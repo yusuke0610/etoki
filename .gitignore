@@ -1,0 +1,21 @@
+# build artifacts
+/bin/
+/web/dist/
+/web/node_modules/
+
+# nix
+result
+result-*
+.direnv/
+
+# local state
+*.db
+*.db-shm
+*.db-wal
+/tmp/
+.env
+.env.local
+
+# editors
+.DS_Store
+.idea/
