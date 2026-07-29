@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: nix flake check
+        run: nix flake check
+
+      # ローカルと同じ入口を通す。CI 専用のセットアップ手順を持たないことで、
+      # 「手元では通るが CI で落ちる」の原因を devShell の外に閉じ込める。
+      - name: setup
+        run: nix develop --command make setup
+
+      - name: lint
+        run: nix develop --command make lint
+
+      - name: test
+        run: nix develop --command make test
+
+      - name: build
+        run: nix develop --command make build
