@@ -51,7 +51,7 @@
         };
       });
 
-      formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
+      formatter = forAllSystems (pkgs: pkgs.nixfmt);
 
       # checks は意図的に Nix コードのフォーマット検査だけに絞っている。
       # Go / フロントエンドのビルドを derivation 化すると vendorHash と
@@ -61,7 +61,7 @@
         nix-fmt =
           pkgs.runCommand "check-nix-fmt"
             {
-              nativeBuildInputs = [ pkgs.nixfmt-rfc-style ];
+              nativeBuildInputs = [ pkgs.nixfmt ];
             }
             ''
               nixfmt --check ${./flake.nix}

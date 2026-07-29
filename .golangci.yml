@@ -21,6 +21,10 @@ linters:
             - disableStutteringCheck
   exclusions:
     generated: lax
+    # web/node_modules には Go ファイルを同梱した npm パッケージが混ざる。
+    # モジュール外なので走査対象から外す。
+    paths:
+      - "^web/"
     rules:
       - path: _test\.go$
         linters:
@@ -34,3 +38,6 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/yusuke0610/etoki
+  exclusions:
+    paths:
+      - "^web/"
