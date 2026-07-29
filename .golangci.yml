@@ -1,0 +1,36 @@
+# golangci-lint v2 形式。v1 とはキー構成が異なるので注意。
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - misspell
+    - noctx
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    revive:
+      rules:
+        - name: exported
+          # 公開 API 面（etoki.go / port/）は外部リポジトリが直接読むため、
+          # doc コメントを必須にする。
+          arguments:
+            - disableStutteringCheck
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go$
+        linters:
+          - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/yusuke0610/etoki
