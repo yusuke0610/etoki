@@ -10,3 +10,4 @@
 | [0004](0004-single-user-local-tool.md) | 単一ユーザーのローカルツールとして設計する | 採用 |
 | [0005](0005-llm-client-abstraction.md) | LLMClient は 1 回の呼び出しだけを担う | 採用 |
 | [0006](0006-two-level-hierarchy.md) | GitHub に作るのは epic と issue の 2 階層のみ | 採用 |
+| [0007](0007-run-history.md) | マッピングは実行単位で履歴を残す | 採用 |

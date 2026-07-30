@@ -1,11 +1,10 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-BIN_DIR    := bin
-BINARY     := $(BIN_DIR)/etoki
-WEB_DIR    := web
-MIGRAT_DIR := migrations
-DB_PATH    ?= etoki.db
+BIN_DIR := bin
+BINARY  := $(BIN_DIR)/etoki
+WEB_DIR := web
+DB_PATH ?= etoki.db
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web \
         test test-go test-web lint lint-go lint-web fmt migrate clean
@@ -66,17 +65,7 @@ fmt: ## Go / Nix / フロントエンドをフォーマットする
 	cd $(WEB_DIR) && bun run fmt
 
 migrate: ## マイグレーションを適用する
-	@# Phase 0 の時点では Go 側に DB コードがないため sqlite3 CLI で適用する。
-	@# Phase 1 で cmd/etoki の migrate サブコマンド（go:embed + 自前 runner）に
-	@# 置き換える。判断の経緯は docs/adr/0003-sqlite-and-migrations.md を参照。
-	@mkdir -p $(dir $(DB_PATH))
-	@shopt -s nullglob; \
-	for f in $(MIGRAT_DIR)/*.sql; do \
-		echo "applying $$f"; \
-		sqlite3 "$(DB_PATH)" < "$$f"; \
-	done; \
-	sqlite3 "$(DB_PATH)" "select 1;" > /dev/null
-	@echo "migrated: $(DB_PATH)"
+	ETOKI_DB_PATH=$(DB_PATH) go run ./cmd/etoki migrate
 
 clean: ## 生成物を削除する
 	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules

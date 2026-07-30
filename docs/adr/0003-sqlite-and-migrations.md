@@ -30,9 +30,3 @@ goose や golang-migrate といった既存ツールを使う選択肢もある�
   テストを先に書いて担保する。
 - Postgres 実装を外部リポジトリに委ねる方針のため、この runner は SQLite 専用で
   よい。汎用化しない。
-
-## 暫定状態（Phase 0）
-
-Phase 0 の時点では Go 側に DB コードが存在しないため、`make migrate` は
-`sqlite3` CLI で `migrations/*.sql` を適用する暫定実装になっている。
-Phase 1 で `etoki migrate` サブコマンドに置き換える。
