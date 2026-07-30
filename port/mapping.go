@@ -2,8 +2,15 @@ package port
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrNotFound は更新対象が存在しないことを表す。
+//
+// 取得系（Find 系）は「無い」を異常として扱わず nil を返すため、このエラーは
+// 更新系でのみ返る。
+var ErrNotFound = errors.New("etoki: not found")
 
 // Board は 1 枚の Excalidraw ボード。
 //
