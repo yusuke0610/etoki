@@ -5,17 +5,36 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/yusuke0610/etoki/internal/usecase"
 )
+
+// Deps はルーティングが必要とするユースケース層。
+type Deps struct {
+	Boards      *usecase.BoardService
+	Annotations *usecase.AnnotationService
+}
 
 // NewRouter は etoki の HTTP ルーティングを構築する。
 //
 // ロギングミドルウェアは意図的に入れていない。構造化ログを導入する段で
 // まとめて足す方が、途中で gin 既定のテキストログと二重になるのを避けられる。
-func NewRouter() *gin.Engine {
+func NewRouter(deps Deps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
 	r.GET("/healthz", handleHealthz)
+
+	h := &handlers{boards: deps.Boards, annotations: deps.Annotations}
+
+	api := r.Group("/api")
+	{
+		api.POST("/boards", h.createBoard)
+		api.GET("/boards", h.listBoards)
+		api.GET("/boards/:id", h.getBoard)
+		api.PUT("/boards/:id/scene", h.saveScene)
+		api.GET("/boards/:id/annotations", h.listAnnotations)
+	}
 
 	return r
 }

@@ -52,8 +52,16 @@ func run() error {
 }
 
 func serve(ctx context.Context) error {
+	db, err := sqlite.Open(ctx, dbPath())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
 	srv, err := etoki.New(etoki.Options{
-		Addr: os.Getenv("ETOKI_ADDR"),
+		Addr:     os.Getenv("ETOKI_ADDR"),
+		Boards:   sqlite.NewBoardRepository(db),
+		Mappings: sqlite.NewMappingRepository(db),
 	})
 	if err != nil {
 		return err
