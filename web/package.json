@@ -11,6 +11,7 @@
     "fmt": "prettier --write ."
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -19,6 +20,7 @@
     "@testing-library/dom": "^10",
     "@testing-library/jest-dom": "^6",
     "@testing-library/react": "^16",
+    "@types/node": "^26.1.2",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^5",
