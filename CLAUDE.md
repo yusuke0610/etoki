@@ -30,7 +30,8 @@ nix develop      # 開発シェル（Go / Bun / SQLite / golangci-lint / air）
 make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
-make lint        # golangci-lint + eslint + tsc
+make lint        # golangci-lint + eslint + tsc + 整形検査（gofmt / prettier）
+make fmt         # Go / Nix / フロントエンドを整形する
 make test        # go test + vitest
 make migrate     # etoki migrate サブコマンドを呼ぶ
 ```
