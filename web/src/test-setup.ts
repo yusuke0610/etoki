@@ -28,8 +28,6 @@ const stub2DContext = {
   stroke: () => {},
 };
 
-HTMLCanvasElement.prototype.getContext = function getContext(
-  contextID: string,
-): unknown {
+HTMLCanvasElement.prototype.getContext = function getContext(contextID: string): unknown {
   return contextID === "2d" ? stub2DContext : null;
 } as typeof HTMLCanvasElement.prototype.getContext;

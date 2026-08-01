@@ -51,10 +51,13 @@ test-go: ## Go のテストのみ実行する
 test-web: ## フロントエンドのテストのみ実行する
 	cd $(WEB_DIR) && bun run test
 
-lint: lint-go lint-web ## golangci-lint とフロントエンドの lint を実行する
+lint: lint-go lint-web ## golangci-lint とフロントエンドの lint / 整形検査を実行する
 
 lint-go:
 	golangci-lint run
+	@# gofmt / goimports は formatters に登録してあり run では検査されない。
+	@# 整形崩れが緑のまま通らないよう、差分が出たら落とす。
+	golangci-lint fmt --diff
 
 lint-web:
 	cd $(WEB_DIR) && bun run lint
