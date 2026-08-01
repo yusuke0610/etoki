@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,19 +14,23 @@ import (
 type Deps struct {
 	Boards      *usecase.BoardService
 	Annotations *usecase.AnnotationService
+	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
+	Logger *slog.Logger
 }
 
 // NewRouter は etoki の HTTP ルーティングを構築する。
-//
-// ロギングミドルウェアは意図的に入れていない。構造化ログを導入する段で
-// まとめて足す方が、途中で gin 既定のテキストログと二重になるのを避けられる。
 func NewRouter(deps Deps) *gin.Engine {
+	logger := deps.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.Use(gin.Recovery(), requestLogger(logger))
 
 	r.GET("/healthz", handleHealthz)
 
-	h := &handlers{boards: deps.Boards, annotations: deps.Annotations}
+	h := &handlers{boards: deps.Boards, annotations: deps.Annotations, logger: logger}
 
 	api := r.Group("/api")
 	{

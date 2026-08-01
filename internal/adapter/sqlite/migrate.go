@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
@@ -10,6 +11,13 @@ import (
 
 	"github.com/yusuke0610/etoki/migrations"
 )
+
+// ErrNotMigrated はマイグレーションが未適用であることを表す。
+//
+// SQLite は接続時にファイルを作るため、空の DB でもサーバーは起動できて
+// しまう。その状態を起動時に検出して落とすために使う。
+// メッセージに "etoki: " を付けないのは、cmd 側が既に前置きしているため。
+var ErrNotMigrated = errors.New("database is not migrated")
 
 // createSchemaMigrations は適用済みバージョンを記録する表を用意する。
 const createSchemaMigrations = `
@@ -32,22 +40,59 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
-	names, err := fs.Glob(migrations.FS, "*.sql")
+	pending, err := pendingVersions(applied)
 	if err != nil {
-		return fmt.Errorf("glob migrations: %w", err)
+		return err
 	}
-	slices.Sort(names)
 
-	for _, name := range names {
-		if slices.Contains(applied, name) {
-			continue
-		}
+	for _, name := range pending {
 		if err := applyMigration(ctx, db, name); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// EnsureMigrated は未適用のマイグレーションが無いことを確かめる。
+//
+// マイグレーションは明示的な操作にしておきたいので、ここでは適用しない。
+// 代わりに何をすべきかが分かるエラーを返す。黙って 500 を返し続けるより、
+// 起動時に落ちて指示を出す方が原因にたどり着ける。
+func EnsureMigrated(ctx context.Context, db *sql.DB) error {
+	applied, err := appliedVersions(ctx, db)
+	if err != nil {
+		// schema_migrations 自体が無い＝一度も適用していない。
+		return fmt.Errorf("%w", ErrNotMigrated)
+	}
+
+	pending, err := pendingVersions(applied)
+	if err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		return fmt.Errorf("%w (pending: %v)", ErrNotMigrated, pending)
+	}
+
+	return nil
+}
+
+// pendingVersions は未適用のマイグレーション名を昇順で返す。
+func pendingVersions(applied []string) ([]string, error) {
+	names, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil {
+		return nil, fmt.Errorf("glob migrations: %w", err)
+	}
+	slices.Sort(names)
+
+	var pending []string
+	for _, name := range names {
+		if !slices.Contains(applied, name) {
+			pending = append(pending, name)
+		}
+	}
+
+	return pending, nil
 }
 
 // appliedVersions は適用済みのバージョン名を返す。
