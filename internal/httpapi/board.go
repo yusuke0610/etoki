@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -68,18 +69,19 @@ type annotationResponse struct {
 type handlers struct {
 	boards      *usecase.BoardService
 	annotations *usecase.AnnotationService
+	logger      *slog.Logger
 }
 
 func (h *handlers) createBoard(c *gin.Context) {
 	var req createBoardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		badRequest(c, err)
+		h.badRequest(c, err)
 		return
 	}
 
 	b, err := h.boards.Create(c.Request.Context(), req.Name, req.Scene)
 	if err != nil {
-		fail(c, err)
+		h.fail(c, err)
 		return
 	}
 
@@ -89,7 +91,7 @@ func (h *handlers) createBoard(c *gin.Context) {
 func (h *handlers) listBoards(c *gin.Context) {
 	boards, err := h.boards.List(c.Request.Context())
 	if err != nil {
-		fail(c, err)
+		h.fail(c, err)
 		return
 	}
 
@@ -105,11 +107,11 @@ func (h *handlers) listBoards(c *gin.Context) {
 func (h *handlers) getBoard(c *gin.Context) {
 	b, err := h.boards.Find(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		fail(c, err)
+		h.fail(c, err)
 		return
 	}
 	if b == nil {
-		notFound(c)
+		h.notFound(c)
 		return
 	}
 
@@ -119,12 +121,12 @@ func (h *handlers) getBoard(c *gin.Context) {
 func (h *handlers) saveScene(c *gin.Context) {
 	var req saveSceneRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		badRequest(c, err)
+		h.badRequest(c, err)
 		return
 	}
 
 	if err := h.boards.SaveScene(c.Request.Context(), c.Param("id"), req.Scene); err != nil {
-		fail(c, err)
+		h.fail(c, err)
 		return
 	}
 
@@ -134,17 +136,17 @@ func (h *handlers) saveScene(c *gin.Context) {
 func (h *handlers) listAnnotations(c *gin.Context) {
 	states, err := h.annotations.ListStates(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		fail(c, err)
+		h.fail(c, err)
 		return
 	}
 	if states == nil {
 		// ボードが無い場合と、注釈が 0 件の場合を区別する必要がある。
 		// ListStates はボードが無いときだけ nil を返す。
 		if b, findErr := h.boards.Find(c.Request.Context(), c.Param("id")); findErr != nil {
-			fail(c, findErr)
+			h.fail(c, findErr)
 			return
 		} else if b == nil {
-			notFound(c)
+			h.notFound(c)
 			return
 		}
 	}
@@ -191,21 +193,27 @@ func toAnnotationResponse(s usecase.AnnotationState) annotationResponse {
 //
 // 分岐をここ 1 箇所に閉じることで、ハンドラ側がステータスコードを
 // 気にしなくて済む。
-func fail(c *gin.Context, err error) {
+func (h *handlers) fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, usecase.ErrInvalidInput):
-		badRequest(c, err)
+		h.badRequest(c, err)
 	case errors.Is(err, port.ErrNotFound):
-		notFound(c)
+		h.notFound(c)
 	default:
+		// レスポンスには内部情報を載せないが、原因が分からないままだと
+		// 手元で調べようがない。サーバー側には必ず残す。
+		h.logger.ErrorContext(c.Request.Context(), "unhandled error",
+			slog.String("path", c.Request.URL.Path),
+			slog.Any("error", err),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 	}
 }
 
-func badRequest(c *gin.Context, err error) {
+func (h *handlers) badRequest(c *gin.Context, err error) {
 	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 }
 
-func notFound(c *gin.Context) {
+func (h *handlers) notFound(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 }

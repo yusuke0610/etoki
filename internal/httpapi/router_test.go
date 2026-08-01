@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -33,18 +34,7 @@ var fixedTime = time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
 func newRouter(t *testing.T) (*gin.Engine, port.MappingRepository) {
 	t.Helper()
 
-	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	if err := sqlite.Migrate(t.Context(), db); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-
-	boards := sqlite.NewBoardRepository(db)
-	mappings := sqlite.NewMappingRepository(db)
+	boards, mappings := newRepos(t)
 
 	seq := 0
 	boardSvc := usecase.NewBoardService(boards,
@@ -386,4 +376,38 @@ func currentHash(t *testing.T, r *gin.Engine, boardID string) string {
 	}
 
 	return string(parsed.AnnotationHash(annotations[0]))
+}
+
+// newRepos はマイグレーション済みの一時 DB に紐づくリポジトリを返す。
+func newRepos(t *testing.T) (port.BoardRepository, port.MappingRepository) {
+	t.Helper()
+
+	db := openTempDB(t)
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	return sqlite.NewBoardRepository(db), sqlite.NewMappingRepository(db)
+}
+
+// newUnmigratedRepos はマイグレーションしていない DB に紐づくリポジトリを返す。
+// 未初期化のまま起動してしまった状況を再現するために使う。
+func newUnmigratedRepos(t *testing.T) (port.BoardRepository, port.MappingRepository) {
+	t.Helper()
+
+	db := openTempDB(t)
+
+	return sqlite.NewBoardRepository(db), sqlite.NewMappingRepository(db)
+}
+
+func openTempDB(t *testing.T) *sql.DB {
+	t.Helper()
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	return db
 }

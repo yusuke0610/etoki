@@ -6,10 +6,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
@@ -52,22 +56,42 @@ func run() error {
 }
 
 func serve(ctx context.Context) error {
-	db, err := sqlite.Open(ctx, dbPath())
+	// gin 既定のリクエストログは使わず slog に寄せるので、debug 出力も止める。
+	gin.SetMode(gin.ReleaseMode)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+
+	path := dbPath()
+
+	db, err := sqlite.Open(ctx, path)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
 
+	// SQLite は接続時にファイルを作るため、未初期化でも起動できてしまう。
+	// そのまま動かすと全 API が 500 を返し続けて原因が分かりにくいので、
+	// ここで落とす。適用は明示的な操作にしておきたいので自動では行わない。
+	if err := sqlite.EnsureMigrated(ctx, db); err != nil {
+		if errors.Is(err, sqlite.ErrNotMigrated) {
+			return fmt.Errorf("%w\n  先に `make migrate` を実行してください (%s)", err, path)
+		}
+		return err
+	}
+
 	srv, err := etoki.New(etoki.Options{
 		Addr:     os.Getenv("ETOKI_ADDR"),
 		Boards:   sqlite.NewBoardRepository(db),
 		Mappings: sqlite.NewMappingRepository(db),
+		Logger:   logger,
 	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "etoki listening on http://%s\n", srv.Addr())
+	logger.InfoContext(ctx, "listening", slog.String("addr", srv.Addr()), slog.String("db", path))
 
 	return srv.Run(ctx)
 }

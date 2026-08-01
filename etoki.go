@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -41,6 +42,8 @@ type Options struct {
 	Boards port.BoardRepository
 	// Mappings は注釈と draft issue の対応の永続化。必須。
 	Mappings port.MappingRepository
+	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
+	Logger *slog.Logger
 }
 
 // Server は etoki の HTTP サーバー。
@@ -68,6 +71,7 @@ func New(opts Options) (*Server, error) {
 	handler := httpapi.NewRouter(httpapi.Deps{
 		Boards:      usecase.NewBoardService(opts.Boards),
 		Annotations: usecase.NewAnnotationService(opts.Boards, opts.Mappings),
+		Logger:      opts.Logger,
 	})
 
 	return &Server{addr: addr, handler: handler}, nil
