@@ -51,6 +51,12 @@
         };
       });
 
+      # .envrc から参照する。nix-direnv を別途グローバルに入れさせるのではなく
+      # ここから取り出すことで、バージョンが flake.lock に固定される。
+      packages = forAllSystems (pkgs: {
+        inherit (pkgs) nix-direnv;
+      });
+
       formatter = forAllSystems (pkgs: pkgs.nixfmt);
 
       # checks は意図的に Nix コードのフォーマット検査だけに絞っている。

@@ -25,6 +25,19 @@ make dev         # バックエンドとフロントエンドを同時に起動
 make help        # ターゲット一覧
 ```
 
+### direnv（任意）
+
+[direnv](https://direnv.net/) を使っているなら、一度許可するだけで
+このディレクトリに `cd` したときに開発用シェルが有効になります。
+
+```sh
+direnv allow
+```
+
+キャッシュ用の nix-direnv は `.envrc` が flake から取り出すので、
+別途インストールする必要はありません。direnv を使わない場合は
+`nix develop` のままで構いません。
+
 ## ドキュメント
 
 設計判断の記録は [`docs/adr/`](docs/adr/) にあります。

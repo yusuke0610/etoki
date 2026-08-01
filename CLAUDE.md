@@ -37,6 +37,10 @@ make migrate     # etoki migrate サブコマンドを呼ぶ
 
 コミット前に `make lint` と `make test` を通す。
 
+`.envrc` があるので、direnv を使っているなら `direnv allow` 一度で `cd` 時に
+devShell が有効になる（`nix develop` を毎回打たなくてよい）。direnv は任意で、
+サポートする導線はあくまで `nix develop`。
+
 ### 単体テストの実行
 
 ```sh
