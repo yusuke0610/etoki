@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/yusuke0610/etoki/internal/httpapi"
+	"github.com/yusuke0610/etoki/internal/usecase"
+	"github.com/yusuke0610/etoki/port"
 )
 
 // DefaultAddr は Options.Addr が空のときに使うリッスンアドレス。
@@ -28,10 +30,17 @@ const DefaultAddr = "127.0.0.1:8080"
 // shutdownTimeout は graceful shutdown で処理中のリクエストを待つ上限。
 const shutdownTimeout = 10 * time.Second
 
-// Options は Server の組み立てに必要な設定を束ねる。
+// Options は Server の組み立てに必要な設定と依存を束ねる。
+//
+// リポジトリを引数で受け取るのは、利用者が独自の実装を差し込めるようにする
+// ため。etoki 本体は SQLite を前提としない。
 type Options struct {
 	// Addr はリッスンアドレス。空なら DefaultAddr を使う。
 	Addr string
+	// Boards はボードの永続化。必須。
+	Boards port.BoardRepository
+	// Mappings は注釈と draft issue の対応の永続化。必須。
+	Mappings port.MappingRepository
 }
 
 // Server は etoki の HTTP サーバー。
@@ -49,11 +58,19 @@ func New(opts Options) (*Server, error) {
 	if _, _, err := net.SplitHostPort(addr); err != nil {
 		return nil, fmt.Errorf("invalid addr %q: %w", addr, err)
 	}
+	if opts.Boards == nil {
+		return nil, errors.New("etoki: Options.Boards is required")
+	}
+	if opts.Mappings == nil {
+		return nil, errors.New("etoki: Options.Mappings is required")
+	}
 
-	return &Server{
-		addr:    addr,
-		handler: httpapi.NewRouter(),
-	}, nil
+	handler := httpapi.NewRouter(httpapi.Deps{
+		Boards:      usecase.NewBoardService(opts.Boards),
+		Annotations: usecase.NewAnnotationService(opts.Boards, opts.Mappings),
+	})
+
+	return &Server{addr: addr, handler: handler}, nil
 }
 
 // Addr はリッスンアドレスを返す。

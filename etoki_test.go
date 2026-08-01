@@ -6,12 +6,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki"
+	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
+	"github.com/yusuke0610/etoki/port"
 )
 
 func TestMain(m *testing.M) {
@@ -19,10 +22,35 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+// repos は一時 DB に紐づいたリポジトリ一式を返す。
+func repos(t *testing.T) (port.BoardRepository, port.MappingRepository) {
+	t.Helper()
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	return sqlite.NewBoardRepository(db), sqlite.NewMappingRepository(db)
+}
+
+// options は Addr 以外を埋めた Options を返す。
+func options(t *testing.T, addr string) etoki.Options {
+	t.Helper()
+
+	boards, mappings := repos(t)
+	return etoki.Options{Addr: addr, Boards: boards, Mappings: mappings}
+}
+
 func TestNewDefaultsToLoopback(t *testing.T) {
 	t.Parallel()
 
-	srv, err := etoki.New(etoki.Options{})
+	srv, err := etoki.New(options(t, ""))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -34,15 +62,30 @@ func TestNewDefaultsToLoopback(t *testing.T) {
 func TestNewRejectsInvalidAddr(t *testing.T) {
 	t.Parallel()
 
-	if _, err := etoki.New(etoki.Options{Addr: "not-an-address"}); err == nil {
+	if _, err := etoki.New(options(t, "not-an-address")); err == nil {
 		t.Fatal("New: want error for malformed addr, got nil")
+	}
+}
+
+// リポジトリは必須。外部リポジトリが差し込みを忘れたまま起動しないよう、
+// 組み立て時点で弾く。
+func TestNewRequiresRepositories(t *testing.T) {
+	t.Parallel()
+
+	boards, mappings := repos(t)
+
+	if _, err := etoki.New(etoki.Options{Mappings: mappings}); err == nil {
+		t.Error("New: want error when Boards is nil, got nil")
+	}
+	if _, err := etoki.New(etoki.Options{Boards: boards}); err == nil {
+		t.Error("New: want error when Mappings is nil, got nil")
 	}
 }
 
 func TestHandlerServesHealthz(t *testing.T) {
 	t.Parallel()
 
-	srv, err := etoki.New(etoki.Options{})
+	srv, err := etoki.New(options(t, ""))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -56,10 +99,28 @@ func TestHandlerServesHealthz(t *testing.T) {
 	}
 }
 
+// 組み立てたサーバーに API ルートが載っていること。
+func TestHandlerServesBoardAPI(t *testing.T) {
+	t.Parallel()
+
+	srv, err := etoki.New(options(t, ""))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/boards", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
 func TestRunShutsDownOnContextCancel(t *testing.T) {
 	t.Parallel()
 
-	srv, err := etoki.New(etoki.Options{Addr: freeAddr(t)})
+	srv, err := etoki.New(options(t, freeAddr(t)))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -95,7 +156,7 @@ func TestRunReportsListenFailure(t *testing.T) {
 	}
 	defer func() { _ = ln.Close() }()
 
-	srv, err := etoki.New(etoki.Options{Addr: addr})
+	srv, err := etoki.New(options(t, addr))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

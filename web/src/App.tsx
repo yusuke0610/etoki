@@ -1,44 +1,104 @@
-import { useEffect, useState } from "react";
+import "@excalidraw/excalidraw/index.css";
 
-/** バックエンド疎通の 3 状態。 */
-type Health = "checking" | "ok" | "unreachable";
+import { useCallback, useEffect, useState } from "react";
 
-/**
- * App は Phase 0 時点ではバックエンドへの疎通確認のみを表示する。
- * Excalidraw の埋め込みと注釈 UI は Phase 2 で載せる。
- */
+import { boardsApi, type BoardDetail, type BoardSummary } from "./api/boards";
+import { BoardPage } from "./board/BoardPage";
+
 export function App() {
-  const health = useHealth();
+  const [boards, setBoards] = useState<BoardSummary[]>([]);
+  const [current, setCurrent] = useState<BoardDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
 
-  return (
-    <main>
-      <h1>etoki</h1>
-      <p>ブレストの絵を解いて、GitHub の設計に落とす。</p>
-      <p>
-        backend: <output>{health}</output>
-      </p>
-    </main>
-  );
-}
-
-/** useHealth は /healthz を 1 回だけ叩き、その結果を返す。 */
-function useHealth(): Health {
-  const [health, setHealth] = useState<Health>("checking");
-
-  useEffect(() => {
-    // アンマウント後の setState を避けるため、abort で購読を打ち切る。
-    const controller = new AbortController();
-
-    fetch("/healthz", { signal: controller.signal })
-      .then((res) => setHealth(res.ok ? "ok" : "unreachable"))
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setHealth("unreachable");
-        }
-      });
-
-    return () => controller.abort();
+  const reload = useCallback(async () => {
+    try {
+      setBoards(await boardsApi.list());
+    } catch (e) {
+      setError(`ボード一覧を取得できませんでした: ${String(e)}`);
+    }
   }, []);
 
-  return health;
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const open = useCallback(async (id: string) => {
+    try {
+      setCurrent(await boardsApi.get(id));
+    } catch (e) {
+      setError(`ボードを開けませんでした: ${String(e)}`);
+    }
+  }, []);
+
+  const create = useCallback(async () => {
+    if (!name.trim()) return;
+    try {
+      const board = await boardsApi.create(name.trim());
+      setName("");
+      await reload();
+      setCurrent(board);
+    } catch (e) {
+      setError(`ボードを作成できませんでした: ${String(e)}`);
+    }
+  }, [name, reload]);
+
+  return (
+    <div className="app">
+      <nav className="sidebar">
+        <h1 className="brand">etoki</h1>
+
+        <form
+          className="create-board"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void create();
+          }}
+        >
+          <input
+            aria-label="ボード名"
+            placeholder="新しいボード名"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <button type="submit" disabled={!name.trim()}>
+            作成
+          </button>
+        </form>
+
+        <ul className="board-list">
+          {boards.map((b) => (
+            <li key={b.id}>
+              <button
+                type="button"
+                className={b.id === current?.id ? "active" : ""}
+                onClick={() => void open(b.id)}
+              >
+                {b.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <main className="main">
+        {error && (
+          <div className="error" role="alert">
+            {error}
+            <button type="button" onClick={() => setError(null)}>
+              閉じる
+            </button>
+          </div>
+        )}
+
+        {current ? (
+          // ボードを切り替えたら Excalidraw ごと作り直す。initialData は
+          // マウント時にしか読まれないため、key を変えないと前のシーンが残る。
+          <BoardPage key={current.id} board={current} onError={setError} />
+        ) : (
+          <p className="hint">左からボードを選ぶか、新しく作成してください。</p>
+        )}
+      </main>
+    </div>
+  );
 }

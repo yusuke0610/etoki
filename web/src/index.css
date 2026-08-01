@@ -1,0 +1,204 @@
+:root {
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  color: #1e1e1e;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid #ddd;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.brand {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+.create-board {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.create-board input {
+  min-width: 0;
+  flex: 1;
+}
+
+.board-list,
+.plain-list,
+.annotation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.board-list button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.board-list button.active {
+  background: #e7f0ff;
+  font-weight: 600;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.board {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ddd;
+}
+
+.board-header h1 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.board-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.board-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.canvas {
+  flex: 1;
+  min-width: 0;
+}
+
+.panel {
+  width: 280px;
+  flex-shrink: 0;
+  border-left: 1px solid #ddd;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.panel h2 {
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+
+.panel h3 {
+  font-size: 13px;
+  margin: 0 0 6px;
+  color: #555;
+}
+
+.panel-section {
+  margin-bottom: 20px;
+}
+
+.hint {
+  color: #777;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.annotation {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.annotation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.annotation-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.badge-uncreated {
+  background: #eee;
+  color: #555;
+}
+
+.badge-created {
+  background: #e3f5e6;
+  color: #1f7a34;
+}
+
+.badge-changed {
+  background: #fdf0d5;
+  color: #8a5a00;
+}
+
+.granularity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.kind {
+  font-size: 11px;
+  color: #777;
+}
+
+.dirty,
+.stale {
+  color: #8a5a00;
+  font-size: 12px;
+}
+
+.error {
+  background: #fdecea;
+  color: #8a1c12;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
