@@ -84,5 +84,6 @@ export const boardsApi = {
       body: JSON.stringify({ scene }),
     }),
 
-  annotations: (id: string) => request<AnnotationStatus[]>(`/api/boards/${id}/annotations`),
+  annotations: (id: string) =>
+    request<AnnotationStatus[]>(`/api/boards/${id}/annotations`),
 };

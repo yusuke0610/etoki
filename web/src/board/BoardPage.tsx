@@ -53,7 +53,10 @@ export function BoardPage({ board, onError }: Props) {
 
   /** 選択状態の変化を拾い、注釈にできる frame を割り出す。 */
   const handleChange = useCallback(
-    (elements: readonly unknown[], appState: { selectedElementIds: Record<string, boolean> }) => {
+    (
+      elements: readonly unknown[],
+      appState: { selectedElementIds: Record<string, boolean> },
+    ) => {
       setDirty(true);
       setSelectedFrames(
         selectableFrameIds(elements as SceneElement[], appState.selectedElementIds),
