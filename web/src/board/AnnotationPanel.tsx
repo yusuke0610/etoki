@@ -1,4 +1,16 @@
-import type { AnnotationStatus, Granularity, SyncState } from "../api/boards";
+import type {
+  AnnotationStatus,
+  Granularity,
+  Interpretation,
+  SyncState,
+} from "../api/boards";
+import { groupByEpic } from "./interpretation";
+
+/** 注釈 1 つぶんの解釈の進み具合。 */
+export type InterpretationState =
+  | { status: "running" }
+  | { status: "done"; result: Interpretation }
+  | { status: "error"; message: string };
 
 const STATE_LABEL: Record<SyncState, string> = {
   uncreated: "未作成",
@@ -23,6 +35,9 @@ type Props = {
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
   /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
   stale: boolean;
+  /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
+  interpretations: Record<string, InterpretationState>;
+  onInterpret: (annotationId: string) => void;
 };
 
 export function AnnotationPanel({
@@ -33,6 +48,8 @@ export function AnnotationPanel({
   onUnmark,
   onChangeGranularity,
   stale,
+  interpretations,
+  onInterpret,
 }: Props) {
   return (
     <aside className="panel">
@@ -109,11 +126,100 @@ export function AnnotationPanel({
                     </ul>
                   </details>
                 )}
+
+                <InterpretationSection
+                  state={interpretations[a.id]}
+                  stale={stale}
+                  onInterpret={() => onInterpret(a.id)}
+                />
               </li>
             ))}
           </ul>
         )}
       </section>
     </aside>
+  );
+}
+
+type InterpretationSectionProps = {
+  state?: InterpretationState;
+  /** 未保存の変更があると、解釈は保存済みシーンに対して行われる。 */
+  stale: boolean;
+  onInterpret: () => void;
+};
+
+/**
+ * 解釈の実行と結果表示。
+ *
+ * 結果を見せるだけで、ここから GitHub には何も作らない。何を作るかは
+ * 開発者が別途トリガーする。
+ */
+function InterpretationSection({
+  state,
+  stale,
+  onInterpret,
+}: InterpretationSectionProps) {
+  const running = state?.status === "running";
+
+  return (
+    <div className="interpretation">
+      <button type="button" onClick={onInterpret} disabled={running}>
+        {running ? "解釈中…" : "解釈する"}
+      </button>
+
+      {stale && (
+        <p className="hint">
+          未保存の変更は解釈に含まれません。保存してから実行してください。
+        </p>
+      )}
+
+      {state?.status === "error" && <p className="error">{state.message}</p>}
+
+      {state?.status === "done" && <InterpretationResult result={state.result} />}
+    </div>
+  );
+}
+
+/**
+ * 解釈結果。summary を最初に見せる。
+ *
+ * summary は GitHub には作らない。LLM がこの囲みをどう読んだかを開発者が
+ * 確かめるための材料。
+ */
+function InterpretationResult({ result }: { result: Interpretation }) {
+  const groups = groupByEpic(result.items);
+
+  return (
+    <div className="interpretation-result">
+      <p className="summary">{result.summary}</p>
+
+      {groups.length === 0 ? (
+        <p className="hint">作成される項目はありません。</p>
+      ) : (
+        <ul className="plain-list">
+          {groups.map((g, i) => (
+            <li key={g.epic?.localId ?? `orphans-${i}`}>
+              {g.epic ? (
+                <>
+                  <span className="kind">epic</span> {g.epic.title}
+                </>
+              ) : (
+                <span className="hint">epic に属さない issue</span>
+              )}
+
+              {g.issues.length > 0 && (
+                <ul className="plain-list">
+                  {g.issues.map((it) => (
+                    <li key={it.localId}>
+                      <span className="kind">issue</span> {it.title}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

@@ -15,7 +15,7 @@ import {
   unmarkAnnotation,
   type SceneElement,
 } from "../excalidraw/annotation";
-import { AnnotationPanel } from "./AnnotationPanel";
+import { AnnotationPanel, type InterpretationState } from "./AnnotationPanel";
 
 type Props = {
   board: BoardDetail;
@@ -28,6 +28,9 @@ export function BoardPage({ board, onError }: Props) {
   const [selectedFrames, setSelectedFrames] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [interpretations, setInterpretations] = useState<
+    Record<string, InterpretationState>
+  >({});
 
   const initialData = useMemo(() => {
     try {
@@ -106,6 +109,9 @@ export function BoardPage({ board, onError }: Props) {
       );
       await boardsApi.saveScene(board.id, scene);
       setDirty(false);
+      // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
+      // 残すと、いまの内容を解釈したものだと誤読される。
+      setInterpretations({});
       await refreshAnnotations();
     } catch (e) {
       onError(`保存できませんでした: ${String(e)}`);
@@ -113,6 +119,38 @@ export function BoardPage({ board, onError }: Props) {
       setSaving(false);
     }
   }, [api, board.id, onError, refreshAnnotations]);
+
+  /**
+   * 注釈を解釈させる。
+   *
+   * エラーはパネル内に残す。どの注釈で何が起きたか分からなくなるので、
+   * 画面全体のエラー表示には流さない。
+   */
+  const interpret = useCallback(
+    async (annotationId: string) => {
+      setInterpretations((prev) => ({
+        ...prev,
+        [annotationId]: { status: "running" },
+      }));
+
+      try {
+        const result = await boardsApi.interpret(board.id, annotationId);
+        setInterpretations((prev) => ({
+          ...prev,
+          [annotationId]: { status: "done", result },
+        }));
+      } catch (e) {
+        setInterpretations((prev) => ({
+          ...prev,
+          [annotationId]: {
+            status: "error",
+            message: e instanceof Error ? e.message : String(e),
+          },
+        }));
+      }
+    },
+    [board.id],
+  );
 
   const markable = selectedFrames.filter(
     (id) => !currentElements().some((el) => el.id === id && isAnnotation(el)),
@@ -151,6 +189,8 @@ export function BoardPage({ board, onError }: Props) {
           onUnmark={handleUnmark}
           onChangeGranularity={(id, g) => handleMark(id, g)}
           stale={dirty}
+          interpretations={interpretations}
+          onInterpret={(id) => void interpret(id)}
         />
       </div>
     </div>
