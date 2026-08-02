@@ -19,6 +19,11 @@ var (
 	// ErrInterpretationFailed は上限まで再送しても出力がスキーマを満たさなかった
 	// ことを表す。LLM への接続自体は成功している。
 	ErrInterpretationFailed = errors.New("etoki: llm output did not satisfy the schema")
+	// ErrLLMUnavailable は LLM の呼び出しそのものが失敗したことを表す。
+	//
+	// 接続不可・認証エラー・モデル側の失敗などが該当する。スキーマ違反とは
+	// 原因も打ち手も違うので、呼び出し側が区別できるよう分けている。
+	ErrLLMUnavailable = errors.New("etoki: llm call failed")
 )
 
 // defaultMaxAttempts は 1 回の解釈で LLM を呼ぶ回数の上限。
@@ -118,7 +123,7 @@ func (s *InterpretationService) complete(ctx context.Context, a domain.Annotatio
 		resp, err := s.llm.Complete(ctx, req)
 		if err != nil {
 			// 接続やモデル側の失敗は修正指示で直る問題ではないので再送しない。
-			return domain.Interpretation{}, fmt.Errorf("llm complete (attempt %d): %w", attempt, err)
+			return domain.Interpretation{}, fmt.Errorf("%w (attempt %d): %w", ErrLLMUnavailable, attempt, err)
 		}
 
 		in, err := parseInterpretation(resp.Text, a.Granularity)

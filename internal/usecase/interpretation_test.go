@@ -300,6 +300,13 @@ func TestInterpret_DoesNotRetryTransportErrors(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Interpret() = %v, want %v", err, wantErr)
 	}
+	// スキーマ違反とは原因も打ち手も違うので、呼び出し側が区別できる必要がある。
+	if !errors.Is(err, usecase.ErrLLMUnavailable) {
+		t.Errorf("Interpret() = %v, want ErrLLMUnavailable", err)
+	}
+	if errors.Is(err, usecase.ErrInterpretationFailed) {
+		t.Errorf("接続の失敗がスキーマ違反として扱われている: %v", err)
+	}
 	if len(llm.requests) != 1 {
 		t.Errorf("LLM 呼び出し回数 = %d, want 1", len(llm.requests))
 	}

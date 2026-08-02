@@ -69,7 +69,9 @@ type annotationResponse struct {
 type handlers struct {
 	boards      *usecase.BoardService
 	annotations *usecase.AnnotationService
-	logger      *slog.Logger
+	// interpretations は nil でもよい。その場合は 503 を返す。
+	interpretations *usecase.InterpretationService
+	logger          *slog.Logger
 }
 
 func (h *handlers) createBoard(c *gin.Context) {
