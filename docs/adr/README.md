@@ -11,3 +11,4 @@
 | [0005](0005-llm-client-abstraction.md) | LLMClient は 1 回の呼び出しだけを担う | 採用 |
 | [0006](0006-two-level-hierarchy.md) | GitHub に作るのは epic と issue の 2 階層のみ | 採用 |
 | [0007](0007-run-history.md) | マッピングは実行単位で履歴を残す | 採用 |
+| [0008](0008-llm-swap-seams.md) | LLM の差し替えは 2 段の継ぎ目で受ける | 採用 |

@@ -35,13 +35,92 @@ func newClient(t *testing.T, handler http.HandlerFunc) *llm.Client {
 	return c
 }
 
-func TestNew_RequiresAPIKey(t *testing.T) {
+// 認証を要求しないローカルのエンドポイントを想定するため、鍵は必須ではない。
+func TestComplete_OmitsAPIKeyHeaderWhenUnset(t *testing.T) {
 	t.Parallel()
 
-	_, err := llm.New(llm.Config{})
-	if !errors.Is(err, llm.ErrAPIKeyRequired) {
-		t.Fatalf("New() = %v, want ErrAPIKeyRequired", err)
+	var gotHeaders http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		_, _ = io.WriteString(w, okResponse)
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := llm.New(llm.Config{BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("New() = %v", err)
 	}
+	if _, err := c.Complete(t.Context(), port.VisionRequest{Text: "x"}); err != nil {
+		t.Fatalf("Complete() = %v", err)
+	}
+
+	// 空の x-api-key を送ると、認証不要の相手がかえって弾くことがある。
+	if _, ok := gotHeaders["X-Api-Key"]; ok {
+		t.Errorf("鍵が未設定なのに x-api-key を送っている: %q", gotHeaders.Get("x-api-key"))
+	}
+	if got := gotHeaders.Get("anthropic-version"); got != "2023-06-01" {
+		t.Errorf("anthropic-version = %q, want 2023-06-01", got)
+	}
+}
+
+// 綴り間違いを実行時まで持ち越すと、解釈の失敗として現れて切り分けが遠回りになる。
+func TestNew_RejectsInvalidBaseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"スキームが無い":   "api.anthropic.com",
+		"対応しないスキーム": "ftp://example.test",
+		"壊れた URL":   "http://[::1",
+		// スキームは通るがホストが無い。呼び出し時まで失敗が遅れる。
+		"ホストが無い":     "http://",
+		"スラッシュが足りない": "https:gateway.example",
+	}
+
+	for name, base := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := llm.New(llm.Config{BaseURL: base, APIKey: testAPIKey}); err == nil {
+				t.Fatalf("New(%q) = nil, want error", base)
+			}
+		})
+	}
+}
+
+// 認証方式が違う基盤に載せ替えるときは、RoundTripper で付け替える（ADR 0008）。
+func TestComplete_AllowsAuthViaRoundTripper(t *testing.T) {
+	t.Parallel()
+
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("authorization")
+		_, _ = io.WriteString(w, okResponse)
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := llm.New(llm.Config{
+		BaseURL:    srv.URL,
+		HTTPClient: &http.Client{Transport: bearerTransport{token: "gateway-token"}},
+	})
+	if err != nil {
+		t.Fatalf("New() = %v", err)
+	}
+	if _, err := c.Complete(t.Context(), port.VisionRequest{Text: "x"}); err != nil {
+		t.Fatalf("Complete() = %v", err)
+	}
+
+	if gotAuth != "Bearer gateway-token" {
+		t.Errorf("authorization = %q, want Bearer gateway-token", gotAuth)
+	}
+}
+
+// bearerTransport は x-api-key 以外の認証を使う基盤の代役。
+type bearerTransport struct{ token string }
+
+func (t bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("authorization", "Bearer "+t.token)
+	return http.DefaultTransport.RoundTrip(r)
 }
 
 func TestComplete_SendsAnthropicShape(t *testing.T) {
