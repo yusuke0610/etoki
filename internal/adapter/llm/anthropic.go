@@ -1,8 +1,13 @@
 // Package llm は port.LLMClient の既定実装を提供する。
 //
 // wire format は Anthropic Messages API 形状に固定してある（ADR 0005）。
-// 別の形式が必要な利用者は、この実装を使わず port.LLMClient を自前で実装して
-// 差し込む。コア側にプロバイダ分岐は入れない。
+//
+// 差し替えの継ぎ目は 2 段ある（ADR 0008）。どちらもコア側に分岐を入れない。
+//
+//   - wire format は同じで認証やヘッダだけが違う（社内ゲートウェイ等）
+//     … Config.HTTPClient に RoundTripper を差す。この実装をそのまま使える。
+//   - wire format ごと違う（Bedrock / Vertex AI / OpenAI 互換等）
+//     … port.LLMClient を自前で実装し etoki.New に渡す。この実装は使わない。
 package llm
 
 import (
@@ -14,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -54,26 +60,36 @@ const (
 	envModel   = "ETOKI_LLM_MODEL"
 )
 
-// ErrAPIKeyRequired は API キーが設定されていないことを表す。
-var ErrAPIKeyRequired = errors.New("etoki: llm api key is required")
-
 // Config は Client の設定。
 type Config struct {
 	// BaseURL は Messages API のホスト。空なら DefaultBaseURL。
+	//
+	// ローカルの Anthropic 互換プロキシに向ける場合はここを差し替える。
 	BaseURL string
-	// APIKey は x-api-key ヘッダに載せる鍵。必須。
+
+	// APIKey は x-api-key ヘッダに載せる鍵。
+	//
+	// 空でもよい。その場合ヘッダ自体を送らない。認証を要求しないローカルの
+	// エンドポイントや、認証を HTTPClient 側で行う構成があるため。鍵が要る
+	// のに空なら、呼び出したときに 401 として返る。
 	APIKey string
+
 	// Model はモデル ID。空なら DefaultModel。
 	Model string
+
 	// MaxTokens は 1 回の応答の上限。0 以下なら DefaultMaxTokens。
 	MaxTokens int
+
 	// HTTPClient は差し替え用。nil なら既定のタイムアウトを持つものを作る。
+	//
+	// x-api-key 以外の認証を使う基盤に載せ替えるときは、ここに RoundTripper を
+	// 差してヘッダを付け替える。etoki 側のコードは触らずに済む（ADR 0008）。
 	HTTPClient *http.Client
 }
 
 // ConfigFromEnv は ETOKI_LLM_* から設定を読む。
 //
-// 値の検証は行わない。API キーの有無は New が判断する。
+// 値の検証は行わない。未設定の項目は空のまま返し、既定への差し戻しは New が行う。
 func ConfigFromEnv() Config {
 	return Config{
 		BaseURL: os.Getenv(envBaseURL),
@@ -93,15 +109,24 @@ type Client struct {
 
 // New は Config を検証して Client を作る。
 //
-// API キーが無ければ起動時に気づけるよう、ここでエラーにする。解釈を実行して
-// 初めて失敗が分かるのでは、原因の切り分けに手間がかかる。
+// API キーの有無は検証しない。認証不要のエンドポイントも想定するため、鍵が
+// 要るかどうかは向き先次第で、ここでは判断できない（ADR 0008）。
+//
+// BaseURL だけは起動時に検証する。綴り間違いを実行時まで持ち越すと、解釈の
+// 失敗として現れて原因の切り分けが遠回りになる。
 func New(cfg Config) (*Client, error) {
-	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("%w: set Config.APIKey or %s", ErrAPIKeyRequired, envAPIKey)
+	base := orDefault(cfg.BaseURL, DefaultBaseURL)
+	u, err := url.Parse(base)
+	if err != nil {
+		return nil, fmt.Errorf("etoki: invalid llm base url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		// Redacted は URL に埋め込まれた資格情報を伏せる。
+		return nil, fmt.Errorf("etoki: invalid llm base url %q: scheme must be http or https", u.Redacted())
 	}
 
 	c := &Client{
-		baseURL:   strings.TrimRight(orDefault(cfg.BaseURL, DefaultBaseURL), "/"),
+		baseURL:   strings.TrimRight(base, "/"),
 		apiKey:    cfg.APIKey,
 		model:     orDefault(cfg.Model, DefaultModel),
 		maxTokens: cfg.MaxTokens,
@@ -137,8 +162,12 @@ func (c *Client) Complete(ctx context.Context, req port.VisionRequest) (port.Vis
 		return port.VisionResponse{}, fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("content-type", "application/json")
-	httpReq.Header.Set("x-api-key", c.apiKey)
 	httpReq.Header.Set("anthropic-version", anthropicVersion)
+	// 鍵が無いなら送らない。空の x-api-key を送ると、認証不要の相手が
+	// かえって弾くことがある。
+	if c.apiKey != "" {
+		httpReq.Header.Set("x-api-key", c.apiKey)
+	}
 
 	httpResp, err := c.http.Do(httpReq)
 	if err != nil {
