@@ -71,6 +71,9 @@ func TestNew_RejectsInvalidBaseURL(t *testing.T) {
 		"スキームが無い":   "api.anthropic.com",
 		"対応しないスキーム": "ftp://example.test",
 		"壊れた URL":   "http://[::1",
+		// スキームは通るがホストが無い。呼び出し時まで失敗が遅れる。
+		"ホストが無い":     "http://",
+		"スラッシュが足りない": "https:gateway.example",
 	}
 
 	for name, base := range tests {

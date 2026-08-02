@@ -124,6 +124,12 @@ func New(cfg Config) (*Client, error) {
 		// Redacted は URL に埋め込まれた資格情報を伏せる。
 		return nil, fmt.Errorf("etoki: invalid llm base url %q: scheme must be http or https", u.Redacted())
 	}
+	// url.Parse は "http://" や "https:gateway.example" も通す。スキームだけ見て
+	// 通すと、ホストの無い URL が起動時の検証をすり抜け、呼び出したときに
+	// "no Host in request URL" として初めて失敗する。検証を置いた意味がなくなる。
+	if u.Hostname() == "" {
+		return nil, fmt.Errorf("etoki: invalid llm base url %q: host is missing", u.Redacted())
+	}
 
 	c := &Client{
 		baseURL:   strings.TrimRight(base, "/"),
