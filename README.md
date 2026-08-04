@@ -51,6 +51,10 @@ direnv allow
 | `ETOKI_LLM_BASE_URL` | `https://api.anthropic.com` | LLM のエンドポイント |
 | `ETOKI_LLM_API_KEY` | （なし） | LLM の API キー。認証不要なら未設定でよい |
 | `ETOKI_LLM_MODEL` | `claude-opus-5` | モデル ID |
+| `ETOKI_GITHUB_TOKEN` | （なし） | GitHub のトークン |
+| `ETOKI_GITHUB_PROJECT_ID` | （なし） | draft issue を作る Projects v2 の node ID |
+| `ETOKI_GITHUB_KIND_FIELD` | `Kind` | 種別のカスタムフィールド名 |
+| `ETOKI_GITHUB_PARENT_FIELD` | `Parent` | 親のカスタムフィールド名 |
 
 ### Anthropic API を使う
 
@@ -74,6 +78,31 @@ make dev
 Ollama や LM Studio が直接公開するのは OpenAI Chat Completions 形状なので、
 `ETOKI_LLM_BASE_URL` をそこへ向けても動きません。形状を変換するプロキシを
 挟むか、`port.LLMClient` を自前実装して差し込んでください。
+
+### GitHub Projects v2 を使う
+
+draft issue の作成には、トークンと作成先のプロジェクトが要ります。
+
+```sh
+export ETOKI_GITHUB_TOKEN=ghp_...
+export ETOKI_GITHUB_PROJECT_ID=PVT_...
+```
+
+トークンに必要な権限は **Projects の read/write** です（fine-grained PAT なら
+`Projects: Read and write`）。
+
+**プロジェクト側にカスタムフィールドを 2 つ用意してください。** draft issue には
+ラベルを付けられず native な親子関係も持てないため、種別と親はカスタム
+フィールドで表します（[ADR 0006](docs/adr/0006-two-level-hierarchy.md)）。
+
+| フィールド | 種類 | 内容 |
+| --- | --- | --- |
+| `Kind` | 単一選択 | 選択肢に `epic` と `issue` |
+| `Parent` | テキスト | 親 epic のタイトルが入る |
+
+名前は `ETOKI_GITHUB_KIND_FIELD` / `ETOKI_GITHUB_PARENT_FIELD` で変えられます。
+足りない場合、作成は実行せずに何を作ればよいかを返します。黙って作ると種別も
+親子も無い draft issue が並ぶだけになるためです。
 
 ### 別の基盤に載せ替える
 
