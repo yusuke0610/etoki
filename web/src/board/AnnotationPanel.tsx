@@ -230,13 +230,14 @@ function CreationSection({
         <div className="creation-result">
           {/* 途中で失敗しても作れたぶんは残る。何も作られていないと
               誤解して再実行すると、GitHub 側に重複が増える。 */}
-          {state.run.incomplete && (
+          {state.run.incomplete ? (
             <p className="error">
               途中で失敗しました（{state.run.items.length} 件は作成済み）:{" "}
               {state.run.error}
             </p>
+          ) : (
+            <p className="hint">{state.run.items.length} 件を作成しました。</p>
           )}
-          <p className="hint">{state.run.items.length} 件を作成しました。</p>
           <ul className="plain-list">
             {state.run.items.map((it) => (
               <li key={it.itemId}>

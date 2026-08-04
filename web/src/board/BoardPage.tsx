@@ -40,6 +40,9 @@ export function BoardPage({ board, onError }: Props) {
   const [creations, setCreations] = useState<Record<string, CreationState>>({});
   // 実行中の解釈を無効にするための世代。useState の初期化関数で 1 度だけ作る。
   const [generations] = useState(createGenerations);
+  // 作成は解釈とは別の世代で管理する。共有すると、片方の実行がもう片方の
+  // 応答まで無効にしてしまう。
+  const [creationGenerations] = useState(createGenerations);
 
   const initialData = useMemo(() => {
     try {
@@ -122,6 +125,7 @@ export function BoardPage({ board, onError }: Props) {
       // 実行中のものも無効にする。後から返ってきて結果が復活すると、いまの
       // 内容を解釈したものだと誤読される。
       generations.invalidateAll();
+      creationGenerations.invalidateAll();
       setInterpretations({});
       setCreations({});
       await refreshAnnotations();
@@ -130,7 +134,7 @@ export function BoardPage({ board, onError }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [api, board.id, generations, onError, refreshAnnotations]);
+  }, [api, board.id, creationGenerations, generations, onError, refreshAnnotations]);
 
   /**
    * 注釈を解釈させる。
@@ -176,16 +180,21 @@ export function BoardPage({ board, onError }: Props) {
    */
   const create = useCallback(
     async (annotationId: string, interpretation: Interpretation) => {
+      const generation = creationGenerations.start(annotationId);
       setCreations((prev) => ({ ...prev, [annotationId]: { status: "running" } }));
 
       try {
         const run = await boardsApi.createItems(board.id, annotationId, interpretation);
+        // 保存が挟まっていたら、この結果は保存前の解釈に対するもの。表示すると
+        // いまの内容に対して作られたと誤読される。
+        if (!creationGenerations.isCurrent(annotationId, generation)) return;
         setCreations((prev) => ({
           ...prev,
           [annotationId]: { status: "done", run },
         }));
         await refreshAnnotations();
       } catch (e) {
+        if (!creationGenerations.isCurrent(annotationId, generation)) return;
         setCreations((prev) => ({
           ...prev,
           [annotationId]: {
@@ -195,8 +204,12 @@ export function BoardPage({ board, onError }: Props) {
         }));
       }
     },
-    [board.id, refreshAnnotations],
+    [board.id, creationGenerations, refreshAnnotations],
   );
+
+  // 作成中は保存させない。GitHub への作成は取り消せないので、実行中にシーンが
+  // 変わると、作られた内容と記録されるハッシュが食い違いうる。
+  const creating = Object.values(creations).some((c) => c.status === "running");
 
   const markable = selectedFrames.filter(
     (id) => !currentElements().some((el) => el.id === id && isAnnotation(el)),
@@ -211,7 +224,12 @@ export function BoardPage({ board, onError }: Props) {
         <h1>{board.name}</h1>
         <div className="board-actions">
           {dirty && <span className="dirty">未保存</span>}
-          <button type="button" onClick={() => void save()} disabled={saving || !api}>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || creating || !api}
+            title={creating ? "作成が終わるまで保存できません" : undefined}
+          >
             {saving ? "保存中…" : "保存"}
           </button>
         </div>
