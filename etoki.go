@@ -42,6 +42,14 @@ type Options struct {
 	Boards port.BoardRepository
 	// Mappings は注釈と draft issue の対応の永続化。必須。
 	Mappings port.MappingRepository
+
+	// LLM は注釈を解釈させる Vision LLM。任意。
+	//
+	// nil でも起動する。その場合、解釈のエンドポイントだけが「設定されていない」
+	// と返し、ボードの編集と状態表示は使える。ブレストだけ先にやる使い方を
+	// 潰さないため（ADR 0008）。
+	LLM port.LLMClient
+
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
 }
@@ -68,11 +76,18 @@ func New(opts Options) (*Server, error) {
 		return nil, errors.New("etoki: Options.Mappings is required")
 	}
 
-	handler := httpapi.NewRouter(httpapi.Deps{
+	deps := httpapi.Deps{
 		Boards:      usecase.NewBoardService(opts.Boards),
 		Annotations: usecase.NewAnnotationService(opts.Boards, opts.Mappings),
 		Logger:      opts.Logger,
-	})
+	}
+	// LLM が無いときはサービスを組み立てない。nil のまま渡し、ハンドラ側で
+	// 「設定されていない」と返す。
+	if opts.LLM != nil {
+		deps.Interpretations = usecase.NewInterpretationService(opts.Boards, opts.LLM)
+	}
+
+	handler := httpapi.NewRouter(deps)
 
 	return &Server{addr: addr, handler: handler}, nil
 }

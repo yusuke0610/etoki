@@ -38,6 +38,54 @@ direnv allow
 別途インストールする必要はありません。direnv を使わない場合は
 `nix develop` のままで構いません。
 
+## 設定
+
+環境変数で設定します。**LLM を設定しなくても起動します。** その場合、解釈の
+エンドポイントだけが「設定されていない」と返し、ボードの編集と注釈の状態表示は
+そのまま使えます。ブレストだけ先にやる、という使い方を潰さないためです。
+
+| 変数 | 既定値 | 用途 |
+| --- | --- | --- |
+| `ETOKI_ADDR` | `127.0.0.1:8080` | リッスンアドレス |
+| `ETOKI_DB_PATH` | `etoki.db` | SQLite ファイルのパス |
+| `ETOKI_LLM_BASE_URL` | `https://api.anthropic.com` | LLM のエンドポイント |
+| `ETOKI_LLM_API_KEY` | （なし） | LLM の API キー。認証不要なら未設定でよい |
+| `ETOKI_LLM_MODEL` | `claude-opus-5` | モデル ID |
+
+### Anthropic API を使う
+
+```sh
+export ETOKI_LLM_API_KEY=sk-ant-...
+make dev
+```
+
+### ローカル LLM を使う
+
+etoki が話すのは **Anthropic Messages API 形状**です（`POST {BASE_URL}/v1/messages`）。
+ローカルのモデルに繋ぐには、その形状で受けられるプロキシを間に置き、そちらへ
+向けます。認証を要求しないなら API キーは未設定のままで構いません。
+
+```sh
+export ETOKI_LLM_BASE_URL=http://localhost:4000
+export ETOKI_LLM_MODEL=<プロキシ側のモデル名>
+make dev
+```
+
+Ollama や LM Studio が直接公開するのは OpenAI Chat Completions 形状なので、
+`ETOKI_LLM_BASE_URL` をそこへ向けても動きません。形状を変換するプロキシを
+挟むか、`port.LLMClient` を自前実装して差し込んでください。
+
+### 別の基盤に載せ替える
+
+差し替えの継ぎ目は 2 段あります。詳細は
+[ADR 0008](docs/adr/0008-llm-swap-seams.md) を参照してください。
+
+| 何が違うか | 継ぎ目 |
+| --- | --- |
+| 向き先だけ | `ETOKI_LLM_BASE_URL` |
+| 認証・ヘッダ | `llm.Config.HTTPClient` に `RoundTripper` を差す |
+| wire format | `port.LLMClient` を自前実装して `etoki.New` に渡す |
+
 ## ドキュメント
 
 設計判断の記録は [`docs/adr/`](docs/adr/) にあります。

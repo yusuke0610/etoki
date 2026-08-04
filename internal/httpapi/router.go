@@ -14,6 +14,11 @@ import (
 type Deps struct {
 	Boards      *usecase.BoardService
 	Annotations *usecase.AnnotationService
+	// Interpretations は注釈の解釈。nil でもよい。
+	//
+	// nil のときは解釈のエンドポイントが 503 を返す。ルート自体は生やす。
+	// 404 だと「機能が無い」のか「URL が違う」のか区別できない。
+	Interpretations *usecase.InterpretationService
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
 }
@@ -30,7 +35,12 @@ func NewRouter(deps Deps) *gin.Engine {
 
 	r.GET("/healthz", handleHealthz)
 
-	h := &handlers{boards: deps.Boards, annotations: deps.Annotations, logger: logger}
+	h := &handlers{
+		boards:          deps.Boards,
+		annotations:     deps.Annotations,
+		interpretations: deps.Interpretations,
+		logger:          logger,
+	}
 
 	api := r.Group("/api")
 	{
@@ -39,6 +49,9 @@ func NewRouter(deps Deps) *gin.Engine {
 		api.GET("/boards/:id", h.getBoard)
 		api.PUT("/boards/:id/scene", h.saveScene)
 		api.GET("/boards/:id/annotations", h.listAnnotations)
+		// 解釈と作成は別のエンドポイントに保つ。解釈結果を見た開発者が
+		// 明示的に作成を叩く（中核思想 3）。
+		api.POST("/boards/:id/annotations/:annotationId/interpret", h.interpretAnnotation)
 	}
 
 	return r

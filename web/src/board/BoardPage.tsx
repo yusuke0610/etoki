@@ -15,7 +15,8 @@ import {
   unmarkAnnotation,
   type SceneElement,
 } from "../excalidraw/annotation";
-import { AnnotationPanel } from "./AnnotationPanel";
+import { AnnotationPanel, type InterpretationState } from "./AnnotationPanel";
+import { createGenerations } from "./generation";
 
 type Props = {
   board: BoardDetail;
@@ -28,6 +29,11 @@ export function BoardPage({ board, onError }: Props) {
   const [selectedFrames, setSelectedFrames] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [interpretations, setInterpretations] = useState<
+    Record<string, InterpretationState>
+  >({});
+  // 実行中の解釈を無効にするための世代。useState の初期化関数で 1 度だけ作る。
+  const [generations] = useState(createGenerations);
 
   const initialData = useMemo(() => {
     try {
@@ -106,13 +112,55 @@ export function BoardPage({ board, onError }: Props) {
       );
       await boardsApi.saveScene(board.id, scene);
       setDirty(false);
+      // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
+      // 実行中のものも無効にする。後から返ってきて結果が復活すると、いまの
+      // 内容を解釈したものだと誤読される。
+      generations.invalidateAll();
+      setInterpretations({});
       await refreshAnnotations();
     } catch (e) {
       onError(`保存できませんでした: ${String(e)}`);
     } finally {
       setSaving(false);
     }
-  }, [api, board.id, onError, refreshAnnotations]);
+  }, [api, board.id, generations, onError, refreshAnnotations]);
+
+  /**
+   * 注釈を解釈させる。
+   *
+   * エラーはパネル内に残す。どの注釈で何が起きたか分からなくなるので、
+   * 画面全体のエラー表示には流さない。
+   */
+  const interpret = useCallback(
+    async (annotationId: string) => {
+      // 応答を受け取ったとき、これがまだ最新の要求かを判断できるようにする。
+      const generation = generations.start(annotationId);
+
+      setInterpretations((prev) => ({
+        ...prev,
+        [annotationId]: { status: "running" },
+      }));
+
+      try {
+        const result = await boardsApi.interpret(board.id, annotationId);
+        if (!generations.isCurrent(annotationId, generation)) return;
+        setInterpretations((prev) => ({
+          ...prev,
+          [annotationId]: { status: "done", result },
+        }));
+      } catch (e) {
+        if (!generations.isCurrent(annotationId, generation)) return;
+        setInterpretations((prev) => ({
+          ...prev,
+          [annotationId]: {
+            status: "error",
+            message: e instanceof Error ? e.message : String(e),
+          },
+        }));
+      }
+    },
+    [board.id, generations],
+  );
 
   const markable = selectedFrames.filter(
     (id) => !currentElements().some((el) => el.id === id && isAnnotation(el)),
@@ -151,6 +199,8 @@ export function BoardPage({ board, onError }: Props) {
           onUnmark={handleUnmark}
           onChangeGranularity={(id, g) => handleMark(id, g)}
           stale={dirty}
+          interpretations={interpretations}
+          onInterpret={(id) => void interpret(id)}
         />
       </div>
     </div>
