@@ -7,6 +7,7 @@ import {
   type AnnotationStatus,
   type BoardDetail,
   type Granularity,
+  type Interpretation,
 } from "../api/boards";
 import {
   isAnnotation,
@@ -15,7 +16,11 @@ import {
   unmarkAnnotation,
   type SceneElement,
 } from "../excalidraw/annotation";
-import { AnnotationPanel, type InterpretationState } from "./AnnotationPanel";
+import {
+  AnnotationPanel,
+  type CreationState,
+  type InterpretationState,
+} from "./AnnotationPanel";
 import { createGenerations } from "./generation";
 
 type Props = {
@@ -32,6 +37,7 @@ export function BoardPage({ board, onError }: Props) {
   const [interpretations, setInterpretations] = useState<
     Record<string, InterpretationState>
   >({});
+  const [creations, setCreations] = useState<Record<string, CreationState>>({});
   // 実行中の解釈を無効にするための世代。useState の初期化関数で 1 度だけ作る。
   const [generations] = useState(createGenerations);
 
@@ -117,6 +123,7 @@ export function BoardPage({ board, onError }: Props) {
       // 内容を解釈したものだと誤読される。
       generations.invalidateAll();
       setInterpretations({});
+      setCreations({});
       await refreshAnnotations();
     } catch (e) {
       onError(`保存できませんでした: ${String(e)}`);
@@ -162,6 +169,35 @@ export function BoardPage({ board, onError }: Props) {
     [board.id, generations],
   );
 
+  /**
+   * 解釈結果から draft issue を作る。
+   *
+   * 作成後は状態が created に変わるので、注釈の状態を取り直す。
+   */
+  const create = useCallback(
+    async (annotationId: string, interpretation: Interpretation) => {
+      setCreations((prev) => ({ ...prev, [annotationId]: { status: "running" } }));
+
+      try {
+        const run = await boardsApi.createItems(board.id, annotationId, interpretation);
+        setCreations((prev) => ({
+          ...prev,
+          [annotationId]: { status: "done", run },
+        }));
+        await refreshAnnotations();
+      } catch (e) {
+        setCreations((prev) => ({
+          ...prev,
+          [annotationId]: {
+            status: "error",
+            message: e instanceof Error ? e.message : String(e),
+          },
+        }));
+      }
+    },
+    [board.id, refreshAnnotations],
+  );
+
   const markable = selectedFrames.filter(
     (id) => !currentElements().some((el) => el.id === id && isAnnotation(el)),
   );
@@ -201,6 +237,8 @@ export function BoardPage({ board, onError }: Props) {
           stale={dirty}
           interpretations={interpretations}
           onInterpret={(id) => void interpret(id)}
+          creations={creations}
+          onCreate={(id, interpretation) => void create(id, interpretation)}
         />
       </div>
     </div>
