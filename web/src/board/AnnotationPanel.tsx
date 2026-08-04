@@ -47,6 +47,8 @@ type Props = {
   onInterpret: (annotationId: string) => void;
   /** 注釈 ID をキーにした作成の状態。未実行の注釈は入っていない。 */
   creations: Record<string, CreationState>;
+  /** 保存中は作成させない。保存が作成の結果を捨てるため。 */
+  saving: boolean;
   onCreate: (annotationId: string, interpretation: Interpretation) => void;
 };
 
@@ -61,6 +63,7 @@ export function AnnotationPanel({
   interpretations,
   onInterpret,
   creations,
+  saving,
   onCreate,
 }: Props) {
   return (
@@ -143,6 +146,7 @@ export function AnnotationPanel({
                   state={interpretations[a.id]}
                   creation={creations[a.id]}
                   stale={stale}
+                  saving={saving}
                   onInterpret={() => onInterpret(a.id)}
                   onCreate={(interpretation) => onCreate(a.id, interpretation)}
                 />
@@ -160,6 +164,7 @@ type InterpretationSectionProps = {
   creation?: CreationState;
   /** 未保存の変更があると、解釈は保存済みシーンに対して行われる。 */
   stale: boolean;
+  saving: boolean;
   onInterpret: () => void;
   onCreate: (interpretation: Interpretation) => void;
 };
@@ -174,6 +179,7 @@ function InterpretationSection({
   state,
   creation,
   stale,
+  saving,
   onInterpret,
   onCreate,
 }: InterpretationSectionProps) {
@@ -196,7 +202,11 @@ function InterpretationSection({
       {state?.status === "done" && (
         <>
           <InterpretationResult result={state.result} />
-          <CreationSection state={creation} onCreate={() => onCreate(state.result)} />
+          <CreationSection
+            state={creation}
+            saving={saving}
+            onCreate={() => onCreate(state.result)}
+          />
         </>
       )}
     </div>
@@ -211,16 +221,23 @@ function InterpretationSection({
  */
 function CreationSection({
   state,
+  saving,
   onCreate,
 }: {
   state?: CreationState;
+  saving: boolean;
   onCreate: () => void;
 }) {
   const running = state?.status === "running";
 
   return (
     <div className="creation">
-      <button type="button" onClick={onCreate} disabled={running}>
+      <button
+        type="button"
+        onClick={onCreate}
+        disabled={running || saving}
+        title={saving ? "保存が終わるまで作成できません" : undefined}
+      >
         {running ? "作成中…" : "GitHub に作成する"}
       </button>
 

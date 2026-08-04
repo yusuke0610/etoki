@@ -216,8 +216,11 @@ export function BoardPage({ board, onError }: Props) {
     [board.id, creationGenerations, refreshAnnotations],
   );
 
-  // 作成中は保存させない。GitHub への作成は取り消せないので、実行中にシーンが
-  // 変わると、作られた内容と記録されるハッシュが食い違いうる。
+  // 保存と作成は互いに排他にする。作成中に保存させないのは、GitHub への作成が
+  // 取り消せないため。実行中にシーンが変わると、作られた内容と記録されるハッシュ
+  // が食い違いうる。逆に保存は creations を捨てるので、保存中に作らせると
+  // GitHub には残ったまま結果だけ消え、作られていないと思って再実行した開発者が
+  // draft issue を重複させる。保存側は creating で、作成側は saving を渡して止める。
   const creating = Object.values(creations).some((c) => c.status === "running");
 
   const markable = selectedFrames.filter(
@@ -265,6 +268,7 @@ export function BoardPage({ board, onError }: Props) {
           interpretations={interpretations}
           onInterpret={(id) => void interpret(id)}
           creations={creations}
+          saving={saving}
           onCreate={(id, interpretation) => void create(id, interpretation)}
         />
       </div>
