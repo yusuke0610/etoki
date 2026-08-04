@@ -1,6 +1,6 @@
 import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   boardsApi,
@@ -54,10 +54,19 @@ export function BoardPage({ board, onError }: Props) {
     }
   }, [board.scene, onError]);
 
+  // 状態の取得は初期表示・保存・作成から重なって走る。番号を振って最後に
+  // 投げたものだけ反映する。古い応答で上書きすると、作成済みの注釈が未作成に
+  // 巻き戻って見える。
+  const annotationsRequest = useRef(0);
+
   const refreshAnnotations = useCallback(async () => {
+    const request = ++annotationsRequest.current;
     try {
-      setAnnotations(await boardsApi.annotations(board.id));
+      const next = await boardsApi.annotations(board.id);
+      if (request !== annotationsRequest.current) return;
+      setAnnotations(next);
     } catch (e) {
+      if (request !== annotationsRequest.current) return;
       onError(`注釈の状態を取得できませんでした: ${String(e)}`);
     }
   }, [board.id, onError]);
