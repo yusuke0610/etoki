@@ -19,6 +19,11 @@ type Deps struct {
 	// nil のときは解釈のエンドポイントが 503 を返す。ルート自体は生やす。
 	// 404 だと「機能が無い」のか「URL が違う」のか区別できない。
 	Interpretations *usecase.InterpretationService
+	// Creations は draft issue の作成。nil でもよい。
+	//
+	// nil のときは作成のエンドポイントが 503 を返す。理由は Interpretations と
+	// 同じで、ルート自体は生やす。
+	Creations *usecase.CreationService
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
 }
@@ -39,6 +44,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		boards:          deps.Boards,
 		annotations:     deps.Annotations,
 		interpretations: deps.Interpretations,
+		creations:       deps.Creations,
 		logger:          logger,
 	}
 
@@ -52,6 +58,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 解釈と作成は別のエンドポイントに保つ。解釈結果を見た開発者が
 		// 明示的に作成を叩く（中核思想 3）。
 		api.POST("/boards/:id/annotations/:annotationId/interpret", h.interpretAnnotation)
+		api.POST("/boards/:id/annotations/:annotationId/items", h.createItems)
 	}
 
 	return r
