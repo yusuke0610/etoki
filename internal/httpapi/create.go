@@ -56,7 +56,13 @@ func (h *handlers) createItems(c *gin.Context) {
 
 	// 途中まで作れた場合は run が返る。エラーだけ返すと、開発者は何も作られて
 	// いないと誤解して再実行し、重複を増やす（ADR 0009）。
-	if err != nil && run == nil {
+	//
+	// err ではなく run で分岐する。この下で run を参照するので、戻り値の
+	// 組み合わせが変わっても panic にならないようにしておく。
+	if run == nil {
+		if err == nil {
+			err = errors.New("creation returned no run")
+		}
 		h.failCreate(c, err)
 		return
 	}
