@@ -307,6 +307,47 @@ func TestCreate_DoesNotRecordWhenNothingCreated(t *testing.T) {
 	}
 }
 
+// 作成には成功したのに記録できなかった状態。GitHub には draft issue が残るのに
+// etoki は何も知らないので、手で追える手掛かりがエラーに要る。
+func TestCreate_ReportsCreatedItemsWhenSaveFails(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{saveErr: errors.New("db: boom")}
+	svc := newCreationService(t, gh, mappings)
+
+	_, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation())
+	if err == nil {
+		t.Fatal("Create() = nil, want error")
+	}
+	// 作った 3 件すべてが分からないと、どれが残っているのか特定できない。
+	for _, id := range []string{"PVTI_a", "PVTI_b", "PVTI_c"} {
+		if !strings.Contains(err.Error(), id) {
+			t.Errorf("作成済みの item ID %s が示されていない: %v", id, err)
+		}
+	}
+}
+
+// フィールドを引けない時点で止める。種別も親子も無い draft issue を作っても、
+// 開発者が手で直すしかなくなる。
+func TestCreate_StopsWhenFieldsCannotBeListed(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{listErr: errors.New("github: boom")}
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation()); err == nil {
+		t.Fatal("Create() = nil, want error")
+	}
+	if len(gh.calls) != 0 {
+		t.Errorf("フィールドを引けていないのに作成している: %+v", gh.calls)
+	}
+	if len(mappings.runs) != 0 {
+		t.Errorf("フィールドを引けていないのに run を記録している: %+v", mappings.runs)
+	}
+}
+
 // 黙って作成を続けると、種別も親子も無い draft issue が並ぶだけになる。
 func TestCreate_RequiresProjectFields(t *testing.T) {
 	t.Parallel()
@@ -441,11 +482,26 @@ func TestCreate_UsesConfiguredFieldNames(t *testing.T) {
 		t.Fatalf("Create() = %v", err)
 	}
 
-	// 選択肢名の大文字小文字は揃わないことがある。
+	// 種別と親の両方が設定した名前で解決されていること。片方しか見ないと、
+	// もう片方が既定の名前のままでも気付けない。
+	kinds, parents := 0, 0
 	for _, c := range gh.calls {
-		if c.op == "field" && c.fieldID == "F_type" && c.optionID == "" {
-			t.Errorf("種別の選択肢が解決できていない: %+v", c)
+		switch {
+		case c.op == "field" && c.fieldID == "F_type":
+			// 選択肢名の大文字小文字は揃わないことがある。
+			if c.optionID == "" {
+				t.Errorf("種別の選択肢が解決できていない: %+v", c)
+			}
+			kinds++
+		case c.op == "field" && c.fieldID == "F_oya":
+			if c.text != "決済フローの見直し" {
+				t.Errorf("親の値 = %q, want epic のタイトル", c.text)
+			}
+			parents++
 		}
+	}
+	if kinds != 3 || parents != 1 {
+		t.Errorf("設定したフィールド名が使われていない: 種別 %d 回, 親 %d 回", kinds, parents)
 	}
 }
 
