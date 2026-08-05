@@ -482,19 +482,34 @@ func TestCreate_UsesConfiguredFieldNames(t *testing.T) {
 		t.Fatalf("Create() = %v", err)
 	}
 
+	const epicTitle = "決済フローの見直し"
+
+	// フィールドの操作は itemID しか持たないので、どの item かを引けるようにする。
+	titles := make(map[string]string)
+	for _, c := range gh.calls {
+		if c.op == "create" {
+			titles[c.itemID] = c.title
+		}
+	}
+
 	// 種別と親の両方が設定した名前で解決されていること。片方しか見ないと、
 	// もう片方が既定の名前のままでも気付けない。
 	kinds, parents := 0, 0
 	for _, c := range gh.calls {
 		switch {
 		case c.op == "field" && c.fieldID == "F_type":
-			// 選択肢名の大文字小文字は揃わないことがある。
-			if c.optionID == "" {
-				t.Errorf("種別の選択肢が解決できていない: %+v", c)
+			// 選択肢名の大文字小文字は揃わないことがある。全部 epic になって
+			// いても件数は合うので、item ごとに期待する選択肢を照らす。
+			want := "O_i"
+			if titles[c.itemID] == epicTitle {
+				want = "O_e"
+			}
+			if c.optionID != want {
+				t.Errorf("%q の種別 = %q, want %q", titles[c.itemID], c.optionID, want)
 			}
 			kinds++
 		case c.op == "field" && c.fieldID == "F_oya":
-			if c.text != "決済フローの見直し" {
+			if c.text != epicTitle {
 				t.Errorf("親の値 = %q, want epic のタイトル", c.text)
 			}
 			parents++
