@@ -36,6 +36,11 @@
             bun
             sqlite
             gnumake
+            # api/openapi.yaml から Go の型を生成する。go.mod の tool ディレクティブ
+            # ではなくここに置くのは、生成器を require に足すと kin-openapi 一式が
+            # アプリの依存グラフに乗り、x/net などの共有依存まで引き上げられて
+            # しまうため。go.mod は動かすものの依存だけに保つ（ADR 0011）。
+            oapi-codegen
           ];
 
           shellHook = ''

@@ -50,6 +50,9 @@ CLAUDE.md に書いてある規約が守られているかを見る。以下は�
 - `sync_runs` は履歴。既存 run を上書き・削除していないか。
 - 最新 run の決定に `created_at` を使っていないか（`id` で決める）。
 - GitHub に作るのは epic と issue の 2 階層のみ。`summary` を作っていないか。
+- 境界の DTO を手書きしていないか。`api/openapi.yaml` を直したなら
+  `make codegen` の結果が同じコミットに入っているか（ADR 0011）。
+- エラー本文に `gin.H` を直書きしていないか。`ErrorResponse` に揃っているか。
 
 **構造**
 

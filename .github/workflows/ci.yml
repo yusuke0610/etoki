@@ -34,6 +34,17 @@ jobs:
       - name: lint
         run: nix develop --command make lint
 
+      # 契約（api/openapi.yaml）を直して生成物を再生成していない状態を落とす。
+      # 手で書いた型とフロントの型がずれても、両方が緑のまま気づけないため
+      # （ADR 0011）。生成器のバージョンは devShell が固定している。
+      - name: codegen drift
+        run: |
+          nix develop --command make codegen
+          if ! git diff --exit-code -- internal/httpapi/apitypes/types.gen.go web/src/api/generated.ts; then
+            echo "::error::生成物が api/openapi.yaml と一致していません。'make codegen' を実行してコミットしてください（ADR 0011）。"
+            exit 1
+          fi
+
       - name: test
         run: nix develop --command make test
 

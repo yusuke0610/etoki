@@ -1,69 +1,11 @@
-/** バックエンドの 3 状態。 */
-export type SyncState = "uncreated" | "created" | "changed";
-
-/** 注釈の粒度。空文字は「指定なし（LLM に任せる）」。 */
-export type Granularity = "" | "epic" | "issue";
-
-export type BoardSummary = {
-  id: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type BoardDetail = BoardSummary & {
-  scene: string;
-};
-
-export type SyncItem = {
-  itemId: string;
-  kind: "epic" | "issue";
-  title: string;
-  localId: string;
-  parentLocalId?: string;
-};
-
-export type AnnotationStatus = {
-  id: string;
-  name: string;
-  granularity: Granularity;
-  state: SyncState;
-  lastSyncedAt?: string;
-  items?: SyncItem[];
-};
-
-/** 解釈結果に含まれる draft issue 1 件。まだ作成はしていない。 */
-export type InterpretedItem = {
-  localId: string;
-  kind: "epic" | "issue";
-  title: string;
-  body: string;
-  parentLocalId?: string;
-};
-
-/**
- * LLM が注釈をどう解釈したか。
- *
- * summary は GitHub には作らない。作成前に「こう読んだ」を見せるためだけに使う。
- *
- * contentHash は解釈の入力になった保存済みシーンのもの。作成時にそのまま送り返し、
- * サーバーが現在のシーンと突き合わせる。フロントでは組み立てない。
- */
-export type Interpretation = {
-  summary: string;
-  contentHash: string;
-  items: InterpretedItem[];
-};
-
-/** 作成した run。途中で失敗しても、作れたぶんは items に入る。 */
-export type CreatedRun = {
-  runId: number;
-  createdAt: string;
-  items: SyncItem[];
-  /** 途中で失敗したことを表す。 */
-  incomplete?: boolean;
-  error?: string;
-};
+import type {
+  AnnotationStatus,
+  BoardDetail,
+  BoardSummary,
+  CreatedRun,
+  ErrorResponse,
+  Interpretation,
+} from "./types";
 
 /** API が返したエラー。呼び出し側でステータスに応じて分岐するために持つ。 */
 export class ApiError extends Error {
@@ -87,7 +29,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.text();
     let message = body;
     try {
-      message = (JSON.parse(body) as { error?: string }).error ?? body;
+      message = (JSON.parse(body) as Partial<ErrorResponse>).error ?? body;
     } catch {
       // JSON でなければ本文をそのまま使う
     }

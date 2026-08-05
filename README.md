@@ -22,8 +22,14 @@ draft issue に変換するツールです。
 nix develop      # 開発用シェルに入る（Go / Bun / SQLite / lint などが揃う）
 make setup       # 依存関係の取得と DB 初期化
 make dev         # バックエンドとフロントエンドを同時に起動
+make test        # Go とフロントエンドのテスト
+make test-e2e    # Playwright による E2E テスト
 make help        # ターゲット一覧
 ```
+
+HTTP API の仕様は [`api/openapi.yaml`](api/openapi.yaml) にあります。これが
+契約の正本で、Go と TypeScript の型はここから生成しています。仕様を変えたら
+`make codegen` で生成物を作り直してください。
 
 ### direnv（任意）
 

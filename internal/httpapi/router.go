@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 )
 
@@ -64,14 +65,9 @@ func NewRouter(deps Deps) *gin.Engine {
 	return r
 }
 
-// healthResponse は /healthz のレスポンスボディ。
-type healthResponse struct {
-	Status string `json:"status"`
-}
-
 // handleHealthz はプロセスが生きていることだけを返す。
 // DB や外部サービスの疎通確認は含めない。etoki は自動で外部に触らないという
 // 方針のため、ヘルスチェックが副作用を持たないようにしている。
 func handleHealthz(c *gin.Context) {
-	c.JSON(http.StatusOK, healthResponse{Status: "ok"})
+	c.JSON(http.StatusOK, apitypes.HealthResponse{Status: "ok"})
 }

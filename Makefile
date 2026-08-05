@@ -7,7 +7,8 @@ WEB_DIR := web
 DB_PATH ?= etoki.db
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web \
-        test test-go test-web lint lint-go lint-web fmt migrate clean
+        test test-go test-web lint lint-go lint-web fmt \
+        codegen codegen-go codegen-web migrate clean
 
 help: ## ターゲット一覧を表示する
 	@echo "使い方: make <target>"
@@ -66,6 +67,14 @@ fmt: ## Go / Nix / フロントエンドをフォーマットする
 	golangci-lint fmt
 	nix fmt -- flake.nix
 	cd $(WEB_DIR) && bun run fmt
+
+codegen: codegen-go codegen-web ## api/openapi.yaml から Go / TypeScript の型を再生成する
+
+codegen-go:
+	cd api && oapi-codegen --config oapi-codegen.yaml openapi.yaml
+
+codegen-web:
+	cd $(WEB_DIR) && bun run codegen
 
 migrate: ## マイグレーションを適用する
 	ETOKI_DB_PATH=$(DB_PATH) go run ./cmd/etoki migrate

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { InterpretedItem } from "../api/boards";
+import type { InterpretedItem } from "../api/types";
 import { groupByEpic, type InterpretationGroup } from "./interpretation";
 
 /** 添字アクセスを型で絞る。件数は各テストで先に確認している。 */

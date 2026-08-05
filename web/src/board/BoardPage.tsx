@@ -2,13 +2,13 @@ import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  boardsApi,
-  type AnnotationStatus,
-  type BoardDetail,
-  type Granularity,
-  type Interpretation,
-} from "../api/boards";
+import { boardsApi } from "../api/boards";
+import type {
+  AnnotationStatus,
+  BoardDetail,
+  Granularity,
+  Interpretation,
+} from "../api/types";
 import {
   isAnnotation,
   markAsAnnotation,

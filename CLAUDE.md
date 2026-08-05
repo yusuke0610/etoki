@@ -33,6 +33,7 @@ make dev         # バックエンド(:8080)とフロントエンド(:5173)を�
 make lint        # golangci-lint + eslint + tsc + 整形検査（gofmt / prettier）
 make fmt         # Go / Nix / フロントエンドを整形する
 make test        # go test + vitest
+make codegen     # api/openapi.yaml から Go / TS の型を再生成する
 make migrate     # etoki migrate サブコマンドを呼ぶ
 ```
 
@@ -114,6 +115,24 @@ UI は未保存の変更があることを表示する。
 - **GitHub に作るのは epic と issue の 2 階層のみ。** LLM 出力の最上位
   `summary` は作成前の確認表示にだけ使い、GitHub には作らない（ADR 0006）。
 
+### HTTP 契約は OpenAPI が正本
+
+**`api/openapi.yaml` が境界の DTO の唯一の定義。Go も TypeScript も生成物。**
+手で型を足すと、そこだけ二重定義に戻る（ADR 0011）。
+
+| 生成物 | 生成元 | 使う側 |
+| --- | --- | --- |
+| `internal/httpapi/apitypes/types.gen.go` | `oapi-codegen` | Gin ハンドラ |
+| `web/src/api/generated.ts` | `openapi-typescript` | `web/src/api/types.ts` 経由でフロント全体 |
+
+- **契約を変えたら `make codegen` を実行し、生成物を同じコミットに含める。**
+  忘れると CI の codegen drift で落ちる。
+- 生成物は手で編集しない。次の生成で消える。
+- フロントは `web/src/api/types.ts` の名前を import する。
+  `components["schemas"][...]` を直書きしない。**独自の別名を付けない。**
+  名前が食い違うと、契約を直したときに追随先を機械的に辿れなくなる。
+- エラー本文も `ErrorResponse` に揃える。`gin.H{"error": ...}` を直に書かない。
+
 ### フロントとバックで一致させる必要がある定義
 
 **注釈の判定規則が 2 箇所にある。片方だけ変えると壊れる。**
@@ -151,6 +170,9 @@ UI は未保存の変更があることを表示する。
 - **`web/src/excalidraw/assumptions.test.ts`** — `customData` が serialize と
   restore を越えて残るという、注釈設計の前提そのものを固定するテスト。
   ライブラリ更新で落ちたら設計を見直す合図。
+- **生成器のバージョンで生成物の形が変わる。** `oapi-codegen` は `flake.lock`
+  が、`openapi-typescript` は `bun.lock` が握っている。`nix flake update` や
+  `bun update` のコミットには `make codegen` の結果も含める。
 
 ## ブランチ運用
 
