@@ -45,6 +45,12 @@ type InterpretationService struct {
 	maxAttempts int
 }
 
+// InterpretationResult は解釈結果と、その入力になった保存済みシーンのハッシュ。
+type InterpretationResult struct {
+	Interpretation domain.Interpretation
+	ContentHash    string
+}
+
 // InterpretationServiceOption は InterpretationService の設定を差し替える。
 type InterpretationServiceOption func(*InterpretationService)
 
@@ -77,33 +83,41 @@ func NewInterpretationService(boards port.BoardRepository, llm port.LLMClient, o
 // Interpret は注釈範囲を LLM に解釈させ、スキーマを満たした結果を返す。
 //
 // 読むのは保存済みシーンである。フロントで編集中の内容は反映されない。
-func (s *InterpretationService) Interpret(ctx context.Context, boardID, annotationID string) (domain.Interpretation, error) {
+func (s *InterpretationService) Interpret(ctx context.Context, boardID, annotationID string) (InterpretationResult, error) {
 	board, err := s.boards.Find(ctx, boardID)
 	if err != nil {
-		return domain.Interpretation{}, err
+		return InterpretationResult{}, err
 	}
 	if board == nil {
-		return domain.Interpretation{}, fmt.Errorf("%w: %s", ErrBoardNotFound, boardID)
+		return InterpretationResult{}, fmt.Errorf("%w: %s", ErrBoardNotFound, boardID)
 	}
 
 	scene, err := domain.ParseScene([]byte(board.Scene))
 	if err != nil {
-		return domain.Interpretation{}, err
+		return InterpretationResult{}, err
 	}
 
 	annotation, ok := findAnnotation(scene, annotationID)
 	if !ok {
-		return domain.Interpretation{}, fmt.Errorf("%w: %s", ErrAnnotationNotFound, annotationID)
+		return InterpretationResult{}, fmt.Errorf("%w: %s", ErrAnnotationNotFound, annotationID)
 	}
 
 	// 粒度が未知の値ならここで止める。既定に倒して解釈を進めると、開発者が
 	// 指定したつもりの制約が黙って外れる。状態を見せて選ばせる方針に反する。
 	if !annotation.Granularity.Valid() {
-		return domain.Interpretation{}, fmt.Errorf("%w: unknown granularity %q on annotation %s",
+		return InterpretationResult{}, fmt.Errorf("%w: unknown granularity %q on annotation %s",
 			ErrInvalidInput, annotation.Granularity, annotationID)
 	}
 
-	return s.complete(ctx, annotation, scene.AnnotationTexts(annotationID))
+	in, err := s.complete(ctx, annotation, scene.AnnotationTexts(annotationID))
+	if err != nil {
+		return InterpretationResult{}, err
+	}
+
+	return InterpretationResult{
+		Interpretation: in,
+		ContentHash:    string(scene.AnnotationHash(annotation)),
+	}, nil
 }
 
 // complete は検証を満たす出力が得られるまで、修正指示を添えて呼び直す。

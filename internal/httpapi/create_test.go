@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,9 +47,10 @@ func (s *stubGitHub) SetItemFieldValue(context.Context, string, string, port.Fie
 }
 
 // createBody は解釈結果をそのまま送るリクエストボディ。
-func createBody() map[string]any {
+func createBody(contentHash string) map[string]any {
 	return map[string]any{
-		"summary": "決済まわりの課題出し",
+		"summary":     "決済まわりの課題出し",
+		"contentHash": contentHash,
 		"items": []map[string]any{
 			{"localId": "e1", "kind": "epic", "title": "決済フローの見直し", "body": "全体の方針"},
 			{"localId": "i1", "kind": "issue", "title": "Stripe SDK の更新", "parentLocalId": "e1"},
@@ -96,7 +98,7 @@ func TestCreateItems(t *testing.T) {
 	id := createBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
-	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody())
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 (%s)", rec.Code, rec.Body)
 	}
@@ -141,8 +143,8 @@ func TestCreateItems_KeepsPastRuns(t *testing.T) {
 	id := createBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
-	first := decode[map[string]any](t, do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody()))
-	second := decode[map[string]any](t, do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody()))
+	first := decode[map[string]any](t, do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id))))
+	second := decode[map[string]any](t, do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id))))
 
 	if first["runId"] == second["runId"] {
 		t.Errorf("2 回目が同じ run を上書きしている: %v", first["runId"])
@@ -167,7 +169,7 @@ func TestCreateItems_ReportsPartialCreation(t *testing.T) {
 	id := createBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
-	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody())
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 (%s)", rec.Code, rec.Body)
 	}
@@ -203,7 +205,7 @@ func TestCreateItems_WithoutGitHub(t *testing.T) {
 	id := createBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
-	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody())
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (%s)", rec.Code, rec.Body)
 	}
@@ -221,7 +223,7 @@ func TestCreateItems_MissingProjectFields(t *testing.T) {
 	id := createBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
-	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody())
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422 (%s)", rec.Code, rec.Body)
 	}
@@ -238,11 +240,16 @@ func TestCreateItems_MissingProjectFields(t *testing.T) {
 	}
 }
 
-// フロントを経由しない呼び出しでも 2 階層の制約が守られる必要がある。
+// フロントを経由しない呼び出しでもリクエストの内容は信用しない。
 func TestCreateItems_RejectsInvalidBody(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]map[string]any{
+		"contentHash が無い": {
+			"summary":     "s",
+			"contentHash": "",
+			"items":       []map[string]any{{"localId": "e1", "kind": "epic", "title": "t"}},
+		},
 		"summary が空": {
 			"items": []map[string]any{{"localId": "e1", "kind": "epic", "title": "t"}},
 		},
@@ -267,6 +274,9 @@ func TestCreateItems_RejectsInvalidBody(t *testing.T) {
 
 			id := createBoard(t, r, "設計会")
 			saveAnnotatedScene(t, r, id)
+			if _, ok := body["contentHash"]; !ok {
+				body["contentHash"] = currentHash(t, r, id)
+			}
 
 			rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), body)
 			if rec.Code != http.StatusBadRequest {
@@ -284,6 +294,35 @@ func TestCreateItems_RejectsInvalidBody(t *testing.T) {
 	}
 }
 
+func TestCreateItems_RejectsMismatchedContentHash(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{}
+	r, mappings := newCreateRouter(t, gh)
+
+	id := createBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody("stale-hash"))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (%s)", rec.Code, rec.Body)
+	}
+	if msg := decode[map[string]string](t, rec)["error"]; !strings.Contains(msg, "interpret again") {
+		t.Errorf("解釈し直すべきことが返っていない: %q", msg)
+	}
+	if gh.seq != 0 {
+		t.Errorf("hash が食い違っているのに GitHub を呼んでいる: %d 回", gh.seq)
+	}
+
+	run, err := mappings.FindLatestRun(t.Context(), id, "annot-1")
+	if err != nil {
+		t.Fatalf("FindLatestRun: %v", err)
+	}
+	if run != nil {
+		t.Errorf("hash が食い違っているのに run が記録されている: %+v", run)
+	}
+}
+
 func TestCreateItems_NotFound(t *testing.T) {
 	t.Parallel()
 
@@ -292,10 +331,10 @@ func TestCreateItems_NotFound(t *testing.T) {
 	id := createBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
-	if rec := do(t, r, http.MethodPost, itemsPath(id, "no-such-annot"), createBody()); rec.Code != http.StatusNotFound {
+	if rec := do(t, r, http.MethodPost, itemsPath(id, "no-such-annot"), createBody(currentHash(t, r, id))); rec.Code != http.StatusNotFound {
 		t.Errorf("注釈が無い: status = %d, want 404 (%s)", rec.Code, rec.Body)
 	}
-	if rec := do(t, r, http.MethodPost, itemsPath("no-such-board", "annot-1"), createBody()); rec.Code != http.StatusNotFound {
+	if rec := do(t, r, http.MethodPost, itemsPath("no-such-board", "annot-1"), createBody(currentHash(t, r, id))); rec.Code != http.StatusNotFound {
 		t.Errorf("ボードが無い: status = %d, want 404 (%s)", rec.Code, rec.Body)
 	}
 }

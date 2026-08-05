@@ -33,6 +33,9 @@ var (
 	// このエラーが返っても run は記録されている。GitHub 側の draft issue は
 	// 削除しないため、記録しないと追跡不能になる（ADR 0009）。
 	ErrCreationIncomplete = errors.New("etoki: draft issue creation did not complete")
+
+	// ErrContentHashMismatch は解釈時点と作成時点の保存済みシーンが違うことを表す。
+	ErrContentHashMismatch = errors.New("etoki: board changed after interpretation")
 )
 
 // CreationService は解釈結果から draft issue を作り、実行を記録する。
@@ -98,7 +101,7 @@ func NewCreationService(
 // ErrCreationIncomplete を返す。GitHub 側に作られた draft issue は削除しないので、
 // 記録しないと etoki から追跡できなくなる（ADR 0009）。
 func (s *CreationService) Create(
-	ctx context.Context, boardID, annotationID string, in domain.Interpretation,
+	ctx context.Context, boardID, annotationID, contentHash string, in domain.Interpretation,
 ) (*port.SyncRun, error) {
 	board, err := s.boards.Find(ctx, boardID)
 	if err != nil {
@@ -122,6 +125,17 @@ func (s *CreationService) Create(
 			ErrInvalidInput, annotation.Granularity, annotationID)
 	}
 
+	// 解釈時点と作成時点で保存済みシーンが変わっていたら作らない。作った
+	// draft issue は削除できないので、古い解釈のまま作ると取り消せない（ADR 0010）。
+	// 任意にすると API を直接叩く経路で素通りできるため、未指定も弾く。
+	if contentHash == "" {
+		return nil, fmt.Errorf("%w: contentHash is required", ErrInvalidInput)
+	}
+	currentHash := string(scene.AnnotationHash(annotation))
+	if contentHash != currentHash {
+		return nil, fmt.Errorf("%w: interpret again before creating draft issues", ErrContentHashMismatch)
+	}
+
 	// リクエストで受け取った内容は信用せず、ここで検証し直す。フロントを
 	// 経由しない呼び出しでも 2 階層の制約が守られる必要がある。
 	if err := in.Validate(annotation.Granularity); err != nil {
@@ -133,12 +147,12 @@ func (s *CreationService) Create(
 		return nil, err
 	}
 
-	// ハッシュは保存済みシーンから求める。解釈した時点と保存内容が食い違って
-	// いる可能性はあるが、状態判定の基準は常に保存済みシーンである。
+	// 記録するのは保存済みシーンのハッシュ。状態判定の基準と同じものを残さないと、
+	// 次回の 3 状態判定が噛み合わない。
 	run := port.SyncRun{
 		BoardID:      boardID,
 		AnnotationID: annotationID,
-		ContentHash:  string(scene.AnnotationHash(annotation)),
+		ContentHash:  currentHash,
 		CreatedAt:    s.now(),
 	}
 

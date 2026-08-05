@@ -87,6 +87,9 @@ func TestInterpretAnnotation(t *testing.T) {
 	if got["summary"] != "決済まわりの課題出し" {
 		t.Errorf("summary = %v", got["summary"])
 	}
+	if got["contentHash"] != currentHash(t, r, id) {
+		t.Errorf("contentHash = %v, want %s", got["contentHash"], currentHash(t, r, id))
+	}
 
 	items, _ := got["items"].([]any)
 	if len(items) != 2 {

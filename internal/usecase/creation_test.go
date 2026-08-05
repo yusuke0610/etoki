@@ -111,6 +111,16 @@ func interpretation() domain.Interpretation {
 	}
 }
 
+func currentContentHash(t *testing.T) string {
+	t.Helper()
+
+	scene, err := domain.ParseScene([]byte(interpretScene))
+	if err != nil {
+		t.Fatalf("ParseScene: %v", err)
+	}
+	return string(scene.AnnotationHash(scene.Annotations()[0]))
+}
+
 func newCreationService(t *testing.T, gh *fakeGitHub, mappings *fakeMappings) *usecase.CreationService {
 	t.Helper()
 
@@ -126,7 +136,7 @@ func TestCreate_CreatesEpicsBeforeIssues(t *testing.T) {
 	mappings := &fakeMappings{}
 	svc := newCreationService(t, gh, mappings)
 
-	run, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation())
+	run, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation())
 	if err != nil {
 		t.Fatalf("Create() = %v", err)
 	}
@@ -160,7 +170,7 @@ func TestCreate_DoesNotCreateSummary(t *testing.T) {
 	svc := newCreationService(t, gh, &fakeMappings{})
 
 	in := interpretation()
-	if _, err := svc.Create(t.Context(), "board-1", "annot-1", in); err != nil {
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in); err != nil {
 		t.Fatalf("Create() = %v", err)
 	}
 
@@ -189,7 +199,7 @@ func TestCreate_SetsKindAndParent(t *testing.T) {
 	gh := &fakeGitHub{fields: projectFields()}
 	svc := newCreationService(t, gh, &fakeMappings{})
 
-	if _, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation()); err != nil {
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation()); err != nil {
 		t.Fatalf("Create() = %v", err)
 	}
 
@@ -230,7 +240,7 @@ func TestCreate_RecordsRunWithCurrentHash(t *testing.T) {
 	mappings := &fakeMappings{}
 	svc := newCreationService(t, gh, mappings)
 
-	run, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation())
+	run, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation())
 	if err != nil {
 		t.Fatalf("Create() = %v", err)
 	}
@@ -262,6 +272,47 @@ func TestCreate_RecordsRunWithCurrentHash(t *testing.T) {
 	}
 }
 
+func TestCreate_RejectsMismatchedContentHashBeforeGitHub(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	_, err := svc.Create(t.Context(), "board-1", "annot-1", "stale-hash", interpretation())
+	if !errors.Is(err, usecase.ErrContentHashMismatch) {
+		t.Fatalf("Create() = %v, want ErrContentHashMismatch", err)
+	}
+
+	if len(gh.calls) != 0 {
+		t.Errorf("hash が食い違っているのに GitHub を呼んでいる: %+v", gh.calls)
+	}
+	if len(mappings.runs) != 0 {
+		t.Errorf("hash が食い違っているのに run が記録されている: %+v", mappings.runs)
+	}
+}
+
+// 任意にすると API を直接叩く経路で検証を素通りできる（ADR 0010）。
+func TestCreate_RequiresContentHash(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	_, err := svc.Create(t.Context(), "board-1", "annot-1", "", interpretation())
+	if !errors.Is(err, usecase.ErrInvalidInput) {
+		t.Fatalf("Create() = %v, want ErrInvalidInput", err)
+	}
+
+	if len(gh.calls) != 0 {
+		t.Errorf("contentHash が無いのに GitHub を呼んでいる: %+v", gh.calls)
+	}
+	if len(mappings.runs) != 0 {
+		t.Errorf("contentHash が無いのに run が記録されている: %+v", mappings.runs)
+	}
+}
+
 // GitHub 側の draft issue は削除しない。記録しないと追跡不能になる（ADR 0009）。
 func TestCreate_RecordsPartialRunOnFailure(t *testing.T) {
 	t.Parallel()
@@ -270,7 +321,7 @@ func TestCreate_RecordsPartialRunOnFailure(t *testing.T) {
 	mappings := &fakeMappings{}
 	svc := newCreationService(t, gh, mappings)
 
-	run, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation())
+	run, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation())
 	if !errors.Is(err, usecase.ErrCreationIncomplete) {
 		t.Fatalf("Create() = %v, want ErrCreationIncomplete", err)
 	}
@@ -299,7 +350,7 @@ func TestCreate_DoesNotRecordWhenNothingCreated(t *testing.T) {
 	mappings := &fakeMappings{}
 	svc := newCreationService(t, gh, mappings)
 
-	if _, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation()); err == nil {
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation()); err == nil {
 		t.Fatal("Create() = nil, want error")
 	}
 	if len(mappings.runs) != 0 {
@@ -316,7 +367,7 @@ func TestCreate_ReportsCreatedItemsWhenSaveFails(t *testing.T) {
 	mappings := &fakeMappings{saveErr: errors.New("db: boom")}
 	svc := newCreationService(t, gh, mappings)
 
-	_, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation())
+	_, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation())
 	if err == nil {
 		t.Fatal("Create() = nil, want error")
 	}
@@ -337,7 +388,7 @@ func TestCreate_StopsWhenFieldsCannotBeListed(t *testing.T) {
 	mappings := &fakeMappings{}
 	svc := newCreationService(t, gh, mappings)
 
-	if _, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation()); err == nil {
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation()); err == nil {
 		t.Fatal("Create() = nil, want error")
 	}
 	if len(gh.calls) != 0 {
@@ -377,7 +428,7 @@ func TestCreate_RequiresProjectFields(t *testing.T) {
 			mappings := &fakeMappings{}
 			svc := newCreationService(t, gh, mappings)
 
-			_, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation())
+			_, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation())
 			if !errors.Is(err, usecase.ErrProjectFieldMissing) {
 				t.Fatalf("Create() = %v, want ErrProjectFieldMissing", err)
 			}
@@ -423,7 +474,7 @@ func TestCreate_RevalidatesInterpretation(t *testing.T) {
 			mappings := &fakeMappings{}
 			svc := newCreationService(t, gh, mappings)
 
-			_, err := svc.Create(t.Context(), "board-1", "annot-1", in)
+			_, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in)
 			if !errors.Is(err, usecase.ErrInvalidInput) {
 				t.Fatalf("Create() = %v, want ErrInvalidInput", err)
 			}
@@ -443,7 +494,7 @@ func TestCreate_NotFound(t *testing.T) {
 		gh := &fakeGitHub{fields: projectFields()}
 		svc := newCreationService(t, gh, &fakeMappings{})
 
-		_, err := svc.Create(t.Context(), "no-such-board", "annot-1", interpretation())
+		_, err := svc.Create(t.Context(), "no-such-board", "annot-1", currentContentHash(t), interpretation())
 		if !errors.Is(err, usecase.ErrBoardNotFound) {
 			t.Fatalf("Create() = %v, want ErrBoardNotFound", err)
 		}
@@ -455,7 +506,7 @@ func TestCreate_NotFound(t *testing.T) {
 		gh := &fakeGitHub{fields: projectFields()}
 		svc := newCreationService(t, gh, &fakeMappings{})
 
-		_, err := svc.Create(t.Context(), "board-1", "no-such-annot", interpretation())
+		_, err := svc.Create(t.Context(), "board-1", "no-such-annot", currentContentHash(t), interpretation())
 		if !errors.Is(err, usecase.ErrAnnotationNotFound) {
 			t.Fatalf("Create() = %v, want ErrAnnotationNotFound", err)
 		}
@@ -478,7 +529,7 @@ func TestCreate_UsesConfiguredFieldNames(t *testing.T) {
 		usecase.WithFieldNames("種別", "親"),
 		usecase.WithCreationClock(func() time.Time { return createdAt }))
 
-	if _, err := svc.Create(t.Context(), "board-1", "annot-1", interpretation()); err != nil {
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation()); err != nil {
 		t.Fatalf("Create() = %v", err)
 	}
 

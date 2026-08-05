@@ -13,3 +13,4 @@
 | [0007](0007-run-history.md) | マッピングは実行単位で履歴を残す | 採用 |
 | [0008](0008-llm-swap-seams.md) | LLM の差し替えは 2 段の継ぎ目で受ける | 採用 |
 | [0009](0009-partial-creation-is-recorded.md) | 途中まで作れた run も記録する | 採用 |
+| [0010](0010-require-content-hash-for-creation.md) | 作成時に解釈時点の contentHash を必須にする | 採用 |

@@ -92,10 +92,11 @@ func TestInterpret_Succeeds(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, boards := newInterpretService(t, newBoard(interpretScene), llm)
 
-	in, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	result, err := svc.Interpret(t.Context(), "board-1", "annot-1")
 	if err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
+	in := result.Interpretation
 
 	if len(llm.requests) != 1 {
 		t.Errorf("LLM 呼び出し回数 = %d, want 1", len(llm.requests))
@@ -108,6 +109,9 @@ func TestInterpret_Succeeds(t *testing.T) {
 	}
 	if in.Summary == "" {
 		t.Error("Summary が空")
+	}
+	if result.ContentHash != currentContentHash(t) {
+		t.Errorf("ContentHash = %q, want %q", result.ContentHash, currentContentHash(t))
 	}
 
 	// 解釈は読むだけ。ボードにも実行記録にも何も書かない。
@@ -191,10 +195,11 @@ func TestInterpret_RetriesWithCorrections(t *testing.T) {
 	llm := &fakeLLM{responses: []string{invalidLLMOutput, validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	in, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	result, err := svc.Interpret(t.Context(), "board-1", "annot-1")
 	if err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
+	in := result.Interpretation
 	if len(in.Items) != 2 {
 		t.Errorf("len(Items) = %d, want 2", len(in.Items))
 	}
@@ -256,10 +261,11 @@ func TestInterpret_AcceptsFencedOutput(t *testing.T) {
 			llm := &fakeLLM{responses: []string{output}}
 			svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-			in, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+			result, err := svc.Interpret(t.Context(), "board-1", "annot-1")
 			if err != nil {
 				t.Fatalf("Interpret() = %v", err)
 			}
+			in := result.Interpretation
 			if len(in.Items) != 2 {
 				t.Errorf("len(Items) = %d, want 2", len(in.Items))
 			}
@@ -427,14 +433,14 @@ func TestInterpret_EnforcesGranularityOnOutput(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput, onlyIssues}}
 	svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-	in, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	result, err := svc.Interpret(t.Context(), "board-1", "annot-1")
 	if err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
 	if len(llm.requests) != 2 {
 		t.Fatalf("LLM 呼び出し回数 = %d, want 2", len(llm.requests))
 	}
-	for _, it := range in.Items {
+	for _, it := range result.Interpretation.Items {
 		if it.Kind == domain.KindEpic {
 			t.Error("issue 指定なのに epic が通っている")
 		}
