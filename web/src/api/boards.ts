@@ -51,6 +51,16 @@ export type Interpretation = {
   items: InterpretedItem[];
 };
 
+/** 作成した run。途中で失敗しても、作れたぶんは items に入る。 */
+export type CreatedRun = {
+  runId: number;
+  createdAt: string;
+  items: SyncItem[];
+  /** 途中で失敗したことを表す。 */
+  incomplete?: boolean;
+  error?: string;
+};
+
 /** API が返したエラー。呼び出し側でステータスに応じて分岐するために持つ。 */
 export class ApiError extends Error {
   readonly status: number;
@@ -116,4 +126,15 @@ export const boardsApi = {
       `/api/boards/${boardId}/annotations/${annotationId}/interpret`,
       { method: "POST" },
     ),
+
+  /**
+   * 解釈結果から draft issue を作る。
+   *
+   * 解釈とは別の呼び出しに保つ。結果を見た開発者が明示的に叩く。
+   */
+  createItems: (boardId: string, annotationId: string, interpretation: Interpretation) =>
+    request<CreatedRun>(`/api/boards/${boardId}/annotations/${annotationId}/items`, {
+      method: "POST",
+      body: JSON.stringify(interpretation),
+    }),
 };

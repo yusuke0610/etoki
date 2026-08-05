@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki"
+	"github.com/yusuke0610/etoki/internal/adapter/github"
 	"github.com/yusuke0610/etoki/internal/adapter/llm"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
 	"github.com/yusuke0610/etoki/port"
@@ -34,9 +35,13 @@ environment:
   ETOKI_LLM_BASE_URL    LLM のエンドポイント（既定: ` + llm.DefaultBaseURL + `）
   ETOKI_LLM_API_KEY     LLM の API キー（認証不要なら未設定でよい）
   ETOKI_LLM_MODEL       モデル ID（既定: ` + llm.DefaultModel + `）
+  ETOKI_GITHUB_TOKEN    GitHub のトークン（Projects の read/write）
+  ETOKI_GITHUB_PROJECT_ID  draft issue を作る Projects v2 の node ID
+  ETOKI_GITHUB_KIND_FIELD    種別のカスタムフィールド名（既定: ` + etoki.DefaultKindFieldName + `）
+  ETOKI_GITHUB_PARENT_FIELD  親のカスタムフィールド名（既定: ` + etoki.DefaultParentFieldName + `）
 
-LLM を未設定のままでも起動する。その場合、解釈のエンドポイントだけが
-「設定されていない」と返し、ボードの編集と状態表示は使える。
+LLM や GitHub を未設定のままでも起動する。その場合、解釈や作成のエンドポイント
+だけが「設定されていない」と返し、ボードの編集と状態表示は使える。
 `
 
 func main() {
@@ -94,12 +99,22 @@ func serve(ctx context.Context) error {
 		return err
 	}
 
+	githubClient, err := newGitHubClient()
+	if err != nil {
+		return err
+	}
+	projectID := os.Getenv("ETOKI_GITHUB_PROJECT_ID")
+
 	srv, err := etoki.New(etoki.Options{
-		Addr:     os.Getenv("ETOKI_ADDR"),
-		Boards:   sqlite.NewBoardRepository(db),
-		Mappings: sqlite.NewMappingRepository(db),
-		LLM:      llmClient,
-		Logger:   logger,
+		Addr:            os.Getenv("ETOKI_ADDR"),
+		Boards:          sqlite.NewBoardRepository(db),
+		Mappings:        sqlite.NewMappingRepository(db),
+		LLM:             llmClient,
+		GitHub:          githubClient,
+		ProjectID:       projectID,
+		KindFieldName:   os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
+		ParentFieldName: os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
+		Logger:          logger,
 	})
 	if err != nil {
 		return err
@@ -109,6 +124,7 @@ func serve(ctx context.Context) error {
 		slog.String("addr", srv.Addr()),
 		slog.String("db", path),
 		slog.Bool("llm", llmClient != nil),
+		slog.Bool("github", githubClient != nil && projectID != ""),
 	)
 
 	return srv.Run(ctx)
@@ -130,6 +146,23 @@ func newLLMClient() (port.LLMClient, error) {
 
 	// BaseURL の綴り間違いはここで落ちる。実行時まで持ち越さない。
 	c, err := llm.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// newGitHubClient は環境変数から GitHub クライアントを組み立てる。
+//
+// トークンが未設定なら nil を返す。作成のエンドポイントが「設定されていない」
+// と返し、ボードの編集は続けられる。LLM と同じ扱い。
+func newGitHubClient() (port.GitHubClient, error) {
+	cfg := github.ConfigFromEnv()
+	if cfg.Token == "" {
+		return nil, nil
+	}
+
+	c, err := github.New(cfg)
 	if err != nil {
 		return nil, err
 	}

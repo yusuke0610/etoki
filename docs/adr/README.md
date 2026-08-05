@@ -12,3 +12,4 @@
 | [0006](0006-two-level-hierarchy.md) | GitHub に作るのは epic と issue の 2 階層のみ | 採用 |
 | [0007](0007-run-history.md) | マッピングは実行単位で履歴を残す | 採用 |
 | [0008](0008-llm-swap-seams.md) | LLM の差し替えは 2 段の継ぎ目で受ける | 採用 |
+| [0009](0009-partial-creation-is-recorded.md) | 途中まで作れた run も記録する | 採用 |

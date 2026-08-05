@@ -21,6 +21,15 @@ import (
 	"github.com/yusuke0610/etoki/port"
 )
 
+// 種別・親を表すカスタムフィールド名の既定値。
+//
+// usecase の定数を公開面に出している。cmd/etoki を写して独自の main を書く
+// 利用者は internal/ を import できないため、ここから参照できる必要がある。
+const (
+	DefaultKindFieldName   = usecase.DefaultKindFieldName
+	DefaultParentFieldName = usecase.DefaultParentFieldName
+)
+
 // DefaultAddr は Options.Addr が空のときに使うリッスンアドレス。
 //
 // etoki は単一ユーザーがローカルで動かすツールであり認証機構を持たない。
@@ -49,6 +58,21 @@ type Options struct {
 	// と返し、ボードの編集と状態表示は使える。ブレストだけ先にやる使い方を
 	// 潰さないため（ADR 0008）。
 	LLM port.LLMClient
+
+	// GitHub は draft issue を作る先。任意。
+	//
+	// nil でも起動する。その場合、作成のエンドポイントだけが「設定されていない」
+	// と返す。LLM と同じ扱い（ADR 0008）。
+	GitHub port.GitHubClient
+
+	// ProjectID は draft issue を作る Projects v2 の node ID。
+	// GitHub を指定するなら必須。
+	ProjectID string
+
+	// KindFieldName と ParentFieldName は種別・親を表すカスタムフィールドの名前。
+	// 空なら usecase の既定を使う。
+	KindFieldName   string
+	ParentFieldName string
 
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
@@ -85,6 +109,14 @@ func New(opts Options) (*Server, error) {
 	// 「設定されていない」と返す。
 	if opts.LLM != nil {
 		deps.Interpretations = usecase.NewInterpretationService(opts.Boards, opts.LLM)
+	}
+	// 作成先が決まっていなければ組み立てない。projectID が空のまま作ると、
+	// 呼ばれてから GitHub 側のエラーになり、原因が設定不足だと分かりにくい。
+	if opts.GitHub != nil && opts.ProjectID != "" {
+		deps.Creations = usecase.NewCreationService(
+			opts.Boards, opts.Mappings, opts.GitHub, opts.ProjectID,
+			usecase.WithFieldNames(opts.KindFieldName, opts.ParentFieldName),
+		)
 	}
 
 	handler := httpapi.NewRouter(deps)

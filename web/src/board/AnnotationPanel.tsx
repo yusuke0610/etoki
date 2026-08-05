@@ -1,10 +1,17 @@
 import type {
   AnnotationStatus,
+  CreatedRun,
   Granularity,
   Interpretation,
   SyncState,
 } from "../api/boards";
 import { groupByEpic } from "./interpretation";
+
+/** 注釈 1 つぶんの作成の進み具合。 */
+export type CreationState =
+  | { status: "running" }
+  | { status: "done"; run: CreatedRun }
+  | { status: "error"; message: string };
 
 /** 注釈 1 つぶんの解釈の進み具合。 */
 export type InterpretationState =
@@ -38,6 +45,11 @@ type Props = {
   /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
   interpretations: Record<string, InterpretationState>;
   onInterpret: (annotationId: string) => void;
+  /** 注釈 ID をキーにした作成の状態。未実行の注釈は入っていない。 */
+  creations: Record<string, CreationState>;
+  /** 保存中は作成させない。保存が作成の結果を捨てるため。 */
+  saving: boolean;
+  onCreate: (annotationId: string, interpretation: Interpretation) => void;
 };
 
 export function AnnotationPanel({
@@ -50,6 +62,9 @@ export function AnnotationPanel({
   stale,
   interpretations,
   onInterpret,
+  creations,
+  saving,
+  onCreate,
 }: Props) {
   return (
     <aside className="panel">
@@ -129,8 +144,11 @@ export function AnnotationPanel({
 
                 <InterpretationSection
                   state={interpretations[a.id]}
+                  creation={creations[a.id]}
                   stale={stale}
+                  saving={saving}
                   onInterpret={() => onInterpret(a.id)}
+                  onCreate={(interpretation) => onCreate(a.id, interpretation)}
                 />
               </li>
             ))}
@@ -143,9 +161,12 @@ export function AnnotationPanel({
 
 type InterpretationSectionProps = {
   state?: InterpretationState;
+  creation?: CreationState;
   /** 未保存の変更があると、解釈は保存済みシーンに対して行われる。 */
   stale: boolean;
+  saving: boolean;
   onInterpret: () => void;
+  onCreate: (interpretation: Interpretation) => void;
 };
 
 /**
@@ -156,8 +177,11 @@ type InterpretationSectionProps = {
  */
 function InterpretationSection({
   state,
+  creation,
   stale,
+  saving,
   onInterpret,
+  onCreate,
 }: InterpretationSectionProps) {
   const running = state?.status === "running";
 
@@ -175,7 +199,71 @@ function InterpretationSection({
 
       {state?.status === "error" && <p className="error">{state.message}</p>}
 
-      {state?.status === "done" && <InterpretationResult result={state.result} />}
+      {state?.status === "done" && (
+        <>
+          <InterpretationResult result={state.result} />
+          <CreationSection
+            state={creation}
+            saving={saving}
+            onCreate={() => onCreate(state.result)}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 作成の実行と結果表示。
+ *
+ * 解釈が済んでいるときだけ出す。何を作るかは開発者が結果を見て決める
+ * （中核思想 3）。
+ */
+function CreationSection({
+  state,
+  saving,
+  onCreate,
+}: {
+  state?: CreationState;
+  saving: boolean;
+  onCreate: () => void;
+}) {
+  const running = state?.status === "running";
+
+  return (
+    <div className="creation">
+      <button
+        type="button"
+        onClick={onCreate}
+        disabled={running || saving}
+        title={saving ? "保存が終わるまで作成できません" : undefined}
+      >
+        {running ? "作成中…" : "GitHub に作成する"}
+      </button>
+
+      {state?.status === "error" && <p className="error">{state.message}</p>}
+
+      {state?.status === "done" && (
+        <div className="creation-result">
+          {/* 途中で失敗しても作れたぶんは残る。何も作られていないと
+              誤解して再実行すると、GitHub 側に重複が増える。 */}
+          {state.run.incomplete ? (
+            <p className="error">
+              途中で失敗しました（{state.run.items.length} 件は作成済み）:{" "}
+              {state.run.error}
+            </p>
+          ) : (
+            <p className="hint">{state.run.items.length} 件を作成しました。</p>
+          )}
+          <ul className="plain-list">
+            {state.run.items.map((it) => (
+              <li key={it.itemId}>
+                <span className="kind">{it.kind}</span> {it.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
