@@ -3,6 +3,9 @@
 /web/dist/
 /web/node_modules/
 
+# e2e の実行結果（レポート・トレース・スクリーンショット）
+/web/e2e-output/
+
 # nix
 result
 result-*

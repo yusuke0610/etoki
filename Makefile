@@ -7,7 +7,7 @@ WEB_DIR := web
 DB_PATH ?= etoki.db
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web \
-        test test-go test-web lint lint-go lint-web fmt \
+        test test-go test-web test-e2e lint lint-go lint-web fmt \
         codegen codegen-go codegen-web migrate clean
 
 help: ## ターゲット一覧を表示する
@@ -52,6 +52,11 @@ test-go: ## Go のテストのみ実行する
 test-web: ## フロントエンドのテストのみ実行する
 	cd $(WEB_DIR) && bun run test
 
+test-e2e: ## Playwright で E2E テストを実行する（test には含めない）
+	@# 実行のたびに web/e2e-output/screenshots/ が作り直される。UI を変えたときは
+	@# ここの画像を報告に添える（CLAUDE.md の「報告にスクリーンショットを添える」）。
+	cd $(WEB_DIR) && bun run test:e2e
+
 lint: lint-go lint-web ## golangci-lint とフロントエンドの lint / 整形検査を実行する
 
 lint-go:
@@ -80,5 +85,5 @@ migrate: ## マイグレーションを適用する
 	ETOKI_DB_PATH=$(DB_PATH) go run ./cmd/etoki migrate
 
 clean: ## 生成物を削除する
-	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules
+	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
 	rm -f $(DB_PATH) $(DB_PATH)-shm $(DB_PATH)-wal

@@ -51,6 +51,13 @@
 
             export ETOKI_DB_PATH="''${ETOKI_DB_PATH:-$PWD/etoki.db}"
 
+            # Playwright にブラウザを自前でダウンロードさせない。npm 側の取得は
+            # flake.lock の外側で起きるため、固定が効かなくなる。web の
+            # @playwright/test は、ここで渡すブラウザ（playwright-driver）と
+            # 同じバージョンに固定しておく必要がある（ADR 0012）。
+            export PLAYWRIGHT_BROWSERS_PATH="${pkgs.playwright-driver.browsers}"
+            export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
             echo "etoki devShell: $(go version | cut -d' ' -f3), bun $(bun --version)"
           '';
         };

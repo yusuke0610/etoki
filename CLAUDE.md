@@ -33,11 +33,13 @@ make dev         # バックエンド(:8080)とフロントエンド(:5173)を�
 make lint        # golangci-lint + eslint + tsc + 整形検査（gofmt / prettier）
 make fmt         # Go / Nix / フロントエンドを整形する
 make test        # go test + vitest
+make test-e2e    # Playwright（test には含まれない）
 make codegen     # api/openapi.yaml から Go / TS の型を再生成する
 make migrate     # etoki migrate サブコマンドを呼ぶ
 ```
 
-コミット前に `make lint` と `make test` を通す。
+コミット前に `make lint` と `make test` を通す。UI かハンドラを触ったなら
+`make test-e2e` も通す。
 
 `.envrc` があるので、direnv を使っているなら `direnv allow` 一度で `cd` 時に
 devShell が有効になる（`nix develop` を毎回打たなくてよい）。direnv は任意で、
@@ -53,6 +55,11 @@ go test ./internal/adapter/sqlite/ -run TestSaveRun -v
 # フロントエンド: ファイル指定 / テスト名指定
 cd web && bunx vitest run src/excalidraw/annotation.test.ts
 cd web && bunx vitest run -t "customData"
+
+# E2E: ファイル指定 / テスト名指定 / ブラウザを見ながら
+cd web && bunx playwright test e2e/interpretation.spec.ts
+cd web && bunx playwright test -g "解釈するまで"
+cd web && bunx playwright test --ui
 ```
 
 `make dev` は `trap 'kill 0'` でプロセスグループごと止める。air と bun が
@@ -132,6 +139,8 @@ UI は未保存の変更があることを表示する。
   `components["schemas"][...]` を直書きしない。**独自の別名を付けない。**
   名前が食い違うと、契約を直したときに追随先を機械的に辿れなくなる。
 - エラー本文も `ErrorResponse` に揃える。`gin.H{"error": ...}` を直に書かない。
+- E2E のモック応答も生成型で縛ってある（`web/e2e/helpers/api.ts`）。
+  モックだけが古い契約のまま緑になるのを防ぐため。
 
 ### フロントとバックで一致させる必要がある定義
 
@@ -148,6 +157,34 @@ UI は未保存の変更があることを表示する。
 注釈の frame 自体は **Excalidraw のフレームツールで作らせる**。etoki は
 `customData` を付けるだけ。frame を自前で生成すると、境界にまたがる要素の
 帰属判定を自分で持つことになり、frame を選んだ理由が消える。
+
+## E2E テスト
+
+`web/e2e/` に置く。Playwright で実ブラウザを動かし、**バックエンドは起動しない。**
+API はすべて `page.route` で差し替える（ADR 0012）。
+
+- **確かめるのは画面側の約束。** 3 状態の表示、解釈するまで作成ボタンが出ない
+  こと、途中失敗の見せ方、保存で解釈結果を捨てること。外部連携そのものは
+  アダプタの単体テストの担当。E2E に持ち込まない。
+- **モックの応答本文は生成型で書く。** `web/e2e/helpers/api.ts` の `Reply<T>`。
+  型を外すと、モックだけが古い契約のまま緑になる。
+- **ルートはパス名の述語でマッチさせる。** パスの途中に `api` を含むグロブは
+  Vite が配信する `/src/api/types.ts` まで傍受してしまう。
+- `make test` には含めない。速さを保ちたいので、E2E はコミット前と CI で回す。
+
+### 報告にブラウザの実行結果を添える
+
+**UI に触れる修正をしたら、`make test-e2e` を実行し、ブラウザの実行結果の
+スクリーンショットを報告に添える。** 「動くはず」ではなく、実際にどう表示された
+かを見せる。テストが緑であることと、画面が意図どおりであることは別の話で、
+セレクタが通っても見た目が壊れていることはある。
+
+- 画像は `web/e2e/screenshots.spec.ts` が `web/e2e-output/screenshots/` に
+  書き出す（gitignore 済み）。`make test-e2e` を回せば毎回作り直される。
+- 添えるのは変更が現れている画面。全部を貼らない。新しい画面や状態を足した
+  なら `screenshots.spec.ts` に撮影を 1 つ足す。
+- 意図と違う表示になっていたら、それも隠さず添えて報告する。落ちたテストの
+  スクリーンショットは `web/e2e-output/results/` にある。
 
 ## ツールチェーン上の非自明な設定
 
@@ -170,6 +207,15 @@ UI は未保存の変更があることを表示する。
 - **`web/src/excalidraw/assumptions.test.ts`** — `customData` が serialize と
   restore を越えて残るという、注釈設計の前提そのものを固定するテスト。
   ライブラリ更新で落ちたら設計を見直す合図。
+- **`@playwright/test` のバージョンは exact 指定。** devShell が渡す
+  `playwright-driver.browsers`（nixpkgs 側）と揃っていないと、要求される
+  リビジョンのブラウザが見つからず E2E が起動しない。`nix flake update` で
+  `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
+- **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の
+  生成型から外れたことを `tsc` に見つけさせるため。外すと ADR 0012 の仕組みが
+  黙って効かなくなる。
+- **`web/vite.config.ts` の `test.include`** — vitest の既定は `*.spec.ts` も
+  拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **生成器のバージョンで生成物の形が変わる。** `oapi-codegen` は `flake.lock`
   が、`openapi-typescript` は `bun.lock` が握っている。`nix flake update` や
   `bun update` のコミットには `make codegen` の結果も含める。

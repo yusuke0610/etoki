@@ -26,7 +26,8 @@ git diff --cached
 2. 下の観点で点検する。
 3. 見つけたものを分類する（後述）。
 4. 「直す」に分類したものを直す。
-5. `nix develop -c make lint` と `nix develop -c make test` を通す。
+5. `nix develop -c make lint` と `nix develop -c make test` を通す。UI か
+   ハンドラを触っているなら `nix develop -c make test-e2e` も通す。
 6. 直したものがあれば次の周へ。なければ終了。
 
 ## 観点
@@ -53,6 +54,8 @@ CLAUDE.md に書いてある規約が守られているかを見る。以下は�
 - 境界の DTO を手書きしていないか。`api/openapi.yaml` を直したなら
   `make codegen` の結果が同じコミットに入っているか（ADR 0011）。
 - エラー本文に `gin.H` を直書きしていないか。`ErrorResponse` に揃っているか。
+- E2E のモック応答が生成型から外れていないか。`tsconfig.json` の `include` から
+  `e2e` を外していないか（ADR 0012）。
 
 **構造**
 
@@ -103,3 +106,5 @@ CLAUDE.md に書いてある規約が守られているかを見る。以下は�
 - 直さなかったもの（理由つき）
 - ユーザーの判断を待つもの
 - `make lint` / `make test` の結果
+- UI を触ったなら `make test-e2e` の結果と、`web/e2e-output/screenshots/` の
+  スクリーンショット（CLAUDE.md「報告にブラウザの実行結果を添える」）

@@ -25,6 +25,9 @@ export default defineConfig({
     },
   },
   test: {
+    // e2e/ の spec は Playwright が実行する。vitest の既定の include は
+    // *.spec.ts も拾うため、明示的に src 配下だけに絞る。
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test-setup.ts"],

@@ -17,5 +17,7 @@
     "noEmit": true,
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src", "vite.config.ts"]
+  // e2e も型検査に含める。E2E のモックが契約の生成型から外れたことを tsc に
+  // 見つけさせるのが狙いなので、ここから漏らすと仕組みが働かない（ADR 0012）。
+  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"]
 }
