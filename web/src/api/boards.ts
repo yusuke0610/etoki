@@ -45,9 +45,13 @@ export type InterpretedItem = {
  * LLM が注釈をどう解釈したか。
  *
  * summary は GitHub には作らない。作成前に「こう読んだ」を見せるためだけに使う。
+ *
+ * contentHash は解釈の入力になった保存済みシーンのもの。作成時にそのまま送り返し、
+ * サーバーが現在のシーンと突き合わせる。フロントでは組み立てない。
  */
 export type Interpretation = {
   summary: string;
+  contentHash: string;
   items: InterpretedItem[];
 };
 

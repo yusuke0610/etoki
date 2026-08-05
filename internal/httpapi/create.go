@@ -18,8 +18,9 @@ import (
 // 開発者が確認した結果を作る、という流れなので、サーバー側で解釈し直さない。
 // ただし内容は信用せず、ユースケース層で検証し直す。
 type createItemsRequest struct {
-	Summary string                    `json:"summary"`
-	Items   []interpretedItemResponse `json:"items"`
+	Summary     string                    `json:"summary"`
+	ContentHash string                    `json:"contentHash"`
+	Items       []interpretedItemResponse `json:"items"`
 }
 
 // createItemsResponse は作成した run。
@@ -52,7 +53,7 @@ func (h *handlers) createItems(c *gin.Context) {
 	}
 
 	run, err := h.creations.Create(
-		c.Request.Context(), c.Param("id"), c.Param("annotationId"), toInterpretation(req))
+		c.Request.Context(), c.Param("id"), c.Param("annotationId"), req.ContentHash, toInterpretation(req))
 
 	// 途中まで作れた場合は run が返る。エラーだけ返すと、開発者は何も作られて
 	// いないと誤解して再実行し、重複を増やす（ADR 0009）。
@@ -90,6 +91,10 @@ func (h *handlers) failCreate(c *gin.Context, err error) {
 	case errors.Is(err, usecase.ErrProjectFieldMissing):
 		// 設定不足であって、リクエストの誤りではない。何を作ればよいかを返す。
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+
+	case errors.Is(err, usecase.ErrContentHashMismatch):
+		// 解釈のやり直しは開発者が決める。ここで解釈し直して作成を続けない。
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 
 	case errors.Is(err, usecase.ErrCreationIncomplete):
 		// 1 件も作れずに失敗した場合。GitHub 側の問題として返す。

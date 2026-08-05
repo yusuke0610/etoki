@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/internal/usecase"
 )
 
@@ -25,8 +24,9 @@ type interpretedItemResponse struct {
 // Summary は GitHub には作らない。LLM がこの囲みをどう解釈したかを開発者が
 // 確かめるための材料として返す（ADR 0006）。
 type interpretationResponse struct {
-	Summary string                    `json:"summary"`
-	Items   []interpretedItemResponse `json:"items"`
+	Summary     string                    `json:"summary"`
+	ContentHash string                    `json:"contentHash"`
+	Items       []interpretedItemResponse `json:"items"`
 }
 
 // interpretAnnotation は注釈を LLM に解釈させて結果を返す。
@@ -82,14 +82,15 @@ func (h *handlers) failInterpret(c *gin.Context, err error) {
 }
 
 // toInterpretationResponse はドメインの解釈結果を境界の DTO に詰め替える。
-func toInterpretationResponse(in domain.Interpretation) interpretationResponse {
+func toInterpretationResponse(result usecase.InterpretationResult) interpretationResponse {
 	out := interpretationResponse{
-		Summary: in.Summary,
+		Summary:     result.Interpretation.Summary,
+		ContentHash: result.ContentHash,
 		// nil を返すと JSON が null になる。常に配列にする。
-		Items: make([]interpretedItemResponse, 0, len(in.Items)),
+		Items: make([]interpretedItemResponse, 0, len(result.Interpretation.Items)),
 	}
 
-	for _, it := range in.Items {
+	for _, it := range result.Interpretation.Items {
 		item := interpretedItemResponse{
 			LocalID: it.LocalID,
 			Kind:    string(it.Kind),
