@@ -299,6 +299,18 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
+        /**
+         * @description Host または Origin が許可されていない。ブラウザ由来の cross-site
+         *     リクエストを弾いた場合（ADR 0013）。全エンドポイントで起こりうる。
+         */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
         /** @description 対象が見つからない */
         NotFound: {
             headers: {
@@ -348,6 +360,7 @@ export interface operations {
                     "application/json": components["schemas"]["HealthResponse"];
                 };
             };
+            403: components["responses"]["Forbidden"];
         };
     };
     listBoards: {
@@ -368,6 +381,7 @@ export interface operations {
                     "application/json": components["schemas"]["BoardSummary"][];
                 };
             };
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -394,6 +408,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -418,6 +433,7 @@ export interface operations {
                     "application/json": components["schemas"]["BoardDetail"];
                 };
             };
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -446,6 +462,7 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -471,6 +488,7 @@ export interface operations {
                     "application/json": components["schemas"]["AnnotationStatus"][];
                 };
             };
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -499,6 +517,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
             /** @description LLM の呼び出しに失敗した、または出力がスキーマを満たさなかった */
@@ -553,6 +572,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             /** @description 解釈時点と現在のシーンの contentHash が食い違う */
             409: {

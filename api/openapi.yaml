@@ -51,6 +51,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/boards:
     get:
@@ -67,6 +69,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/BoardSummary"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -89,6 +93,8 @@ paths:
                 $ref: "#/components/schemas/BoardDetail"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -106,6 +112,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BoardDetail"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -132,6 +140,8 @@ paths:
           description: 保存した
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -156,6 +166,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AnnotationStatus"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -181,6 +193,8 @@ paths:
                 $ref: "#/components/schemas/Interpretation"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -230,6 +244,8 @@ paths:
                 $ref: "#/components/schemas/CreatedRun"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -280,6 +296,15 @@ components:
   responses:
     BadRequest:
       description: リクエストの内容が不正
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Forbidden:
+      description: |
+        Host または Origin が許可されていない。ブラウザ由来の cross-site
+        リクエストを弾いた場合（ADR 0013）。全エンドポイントで起こりうる。
       content:
         application/json:
           schema:

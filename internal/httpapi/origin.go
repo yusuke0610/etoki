@@ -150,8 +150,8 @@ func (g originGuard) reject(c *gin.Context, logger *slog.Logger, msg string, att
 
 	// 何を許すかは応答に載せない。攻撃者が許可リストを総当たりで
 	// 探れるようにする理由がない。
-	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-		"error": "forbidden: request did not come from a local origin. " +
-			"set ETOKI_ALLOWED_ORIGINS if etoki is bound beyond loopback",
-	})
+	c.Abort()
+	errorJSON(c, http.StatusForbidden,
+		"forbidden: request did not come from a local origin. "+
+			"set ETOKI_ALLOWED_ORIGINS if etoki is bound beyond loopback")
 }

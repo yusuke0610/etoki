@@ -193,6 +193,27 @@ func TestOriginGuard_RejectsNonLoopbackHost(t *testing.T) {
 	}
 }
 
+// 弾いたときの本文も契約どおりの形にする。gin.H を直に書くと、契約に無いキーが
+// 混ざっても気づけない（ADR 0011）。
+func TestOriginGuard_RejectBodyMatchesContract(t *testing.T) {
+	t.Parallel()
+
+	r := newGuardedRouter(t)
+	rec := request(t, r, http.MethodGet, "/api/boards", "evil.example:8080", nil, "")
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	body := decode[map[string]any](t, rec)
+	if len(body) != 1 {
+		t.Errorf("ErrorResponse に無いキーが混ざっている: %v", body)
+	}
+	if msg, _ := body["error"].(string); msg == "" {
+		t.Errorf("error = %v, want 非空の文字列", body["error"])
+	}
+}
+
 // ループバック以外にバインドする場合は、利用者が明示的に許可を足す。
 // ETOKI_ADDR を上書きできる以上、これが無いと自分で締め出される。
 func TestOriginGuard_AllowsConfiguredOrigin(t *testing.T) {
