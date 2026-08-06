@@ -7,7 +7,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import openapiTS, { astToString } from "openapi-typescript";
 
@@ -25,7 +25,8 @@ const BANNER = `/**
 `;
 
 // URL で渡すと相対 $ref の解決基準がファイルの場所になる。いまは 1 ファイル
-// だが、分割したくなったときに壊れないようにしておく。
-const ast = await openapiTS(new URL(`file://${SPEC_PATH}`));
+// だが、分割したくなったときに壊れないようにしておく。file:// を文字列で
+// 組み立てると、チェックアウト先に空白などが含まれたときに壊れる。
+const ast = await openapiTS(pathToFileURL(SPEC_PATH));
 writeFileSync(OUTPUT_PATH, BANNER + astToString(ast), "utf8");
 console.log(`型定義を生成しました: ${OUTPUT_PATH}`);

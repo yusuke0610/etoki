@@ -40,8 +40,13 @@ jobs:
       - name: codegen drift
         run: |
           nix develop --command make codegen
-          if ! git diff --exit-code -- internal/httpapi/apitypes/types.gen.go web/src/api/generated.ts; then
-            echo "::error::生成物が api/openapi.yaml と一致していません。'make codegen' を実行してコミットしてください（ADR 0011）。"
+          generated=(internal/httpapi/apitypes/types.gen.go web/src/api/generated.ts)
+          # git diff は追跡外のファイルを報告しない。生成物をコミットし忘れると
+          # make codegen が同じ内容で作り直すため、差分ゼロに見えて素通りする。
+          # 未追跡かどうかも併せて見る。
+          if ! git diff --exit-code -- "${generated[@]}" \
+            || [ -n "$(git ls-files --others --exclude-standard -- "${generated[@]}")" ]; then
+            echo "::error::生成物が api/openapi.yaml と一致していないか、コミットされていません。'make codegen' を実行してコミットしてください（ADR 0011）。"
             exit 1
           fi
 

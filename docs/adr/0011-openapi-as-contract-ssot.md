@@ -54,5 +54,3 @@ DevForge では FastAPI が実行時に OpenAPI を吐くため、backend のス
 - 生成物の形は生成器のバージョンに依存する。`nix flake update` が
   `oapi-codegen` や `openapi-typescript` を動かすと差分が出るため、更新の
   コミットには再生成も含める必要がある。
-- `BoardDetail` の `allOf` は Go では平坦な struct になり、埋め込みにはならない。
-  `BoardSummary` との詰め替えは共有できず、`toDetail` に同じ代入が並ぶ。

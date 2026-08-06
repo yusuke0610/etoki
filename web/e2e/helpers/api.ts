@@ -124,15 +124,17 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     },
   );
 
+  // 末尾一致にしない。パスを間違えても一致してしまい、契約から外れた呼び出しが
+  // 緑のまま通る。取りこぼしはキャッチオールが 500 で拾う。
   await page.route(
-    (url) => url.pathname.endsWith("/interpret"),
+    (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/interpret$/.test(url.pathname),
     async (route) => {
       await json(route, mock.interpret.status, mock.interpret.body);
     },
   );
 
   await page.route(
-    (url) => url.pathname.endsWith("/items"),
+    (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/items$/.test(url.pathname),
     async (route) => {
       await json(route, mock.createItems.status, mock.createItems.body);
     },
