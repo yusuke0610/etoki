@@ -91,6 +91,9 @@ func TestHandlerServesHealthz(t *testing.T) {
 	}
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
+	// httptest の既定の Host は example.com。cross-site を弾くミドルウェアに
+	// 引っかかるので、実際に届く形と揃える。
+	req.Host = "127.0.0.1:8080"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -109,6 +112,7 @@ func TestHandlerServesBoardAPI(t *testing.T) {
 	}
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/boards", nil)
+	req.Host = "127.0.0.1:8080"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 

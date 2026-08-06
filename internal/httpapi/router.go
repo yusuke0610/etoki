@@ -27,6 +27,12 @@ type Deps struct {
 	Creations *usecase.CreationService
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
+	// AllowedOrigins はループバック以外に追加で許すオリジン。
+	//
+	// ループバックは常に許すので、既定の構成では空でよい。ETOKI_ADDR で
+	// 公開インターフェースにバインドした利用者が、自分で自分を締め出さない
+	// ための逃げ道。
+	AllowedOrigins []string
 }
 
 // NewRouter は etoki の HTTP ルーティングを構築する。
@@ -37,7 +43,10 @@ func NewRouter(deps Deps) *gin.Engine {
 	}
 
 	r := gin.New()
-	r.Use(gin.Recovery(), requestLogger(logger))
+	// 検証はログの後に置く。弾いたリクエストも記録に残す。何を叩かれたかが
+	// 分からないと、弾けていること自体を確かめられない。
+	r.Use(gin.Recovery(), requestLogger(logger),
+		newOriginGuard(deps.AllowedOrigins).handler(logger))
 
 	r.GET("/healthz", handleHealthz)
 

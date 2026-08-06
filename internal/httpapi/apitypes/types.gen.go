@@ -164,6 +164,9 @@ type BoardID = string
 // BadRequest 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type BadRequest = ErrorResponse
 
+// Forbidden 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+type Forbidden = ErrorResponse
+
 // InternalError 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type InternalError = ErrorResponse
 

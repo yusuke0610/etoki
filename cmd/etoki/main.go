@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,7 @@ const usage = `usage:
 
 environment:
   ETOKI_ADDR            リッスンアドレス（既定: ` + etoki.DefaultAddr + `）
+  ETOKI_ALLOWED_ORIGINS 追加で許すオリジン（カンマ区切り）。ループバックは常に許す
   ETOKI_DB_PATH         SQLite ファイルのパス（既定: ` + defaultDBPath + `）
   ETOKI_LLM_BASE_URL    LLM のエンドポイント（既定: ` + llm.DefaultBaseURL + `）
   ETOKI_LLM_API_KEY     LLM の API キー（認証不要なら未設定でよい）
@@ -115,6 +117,7 @@ func serve(ctx context.Context) error {
 		KindFieldName:   os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
 		ParentFieldName: os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
 		Logger:          logger,
+		AllowedOrigins:  splitList(os.Getenv("ETOKI_ALLOWED_ORIGINS")),
 	})
 	if err != nil {
 		return err
@@ -192,4 +195,15 @@ func dbPath() string {
 		return p
 	}
 	return defaultDBPath
+}
+
+// splitList はカンマ区切りの環境変数を要素に分ける。空要素は捨てる。
+func splitList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if v := strings.TrimSpace(part); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

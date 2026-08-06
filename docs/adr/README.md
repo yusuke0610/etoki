@@ -16,3 +16,4 @@
 | [0010](0010-require-content-hash-for-creation.md) | 作成時に解釈時点の contentHash を必須にする | 採用 |
 | [0011](0011-openapi-as-contract-ssot.md) | HTTP 契約の正本を OpenAPI に置き、Go と TypeScript の型を生成する | 採用 |
 | [0012](0012-e2e-tests-mock-the-backend.md) | E2E はバックエンドを起動せず、契約の型でモックする | 採用 |
+| [0013](0013-reject-cross-site-browser-requests.md) | ブラウザ由来の cross-site リクエストを Host と Origin で弾く | 採用 |
