@@ -76,6 +76,13 @@ type Options struct {
 
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
+
+	// AllowedOrigins はループバック以外に追加で許すオリジン。任意。
+	//
+	// ブラウザ由来の cross-site リクエストは既定で弾く。ループバックは常に
+	// 許すので、既定の構成では空でよい。Addr で公開インターフェースに
+	// バインドしたときだけ、そのオリジンを足す必要がある（ADR 0013）。
+	AllowedOrigins []string
 }
 
 // Server は etoki の HTTP サーバー。
@@ -101,9 +108,10 @@ func New(opts Options) (*Server, error) {
 	}
 
 	deps := httpapi.Deps{
-		Boards:      usecase.NewBoardService(opts.Boards),
-		Annotations: usecase.NewAnnotationService(opts.Boards, opts.Mappings),
-		Logger:      opts.Logger,
+		Boards:         usecase.NewBoardService(opts.Boards),
+		Annotations:    usecase.NewAnnotationService(opts.Boards, opts.Mappings),
+		Logger:         opts.Logger,
+		AllowedOrigins: opts.AllowedOrigins,
 	}
 	// LLM が無いときはサービスを組み立てない。nil のまま渡し、ハンドラ側で
 	// 「設定されていない」と返す。

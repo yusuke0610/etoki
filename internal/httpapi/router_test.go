@@ -65,6 +65,9 @@ func do(t *testing.T, r *gin.Engine, method, path string, body any) *httptest.Re
 
 	req := httptest.NewRequestWithContext(t.Context(), method, path, reader)
 	req.Header.Set("Content-Type", "application/json")
+	// httptest の既定の Host は example.com。実際に届く形と揃えないと、
+	// cross-site を弾くミドルウェアに引っかかる（origin.go）。
+	req.Host = loopbackHost
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

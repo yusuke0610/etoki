@@ -47,6 +47,7 @@ direnv allow
 | 変数 | 既定値 | 用途 |
 | --- | --- | --- |
 | `ETOKI_ADDR` | `127.0.0.1:8080` | リッスンアドレス |
+| `ETOKI_ALLOWED_ORIGINS` | （なし） | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す |
 | `ETOKI_DB_PATH` | `etoki.db` | SQLite ファイルのパス |
 | `ETOKI_LLM_BASE_URL` | `https://api.anthropic.com` | LLM のエンドポイント |
 | `ETOKI_LLM_API_KEY` | （なし） | LLM の API キー。認証不要なら未設定でよい |
@@ -55,6 +56,12 @@ direnv allow
 | `ETOKI_GITHUB_PROJECT_ID` | （なし） | draft issue を作る Projects v2 の node ID |
 | `ETOKI_GITHUB_KIND_FIELD` | `Kind` | 種別のカスタムフィールド名 |
 | `ETOKI_GITHUB_PARENT_FIELD` | `Parent` | 親のカスタムフィールド名 |
+
+認証は持ちません。代わりに、ループバック以外から来たブラウザのリクエストを
+拒否します（ADR 0013）。`curl` やスクリプトからの利用には影響しません。
+`ETOKI_ADDR` で公開インターフェースにバインドする場合は、
+`ETOKI_ALLOWED_ORIGINS` にそのオリジンを足さないと自分のブラウザからも
+届かなくなります。
 
 ### Anthropic API を使う
 
