@@ -219,6 +219,12 @@ API はすべて `page.route` で差し替える（ADR 0012）。
 - **生成器のバージョンで生成物の形が変わる。** `oapi-codegen` は `flake.lock`
   が、`openapi-typescript` は `bun.lock` が握っている。`nix flake update` や
   `bun update` のコミットには `make codegen` の結果も含める。
+- **`make codegen` は必ず devShell の中で実行する。** `types.gen.go` の冒頭
+  バナーには生成器のバージョン文字列が埋まる。しかもこれは「どのバージョンか」
+  ではなく「どうビルドされたか」で変わる。nixpkgs は
+  `-X main.noVCSVersionOverride=2.5.1` を渡すので `2.5.1` になるが、
+  `go run ...@v2.5.1` で入れた同じバージョンは `v2.5.1` と出る。devShell の外で
+  生成すると、中身が同じでも codegen drift で落ちる。
 
 ## ブランチ運用
 
