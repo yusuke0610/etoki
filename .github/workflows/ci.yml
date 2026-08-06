@@ -34,8 +34,38 @@ jobs:
       - name: lint
         run: nix develop --command make lint
 
+      # 契約（api/openapi.yaml）を直して生成物を再生成していない状態を落とす。
+      # 手で書いた型とフロントの型がずれても、両方が緑のまま気づけないため
+      # （ADR 0011）。生成器のバージョンは devShell が固定している。
+      - name: codegen drift
+        run: |
+          nix develop --command make codegen
+          generated=(internal/httpapi/apitypes/types.gen.go web/src/api/generated.ts)
+          # git diff は追跡外のファイルを報告しない。生成物をコミットし忘れると
+          # make codegen が同じ内容で作り直すため、差分ゼロに見えて素通りする。
+          # 未追跡かどうかも併せて見る。
+          if ! git diff --exit-code -- "${generated[@]}" \
+            || [ -n "$(git ls-files --others --exclude-standard -- "${generated[@]}")" ]; then
+            echo "::error::生成物が api/openapi.yaml と一致していないか、コミットされていません。'make codegen' を実行してコミットしてください（ADR 0011）。"
+            exit 1
+          fi
+
       - name: test
         run: nix develop --command make test
+
+      # ブラウザは devShell が渡す（PLAYWRIGHT_BROWSERS_PATH）。CI 側で
+      # playwright install を叩かないのは、そこだけ flake.lock の外で
+      # バージョンが決まってしまうため。
+      - name: e2e
+        run: nix develop --command make test-e2e
+
+      - name: upload e2e report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: web/e2e-output/
+          retention-days: 7
 
       - name: build
         run: nix develop --command make build

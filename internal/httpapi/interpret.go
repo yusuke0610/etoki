@@ -7,27 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 )
-
-// interpretedItemResponse は解釈結果に含まれる draft issue 1 件。
-type interpretedItemResponse struct {
-	LocalID string `json:"localId"`
-	Kind    string `json:"kind"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	Parent  string `json:"parentLocalId,omitempty"`
-}
-
-// interpretationResponse は解釈の結果。
-//
-// Summary は GitHub には作らない。LLM がこの囲みをどう解釈したかを開発者が
-// 確かめるための材料として返す（ADR 0006）。
-type interpretationResponse struct {
-	Summary     string                    `json:"summary"`
-	ContentHash string                    `json:"contentHash"`
-	Items       []interpretedItemResponse `json:"items"`
-}
 
 // interpretAnnotation は注釈を LLM に解釈させて結果を返す。
 //
@@ -36,9 +18,8 @@ type interpretationResponse struct {
 func (h *handlers) interpretAnnotation(c *gin.Context) {
 	if h.interpretations == nil {
 		// 404 ではなく 503。URL の誤りではなく設定の不足だと伝える必要がある。
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "llm is not configured: set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL",
-		})
+		errorJSON(c, http.StatusServiceUnavailable,
+			"llm is not configured: set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL")
 		return
 	}
 
@@ -68,13 +49,13 @@ func (h *handlers) failInterpret(c *gin.Context, err error) {
 		// 認証や接続の失敗。API キーはアダプタ側でエラーに載せていない。
 		h.logger.ErrorContext(c.Request.Context(), "llm call failed",
 			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
-		c.JSON(http.StatusBadGateway, gin.H{"error": "llm call failed: " + err.Error()})
+		errorJSON(c, http.StatusBadGateway, "llm call failed: "+err.Error())
 
 	case errors.Is(err, usecase.ErrInterpretationFailed):
 		// 接続はできたが、上限まで再送しても出力がスキーマを満たさなかった。
 		h.logger.WarnContext(c.Request.Context(), "llm output rejected",
 			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		errorJSON(c, http.StatusBadGateway, err.Error())
 
 	default:
 		h.fail(c, err)
@@ -82,23 +63,23 @@ func (h *handlers) failInterpret(c *gin.Context, err error) {
 }
 
 // toInterpretationResponse はドメインの解釈結果を境界の DTO に詰め替える。
-func toInterpretationResponse(result usecase.InterpretationResult) interpretationResponse {
-	out := interpretationResponse{
+func toInterpretationResponse(result usecase.InterpretationResult) apitypes.Interpretation {
+	out := apitypes.Interpretation{
 		Summary:     result.Interpretation.Summary,
 		ContentHash: result.ContentHash,
 		// nil を返すと JSON が null になる。常に配列にする。
-		Items: make([]interpretedItemResponse, 0, len(result.Interpretation.Items)),
+		Items: make([]apitypes.InterpretedItem, 0, len(result.Interpretation.Items)),
 	}
 
 	for _, it := range result.Interpretation.Items {
-		item := interpretedItemResponse{
+		item := apitypes.InterpretedItem{
 			LocalID: it.LocalID,
-			Kind:    string(it.Kind),
+			Kind:    apitypes.ItemKind(it.Kind),
 			Title:   it.Title,
 			Body:    it.Body,
 		}
 		if it.ParentLocalID != nil {
-			item.Parent = *it.ParentLocalID
+			item.ParentLocalID = *it.ParentLocalID
 		}
 		out.Items = append(out.Items, item)
 	}

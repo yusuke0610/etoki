@@ -7,6 +7,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "codegen": "node scripts/gen-types.mjs",
     "lint": "eslint . && tsc --noEmit && prettier --check .",
     "fmt": "prettier --write ."
   },
@@ -17,6 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9",
+    "@playwright/test": "1.61.1",
     "@testing-library/dom": "^10",
     "@testing-library/jest-dom": "^6",
     "@testing-library/react": "^16",
@@ -28,6 +32,7 @@
     "eslint-plugin-react-hooks": "^5",
     "globals": "^16",
     "jsdom": "^26",
+    "openapi-typescript": "^7",
     "prettier": "^3",
     "typescript": "^5",
     "typescript-eslint": "^8",
