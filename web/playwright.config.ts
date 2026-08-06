@@ -39,8 +39,12 @@ export default defineConfig({
 
   webServer: {
     command: "bun run dev",
+    // vite.config.ts が host と port を固定しているので、ここと必ず一致する。
     url: "http://127.0.0.1:5173",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // 既定では dev サーバーの stdout を捨てる。起動しなかったとき
+    // 「120 秒待った」以外の情報が残らず、CI で原因を追えない。
+    stdout: "pipe",
   },
 });

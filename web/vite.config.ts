@@ -18,7 +18,14 @@ const excalidrawProd = fileURLToPath(
 export default defineConfig({
   plugins: [react()],
   server: {
+    // 既定の localhost にせず IPv4 ループバックを明示する。localhost の解決は
+    // 環境まかせで、IPv6 のある環境では ::1 に寄って 127.0.0.1 では届かなく
+    // なる。バックエンドの既定も 127.0.0.1 なので、そちらに揃える。
+    host: "127.0.0.1",
     port: 5173,
+    // ポートが埋まっていたら黙って隣にずらさず落とす。ずらされると
+    // Playwright が 5173 を待ち続け、原因の分からないタイムアウトになる。
+    strictPort: true,
     proxy: {
       "/api": { target: API_TARGET },
       "/healthz": { target: API_TARGET },
