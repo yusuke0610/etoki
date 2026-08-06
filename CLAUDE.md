@@ -115,6 +115,9 @@ UI は未保存の変更があることを表示する。
 - **`content_hash` の入力はテキストのみ。** 図形・矢印・座標だけの変更は検知
   しない。これは仕様であり、`TestComputeContentHash_IgnoresNonTextChanges` で
   固定してある。善意で「直さない」こと。
+- **フロントの「未保存」判定（`web/src/excalidraw/dirty.ts`）は別物。** 保存は
+  シーン全体を書くので、図形を動かしただけでも未保存にする。`content_hash` に
+  揃えると、保存すべき変更を取りこぼす。
 - **`sync_runs` は履歴。** 再実行しても過去の run を消さない。上書きすると
   GitHub 側に残っている draft issue を追跡できなくなるため（ADR 0007）。
 - **最新 run は `created_at` ではなく `id` で決める。** 時刻は呼び出し側が与える

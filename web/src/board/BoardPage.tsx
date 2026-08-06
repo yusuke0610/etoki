@@ -16,6 +16,7 @@ import {
   unmarkAnnotation,
   type SceneElement,
 } from "../excalidraw/annotation";
+import { sceneSignature } from "../excalidraw/dirty";
 import {
   AnnotationPanel,
   type CreationState,
@@ -75,27 +76,42 @@ export function BoardPage({ board, onError }: Props) {
     void refreshAnnotations();
   }, [refreshAnnotations]);
 
+  // 保存済みシーンの署名。未保存かどうかはこれと現在の署名の比較で決める。
+  // null は Excalidraw から最初の onChange がまだ来ていない状態。
+  const savedSignature = useRef<string | null>(null);
+  const latestSignature = useRef<string | null>(null);
+
+  /** 署名を取り込み、保存済みと違えば未保存にする。 */
+  const applySignature = useCallback((signature: string) => {
+    latestSignature.current = signature;
+    // Excalidraw はマウント時にも onChange を発火する。その 1 回目は保存済み
+    // シーンそのものなので、未保存ではなく基準として覚える。
+    savedSignature.current ??= signature;
+    setDirty(signature !== savedSignature.current);
+  }, []);
+
   /** 選択状態の変化を拾い、注釈にできる frame を割り出す。 */
   const handleChange = useCallback(
     (
       elements: readonly unknown[],
       appState: { selectedElementIds: Record<string, boolean> },
     ) => {
-      setDirty(true);
-      setSelectedFrames(
-        selectableFrameIds(elements as SceneElement[], appState.selectedElementIds),
-      );
+      const els = elements as SceneElement[];
+      applySignature(sceneSignature(els));
+      setSelectedFrames(selectableFrameIds(els, appState.selectedElementIds));
     },
-    [],
+    [applySignature],
   );
 
   /** 現在のシーンを elements ごと差し替える。 */
   const updateElements = useCallback(
     (next: SceneElement[]) => {
       api?.updateScene({ elements: next as never });
-      setDirty(true);
+      // onChange の発火を待たずにここでも判定する。注釈の付け外しが未保存として
+      // 出るかどうかを、updateScene が onChange を呼ぶかに依存させない。
+      applySignature(sceneSignature(next));
     },
-    [api],
+    [api, applySignature],
   );
 
   const currentElements = useCallback(
@@ -122,14 +138,15 @@ export function BoardPage({ board, onError }: Props) {
 
     setSaving(true);
     try {
-      const scene = serializeAsJSON(
-        api.getSceneElements(),
-        api.getAppState(),
-        api.getFiles(),
-        "local",
-      );
+      const elements = api.getSceneElements();
+      const scene = serializeAsJSON(elements, api.getAppState(), api.getFiles(), "local");
+      // 送った内容そのものを新しい基準にする。保存の待ち時間に編集されていたら
+      // 未保存のまま残す必要があるので、setDirty(false) とは書かない。
+      const sent = sceneSignature(elements as unknown as SceneElement[]);
+
       await boardsApi.saveScene(board.id, scene);
-      setDirty(false);
+      savedSignature.current = sent;
+      setDirty(latestSignature.current !== sent);
       // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
       // 実行中のものも無効にする。後から返ってきて結果が復活すると、いまの
       // 内容を解釈したものだと誤読される。

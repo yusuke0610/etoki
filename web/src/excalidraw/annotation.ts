@@ -19,6 +19,8 @@ export type SceneElement = {
   isDeleted?: boolean;
   name?: string | null;
   customData?: Record<string, unknown>;
+  /** Excalidraw が中身を変えるたびに上げる番号。未保存の判定に使う（dirty.ts）。 */
+  version?: number;
 };
 
 /**
