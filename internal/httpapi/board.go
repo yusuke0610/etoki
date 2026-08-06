@@ -4,30 +4,19 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
 
-// boardSummary は一覧で返すボード。シーンは大きいので含めない。
-type boardSummary struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-}
+// 境界の DTO は api/openapi.yaml から生成した apitypes を使う。ここで型を
+// 手書きすると、フロントの型との一致を人が保つことになる（ADR 0011）。
 
-// boardDetail はシーンを含むボード。
-type boardDetail struct {
-	boardSummary
-	Scene string `json:"scene"`
-}
-
-func toSummary(b port.Board) boardSummary {
-	return boardSummary{
+func toSummary(b port.Board) apitypes.BoardSummary {
+	return apitypes.BoardSummary{
 		ID:        b.ID,
 		Name:      b.Name,
 		CreatedAt: b.CreatedAt,
@@ -35,34 +24,39 @@ func toSummary(b port.Board) boardSummary {
 	}
 }
 
-type createBoardRequest struct {
-	Name  string `json:"name"`
-	Scene string `json:"scene"`
+// toDetail は BoardSummary の詰め替えを繰り返している。allOf は生成後には
+// 平坦な struct になり、Go の埋め込みにはならないため共有できない。
+func toDetail(b port.Board) apitypes.BoardDetail {
+	return apitypes.BoardDetail{
+		ID:        b.ID,
+		Name:      b.Name,
+		CreatedAt: b.CreatedAt,
+		UpdatedAt: b.UpdatedAt,
+		Scene:     b.Scene,
+	}
 }
 
-type saveSceneRequest struct {
-	Scene string `json:"scene"`
+// toSyncItem は保存済みの draft issue 1 件を境界の DTO に詰め替える。
+// 注釈の状態と作成結果の両方で返すので 1 箇所に置く。
+func toSyncItem(it port.SyncItem) apitypes.SyncItem {
+	out := apitypes.SyncItem{
+		ItemID:  it.ItemID,
+		Kind:    apitypes.ItemKind(it.Kind),
+		Title:   it.Title,
+		LocalID: it.LocalID,
+	}
+	if it.ParentLocalID != nil {
+		out.ParentLocalID = *it.ParentLocalID
+	}
+	return out
 }
 
-// syncItemResponse は前回作成した draft issue 1 件。
-type syncItemResponse struct {
-	ItemID  string `json:"itemId"`
-	Kind    string `json:"kind"`
-	Title   string `json:"title"`
-	LocalID string `json:"localId"`
-	Parent  string `json:"parentLocalId,omitempty"`
-}
-
-// annotationResponse は注釈 1 つの状態。
-type annotationResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Granularity string `json:"granularity"`
-	State       string `json:"state"`
-
-	// LastSyncedAt と Items は前回実行の記録。未実行なら省略する。
-	LastSyncedAt *time.Time         `json:"lastSyncedAt,omitempty"`
-	Items        []syncItemResponse `json:"items,omitempty"`
+func toSyncItems(items []port.SyncItem) []apitypes.SyncItem {
+	out := make([]apitypes.SyncItem, 0, len(items))
+	for _, it := range items {
+		out = append(out, toSyncItem(it))
+	}
+	return out
 }
 
 // handlers はユースケース層への入口をまとめる。
@@ -77,7 +71,7 @@ type handlers struct {
 }
 
 func (h *handlers) createBoard(c *gin.Context) {
-	var req createBoardRequest
+	var req apitypes.CreateBoardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.badRequest(c, err)
 		return
@@ -89,7 +83,7 @@ func (h *handlers) createBoard(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, boardDetail{boardSummary: toSummary(b), Scene: b.Scene})
+	c.JSON(http.StatusCreated, toDetail(b))
 }
 
 func (h *handlers) listBoards(c *gin.Context) {
@@ -100,7 +94,7 @@ func (h *handlers) listBoards(c *gin.Context) {
 	}
 
 	// nil を返すと JSON が null になる。一覧は常に配列にする。
-	out := make([]boardSummary, 0, len(boards))
+	out := make([]apitypes.BoardSummary, 0, len(boards))
 	for _, b := range boards {
 		out = append(out, toSummary(b))
 	}
@@ -119,11 +113,11 @@ func (h *handlers) getBoard(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, boardDetail{boardSummary: toSummary(*b), Scene: b.Scene})
+	c.JSON(http.StatusOK, toDetail(*b))
 }
 
 func (h *handlers) saveScene(c *gin.Context) {
-	var req saveSceneRequest
+	var req apitypes.SaveSceneRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.badRequest(c, err)
 		return
@@ -155,39 +149,26 @@ func (h *handlers) listAnnotations(c *gin.Context) {
 		}
 	}
 
-	out := make([]annotationResponse, 0, len(states))
+	out := make([]apitypes.AnnotationStatus, 0, len(states))
 	for _, s := range states {
-		out = append(out, toAnnotationResponse(s))
+		out = append(out, toAnnotationStatus(s))
 	}
 
 	c.JSON(http.StatusOK, out)
 }
 
-func toAnnotationResponse(s usecase.AnnotationState) annotationResponse {
-	res := annotationResponse{
+func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {
+	res := apitypes.AnnotationStatus{
 		ID:          s.Annotation.ID,
 		Name:        s.Annotation.Name,
-		Granularity: string(s.Annotation.Granularity),
-		State:       string(s.State),
+		Granularity: apitypes.Granularity(s.Annotation.Granularity),
+		State:       apitypes.SyncState(s.State),
 	}
 
 	if s.LatestRun != nil {
 		syncedAt := s.LatestRun.CreatedAt
 		res.LastSyncedAt = &syncedAt
-
-		res.Items = make([]syncItemResponse, 0, len(s.LatestRun.Items))
-		for _, it := range s.LatestRun.Items {
-			out := syncItemResponse{
-				ItemID:  it.ItemID,
-				Kind:    string(it.Kind),
-				Title:   it.Title,
-				LocalID: it.LocalID,
-			}
-			if it.ParentLocalID != nil {
-				out.Parent = *it.ParentLocalID
-			}
-			res.Items = append(res.Items, out)
-		}
+		res.Items = toSyncItems(s.LatestRun.Items)
 	}
 
 	return res
@@ -210,14 +191,20 @@ func (h *handlers) fail(c *gin.Context, err error) {
 			slog.String("path", c.Request.URL.Path),
 			slog.Any("error", err),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		errorJSON(c, http.StatusInternalServerError, "internal error")
 	}
 }
 
 func (h *handlers) badRequest(c *gin.Context, err error) {
-	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	errorJSON(c, http.StatusBadRequest, err.Error())
 }
 
 func (h *handlers) notFound(c *gin.Context) {
-	c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	errorJSON(c, http.StatusNotFound, "not found")
+}
+
+// errorJSON はエラー本文を 1 つの型に揃える。gin.H を直に書くと、契約に
+// 無いキーが混ざっても気づけない。
+func errorJSON(c *gin.Context, status int, message string) {
+	c.JSON(status, apitypes.ErrorResponse{Error: message})
 }

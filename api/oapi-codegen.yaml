@@ -1,0 +1,23 @@
+# oapi-codegen の設定。`make codegen` から呼ばれる。
+#
+# 生成するのはスキーマの型だけ。サーバーの雛形（ハンドラのインターフェースや
+# ルーティング）は生成しない。ルーティングは gin のハンドラに直接書いてあり、
+# そこを生成物に置き換えると、いま読めば分かるものが読めなくなる。潰したいのは
+# 契約の二重管理であって、ルーティングの記述ではない。
+package: apitypes
+output: ../internal/httpapi/apitypes/types.gen.go
+
+generate:
+  models: true
+
+output-options:
+  # Id ではなく ID になるようにする。生成物とはいえ、ハンドラ側が
+  # `apitypes.BoardSummary{Id: ...}` と書くことになるため、周囲の Go コードと
+  # 揃えておかないと呼び出し側だけが浮く。
+  name-normalizer: ToCamelCaseWithInitialisms
+
+compatibility:
+  # enum の定数名に必ず型名を前置する。既定では値が衝突したときだけ前置される
+  # ため、SyncState だけ `Created`、ItemKind は `ItemKindEpic` という不揃いな
+  # 並びになる。スキーマを足したとたんに既存の定数名が変わるのも避けたい。
+  always-prefix-enum-values: true

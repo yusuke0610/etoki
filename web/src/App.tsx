@@ -2,7 +2,8 @@ import "@excalidraw/excalidraw/index.css";
 
 import { useCallback, useEffect, useState } from "react";
 
-import { boardsApi, type BoardDetail, type BoardSummary } from "./api/boards";
+import { boardsApi } from "./api/boards";
+import type { BoardDetail, BoardSummary } from "./api/types";
 import { BoardPage } from "./board/BoardPage";
 
 export function App() {

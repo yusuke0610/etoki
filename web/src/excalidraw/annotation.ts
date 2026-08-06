@@ -1,4 +1,4 @@
-import type { Granularity } from "../api/boards";
+import type { Granularity } from "../api/types";
 
 /**
  * 注釈のメタデータを載せる customData のキー。

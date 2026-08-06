@@ -4,7 +4,7 @@ import type {
   Granularity,
   Interpretation,
   SyncState,
-} from "../api/boards";
+} from "../api/types";
 import { groupByEpic } from "./interpretation";
 
 /** 注釈 1 つぶんの作成の進み具合。 */

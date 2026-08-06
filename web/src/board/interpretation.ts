@@ -1,4 +1,4 @@
-import type { InterpretedItem } from "../api/boards";
+import type { InterpretedItem } from "../api/types";
 
 /** 表示用の epic とその配下の issue。 */
 export type InterpretationGroup = {

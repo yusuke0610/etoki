@@ -4,49 +4,31 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki/internal/domain"
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
 
-// createItemsRequest は作成する内容。解釈結果をそのまま送る。
-//
-// 開発者が確認した結果を作る、という流れなので、サーバー側で解釈し直さない。
-// ただし内容は信用せず、ユースケース層で検証し直す。
-type createItemsRequest struct {
-	Summary     string                    `json:"summary"`
-	ContentHash string                    `json:"contentHash"`
-	Items       []interpretedItemResponse `json:"items"`
-}
-
-// createItemsResponse は作成した run。
-type createItemsResponse struct {
-	RunID     int64              `json:"runId"`
-	CreatedAt time.Time          `json:"createdAt"`
-	Items     []syncItemResponse `json:"items"`
-
-	// Incomplete は途中で失敗したことを表す。作られたぶんは Items に入る。
-	Incomplete bool   `json:"incomplete,omitempty"`
-	Error      string `json:"error,omitempty"`
-}
-
 // createItems は解釈結果から draft issue を作る。
+//
+// リクエストボディは解釈のエンドポイントが返したものそのもの。開発者が確認した
+// 結果を作る流れなのでサーバー側で解釈し直さない。ただし内容は信用せず、
+// ユースケース層で検証し直す。
 //
 // 解釈とは別のエンドポイントに保つ。解釈結果を見た開発者が明示的に叩く
 // （中核思想 3）。
 func (h *handlers) createItems(c *gin.Context) {
 	if h.creations == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "github is not configured: set ETOKI_GITHUB_TOKEN and ETOKI_GITHUB_PROJECT_ID",
-		})
+		errorJSON(c, http.StatusServiceUnavailable,
+			"github is not configured: set ETOKI_GITHUB_TOKEN and ETOKI_GITHUB_PROJECT_ID")
 		return
 	}
 
-	var req createItemsRequest
+	var req apitypes.Interpretation
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.badRequest(c, err)
 		return
@@ -68,7 +50,7 @@ func (h *handlers) createItems(c *gin.Context) {
 		return
 	}
 
-	out := toCreateItemsResponse(*run)
+	out := toCreatedRun(*run)
 	if err != nil {
 		h.logger.ErrorContext(c.Request.Context(), "creation did not complete",
 			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
@@ -90,17 +72,17 @@ func (h *handlers) failCreate(c *gin.Context, err error) {
 
 	case errors.Is(err, usecase.ErrProjectFieldMissing):
 		// 設定不足であって、リクエストの誤りではない。何を作ればよいかを返す。
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		errorJSON(c, http.StatusUnprocessableEntity, err.Error())
 
 	case errors.Is(err, usecase.ErrContentHashMismatch):
 		// 解釈のやり直しは開発者が決める。ここで解釈し直して作成を続けない。
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		errorJSON(c, http.StatusConflict, err.Error())
 
 	case errors.Is(err, usecase.ErrCreationIncomplete):
 		// 1 件も作れずに失敗した場合。GitHub 側の問題として返す。
 		h.logger.ErrorContext(c.Request.Context(), "creation failed",
 			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		errorJSON(c, http.StatusBadGateway, err.Error())
 
 	default:
 		h.fail(c, err)
@@ -108,7 +90,7 @@ func (h *handlers) failCreate(c *gin.Context, err error) {
 }
 
 // toInterpretation は境界の DTO をドメインの解釈結果に詰め替える。
-func toInterpretation(req createItemsRequest) domain.Interpretation {
+func toInterpretation(req apitypes.Interpretation) domain.Interpretation {
 	in := domain.Interpretation{
 		Summary: req.Summary,
 		Items:   make([]domain.InterpretedItem, 0, len(req.Items)),
@@ -121,8 +103,8 @@ func toInterpretation(req createItemsRequest) domain.Interpretation {
 			Title:   it.Title,
 			Body:    it.Body,
 		}
-		if it.Parent != "" {
-			parent := it.Parent
+		if it.ParentLocalID != "" {
+			parent := it.ParentLocalID
 			item.ParentLocalID = &parent
 		}
 		in.Items = append(in.Items, item)
@@ -131,26 +113,11 @@ func toInterpretation(req createItemsRequest) domain.Interpretation {
 	return in
 }
 
-// toCreateItemsResponse は保存した run を境界の DTO に詰め替える。
-func toCreateItemsResponse(run port.SyncRun) createItemsResponse {
-	out := createItemsResponse{
+// toCreatedRun は保存した run を境界の DTO に詰め替える。
+func toCreatedRun(run port.SyncRun) apitypes.CreatedRun {
+	return apitypes.CreatedRun{
 		RunID:     run.ID,
 		CreatedAt: run.CreatedAt,
-		Items:     make([]syncItemResponse, 0, len(run.Items)),
+		Items:     toSyncItems(run.Items),
 	}
-
-	for _, it := range run.Items {
-		item := syncItemResponse{
-			ItemID:  it.ItemID,
-			Kind:    string(it.Kind),
-			Title:   it.Title,
-			LocalID: it.LocalID,
-		}
-		if it.ParentLocalID != nil {
-			item.Parent = *it.ParentLocalID
-		}
-		out.Items = append(out.Items, item)
-	}
-
-	return out
 }
