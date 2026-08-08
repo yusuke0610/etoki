@@ -37,13 +37,14 @@ environment:
   ETOKI_LLM_BASE_URL    LLM のエンドポイント（既定: ` + llm.DefaultBaseURL + `）
   ETOKI_LLM_API_KEY     LLM の API キー（認証不要なら未設定でよい）
   ETOKI_LLM_MODEL       モデル ID（既定: ` + llm.DefaultModel + `）
-  ETOKI_GITHUB_TOKEN    GitHub のトークン（Projects の read/write）
-  ETOKI_GITHUB_PROJECT_ID  draft issue を作る Projects v2 の node ID
+  ETOKI_GITHUB_TOKEN    GitHub のトークン（repo の read と Projects の read/write）
   ETOKI_GITHUB_KIND_FIELD    種別のカスタムフィールド名（既定: ` + etoki.DefaultKindFieldName + `）
   ETOKI_GITHUB_PARENT_FIELD  親のカスタムフィールド名（既定: ` + etoki.DefaultParentFieldName + `）
 
 LLM や GitHub を未設定のままでも起動する。その場合、解釈や作成のエンドポイント
 だけが「設定されていない」と返し、ボードの編集と状態表示は使える。
+
+draft issue の作成先はボードごとに画面で選ぶ。環境変数では指定しない。
 `
 
 func main() {
@@ -105,7 +106,6 @@ func serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	projectID := os.Getenv("ETOKI_GITHUB_PROJECT_ID")
 
 	srv, err := etoki.New(etoki.Options{
 		Addr:            os.Getenv("ETOKI_ADDR"),
@@ -113,7 +113,6 @@ func serve(ctx context.Context) error {
 		Mappings:        sqlite.NewMappingRepository(db),
 		LLM:             llmClient,
 		GitHub:          githubClient,
-		ProjectID:       projectID,
 		KindFieldName:   os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
 		ParentFieldName: os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
 		Logger:          logger,
@@ -127,7 +126,7 @@ func serve(ctx context.Context) error {
 		slog.String("addr", srv.Addr()),
 		slog.String("db", path),
 		slog.Bool("llm", llmClient != nil),
-		slog.Bool("github", githubClient != nil && projectID != ""),
+		slog.Bool("github", githubClient != nil),
 	)
 
 	return srv.Run(ctx)

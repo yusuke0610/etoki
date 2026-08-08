@@ -59,7 +59,6 @@ direnv allow
 | `ETOKI_LLM_API_KEY` | （なし） | LLM の API キー。認証不要なら未設定でよい |
 | `ETOKI_LLM_MODEL` | `claude-opus-5` | モデル ID |
 | `ETOKI_GITHUB_TOKEN` | （なし） | GitHub のトークン |
-| `ETOKI_GITHUB_PROJECT_ID` | （なし） | draft issue を作る Projects v2 の node ID |
 | `ETOKI_GITHUB_KIND_FIELD` | `Kind` | 種別のカスタムフィールド名 |
 | `ETOKI_GITHUB_PARENT_FIELD` | `Parent` | 親のカスタムフィールド名 |
 
@@ -95,15 +94,24 @@ Ollama や LM Studio が直接公開するのは OpenAI Chat Completions 形状�
 
 ### GitHub Projects v2 を使う
 
-draft issue の作成には、トークンと作成先のプロジェクトが要ります。
+draft issue の作成にはトークンが要ります。
 
 ```sh
 export ETOKI_GITHUB_TOKEN=ghp_...
-export ETOKI_GITHUB_PROJECT_ID=PVT_...
 ```
 
-トークンに必要な権限は **Projects の read/write** です（fine-grained PAT なら
-`Projects: Read and write`）。
+トークンに必要な権限は **repo の read** と **Projects の read/write** です
+（fine-grained PAT なら `Metadata: Read-only` と `Projects: Read and write`）。
+repo の read はリポジトリの一覧に使います。無いと選択肢が 1 件も出ません。
+
+**作成先は環境変数では指定しません。** ボードごとに画面で選びます
+（[ADR 0014](docs/adr/0014-board-scoped-github-target.md)）。ボードを開くと
+リポジトリと、そこに紐づく Projects v2 を選ぶ画面が出ます。draft issue は
+リポジトリではなく Project に属するので、2 段で選ぶことになります。
+
+選んだ作成先は、**そのボードで最初の draft issue を作った時点で固定されます。**
+`sync_runs` は GitHub 側に残っている item の追跡表であり、作成先が変わると
+記録が指す先を見失うためです。
 
 **プロジェクト側にカスタムフィールドを 2 つ用意してください。** draft issue には
 ラベルを付けられず native な親子関係も持てないため、種別と親はカスタム
