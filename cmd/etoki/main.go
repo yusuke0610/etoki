@@ -36,8 +36,9 @@ const envPublicURL = "ETOKI_PUBLIC_URL"
 const defaultDBPath = "etoki.db"
 
 const usage = `usage:
-  etoki           サーバーを起動する
-  etoki migrate   マイグレーションを適用する
+  etoki                 サーバーを起動する
+  etoki migrate         マイグレーションを適用する
+  etoki claim <login>   所有者の無いボードを引き受ける
 
 environment:
   ETOKI_ADDR            リッスンアドレス（既定: ` + etoki.DefaultAddr + `）
@@ -83,6 +84,12 @@ func run() error {
 		return serve(ctx)
 	case args[0] == "migrate":
 		return migrate(ctx)
+	case args[0] == "claim":
+		if len(args) != 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return errors.New("claim requires a login")
+		}
+		return claim(ctx, args[1])
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return fmt.Errorf("unknown command %q", args[0])
@@ -120,6 +127,8 @@ func serve(ctx context.Context) error {
 		return err
 	}
 
+	boards := sqlite.NewBoardRepository(db)
+
 	auth, err := newAuthenticator(db)
 	if err != nil {
 		return err
@@ -132,7 +141,7 @@ func serve(ctx context.Context) error {
 
 	srv, err := etoki.New(etoki.Options{
 		Addr:            os.Getenv("ETOKI_ADDR"),
-		Boards:          sqlite.NewBoardRepository(db),
+		Boards:          boards,
 		Mappings:        sqlite.NewMappingRepository(db),
 		LLM:             llmClient,
 		GitHub:          githubClient,
@@ -154,6 +163,21 @@ func serve(ctx context.Context) error {
 		slog.Bool("github", githubClient != nil),
 		slog.Bool("auth", auth != nil),
 	)
+
+	// 認証を有効にすると、それ以前のボードは所有者が無いので画面から消える
+	// （ADR 0016）。黙って消さず、引き受け方を添えて知らせる。
+	if auth != nil {
+		n, err := boards.CountUnowned(ctx)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			logger.WarnContext(ctx, "boards without an owner are hidden",
+				slog.Int("count", n),
+				slog.String("hint", "run `etoki claim <login>` to take them over"),
+			)
+		}
+	}
 
 	return srv.Run(ctx)
 }
@@ -191,11 +215,7 @@ func newAuthenticator(db *sql.DB) (*etoki.Authenticator, error) {
 	}
 
 	// 認証を使うなら鍵は必須。無いまま起動して平文で保存する、を起こさない。
-	key, err := secret.DecodeKey(os.Getenv(envEncryptionKey))
-	if err != nil {
-		return nil, fmt.Errorf("%w\n  %s に base64 の 32 バイトを設定してください", err, envEncryptionKey)
-	}
-	box, err := secret.New(key)
+	box, err := newSecretBox()
 	if err != nil {
 		return nil, err
 	}
@@ -235,6 +255,71 @@ func newGitHubClient(auth *etoki.Authenticator) (port.GitHubClient, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// claim は所有者の無いボードを引き受ける。
+//
+// 初回ログインした利用者に自動で寄せない。共有サーバーで先に入った人が全部を
+// 持っていく決まり方は説明できないため、明示的な操作にしてある（ADR 0016）。
+func claim(ctx context.Context, login string) error {
+	path := dbPath()
+
+	db, err := sqlite.Open(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
+	// serve と同じ確認を通す。未初期化の DB に対して claim すると、原因の
+	// 分からない SQL エラーになる。
+	if err := sqlite.EnsureMigrated(ctx, db); err != nil {
+		if errors.Is(err, sqlite.ErrNotMigrated) {
+			return fmt.Errorf("%w\n  先に `make migrate` を実行してください (%s)", err, path)
+		}
+		return err
+	}
+
+	if !githubauth.ConfigFromEnv().Configured() {
+		return errors.New("claim requires authentication to be configured")
+	}
+
+	// 引き受ける相手は一度ログインしている必要がある。users に行ができるのは
+	// ログインしたときだけなので、そこで初めて指せるようになる。
+	box, err := newSecretBox()
+	if err != nil {
+		return err
+	}
+
+	user, err := sqlite.NewSessionRepository(db, box).
+		FindUserByLogin(ctx, githubauth.ProviderName, login)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return fmt.Errorf("unknown user %q: sign in once before claiming boards", login)
+	}
+
+	n, err := sqlite.NewBoardRepository(db).ClaimUnowned(ctx, user.ID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "etoki: claimed %d board(s) for %s\n", n, login)
+
+	return nil
+}
+
+// newSecretBox は保存する資格情報に封をする道具を作る。
+//
+// 認証を使う経路（serve と claim）から共通で呼ぶ。鍵の扱いを 2 箇所に書くと、
+// 片方だけ緩められる余地ができる。
+func newSecretBox() (secret.Box, error) {
+	key, err := secret.DecodeKey(os.Getenv(envEncryptionKey))
+	if err != nil {
+		return secret.Box{}, fmt.Errorf("%w\n  %s に base64 の 32 バイトを設定してください",
+			err, envEncryptionKey)
+	}
+	return secret.New(key)
 }
 
 func migrate(ctx context.Context) error {
