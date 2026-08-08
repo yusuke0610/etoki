@@ -4,9 +4,12 @@ import type {
   AnnotationStatus,
   BoardDetail,
   BoardSummary,
+  BoardTarget,
   CreatedRun,
   ErrorResponse,
   Interpretation,
+  Project,
+  Repository,
 } from "../../src/api/types";
 
 /**
@@ -31,8 +34,14 @@ export type ApiMock = {
   annotations: Record<string, AnnotationStatus[]>;
   interpret: Reply<Interpretation>;
   createItems: Reply<CreatedRun>;
+  /** 作成先の候補。リポジトリ選択の画面が読む。 */
+  repositories: Reply<Repository[]>;
+  /** `owner/name` をキーにした Projects v2。 */
+  projects: Record<string, Reply<Project[]>>;
   /** 一覧取得を失敗させたいときに指定する。 */
   boardsError?: Reply<never>;
+  /** 作成先の設定を失敗させたいときに指定する。409 の見せ方を確かめる用。 */
+  setTargetError?: Reply<never>;
 };
 
 async function json(route: Route, status: number, body: unknown): Promise<void> {
@@ -53,6 +62,8 @@ async function json(route: Route, status: number, body: unknown): Promise<void> 
 export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   let issued = 0;
 
+  // 新しいボードは作成先が未選択で始まる。開くとリポジトリ選択に入る
+  // （ADR 0014）。
   const newBoard = (name: string): BoardDetail => {
     issued += 1;
     return {
@@ -61,6 +72,10 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       createdAt: "2026-08-05T10:00:00Z",
       updatedAt: "2026-08-05T10:00:00Z",
       scene: emptyScene(),
+      repositoryOwner: "",
+      repositoryName: "",
+      projectId: "",
+      targetLocked: false,
     };
   };
 
@@ -118,6 +133,29 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   );
 
   await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/target$/.test(url.pathname),
+    async (route) => {
+      if (mock.setTargetError) {
+        await json(route, mock.setTargetError.status, mock.setTargetError.body);
+        return;
+      }
+
+      const id = boardIdOf(route);
+      const detail = mock.details[id];
+      if (!detail) {
+        await json(route, 404, { error: "not found" } satisfies ErrorResponse);
+        return;
+      }
+
+      const target = route.request().postDataJSON() as BoardTarget;
+      const next: BoardDetail = { ...detail, ...target };
+      mock.details[id] = next;
+      mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
+      await json(route, 200, next);
+    },
+  );
+
+  await page.route(
     (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
     async (route) => {
       await json(route, 200, mock.annotations[boardIdOf(route)] ?? []);
@@ -137,6 +175,25 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/items$/.test(url.pathname),
     async (route) => {
       await json(route, mock.createItems.status, mock.createItems.body);
+    },
+  );
+
+  // 作成先の候補一覧。ボードには紐づかないので、ボードのルートとは分けて置く。
+  await page.route(
+    (url) => url.pathname === "/api/github/repositories",
+    async (route) => {
+      await json(route, mock.repositories.status, mock.repositories.body);
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/github\/repositories\/[^/]+\/[^/]+\/projects$/.test(url.pathname),
+    async (route) => {
+      const segments = new URL(route.request().url()).pathname.split("/");
+      // /api/github/repositories/<owner>/<repo>/projects
+      const key = `${segments[4]}/${segments[5]}`;
+      const reply = mock.projects[key] ?? { status: 200, body: [] };
+      await json(route, reply.status, reply.body);
     },
   );
 
