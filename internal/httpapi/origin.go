@@ -123,8 +123,16 @@ func (g originGuard) allowsOrigin(origin string) bool {
 // Origin を省略・偽装することはできないので、この非対称性は安全側に働く。
 //
 // ただしサブリソース読み込み（<img> など）の GET には Origin が付かない。
-// etoki の GET はすべて副作用を持たず、応答も CORS で読めないため許容して
-// いる。GET に副作用を持たせるなら、この判断ごと見直すこと（ADR 0013）。
+// etoki の GET は 1 つを除いて副作用を持たず、応答も CORS で読めないため
+// 許容している。
+//
+// **例外は /api/auth/callback だけ。** 認証基盤からのトップレベル遷移なので
+// GET 以外にできず、セッションを張るという副作用を持つ。そこは Origin では
+// なく state が守っている（サーバー発行・単回使用・期限つき）。送り出し側の
+// /api/auth/login を POST にしてあるのも、state の発行を Origin 検証の内側に
+// 置くため（ADR 0015）。
+//
+// これ以上 GET に副作用を持たせるなら、この判断ごと見直すこと（ADR 0013）。
 func (g originGuard) handler(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !g.allowsHost(c.Request.Host) {

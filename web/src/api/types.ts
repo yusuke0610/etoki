@@ -54,3 +54,12 @@ export type CreatedRun = Schemas["CreatedRun"];
 
 /** 失敗したときのレスポンスボディ。 */
 export type ErrorResponse = Schemas["ErrorResponse"];
+
+/** ログイン状態。認証を設定していない構成でも返る。 */
+export type SessionStatus = Schemas["SessionStatus"];
+
+/** ログイン中の利用者。 */
+export type AuthUser = Schemas["AuthUser"];
+
+/** 認可画面へ送り出すための URL。 */
+export type LoginResponse = Schemas["LoginResponse"];

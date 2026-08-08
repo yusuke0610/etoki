@@ -27,6 +27,16 @@ type Deps struct {
 	Creations *usecase.CreationService
 	// Catalog は作成先の候補一覧。nil でもよい。扱いは Creations と同じ。
 	Catalog *usecase.GitHubCatalogService
+	// Auth はログインとセッション。nil なら認証しない。
+	//
+	// nil のときは既存の挙動のまま。全エンドポイントが素通しになり、
+	// /api/auth/session は authRequired: false を返す（ADR 0015）。
+	Auth *usecase.AuthService
+	// PublicURL は認可から戻ってくる先の組み立てに使う。
+	//
+	// 空ならリクエストの Host から組む。make dev ではブラウザが :5173 にいて
+	// Vite が Host を書き換えずに転送するので、それで正しい値になる。
+	PublicURL string
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
 	// AllowedOrigins はループバック以外に追加で許すオリジン。
@@ -58,10 +68,27 @@ func NewRouter(deps Deps) *gin.Engine {
 		interpretations: deps.Interpretations,
 		creations:       deps.Creations,
 		catalog:         deps.Catalog,
+		auth:            deps.Auth,
+		publicURL:       deps.PublicURL,
 		logger:          logger,
 	}
 
-	api := r.Group("/api")
+	// セッションの解決はここで一度だけ。弾くのは requireAuth の仕事で、
+	// ここでは載せるだけ。/api/auth/session は未ログインでも 200 を返す。
+	r.Use(resolveSession(deps.Auth, logger))
+
+	auth := r.Group("/api/auth")
+	{
+		auth.GET("/session", h.getSession)
+		// state の発行は書き込みなので POST。GET にすると外部ページから
+		// 叩ける（ADR 0013 / 0015）。
+		auth.POST("/login", h.startLogin)
+		// etoki で唯一、副作用を持つ GET。守るのは Origin ではなく state。
+		auth.GET("/callback", h.completeLogin)
+		auth.POST("/logout", h.logout)
+	}
+
+	api := r.Group("/api", requireAuth(deps.Auth))
 	{
 		api.POST("/boards", h.createBoard)
 		api.GET("/boards", h.listBoards)
