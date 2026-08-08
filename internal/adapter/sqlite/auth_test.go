@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -370,5 +371,201 @@ func TestDeletingUserCascades(t *testing.T) {
 	}
 	if creds != nil {
 		t.Error("利用者を消しても資格情報が残っている")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 所有者による絞り込み（ADR 0016）
+// ---------------------------------------------------------------------------
+
+func seedOwnedBoard(t *testing.T, db *sql.DB, id, owner string) {
+	t.Helper()
+
+	err := sqlite.NewBoardRepository(db).Create(t.Context(), port.Board{
+		ID: id, Name: "board " + id, Scene: `{"elements":[]}`,
+		OwnerUserID: owner, CreatedAt: baseTime, UpdatedAt: baseTime,
+	})
+	if err != nil {
+		t.Fatalf("seed board: %v", err)
+	}
+}
+
+// 他人のボードは「存在しない」ものとして扱う。権限エラーと区別すると、
+// ID を総当たりして他人のボードの存在を確かめられる。
+func TestBoards_AreInvisibleToOtherOwners(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedOwnedBoard(t, db, "board-a", "user-a")
+
+	got, err := repo.Find(t.Context(), "user-b", "board-a")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got != nil {
+		t.Errorf("他人のボードが見えている: %+v", got)
+	}
+
+	// 所有者本人には見える。
+	if got, err = repo.Find(t.Context(), "user-a", "board-a"); err != nil || got == nil {
+		t.Fatalf("Find(所有者) = (%+v, %v), want ボード", got, err)
+	}
+}
+
+func TestList_ReturnsOnlyOwnBoards(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedOwnedBoard(t, db, "board-a", "user-a")
+	seedOwnedBoard(t, db, "board-b", "user-b")
+	seedOwnedBoard(t, db, "board-legacy", "")
+
+	got, err := repo.List(t.Context(), "user-a")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "board-a" {
+		t.Fatalf("List(user-a) = %+v, want board-a だけ", got)
+	}
+}
+
+// UpdateScene は Find を通らずに直接 UPDATE する経路。絞り忘れると他人の
+// ボードを書き換えられる。
+func TestUpdateScene_RejectsOtherOwners(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedOwnedBoard(t, db, "board-a", "user-a")
+
+	err := repo.UpdateScene(t.Context(), "user-b", "board-a", `{"elements":["tampered"]}`, baseTime)
+	if !errors.Is(err, port.ErrNotFound) {
+		t.Fatalf("UpdateScene = %v, want ErrNotFound", err)
+	}
+
+	got, err := repo.Find(t.Context(), "user-a", "board-a")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.Scene != `{"elements":[]}` {
+		t.Errorf("他人に書き換えられている: %s", got.Scene)
+	}
+}
+
+func TestUpdateTarget_RejectsOtherOwners(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedOwnedBoard(t, db, "board-a", "user-a")
+
+	target := port.BoardTarget{RepositoryOwner: "evil", RepositoryName: "repo", ProjectID: "PVT_x"}
+	if err := repo.UpdateTarget(t.Context(), "user-b", "board-a", target, baseTime); !errors.Is(err, port.ErrNotFound) {
+		t.Fatalf("UpdateTarget = %v, want ErrNotFound", err)
+	}
+
+	got, err := repo.Find(t.Context(), "user-a", "board-a")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.Target.Selected() {
+		t.Errorf("他人に作成先を設定されている: %+v", got.Target)
+	}
+}
+
+// 認証を設定していない構成は、空文字の所有者 1 人として動く。
+func TestUnauthenticatedOwnerSeesLegacyBoards(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedOwnedBoard(t, db, "board-legacy", "")
+
+	got, err := repo.List(t.Context(), "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List(\"\") = %d 件, want 1", len(got))
+	}
+}
+
+func TestClaimUnowned(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedOwnedBoard(t, db, "board-legacy-1", "")
+	seedOwnedBoard(t, db, "board-legacy-2", "")
+	seedOwnedBoard(t, db, "board-owned", "user-b")
+
+	n, err := repo.CountUnowned(t.Context())
+	if err != nil {
+		t.Fatalf("CountUnowned: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("CountUnowned = %d, want 2", n)
+	}
+
+	claimed, err := repo.ClaimUnowned(t.Context(), "user-a")
+	if err != nil {
+		t.Fatalf("ClaimUnowned: %v", err)
+	}
+	if claimed != 2 {
+		t.Errorf("ClaimUnowned = %d, want 2", claimed)
+	}
+
+	got, err := repo.List(t.Context(), "user-a")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("引き受け後の List = %d 件, want 2", len(got))
+	}
+
+	// 他人のボードは巻き込まない。
+	other, err := repo.List(t.Context(), "user-b")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(other) != 1 {
+		t.Errorf("他人のボードを巻き込んでいる: %+v", other)
+	}
+
+	if n, err = repo.CountUnowned(t.Context()); err != nil || n != 0 {
+		t.Errorf("CountUnowned = (%d, %v), want (0, nil)", n, err)
+	}
+}
+
+// 空文字は「所有者が無い」そのもの。引き受けたことにならない。
+func TestClaimUnowned_RejectsEmptyOwner(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedOwnedBoard(t, db, "board-legacy", "")
+
+	if _, err := sqlite.NewBoardRepository(db).ClaimUnowned(t.Context(), ""); err == nil {
+		t.Fatal("ClaimUnowned(\"\") = nil, want error")
+	}
+}
+
+func TestFindUserByLogin(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+	want := seedUser(t, repo)
+
+	got, err := repo.FindUserByLogin(t.Context(), "github", "octocat")
+	if err != nil {
+		t.Fatalf("FindUserByLogin: %v", err)
+	}
+	if got == nil || got.ID != want.ID {
+		t.Fatalf("FindUserByLogin() = %+v, want %+v", got, want)
+	}
+
+	if got, err = repo.FindUserByLogin(t.Context(), "github", "nobody"); err != nil || got != nil {
+		t.Errorf("FindUserByLogin(未知) = (%+v, %v), want (nil, nil)", got, err)
 	}
 }
