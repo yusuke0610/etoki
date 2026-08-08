@@ -37,7 +37,7 @@ func newRouter(t *testing.T) (*gin.Engine, port.MappingRepository) {
 	boards, mappings := newRepos(t)
 
 	seq := 0
-	boardSvc := usecase.NewBoardService(boards,
+	boardSvc := usecase.NewBoardService(boards, mappings,
 		usecase.WithClock(func() time.Time { return fixedTime }),
 		usecase.WithIDGenerator(func() string {
 			seq++

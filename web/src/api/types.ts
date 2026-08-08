@@ -21,8 +21,17 @@ export type ItemKind = Schemas["ItemKind"];
 /** 一覧で返すボード。シーンは含まない。 */
 export type BoardSummary = Schemas["BoardSummary"];
 
-/** シーンを含むボード。 */
+/** シーンと作成先を含むボード。 */
 export type BoardDetail = Schemas["BoardDetail"];
+
+/** draft issue の作成先。設定のリクエストボディ。 */
+export type BoardTarget = Schemas["BoardTarget"];
+
+/** 作成先を選ぶときに見せるリポジトリ。 */
+export type Repository = Schemas["Repository"];
+
+/** リポジトリに紐づく Projects v2。 */
+export type Project = Schemas["Project"];
 
 /** 作成済みの draft issue 1 件。 */
 export type SyncItem = Schemas["SyncItem"];

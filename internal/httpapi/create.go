@@ -23,8 +23,7 @@ import (
 // （中核思想 3）。
 func (h *handlers) createItems(c *gin.Context) {
 	if h.creations == nil {
-		errorJSON(c, http.StatusServiceUnavailable,
-			"github is not configured: set ETOKI_GITHUB_TOKEN and ETOKI_GITHUB_PROJECT_ID")
+		errorJSON(c, http.StatusServiceUnavailable, githubNotConfigured)
 		return
 	}
 
@@ -70,8 +69,9 @@ func (h *handlers) failCreate(c *gin.Context, err error) {
 	case errors.Is(err, usecase.ErrInvalidInput):
 		h.badRequest(c, err)
 
-	case errors.Is(err, usecase.ErrProjectFieldMissing):
-		// 設定不足であって、リクエストの誤りではない。何を作ればよいかを返す。
+	case errors.Is(err, usecase.ErrProjectFieldMissing),
+		errors.Is(err, usecase.ErrTargetNotSelected):
+		// 設定不足であって、リクエストの誤りではない。何をすればよいかを返す。
 		errorJSON(c, http.StatusUnprocessableEntity, err.Error())
 
 	case errors.Is(err, usecase.ErrContentHashMismatch):

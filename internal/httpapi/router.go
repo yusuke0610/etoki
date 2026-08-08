@@ -25,6 +25,8 @@ type Deps struct {
 	// nil のときは作成のエンドポイントが 503 を返す。理由は Interpretations と
 	// 同じで、ルート自体は生やす。
 	Creations *usecase.CreationService
+	// Catalog は作成先の候補一覧。nil でもよい。扱いは Creations と同じ。
+	Catalog *usecase.GitHubCatalogService
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
 	// AllowedOrigins はループバック以外に追加で許すオリジン。
@@ -55,6 +57,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		annotations:     deps.Annotations,
 		interpretations: deps.Interpretations,
 		creations:       deps.Creations,
+		catalog:         deps.Catalog,
 		logger:          logger,
 	}
 
@@ -64,11 +67,18 @@ func NewRouter(deps Deps) *gin.Engine {
 		api.GET("/boards", h.listBoards)
 		api.GET("/boards/:id", h.getBoard)
 		api.PUT("/boards/:id/scene", h.saveScene)
+		// 作成先はボードごとに持つ。最初の draft issue を作ると固定される
+		// （ADR 0014）。
+		api.PUT("/boards/:id/target", h.setBoardTarget)
 		api.GET("/boards/:id/annotations", h.listAnnotations)
 		// 解釈と作成は別のエンドポイントに保つ。解釈結果を見た開発者が
 		// 明示的に作成を叩く（中核思想 3）。
 		api.POST("/boards/:id/annotations/:annotationId/interpret", h.interpretAnnotation)
 		api.POST("/boards/:id/annotations/:annotationId/items", h.createItems)
+
+		// 作成先を選ぶための一覧。ここで選んだ Project をボードに設定する。
+		api.GET("/github/repositories", h.listRepositories)
+		api.GET("/github/repositories/:owner/:repo/projects", h.listRepositoryProjects)
 	}
 
 	return r

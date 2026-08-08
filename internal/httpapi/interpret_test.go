@@ -42,7 +42,7 @@ func newInterpretRouter(t *testing.T, llm port.LLMClient) *gin.Engine {
 	boards, mappings := newRepos(t)
 
 	seq := 0
-	boardSvc := usecase.NewBoardService(boards,
+	boardSvc := usecase.NewBoardService(boards, mappings,
 		usecase.WithClock(func() time.Time { return fixedTime }),
 		usecase.WithIDGenerator(func() string {
 			seq++
@@ -121,7 +121,7 @@ func TestInterpretAnnotation_DoesNotRecordRun(t *testing.T) {
 	boards, mappings := newRepos(t)
 
 	seq := 0
-	boardSvc := usecase.NewBoardService(boards,
+	boardSvc := usecase.NewBoardService(boards, mappings,
 		usecase.WithClock(func() time.Time { return fixedTime }),
 		usecase.WithIDGenerator(func() string {
 			seq++

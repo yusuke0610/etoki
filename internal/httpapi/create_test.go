@@ -20,6 +20,19 @@ type stubGitHub struct {
 	seq         int
 	failOnTitle string
 	fields      []port.ProjectField
+	// repos と projects は作成先の候補一覧が返すもの。
+	repos    []port.Repository
+	projects []port.Project
+	// listErr が非 nil なら候補一覧が失敗する。
+	listErr error
+}
+
+func (s *stubGitHub) ListRepositories(context.Context) ([]port.Repository, error) {
+	return s.repos, s.listErr
+}
+
+func (s *stubGitHub) ListRepositoryProjects(context.Context, string, string) ([]port.Project, error) {
+	return s.projects, s.listErr
 }
 
 func (s *stubGitHub) ListProjectFields(context.Context, string) ([]port.ProjectField, error) {
@@ -66,7 +79,7 @@ func newCreateRouter(t *testing.T, gh port.GitHubClient) (*gin.Engine, port.Mapp
 	boards, mappings := newRepos(t)
 
 	seq := 0
-	boardSvc := usecase.NewBoardService(boards,
+	boardSvc := usecase.NewBoardService(boards, mappings,
 		usecase.WithClock(func() time.Time { return fixedTime }),
 		usecase.WithIDGenerator(func() string {
 			seq++
@@ -79,11 +92,33 @@ func newCreateRouter(t *testing.T, gh port.GitHubClient) (*gin.Engine, port.Mapp
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 	}
 	if gh != nil {
-		deps.Creations = usecase.NewCreationService(boards, mappings, gh, "PVT_1",
+		deps.Creations = usecase.NewCreationService(boards, mappings, gh,
 			usecase.WithCreationClock(func() time.Time { return fixedTime }))
+		deps.Catalog = usecase.NewGitHubCatalogService(gh)
 	}
 
 	return httpapi.NewRouter(deps), mappings
+}
+
+// createTargetedBoard はボードを作り、draft issue の作成先まで設定する。
+//
+// 作成先が未選択のボードには作れない（ADR 0014）。作成そのものを見るテストは
+// 全部ここを通す。
+func createTargetedBoard(t *testing.T, r *gin.Engine, name string) string {
+	t.Helper()
+
+	id := createBoard(t, r, name)
+
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/target", map[string]string{
+		"repositoryOwner": "acme",
+		"repositoryName":  "web",
+		"projectId":       "PVT_1",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set target: %d %s", rec.Code, rec.Body)
+	}
+
+	return id
 }
 
 func itemsPath(boardID, annotationID string) string {
@@ -95,7 +130,7 @@ func TestCreateItems(t *testing.T) {
 
 	r, mappings := newCreateRouter(t, &stubGitHub{})
 
-	id := createBoard(t, r, "設計会")
+	id := createTargetedBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
 	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
@@ -140,7 +175,7 @@ func TestCreateItems_KeepsPastRuns(t *testing.T) {
 
 	r, mappings := newCreateRouter(t, &stubGitHub{})
 
-	id := createBoard(t, r, "設計会")
+	id := createTargetedBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
 	first := decode[map[string]any](t, do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id))))
@@ -166,7 +201,7 @@ func TestCreateItems_ReportsPartialCreation(t *testing.T) {
 
 	r, mappings := newCreateRouter(t, &stubGitHub{failOnTitle: "Stripe SDK の更新"})
 
-	id := createBoard(t, r, "設計会")
+	id := createTargetedBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
 	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
@@ -202,7 +237,7 @@ func TestCreateItems_WithoutGitHub(t *testing.T) {
 
 	r, _ := newCreateRouter(t, nil)
 
-	id := createBoard(t, r, "設計会")
+	id := createTargetedBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
 	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
@@ -220,7 +255,7 @@ func TestCreateItems_MissingProjectFields(t *testing.T) {
 	}}
 	r, mappings := newCreateRouter(t, gh)
 
-	id := createBoard(t, r, "設計会")
+	id := createTargetedBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
 	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
@@ -272,7 +307,7 @@ func TestCreateItems_RejectsInvalidBody(t *testing.T) {
 
 			r, mappings := newCreateRouter(t, &stubGitHub{})
 
-			id := createBoard(t, r, "設計会")
+			id := createTargetedBoard(t, r, "設計会")
 			saveAnnotatedScene(t, r, id)
 			if _, ok := body["contentHash"]; !ok {
 				body["contentHash"] = currentHash(t, r, id)
@@ -300,7 +335,7 @@ func TestCreateItems_RejectsMismatchedContentHash(t *testing.T) {
 	gh := &stubGitHub{}
 	r, mappings := newCreateRouter(t, gh)
 
-	id := createBoard(t, r, "設計会")
+	id := createTargetedBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
 	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody("stale-hash"))
@@ -328,7 +363,7 @@ func TestCreateItems_NotFound(t *testing.T) {
 
 	r, _ := newCreateRouter(t, &stubGitHub{})
 
-	id := createBoard(t, r, "設計会")
+	id := createTargetedBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
 	if rec := do(t, r, http.MethodPost, itemsPath(id, "no-such-annot"), createBody(currentHash(t, r, id))); rec.Code != http.StatusNotFound {
@@ -336,5 +371,195 @@ func TestCreateItems_NotFound(t *testing.T) {
 	}
 	if rec := do(t, r, http.MethodPost, itemsPath("no-such-board", "annot-1"), createBody(currentHash(t, r, id))); rec.Code != http.StatusNotFound {
 		t.Errorf("ボードが無い: status = %d, want 404 (%s)", rec.Code, rec.Body)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 作成先の設定と候補一覧（ADR 0014）
+// ---------------------------------------------------------------------------
+
+func targetPath(boardID string) string { return "/api/boards/" + boardID + "/target" }
+
+func setTargetBody() map[string]string {
+	return map[string]string{
+		"repositoryOwner": "acme",
+		"repositoryName":  "web",
+		"projectId":       "PVT_1",
+	}
+}
+
+// 新しいボードは未選択で始まる。既存 DB からの移行もこの形になる。
+func TestSetBoardTarget_StartsUnselected(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+	id := createBoard(t, r, "設計会")
+
+	got := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	if got["projectId"] != "" || got["repositoryOwner"] != "" {
+		t.Errorf("作成直後に作成先が入っている: %+v", got)
+	}
+	if got["targetLocked"] != false {
+		t.Errorf("targetLocked = %v, want false", got["targetLocked"])
+	}
+}
+
+func TestSetBoardTarget_StoresAndReturnsBoard(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+	id := createBoard(t, r, "設計会")
+
+	rec := do(t, r, http.MethodPut, targetPath(id), setTargetBody())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+
+	got := decode[map[string]any](t, rec)
+	if got["repositoryOwner"] != "acme" || got["repositoryName"] != "web" || got["projectId"] != "PVT_1" {
+		t.Errorf("設定後のボード = %+v", got)
+	}
+
+	// 読み直しても残っている。
+	again := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	if again["projectId"] != "PVT_1" {
+		t.Errorf("projectId = %v, want PVT_1", again["projectId"])
+	}
+}
+
+// 最初の draft issue を作ると固定される。以後の変更は 409。
+func TestSetBoardTarget_ConflictsAfterFirstCreation(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("作成に失敗: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = do(t, r, http.MethodPut, targetPath(id), map[string]string{
+		"repositoryOwner": "acme", "repositoryName": "other", "projectId": "PVT_2",
+	})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (%s)", rec.Code, rec.Body)
+	}
+
+	// 固定は状態として返る。フロントは sync_runs を数えられない。
+	got := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	if got["targetLocked"] != true {
+		t.Errorf("targetLocked = %v, want true", got["targetLocked"])
+	}
+	if got["repositoryName"] != "web" {
+		t.Errorf("作成先が変わっている: %v", got["repositoryName"])
+	}
+}
+
+func TestSetBoardTarget_RejectsIncomplete(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+	id := createBoard(t, r, "設計会")
+
+	rec := do(t, r, http.MethodPut, targetPath(id), map[string]string{
+		"repositoryOwner": "acme", "repositoryName": "web", "projectId": "",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+	}
+}
+
+func TestSetBoardTarget_NotFound(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+
+	rec := do(t, r, http.MethodPut, targetPath("missing"), setTargetBody())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (%s)", rec.Code, rec.Body)
+	}
+}
+
+// 作成先が未選択のボードには作れない。設定不足なので 422。
+func TestCreateItems_RejectsBoardWithoutTarget(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+	id := createBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (%s)", rec.Code, rec.Body)
+	}
+}
+
+func TestListRepositories(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{repos: []port.Repository{{Owner: "acme", Name: "web", Description: "フロント"}}}
+	r, _ := newCreateRouter(t, gh)
+
+	got := decode[[]map[string]any](t, do(t, r, http.MethodGet, "/api/github/repositories", nil))
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1 (%+v)", len(got), got)
+	}
+	if got[0]["owner"] != "acme" || got[0]["name"] != "web" {
+		t.Errorf("repositories[0] = %+v", got[0])
+	}
+}
+
+// 0 件でも null ではなく配列を返す。
+func TestListRepositories_EmptyIsArray(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+
+	rec := do(t, r, http.MethodGet, "/api/github/repositories", nil)
+	if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
+		t.Errorf("body = %q, want []", body)
+	}
+}
+
+func TestListRepositoryProjects(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{projects: []port.Project{{ID: "PVT_9", Number: 3, Title: "ロードマップ"}}}
+	r, _ := newCreateRouter(t, gh)
+
+	got := decode[[]map[string]any](t, do(t, r,
+		http.MethodGet, "/api/github/repositories/acme/web/projects", nil))
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1 (%+v)", len(got), got)
+	}
+	if got[0]["id"] != "PVT_9" || got[0]["title"] != "ロードマップ" {
+		t.Errorf("projects[0] = %+v", got[0])
+	}
+}
+
+// GitHub 側の失敗は 502。500 にすると etoki の不具合と読めてしまい、
+// トークンの権限不足やレート制限であることが伝わらない。
+func TestListRepositories_GitHubFailureIsBadGateway(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{listErr: errors.New("github api: 401: Bad credentials")})
+
+	rec := do(t, r, http.MethodGet, "/api/github/repositories", nil)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 (%s)", rec.Code, rec.Body)
+	}
+}
+
+// GitHub 未設定でもサーバーは起動する。一覧だけが「設定されていない」と返す。
+func TestListRepositories_UnavailableWithoutGitHub(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, nil)
+
+	rec := do(t, r, http.MethodGet, "/api/github/repositories", nil)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 (%s)", rec.Code, rec.Body)
 	}
 }
