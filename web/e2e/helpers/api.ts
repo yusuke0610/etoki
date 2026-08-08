@@ -8,8 +8,10 @@ import type {
   CreatedRun,
   ErrorResponse,
   Interpretation,
+  LoginResponse,
   Project,
   Repository,
+  SessionStatus,
 } from "../../src/api/types";
 
 /**
@@ -38,6 +40,15 @@ export type ApiMock = {
   repositories: Reply<Repository[]>;
   /** `owner/name` をキーにした Projects v2。 */
   projects: Record<string, Reply<Project[]>>;
+  /**
+   * ログイン状態。既定は「認証を設定していない」。
+   *
+   * これを足さないと、認証が入った時点で全 spec がキャッチオールの 500 に
+   * 落ちる。アプリは起動時に必ずここを引く。
+   */
+  session: Reply<SessionStatus>;
+  /** ログイン開始が返す URL。 */
+  login: Reply<LoginResponse>;
   /** 一覧取得を失敗させたいときに指定する。 */
   boardsError?: Reply<never>;
   /** 作成先の設定を失敗させたいときに指定する。409 の見せ方を確かめる用。 */
@@ -182,6 +193,33 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/items$/.test(url.pathname),
     async (route) => {
       await json(route, mock.createItems.status, mock.createItems.body);
+    },
+  );
+
+  await page.route(
+    (url) => url.pathname === "/api/auth/session",
+    async (route) => {
+      await json(route, mock.session.status, mock.session.body);
+    },
+  );
+
+  await page.route(
+    (url) => url.pathname === "/api/auth/login",
+    async (route) => {
+      await json(route, mock.login.status, mock.login.body);
+    },
+  );
+
+  await page.route(
+    (url) => url.pathname === "/api/auth/logout",
+    async (route) => {
+      // ログアウトしたら未ログインに戻す。次の session の問い合わせに効く。
+      // authRequired は元のまま保つ。ここで true に固定すると、認証を
+      // 設定していない構成のテストが黙って別の構成に変わる。
+      const authRequired =
+        "authRequired" in mock.session.body ? mock.session.body.authRequired : true;
+      mock.session = { status: 200, body: { authRequired, authenticated: false } };
+      await route.fulfill({ status: 204, body: "" });
     },
   );
 

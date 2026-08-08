@@ -64,7 +64,7 @@ func newAuthRouter(
 	mappings := sqlite.NewMappingRepository(db)
 
 	deps := httpapi.Deps{
-		Boards:      usecase.NewBoardService(boards, mappings),
+		Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 	}
 
