@@ -72,6 +72,22 @@ type Options struct {
 	KindFieldName   string
 	ParentFieldName string
 
+	// Auth はログインとセッション。任意。NewAuthenticator で作る。
+	//
+	// nil なら認証しない。いまの単一ユーザー動作のままになる。指定すると
+	// 全 API がログインを要求し、GitHub は利用者ごとのトークンで叩く
+	// （ADR 0015）。
+	//
+	// GitHub クライアントの TokenSource にも同じものを渡す。呼び出し側で
+	// 組み立ててもらうのはそのためで、ここで作ると 2 つできてしまう。
+	Auth *Authenticator
+
+	// PublicURL は認可から戻ってくる先の組み立てに使う。任意。
+	//
+	// 空ならリクエストの Host から組む。リバースプロキシの背後など、
+	// 届く Host が外から見た URL と違う場合に指定する。
+	PublicURL string
+
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
 
@@ -81,6 +97,29 @@ type Options struct {
 	// 許すので、既定の構成では空でよい。Addr で公開インターフェースに
 	// バインドしたときだけ、そのオリジンを足す必要がある（ADR 0013）。
 	AllowedOrigins []string
+}
+
+// Authenticator はログインとセッションを担う。
+//
+// 実体はユースケース層の型。別名で公開しているのは、cmd/etoki を写して独自の
+// main を書く利用者が internal/ を import できないため（ADR 0001）。
+type Authenticator = usecase.AuthService
+
+// NewAuthenticator は Authenticator を作る。
+//
+// 返り値は port.GitHubTokenSource でもある。GitHub クライアントの
+// Config.TokenSource と Options.Auth の両方に、同じものを渡す。別々に作ると
+// トークン更新の直列化が効かなくなる（ADR 0015）。
+func NewAuthenticator(
+	provider port.IdentityProvider, sessions port.SessionRepository,
+) (*Authenticator, error) {
+	if provider == nil {
+		return nil, errors.New("etoki: identity provider is required")
+	}
+	if sessions == nil {
+		return nil, errors.New("etoki: session repository is required")
+	}
+	return usecase.NewAuthService(provider, sessions), nil
 }
 
 // Server は etoki の HTTP サーバー。
@@ -108,9 +147,11 @@ func New(opts Options) (*Server, error) {
 	deps := httpapi.Deps{
 		Boards:         usecase.NewBoardService(opts.Boards, opts.Mappings),
 		Annotations:    usecase.NewAnnotationService(opts.Boards, opts.Mappings),
+		PublicURL:      opts.PublicURL,
 		Logger:         opts.Logger,
 		AllowedOrigins: opts.AllowedOrigins,
 	}
+	deps.Auth = opts.Auth
 	// LLM が無いときはサービスを組み立てない。nil のまま渡し、ハンドラ側で
 	// 「設定されていない」と返す。
 	if opts.LLM != nil {

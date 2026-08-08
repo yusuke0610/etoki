@@ -312,9 +312,31 @@ gh api repos/yusuke0610/etoki/pulls/<番号>/comments -q '.[] | "\(.path):\(.lin
 
 ## 認証について
 
-単一ユーザーがローカルで動かす前提のため、認証・認可・マルチテナントを実装
-していない。既定で `127.0.0.1` にのみバインドする。この前提が崩れると何が
-壊れるかは ADR 0004 に列挙してある。
+**認証は任意。** 設定しなければ単一ユーザーのローカルツールのまま（ADR 0004）で、
+既定で `127.0.0.1` にのみバインドする。この前提が崩れると何が壊れるかは
+ADR 0004 に列挙してある。
+
+GitHub App を設定するとログインを要求する（ADR 0015）。継ぎ目は **3 つに割って
+ある**。1 つにまとめないこと。まとめると「GitHub 以外を差せる」と言いながら
+GitHub の形しか差せなくなる。
+
+| 差し替える対象 | 継ぎ目 |
+| --- | --- |
+| 誰であるかを決める基盤 | `port.IdentityProvider` |
+| GitHub を叩くトークンの出どころ | `port.GitHubTokenSource` |
+| セッションの置き場所 | `port.SessionRepository` |
+
+- **利用者は `context.Context` で運ぶ。** 出入口は `port.ContextWithUserID` /
+  `port.UserIDFromContext`。`port/` に置いてあるのは、外部リポジトリが
+  `GitHubTokenSource` を自前実装するときに読む必要があるため。
+- **`Authenticator` は 1 つだけ作る。** GitHub クライアントの `TokenSource` と
+  `etoki.Options.Auth` に同じものを渡す。2 つ作るとトークン更新の直列化が効かず、
+  GitHub が使い捨てにした refresh token を掴む。
+- **リポジトリ一覧は `github.Config.Mode` で分岐する。** GitHub App では
+  インストール経由の REST、PAT では GraphQL。「使えるリポジトリ」の定義が
+  GitHub 側で違うため。判断するのは `cmd/etoki` だけ。
+- **OAuth を設定したら PAT は無視する。** フォールバックにすると作成の主体が
+  リクエストごとに変わり、誰が作ったのか追えなくなる。
 
 **バインド先を絞るだけでは足りない。** ループバックにバインドしていても、
 ブラウザ経由なら外部サイトのページから API を叩ける（CSRF / DNS
@@ -324,6 +346,10 @@ gh api repos/yusuke0610/etoki/pulls/<番号>/comments -q '.[] | "\(.path):\(.lin
 - **`Origin` が無いリクエストは通す。** curl やスクリプトが該当する。ブラウザは
   cross-origin の POST に必ず `Origin` を付け、攻撃者はそれを省略・偽装できない。
   ここを塞いでも守れるものは増えず、CLI からの利用だけが壊れる。
+- **副作用を持つ GET は `/api/auth/callback` だけ。** これは例外で、Origin では
+  なく `state` が守っている。**これ以上増やさないこと。** 増やすなら ADR 0013 の
+  判断ごと見直す。送り出し側の `/api/auth/login` を POST にしてあるのも、
+  state の発行を Origin 検証の内側に置くため。
 - **ループバック判定でポートを見ない。** `make dev` では Vite の dev サーバーが
   `Host` と `Origin` を書き換えずに転送するため、`:8080` ではなく `:5173` が
   届く。リッスンポートに絞ると開発時に落ちる。

@@ -58,12 +58,17 @@ direnv allow
 | `ETOKI_LLM_BASE_URL` | `https://api.anthropic.com` | LLM のエンドポイント |
 | `ETOKI_LLM_API_KEY` | （なし） | LLM の API キー。認証不要なら未設定でよい |
 | `ETOKI_LLM_MODEL` | `claude-opus-5` | モデル ID |
-| `ETOKI_GITHUB_TOKEN` | （なし） | GitHub のトークン |
+| `ETOKI_GITHUB_TOKEN` | （なし） | GitHub のトークン。認証を設定した場合は使わない |
+| `ETOKI_GITHUB_APP_CLIENT_ID` | （なし） | GitHub App の client ID。設定するとログインを要求する |
+| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし） | 同 client secret |
+| `ETOKI_TOKEN_ENCRYPTION_KEY` | （なし） | 保存するトークンの暗号化鍵（base64 の 32 バイト） |
+| `ETOKI_PUBLIC_URL` | （なし） | 認可から戻る先。空ならリクエストの Host から組む |
 | `ETOKI_GITHUB_KIND_FIELD` | `Kind` | 種別のカスタムフィールド名 |
 | `ETOKI_GITHUB_PARENT_FIELD` | `Parent` | 親のカスタムフィールド名 |
 
-認証は持ちません。代わりに、許可していない Host / Origin を持つブラウザからの
-リクエストを拒否します（ADR 0013）。ループバックは常に許可されるので、通常の
+認証は既定では持ちません。GitHub App を設定するとログインを要求します（後述）。
+どちらの構成でも、許可していない Host / Origin を持つブラウザからのリクエストは
+拒否します（ADR 0013）。ループバックは常に許可されるので、通常の
 使い方では意識する必要はありません。`curl` やスクリプトからの利用にも影響しません。
 `ETOKI_ADDR` で公開インターフェースにバインドする場合は、
 `ETOKI_ALLOWED_ORIGINS` にそのオリジンを足さないと自分のブラウザからも
@@ -125,6 +130,40 @@ repo の read はリポジトリの一覧に使います。無いと選択肢が
 名前は `ETOKI_GITHUB_KIND_FIELD` / `ETOKI_GITHUB_PARENT_FIELD` で変えられます。
 足りない場合、作成は実行せずに何を作ればよいかを返します。黙って作ると種別も
 親子も無い draft issue が並ぶだけになるためです。
+
+### GitHub App でログインする
+
+PAT を手で貼る代わりに、GitHub の画面でログインさせられます。設定すると
+**PAT は使わなくなり**、未ログインのリクエストは 401 になります
+（[ADR 0015](docs/adr/0015-pluggable-auth-seams.md)）。
+
+OAuth App ではなく **GitHub App** を使います。PAT に求めている粒度をそのまま
+要求できるのは GitHub App だけで、OAuth App では全リポジトリの読み書きを
+預かることになるためです。
+
+1. [GitHub App を作る](https://github.com/settings/apps/new)
+   - **Callback URL**: `http://127.0.0.1:5173/api/auth/callback`
+     （`make dev` の場合。ブラウザがいるポートに合わせる）
+   - **Permissions**: `Metadata: Read-only` と `Projects: Read and write`
+   - Webhook は要りません（Active のチェックを外す）
+2. 使いたいリポジトリにインストールする。**候補に出るのはここで許可した
+   リポジトリだけ**です。
+3. 環境変数を設定する。
+
+```sh
+export ETOKI_GITHUB_APP_CLIENT_ID=Iv23li...
+export ETOKI_GITHUB_APP_CLIENT_SECRET=...
+export ETOKI_TOKEN_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
+export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき
+```
+
+鍵は保存するトークンの暗号化に使います。**未設定だと起動時に落ちます。**
+黙って平文で保存しないためです。鍵を変えると保存済みのトークンは開けなくなり、
+再ログインが必要になります。
+
+トークンは既定で 8 時間で失効しますが、`refresh_token` で自動更新するので
+再ログインは要りません。App の設定で「Expire user authorization tokens」を
+切っている場合も動きます。
 
 ### 別の基盤に載せ替える
 
