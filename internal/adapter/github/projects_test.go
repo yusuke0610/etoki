@@ -506,3 +506,129 @@ func TestConfigFromEnv(t *testing.T) {
 
 // Client が port.GitHubClient を満たすことを固定する。
 var _ port.GitHubClient = (*github.Client)(nil)
+
+// ---------------------------------------------------------------------------
+// 作成先の候補一覧（ADR 0014）
+// ---------------------------------------------------------------------------
+
+func TestListRepositories(t *testing.T) {
+	t.Parallel()
+
+	body := `{"data":{"viewer":{"repositories":{
+		"pageInfo":{"hasNextPage":false,"endCursor":"c1"},
+		"nodes":[
+			{"name":"web","description":"フロント","isArchived":false,"owner":{"login":"acme"}},
+			{"name":"old","description":"","isArchived":true,"owner":{"login":"acme"}},
+			{"name":"api","description":"","isArchived":false,"owner":{"login":"other"}}
+		]}}}}`
+
+	c, got := newClient(t, body)
+
+	repos, err := c.ListRepositories(t.Context())
+	if err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+
+	// アーカイブ済みは落とす。選ばせる意味が無い。
+	want := []port.Repository{
+		{Owner: "acme", Name: "web", Description: "フロント"},
+		{Owner: "other", Name: "api"},
+	}
+	if len(repos) != len(want) {
+		t.Fatalf("len(repos) = %d, want %d (%+v)", len(repos), len(want), repos)
+	}
+	for i := range want {
+		if repos[i] != want[i] {
+			t.Errorf("repos[%d] = %+v, want %+v", i, repos[i], want[i])
+		}
+	}
+
+	if (*got)[0].Path != "/graphql" {
+		t.Errorf("path = %q, want /graphql", (*got)[0].Path)
+	}
+}
+
+func TestListRepositories_FollowsPagination(t *testing.T) {
+	t.Parallel()
+
+	page1 := `{"data":{"viewer":{"repositories":{
+		"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"},
+		"nodes":[{"name":"one","owner":{"login":"acme"}}]}}}}`
+	page2 := `{"data":{"viewer":{"repositories":{
+		"pageInfo":{"hasNextPage":false,"endCursor":"cursor-2"},
+		"nodes":[{"name":"two","owner":{"login":"acme"}}]}}}}`
+
+	c, got := newClient(t, page1, page2)
+
+	repos, err := c.ListRepositories(t.Context())
+	if err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("len(repos) = %d, want 2", len(repos))
+	}
+	if (*got)[1].Variables["after"] != "cursor-1" {
+		t.Errorf("2 回目の after = %v, want cursor-1", (*got)[1].Variables["after"])
+	}
+}
+
+// カーソルが進まないと、辿り続けても同じページを取り直すだけで終わらない。
+func TestListRepositories_StopsWhenCursorDoesNotAdvance(t *testing.T) {
+	t.Parallel()
+
+	stuck := `{"data":{"viewer":{"repositories":{
+		"pageInfo":{"hasNextPage":true,"endCursor":""},
+		"nodes":[{"name":"one","owner":{"login":"acme"}}]}}}}`
+
+	c, _ := newClient(t, stuck)
+
+	if _, err := c.ListRepositories(t.Context()); err == nil {
+		t.Fatal("ListRepositories() = nil, want error")
+	}
+}
+
+func TestListRepositoryProjects(t *testing.T) {
+	t.Parallel()
+
+	body := `{"data":{"repository":{"projectsV2":{
+		"pageInfo":{"hasNextPage":false,"endCursor":"c1"},
+		"nodes":[
+			{"id":"PVT_1","number":1,"title":"ロードマップ","closed":false},
+			{"id":"PVT_2","number":2,"title":"終わったやつ","closed":true}
+		]}}}}`
+
+	c, got := newClient(t, body)
+
+	projects, err := c.ListRepositoryProjects(t.Context(), "acme", "web")
+	if err != nil {
+		t.Fatalf("ListRepositoryProjects() = %v", err)
+	}
+
+	// 閉じた Project は落とす。draft issue の置き場所として選ばせる意味が無い。
+	if len(projects) != 1 {
+		t.Fatalf("len(projects) = %d, want 1 (%+v)", len(projects), projects)
+	}
+	want := port.Project{ID: "PVT_1", Number: 1, Title: "ロードマップ"}
+	if projects[0] != want {
+		t.Errorf("projects[0] = %+v, want %+v", projects[0], want)
+	}
+
+	vars := (*got)[0].Variables
+	if vars["owner"] != "acme" || vars["name"] != "web" {
+		t.Errorf("variables = %+v, want owner=acme name=web", vars)
+	}
+}
+
+func TestListRepositoryProjects_RequiresOwnerAndName(t *testing.T) {
+	t.Parallel()
+
+	c, got := newClient(t, `{"data":{}}`)
+
+	if _, err := c.ListRepositoryProjects(t.Context(), "acme", ""); err == nil {
+		t.Fatal("ListRepositoryProjects() = nil, want error")
+	}
+	// 入口で弾く。空のまま投げると GitHub 側のエラーとして返り、原因が遠くなる。
+	if len(*got) != 0 {
+		t.Errorf("リクエストを送っている: %d 回", len(*got))
+	}
+}
