@@ -101,11 +101,13 @@ type racingBoards struct {
 	updated chan struct{}
 }
 
-func (r *racingBoards) Find(_ context.Context, id string) (*port.Board, error) {
+// Find は所有者も突き合わせる。実装と同じ形にしておかないと、絞り忘れを
+// フェイクが吸収してしまう（ADR 0016）。
+func (r *racingBoards) Find(_ context.Context, owner, id string) (*port.Board, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.board.ID != id {
+	if r.board.ID != id || r.board.OwnerUserID != owner {
 		return nil, nil
 	}
 	b := r.board
@@ -113,7 +115,7 @@ func (r *racingBoards) Find(_ context.Context, id string) (*port.Board, error) {
 }
 
 func (r *racingBoards) UpdateTarget(
-	_ context.Context, _ string, t port.BoardTarget, _ time.Time,
+	_ context.Context, _, _ string, t port.BoardTarget, _ time.Time,
 ) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -125,9 +127,15 @@ func (r *racingBoards) UpdateTarget(
 
 func (r *racingBoards) Create(context.Context, port.Board) error { return nil }
 
-func (r *racingBoards) UpdateScene(context.Context, string, string, time.Time) error { return nil }
+func (r *racingBoards) UpdateScene(context.Context, string, string, string, time.Time) error {
+	return nil
+}
 
-func (r *racingBoards) List(context.Context) ([]port.Board, error) { return nil, nil }
+func (r *racingBoards) List(context.Context, string) ([]port.Board, error) { return nil, nil }
+
+func (r *racingBoards) CountUnowned(context.Context) (int, error) { return 0, nil }
+
+func (r *racingBoards) ClaimUnowned(context.Context, string) (int64, error) { return 0, nil }
 
 // racingMappings は複数の goroutine から触れる MappingRepository。
 type racingMappings struct {

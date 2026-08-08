@@ -37,7 +37,7 @@ func NewAnnotationService(boards port.BoardRepository, mappings port.MappingRepo
 // ListStates はボード上の全注釈の状態を返す。
 // ボードが存在しなければ (nil, nil) を返す。
 func (s *AnnotationService) ListStates(ctx context.Context, boardID string) ([]AnnotationState, error) {
-	board, err := s.boards.Find(ctx, boardID)
+	board, err := s.boards.Find(ctx, ownerOf(ctx), boardID)
 	if err != nil {
 		return nil, err
 	}
