@@ -1,5 +1,7 @@
 import type {
   AnnotationStatus,
+  LoginResponse,
+  SessionStatus,
   BoardDetail,
   BoardSummary,
   BoardTarget,
@@ -97,6 +99,26 @@ export const boardsApi = {
       method: "POST",
       body: JSON.stringify(interpretation),
     }),
+};
+
+/**
+ * ログインとセッション。
+ *
+ * 認証を設定していない構成でも session は 200 を返す。authRequired が false
+ * なら画面はログインを求めない（ADR 0015）。
+ */
+export const authApi = {
+  session: () => request<SessionStatus>("/api/auth/session"),
+
+  /**
+   * 認可画面の URL を受け取る。遷移は呼び出し側が行う。
+   *
+   * POST なのは state の発行が書き込みだから。GET にすると外部ページから
+   * 叩けてしまう。
+   */
+  start: () => request<LoginResponse>("/api/auth/login", { method: "POST" }),
+
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
 };
 
 /** 作成先を選ぶための一覧。ボードには紐づかない。 */
