@@ -109,7 +109,7 @@ func NewCreationService(
 func (s *CreationService) Create(
 	ctx context.Context, boardID, annotationID, contentHash string, in domain.Interpretation,
 ) (*port.SyncRun, error) {
-	board, err := s.boards.Find(ctx, boardID)
+	board, err := s.boards.Find(ctx, ownerOf(ctx), boardID)
 	if err != nil {
 		return nil, err
 	}

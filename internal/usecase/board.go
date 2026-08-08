@@ -19,6 +19,16 @@ import (
 // ErrInvalidInput は入力が要件を満たしていないことを表す。
 var ErrInvalidInput = errors.New("etoki: invalid input")
 
+// ownerOf は ctx から所有者を返す。
+//
+// 認証を設定していなければ空文字になる。空文字は無効値ではなく「認証なしの
+// 所有者」1 人を表すので、その構成では全ボードがその 1 人のものになり、
+// これまでどおり全部が見える（ADR 0016）。
+func ownerOf(ctx context.Context) string {
+	owner, _ := port.UserIDFromContext(ctx)
+	return owner
+}
+
 // ErrTargetLocked は作成先を変えられないことを表す。
 //
 // そのボードで draft issue を 1 件でも作ったら固定する。sync_runs は GitHub 側に
@@ -79,11 +89,12 @@ func (s *BoardService) Create(ctx context.Context, name, scene string) (port.Boa
 
 	now := s.now()
 	b := port.Board{
-		ID:        s.newID(),
-		Name:      name,
-		Scene:     scene,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          s.newID(),
+		Name:        name,
+		Scene:       scene,
+		OwnerUserID: ownerOf(ctx),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := s.boards.Create(ctx, b); err != nil {
 		return port.Board{}, err
@@ -94,12 +105,12 @@ func (s *BoardService) Create(ctx context.Context, name, scene string) (port.Boa
 
 // Find は ID でボードを引く。存在しなければ (nil, nil) を返す。
 func (s *BoardService) Find(ctx context.Context, id string) (*port.Board, error) {
-	return s.boards.Find(ctx, id)
+	return s.boards.Find(ctx, ownerOf(ctx), id)
 }
 
 // List は全ボードを更新時刻の降順で返す。
 func (s *BoardService) List(ctx context.Context) ([]port.Board, error) {
-	return s.boards.List(ctx)
+	return s.boards.List(ctx, ownerOf(ctx))
 }
 
 // SaveScene はボードのシーンを更新する。
@@ -107,7 +118,7 @@ func (s *BoardService) SaveScene(ctx context.Context, id, scene string) error {
 	if err := validateScene(scene); err != nil {
 		return err
 	}
-	return s.boards.UpdateScene(ctx, id, scene, s.now())
+	return s.boards.UpdateScene(ctx, ownerOf(ctx), id, scene, s.now())
 }
 
 // SetTarget は draft issue の作成先をボードに設定する。
@@ -118,7 +129,9 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 		return fmt.Errorf("%w: repository and project are required", ErrInvalidInput)
 	}
 
-	b, err := s.boards.Find(ctx, id)
+	owner := ownerOf(ctx)
+
+	b, err := s.boards.Find(ctx, owner, id)
 	if err != nil {
 		return err
 	}
@@ -136,13 +149,17 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 		return fmt.Errorf("%w: %s", ErrTargetLocked, id)
 	}
 
-	return s.boards.UpdateTarget(ctx, id, t, s.now())
+	return s.boards.UpdateTarget(ctx, owner, id, t, s.now())
 }
 
 // TargetLocked はそのボードの作成先が固定済みかどうかを返す。
 //
 // 判定は「run が 1 件でもあるか」。フロントは sync_runs を数えられないので、
 // 状態としてサーバーが返す必要がある。
+//
+// **所有者は見ない。呼ぶ前に Find で確かめること。** run は board_id でしか
+// 引けないので、ここで二重に絞ると、絞り忘れたときにどちらが効いているのか
+// 分からなくなる（ADR 0016）。
 func (s *BoardService) TargetLocked(ctx context.Context, id string) (bool, error) {
 	runs, err := s.mappings.ListLatestRunsByBoard(ctx, id)
 	if err != nil {

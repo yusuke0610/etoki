@@ -21,8 +21,10 @@ type fakeBoards struct {
 	writes int
 }
 
-func (f *fakeBoards) Find(_ context.Context, id string) (*port.Board, error) {
-	if f.board == nil || f.board.ID != id {
+// Find は所有者も突き合わせる。実装と同じ形にしておかないと、絞り忘れを
+// フェイクが吸収してしまう（ADR 0016）。
+func (f *fakeBoards) Find(_ context.Context, owner, id string) (*port.Board, error) {
+	if f.board == nil || f.board.ID != id || f.board.OwnerUserID != owner {
 		return nil, nil
 	}
 	return f.board, nil
@@ -33,17 +35,26 @@ func (f *fakeBoards) Create(context.Context, port.Board) error {
 	return nil
 }
 
-func (f *fakeBoards) UpdateScene(context.Context, string, string, time.Time) error {
+func (f *fakeBoards) UpdateScene(context.Context, string, string, string, time.Time) error {
 	f.writes++
 	return nil
 }
 
-func (f *fakeBoards) UpdateTarget(context.Context, string, port.BoardTarget, time.Time) error {
+func (f *fakeBoards) UpdateTarget(
+	context.Context, string, string, port.BoardTarget, time.Time,
+) error {
 	f.writes++
 	return nil
 }
 
-func (f *fakeBoards) List(context.Context) ([]port.Board, error) { return nil, nil }
+func (f *fakeBoards) List(context.Context, string) ([]port.Board, error) { return nil, nil }
+
+func (f *fakeBoards) CountUnowned(context.Context) (int, error) { return 0, nil }
+
+func (f *fakeBoards) ClaimUnowned(context.Context, string) (int64, error) {
+	f.writes++
+	return 0, nil
+}
 
 // fakeLLM は決められた応答を順に返す LLMClient。
 //
