@@ -1,0 +1,180 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { boardsApi, githubApi } from "../api/boards";
+import type { BoardDetail, Project, Repository } from "../api/types";
+
+type Props = {
+  board: BoardDetail;
+  /** 設定後のボード。呼び出し側が差し替えて、ブレストに進ませる。 */
+  onSelected: (board: BoardDetail) => void;
+  /** 選び直しをやめる。未選択のボードでは呼ばない。 */
+  onCancel?: () => void;
+};
+
+/**
+ * ブレストを始める前に、draft issue の作成先を選ばせる。
+ *
+ * 利用者が選ぶのはリポジトリだが、保存するのはそこに紐づく Projects v2。
+ * draft issue はリポジトリではなく Project に属するため、2 段になる（ADR 0014）。
+ *
+ * どれかを既定で選んだり、1 件しか無いときに自動で確定したりしない。
+ * 作成先は取り返しのつかない選択なので、開発者に選ばせる（中核思想 3）。
+ */
+export function RepositoryPicker({ board, onSelected, onCancel }: Props) {
+  const [repositories, setRepositories] = useState<Repository[] | null>(null);
+  const [repository, setRepository] = useState<Repository | null>(null);
+  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const list = await githubApi.repositories();
+        if (!cancelled) setRepositories(list);
+      } catch (e) {
+        if (!cancelled) setError(`リポジトリを取得できませんでした: ${String(e)}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // リポジトリを続けて押すと応答が前後しうる。番号を振って最後に投げたものだけ
+  // 反映する。古い応答で上書きすると、選んでいないリポジトリのプロジェクトが
+  // 並ぶ。作成先を取り違える経路なので塞いでおく。
+  const projectsRequest = useRef(0);
+
+  const chooseRepository = useCallback(async (repo: Repository) => {
+    const request = ++projectsRequest.current;
+
+    setRepository(repo);
+    setProjects(null);
+    setError(null);
+
+    try {
+      const list = await githubApi.projects(repo.owner, repo.name);
+      if (request !== projectsRequest.current) return;
+      setProjects(list);
+    } catch (e) {
+      if (request !== projectsRequest.current) return;
+      setError(`プロジェクトを取得できませんでした: ${String(e)}`);
+    }
+  }, []);
+
+  const chooseProject = useCallback(
+    async (project: Project) => {
+      if (!repository) return;
+
+      setSaving(true);
+      setError(null);
+      try {
+        onSelected(
+          await boardsApi.setTarget(board.id, {
+            repositoryOwner: repository.owner,
+            repositoryName: repository.name,
+            projectId: project.id,
+          }),
+        );
+      } catch (e) {
+        setError(`作成先を設定できませんでした: ${String(e)}`);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [board.id, onSelected, repository],
+  );
+
+  return (
+    <div className="picker">
+      <h1>{board.name}</h1>
+      <p className="hint">{"このボードの draft issue を作る先を選びます。"}</p>
+      <p className="hint">
+        {"最初の draft issue を作ると、以後は変更できなくなります。"}
+      </p>
+
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <section className="panel-section">
+        <h2>リポジトリ</h2>
+        {repositories === null ? (
+          <p className="hint">読み込み中…</p>
+        ) : repositories.length === 0 ? (
+          // 権限不足と「本当に 1 つも無い」は API からは区別できない。
+          // どちらの可能性も書いておく。
+          <p className="hint">
+            {"リポジトリが 1 つも見つかりませんでした。"}
+            {"ETOKI_GITHUB_TOKEN に repo の read 権限があるか確認してください。"}
+          </p>
+        ) : (
+          <ul className="plain-list">
+            {repositories.map((r) => (
+              <li key={`${r.owner}/${r.name}`}>
+                <button
+                  type="button"
+                  className={
+                    repository?.owner === r.owner && repository?.name === r.name
+                      ? "active"
+                      : ""
+                  }
+                  // 設定の最中に選び直させない。送っている中身は押した時点の
+                  // ものなので取り違えはしないが、画面だけ先に進むと、どれで
+                  // 確定したのか分からなくなる。
+                  disabled={saving}
+                  onClick={() => void chooseRepository(r)}
+                >
+                  {r.owner}/{r.name}
+                  {r.description && <span className="kind">{r.description}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {repository && (
+        <section className="panel-section">
+          <h2>
+            {repository.owner}/{repository.name} のプロジェクト
+          </h2>
+          {projects === null ? (
+            <p className="hint">読み込み中…</p>
+          ) : projects.length === 0 ? (
+            <p className="hint">
+              {"このリポジトリに紐づく Projects v2 がありません。"}
+              {"GitHub 側で作ってから選び直してください。"}
+            </p>
+          ) : (
+            <ul className="plain-list">
+              {projects.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void chooseProject(p)}
+                  >
+                    #{p.number} {p.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {onCancel && (
+        <button type="button" onClick={onCancel}>
+          やめる
+        </button>
+      )}
+    </div>
+  );
+}

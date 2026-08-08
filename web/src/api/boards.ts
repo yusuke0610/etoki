@@ -2,9 +2,12 @@ import type {
   AnnotationStatus,
   BoardDetail,
   BoardSummary,
+  BoardTarget,
   CreatedRun,
   ErrorResponse,
   Interpretation,
+  Project,
+  Repository,
 } from "./types";
 
 /** API が返したエラー。呼び出し側でステータスに応じて分岐するために持つ。 */
@@ -59,6 +62,17 @@ export const boardsApi = {
       body: JSON.stringify({ scene }),
     }),
 
+  /**
+   * draft issue の作成先をボードに設定する。
+   *
+   * 最初の draft issue を作った後は 409 が返る（ADR 0014）。
+   */
+  setTarget: (id: string, target: BoardTarget) =>
+    request<BoardDetail>(`/api/boards/${id}/target`, {
+      method: "PUT",
+      body: JSON.stringify(target),
+    }),
+
   annotations: (id: string) =>
     request<AnnotationStatus[]>(`/api/boards/${id}/annotations`),
 
@@ -83,4 +97,14 @@ export const boardsApi = {
       method: "POST",
       body: JSON.stringify(interpretation),
     }),
+};
+
+/** 作成先を選ぶための一覧。ボードには紐づかない。 */
+export const githubApi = {
+  repositories: () => request<Repository[]>("/api/github/repositories"),
+
+  projects: (owner: string, repo: string) =>
+    request<Project[]>(
+      `/api/github/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/projects`,
+    ),
 };
