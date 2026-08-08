@@ -452,6 +452,13 @@ func TestHTTPErrors(t *testing.T) {
 					t.Errorf("エラーに %q が含まれない: %v", want, err)
 				}
 			}
+
+			// 401 だけは sentinel に寄せる。文字列で判定させると、UI が
+			// 「再ログインが要る」を見分けられない（ADR 0015）。
+			if got := errors.Is(err, port.ErrNotAuthenticated); got != (tt.status == http.StatusUnauthorized) {
+				t.Errorf("errors.Is(err, ErrNotAuthenticated) = %v (status %d): %v",
+					got, tt.status, err)
+			}
 		})
 	}
 }
