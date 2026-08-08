@@ -97,12 +97,13 @@ func countMigrations(t *testing.T, db *sql.DB) int {
 	return n
 }
 
-// 0002 は既存の boards に列を足す。移行後、それまでのボードは作成先が
-// 未選択として読めなければならない（ADR 0014）。空文字が「未選択」を表す。
+// 0002 以降は既存の boards に列を足す。移行後、それまでのボードは
+// 「作成先が未選択」（ADR 0014）かつ「所有者が無い」（ADR 0016）として
+// 読めなければならない。どちらも空文字がその状態を表す。
 //
 // 0001 だけ適用した状態を作ってから Migrate を呼ぶ。newDB は全部適用して
 // しまうので、ここでは使えない。
-func TestMigrate_ExistingBoardsBecomeUnselected(t *testing.T) {
+func TestMigrate_ExistingBoardsAreUnselectedAndUnowned(t *testing.T) {
 	t.Parallel()
 
 	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
@@ -131,7 +132,7 @@ func TestMigrate_ExistingBoardsBecomeUnselected(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	b, err := sqlite.NewBoardRepository(db).Find(t.Context(), "legacy")
+	b, err := sqlite.NewBoardRepository(db).Find(t.Context(), "", "legacy")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -143,6 +144,18 @@ func TestMigrate_ExistingBoardsBecomeUnselected(t *testing.T) {
 	}
 	if b.Target.Selected() {
 		t.Error("未選択のはずが Selected() が true")
+	}
+	if b.OwnerUserID != "" {
+		t.Errorf("OwnerUserID = %q, want 空文字（所有者なし）", b.OwnerUserID)
+	}
+
+	// 所有者が無いので、認証を有効にすると引き受けの対象として数えられる。
+	n, err := sqlite.NewBoardRepository(db).CountUnowned(t.Context())
+	if err != nil {
+		t.Fatalf("CountUnowned: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("CountUnowned = %d, want 1", n)
 	}
 }
 
@@ -543,7 +556,7 @@ func TestBoard_RoundTrip(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	got, err := repo.Find(t.Context(), "board-1")
+	got, err := repo.Find(t.Context(), "", "board-1")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -568,11 +581,11 @@ func TestBoard_UpdateScene(t *testing.T) {
 	seedBoard(t, db, "board-1")
 
 	later := baseTime.Add(time.Hour)
-	if err := repo.UpdateScene(t.Context(), "board-1", `{"elements":["updated"]}`, later); err != nil {
+	if err := repo.UpdateScene(t.Context(), "", "board-1", `{"elements":["updated"]}`, later); err != nil {
 		t.Fatalf("UpdateScene: %v", err)
 	}
 
-	got, err := repo.Find(t.Context(), "board-1")
+	got, err := repo.Find(t.Context(), "", "board-1")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -593,7 +606,7 @@ func TestBoard_UpdateSceneNotFound(t *testing.T) {
 	db := newDB(t)
 	repo := sqlite.NewBoardRepository(db)
 
-	err := repo.UpdateScene(t.Context(), "no-such-board", "{}", baseTime)
+	err := repo.UpdateScene(t.Context(), "", "no-such-board", "{}", baseTime)
 	if !errors.Is(err, port.ErrNotFound) {
 		t.Errorf("UpdateScene = %v, want port.ErrNotFound", err)
 	}
@@ -605,7 +618,7 @@ func TestBoard_FindNotFound(t *testing.T) {
 
 	db := newDB(t)
 
-	got, err := sqlite.NewBoardRepository(db).Find(t.Context(), "no-such-board")
+	got, err := sqlite.NewBoardRepository(db).Find(t.Context(), "", "no-such-board")
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -635,7 +648,7 @@ func TestBoard_ListOrder(t *testing.T) {
 	create("newest", baseTime.Add(2*time.Hour))
 	create("middle", baseTime.Add(time.Hour))
 
-	got, err := repo.List(t.Context())
+	got, err := repo.List(t.Context(), "")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -658,7 +671,7 @@ func TestBoard_ListOrder(t *testing.T) {
 func TestBoard_ListEmpty(t *testing.T) {
 	t.Parallel()
 
-	got, err := sqlite.NewBoardRepository(newDB(t)).List(t.Context())
+	got, err := sqlite.NewBoardRepository(newDB(t)).List(t.Context(), "")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

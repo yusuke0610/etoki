@@ -127,6 +127,11 @@ type SessionRepository interface {
 	UpsertUser(ctx context.Context, u User) (User, error)
 	// FindUser は ID で利用者を引く。存在しなければ (nil, nil) を返す。
 	FindUser(ctx context.Context, id string) (*User, error)
+	// FindUserByLogin は login で利用者を引く。存在しなければ (nil, nil)。
+	//
+	// 人が打つ識別子は login しかないので、CLI から利用者を指すのに要る。
+	// login は改名で変わるため、同定には使わない（それは Subject の仕事）。
+	FindUserByLogin(ctx context.Context, provider, login string) (*User, error)
 
 	// CreateSession はセッションを保存する。
 	CreateSession(ctx context.Context, s Session) error
