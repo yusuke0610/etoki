@@ -12,6 +12,23 @@ import (
 // 更新系でのみ返る。
 var ErrNotFound = errors.New("etoki: not found")
 
+// BoardTarget は draft issue の作成先。
+//
+// ボードごとに持つ。3 つとも空なら未選択（ADR 0014）。
+type BoardTarget struct {
+	// RepositoryOwner は対象リポジトリの所有者。
+	RepositoryOwner string
+	// RepositoryName は対象リポジトリの名前。
+	RepositoryName string
+	// ProjectID は draft issue を作る Projects v2 の node ID。
+	ProjectID string
+}
+
+// Selected は作成先が選ばれているかどうかを返す。
+func (t BoardTarget) Selected() bool {
+	return t.RepositoryOwner != "" && t.RepositoryName != "" && t.ProjectID != ""
+}
+
 // Board は 1 枚の Excalidraw ボード。
 //
 // スナップショットとバージョニングは行わないため、Scene は常に最新状態のみを
@@ -23,6 +40,8 @@ type Board struct {
 	Name string
 	// Scene は Excalidraw のシーン JSON。
 	Scene string
+	// Target は draft issue の作成先。未選択ならゼロ値。
+	Target BoardTarget
 	// CreatedAt は作成時刻。
 	CreatedAt time.Time
 	// UpdatedAt は最終更新時刻。
@@ -97,6 +116,11 @@ type BoardRepository interface {
 	Create(ctx context.Context, b Board) error
 	// UpdateScene はシーンと更新時刻だけを更新する。CreatedAt は変えない。
 	UpdateScene(ctx context.Context, id, scene string, updatedAt time.Time) error
+	// UpdateTarget は作成先と更新時刻だけを更新する。Scene は変えない。
+	//
+	// 固定済みかどうかはここでは見ない。判断に sync_runs が要るため、
+	// ユースケース層が担う（ADR 0014）。
+	UpdateTarget(ctx context.Context, id string, t BoardTarget, updatedAt time.Time) error
 	// Find は ID でボードを引く。存在しなければ (nil, nil) を返す。
 	Find(ctx context.Context, id string) (*Board, error)
 	// List は全ボードを UpdatedAt の降順で返す。

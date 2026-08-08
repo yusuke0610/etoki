@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
+	"github.com/yusuke0610/etoki/migrations"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -71,17 +72,77 @@ func TestMigrate_IsIdempotent(t *testing.T) {
 
 	db := newDB(t) // 1 回目は newDB の中で適用済み
 
+	// 適用済みの件数はマイグレーションを足すたびに変わる。件数そのものを
+	// 期待値に書くと、SQL を 1 つ足しただけでこのテストが落ちる。確かめたいのは
+	// 「2 回目で増えないこと」なので、前後を突き合わせる。
+	before := countMigrations(t, db)
+
 	if err := sqlite.Migrate(t.Context(), db); err != nil {
 		t.Fatalf("2 回目の Migrate: %v", err)
 	}
+
+	if after := countMigrations(t, db); after != before {
+		t.Errorf("schema_migrations の件数 = %d, want %d", after, before)
+	}
+}
+
+func countMigrations(t *testing.T, db *sql.DB) int {
+	t.Helper()
 
 	var n int
 	if err := db.QueryRowContext(t.Context(),
 		`SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatalf("count schema_migrations: %v", err)
 	}
-	if n != 1 {
-		t.Errorf("schema_migrations の件数 = %d, want 1", n)
+	return n
+}
+
+// 0002 は既存の boards に列を足す。移行後、それまでのボードは作成先が
+// 未選択として読めなければならない（ADR 0014）。空文字が「未選択」を表す。
+//
+// 0001 だけ適用した状態を作ってから Migrate を呼ぶ。newDB は全部適用して
+// しまうので、ここでは使えない。
+func TestMigrate_ExistingBoardsBecomeUnselected(t *testing.T) {
+	t.Parallel()
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	initial, err := migrations.FS.ReadFile("0001_initial.sql")
+	if err != nil {
+		t.Fatalf("read 0001: %v", err)
+	}
+	for _, stmt := range []string{
+		string(initial),
+		`CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`,
+		`INSERT INTO schema_migrations VALUES ('0001_initial.sql', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO boards (id, name, scene, created_at, updated_at)
+		 VALUES ('legacy', '移行前のボード', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := db.ExecContext(t.Context(), stmt); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	b, err := sqlite.NewBoardRepository(db).Find(t.Context(), "legacy")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if b == nil {
+		t.Fatal("移行でボードが消えている")
+	}
+	if b.Target != (port.BoardTarget{}) {
+		t.Errorf("Target = %+v, want ゼロ値（未選択）", b.Target)
+	}
+	if b.Target.Selected() {
+		t.Error("未選択のはずが Selected() が true")
 	}
 }
 
