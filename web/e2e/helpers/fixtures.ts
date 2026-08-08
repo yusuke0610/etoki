@@ -5,6 +5,7 @@ import type {
   Interpretation,
   Project,
   Repository,
+  SessionStatus,
 } from "../../src/api/types";
 import { emptyScene, type ApiMock } from "./api";
 
@@ -41,6 +42,23 @@ export function unselectedBoard(): BoardDetail {
     repositoryOwner: "",
     repositoryName: "",
     projectId: "",
+  };
+}
+
+/**
+ * 認可画面の URL。
+ *
+ * 実際の github.com には行かせない。外部連携そのものは E2E の担当ではない
+ * （ADR 0012）。遷移したことだけを確かめる。
+ */
+export const AUTHORIZE_URL = "https://github.test/login/oauth/authorize?state=e2e";
+
+/** ログイン済みの状態。 */
+export function signedIn(): SessionStatus {
+  return {
+    authRequired: true,
+    authenticated: true,
+    user: { provider: "github", login: "octocat", displayName: "Octo Cat" },
   };
 }
 
@@ -170,6 +188,10 @@ export function baseMock(): ApiMock {
     annotations: { [detail.id]: annotations() },
     interpret: { status: 200, body: interpretation() },
     createItems: { status: 201, body: createdRun() },
+    // 既定は認証を設定していない構成。ログインの導線を見る spec だけが
+    // 書き換える。
+    session: { status: 200, body: { authRequired: false, authenticated: false } },
+    login: { status: 200, body: { authorizeUrl: AUTHORIZE_URL } },
     repositories: { status: 200, body: repositories() },
     projects: {
       "acme/web": { status: 200, body: projects() },

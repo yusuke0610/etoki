@@ -2,7 +2,7 @@ import { test, type Page } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { annotationCard, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock, unselectedBoard } from "./helpers/fixtures";
+import { BOARD_ID, baseMock, signedIn, unselectedBoard } from "./helpers/fixtures";
 
 /**
  * 主要な画面のスクリーンショットを撮る。
@@ -85,5 +85,24 @@ test.describe("スクリーンショット", () => {
     await page.locator(".excalidraw canvas").first().waitFor();
     await page.getByRole("heading", { name: "注釈" }).waitFor();
     await shot(page, "07-target-selected");
+  });
+
+  // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。
+  test("ログイン画面を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "GitHub でログイン" }).waitFor();
+    await shot(page, "08-login");
+
+    // ログイン後はサイドバーに利用者が出る。
+    mock.session = { status: 200, body: signedIn() };
+    await page.reload();
+    await page.getByText("Octo Cat").waitFor();
+    await shot(page, "09-signed-in");
   });
 });
