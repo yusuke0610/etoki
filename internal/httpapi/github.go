@@ -9,6 +9,7 @@ import (
 
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
+	"github.com/yusuke0610/etoki/port"
 )
 
 // githubNotConfigured は GitHub 未設定のときの案内。
@@ -74,6 +75,11 @@ func (h *handlers) failCatalog(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, usecase.ErrInvalidInput):
 		h.badRequest(c, err)
+
+	case errors.Is(err, port.ErrNotAuthenticated):
+		// トークンが失効した。502 だと GitHub 側の障害に見えるが、直すのは
+		// 再ログイン。UI が案内できるよう 401 に寄せる（ADR 0015）。
+		errorJSON(c, http.StatusUnauthorized, err.Error())
 
 	default:
 		h.logger.ErrorContext(c.Request.Context(), "github listing failed",
