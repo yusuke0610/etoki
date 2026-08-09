@@ -1,7 +1,7 @@
 import { test, type Page } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
-import { annotationCard, openBoard } from "./helpers/board";
+import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
 import { BOARD_ID, baseMock, unselectedBoard } from "./helpers/fixtures";
 
 /**
@@ -85,5 +85,18 @@ test.describe("スクリーンショット", () => {
     await page.locator(".excalidraw canvas").first().waitFor();
     await page.getByRole("heading", { name: "注釈" }).waitFor();
     await shot(page, "07-target-selected");
+  });
+
+  // 押せない理由は title ではなく本文で出す。ホバーできない利用者と読み上げにも
+  // 届く必要がある。見た目の話でもあるので撮る。
+  test("作成先を変更できない状態を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await page.getByText("未保存", { exact: true }).waitFor();
+    await shot(page, "08-target-change-blocked");
   });
 });

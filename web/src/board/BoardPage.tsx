@@ -261,25 +261,33 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
           <span className="badge badge-target">
             {board.repositoryOwner}/{board.repositoryName}
           </span>
+          {/*
+            押せない理由は title に隠さず、本文として出す。title はホバーでしか
+            読めず、disabled なボタンはフォーカスも当たらないので、キーボードと
+            読み上げの利用者には理由が届かない。
+          */}
           {board.targetLocked ? (
             // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
             // 押せないことを見せるほうが状態として正しい。
-            <span className="hint" title="draft issue を作成済みのため変更できません">
-              作成先は確定
-            </span>
+            <span className="hint">作成先は確定（draft issue を作成済み）</span>
           ) : (
-            <button
-              type="button"
-              onClick={onChangeTarget}
-              // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
-              // 黙って捨てずに、保存してからにしてもらう。
-              disabled={dirty || saving}
-              title={
-                dirty ? "未保存の変更があります。保存してから変更してください" : undefined
-              }
-            >
-              作成先を変更
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={onChangeTarget}
+                // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
+                // 黙って捨てずに、保存してからにしてもらう。
+                disabled={dirty || saving}
+                aria-describedby={dirty ? "target-change-blocked" : undefined}
+              >
+                作成先を変更
+              </button>
+              {dirty && (
+                <span className="hint" id="target-change-blocked">
+                  保存してから作成先を変更できます
+                </span>
+              )}
+            </>
           )}
           {dirty && <span className="dirty">未保存</span>}
           <button

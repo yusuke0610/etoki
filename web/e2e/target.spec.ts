@@ -141,6 +141,9 @@ test.describe("作成先の選択", () => {
 
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
     await expect(change).toBeDisabled();
+    // 押せない理由は本文として出す。title に隠すと、ホバーできない利用者と
+    // 読み上げには届かない（disabled なボタンにはフォーカスも当たらない）。
+    await expect(page.getByText("保存してから作成先を変更できます")).toBeVisible();
 
     await page.getByRole("button", { name: "保存" }).click();
     await expect(change).toBeEnabled();
@@ -194,7 +197,8 @@ test.describe("作成先の選択", () => {
     await openBoard(page, BOARD_NAME);
 
     await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
-    await expect(page.getByText("作成先は確定")).toBeVisible();
+    // 確定していることだけでなく、なぜ確定なのかも本文で読める必要がある。
+    await expect(page.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
   });
 
   test("新しく作ったボードは作成先の選択から始まる", async ({ page }) => {
