@@ -135,6 +135,13 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/target$/.test(url.pathname),
     async (route) => {
+      // メソッドが違うものは捕まえず、キャッチオールの 500 に落とす。何でも
+      // 受けると、フロントが契約と違うメソッドで叩いていても緑になる。
+      if (route.request().method() !== "PUT") {
+        await route.fallback();
+        return;
+      }
+
       if (mock.setTargetError) {
         await json(route, mock.setTargetError.status, mock.setTargetError.body);
         return;

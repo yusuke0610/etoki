@@ -120,6 +120,11 @@ export function RepositoryPicker({ board, onSelected, onCancel }: Props) {
               <li key={`${r.owner}/${r.name}`}>
                 <button
                   type="button"
+                  // 選択中であることを class だけで表すと、色の違いを見ない
+                  // 利用者には伝わらない。状態として持たせる。
+                  aria-pressed={
+                    repository?.owner === r.owner && repository?.name === r.name
+                  }
                   className={
                     repository?.owner === r.owner && repository?.name === r.name
                       ? "active"
