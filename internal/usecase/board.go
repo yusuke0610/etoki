@@ -29,6 +29,7 @@ var ErrTargetLocked = errors.New("etoki: board target is locked")
 type BoardService struct {
 	boards   port.BoardRepository
 	mappings port.MappingRepository
+	locks    *BoardLocks
 	now      func() time.Time
 	newID    func() string
 }
@@ -50,12 +51,17 @@ func WithIDGenerator(f func() string) BoardServiceOption {
 //
 // mappings を取るのは作成先の固定判定に使うため。ボードの読み書きだけなら
 // 要らないが、固定はユースケース層で守ると決めた（ADR 0014）。
+//
+// locks は CreationService と同じものを渡す。固定の判定と、判定の前提を崩す
+// 作成とを直列化するため（BoardLocks を参照）。
 func NewBoardService(
-	boards port.BoardRepository, mappings port.MappingRepository, opts ...BoardServiceOption,
+	boards port.BoardRepository, mappings port.MappingRepository, locks *BoardLocks,
+	opts ...BoardServiceOption,
 ) *BoardService {
 	s := &BoardService{
 		boards:   boards,
 		mappings: mappings,
+		locks:    locks,
 		now:      time.Now,
 		newID:    uuid.NewString,
 	}
@@ -117,6 +123,15 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 	if !t.Selected() {
 		return fmt.Errorf("%w: repository and project are required", ErrInvalidInput)
 	}
+
+	// 作成中のボードは待つ。作成が終われば run が残るので、待った先で
+	// ErrTargetLocked になる。「作成が始まっていたなら変えられない」が
+	// 判定の取りこぼしではなく順序として出る。
+	release, err := s.locks.Acquire(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	b, err := s.boards.Find(ctx, id)
 	if err != nil {

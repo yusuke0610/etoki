@@ -105,8 +105,12 @@ func New(opts Options) (*Server, error) {
 		return nil, errors.New("etoki: Options.Mappings is required")
 	}
 
+	// 作成先の固定を守るには、固定を判定する側と、判定の前提を崩す側とが
+	// 同じ排他を見ている必要がある（usecase.BoardLocks）。
+	locks := usecase.NewBoardLocks()
+
 	deps := httpapi.Deps{
-		Boards:         usecase.NewBoardService(opts.Boards, opts.Mappings),
+		Boards:         usecase.NewBoardService(opts.Boards, opts.Mappings, locks),
 		Annotations:    usecase.NewAnnotationService(opts.Boards, opts.Mappings),
 		Logger:         opts.Logger,
 		AllowedOrigins: opts.AllowedOrigins,
@@ -120,7 +124,7 @@ func New(opts Options) (*Server, error) {
 	// （ADR 0014）。未選択のボードは作成の手前で 422 として止まる。
 	if opts.GitHub != nil {
 		deps.Creations = usecase.NewCreationService(
-			opts.Boards, opts.Mappings, opts.GitHub,
+			opts.Boards, opts.Mappings, opts.GitHub, locks,
 			usecase.WithFieldNames(opts.KindFieldName, opts.ParentFieldName),
 		)
 		deps.Catalog = usecase.NewGitHubCatalogService(opts.GitHub)

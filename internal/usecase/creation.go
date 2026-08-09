@@ -55,6 +55,7 @@ type CreationService struct {
 	boards      port.BoardRepository
 	mappings    port.MappingRepository
 	github      port.GitHubClient
+	locks       *BoardLocks
 	kindField   string
 	parentField string
 	now         func() time.Time
@@ -81,16 +82,20 @@ func WithCreationClock(f func() time.Time) CreationServiceOption {
 }
 
 // NewCreationService は CreationService を作る。
+//
+// locks は BoardService と同じものを渡す（BoardLocks を参照）。
 func NewCreationService(
 	boards port.BoardRepository,
 	mappings port.MappingRepository,
 	github port.GitHubClient,
+	locks *BoardLocks,
 	opts ...CreationServiceOption,
 ) *CreationService {
 	s := &CreationService{
 		boards:      boards,
 		mappings:    mappings,
 		github:      github,
+		locks:       locks,
 		kindField:   DefaultKindFieldName,
 		parentField: DefaultParentFieldName,
 		now:         time.Now,
@@ -109,6 +114,14 @@ func NewCreationService(
 func (s *CreationService) Create(
 	ctx context.Context, boardID, annotationID, contentHash string, in domain.Interpretation,
 ) (*port.SyncRun, error) {
+	// 作成先を読んでから run を記録するまで、このボードの作成先を動かさせない。
+	// 途中で変えられると、作った先と記録が指す先がずれる（BoardLocks を参照）。
+	release, err := s.locks.Acquire(ctx, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	board, err := s.boards.Find(ctx, boardID)
 	if err != nil {
 		return nil, err

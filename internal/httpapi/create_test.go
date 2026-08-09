@@ -78,8 +78,12 @@ func newCreateRouter(t *testing.T, gh port.GitHubClient) (*gin.Engine, port.Mapp
 
 	boards, mappings := newRepos(t)
 
+	// 作成先の固定を守るには、判定する側と前提を崩す側が同じ排他を見る必要が
+	// ある。本番の配線（etoki.New）と同じく 1 つを共有させる。
+	locks := usecase.NewBoardLocks()
+
 	seq := 0
-	boardSvc := usecase.NewBoardService(boards, mappings,
+	boardSvc := usecase.NewBoardService(boards, mappings, locks,
 		usecase.WithClock(func() time.Time { return fixedTime }),
 		usecase.WithIDGenerator(func() string {
 			seq++
@@ -92,7 +96,7 @@ func newCreateRouter(t *testing.T, gh port.GitHubClient) (*gin.Engine, port.Mapp
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 	}
 	if gh != nil {
-		deps.Creations = usecase.NewCreationService(boards, mappings, gh,
+		deps.Creations = usecase.NewCreationService(boards, mappings, gh, locks,
 			usecase.WithCreationClock(func() time.Time { return fixedTime }))
 		deps.Catalog = usecase.NewGitHubCatalogService(gh)
 	}

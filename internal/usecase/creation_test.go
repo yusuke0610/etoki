@@ -99,8 +99,18 @@ func (f *fakeMappings) FindLatestRun(context.Context, string, string) (*port.Syn
 	return nil, nil
 }
 
-func (f *fakeMappings) ListLatestRunsByBoard(context.Context, string) ([]port.SyncRun, error) {
-	return f.runs, nil
+// 実装は board_id で絞る。フェイクが全部返すと、別ボードの run が固定判定を
+// 誤らせても気づけない。
+func (f *fakeMappings) ListLatestRunsByBoard(
+	_ context.Context, boardID string,
+) ([]port.SyncRun, error) {
+	var runs []port.SyncRun
+	for _, run := range f.runs {
+		if run.BoardID == boardID {
+			runs = append(runs, run)
+		}
+	}
+	return runs, nil
 }
 
 // projectFields は etoki が必要とするフィールドが揃った状態。
@@ -142,7 +152,7 @@ func newCreationService(t *testing.T, gh *fakeGitHub, mappings *fakeMappings) *u
 	t.Helper()
 
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	return usecase.NewCreationService(boards, mappings, gh,
+	return usecase.NewCreationService(boards, mappings, gh, usecase.NewBoardLocks(),
 		usecase.WithCreationClock(func() time.Time { return createdAt }))
 }
 
@@ -542,7 +552,7 @@ func TestCreate_UsesConfiguredFieldNames(t *testing.T) {
 	}}
 
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	svc := usecase.NewCreationService(boards, &fakeMappings{}, gh,
+	svc := usecase.NewCreationService(boards, &fakeMappings{}, gh, usecase.NewBoardLocks(),
 		usecase.WithFieldNames("種別", "親"),
 		usecase.WithCreationClock(func() time.Time { return createdAt }))
 

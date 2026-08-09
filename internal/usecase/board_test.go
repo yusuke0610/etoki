@@ -20,7 +20,7 @@ func TestSetTarget_SucceedsBeforeAnyRun(t *testing.T) {
 	t.Parallel()
 
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	svc := usecase.NewBoardService(boards, &fakeMappings{})
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
 
 	if err := svc.SetTarget(t.Context(), "board-1", newTarget()); err != nil {
 		t.Fatalf("SetTarget() = %v", err)
@@ -37,7 +37,7 @@ func TestSetTarget_RejectsAfterFirstRun(t *testing.T) {
 
 	boards := &fakeBoards{board: newBoard(interpretScene)}
 	mappings := &fakeMappings{runs: []port.SyncRun{{BoardID: "board-1"}}}
-	svc := usecase.NewBoardService(boards, mappings)
+	svc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks())
 
 	err := svc.SetTarget(t.Context(), "board-1", newTarget())
 	if !errors.Is(err, usecase.ErrTargetLocked) {
@@ -56,7 +56,7 @@ func TestSetTarget_RejectsSameValueAfterRun(t *testing.T) {
 	board := newBoard(interpretScene)
 	boards := &fakeBoards{board: board}
 	mappings := &fakeMappings{runs: []port.SyncRun{{BoardID: "board-1"}}}
-	svc := usecase.NewBoardService(boards, mappings)
+	svc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks())
 
 	if err := svc.SetTarget(t.Context(), "board-1", board.Target); !errors.Is(err, usecase.ErrTargetLocked) {
 		t.Fatalf("SetTarget() = %v, want ErrTargetLocked", err)
@@ -76,7 +76,7 @@ func TestSetTarget_RejectsIncompleteTarget(t *testing.T) {
 			t.Parallel()
 
 			boards := &fakeBoards{board: newBoard(interpretScene)}
-			svc := usecase.NewBoardService(boards, &fakeMappings{})
+			svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
 
 			if err := svc.SetTarget(t.Context(), "board-1", target); !errors.Is(err, usecase.ErrInvalidInput) {
 				t.Fatalf("SetTarget() = %v, want ErrInvalidInput", err)
@@ -88,7 +88,7 @@ func TestSetTarget_RejectsIncompleteTarget(t *testing.T) {
 func TestSetTarget_RejectsUnknownBoard(t *testing.T) {
 	t.Parallel()
 
-	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{})
+	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{}, usecase.NewBoardLocks())
 
 	if err := svc.SetTarget(t.Context(), "missing", newTarget()); !errors.Is(err, port.ErrNotFound) {
 		t.Fatalf("SetTarget() = %v, want ErrNotFound", err)
@@ -98,7 +98,7 @@ func TestSetTarget_RejectsUnknownBoard(t *testing.T) {
 func TestTargetLocked(t *testing.T) {
 	t.Parallel()
 
-	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{})
+	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{}, usecase.NewBoardLocks())
 	locked, err := svc.TargetLocked(t.Context(), "board-1")
 	if err != nil {
 		t.Fatalf("TargetLocked() = %v", err)
@@ -108,7 +108,7 @@ func TestTargetLocked(t *testing.T) {
 	}
 
 	withRun := usecase.NewBoardService(&fakeBoards{},
-		&fakeMappings{runs: []port.SyncRun{{BoardID: "board-1"}}})
+		&fakeMappings{runs: []port.SyncRun{{BoardID: "board-1"}}}, usecase.NewBoardLocks())
 	if locked, err = withRun.TargetLocked(t.Context(), "board-1"); err != nil {
 		t.Fatalf("TargetLocked() = %v", err)
 	}
@@ -126,7 +126,8 @@ func TestCreate_RejectsBoardWithoutTarget(t *testing.T) {
 	board.Target = port.BoardTarget{}
 
 	gh := &fakeGitHub{fields: projectFields()}
-	svc := usecase.NewCreationService(&fakeBoards{board: board}, &fakeMappings{}, gh)
+	svc := usecase.NewCreationService(&fakeBoards{board: board}, &fakeMappings{}, gh,
+		usecase.NewBoardLocks())
 
 	_, err := svc.Create(t.Context(), "board-1", "annot-1", "sha256:whatever", interpretation())
 	if !errors.Is(err, usecase.ErrTargetNotSelected) {
@@ -145,7 +146,8 @@ func TestCreate_UsesTargetProjectOfBoard(t *testing.T) {
 	board.Target.ProjectID = "PVT_board_specific"
 
 	gh := &fakeGitHub{fields: projectFields()}
-	svc := usecase.NewCreationService(&fakeBoards{board: board}, &fakeMappings{}, gh)
+	svc := usecase.NewCreationService(&fakeBoards{board: board}, &fakeMappings{}, gh,
+		usecase.NewBoardLocks())
 
 	if _, err := svc.Create(
 		t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation(),
