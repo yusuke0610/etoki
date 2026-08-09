@@ -93,7 +93,9 @@ func New(cfg Config) (*Client, error) {
 
 // ListRepositories は利用者が関われるリポジトリを返す。
 //
-// アーカイブ済みは落とす。選択肢として出しても選ばせる意味が無い。
+// アーカイブ済みは含めない。選択肢として出しても選ばせる意味が無いので、
+// クエリ側で落としている。
+//
 // トークンに repo の read が無いと 0 件になるが、権限不足と「本当に 1 つも
 // 無い」を GraphQL の応答からは区別できない。案内は呼び出し側に任せる。
 func (c *Client) ListRepositories(ctx context.Context) ([]port.Repository, error) {
@@ -110,9 +112,6 @@ func (c *Client) ListRepositories(ctx context.Context) ([]port.Repository, error
 		}
 
 		for _, n := range resp.Viewer.Repositories.Nodes {
-			if n.IsArchived {
-				continue
-			}
 			repos = append(repos, port.Repository{
 				Owner:       n.Owner.Login,
 				Name:        n.Name,
@@ -410,16 +409,21 @@ type graphQLError struct {
 //
 // affiliations を絞らないと、star したリポジトリまで混ざる。並びは push が
 // 新しい順。直近さわっているものほど選びたい対象である可能性が高い。
+//
+// **アーカイブ済みはクエリ側で落とす。** 取ってから捨てると、1 ページの枠を
+// 選択肢にならないもので埋めてしまい、maxRepositories に達する前に候補が
+// 尽きる。
 const queryViewerRepositories = `query($first: Int!, $after: String) {
   viewer {
     repositories(
       first: $first
       after: $after
+      isArchived: false
       affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
       orderBy: {field: PUSHED_AT, direction: DESC}
     ) {
       pageInfo { hasNextPage endCursor }
-      nodes { name description isArchived owner { login } }
+      nodes { name description owner { login } }
     }
   }
 }`
@@ -431,7 +435,6 @@ type repositoriesResponse struct {
 			Nodes    []struct {
 				Name        string `json:"name"`
 				Description string `json:"description"`
-				IsArchived  bool   `json:"isArchived"`
 				Owner       struct {
 					Login string `json:"login"`
 				} `json:"owner"`
@@ -444,9 +447,19 @@ type repositoriesResponse struct {
 //
 // draft issue の作成先はリポジトリではなく Project（ADR 0014）。番号順に
 // 並べるのは、GitHub の URL に出る番号と一覧の並びを揃えるため。
+//
+// **minPermissionLevel は WRITE。** 既定の READ だと、読めるだけで書けない
+// Project まで候補に出る。選んだ時点では通り、最初の draft issue を作る
+// ところで初めて GitHub 側の権限エラーになる。そこは固定の時点でもあるので、
+// 作成先を変えて逃げることもできない（ADR 0014）。選ばせる前に落とす。
 const queryRepositoryProjects = `query($owner: String!, $name: String!, $first: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
-    projectsV2(first: $first, after: $after, orderBy: {field: NUMBER, direction: ASC}) {
+    projectsV2(
+      first: $first
+      after: $after
+      minPermissionLevel: WRITE
+      orderBy: {field: NUMBER, direction: ASC}
+    ) {
       pageInfo { hasNextPage endCursor }
       nodes { id number title closed }
     }

@@ -517,9 +517,8 @@ func TestListRepositories(t *testing.T) {
 	body := `{"data":{"viewer":{"repositories":{
 		"pageInfo":{"hasNextPage":false,"endCursor":"c1"},
 		"nodes":[
-			{"name":"web","description":"フロント","isArchived":false,"owner":{"login":"acme"}},
-			{"name":"old","description":"","isArchived":true,"owner":{"login":"acme"}},
-			{"name":"api","description":"","isArchived":false,"owner":{"login":"other"}}
+			{"name":"web","description":"フロント","owner":{"login":"acme"}},
+			{"name":"api","description":"","owner":{"login":"other"}}
 		]}}}}`
 
 	c, got := newClient(t, body)
@@ -529,7 +528,6 @@ func TestListRepositories(t *testing.T) {
 		t.Fatalf("ListRepositories() = %v", err)
 	}
 
-	// アーカイブ済みは落とす。選ばせる意味が無い。
 	want := []port.Repository{
 		{Owner: "acme", Name: "web", Description: "フロント"},
 		{Owner: "other", Name: "api"},
@@ -545,6 +543,27 @@ func TestListRepositories(t *testing.T) {
 
 	if (*got)[0].Path != "/graphql" {
 		t.Errorf("path = %q, want /graphql", (*got)[0].Path)
+	}
+}
+
+// アーカイブ済みを落とすのはクエリ側の仕事。取ってから捨てると、1 ページの枠を
+// 選択肢にならないもので埋めてしまう。応答に isArchived が入らないので、
+// 絞り込みが消えたことは取得結果からは分からない。クエリを直に見る。
+func TestListRepositories_FiltersArchivedInQuery(t *testing.T) {
+	t.Parallel()
+
+	body := `{"data":{"viewer":{"repositories":{
+		"pageInfo":{"hasNextPage":false,"endCursor":"c1"},
+		"nodes":[]}}}}`
+
+	c, got := newClient(t, body)
+
+	if _, err := c.ListRepositories(t.Context()); err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+
+	if q := (*got)[0].Query; !strings.Contains(q, "isArchived: false") {
+		t.Errorf("クエリがアーカイブ済みを除外していない:\n%s", q)
 	}
 }
 
@@ -616,6 +635,12 @@ func TestListRepositoryProjects(t *testing.T) {
 	vars := (*got)[0].Variables
 	if vars["owner"] != "acme" || vars["name"] != "web" {
 		t.Errorf("variables = %+v, want owner=acme name=web", vars)
+	}
+
+	// 書けない Project を候補に出さないのはクエリ側の仕事。応答には権限が
+	// 入らないので、絞り込みが消えたことは取得結果からは分からない。
+	if q := (*got)[0].Query; !strings.Contains(q, "minPermissionLevel: WRITE") {
+		t.Errorf("クエリが書き込み権限で絞っていない:\n%s", q)
 	}
 }
 
