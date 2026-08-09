@@ -3,6 +3,8 @@ import type {
   BoardDetail,
   CreatedRun,
   Interpretation,
+  Project,
+  Repository,
 } from "../../src/api/types";
 import { emptyScene, type ApiMock } from "./api";
 
@@ -15,6 +17,7 @@ export const ANNOTATION_IDS = {
   changed: "frame-changed",
 } as const;
 
+/** 作成先を選び終えたボード。ほとんどのテストはここから始まる。 */
 export function board(): BoardDetail {
   return {
     id: BOARD_ID,
@@ -22,7 +25,37 @@ export function board(): BoardDetail {
     createdAt: "2026-08-01T09:00:00Z",
     updatedAt: "2026-08-05T09:30:00Z",
     scene: emptyScene(),
+    repositoryOwner: "acme",
+    repositoryName: "web",
+    projectId: "PVT_1",
+    targetLocked: false,
   };
+}
+
+/** まだ作成先を選んでいないボード。開くとリポジトリ選択に入る。 */
+export function unselectedBoard(): BoardDetail {
+  return {
+    ...board(),
+    id: "board-unselected",
+    name: "作成先未選択のブレスト",
+    repositoryOwner: "",
+    repositoryName: "",
+    projectId: "",
+  };
+}
+
+export function repositories(): Repository[] {
+  return [
+    { owner: "acme", name: "web", description: "フロントエンド" },
+    { owner: "acme", name: "api" },
+  ];
+}
+
+export function projects(): Project[] {
+  return [
+    { id: "PVT_1", number: 1, title: "ロードマップ" },
+    { id: "PVT_2", number: 4, title: "技術的負債" },
+  ];
 }
 
 export function annotations(): AnnotationStatus[] {
@@ -137,5 +170,10 @@ export function baseMock(): ApiMock {
     annotations: { [detail.id]: annotations() },
     interpret: { status: 200, body: interpretation() },
     createItems: { status: 201, body: createdRun() },
+    repositories: { status: 200, body: repositories() },
+    projects: {
+      "acme/web": { status: 200, body: projects() },
+      "acme/api": { status: 200, body: [] },
+    },
   };
 }

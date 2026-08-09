@@ -33,16 +33,32 @@ type fakeGitHub struct {
 	// listErr が非 nil なら ListProjectFields が失敗する。
 	listErr error
 	seq     int
+	// repos と projects は作成先の候補一覧が返すもの。
+	repos    []port.Repository
+	projects []port.Project
+	// projectIDs は呼び出しごとに渡された作成先。ボードの Project が
+	// 使われていることを確かめる。
+	projectIDs []string
 }
 
-func (f *fakeGitHub) ListProjectFields(context.Context, string) ([]port.ProjectField, error) {
+func (f *fakeGitHub) ListRepositories(context.Context) ([]port.Repository, error) {
+	return f.repos, nil
+}
+
+func (f *fakeGitHub) ListRepositoryProjects(context.Context, string, string) ([]port.Project, error) {
+	return f.projects, nil
+}
+
+func (f *fakeGitHub) ListProjectFields(_ context.Context, projectID string) ([]port.ProjectField, error) {
+	f.projectIDs = append(f.projectIDs, projectID)
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
 	return f.fields, nil
 }
 
-func (f *fakeGitHub) CreateDraftIssue(_ context.Context, _ string, item port.DraftIssue) (string, error) {
+func (f *fakeGitHub) CreateDraftIssue(_ context.Context, projectID string, item port.DraftIssue) (string, error) {
+	f.projectIDs = append(f.projectIDs, projectID)
 	if f.failOnTitle != "" && item.Title == f.failOnTitle {
 		return "", errors.New("github: boom")
 	}
@@ -52,7 +68,8 @@ func (f *fakeGitHub) CreateDraftIssue(_ context.Context, _ string, item port.Dra
 	return id, nil
 }
 
-func (f *fakeGitHub) SetItemFieldValue(_ context.Context, _, itemID string, v port.FieldValue) error {
+func (f *fakeGitHub) SetItemFieldValue(_ context.Context, projectID, itemID string, v port.FieldValue) error {
+	f.projectIDs = append(f.projectIDs, projectID)
 	call := githubCall{op: "field", itemID: itemID, fieldID: v.FieldID}
 	if v.Text != nil {
 		call.text = *v.Text
@@ -82,8 +99,18 @@ func (f *fakeMappings) FindLatestRun(context.Context, string, string) (*port.Syn
 	return nil, nil
 }
 
-func (f *fakeMappings) ListLatestRunsByBoard(context.Context, string) ([]port.SyncRun, error) {
-	return nil, nil
+// 実装は board_id で絞る。フェイクが全部返すと、別ボードの run が固定判定を
+// 誤らせても気づけない。
+func (f *fakeMappings) ListLatestRunsByBoard(
+	_ context.Context, boardID string,
+) ([]port.SyncRun, error) {
+	var runs []port.SyncRun
+	for _, run := range f.runs {
+		if run.BoardID == boardID {
+			runs = append(runs, run)
+		}
+	}
+	return runs, nil
 }
 
 // projectFields は etoki が必要とするフィールドが揃った状態。
@@ -125,7 +152,7 @@ func newCreationService(t *testing.T, gh *fakeGitHub, mappings *fakeMappings) *u
 	t.Helper()
 
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	return usecase.NewCreationService(boards, mappings, gh, "PVT_1",
+	return usecase.NewCreationService(boards, mappings, gh, usecase.NewBoardLocks(),
 		usecase.WithCreationClock(func() time.Time { return createdAt }))
 }
 
@@ -525,7 +552,7 @@ func TestCreate_UsesConfiguredFieldNames(t *testing.T) {
 	}}
 
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	svc := usecase.NewCreationService(boards, &fakeMappings{}, gh, "PVT_1",
+	svc := usecase.NewCreationService(boards, &fakeMappings{}, gh, usecase.NewBoardLocks(),
 		usecase.WithFieldNames("種別", "親"),
 		usecase.WithCreationClock(func() time.Time { return createdAt }))
 

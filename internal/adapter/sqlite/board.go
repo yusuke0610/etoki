@@ -22,12 +22,23 @@ func NewBoardRepository(db *sql.DB) *BoardRepository {
 
 var _ port.BoardRepository = (*BoardRepository)(nil)
 
+// boardColumns は SELECT する列。Find と List で同じ並びを使う。
+//
+// scanBoard が並び順に依存するので、片方だけ足すと取り違える。
+const boardColumns = `id, name, scene,
+	repository_owner, repository_name, project_id,
+	created_at, updated_at`
+
 // Create は新しいボードを保存する。
 func (r *BoardRepository) Create(ctx context.Context, b port.Board) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO boards (id, name, scene, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		b.ID, b.Name, b.Scene, formatTime(b.CreatedAt), formatTime(b.UpdatedAt),
+		`INSERT INTO boards (id, name, scene,
+		                     repository_owner, repository_name, project_id,
+		                     created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		b.ID, b.Name, b.Scene,
+		b.Target.RepositoryOwner, b.Target.RepositoryName, b.Target.ProjectID,
+		formatTime(b.CreatedAt), formatTime(b.UpdatedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("insert board %s: %w", b.ID, err)
@@ -37,10 +48,28 @@ func (r *BoardRepository) Create(ctx context.Context, b port.Board) error {
 
 // UpdateScene はシーンと更新時刻だけを更新する。
 func (r *BoardRepository) UpdateScene(ctx context.Context, id, scene string, updatedAt time.Time) error {
-	res, err := r.db.ExecContext(ctx,
+	return r.update(ctx, id,
 		`UPDATE boards SET scene = ?, updated_at = ? WHERE id = ?`,
-		scene, formatTime(updatedAt), id,
-	)
+		scene, formatTime(updatedAt), id)
+}
+
+// UpdateTarget は作成先と更新時刻だけを更新する。
+func (r *BoardRepository) UpdateTarget(
+	ctx context.Context, id string, t port.BoardTarget, updatedAt time.Time,
+) error {
+	return r.update(ctx, id,
+		`UPDATE boards
+		 SET repository_owner = ?, repository_name = ?, project_id = ?, updated_at = ?
+		 WHERE id = ?`,
+		t.RepositoryOwner, t.RepositoryName, t.ProjectID, formatTime(updatedAt), id)
+}
+
+// update は 1 行更新を実行し、対象が無ければ ErrNotFound にする。
+//
+// UPDATE は対象が無くてもエラーにならない。存在しない ID への更新が黙って
+// 成功すると、呼び出し側は保存できたと思い込む。
+func (r *BoardRepository) update(ctx context.Context, id, query string, args ...any) error {
+	res, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("update board %s: %w", id, err)
 	}
@@ -59,7 +88,7 @@ func (r *BoardRepository) UpdateScene(ctx context.Context, id, scene string, upd
 // Find は ID でボードを引く。存在しなければ (nil, nil) を返す。
 func (r *BoardRepository) Find(ctx context.Context, id string) (*port.Board, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, name, scene, created_at, updated_at FROM boards WHERE id = ?`, id)
+		`SELECT `+boardColumns+` FROM boards WHERE id = ?`, id)
 
 	b, err := scanBoard(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -76,7 +105,7 @@ func (r *BoardRepository) Find(ctx context.Context, id string) (*port.Board, err
 // List は全ボードを更新時刻の降順で返す。
 func (r *BoardRepository) List(ctx context.Context) ([]port.Board, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, scene, created_at, updated_at FROM boards ORDER BY updated_at DESC, id`)
+		`SELECT `+boardColumns+` FROM boards ORDER BY updated_at DESC, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list boards: %w", err)
 	}
@@ -107,7 +136,9 @@ func scanBoard(s rowScanner) (port.Board, error) {
 		b                    port.Board
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&b.ID, &b.Name, &b.Scene, &createdAt, &updatedAt); err != nil {
+	if err := s.Scan(&b.ID, &b.Name, &b.Scene,
+		&b.Target.RepositoryOwner, &b.Target.RepositoryName, &b.Target.ProjectID,
+		&createdAt, &updatedAt); err != nil {
 		return port.Board{}, err
 	}
 

@@ -5,12 +5,15 @@ import { useCallback, useEffect, useState } from "react";
 import { boardsApi } from "./api/boards";
 import type { BoardDetail, BoardSummary } from "./api/types";
 import { BoardPage } from "./board/BoardPage";
+import { RepositoryPicker } from "./board/RepositoryPicker";
 
 export function App() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [current, setCurrent] = useState<BoardDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
+  // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
+  const [picking, setPicking] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -26,6 +29,7 @@ export function App() {
 
   const open = useCallback(async (id: string) => {
     try {
+      setPicking(false);
       setCurrent(await boardsApi.get(id));
     } catch (e) {
       setError(`ボードを開けませんでした: ${String(e)}`);
@@ -38,11 +42,18 @@ export function App() {
       const board = await boardsApi.create(name.trim());
       setName("");
       await reload();
+      setPicking(false);
       setCurrent(board);
     } catch (e) {
       setError(`ボードを作成できませんでした: ${String(e)}`);
     }
   }, [name, reload]);
+
+  /** 作成先が決まったら、その姿でボードを差し替えてブレストに進む。 */
+  const targetSelected = useCallback((board: BoardDetail) => {
+    setPicking(false);
+    setCurrent(board);
+  }, []);
 
   return (
     <div className="app">
@@ -92,12 +103,30 @@ export function App() {
           </div>
         )}
 
-        {current ? (
+        {/*
+          「ボードに入る → 対象リポジトリ選択 → ブレスト開始」の分岐はここに置く。
+          BoardPage の中ではなく手前で切ることで、作成先が決まるまでキャンバスを
+          出さないという要求がそのまま形になる。
+        */}
+        {current === null ? (
+          <p className="hint">左からボードを選ぶか、新しく作成してください。</p>
+        ) : picking || current.projectId === "" ? (
+          <RepositoryPicker
+            key={current.id}
+            board={current}
+            onSelected={targetSelected}
+            // 未選択のうちは引き返す先が無い。選び直しのときだけ戻れる。
+            onCancel={picking ? () => setPicking(false) : undefined}
+          />
+        ) : (
           // ボードを切り替えたら Excalidraw ごと作り直す。initialData は
           // マウント時にしか読まれないため、key を変えないと前のシーンが残る。
-          <BoardPage key={current.id} board={current} onError={setError} />
-        ) : (
-          <p className="hint">左からボードを選ぶか、新しく作成してください。</p>
+          <BoardPage
+            key={current.id}
+            board={current}
+            onError={setError}
+            onChangeTarget={() => setPicking(true)}
+          />
         )}
       </main>
     </div>

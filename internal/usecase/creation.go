@@ -36,17 +36,26 @@ var (
 
 	// ErrContentHashMismatch は解釈時点と作成時点の保存済みシーンが違うことを表す。
 	ErrContentHashMismatch = errors.New("etoki: board changed after interpretation")
+
+	// ErrTargetNotSelected はボードに作成先が設定されていないことを表す。
+	//
+	// 作成先はボードごとに持つ（ADR 0014）。未選択のまま作ると、どこにも
+	// 置き場所が無い。
+	ErrTargetNotSelected = errors.New("etoki: board has no target project")
 )
 
 // CreationService は解釈結果から draft issue を作り、実行を記録する。
 //
 // 何を作るかは開発者が解釈結果を見て決める。この層は渡されたものを作るだけで、
 // 自分で解釈し直したり、作る内容を選んだりしない（中核思想 3）。
+//
+// 作成先はコンストラクタでは受け取らない。ボードごとに違うので、Create の中で
+// 読み込んだ board から取る（ADR 0014）。
 type CreationService struct {
 	boards      port.BoardRepository
 	mappings    port.MappingRepository
 	github      port.GitHubClient
-	projectID   string
+	locks       *BoardLocks
 	kindField   string
 	parentField string
 	now         func() time.Time
@@ -73,18 +82,20 @@ func WithCreationClock(f func() time.Time) CreationServiceOption {
 }
 
 // NewCreationService は CreationService を作る。
+//
+// locks は BoardService と同じものを渡す（BoardLocks を参照）。
 func NewCreationService(
 	boards port.BoardRepository,
 	mappings port.MappingRepository,
 	github port.GitHubClient,
-	projectID string,
+	locks *BoardLocks,
 	opts ...CreationServiceOption,
 ) *CreationService {
 	s := &CreationService{
 		boards:      boards,
 		mappings:    mappings,
 		github:      github,
-		projectID:   projectID,
+		locks:       locks,
 		kindField:   DefaultKindFieldName,
 		parentField: DefaultParentFieldName,
 		now:         time.Now,
@@ -103,6 +114,14 @@ func NewCreationService(
 func (s *CreationService) Create(
 	ctx context.Context, boardID, annotationID, contentHash string, in domain.Interpretation,
 ) (*port.SyncRun, error) {
+	// 作成先を読んでから run を記録するまで、このボードの作成先を動かさせない。
+	// 途中で変えられると、作った先と記録が指す先がずれる（BoardLocks を参照）。
+	release, err := s.locks.Acquire(ctx, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	board, err := s.boards.Find(ctx, boardID)
 	if err != nil {
 		return nil, err
@@ -110,6 +129,14 @@ func (s *CreationService) Create(
 	if board == nil {
 		return nil, fmt.Errorf("%w: %s", ErrBoardNotFound, boardID)
 	}
+
+	// 作成先はボードが持つ。未選択なら止める。ここを通すと、置き場所の無い
+	// draft issue を GitHub 側のエラーとして受け取ることになり、原因が
+	// 設定不足だと分かりにくい。
+	if !board.Target.Selected() {
+		return nil, fmt.Errorf("%w: %s", ErrTargetNotSelected, boardID)
+	}
+	projectID := board.Target.ProjectID
 
 	scene, err := domain.ParseScene([]byte(board.Scene))
 	if err != nil {
@@ -142,7 +169,7 @@ func (s *CreationService) Create(
 		return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
-	fields, err := s.resolveFields(ctx)
+	fields, err := s.resolveFields(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +183,7 @@ func (s *CreationService) Create(
 		CreatedAt:    s.now(),
 	}
 
-	items, createErr := s.createItems(ctx, in, fields, run.CreatedAt)
+	items, createErr := s.createItems(ctx, projectID, in, fields, run.CreatedAt)
 	run.Items = items
 
 	// 1 件も作れていないなら記録するものが無い。空の run を残すと、状態が
@@ -184,7 +211,8 @@ func (s *CreationService) Create(
 // 順序に意味がある。issue の親フィールドには epic のタイトルを入れるため、
 // epic が確定していないと値を決められない。
 func (s *CreationService) createItems(
-	ctx context.Context, in domain.Interpretation, fields projectFields, now time.Time,
+	ctx context.Context, projectID string, in domain.Interpretation,
+	fields projectFields, now time.Time,
 ) ([]port.SyncItem, error) {
 	var created []port.SyncItem
 
@@ -197,7 +225,7 @@ func (s *CreationService) createItems(
 				continue
 			}
 
-			saved, err := s.createOne(ctx, item, fields, epicTitles, now)
+			saved, err := s.createOne(ctx, projectID, item, fields, epicTitles, now)
 			if err != nil {
 				return created, fmt.Errorf("%w: %w", ErrCreationIncomplete, err)
 			}
@@ -215,12 +243,13 @@ func (s *CreationService) createItems(
 // createOne は draft issue を 1 件作り、種別と親を設定する。
 func (s *CreationService) createOne(
 	ctx context.Context,
+	projectID string,
 	item domain.InterpretedItem,
 	fields projectFields,
 	epicTitles map[string]string,
 	now time.Time,
 ) (port.SyncItem, error) {
-	itemID, err := s.github.CreateDraftIssue(ctx, s.projectID,
+	itemID, err := s.github.CreateDraftIssue(ctx, projectID,
 		port.DraftIssue{Title: item.Title, Body: item.Body})
 	if err != nil {
 		return port.SyncItem{}, fmt.Errorf("create %q: %w", item.Title, err)
@@ -230,7 +259,7 @@ func (s *CreationService) createOne(
 	if item.Kind == domain.KindIssue {
 		optionID = fields.issueOptionID
 	}
-	if err := s.github.SetItemFieldValue(ctx, s.projectID, itemID,
+	if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
 		port.FieldValue{FieldID: fields.kindID, OptionID: &optionID}); err != nil {
 		return port.SyncItem{}, fmt.Errorf("set kind on %q: %w", item.Title, err)
 	}
@@ -256,7 +285,7 @@ func (s *CreationService) createOne(
 		return port.SyncItem{}, fmt.Errorf("parent %q of %q was not created",
 			*item.ParentLocalID, item.Title)
 	}
-	if err := s.github.SetItemFieldValue(ctx, s.projectID, itemID,
+	if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
 		port.FieldValue{FieldID: fields.parentID, Text: &title}); err != nil {
 		return port.SyncItem{}, fmt.Errorf("set parent on %q: %w", item.Title, err)
 	}
@@ -273,8 +302,8 @@ type projectFields struct {
 }
 
 // resolveFields は種別と親のフィールド ID を名前から解決する。
-func (s *CreationService) resolveFields(ctx context.Context) (projectFields, error) {
-	all, err := s.github.ListProjectFields(ctx, s.projectID)
+func (s *CreationService) resolveFields(ctx context.Context, projectID string) (projectFields, error) {
+	all, err := s.github.ListProjectFields(ctx, projectID)
 	if err != nil {
 		return projectFields{}, err
 	}

@@ -34,6 +34,15 @@ const maxResponseBytes = 10 << 20 // 10 MiB
 // fieldsPageSize は一度に取得するカスタムフィールドの数。
 const fieldsPageSize = 100
 
+// listPageSize は一度に取得するリポジトリ / Project の数。
+const listPageSize = 100
+
+// maxRepositories は一覧で辿るリポジトリ数の上限。
+//
+// 選択肢として画面に出すものなので、全部を取り切ることに意味が無い。
+// 上限を設けないと、所属組織の多い利用者で一覧の取得だけが延々と続く。
+const maxRepositories = 500
+
 // ErrTokenRequired はトークンが設定されていないことを表す。
 var ErrTokenRequired = errors.New("etoki: github token is required")
 
@@ -82,6 +91,107 @@ func New(cfg Config) (*Client, error) {
 	return c, nil
 }
 
+// ListRepositories は利用者が関われるリポジトリを返す。
+//
+// アーカイブ済みは含めない。選択肢として出しても選ばせる意味が無いので、
+// クエリ側で落としている。
+//
+// トークンに repo の read が無いと 0 件になるが、権限不足と「本当に 1 つも
+// 無い」を GraphQL の応答からは区別できない。案内は呼び出し側に任せる。
+func (c *Client) ListRepositories(ctx context.Context) ([]port.Repository, error) {
+	var (
+		repos []port.Repository
+		after *string
+	)
+
+	for {
+		var resp repositoriesResponse
+		vars := map[string]any{"first": listPageSize, "after": after}
+		if err := c.do(ctx, queryViewerRepositories, vars, &resp); err != nil {
+			return nil, err
+		}
+
+		for _, n := range resp.Viewer.Repositories.Nodes {
+			repos = append(repos, port.Repository{
+				Owner:       n.Owner.Login,
+				Name:        n.Name,
+				Description: n.Description,
+			})
+		}
+
+		// 上限に達したらそこで返す。選択肢として見せるものなので、全件を
+		// 取り切る必要が無い。
+		if len(repos) >= maxRepositories {
+			return repos[:maxRepositories], nil
+		}
+
+		page := resp.Viewer.Repositories.PageInfo
+		next, err := nextCursor("repositories", page.HasNextPage, page.EndCursor, after)
+		if err != nil {
+			return nil, err
+		}
+		if next == nil {
+			return repos, nil
+		}
+		after = next
+	}
+}
+
+// ListRepositoryProjects はリポジトリに紐づく Projects v2 を返す。
+//
+// 閉じた Project は落とす。draft issue を入れる先として選ばせる意味が無い。
+func (c *Client) ListRepositoryProjects(
+	ctx context.Context, owner, name string,
+) ([]port.Project, error) {
+	if owner == "" || name == "" {
+		return nil, errors.New("github: repository owner and name are required")
+	}
+
+	var (
+		projects []port.Project
+		after    *string
+	)
+
+	for {
+		var resp repositoryProjectsResponse
+		vars := map[string]any{"owner": owner, "name": name, "first": listPageSize, "after": after}
+		if err := c.do(ctx, queryRepositoryProjects, vars, &resp); err != nil {
+			return nil, err
+		}
+
+		for _, n := range resp.Repository.ProjectsV2.Nodes {
+			if n.Closed {
+				continue
+			}
+			projects = append(projects, port.Project{ID: n.ID, Number: n.Number, Title: n.Title})
+		}
+
+		page := resp.Repository.ProjectsV2.PageInfo
+		next, err := nextCursor("projects", page.HasNextPage, page.EndCursor, after)
+		if err != nil {
+			return nil, err
+		}
+		if next == nil {
+			return projects, nil
+		}
+		after = next
+	}
+}
+
+// nextCursor は次のページのカーソルを返す。次が無ければ (nil, nil)。
+//
+// カーソルが空、あるいは前回から進んでいないなら、辿り続けても同じページを
+// 取り直すだけで終わらない。打ち切ってエラーにする。
+func nextCursor(what string, hasNext bool, endCursor string, after *string) (*string, error) {
+	if !hasNext {
+		return nil, nil
+	}
+	if endCursor == "" || (after != nil && endCursor == *after) {
+		return nil, fmt.Errorf("github: %s pagination did not advance (cursor %q)", what, endCursor)
+	}
+	return &endCursor, nil
+}
+
 // ListProjectFields はプロジェクトのカスタムフィールド定義を返す。
 //
 // ページングを辿る。途中で打ち切ると、後ろにあるフィールドが「存在しない」
@@ -112,17 +222,15 @@ func (c *Client) ListProjectFields(ctx context.Context, projectID string) ([]por
 			fields = append(fields, f)
 		}
 
-		if !resp.Node.Fields.PageInfo.HasNextPage {
+		page := resp.Node.Fields.PageInfo
+		next, err := nextCursor("fields", page.HasNextPage, page.EndCursor, after)
+		if err != nil {
+			return nil, err
+		}
+		if next == nil {
 			return fields, nil
 		}
-
-		// カーソルが空、あるいは前回から進んでいないなら、辿り続けても同じ
-		// ページを取り直すだけで終わらない。打ち切ってエラーにする。
-		cursor := resp.Node.Fields.PageInfo.EndCursor
-		if cursor == "" || (after != nil && cursor == *after) {
-			return nil, fmt.Errorf("github: fields pagination did not advance (cursor %q)", cursor)
-		}
-		after = &cursor
+		after = next
 	}
 }
 
@@ -297,6 +405,87 @@ type graphQLError struct {
 	Message string `json:"message"`
 }
 
+// queryViewerRepositories はトークンの持ち主が関われるリポジトリを取る。
+//
+// affiliations を絞らないと、star したリポジトリまで混ざる。並びは push が
+// 新しい順。直近さわっているものほど選びたい対象である可能性が高い。
+//
+// **アーカイブ済みはクエリ側で落とす。** 取ってから捨てると、1 ページの枠を
+// 選択肢にならないもので埋めてしまい、maxRepositories に達する前に候補が
+// 尽きる。
+const queryViewerRepositories = `query($first: Int!, $after: String) {
+  viewer {
+    repositories(
+      first: $first
+      after: $after
+      isArchived: false
+      affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
+      orderBy: {field: PUSHED_AT, direction: DESC}
+    ) {
+      pageInfo { hasNextPage endCursor }
+      nodes { name description owner { login } }
+    }
+  }
+}`
+
+type repositoriesResponse struct {
+	Viewer struct {
+		Repositories struct {
+			PageInfo pageInfo `json:"pageInfo"`
+			Nodes    []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Owner       struct {
+					Login string `json:"login"`
+				} `json:"owner"`
+			} `json:"nodes"`
+		} `json:"repositories"`
+	} `json:"viewer"`
+}
+
+// queryRepositoryProjects はリポジトリに紐づく Projects v2 を取る。
+//
+// draft issue の作成先はリポジトリではなく Project（ADR 0014）。番号順に
+// 並べるのは、GitHub の URL に出る番号と一覧の並びを揃えるため。
+//
+// **minPermissionLevel は WRITE。** 既定の READ だと、読めるだけで書けない
+// Project まで候補に出る。選んだ時点では通り、最初の draft issue を作る
+// ところで初めて GitHub 側の権限エラーになる。そこは固定の時点でもあるので、
+// 作成先を変えて逃げることもできない（ADR 0014）。選ばせる前に落とす。
+const queryRepositoryProjects = `query($owner: String!, $name: String!, $first: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    projectsV2(
+      first: $first
+      after: $after
+      minPermissionLevel: WRITE
+      orderBy: {field: NUMBER, direction: ASC}
+    ) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id number title closed }
+    }
+  }
+}`
+
+type repositoryProjectsResponse struct {
+	Repository struct {
+		ProjectsV2 struct {
+			PageInfo pageInfo `json:"pageInfo"`
+			Nodes    []struct {
+				ID     string `json:"id"`
+				Number int    `json:"number"`
+				Title  string `json:"title"`
+				Closed bool   `json:"closed"`
+			} `json:"nodes"`
+		} `json:"projectsV2"`
+	} `json:"repository"`
+}
+
+// pageInfo は GraphQL の Relay ページング情報。
+type pageInfo struct {
+	HasNextPage bool   `json:"hasNextPage"`
+	EndCursor   string `json:"endCursor"`
+}
+
 // queryProjectFields はカスタムフィールド定義を取る。
 //
 // ProjectV2FieldCommon は id / name / dataType を持つインターフェース。
@@ -318,11 +507,8 @@ const queryProjectFields = `query($projectId: ID!, $first: Int!, $after: String)
 type fieldsResponse struct {
 	Node struct {
 		Fields struct {
-			PageInfo struct {
-				HasNextPage bool   `json:"hasNextPage"`
-				EndCursor   string `json:"endCursor"`
-			} `json:"pageInfo"`
-			Nodes []struct {
+			PageInfo pageInfo `json:"pageInfo"`
+			Nodes    []struct {
 				ID       string `json:"id"`
 				Name     string `json:"name"`
 				DataType string `json:"dataType"`

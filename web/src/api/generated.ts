@@ -92,6 +92,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/boards/{id}/target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * draft issue の作成先をボードに設定する
+         * @description 利用者はリポジトリを選ぶが、保存するのはそのリポジトリに紐づく
+         *     Projects v2。draft issue はリポジトリではなく Project に属するため
+         *     （ADR 0014）。
+         *
+         *     そのボードで draft issue を 1 件でも作った後は 409 を返す。
+         */
+        put: operations["setBoardTarget"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 作成先に選べるリポジトリの一覧を返す
+         * @description アーカイブ済みは含めない。トークンに repo の read が無いと 0 件になるが、
+         *     権限不足と「本当に 1 つも無い」は区別できない。
+         */
+        get: operations["listRepositories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/repositories/{owner}/{repo}/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description リポジトリ所有者の login */
+                owner: components["parameters"]["RepositoryOwner"];
+                /** @description リポジトリ名 */
+                repo: components["parameters"]["RepositoryName"];
+            };
+            cookie?: never;
+        };
+        /**
+         * リポジトリに紐づく Projects v2 の一覧を返す
+         * @description 閉じた Project は含めない。
+         */
+        get: operations["listRepositoryProjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards/{id}/annotations": {
         parameters: {
             query?: never;
@@ -210,10 +283,52 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        /** @description シーンを含むボード */
+        /**
+         * @description シーンと作成先を含むボード。
+         *
+         *     作成先は一覧（BoardSummary）には含めない。`targetLocked` の算出に
+         *     run の照会が要るので、ボード数だけ問い合わせが増える。
+         */
         BoardDetail: components["schemas"]["BoardSummary"] & {
             /** @description Excalidraw のシーン JSON をそのまま入れた文字列 */
             scene: string;
+            /** @description 作成先リポジトリの所有者。未選択なら空文字 */
+            repositoryOwner: string;
+            /** @description 作成先リポジトリの名前。未選択なら空文字 */
+            repositoryName: string;
+            /** @description draft issue を作る Projects v2 の node ID。未選択なら空文字 */
+            projectId: string;
+            /**
+             * @description 作成先を変更できないことを表す。そのボードで draft issue を
+             *     1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
+             *     数えられないので、状態としてサーバーが返す
+             */
+            targetLocked: boolean;
+        };
+        /**
+         * @description draft issue の作成先。設定のリクエストボディ。
+         *
+         *     リポジトリと Project の両方を持つ。保存先として効くのは projectId
+         *     だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
+         */
+        BoardTarget: {
+            repositoryOwner: string;
+            repositoryName: string;
+            projectId: string;
+        };
+        /** @description 作成先を選ぶときに見せるリポジトリ */
+        Repository: {
+            owner: string;
+            name: string;
+            description?: string;
+        };
+        /** @description リポジトリに紐づく Projects v2 */
+        Project: {
+            /** @description GraphQL の node ID。作成先として保存するのはこれ */
+            id: string;
+            /** @description リポジトリ内での番号。GitHub の URL に出る */
+            number: number;
+            title: string;
         };
         /** @description ボード作成のリクエストボディ */
         CreateBoardRequest: {
@@ -335,6 +450,10 @@ export interface components {
         BoardId: string;
         /** @description 注釈にした frame の要素 ID */
         AnnotationId: string;
+        /** @description リポジトリ所有者の login */
+        RepositoryOwner: string;
+        /** @description リポジトリ名 */
+        RepositoryName: string;
     };
     requestBodies: never;
     headers: never;
@@ -467,6 +586,132 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    setBoardTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardTarget"];
+            };
+        };
+        responses: {
+            /** @description 設定後のボード */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description すでに draft issue を作っているので作成先を変えられない */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listRepositories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description リポジトリの一覧。0 件でも配列を返す */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Repository"][];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            /** @description GitHub の呼び出しに失敗した */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description GitHub が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listRepositoryProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description リポジトリ所有者の login */
+                owner: components["parameters"]["RepositoryOwner"];
+                /** @description リポジトリ名 */
+                repo: components["parameters"]["RepositoryName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Projects v2 の一覧。0 件でも配列を返す */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            /** @description GitHub の呼び出しに失敗した */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description GitHub が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAnnotations: {
         parameters: {
             query?: never;
@@ -583,7 +828,10 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Projects v2 側に必要なフィールドが無い */
+            /**
+             * @description ボードに作成先が設定されていない、または Projects v2 側に必要な
+             *     フィールドが無い
+             */
             422: {
                 headers: {
                     [name: string]: unknown;

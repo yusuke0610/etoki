@@ -17,3 +17,4 @@
 | [0011](0011-openapi-as-contract-ssot.md) | HTTP 契約の正本を OpenAPI に置き、Go と TypeScript の型を生成する | 採用 |
 | [0012](0012-e2e-tests-mock-the-backend.md) | E2E はバックエンドを起動せず、契約の型でモックする | 採用 |
 | [0013](0013-reject-cross-site-browser-requests.md) | ブラウザ由来の cross-site リクエストを Host と Origin で弾く | 採用 |
+| [0014](0014-board-scoped-github-target.md) | 作成先の Projects v2 はボードごとに持ち、最初の作成で固定する | 採用 |

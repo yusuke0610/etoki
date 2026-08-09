@@ -51,9 +51,23 @@ type BoardDetail struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 
+	// ProjectID draft issue を作る Projects v2 の node ID。未選択なら空文字
+	ProjectID string `json:"projectId"`
+
+	// RepositoryName 作成先リポジトリの名前。未選択なら空文字
+	RepositoryName string `json:"repositoryName"`
+
+	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
+	RepositoryOwner string `json:"repositoryOwner"`
+
 	// Scene Excalidraw のシーン JSON をそのまま入れた文字列
-	Scene     string    `json:"scene"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Scene string `json:"scene"`
+
+	// TargetLocked 作成先を変更できないことを表す。そのボードで draft issue を
+	// 1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
+	// 数えられないので、状態としてサーバーが返す
+	TargetLocked bool      `json:"targetLocked"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // BoardSummary 一覧で返すボード。シーンは大きいので含めない
@@ -62,6 +76,16 @@ type BoardSummary struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// BoardTarget draft issue の作成先。設定のリクエストボディ。
+//
+// リポジトリと Project の両方を持つ。保存先として効くのは projectId
+// だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
+type BoardTarget struct {
+	ProjectID       string `json:"projectId"`
+	RepositoryName  string `json:"repositoryName"`
+	RepositoryOwner string `json:"repositoryOwner"`
 }
 
 // CreateBoardRequest ボード作成のリクエストボディ
@@ -129,6 +153,23 @@ type InterpretedItem struct {
 // （ADR 0006）。
 type ItemKind string
 
+// Project リポジトリに紐づく Projects v2
+type Project struct {
+	// ID GraphQL の node ID。作成先として保存するのはこれ
+	ID string `json:"id"`
+
+	// Number リポジトリ内での番号。GitHub の URL に出る
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+}
+
+// Repository 作成先を選ぶときに見せるリポジトリ
+type Repository struct {
+	Description string `json:"description,omitempty"`
+	Name        string `json:"name"`
+	Owner       string `json:"owner"`
+}
+
 // SaveSceneRequest シーン保存のリクエストボディ
 type SaveSceneRequest struct {
 	Scene string `json:"scene"`
@@ -161,6 +202,12 @@ type AnnotationID = string
 // BoardID defines model for BoardId.
 type BoardID = string
 
+// RepositoryName defines model for RepositoryName.
+type RepositoryName = string
+
+// RepositoryOwner defines model for RepositoryOwner.
+type RepositoryOwner = string
+
 // BadRequest 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type BadRequest = ErrorResponse
 
@@ -181,3 +228,6 @@ type CreateItemsJSONRequestBody = Interpretation
 
 // SaveSceneJSONRequestBody defines body for SaveScene for application/json ContentType.
 type SaveSceneJSONRequestBody = SaveSceneRequest
+
+// SetBoardTargetJSONRequestBody defines body for SetBoardTarget for application/json ContentType.
+type SetBoardTargetJSONRequestBody = BoardTarget

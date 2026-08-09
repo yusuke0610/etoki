@@ -24,7 +24,7 @@ func TestRequestLogging(t *testing.T) {
 
 	boards, mappings := newRepos(t)
 	r := httpapi.NewRouter(httpapi.Deps{
-		Boards:      usecase.NewBoardService(boards),
+		Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 		Logger:      logger,
 	})
@@ -48,7 +48,7 @@ func TestRequestLogging_SkipsHealthz(t *testing.T) {
 
 	boards, mappings := newRepos(t)
 	r := httpapi.NewRouter(httpapi.Deps{
-		Boards:      usecase.NewBoardService(boards),
+		Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 		Logger:      logger,
 	})
@@ -68,7 +68,7 @@ func TestRequestLogging_ClientErrorIsWarn(t *testing.T) {
 
 	boards, mappings := newRepos(t)
 	r := httpapi.NewRouter(httpapi.Deps{
-		Boards:      usecase.NewBoardService(boards),
+		Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 		Logger:      logger,
 	})
@@ -92,7 +92,7 @@ func TestUnhandledErrorIsLogged(t *testing.T) {
 	// 未初期化のまま起動してしまった状況を再現している。
 	boards, mappings := newUnmigratedRepos(t)
 	r := httpapi.NewRouter(httpapi.Deps{
-		Boards:      usecase.NewBoardService(boards),
+		Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 		Logger:      logger,
 	})

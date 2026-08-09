@@ -38,6 +38,11 @@ func (f *fakeBoards) UpdateScene(context.Context, string, string, time.Time) err
 	return nil
 }
 
+func (f *fakeBoards) UpdateTarget(context.Context, string, port.BoardTarget, time.Time) error {
+	f.writes++
+	return nil
+}
+
 func (f *fakeBoards) List(context.Context) ([]port.Board, error) { return nil, nil }
 
 // fakeLLM は決められた応答を順に返す LLMClient。
@@ -74,8 +79,17 @@ const validLLMOutput = `{"summary":"決済まわりの課題出し。SDK 更新�
 const invalidLLMOutput = `{"summary":"決済まわりの課題出し","items":[
 	{"localId":"e1","kind":"epic","title":"","body":"","parentLocalId":null}]}`
 
+// newBoard は作成先を設定済みのボードを返す。
+//
+// 未選択のボードには draft issue を作れない（ADR 0014）。作成先の有無そのものを
+// 見るテストだけが、ここから Target を落として使う。
 func newBoard(scene string) *port.Board {
-	return &port.Board{ID: "board-1", Name: "設計会", Scene: scene}
+	return &port.Board{
+		ID:     "board-1",
+		Name:   "設計会",
+		Scene:  scene,
+		Target: port.BoardTarget{RepositoryOwner: "acme", RepositoryName: "web", ProjectID: "PVT_1"},
+	}
 }
 
 func newInterpretService(t *testing.T, board *port.Board, llm *fakeLLM) (*usecase.InterpretationService, *fakeBoards) {

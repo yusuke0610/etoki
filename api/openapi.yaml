@@ -34,6 +34,8 @@ tags:
     description: ボードとシーンの読み書き
   - name: annotations
     description: 注釈の状態・解釈・作成
+  - name: github
+    description: 作成先を選ぶための GitHub の一覧
 
 paths:
   /healthz:
@@ -147,6 +149,118 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/boards/{id}/target:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    put:
+      tags: [boards]
+      operationId: setBoardTarget
+      summary: draft issue の作成先をボードに設定する
+      description: |
+        利用者はリポジトリを選ぶが、保存するのはそのリポジトリに紐づく
+        Projects v2。draft issue はリポジトリではなく Project に属するため
+        （ADR 0014）。
+
+        そのボードで draft issue を 1 件でも作った後は 409 を返す。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoardTarget"
+      responses:
+        "200":
+          description: 設定後のボード
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: すでに draft issue を作っているので作成先を変えられない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/github/repositories:
+    get:
+      tags: [github]
+      operationId: listRepositories
+      summary: 作成先に選べるリポジトリの一覧を返す
+      description: |
+        アーカイブ済みは含めない。トークンに repo の read が無いと 0 件になるが、
+        権限不足と「本当に 1 つも無い」は区別できない。
+      responses:
+        "200":
+          description: リポジトリの一覧。0 件でも配列を返す
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Repository"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          description: GitHub の呼び出しに失敗した
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: GitHub が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/github/repositories/{owner}/{repo}/projects:
+    parameters:
+      - $ref: "#/components/parameters/RepositoryOwner"
+      - $ref: "#/components/parameters/RepositoryName"
+    get:
+      tags: [github]
+      operationId: listRepositoryProjects
+      summary: リポジトリに紐づく Projects v2 の一覧を返す
+      description: 閉じた Project は含めない。
+      responses:
+        "200":
+          description: Projects v2 の一覧。0 件でも配列を返す
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          description: GitHub の呼び出しに失敗した
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: GitHub が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/boards/{id}/annotations:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -255,7 +369,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
-          description: Projects v2 側に必要なフィールドが無い
+          description: |
+            ボードに作成先が設定されていない、または Projects v2 側に必要な
+            フィールドが無い
           content:
             application/json:
               schema:
@@ -290,6 +406,22 @@ components:
       in: path
       required: true
       description: 注釈にした frame の要素 ID
+      schema:
+        type: string
+
+    RepositoryOwner:
+      name: owner
+      in: path
+      required: true
+      description: リポジトリ所有者の login
+      schema:
+        type: string
+
+    RepositoryName:
+      name: repo
+      in: path
+      required: true
+      description: リポジトリ名
       schema:
         type: string
 
@@ -388,15 +520,78 @@ components:
           format: date-time
 
     BoardDetail:
-      description: シーンを含むボード
+      description: |
+        シーンと作成先を含むボード。
+
+        作成先は一覧（BoardSummary）には含めない。`targetLocked` の算出に
+        run の照会が要るので、ボード数だけ問い合わせが増える。
       allOf:
         - $ref: "#/components/schemas/BoardSummary"
         - type: object
-          required: [scene]
+          required:
+            [scene, repositoryOwner, repositoryName, projectId, targetLocked]
           properties:
             scene:
               type: string
               description: Excalidraw のシーン JSON をそのまま入れた文字列
+            repositoryOwner:
+              type: string
+              description: 作成先リポジトリの所有者。未選択なら空文字
+            repositoryName:
+              type: string
+              description: 作成先リポジトリの名前。未選択なら空文字
+            projectId:
+              type: string
+              description: draft issue を作る Projects v2 の node ID。未選択なら空文字
+            targetLocked:
+              type: boolean
+              description: |
+                作成先を変更できないことを表す。そのボードで draft issue を
+                1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
+                数えられないので、状態としてサーバーが返す
+
+    BoardTarget:
+      type: object
+      description: |
+        draft issue の作成先。設定のリクエストボディ。
+
+        リポジトリと Project の両方を持つ。保存先として効くのは projectId
+        だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
+      required: [repositoryOwner, repositoryName, projectId]
+      properties:
+        repositoryOwner:
+          type: string
+        repositoryName:
+          type: string
+        projectId:
+          type: string
+
+    Repository:
+      type: object
+      description: 作成先を選ぶときに見せるリポジトリ
+      required: [owner, name]
+      properties:
+        owner:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          x-go-type-skip-optional-pointer: true
+
+    Project:
+      type: object
+      description: リポジトリに紐づく Projects v2
+      required: [id, number, title]
+      properties:
+        id:
+          type: string
+          description: GraphQL の node ID。作成先として保存するのはこれ
+        number:
+          type: integer
+          description: リポジトリ内での番号。GitHub の URL に出る
+        title:
+          type: string
 
     CreateBoardRequest:
       type: object

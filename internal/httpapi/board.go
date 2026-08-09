@@ -26,13 +26,19 @@ func toSummary(b port.Board) apitypes.BoardSummary {
 
 // toDetail は BoardSummary の詰め替えを繰り返している。allOf は生成後には
 // 平坦な struct になり、Go の埋め込みにはならないため共有できない。
-func toDetail(b port.Board) apitypes.BoardDetail {
+//
+// targetLocked は board だけでは決まらない。run の有無で決まるので引数で受ける。
+func toDetail(b port.Board, targetLocked bool) apitypes.BoardDetail {
 	return apitypes.BoardDetail{
-		ID:        b.ID,
-		Name:      b.Name,
-		CreatedAt: b.CreatedAt,
-		UpdatedAt: b.UpdatedAt,
-		Scene:     b.Scene,
+		ID:              b.ID,
+		Name:            b.Name,
+		CreatedAt:       b.CreatedAt,
+		UpdatedAt:       b.UpdatedAt,
+		Scene:           b.Scene,
+		RepositoryOwner: b.Target.RepositoryOwner,
+		RepositoryName:  b.Target.RepositoryName,
+		ProjectID:       b.Target.ProjectID,
+		TargetLocked:    targetLocked,
 	}
 }
 
@@ -67,7 +73,9 @@ type handlers struct {
 	interpretations *usecase.InterpretationService
 	// creations は nil でもよい。その場合は 503 を返す。
 	creations *usecase.CreationService
-	logger    *slog.Logger
+	// catalog は作成先の候補一覧。nil でもよい。その場合は 503 を返す。
+	catalog *usecase.GitHubCatalogService
+	logger  *slog.Logger
 }
 
 func (h *handlers) createBoard(c *gin.Context) {
@@ -83,7 +91,8 @@ func (h *handlers) createBoard(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toDetail(b))
+	// 作ったばかりのボードに run はありえないので、照会せず false でよい。
+	c.JSON(http.StatusCreated, toDetail(b, false))
 }
 
 func (h *handlers) listBoards(c *gin.Context) {
@@ -113,7 +122,55 @@ func (h *handlers) getBoard(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toDetail(*b))
+	h.respondBoard(c, http.StatusOK, *b)
+}
+
+// setBoardTarget は draft issue の作成先をボードに設定する。
+//
+// 固定済みかどうかの判断はユースケース層が持つ。ここは 409 に写すだけ。
+func (h *handlers) setBoardTarget(c *gin.Context) {
+	var req apitypes.BoardTarget
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.badRequest(c, err)
+		return
+	}
+
+	id := c.Param("id")
+	target := port.BoardTarget{
+		RepositoryOwner: req.RepositoryOwner,
+		RepositoryName:  req.RepositoryName,
+		ProjectID:       req.ProjectID,
+	}
+
+	if err := h.boards.SetTarget(c.Request.Context(), id, target); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// 設定後の姿を返す。フロントが手元の値を組み立て直さずに済む。
+	b, err := h.boards.Find(c.Request.Context(), id)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	if b == nil {
+		// SetTarget を通った直後なので、消えているのは異常事態。
+		h.notFound(c)
+		return
+	}
+
+	h.respondBoard(c, http.StatusOK, *b)
+}
+
+// respondBoard はボードを固定状態つきで返す。
+func (h *handlers) respondBoard(c *gin.Context, status int, b port.Board) {
+	locked, err := h.boards.TargetLocked(c.Request.Context(), b.ID)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(status, toDetail(b, locked))
 }
 
 func (h *handlers) saveScene(c *gin.Context) {
@@ -184,6 +241,9 @@ func (h *handlers) fail(c *gin.Context, err error) {
 		h.badRequest(c, err)
 	case errors.Is(err, port.ErrNotFound):
 		h.notFound(c)
+	case errors.Is(err, usecase.ErrTargetLocked):
+		// 状態が食い違っていて進めない、という点で contentHash の不一致と同類。
+		errorJSON(c, http.StatusConflict, err.Error())
 	default:
 		// レスポンスには内部情報を載せないが、原因が分からないままだと
 		// 手元で調べようがない。サーバー側には必ず残す。

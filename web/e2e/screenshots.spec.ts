@@ -1,8 +1,8 @@
 import { test, type Page } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
-import { annotationCard, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock } from "./helpers/fixtures";
+import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
+import { BOARD_ID, baseMock, unselectedBoard } from "./helpers/fixtures";
 
 /**
  * 主要な画面のスクリーンショットを撮る。
@@ -49,5 +49,54 @@ test.describe("スクリーンショット", () => {
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
     await card.getByText("3 件を作成しました。").waitFor();
     await shot(page, "04-created");
+  });
+
+  // ブレストに入る前の画面。作成先を選ばないとキャンバスが出ない（ADR 0014）。
+  test("作成先の選択を撮る", async ({ page }) => {
+    const mock = baseMock();
+    const board = unselectedBoard();
+    mock.boards = [
+      {
+        id: board.id,
+        name: board.name,
+        createdAt: board.createdAt,
+        updatedAt: board.updatedAt,
+      },
+    ];
+    mock.details = { [board.id]: board };
+    mock.annotations = { [board.id]: [] };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.locator(".board-list").getByRole("button", { name: board.name }).click();
+    await page.getByRole("heading", { name: "リポジトリ" }).waitFor();
+    await shot(page, "05-target-repositories");
+
+    await page.getByRole("button", { name: /acme\/web/ }).click();
+    await page.getByRole("button", { name: "#1 ロードマップ" }).waitFor();
+    await shot(page, "06-target-projects");
+
+    await page.getByRole("button", { name: "#1 ロードマップ" }).click();
+    await page.locator(".badge-target").waitFor();
+    // バッジはキャンバスより先に出る。ここで待たないと Excalidraw の
+    // 「Loading scene...」を撮ってしまい、報告に使えない画像になる。
+    await page.locator(".excalidraw canvas").first().waitFor();
+    await page.getByRole("heading", { name: "注釈" }).waitFor();
+    await shot(page, "07-target-selected");
+  });
+
+  // 押せない理由は title ではなく本文で出す。ホバーできない利用者と読み上げにも
+  // 届く必要がある。見た目の話でもあるので撮る。
+  test("作成先を変更できない状態を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await page.getByText("未保存", { exact: true }).waitFor();
+    await shot(page, "08-target-change-blocked");
   });
 });

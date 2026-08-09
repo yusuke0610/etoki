@@ -27,9 +27,11 @@ import { createGenerations } from "./generation";
 type Props = {
   board: BoardDetail;
   onError: (message: string) => void;
+  /** 作成先を選び直す。固定済みなら呼ばれない。 */
+  onChangeTarget: () => void;
 };
 
-export function BoardPage({ board, onError }: Props) {
+export function BoardPage({ board, onError, onChangeTarget }: Props) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationStatus[]>([]);
   const [selectedFrames, setSelectedFrames] = useState<string[]>([]);
@@ -252,6 +254,41 @@ export function BoardPage({ board, onError }: Props) {
       <header className="board-header">
         <h1>{board.name}</h1>
         <div className="board-actions">
+          {/*
+            どこに作られるのかは、作る直前ではなく常に見えている必要がある。
+            作った draft issue は取り消せない（ADR 0009）。
+          */}
+          <span className="badge badge-target">
+            {board.repositoryOwner}/{board.repositoryName}
+          </span>
+          {/*
+            押せない理由は title に隠さず、本文として出す。title はホバーでしか
+            読めず、disabled なボタンはフォーカスも当たらないので、キーボードと
+            読み上げの利用者には理由が届かない。
+          */}
+          {board.targetLocked ? (
+            // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
+            // 押せないことを見せるほうが状態として正しい。
+            <span className="hint">作成先は確定（draft issue を作成済み）</span>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onChangeTarget}
+                // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
+                // 黙って捨てずに、保存してからにしてもらう。
+                disabled={dirty || saving}
+                aria-describedby={dirty ? "target-change-blocked" : undefined}
+              >
+                作成先を変更
+              </button>
+              {dirty && (
+                <span className="hint" id="target-change-blocked">
+                  保存してから作成先を変更できます
+                </span>
+              )}
+            </>
+          )}
           {dirty && <span className="dirty">未保存</span>}
           <button
             type="button"

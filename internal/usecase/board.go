@@ -19,11 +19,19 @@ import (
 // ErrInvalidInput は入力が要件を満たしていないことを表す。
 var ErrInvalidInput = errors.New("etoki: invalid input")
 
+// ErrTargetLocked は作成先を変えられないことを表す。
+//
+// そのボードで draft issue を 1 件でも作ったら固定する。sync_runs は GitHub 側に
+// 残っている item の追跡表であり、作成先が変わると記録が指す先を見失う（ADR 0014）。
+var ErrTargetLocked = errors.New("etoki: board target is locked")
+
 // BoardService はボードの作成・取得・更新を担う。
 type BoardService struct {
-	boards port.BoardRepository
-	now    func() time.Time
-	newID  func() string
+	boards   port.BoardRepository
+	mappings port.MappingRepository
+	locks    *BoardLocks
+	now      func() time.Time
+	newID    func() string
 }
 
 // BoardServiceOption は BoardService の依存を差し替える。
@@ -40,11 +48,22 @@ func WithIDGenerator(f func() string) BoardServiceOption {
 }
 
 // NewBoardService は BoardService を作る。
-func NewBoardService(boards port.BoardRepository, opts ...BoardServiceOption) *BoardService {
+//
+// mappings を取るのは作成先の固定判定に使うため。ボードの読み書きだけなら
+// 要らないが、固定はユースケース層で守ると決めた（ADR 0014）。
+//
+// locks は CreationService と同じものを渡す。固定の判定と、判定の前提を崩す
+// 作成とを直列化するため（BoardLocks を参照）。
+func NewBoardService(
+	boards port.BoardRepository, mappings port.MappingRepository, locks *BoardLocks,
+	opts ...BoardServiceOption,
+) *BoardService {
 	s := &BoardService{
-		boards: boards,
-		now:    time.Now,
-		newID:  uuid.NewString,
+		boards:   boards,
+		mappings: mappings,
+		locks:    locks,
+		now:      time.Now,
+		newID:    uuid.NewString,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -95,6 +114,56 @@ func (s *BoardService) SaveScene(ctx context.Context, id, scene string) error {
 		return err
 	}
 	return s.boards.UpdateScene(ctx, id, scene, s.now())
+}
+
+// SetTarget は draft issue の作成先をボードに設定する。
+//
+// すでに draft issue を作っているボードでは ErrTargetLocked を返す。
+func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTarget) error {
+	if !t.Selected() {
+		return fmt.Errorf("%w: repository and project are required", ErrInvalidInput)
+	}
+
+	// 作成中のボードは待つ。作成が終われば run が残るので、待った先で
+	// ErrTargetLocked になる。「作成が始まっていたなら変えられない」が
+	// 判定の取りこぼしではなく順序として出る。
+	release, err := s.locks.Acquire(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	b, err := s.boards.Find(ctx, id)
+	if err != nil {
+		return err
+	}
+	if b == nil {
+		return fmt.Errorf("board %s: %w", id, port.ErrNotFound)
+	}
+
+	locked, err := s.TargetLocked(ctx, id)
+	if err != nil {
+		return err
+	}
+	if locked {
+		// 同じ値なら通してもよさそうだが、通さない。「変更できた」と
+		// 「たまたま同じだった」を呼び出し側が区別できなくなる。
+		return fmt.Errorf("%w: %s", ErrTargetLocked, id)
+	}
+
+	return s.boards.UpdateTarget(ctx, id, t, s.now())
+}
+
+// TargetLocked はそのボードの作成先が固定済みかどうかを返す。
+//
+// 判定は「run が 1 件でもあるか」。フロントは sync_runs を数えられないので、
+// 状態としてサーバーが返す必要がある。
+func (s *BoardService) TargetLocked(ctx context.Context, id string) (bool, error) {
+	runs, err := s.mappings.ListLatestRunsByBoard(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	return len(runs) > 0, nil
 }
 
 // emptyScene は Excalidraw が読み込める最小のシーン。

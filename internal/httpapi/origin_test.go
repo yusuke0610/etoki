@@ -22,7 +22,7 @@ func newGuardedRouter(t *testing.T, allowed ...string) *gin.Engine {
 	seq := 0
 
 	return httpapi.NewRouter(httpapi.Deps{
-		Boards: usecase.NewBoardService(boards,
+		Boards: usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks(),
 			usecase.WithClock(func() time.Time { return fixedTime }),
 			usecase.WithIDGenerator(func() string {
 				seq++

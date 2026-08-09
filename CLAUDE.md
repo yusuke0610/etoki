@@ -124,6 +124,17 @@ UI は未保存の変更があることを表示する。
   設計なので同一時刻の run がありうる。
 - **GitHub に作るのは epic と issue の 2 階層のみ。** LLM 出力の最上位
   `summary` は作成前の確認表示にだけ使い、GitHub には作らない（ADR 0006）。
+- **作成先の Projects v2 はボードごと。** プロセス全体の設定ではない
+  （`ETOKI_GITHUB_PROJECT_ID` は廃止済み）。`boards` の
+  `repository_owner` / `repository_name` / `project_id` に持ち、3 つとも
+  空文字なら未選択。**そのボードで最初の run ができたら固定**し、以後の変更は
+  409 で拒む。作成先が変わると `sync_runs` が指す item を見失うため（ADR 0014）。
+  判定は `BoardService.SetTarget` にある。**ハンドラに移さないこと。**
+  **作成と作成先の変更はボード単位で直列化する**（`usecase.BoardLocks`）。判定
+  材料の `sync_runs` は作成の最後に書かれるので、排他が無いと作成の途中で
+  作成先を変えられる。`BoardService` と `CreationService` には**同じ
+  `*BoardLocks` を渡す**。別々に持たせると直列化が素通りするので、任意の設定
+  ではなくコンストラクタの引数にしてある。
 
 ### HTTP 契約は OpenAPI が正本
 
