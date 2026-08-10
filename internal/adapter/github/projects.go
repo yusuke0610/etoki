@@ -587,6 +587,13 @@ func statusError(resp *http.Response, raw []byte) error {
 	// **レート制限の判定を 403 より先に置く。** GitHub はレート制限も 403 で
 	// 返すが、それは権限の問題ではない。待てば通るものを「権限がありません」と
 	// 見せると、利用者は直しようのない原因を疑うことになる。
+	//
+	// 二次レート制限は残数を減らさず、retry-after だけを付けて 403 を返す。
+	// 残数しか見ていないと、これが権限不足に化ける。
+	if after := resp.Header.Get("retry-after"); after != "" {
+		return fmt.Errorf("github api: %d: %s (rate limited, retry-after: %s)",
+			resp.StatusCode, detail, after)
+	}
 	if remaining := resp.Header.Get("x-ratelimit-remaining"); remaining == "0" {
 		return fmt.Errorf("github api: %d: %s (rate limit resets at %s)",
 			resp.StatusCode, detail, resp.Header.Get("x-ratelimit-reset"))

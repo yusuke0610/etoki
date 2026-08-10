@@ -421,6 +421,14 @@ func TestHTTPErrors(t *testing.T) {
 			want:    []string{"403", "rate limit resets at", "1780000000"},
 		},
 		{
+			// 二次レート制限。残数は残ったまま retry-after だけが付く。
+			name:    "403 二次レート制限",
+			status:  http.StatusForbidden,
+			headers: map[string]string{"x-ratelimit-remaining": "4999", "retry-after": "60"},
+			body:    `{"message":"You have exceeded a secondary rate limit"}`,
+			want:    []string{"403", "retry-after: 60"},
+		},
+		{
 			// レート制限ではない 403。招待されただけでリポジトリに権限が無い
 			// 利用者はここに来る（ADR 0017）。
 			name:   "403 権限不足",
@@ -474,7 +482,8 @@ func TestHTTPErrors(t *testing.T) {
 			// 403 も sentinel に寄せるが、レート制限は含めない。待てば通るものを
 			// 「権限がありません」と見せない（ADR 0017）。
 			wantForbidden := tt.status == http.StatusForbidden &&
-				tt.headers["x-ratelimit-remaining"] != "0"
+				tt.headers["x-ratelimit-remaining"] != "0" &&
+				tt.headers["retry-after"] == ""
 			if got := errors.Is(err, port.ErrForbidden); got != wantForbidden {
 				t.Errorf("errors.Is(err, ErrForbidden) = %v, want %v: %v",
 					got, wantForbidden, err)
