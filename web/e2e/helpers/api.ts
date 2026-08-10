@@ -241,6 +241,13 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         return;
       }
 
+      // GET 以外を一覧で答えない。何でも受けると、フロントが契約と違う
+      // メソッドで叩いていても緑になる。
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+
       await json(route, 200, mock.members[id]);
     },
   );
@@ -256,6 +263,12 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       if (route.request().method() === "DELETE") {
         mock.members[id] = mock.members[id].filter((m) => m.userId !== userId);
         await route.fulfill({ status: 204, body: "" });
+        return;
+      }
+
+      // ロールの変更は PUT だけ。他は捕まえずキャッチオールの 500 に落とす。
+      if (route.request().method() !== "PUT") {
+        await route.fallback();
         return;
       }
 
