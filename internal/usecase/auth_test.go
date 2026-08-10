@@ -117,6 +117,20 @@ func (f *fakeSessions) FindUser(_ context.Context, id string) (*port.User, error
 	return &u, nil
 }
 
+func (f *fakeSessions) FindUserByLogin(
+	_ context.Context, provider, login string,
+) (*port.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for _, u := range f.users {
+		if u.Provider == provider && u.Login == login {
+			return &u, nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakeSessions) CreateSession(_ context.Context, s port.Session) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

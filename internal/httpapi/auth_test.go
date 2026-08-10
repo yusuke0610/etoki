@@ -1,7 +1,9 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -379,4 +381,120 @@ func TestExpiredSessionIsRejected(t *testing.T) {
 	if user != nil {
 		t.Errorf("失効したセッションが解決できている: %+v", user)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 所有者による分離（ADR 0016）
+// ---------------------------------------------------------------------------
+
+// もう 1 人分のセッションを作る。stubProvider は毎回同じ利用者を返すので、
+// 別の subject を返すものを差し替えて使う。
+type otherUserProvider struct{ stubProvider }
+
+func (p *otherUserProvider) Exchange(
+	context.Context, string, string,
+) (port.Identity, port.Credentials, error) {
+	return port.Identity{
+			Provider: "github", Subject: "99", Login: "hubot", DisplayName: "Hubot",
+		},
+		port.Credentials{AccessToken: "ghu_2"}, nil
+}
+
+// ログインした A が、B のボード ID を知っていても触れないこと。
+// 認証だけ入れて認可を入れないのは、鍵をかけずに受付を置いたのと同じ。
+func TestBoards_AreIsolatedBetweenUsers(t *testing.T) {
+	t.Parallel()
+
+	db := openTempDB(t)
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	key := make([]byte, secret.KeySize)
+	box, err := secret.New(key)
+	if err != nil {
+		t.Fatalf("secret.New: %v", err)
+	}
+
+	boards := sqlite.NewBoardRepository(db)
+	mappings := sqlite.NewMappingRepository(db)
+	sessions := sqlite.NewSessionRepository(db, box)
+
+	// 同じ DB に向いた 2 つのルーター。利用者だけが違う。
+	newFor := func(provider port.IdentityProvider) *gin.Engine {
+		return httpapi.NewRouter(httpapi.Deps{
+			Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
+			Annotations: usecase.NewAnnotationService(boards, mappings),
+			Auth:        usecase.NewAuthService(provider, sessions),
+		})
+	}
+
+	alice, bob := newFor(&stubProvider{}), newFor(&otherUserProvider{})
+	aliceCookie, bobCookie := login(t, alice), login(t, bob)
+
+	rec := doWithCookie(t, alice, http.MethodPost, "/api/boards",
+		map[string]string{"name": "アリスのボード"}, aliceCookie)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	boardID, _ := decode[map[string]any](t, rec)["id"].(string)
+
+	// 一覧に出ない。
+	list := decode[[]map[string]any](t,
+		withCookie(t, bob, http.MethodGet, "/api/boards", bobCookie))
+	if len(list) != 0 {
+		t.Errorf("他人のボードが一覧に出ている: %+v", list)
+	}
+
+	// ID を知っていても 404。403 にしないのは、ID の総当たりで存在を
+	// 確かめられるようにしないため。
+	if rec = withCookie(t, bob, http.MethodGet, "/api/boards/"+boardID, bobCookie); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /api/boards/{id} = %d, want 404", rec.Code)
+	}
+
+	// 書き換えもできない。ここは Find を通らない経路。
+	rec = doWithCookie(t, bob, http.MethodPut, "/api/boards/"+boardID+"/scene",
+		map[string]string{"scene": `{"type":"excalidraw","elements":[],"appState":{}}`}, bobCookie)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("PUT scene = %d, want 404 (%s)", rec.Code, rec.Body)
+	}
+
+	// 作成先も設定できない。
+	rec = doWithCookie(t, bob, http.MethodPut, "/api/boards/"+boardID+"/target",
+		map[string]string{"repositoryOwner": "evil", "repositoryName": "r", "projectId": "PVT_x"},
+		bobCookie)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("PUT target = %d, want 404 (%s)", rec.Code, rec.Body)
+	}
+
+	// 注釈の状態も見えない。
+	if rec = withCookie(t, bob, http.MethodGet, "/api/boards/"+boardID+"/annotations", bobCookie); rec.Code != http.StatusNotFound {
+		t.Errorf("GET annotations = %d, want 404", rec.Code)
+	}
+
+	// 本人には見える。分離できていることと、壊れていることを区別する。
+	if rec = withCookie(t, alice, http.MethodGet, "/api/boards/"+boardID, aliceCookie); rec.Code != http.StatusOK {
+		t.Errorf("所有者本人が見られない: %d (%s)", rec.Code, rec.Body)
+	}
+}
+
+// doWithCookie は本文つきで cookie を送る。
+func doWithCookie(
+	t *testing.T, r *gin.Engine, method, path string, body any, cookie *http.Cookie,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = loopbackHost
+	req.AddCookie(cookie)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
 }

@@ -40,6 +40,10 @@ type Board struct {
 	Name string
 	// Scene は Excalidraw のシーン JSON。
 	Scene string
+	// OwnerUserID は所有者。
+	//
+	// 空文字は無効値ではなく「認証なしの所有者」1 人を表す（ADR 0016）。
+	OwnerUserID string
 	// Target は draft issue の作成先。未選択ならゼロ値。
 	Target BoardTarget
 	// CreatedAt は作成時刻。
@@ -111,20 +115,36 @@ type SyncRun struct {
 //
 // 時刻は呼び出し側が与える。実装が time.Now を握ると挙動が時計に依存し、
 // テストが書きづらくなるため。
+//
+// **所有者は引数で受け取る。** ctx から実装が勝手に読む形にすると、絞り忘れても
+// 動いてしまう。引数なら渡し忘れがコンパイルエラーになる（ADR 0016）。
+// 他人のボードは「存在しない」ものとして扱い、権限エラーとは区別しない。
 type BoardRepository interface {
 	// Create は新しいボードを保存する。ID が既存なら誤りとして扱う。
+	// 所有者は Board.OwnerUserID から取る。
 	Create(ctx context.Context, b Board) error
 	// UpdateScene はシーンと更新時刻だけを更新する。CreatedAt は変えない。
-	UpdateScene(ctx context.Context, id, scene string, updatedAt time.Time) error
+	UpdateScene(ctx context.Context, owner, id, scene string, updatedAt time.Time) error
 	// UpdateTarget は作成先と更新時刻だけを更新する。Scene は変えない。
 	//
 	// 固定済みかどうかはここでは見ない。判断に sync_runs が要るため、
 	// ユースケース層が担う（ADR 0014）。
-	UpdateTarget(ctx context.Context, id string, t BoardTarget, updatedAt time.Time) error
-	// Find は ID でボードを引く。存在しなければ (nil, nil) を返す。
-	Find(ctx context.Context, id string) (*Board, error)
-	// List は全ボードを UpdatedAt の降順で返す。
-	List(ctx context.Context) ([]Board, error)
+	UpdateTarget(ctx context.Context, owner, id string, t BoardTarget, updatedAt time.Time) error
+	// Find は ID でボードを引く。存在しない、または他人のものなら (nil, nil)。
+	Find(ctx context.Context, owner, id string) (*Board, error)
+	// List は所有者のボードを UpdatedAt の降順で返す。
+	List(ctx context.Context, owner string) ([]Board, error)
+
+	// CountUnowned は所有者の無いボードの数を返す。
+	//
+	// 認証を有効にした直後に、見えなくなったボードがあることを起動時に
+	// 知らせるために使う。黙って消さない（ADR 0016）。
+	CountUnowned(ctx context.Context) (int, error)
+	// ClaimUnowned は所有者の無いボードをすべて owner のものにし、件数を返す。
+	//
+	// 更新時刻は変えない。引き受けはボードの中身を変えていないので、一覧の
+	// 並びが入れ替わる理由が無い。
+	ClaimUnowned(ctx context.Context, owner string) (int64, error)
 }
 
 // MappingRepository は注釈と draft issue の対応を永続化する。

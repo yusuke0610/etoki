@@ -7,7 +7,7 @@
 | [0001](0001-dependency-direction-and-ports.md) | 依存の方向とポートの配置 | 採用 |
 | [0002](0002-toolchain.md) | 開発ツールチェーンは flake.nix と Makefile に限定する | 採用 |
 | [0003](0003-sqlite-and-migrations.md) | SQLite は modernc.org/sqlite、マイグレーションは embed + 自前 runner | 採用 |
-| [0004](0004-single-user-local-tool.md) | 単一ユーザーのローカルツールとして設計する | 採用 |
+| [0004](0004-single-user-local-tool.md) | 単一ユーザーのローカルツールとして設計する | 置き換え済み（0016） |
 | [0005](0005-llm-client-abstraction.md) | LLMClient は 1 回の呼び出しだけを担う | 採用 |
 | [0006](0006-two-level-hierarchy.md) | GitHub に作るのは epic と issue の 2 階層のみ | 採用 |
 | [0007](0007-run-history.md) | マッピングは実行単位で履歴を残す | 採用 |
@@ -19,3 +19,4 @@
 | [0013](0013-reject-cross-site-browser-requests.md) | ブラウザ由来の cross-site リクエストを Host と Origin で弾く | 採用 |
 | [0014](0014-board-scoped-github-target.md) | 作成先の Projects v2 はボードごとに持ち、最初の作成で固定する | 採用 |
 | [0015](0015-pluggable-auth-seams.md) | 認証は 3 つの継ぎ目で受け、GitHub App を既定実装にする | 採用 |
+| [0016](0016-boards-have-owners.md) | 単一ユーザー前提を捨て、ボードに所有者を持たせる | 採用 |

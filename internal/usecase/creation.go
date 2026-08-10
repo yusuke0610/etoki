@@ -122,7 +122,7 @@ func (s *CreationService) Create(
 	}
 	defer release()
 
-	board, err := s.boards.Find(ctx, boardID)
+	board, err := s.boards.Find(ctx, ownerOf(ctx), boardID)
 	if err != nil {
 		return nil, err
 	}

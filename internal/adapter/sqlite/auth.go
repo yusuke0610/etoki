@@ -76,6 +76,24 @@ func (r *SessionRepository) FindUser(ctx context.Context, id string) (*port.User
 	return &u, nil
 }
 
+// FindUserByLogin は login で利用者を引く。存在しなければ (nil, nil) を返す。
+func (r *SessionRepository) FindUserByLogin(
+	ctx context.Context, provider, login string,
+) (*port.User, error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT `+userColumns+` FROM users WHERE provider = ? AND login = ?`, provider, login)
+
+	u, err := scanUser(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find user %s/%s: %w", provider, login, err)
+	}
+
+	return &u, nil
+}
+
 const userColumns = `id, provider, subject, login, display_name, created_at, updated_at`
 
 func scanUser(s rowScanner) (port.User, error) {

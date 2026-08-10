@@ -84,7 +84,7 @@ func NewInterpretationService(boards port.BoardRepository, llm port.LLMClient, o
 //
 // 読むのは保存済みシーンである。フロントで編集中の内容は反映されない。
 func (s *InterpretationService) Interpret(ctx context.Context, boardID, annotationID string) (InterpretationResult, error) {
-	board, err := s.boards.Find(ctx, boardID)
+	board, err := s.boards.Find(ctx, ownerOf(ctx), boardID)
 	if err != nil {
 		return InterpretationResult{}, err
 	}
