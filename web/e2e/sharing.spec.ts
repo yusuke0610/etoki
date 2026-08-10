@@ -81,9 +81,7 @@ test.describe("共有", () => {
     await openBoard(page, BOARD_NAME);
 
     await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
-    await expect(
-      page.getByText("作成先を変えられるのはオーナーだけです"),
-    ).toBeVisible();
+    await expect(page.getByText("作成先を変えられるのはオーナーだけです")).toBeVisible();
   });
 
   // メンバー一覧は owner でなくても見られる。誰と共有しているかを owner だけが

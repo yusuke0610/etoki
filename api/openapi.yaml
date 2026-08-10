@@ -42,6 +42,8 @@ tags:
     description: 作成先を選ぶための GitHub の一覧
   - name: auth
     description: ログインとセッション
+  - name: members
+    description: ボードの共有
 
 paths:
   /healthz:
@@ -350,6 +352,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
         "500":
           $ref: "#/components/responses/InternalError"
 
