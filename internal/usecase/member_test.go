@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,7 +56,7 @@ func memberSetup(t *testing.T, role port.BoardRole) (*usecase.BoardMemberService
 		{ID: "user-b", Login: "bob", DisplayName: "Bob"},
 	}}
 
-	svc := usecase.NewBoardMemberService(boards, users,
+	svc := usecase.NewBoardMemberService(boards, users, usecase.NewBoardLocks(),
 		usecase.WithMemberClock(func() time.Time { return baseTime }))
 	return svc, boards
 }
@@ -182,7 +183,7 @@ func TestList_KeepsMembersWithoutUser(t *testing.T) {
 			{BoardID: "board-1", UserID: "deleted", Role: port.RoleOwner, CreatedAt: baseTime},
 		},
 	}
-	svc := usecase.NewBoardMemberService(boards, &fakeUsers{})
+	svc := usecase.NewBoardMemberService(boards, &fakeUsers{}, usecase.NewBoardLocks())
 
 	got, err := svc.List(t.Context(), "board-1")
 	if err != nil {
@@ -245,12 +246,150 @@ func TestMembers_HideBoardFromNonMembers(t *testing.T) {
 	t.Parallel()
 
 	boards := &fakeBoards{board: newBoard(interpretScene), owner: "someone-else"}
-	svc := usecase.NewBoardMemberService(boards, &fakeUsers{})
+	svc := usecase.NewBoardMemberService(boards, &fakeUsers{}, usecase.NewBoardLocks())
 
 	if _, err := svc.List(t.Context(), "board-1"); !errors.Is(err, usecase.ErrBoardNotFound) {
 		t.Errorf("List() = %v, want ErrBoardNotFound", err)
 	}
 	if _, err := svc.Invite(t.Context(), "board-1", "bob", port.RoleEditor); !errors.Is(err, usecase.ErrBoardNotFound) {
 		t.Errorf("Invite() = %v, want ErrBoardNotFound", err)
+	}
+}
+
+// blockingMembers は最初の ListMembers で止まるボードリポジトリ。
+//
+// 「他に owner がいるか」は数えてから書くまでに間がある。その間を実際に開けて
+// みせないと、排他が効いているかを確かめたことにならない（race_test.go と同じ
+// 方針）。
+type blockingMembers struct {
+	mu      sync.Mutex
+	board   *port.Board
+	members []port.BoardMember
+
+	once    sync.Once
+	started chan struct{}
+	resume  chan struct{}
+}
+
+func (b *blockingMembers) Find(_ context.Context, _, id string) (*port.BoardAccess, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.board.ID != id {
+		return nil, nil
+	}
+	return &port.BoardAccess{Board: *b.board, Role: port.RoleOwner}, nil
+}
+
+func (b *blockingMembers) ListMembers(_ context.Context, _ string) ([]port.BoardMember, error) {
+	// 1 本目だけ、数え終えたところで止める。
+	b.once.Do(func() {
+		close(b.started)
+		<-b.resume
+	})
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return append([]port.BoardMember(nil), b.members...), nil
+}
+
+func (b *blockingMembers) RemoveMember(_ context.Context, _, userID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for i, m := range b.members {
+		if m.UserID == userID {
+			b.members = append(b.members[:i], b.members[i+1:]...)
+			return nil
+		}
+	}
+	return port.ErrNotFound
+}
+
+func (b *blockingMembers) Create(context.Context, port.Board, string) error { return nil }
+
+func (b *blockingMembers) UpdateScene(context.Context, string, string, string, time.Time) error {
+	return nil
+}
+
+func (b *blockingMembers) UpdateTarget(
+	context.Context, string, string, port.BoardTarget, time.Time,
+) error {
+	return nil
+}
+
+func (b *blockingMembers) List(context.Context, string) ([]port.BoardAccess, error) {
+	return nil, nil
+}
+
+func (b *blockingMembers) AddMember(context.Context, port.BoardMember) error { return nil }
+
+func (b *blockingMembers) UpdateMemberRole(
+	context.Context, string, string, port.BoardRole,
+) error {
+	return nil
+}
+
+func (b *blockingMembers) CountUnowned(context.Context) (int, error) { return 0, nil }
+
+func (b *blockingMembers) ClaimUnowned(context.Context, string) (int64, error) { return 0, nil }
+
+// owner が 2 人いるボードから同時に 2 人とも抜けようとしても、owner は残る。
+//
+// 排他が無いと、2 本とも「もう 1 人いる」と判断して両方が抜け、誰も招待できず
+// 作成先も変えられないボードが残る（ADR 0017 / BoardLocks）。
+func TestRemove_ConcurrentOwnersKeepOne(t *testing.T) {
+	t.Parallel()
+
+	boards := &blockingMembers{
+		board: newBoard(interpretScene),
+		members: []port.BoardMember{
+			{BoardID: "board-1", UserID: "user-a", Role: port.RoleOwner, CreatedAt: baseTime},
+			{BoardID: "board-1", UserID: "user-b", Role: port.RoleOwner, CreatedAt: baseTime},
+		},
+		started: make(chan struct{}),
+		resume:  make(chan struct{}),
+	}
+	svc := usecase.NewBoardMemberService(boards, &fakeUsers{}, usecase.NewBoardLocks())
+
+	// 途中で t.Fatal しても 1 本目を進ませる。止めたまま抜けると goroutine が残る。
+	var resumeOnce sync.Once
+	resume := func() { resumeOnce.Do(func() { close(boards.resume) }) }
+	defer resume()
+
+	first := make(chan error, 1)
+	go func() { first <- svc.Remove(t.Context(), "board-1", "user-a") }()
+
+	// 1 本目が owner を数え終えた = ここから書き込みまでが窓。
+	<-boards.started
+
+	second := make(chan error, 1)
+	go func() { second <- svc.Remove(t.Context(), "board-1", "user-b") }()
+
+	// 排他が効いていれば 2 本目はここで待たされ、まだ数えてすらいない。
+	select {
+	case err := <-second:
+		t.Fatalf("1 本目の途中で 2 本目が進んだ: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	resume()
+
+	if err := <-first; err != nil {
+		t.Fatalf("1 本目の Remove() = %v", err)
+	}
+	// 待たされた先では owner が 1 人しかいない。「最後の owner は外せない」が
+	// 判定の取りこぼしではなく順序として出る。
+	if err := <-second; !errors.Is(err, usecase.ErrLastOwner) {
+		t.Fatalf("2 本目の Remove() = %v, want ErrLastOwner", err)
+	}
+
+	remaining, err := boards.ListMembers(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("ListMembers: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].UserID != "user-b" {
+		t.Fatalf("残ったメンバー = %+v, want user-b だけ", remaining)
 	}
 }

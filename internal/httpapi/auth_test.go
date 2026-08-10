@@ -95,7 +95,7 @@ func newAuthRouter(
 		deps.Auth = auth
 		// 招待は認証が無いと意味を持たない。組み立ての条件を etoki.New と
 		// 揃えておかないと、ここだけ 503 にならない構成になる（ADR 0017）。
-		deps.Members = usecase.NewBoardMemberService(boards, auth)
+		deps.Members = usecase.NewBoardMemberService(boards, auth, usecase.NewBoardLocks())
 	}
 
 	return httpapi.NewRouter(deps), sessions

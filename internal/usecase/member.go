@@ -54,6 +54,7 @@ type userDirectory interface {
 type BoardMemberService struct {
 	boardGuard
 	users userDirectory
+	locks *BoardLocks
 	now   func() time.Time
 }
 
@@ -66,13 +67,19 @@ func WithMemberClock(f func() time.Time) BoardMemberServiceOption {
 }
 
 // NewBoardMemberService は BoardMemberService を作る。
+//
+// locks は BoardService / CreationService と同じものを渡す。「最後の owner か」の
+// 判定は読んでから書くまでに間があり、排他が無いと 2 本が同時に「他にも owner が
+// いる」と判断して、両方とも抜けられる（BoardLocks を参照）。任意の設定ではなく
+// 引数にしてあるのも同じ理由。
 func NewBoardMemberService(
-	boards port.BoardRepository, users userDirectory,
+	boards port.BoardRepository, users userDirectory, locks *BoardLocks,
 	opts ...BoardMemberServiceOption,
 ) *BoardMemberService {
 	s := &BoardMemberService{
 		boardGuard: boardGuard{boards: boards},
 		users:      users,
+		locks:      locks,
 		now:        time.Now,
 	}
 	for _, opt := range opts {
@@ -123,6 +130,8 @@ func (s *BoardMemberService) Invite(
 			"%w: %q has not signed in to etoki yet", ErrInvalidInput, login)
 	}
 
+	// 招待は排他を取らない。重複は board_members の主キーが弾き、
+	// AddMember が ErrAlreadyExists として返す。数えてから書く形ではない。
 	m := port.BoardMember{
 		BoardID:   boardID,
 		UserID:    user.ID,
@@ -146,6 +155,14 @@ func (s *BoardMemberService) SetRole(
 	if !role.Valid() {
 		return Member{}, fmt.Errorf("%w: unknown role %q", ErrInvalidInput, role)
 	}
+
+	// owner を数えてから書くまで、このボードのメンバーを動かさせない。
+	release, err := s.locks.Acquire(ctx, boardID)
+	if err != nil {
+		return Member{}, err
+	}
+	defer release()
+
 	if _, err := s.access(ctx, boardID, port.RoleOwner); err != nil {
 		return Member{}, err
 	}
@@ -181,6 +198,14 @@ func (s *BoardMemberService) SetRole(
 
 // Remove はメンバーを外す。
 func (s *BoardMemberService) Remove(ctx context.Context, boardID, userID string) error {
+	// SetRole と同じ理由で直列化する。排他が無いと、2 人の owner が同時に
+	// 相手を外して owner が 0 人になる。
+	release, err := s.locks.Acquire(ctx, boardID)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	if _, err := s.access(ctx, boardID, port.RoleOwner); err != nil {
 		return err
 	}
@@ -195,6 +220,8 @@ func (s *BoardMemberService) Remove(ctx context.Context, boardID, userID string)
 //
 // 「自分自身か」ではなく「他に owner がいるか」で見る。owner が 2 人いれば
 // 自分が抜けてよく、1 人しかいなければ、それが誰であっても抜けさせられない。
+//
+// **呼ぶ前にボードの排他を取っていること。** 数えてから書くまでに間がある。
 func (s *BoardMemberService) ensureAnotherOwner(
 	ctx context.Context, boardID, userID string,
 ) error {

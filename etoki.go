@@ -162,7 +162,7 @@ func New(opts Options) (*Server, error) {
 	// 招待は「誰であるか」が決まって初めて意味を持つ。認証を設定していない
 	// 構成は利用者 1 人なので、共有する相手がいない（ADR 0017）。
 	if opts.Auth != nil {
-		deps.Members = usecase.NewBoardMemberService(opts.Boards, opts.Auth)
+		deps.Members = usecase.NewBoardMemberService(opts.Boards, opts.Auth, locks)
 	}
 	// LLM が無いときはサービスを組み立てない。nil のまま渡し、ハンドラ側で
 	// 「設定されていない」と返す。
