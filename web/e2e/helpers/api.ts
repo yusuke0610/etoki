@@ -196,9 +196,15 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     },
   );
 
+  // 認証の 3 本も契約のメソッドだけを受ける。何でも受けると、フロントが違う
+  // メソッドで叩いていても E2E は緑のまま通り、実物で初めて落ちる。
   await page.route(
     (url) => url.pathname === "/api/auth/session",
     async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
       await json(route, mock.session.status, mock.session.body);
     },
   );
@@ -206,6 +212,10 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => url.pathname === "/api/auth/login",
     async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
       await json(route, mock.login.status, mock.login.body);
     },
   );
@@ -213,6 +223,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => url.pathname === "/api/auth/logout",
     async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+
       // ログアウトしたら未ログインに戻す。次の session の問い合わせに効く。
       // authRequired は元のまま保つ。ここで true に固定すると、認証を
       // 設定していない構成のテストが黙って別の構成に変わる。

@@ -106,4 +106,31 @@ test.describe("ログイン", () => {
 
     await expect(page.getByRole("alert")).toContainText("ログインを開始できませんでした");
   });
+
+  // 使っている最中に失効すると、画面はログイン済みのまま操作できなくなる。
+  // 401 を掴んだら状態を読み直し、ログイン画面へ戻す。
+  test("使っている最中にセッションが切れたら、ログイン画面へ戻す", async ({ page }) => {
+    const mock = baseMock();
+    mock.session = { status: 200, body: signedIn() };
+
+    await installApi(page, mock);
+    await page.goto("/");
+
+    // まずログイン済みで入れること。ここを確かめないと、最初から未ログイン
+    // だっただけのテストになる。
+    await expect(page.getByLabel("ボード名")).toBeVisible();
+
+    // ここで失効させる。一覧の取得だけが 401 を返し、状態を読み直すと
+    // 未ログインになる、という実際の並びを作る。
+    mock.boardsError = { status: 401, body: { error: "login required" } };
+    mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+
+    // 一覧を読み直す操作をさせる。作成そのものは通り、続く再取得で失効に気づく。
+    await page.getByLabel("ボード名").fill("失効の確認");
+    await page.getByRole("button", { name: "作成" }).click();
+
+    await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
+    // 失効はエラーではないので、赤い帯を出したまま残さない。
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
 });

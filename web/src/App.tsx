@@ -2,7 +2,7 @@ import "@excalidraw/excalidraw/index.css";
 
 import { useCallback, useEffect, useState } from "react";
 
-import { authApi, boardsApi } from "./api/boards";
+import { ApiError, authApi, boardsApi } from "./api/boards";
 import type { BoardDetail, BoardSummary, SessionStatus } from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
 import { BoardPage } from "./board/BoardPage";
@@ -35,6 +35,13 @@ export function App() {
     try {
       setBoards(await boardsApi.list());
     } catch (e) {
+      // 使っている最中の失効はここで初めて分かる。エラーだけ出すと、画面は
+      // ログイン済みのまま何も操作できず、リロードするまで戻れない。
+      // 状態を読み直せばログイン画面に落ちる。
+      if (e instanceof ApiError && e.status === 401) {
+        setSession(await authApi.session());
+        return;
+      }
       setError(`ボード一覧を取得できませんでした: ${String(e)}`);
     }
   }, []);
