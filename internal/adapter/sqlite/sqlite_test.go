@@ -481,10 +481,10 @@ func TestListLatestRunsByBoard_EmptyBoard(t *testing.T) {
 	}
 }
 
-// C-9: ボードを削除すると run と items が CASCADE で消える。
+// C-9: ボードを削除すると run と items とメンバーが CASCADE で消える。
 // SQLite は既定で外部キーを検査しないため、これは PRAGMA foreign_keys の
 // 設定が効いているかの確認でもある。
-func TestDeleteBoard_CascadesToRunsAndItems(t *testing.T) {
+func TestDeleteBoard_CascadesToRunsItemsAndMembers(t *testing.T) {
 	t.Parallel()
 
 	db := newDB(t)
@@ -504,7 +504,7 @@ func TestDeleteBoard_CascadesToRunsAndItems(t *testing.T) {
 		t.Fatalf("delete board: %v", err)
 	}
 
-	for _, table := range []string{"sync_runs", "sync_items"} {
+	for _, table := range []string{"sync_runs", "sync_items", "board_members"} {
 		var n int
 		if err := db.QueryRowContext(t.Context(),
 			`SELECT COUNT(*) FROM `+table).Scan(&n); err != nil {
