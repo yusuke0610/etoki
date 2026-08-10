@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -43,6 +42,13 @@ const listPageSize = 100
 // 選択肢として画面に出すものなので、全部を取り切ることに意味が無い。
 // 上限を設けないと、所属組織の多い利用者で一覧の取得だけが延々と続く。
 const maxRepositories = 500
+
+// maxRestPages は 1 インストールあたりに辿る REST のページ数の上限。
+//
+// maxRepositories は「残った件数」しか数えない。アーカイブ済みばかりの
+// ページが続くと候補が増えず、上限に達しないまま全ページを取り切ってしまう。
+// 走査そのものにも歯止めを置く。
+const maxRestPages = 20
 
 // ErrTokenRequired はトークンが設定されていないことを表す。
 var ErrTokenRequired = errors.New("etoki: github token is required")
@@ -238,19 +244,37 @@ func (c *Client) ListRepositoryProjects(
 // 画面の意味も正しくなる。候補が「利用者が etoki に許可したリポジトリ」だけに
 // なり、選んだのに Projects を作れない、が起きない。
 func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Repository, error) {
-	var installations struct {
-		Installations []struct {
-			ID int64 `json:"id"`
-		} `json:"installations"`
-	}
-	if err := c.rest(ctx, "/user/installations?per_page="+strconv.Itoa(listPageSize),
-		&installations); err != nil {
-		return nil, err
+	// インストール一覧もページングする。1 ページ目で打ち切ると、超えた分の
+	// インストールが黙って消え、そのリポジトリが候補に出ない。「インストール
+	// 経由が使えるリポジトリの定義」という前提がそこで崩れる。
+	var installIDs []int64
+
+	for page := 1; ; page++ {
+		var installations struct {
+			Installations []struct {
+				ID int64 `json:"id"`
+			} `json:"installations"`
+		}
+
+		path := fmt.Sprintf("/user/installations?per_page=%d&page=%d", listPageSize, page)
+		if err := c.rest(ctx, path, &installations); err != nil {
+			return nil, err
+		}
+
+		for _, inst := range installations.Installations {
+			installIDs = append(installIDs, inst.ID)
+		}
+
+		// 埋まっていないページが返ったら終わり。リポジトリ側と同じ止め方に
+		// 揃える。total_count は権限で絞られた件数と食い違うので信じない。
+		if len(installations.Installations) < listPageSize {
+			break
+		}
 	}
 
 	var repos []port.Repository
 
-	for _, inst := range installations.Installations {
+	for _, instID := range installIDs {
 		for page := 1; ; page++ {
 			var body struct {
 				Repositories []struct {
@@ -264,7 +288,7 @@ func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Reposito
 			}
 
 			path := fmt.Sprintf("/user/installations/%d/repositories?per_page=%d&page=%d",
-				inst.ID, listPageSize, page)
+				instID, listPageSize, page)
 			if err := c.rest(ctx, path, &body); err != nil {
 				return nil, err
 			}
@@ -286,8 +310,14 @@ func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Reposito
 			if len(repos) >= maxRepositories {
 				return repos[:maxRepositories], nil
 			}
-			// 空ページが返ったら終わり。total_count だけを信じて回すと、
-			// 権限で絞られた場合に終わらない。
+			// 上の判定は残った件数しか見ない。アーカイブ済みばかりのページが
+			// 続くと repos が増えず、上限に達しないまま辿り続ける。走査した
+			// ページ数にも上限を置く。
+			if page >= maxRestPages {
+				break
+			}
+			// 埋まっていないページが返ったら終わり。total_count は権限で
+			// 絞られた件数と食い違うので信じない。
 			if len(body.Repositories) < listPageSize {
 				break
 			}
