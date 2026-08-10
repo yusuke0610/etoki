@@ -924,6 +924,10 @@ func TestCanWriteProject(t *testing.T) {
 	}{
 		"書ける":  {`{"data":{"node":{"viewerCanUpdate":true}}}`, true},
 		"書けない": {`{"data":{"node":{"viewerCanUpdate":false}}}`, false},
+		// 辿れない ID は node が null で返る。招待されただけでリポジトリに
+		// 権限が無い利用者はこれを受け取る（ADR 0017）。表示は「書けない」で
+		// よい。エラーにすると、権限が無いことを障害として見せてしまう。
+		"辿れない": {`{"data":{"node":null}}`, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
