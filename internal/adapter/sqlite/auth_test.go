@@ -505,6 +505,15 @@ func TestClaimUnowned(t *testing.T) {
 	seedOwnedBoard(t, db, "board-legacy-2", "")
 	seedOwnedBoard(t, db, "board-owned", "user-b")
 
+	// 認証なしの利用者が誰かのボードに招かれている行。数えないものは
+	// 引き受けもしない。数と述語がずれると、owner のつもりで viewer の行を
+	// 受け取ることになる。
+	if err := repo.AddMember(t.Context(), port.BoardMember{
+		BoardID: "board-owned", UserID: "", Role: port.RoleViewer, CreatedAt: baseTime,
+	}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
 	n, err := repo.CountUnowned(t.Context())
 	if err != nil {
 		t.Fatalf("CountUnowned: %v", err)

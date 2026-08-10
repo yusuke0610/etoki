@@ -126,8 +126,12 @@ func (r *BoardRepository) ClaimUnowned(ctx context.Context, owner string) (int64
 		return 0, fmt.Errorf("claim boards: %w: owner is required", port.ErrNotFound)
 	}
 
+	// role の条件は CountUnowned と揃える。片方だけが招待された行まで拾うと、
+	// 数えた件数と引き受けた件数が食い違い、owner のつもりで viewer の行を
+	// 受け取ることになる。
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE board_members SET user_id = ? WHERE user_id = ''`, owner)
+		`UPDATE board_members SET user_id = ? WHERE user_id = '' AND role = ?`,
+		owner, string(port.RoleOwner))
 	if err != nil {
 		return 0, fmt.Errorf("claim boards: %w", err)
 	}
