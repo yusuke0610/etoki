@@ -45,6 +45,15 @@ type AnnotationStatus struct {
 	State SyncState `json:"state"`
 }
 
+// AuthUser ログイン中の利用者
+type AuthUser struct {
+	DisplayName string `json:"displayName"`
+	Login       string `json:"login"`
+
+	// Provider 認証基盤の識別子。"github" など
+	Provider string `json:"provider"`
+}
+
 // BoardDetail defines model for BoardDetail.
 type BoardDetail struct {
 	CreatedAt time.Time `json:"createdAt"`
@@ -153,6 +162,11 @@ type InterpretedItem struct {
 // （ADR 0006）。
 type ItemKind string
 
+// LoginResponse 認可画面へ送り出すための URL
+type LoginResponse struct {
+	AuthorizeURL string `json:"authorizeUrl"`
+}
+
 // Project リポジトリに紐づく Projects v2
 type Project struct {
 	// ID GraphQL の node ID。作成先として保存するのはこれ
@@ -173,6 +187,16 @@ type Repository struct {
 // SaveSceneRequest シーン保存のリクエストボディ
 type SaveSceneRequest struct {
 	Scene string `json:"scene"`
+}
+
+// SessionStatus ログイン状態。認証を設定していない構成でも 200 で返る。
+type SessionStatus struct {
+	// AuthRequired 認証を設定しているか。false なら画面はログインを求めない
+	AuthRequired  bool `json:"authRequired"`
+	Authenticated bool `json:"authenticated"`
+
+	// User ログイン中の利用者
+	User *AuthUser `json:"user,omitempty"`
 }
 
 // SyncItem 作成済みの draft issue 1 件
@@ -219,6 +243,15 @@ type InternalError = ErrorResponse
 
 // NotFound 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type NotFound = ErrorResponse
+
+// Unauthorized 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+type Unauthorized = ErrorResponse
+
+// CompleteLoginParams defines parameters for CompleteLogin.
+type CompleteLoginParams struct {
+	Code  string `form:"code" json:"code"`
+	State string `form:"state" json:"state"`
+}
 
 // CreateBoardJSONRequestBody defines body for CreateBoard for application/json ContentType.
 type CreateBoardJSONRequestBody = CreateBoardRequest

@@ -2,8 +2,9 @@ import "@excalidraw/excalidraw/index.css";
 
 import { useCallback, useEffect, useState } from "react";
 
-import { boardsApi } from "./api/boards";
-import type { BoardDetail, BoardSummary } from "./api/types";
+import { ApiError, authApi, boardsApi } from "./api/boards";
+import type { BoardDetail, BoardSummary, SessionStatus } from "./api/types";
+import { LoginPage } from "./auth/LoginPage";
 import { BoardPage } from "./board/BoardPage";
 import { RepositoryPicker } from "./board/RepositoryPicker";
 
@@ -14,18 +15,57 @@ export function App() {
   const [name, setName] = useState("");
   // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
   const [picking, setPicking] = useState(false);
+  // ログイン状態。null は問い合わせ中。
+  const [session, setSession] = useState<SessionStatus | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setSession(await authApi.session());
+      } catch (e) {
+        // 状態が分からないなら、ログインを求めない側に倒す。求める側に倒すと、
+        // 認証を設定していない構成が API の一時的な失敗で使えなくなる。
+        setError(`ログイン状態を取得できませんでした: ${String(e)}`);
+        setSession({ authRequired: false, authenticated: false });
+      }
+    })();
+  }, []);
 
   const reload = useCallback(async () => {
     try {
       setBoards(await boardsApi.list());
     } catch (e) {
+      // 使っている最中の失効はここで初めて分かる。エラーだけ出すと、画面は
+      // ログイン済みのまま何も操作できず、リロードするまで戻れない。
+      // 状態を読み直せばログイン画面に落ちる。
+      if (e instanceof ApiError && e.status === 401) {
+        setSession(await authApi.session());
+        return;
+      }
       setError(`ボード一覧を取得できませんでした: ${String(e)}`);
     }
   }, []);
 
+  // ログインが要る構成では、済むまで読みにいかない。先に叩くと 401 が
+  // エラー表示に出て、ログイン画面の上に無関係な失敗が重なる。
+  const signedIn = session !== null && (!session.authRequired || session.authenticated);
+
   useEffect(() => {
+    if (!signedIn) return;
     void reload();
-  }, [reload]);
+  }, [reload, signedIn]);
+
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout();
+      // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
+      setSession(await authApi.session());
+      setCurrent(null);
+      setBoards([]);
+    } catch (e) {
+      setError(`ログアウトできませんでした: ${String(e)}`);
+    }
+  }, []);
 
   const open = useCallback(async (id: string) => {
     try {
@@ -55,10 +95,35 @@ export function App() {
     setCurrent(board);
   }, []);
 
+  // 問い合わせ中は何も出さない。ログイン画面を一瞬見せてから消すと、
+  // 認証を設定していない構成でもちらつく。
+  if (session === null) {
+    return <div className="app" />;
+  }
+
+  if (session.authRequired && !session.authenticated) {
+    return (
+      <div className="app">
+        <main className="main">
+          <LoginPage />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <nav className="sidebar">
         <h1 className="brand">etoki</h1>
+
+        {session.user && (
+          <div className="account">
+            <span className="account-name">{session.user.displayName}</span>
+            <button type="button" onClick={() => void logout()}>
+              ログアウト
+            </button>
+          </div>
+        )}
 
         <form
           className="create-board"

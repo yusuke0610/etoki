@@ -17,7 +17,8 @@ info:
     ホワイトボードのブレスト内容を Vision LLM に解釈させ、GitHub Projects v2 の
     draft issue に変換するためのローカル API。
 
-    単一ユーザーがローカルで動かす前提のため、認証・認可は持たない（ADR 0004）。
+    認証は任意。設定しなければ単一ユーザーのローカルツールとして動く（ADR 0004）。
+    GitHub App を設定するとログインを要求し、`/api/**` は 401 を返しうる（ADR 0015）。
   version: 0.1.0
   license:
     name: MIT
@@ -36,6 +37,8 @@ tags:
     description: 注釈の状態・解釈・作成
   - name: github
     description: 作成先を選ぶための GitHub の一覧
+  - name: auth
+    description: ログインとセッション
 
 paths:
   /healthz:
@@ -56,6 +59,120 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/auth/session:
+    get:
+      tags: [auth]
+      operationId: getSession
+      summary: ログイン状態を返す
+      description: |
+        **常に 200 を返す。** 未ログインを 401 で伝えると、認証を設定していない
+        構成の起動時にも 401 が出て、本当の失効と見分けがつかなくなる。
+
+        `authRequired` が false なら認証を設定していない。画面はログインを
+        求めない（ADR 0015）。
+      responses:
+        "200":
+          description: ログイン状態
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionStatus"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: startLogin
+      summary: 認可画面の URL を発行する
+      description: |
+        **GET ではなく POST。** state の発行は書き込みであり、GET にすると
+        外部ページの `<img>` から叩けてしまう。POST なら Origin 検証が効く
+        （ADR 0013 / 0015）。
+
+        遷移そのものはフロントが行う。サーバーからリダイレクトしないのは、
+        fetch でのリダイレクト追跡が cross-origin で扱いにくいため。
+      responses:
+        "200":
+          description: 送り出す先
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: 認証が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/auth/callback:
+    get:
+      tags: [auth]
+      operationId: completeLogin
+      summary: 認可の結果を受け取ってセッションを張る
+      description: |
+        認証基盤からのトップレベル遷移。**etoki で唯一、副作用を持つ GET。**
+        GET 以外にはできないので、`state` の照合で守る。サーバー発行・単回
+        使用・期限つきなので、攻撃者は有効な値を用意できない（ADR 0015）。
+
+        画面に戻すためのリダイレクトを返す。ブラウザ以外から叩く用途は無い。
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: |
+            画面へ戻す。成功時だけでなく、state が古い・code を使い切った
+            場合もここに来る。ブラウザのトップレベル遷移に JSON を返すと
+            利用者が生のエラー本文を見ることになるため
+        "400":
+          description: code か state が付いていない（直接叩かれた場合）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: 認証が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: セッションを破棄する
+      description: |
+        GitHub 側のトークンは取り消さない。同じ利用者が別の端末からも使って
+        いる可能性があり、片方のログアウトで全部を切るのは意図に合わない。
+      responses:
+        "204":
+          description: 破棄した。もともとログインしていなくても 204
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/boards:
     get:
       tags: [boards]
@@ -71,6 +188,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/BoardSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "500":
@@ -95,6 +214,8 @@ paths:
                 $ref: "#/components/schemas/BoardDetail"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "500":
@@ -114,6 +235,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BoardDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -142,6 +265,8 @@ paths:
           description: 保存した
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -177,6 +302,8 @@ paths:
                 $ref: "#/components/schemas/BoardDetail"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -207,6 +334,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Repository"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "500":
@@ -244,6 +373,8 @@ paths:
                   $ref: "#/components/schemas/Project"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "500":
@@ -280,6 +411,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AnnotationStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -307,6 +440,8 @@ paths:
                 $ref: "#/components/schemas/Interpretation"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -358,6 +493,8 @@ paths:
                 $ref: "#/components/schemas/CreatedRun"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -433,6 +570,15 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
 
+    Unauthorized:
+      description: |
+        ログインしていない、またはセッションが失効した。認証を設定している
+        場合にだけ起こる（ADR 0015）。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     Forbidden:
       description: |
         Host または Origin が許可されていない。ブラウザ由来の cross-site
@@ -457,6 +603,42 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    AuthUser:
+      type: object
+      description: ログイン中の利用者
+      required: [provider, login, displayName]
+      properties:
+        provider:
+          type: string
+          description: 認証基盤の識別子。"github" など
+        login:
+          type: string
+        displayName:
+          type: string
+
+    SessionStatus:
+      type: object
+      description: |
+        ログイン状態。認証を設定していない構成でも 200 で返る。
+      required: [authRequired, authenticated]
+      properties:
+        authRequired:
+          type: boolean
+          description: |
+            認証を設定しているか。false なら画面はログインを求めない
+        authenticated:
+          type: boolean
+        user:
+          $ref: "#/components/schemas/AuthUser"
+
+    LoginResponse:
+      type: object
+      description: 認可画面へ送り出すための URL
+      required: [authorizeUrl]
+      properties:
+        authorizeUrl:
+          type: string
+
     HealthResponse:
       type: object
       description: /healthz のレスポンスボディ

@@ -75,7 +75,15 @@ type handlers struct {
 	creations *usecase.CreationService
 	// catalog は作成先の候補一覧。nil でもよい。その場合は 503 を返す。
 	catalog *usecase.GitHubCatalogService
-	logger  *slog.Logger
+	// auth はログインとセッション。nil なら認証しない。
+	//
+	// nil のときは /api/auth/session が authRequired: false を返し、画面は
+	// ログインを求めない（ADR 0015）。
+	auth *usecase.AuthService
+	// publicURL は認可から戻ってくる先の組み立てに使う。空ならリクエストの
+	// Host から組む。
+	publicURL string
+	logger    *slog.Logger
 }
 
 func (h *handlers) createBoard(c *gin.Context) {
@@ -241,6 +249,10 @@ func (h *handlers) fail(c *gin.Context, err error) {
 		h.badRequest(c, err)
 	case errors.Is(err, port.ErrNotFound):
 		h.notFound(c)
+	case errors.Is(err, port.ErrNotAuthenticated):
+		// セッションが失効した、あるいはトークンを更新できなかった。
+		// UI が「再ログインが要る」と判断できるよう 401 に寄せる。
+		errorJSON(c, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, usecase.ErrTargetLocked):
 		// 状態が食い違っていて進めない、という点で contentHash の不一致と同類。
 		errorJSON(c, http.StatusConflict, err.Error())

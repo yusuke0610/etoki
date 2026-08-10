@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -452,6 +455,13 @@ func TestHTTPErrors(t *testing.T) {
 					t.Errorf("エラーに %q が含まれない: %v", want, err)
 				}
 			}
+
+			// 401 だけは sentinel に寄せる。文字列で判定させると、UI が
+			// 「再ログインが要る」を見分けられない（ADR 0015）。
+			if got := errors.Is(err, port.ErrNotAuthenticated); got != (tt.status == http.StatusUnauthorized) {
+				t.Errorf("errors.Is(err, ErrNotAuthenticated) = %v (status %d): %v",
+					got, tt.status, err)
+			}
 		})
 	}
 }
@@ -655,5 +665,211 @@ func TestListRepositoryProjects_RequiresOwnerAndName(t *testing.T) {
 	// 入口で弾く。空のまま投げると GitHub 側のエラーとして返り、原因が遠くなる。
 	if len(*got) != 0 {
 		t.Errorf("リクエストを送っている: %d 回", len(*got))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GitHub App モードのリポジトリ一覧（ADR 0015）
+// ---------------------------------------------------------------------------
+
+// countingTokens は呼ばれた回数を数える GitHubTokenSource。
+//
+// 利用者ごとにトークンが変わる構成では、リクエストのたびに引き直す必要がある。
+// 1 回だけ引いて使い回すと、更新後も古いトークンを送り続ける。
+type countingTokens struct {
+	mu    sync.Mutex
+	token string
+	calls int
+}
+
+func (t *countingTokens) Token(context.Context) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.calls++
+	return t.token, nil
+}
+
+func (t *countingTokens) count() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	return t.calls
+}
+
+// restPage は all のうち page 番目のページを返す。GitHub の per_page / page と
+// 同じ切り方にしないと、辿り方の誤りをテストが検知できない。
+func restPage[T any](all []T, per, num int) []T {
+	start := (num - 1) * per
+	if start >= len(all) {
+		return nil
+	}
+	return all[start:min(start+per, len(all))]
+}
+
+// installedRepo はインストール配下のリポジトリ 1 件分の応答。
+type installedRepo struct {
+	name     string
+	owner    string
+	archived bool
+}
+
+// newAppClient は installations と repositories を返すサーバーに向いた
+// ModeApp のクライアントを返す。
+//
+// repos はインストール ID をキーにする。ページングは per_page と page を見て
+// サーバー側で切る。実物と同じ切り方にしないと、辿り方の誤りを検知できない。
+func newAppClient(
+	t *testing.T, installIDs []int64, repos map[int64][]installedRepo,
+) (*github.Client, *countingTokens) {
+	t.Helper()
+
+	tokens := &countingTokens{token: testToken}
+
+	page := func(r *http.Request) (per, num int) {
+		per, num = 100, 1
+		if v := r.URL.Query().Get("per_page"); v != "" {
+			per, _ = strconv.Atoi(v)
+		}
+		if v := r.URL.Query().Get("page"); v != "" {
+			num, _ = strconv.Atoi(v)
+		}
+		return per, num
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if want := "Bearer " + testToken; r.Header.Get("authorization") != want {
+			t.Errorf("authorization = %q", r.Header.Get("authorization"))
+		}
+
+		per, num := page(r)
+
+		if r.URL.Path == "/user/installations" {
+			var out []map[string]any
+			for _, id := range restPage(installIDs, per, num) {
+				out = append(out, map[string]any{"id": id})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"installations": out})
+			return
+		}
+
+		var id int64
+		if _, err := fmt.Sscanf(r.URL.Path, "/user/installations/%d/repositories", &id); err != nil {
+			t.Errorf("想定しないパス: %s", r.URL.Path)
+		}
+
+		var out []map[string]any
+		for _, rp := range restPage(repos[id], per, num) {
+			out = append(out, map[string]any{
+				"name":     rp.name,
+				"archived": rp.archived,
+				"owner":    map[string]any{"login": rp.owner},
+			})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"repositories": out})
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := github.New(github.Config{
+		BaseURL: srv.URL, TokenSource: tokens, Mode: github.ModeApp,
+	})
+	if err != nil {
+		t.Fatalf("New() = %v", err)
+	}
+
+	return c, tokens
+}
+
+// インストールが 1 ページに収まらない利用者がいる。1 ページ目で打ち切ると、
+// 超えた分のインストールのリポジトリが黙って候補から消える。
+func TestListRepositories_AppModeFollowsInstallationPages(t *testing.T) {
+	t.Parallel()
+
+	// 100 で 1 ページが埋まり、101 個目が 2 ページ目に来る。
+	const installs = 101
+
+	ids := make([]int64, installs)
+	repos := make(map[int64][]installedRepo, installs)
+	for i := range installs {
+		id := int64(i + 1)
+		ids[i] = id
+		repos[id] = []installedRepo{{name: fmt.Sprintf("repo-%d", id), owner: "acme"}}
+	}
+
+	c, tokens := newAppClient(t, ids, repos)
+
+	got, err := c.ListRepositories(t.Context())
+	if err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+	if len(got) != installs {
+		t.Fatalf("len(repos) = %d, want %d", len(got), installs)
+	}
+	// 2 ページ目のインストールが含まれること。ここが落ちるなら一覧を
+	// 切り詰めている。
+	if got[installs-1].Name != "repo-101" {
+		t.Errorf("最後の要素 = %+v, want repo-101", got[installs-1])
+	}
+
+	// トークンはリクエストのたびに引く。1 回で使い回すと、更新後も古い
+	// トークンを送り続ける。
+	if tokens.count() < installs {
+		t.Errorf("Token() = %d 回, want >= %d", tokens.count(), installs)
+	}
+}
+
+func TestListRepositories_AppModeSkipsArchived(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newAppClient(t, []int64{7}, map[int64][]installedRepo{
+		7: {
+			{name: "web", owner: "acme"},
+			{name: "old", owner: "acme", archived: true},
+			{name: "api", owner: "other"},
+		},
+	})
+
+	got, err := c.ListRepositories(t.Context())
+	if err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+
+	// この REST にはアーカイブ済みを除くパラメータが無いので、取ってから捨てる。
+	want := []port.Repository{{Owner: "acme", Name: "web"}, {Owner: "other", Name: "api"}}
+	if len(got) != len(want) {
+		t.Fatalf("len(repos) = %d, want %d (%+v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("repos[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// 選択肢として見せるものなので、全部を取り切らずに打ち切る。
+func TestListRepositories_AppModeStopsAtMaxRepositories(t *testing.T) {
+	t.Parallel()
+
+	// **インストールをまたいで数える。** 1 つに 700 件入れると、上限が
+	// インストールごとにリセットする実装でも通ってしまう。3 つに分けて
+	// 合計で 700 件にすれば、通算で止まることまで縛れる。
+	ids := []int64{1, 2, 3}
+	repos := make(map[int64][]installedRepo, len(ids))
+	for _, id := range ids {
+		batch := make([]installedRepo, 300)
+		for i := range batch {
+			batch[i] = installedRepo{name: fmt.Sprintf("repo-%d-%d", id, i), owner: "acme"}
+		}
+		repos[id] = batch
+	}
+
+	c, _ := newAppClient(t, ids, repos)
+
+	got, err := c.ListRepositories(t.Context())
+	if err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+	if len(got) != 500 {
+		t.Errorf("len(repos) = %d, want 500", len(got))
 	}
 }

@@ -43,15 +43,46 @@ const listPageSize = 100
 // 上限を設けないと、所属組織の多い利用者で一覧の取得だけが延々と続く。
 const maxRepositories = 500
 
+// maxRestPages は 1 インストールあたりに辿る REST のページ数の上限。
+//
+// maxRepositories は「残った件数」しか数えない。アーカイブ済みばかりの
+// ページが続くと候補が増えず、上限に達しないまま全ページを取り切ってしまう。
+// 走査そのものにも歯止めを置く。
+const maxRestPages = 20
+
 // ErrTokenRequired はトークンが設定されていないことを表す。
 var ErrTokenRequired = errors.New("etoki: github token is required")
+
+// Mode は「使えるリポジトリ」の決まり方。
+//
+// GitHub App と PAT で定義そのものが違うので、アダプタの中で推測せず外から
+// 渡す。判断できるのは、認証をどう設定したかを知っている cmd/etoki だけ
+// （ADR 0015）。
+type Mode int
+
+const (
+	// ModePAT は PAT で叩く構成。利用者が見えるリポジトリすべてが対象。
+	ModePAT Mode = iota
+	// ModeApp は GitHub App の user-to-server トークンで叩く構成。
+	// アプリをインストールしたリポジトリだけが対象。
+	ModeApp
+)
 
 // Config は Client の設定。
 type Config struct {
 	// BaseURL は GitHub API のホスト。空なら DefaultBaseURL。
 	BaseURL string
-	// Token は Authorization ヘッダに載せるトークン。必須。
+	// Token は Authorization ヘッダに載せるトークン。
+	//
+	// TokenSource を指定するなら空でよい。両方あれば TokenSource が勝つ。
 	Token string
+	// TokenSource はリクエストごとにトークンを引く。
+	//
+	// 利用者ごとにトークンが変わる構成（OAuth）で使う。nil なら Token を
+	// 固定で使う（ADR 0015）。
+	TokenSource port.GitHubTokenSource
+	// Mode は「使えるリポジトリ」の決まり方。既定は ModePAT。
+	Mode Mode
 	// HTTPClient は差し替え用。nil なら既定のタイムアウトを持つものを作る。
 	HTTPClient *http.Client
 }
@@ -61,17 +92,28 @@ func ConfigFromEnv() Config {
 	return Config{Token: os.Getenv(envToken)}
 }
 
+// staticToken は Config.Token をトークン源として扱うためのラッパー。
+type staticToken string
+
+func (t staticToken) Token(context.Context) (string, error) { return string(t), nil }
+
 // Client は GitHub Projects v2 を GraphQL で操作する。
 type Client struct {
-	endpoint string
-	token    string
-	http     *http.Client
+	base   string
+	tokens port.GitHubTokenSource
+	mode   Mode
+	http   *http.Client
 }
 
 // New は Config を検証して Client を作る。
 func New(cfg Config) (*Client, error) {
-	if cfg.Token == "" {
-		return nil, fmt.Errorf("%w: set Config.Token or %s", ErrTokenRequired, envToken)
+	tokens := cfg.TokenSource
+	if tokens == nil {
+		if cfg.Token == "" {
+			return nil, fmt.Errorf("%w: set Config.Token, Config.TokenSource, or %s",
+				ErrTokenRequired, envToken)
+		}
+		tokens = staticToken(cfg.Token)
 	}
 
 	base := cfg.BaseURL
@@ -80,9 +122,10 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	c := &Client{
-		endpoint: strings.TrimRight(base, "/") + "/graphql",
-		token:    cfg.Token,
-		http:     cfg.HTTPClient,
+		base:   strings.TrimRight(base, "/"),
+		tokens: tokens,
+		mode:   cfg.Mode,
+		http:   cfg.HTTPClient,
 	}
 	if c.http == nil {
 		c.http = &http.Client{Timeout: defaultTimeout}
@@ -91,14 +134,27 @@ func New(cfg Config) (*Client, error) {
 	return c, nil
 }
 
-// ListRepositories は利用者が関われるリポジトリを返す。
+// ListRepositories は作成先に選べるリポジトリを返す。
 //
-// アーカイブ済みは含めない。選択肢として出しても選ばせる意味が無いので、
-// クエリ側で落としている。
+// アーカイブ済みは含めない。選択肢として出しても選ばせる意味が無い。
+//
+// 「使える」の定義が Mode で変わる（ADR 0015）。GitHub App では
+// インストールしたリポジトリだけ、PAT では利用者が見えるものすべて。
+// これは実装の都合ではなく、GitHub 側の権限モデルの違いそのもの。
+func (c *Client) ListRepositories(ctx context.Context) ([]port.Repository, error) {
+	if c.mode == ModeApp {
+		return c.listInstalledRepositories(ctx)
+	}
+	return c.listViewerRepositories(ctx)
+}
+
+// listViewerRepositories は PAT 向けに、利用者が見えるリポジトリを返す。
+//
+// アーカイブ済みはクエリ側で落としている。
 //
 // トークンに repo の read が無いと 0 件になるが、権限不足と「本当に 1 つも
 // 無い」を GraphQL の応答からは区別できない。案内は呼び出し側に任せる。
-func (c *Client) ListRepositories(ctx context.Context) ([]port.Repository, error) {
+func (c *Client) listViewerRepositories(ctx context.Context) ([]port.Repository, error) {
 	var (
 		repos []port.Repository
 		after *string
@@ -176,6 +232,138 @@ func (c *Client) ListRepositoryProjects(
 		}
 		after = next
 	}
+}
+
+// listInstalledRepositories は GitHub App 向けに、アプリをインストールした
+// リポジトリを返す。
+//
+// GraphQL の viewer.repositories は使わない。user-to-server トークンで
+// それが返す範囲は仕様として保証されていない。インストール経由の REST が
+// GitHub App における「使えるリポジトリ」の定義そのもの（ADR 0015）。
+//
+// 画面の意味も正しくなる。候補が「利用者が etoki に許可したリポジトリ」だけに
+// なり、選んだのに Projects を作れない、が起きない。
+func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Repository, error) {
+	// インストール一覧もページングする。1 ページ目で打ち切ると、超えた分の
+	// インストールが黙って消え、そのリポジトリが候補に出ない。「インストール
+	// 経由が使えるリポジトリの定義」という前提がそこで崩れる。
+	var installIDs []int64
+
+	for page := 1; ; page++ {
+		var installations struct {
+			Installations []struct {
+				ID int64 `json:"id"`
+			} `json:"installations"`
+		}
+
+		path := fmt.Sprintf("/user/installations?per_page=%d&page=%d", listPageSize, page)
+		if err := c.rest(ctx, path, &installations); err != nil {
+			return nil, err
+		}
+
+		for _, inst := range installations.Installations {
+			installIDs = append(installIDs, inst.ID)
+		}
+
+		// 埋まっていないページが返ったら終わり。リポジトリ側と同じ止め方に
+		// 揃える。total_count は権限で絞られた件数と食い違うので信じない。
+		if len(installations.Installations) < listPageSize {
+			break
+		}
+	}
+
+	var repos []port.Repository
+
+	for _, instID := range installIDs {
+		for page := 1; ; page++ {
+			var body struct {
+				Repositories []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+					Archived    bool   `json:"archived"`
+					Owner       struct {
+						Login string `json:"login"`
+					} `json:"owner"`
+				} `json:"repositories"`
+			}
+
+			path := fmt.Sprintf("/user/installations/%d/repositories?per_page=%d&page=%d",
+				instID, listPageSize, page)
+			if err := c.rest(ctx, path, &body); err != nil {
+				return nil, err
+			}
+
+			for _, r := range body.Repositories {
+				// GraphQL 側はクエリで落としているが、この REST には
+				// アーカイブ済みを除くパラメータが無い。取ってから捨てるしかない。
+				if r.Archived {
+					continue
+				}
+				repos = append(repos, port.Repository{
+					Owner:       r.Owner.Login,
+					Name:        r.Name,
+					Description: r.Description,
+				})
+			}
+
+			// 選択肢として見せるものなので、全件を取り切る必要は無い。
+			if len(repos) >= maxRepositories {
+				return repos[:maxRepositories], nil
+			}
+			// 上の判定は残った件数しか見ない。アーカイブ済みばかりのページが
+			// 続くと repos が増えず、上限に達しないまま辿り続ける。走査した
+			// ページ数にも上限を置く。
+			if page >= maxRestPages {
+				break
+			}
+			// 埋まっていないページが返ったら終わり。total_count は権限で
+			// 絞られた件数と食い違うので信じない。
+			if len(body.Repositories) < listPageSize {
+				break
+			}
+		}
+	}
+
+	return repos, nil
+}
+
+// rest は GitHub の REST を 1 回叩き、JSON を out に詰める。
+//
+// Projects v2 は GraphQL にしか無いので、REST を使うのはインストール一覧だけ。
+// そのためだけに別のクライアントを作らず、ここに小さく持つ。
+func (c *Client) rest(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("accept", "application/vnd.github+json")
+
+	token, err := c.tokens.Token(ctx)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("authorization", "Bearer "+token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("call github rest: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return statusError(resp, raw)
+	}
+
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	return nil
 }
 
 // nextCursor は次のページのカーソルを返す。次が無ければ (nil, nil)。
@@ -301,12 +489,19 @@ func (c *Client) do(ctx context.Context, query string, vars map[string]any, out 
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/graphql", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("content-type", "application/json")
-	req.Header.Set("authorization", "Bearer "+c.token)
+
+	// トークンはリクエストごとに引く。OAuth では利用者ごとに変わり、失効
+	// 間際なら差し替わる（ADR 0015）。
+	token, err := c.tokens.Token(ctx)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("authorization", "Bearer "+token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -356,6 +551,12 @@ func statusError(resp *http.Response, raw []byte) error {
 	detail := truncate(string(raw), 200)
 	if err := json.Unmarshal(raw, &msg); err == nil && msg.Message != "" {
 		detail = msg.Message
+	}
+
+	// 401 は sentinel に寄せる。文字列のままだと UI が「再ログインが要る」と
+	// 判断できない（ADR 0015）。ステータスは他と揃えて残す。
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("%w: github api: %d: %s", port.ErrNotAuthenticated, resp.StatusCode, detail)
 	}
 
 	if remaining := resp.Header.Get("x-ratelimit-remaining"); remaining == "0" {

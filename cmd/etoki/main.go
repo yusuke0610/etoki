@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,11 +18,19 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki"
+	githubauth "github.com/yusuke0610/etoki/internal/adapter/auth/github"
 	"github.com/yusuke0610/etoki/internal/adapter/github"
 	"github.com/yusuke0610/etoki/internal/adapter/llm"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
+	"github.com/yusuke0610/etoki/internal/secret"
 	"github.com/yusuke0610/etoki/port"
 )
+
+// envEncryptionKey は保存するトークンを暗号化する鍵。
+const envEncryptionKey = "ETOKI_TOKEN_ENCRYPTION_KEY"
+
+// envPublicURL は認可から戻ってくる先の組み立てに使う。
+const envPublicURL = "ETOKI_PUBLIC_URL"
 
 // defaultDBPath は ETOKI_DB_PATH が未設定のときに使う SQLite ファイル。
 const defaultDBPath = "etoki.db"
@@ -38,6 +47,11 @@ environment:
   ETOKI_LLM_API_KEY     LLM の API キー（認証不要なら未設定でよい）
   ETOKI_LLM_MODEL       モデル ID（既定: ` + llm.DefaultModel + `）
   ETOKI_GITHUB_TOKEN    GitHub のトークン（repo の read と Projects の read/write）
+                        認証を設定した場合は使わない
+  ETOKI_GITHUB_APP_CLIENT_ID      GitHub App の client ID（設定するとログインを要求する）
+  ETOKI_GITHUB_APP_CLIENT_SECRET  同 client secret
+  ETOKI_TOKEN_ENCRYPTION_KEY      トークンを暗号化する鍵（base64 の 32 バイト）
+  ETOKI_PUBLIC_URL                認可から戻ってくる先。空ならリクエストの Host から組む
   ETOKI_GITHUB_KIND_FIELD    種別のカスタムフィールド名（既定: ` + etoki.DefaultKindFieldName + `）
   ETOKI_GITHUB_PARENT_FIELD  親のカスタムフィールド名（既定: ` + etoki.DefaultParentFieldName + `）
 
@@ -45,6 +59,10 @@ LLM や GitHub を未設定のままでも起動する。その場合、解釈�
 だけが「設定されていない」と返し、ボードの編集と状態表示は使える。
 
 draft issue の作成先はボードごとに画面で選ぶ。環境変数では指定しない。
+
+GitHub App を設定するとログインを要求し、GitHub は利用者ごとのトークンで叩く。
+そのとき ETOKI_GITHUB_TOKEN は使わない。認証を設定しなければ従来どおり PAT で
+動く。
 `
 
 func main() {
@@ -102,7 +120,12 @@ func serve(ctx context.Context) error {
 		return err
 	}
 
-	githubClient, err := newGitHubClient()
+	auth, err := newAuthenticator(db)
+	if err != nil {
+		return err
+	}
+
+	githubClient, err := newGitHubClient(auth)
 	if err != nil {
 		return err
 	}
@@ -113,6 +136,8 @@ func serve(ctx context.Context) error {
 		Mappings:        sqlite.NewMappingRepository(db),
 		LLM:             llmClient,
 		GitHub:          githubClient,
+		Auth:            auth,
+		PublicURL:       os.Getenv(envPublicURL),
 		KindFieldName:   os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
 		ParentFieldName: os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
 		Logger:          logger,
@@ -127,6 +152,7 @@ func serve(ctx context.Context) error {
 		slog.String("db", path),
 		slog.Bool("llm", llmClient != nil),
 		slog.Bool("github", githubClient != nil),
+		slog.Bool("auth", auth != nil),
 	)
 
 	return srv.Run(ctx)
@@ -154,13 +180,53 @@ func newLLMClient() (port.LLMClient, error) {
 	return c, nil
 }
 
+// newAuthenticator は環境変数から認証を組み立てる。
+//
+// GitHub App が未設定なら nil を返す。認証しない構成になり、これまでどおり
+// PAT で動く（ADR 0015）。
+func newAuthenticator(db *sql.DB) (*etoki.Authenticator, error) {
+	cfg := githubauth.ConfigFromEnv()
+	if !cfg.Configured() {
+		return nil, nil
+	}
+
+	// 認証を使うなら鍵は必須。無いまま起動して平文で保存する、を起こさない。
+	key, err := secret.DecodeKey(os.Getenv(envEncryptionKey))
+	if err != nil {
+		return nil, fmt.Errorf("%w\n  %s に base64 の 32 バイトを設定してください", err, envEncryptionKey)
+	}
+	box, err := secret.New(key)
+	if err != nil {
+		return nil, err
+	}
+
+	// client_id と client_secret の片方だけ、はここで落ちる。
+	provider, err := githubauth.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box))
+}
+
 // newGitHubClient は環境変数から GitHub クライアントを組み立てる。
 //
-// トークンが未設定なら nil を返す。作成のエンドポイントが「設定されていない」
-// と返し、ボードの編集は続けられる。LLM と同じ扱い。
-func newGitHubClient() (port.GitHubClient, error) {
+// auth があればそれをトークン源にする。無ければ PAT。どちらも無ければ nil を
+// 返し、作成のエンドポイントが「設定されていない」と返す。LLM と同じ扱い。
+//
+// Mode を決めるのはここだけ。「使えるリポジトリ」の定義が GitHub App と PAT で
+// 違うが、それを知っているのは認証をどう設定したかを見ているこの層だけ
+// （ADR 0015）。
+func newGitHubClient(auth *etoki.Authenticator) (port.GitHubClient, error) {
 	cfg := github.ConfigFromEnv()
-	if cfg.Token == "" {
+
+	if auth != nil {
+		// 認証を設定したら PAT は使わない。作成の主体がリクエストごとに
+		// 変わると、誰が作ったのかを追えなくなる。
+		cfg.Token = ""
+		cfg.TokenSource = auth
+		cfg.Mode = github.ModeApp
+	} else if cfg.Token == "" {
 		return nil, nil
 	}
 

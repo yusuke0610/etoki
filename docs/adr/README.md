@@ -18,3 +18,4 @@
 | [0012](0012-e2e-tests-mock-the-backend.md) | E2E はバックエンドを起動せず、契約の型でモックする | 採用 |
 | [0013](0013-reject-cross-site-browser-requests.md) | ブラウザ由来の cross-site リクエストを Host と Origin で弾く | 採用 |
 | [0014](0014-board-scoped-github-target.md) | 作成先の Projects v2 はボードごとに持ち、最初の作成で固定する | 採用 |
+| [0015](0015-pluggable-auth-seams.md) | 認証は 3 つの継ぎ目で受け、GitHub App を既定実装にする | 採用 |
