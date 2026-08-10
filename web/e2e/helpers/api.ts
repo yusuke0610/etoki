@@ -73,9 +73,9 @@ async function json(route: Route, status: number, body: unknown): Promise<void> 
 export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   let issued = 0;
 
-  // 新しいボードは作成先が未選択で始まる。開くとリポジトリ選択に入る
-  // （ADR 0014）。
-  const newBoard = (name: string): BoardDetail => {
+  // 新しいボードは作成先を持って生まれる。作成先を選ばないと作れない
+  // （ADR 0017）。
+  const newBoard = (name: string, target: BoardTarget): BoardDetail => {
     issued += 1;
     return {
       id: `board-new-${issued}`,
@@ -85,9 +85,9 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       createdAt: "2026-08-05T10:00:00Z",
       updatedAt: "2026-08-05T10:00:00Z",
       scene: emptyScene(),
-      repositoryOwner: "",
-      repositoryName: "",
-      projectId: "",
+      repositoryOwner: target.repositoryOwner,
+      repositoryName: target.repositoryName,
+      projectId: target.projectId,
       targetLocked: false,
     };
   };
@@ -110,8 +110,8 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => url.pathname === "/api/boards",
     async (route) => {
       if (route.request().method() === "POST") {
-        const req = route.request().postDataJSON() as { name: string };
-        const board = newBoard(req.name);
+        const req = route.request().postDataJSON() as { name: string } & BoardTarget;
+        const board = newBoard(req.name, req);
         mock.boards = [summarize(board), ...mock.boards];
         mock.details[board.id] = board;
         mock.annotations[board.id] ??= [];

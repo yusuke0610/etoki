@@ -104,7 +104,11 @@ func (h *handlers) createBoard(c *gin.Context) {
 		return
 	}
 
-	b, err := h.boards.Create(c.Request.Context(), req.Name, req.Scene)
+	b, err := h.boards.Create(c.Request.Context(), req.Name, req.Scene, port.BoardTarget{
+		RepositoryOwner: req.RepositoryOwner,
+		RepositoryName:  req.RepositoryName,
+		ProjectID:       req.ProjectID,
+	})
 	if err != nil {
 		h.fail(c, err)
 		return

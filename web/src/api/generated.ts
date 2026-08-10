@@ -593,9 +593,23 @@ export interface components {
             number: number;
             title: string;
         };
-        /** @description ボード作成のリクエストボディ */
+        /**
+         * @description ボード作成のリクエストボディ。
+         *
+         *     **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
+         *     （ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
+         *     「ボードの作成にはリポジトリへのアクセス権が要る」はこれで満ちる
+         *     （ADR 0017）。
+         *
+         *     副産物として、作成先が未選択のボードは新規には生まれなくなる。移行前の
+         *     ボードは未選択のまま残るので、`projectId` が空文字の経路は消えない。
+         */
         CreateBoardRequest: {
             name: string;
+            repositoryOwner: string;
+            repositoryName: string;
+            /** @description draft issue を作る Projects v2 の node ID */
+            projectId: string;
             /** @description 省略すると空のシーンで作る */
             scene?: string;
         };

@@ -110,6 +110,32 @@ func newCreateRouter(t *testing.T, gh port.GitHubClient) (*gin.Engine, port.Mapp
 	return httpapi.NewRouter(deps), mappings
 }
 
+// newCreateRouterWithBoards は newCreateRouter と同じものに、ボードの
+// リポジトリを添えて返す。
+//
+// 作成先が未選択のボードは API では作れなくなった（ADR 0017）。移行前の
+// ボードだけがその形で残るので、API を通さずに作るしかない。
+func newCreateRouterWithBoards(
+	t *testing.T, gh port.GitHubClient,
+) (*gin.Engine, port.BoardRepository) {
+	t.Helper()
+
+	boards, mappings := newRepos(t)
+	locks := usecase.NewBoardLocks()
+
+	deps := httpapi.Deps{
+		Boards: usecase.NewBoardService(boards, mappings, locks,
+			usecase.WithClock(func() time.Time { return fixedTime })),
+		Annotations: usecase.NewAnnotationService(boards, mappings),
+	}
+	if gh != nil {
+		deps.Creations = usecase.NewCreationService(boards, mappings, gh, locks,
+			usecase.WithCreationClock(func() time.Time { return fixedTime }))
+	}
+
+	return httpapi.NewRouter(deps), boards
+}
+
 // createTargetedBoard はボードを作り、draft issue の作成先まで設定する。
 //
 // 作成先が未選択のボードには作れない（ADR 0014）。作成そのものを見るテストは
@@ -398,19 +424,43 @@ func setTargetBody() map[string]string {
 	}
 }
 
-// 新しいボードは未選択で始まる。既存 DB からの移行もこの形になる。
-func TestSetBoardTarget_StartsUnselected(t *testing.T) {
+// 新しいボードは作成先を持って生まれる。候補は書ける Project だけに絞って
+// あるので、書ける先を 1 つも持たない人はここまで来られない（ADR 0017）。
+func TestCreateBoard_StartsWithTarget(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newCreateRouter(t, &stubGitHub{})
 	id := createBoard(t, r, "設計会")
 
 	got := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
-	if got["projectId"] != "" || got["repositoryOwner"] != "" {
-		t.Errorf("作成直後に作成先が入っている: %+v", got)
+	if got["projectId"] != "PVT_1" || got["repositoryOwner"] != "acme" {
+		t.Errorf("作成先が入っていない: %+v", got)
 	}
 	if got["targetLocked"] != false {
 		t.Errorf("targetLocked = %v, want false", got["targetLocked"])
+	}
+}
+
+// 作成先を省いたら作れない。「ボードの作成にはリポジトリへのアクセス権が
+// 要る」を、この 1 本で守っている（ADR 0017）。
+func TestCreateBoard_RequiresTarget(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+
+	for name, body := range map[string]map[string]string{
+		"作成先が無い":      {"name": "設計会"},
+		"project が無い": {"name": "設計会", "repositoryOwner": "acme", "repositoryName": "web"},
+		"リポジトリが無い":    {"name": "設計会", "projectId": "PVT_1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := do(t, r, http.MethodPost, "/api/boards", body)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+			}
+		})
 	}
 }
 
@@ -493,14 +543,23 @@ func TestSetBoardTarget_NotFound(t *testing.T) {
 }
 
 // 作成先が未選択のボードには作れない。設定不足なので 422。
+//
+// 新規には生まれない形だが（ADR 0017）、移行前のボードは未選択のまま残るので
+// 経路は消えない。API を通さずに作って確かめる。
 func TestCreateItems_RejectsBoardWithoutTarget(t *testing.T) {
 	t.Parallel()
 
-	r, _ := newCreateRouter(t, &stubGitHub{})
-	id := createBoard(t, r, "設計会")
-	saveAnnotatedScene(t, r, id)
+	r, boards := newCreateRouterWithBoards(t, &stubGitHub{})
 
-	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), createBody(currentHash(t, r, id)))
+	if err := boards.Create(t.Context(), port.Board{
+		ID: "legacy", Name: "移行前のボード", Scene: annotatedScene,
+		CreatedAt: fixedTime, UpdatedAt: fixedTime,
+	}, ""); err != nil {
+		t.Fatalf("seed legacy board: %v", err)
+	}
+
+	rec := do(t, r, http.MethodPost, itemsPath("legacy", "annot-1"),
+		createBody(currentHash(t, r, "legacy")))
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422 (%s)", rec.Code, rec.Body)
 	}

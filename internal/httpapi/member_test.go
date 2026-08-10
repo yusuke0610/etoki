@@ -62,8 +62,7 @@ func signInAs(
 func createSharedBoard(t *testing.T, r *gin.Engine, cookie *http.Cookie, name string) string {
 	t.Helper()
 
-	rec := doJSON(t, r, http.MethodPost, "/api/boards", cookie,
-		map[string]string{"name": name})
+	rec := doJSON(t, r, http.MethodPost, "/api/boards", cookie, newBoardBody(name))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("createBoard: %d %s", rec.Code, rec.Body)
 	}

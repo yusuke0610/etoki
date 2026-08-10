@@ -133,8 +133,11 @@ test.describe("ログイン", () => {
     );
 
     // 一覧を読み直す操作をさせる。作成そのものは通り、続く再取得で失効に気づく。
+    // 作成先を選ばないとボードは作られないので、選択まで進める（ADR 0017）。
     await page.getByLabel("ボード名").fill("失効の確認");
-    await page.getByRole("button", { name: "作成" }).click();
+    await page.getByRole("button", { name: "次へ" }).click();
+    await page.getByRole("button", { name: "acme/web" }).click();
+    await page.getByRole("button", { name: "#1 ロードマップ" }).click();
     await sessionRefetch;
 
     await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();

@@ -72,9 +72,23 @@ func NewBoardService(
 }
 
 // Create は新しいボードを作る。scene が空なら空のシーンで初期化する。
-func (s *BoardService) Create(ctx context.Context, name, scene string) (port.Board, error) {
+//
+// **作成先は必須。** 候補は書ける Project だけに絞ってあるので（ADR 0014）、
+// 書ける先を 1 つも持たない人はボードを作れない。「ボードの作成にはリポジトリ
+// へのアクセス権が要る」はこの形で満たす（ADR 0017）。
+//
+// GitHub にここで問い合わせて確かめはしない。「どこかに書ける」は「その Project
+// に書ける」ではないし、GitHub 側の権限を etoki が判定に使わないという方針とも
+// 食い違う。
+func (s *BoardService) Create(
+	ctx context.Context, name, scene string, target port.BoardTarget,
+) (port.Board, error) {
 	if name == "" {
 		return port.Board{}, fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
+	if !target.Selected() {
+		return port.Board{}, fmt.Errorf(
+			"%w: repository and project are required", ErrInvalidInput)
 	}
 	if scene == "" {
 		scene = emptyScene
@@ -88,6 +102,7 @@ func (s *BoardService) Create(ctx context.Context, name, scene string) (port.Boa
 		ID:        s.newID(),
 		Name:      name,
 		Scene:     scene,
+		Target:    target,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

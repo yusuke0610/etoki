@@ -446,7 +446,7 @@ func TestBoards_AreIsolatedBetweenUsers(t *testing.T) {
 	aliceCookie, bobCookie := signIn(t, alice), signIn(t, bob)
 
 	rec := doWithCookie(t, alice, http.MethodPost, "/api/boards",
-		map[string]string{"name": "アリスのボード"}, aliceCookie)
+		newBoardBody("アリスのボード"), aliceCookie)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body)
 	}

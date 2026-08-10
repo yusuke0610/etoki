@@ -51,6 +51,24 @@ func newRouter(t *testing.T) (*gin.Engine, port.MappingRepository) {
 	}), mappings
 }
 
+// newBoardBody は作成先つきのボード作成ボディを返す。
+//
+// 作成先は必須（ADR 0017）。ここを省くと 400 になるので、ほとんどのテストは
+// これを通す。
+func newBoardBody(name string) map[string]string {
+	return map[string]string{
+		"name":            name,
+		"repositoryOwner": "acme",
+		"repositoryName":  "web",
+		"projectId":       "PVT_1",
+	}
+}
+
+func withScene(body map[string]string, scene string) map[string]string {
+	body["scene"] = scene
+	return body
+}
+
 func do(t *testing.T, r *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -114,7 +132,7 @@ func TestCreateAndGetBoard(t *testing.T) {
 
 	r, _ := newRouter(t)
 
-	rec := do(t, r, http.MethodPost, "/api/boards", map[string]string{"name": "決済まわり"})
+	rec := do(t, r, http.MethodPost, "/api/boards", newBoardBody("決済まわり"))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want %d (%s)", rec.Code, http.StatusCreated, rec.Body)
 	}
@@ -140,7 +158,8 @@ func TestCreateBoard_RejectsEmptyName(t *testing.T) {
 
 	r, _ := newRouter(t)
 
-	rec := do(t, r, http.MethodPost, "/api/boards", map[string]string{"name": ""})
+	body := newBoardBody("")
+	rec := do(t, r, http.MethodPost, "/api/boards", body)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
@@ -153,7 +172,7 @@ func TestCreateBoard_RejectsBrokenScene(t *testing.T) {
 	r, _ := newRouter(t)
 
 	rec := do(t, r, http.MethodPost, "/api/boards",
-		map[string]string{"name": "壊れたボード", "scene": "{"})
+		withScene(newBoardBody("壊れたボード"), "{"))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
@@ -334,7 +353,7 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 func createBoard(t *testing.T, r *gin.Engine, name string) string {
 	t.Helper()
 
-	rec := do(t, r, http.MethodPost, "/api/boards", map[string]string{"name": name})
+	rec := do(t, r, http.MethodPost, "/api/boards", newBoardBody(name))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create board: %d %s", rec.Code, rec.Body)
 	}

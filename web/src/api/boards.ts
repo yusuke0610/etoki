@@ -53,10 +53,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const boardsApi = {
   list: () => request<BoardSummary[]>("/api/boards"),
 
-  create: (name: string) =>
+  /**
+   * ボードを作る。
+   *
+   * **作成先は必須。** 候補は書ける Project だけに絞ってあるので、書ける先を
+   * 1 つも持たない人はここまで来られない（ADR 0017）。
+   */
+  create: (name: string, target: BoardTarget) =>
     request<BoardDetail>("/api/boards", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...target }),
     }),
 
   get: (id: string) => request<BoardDetail>(`/api/boards/${id}`),
