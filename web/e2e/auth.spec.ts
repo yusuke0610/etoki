@@ -125,9 +125,17 @@ test.describe("ログイン", () => {
     mock.boardsError = { status: 401, body: { error: "login required" } };
     mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
 
+    // 状態はサーバーに訊き直す。画面だけログイン画面に切り替える実装でも
+    // 見た目は同じになるので、問い合わせが起きたことを別に縛る。
+    const sessionRefetch = page.waitForRequest(
+      (req) =>
+        req.method() === "GET" && new URL(req.url()).pathname === "/api/auth/session",
+    );
+
     // 一覧を読み直す操作をさせる。作成そのものは通り、続く再取得で失効に気づく。
     await page.getByLabel("ボード名").fill("失効の確認");
     await page.getByRole("button", { name: "作成" }).click();
+    await sessionRefetch;
 
     await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
     // 失効はエラーではないので、赤い帯を出したまま残さない。

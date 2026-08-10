@@ -850,13 +850,20 @@ func TestListRepositories_AppModeSkipsArchived(t *testing.T) {
 func TestListRepositories_AppModeStopsAtMaxRepositories(t *testing.T) {
 	t.Parallel()
 
-	// 上限より多く用意して、超えた分を返さないことを見る。
-	all := make([]installedRepo, 700)
-	for i := range all {
-		all[i] = installedRepo{name: fmt.Sprintf("repo-%d", i), owner: "acme"}
+	// **インストールをまたいで数える。** 1 つに 700 件入れると、上限が
+	// インストールごとにリセットする実装でも通ってしまう。3 つに分けて
+	// 合計で 700 件にすれば、通算で止まることまで縛れる。
+	ids := []int64{1, 2, 3}
+	repos := make(map[int64][]installedRepo, len(ids))
+	for _, id := range ids {
+		batch := make([]installedRepo, 300)
+		for i := range batch {
+			batch[i] = installedRepo{name: fmt.Sprintf("repo-%d-%d", id, i), owner: "acme"}
+		}
+		repos[id] = batch
 	}
 
-	c, _ := newAppClient(t, []int64{1}, map[int64][]installedRepo{1: all})
+	c, _ := newAppClient(t, ids, repos)
 
 	got, err := c.ListRepositories(t.Context())
 	if err != nil {
