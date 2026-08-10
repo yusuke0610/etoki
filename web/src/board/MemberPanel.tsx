@@ -174,6 +174,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
                   </select>
                   <button
                     type="button"
+                    aria-label={`${m.login || m.userId} を外す`}
                     disabled={busy}
                     onClick={() => void remove(m.userId)}
                   >
