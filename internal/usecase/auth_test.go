@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -100,7 +101,7 @@ func (f *fakeSessions) UpsertUser(_ context.Context, u port.User) (port.User, er
 	}
 
 	f.seq++
-	u.ID = "user-" + string(rune('0'+f.seq))
+	u.ID = "user-" + strconv.Itoa(f.seq)
 	f.users[u.ID] = u
 	return u, nil
 }

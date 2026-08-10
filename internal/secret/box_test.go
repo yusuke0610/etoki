@@ -185,3 +185,24 @@ func TestDecodeKey_RejectsWrongLength(t *testing.T) {
 		t.Fatalf("DecodeKey = %v, want ErrKeySize", err)
 	}
 }
+
+// ゼロ値の Box は配線ミス。読める形で落ちることを固定する。
+//
+// 空文字だけは封の対象外で、鍵の有無を見る前に返る。この非対称は意図した
+// ものなので、崩れたら気付けるようにここで併せて押さえる。
+func TestZeroBox_ReportsNotInitialized(t *testing.T) {
+	t.Parallel()
+
+	var b secret.Box
+
+	if _, err := b.Seal("x"); !errors.Is(err, secret.ErrNotInitialized) {
+		t.Errorf("Seal() = %v, want ErrNotInitialized", err)
+	}
+	if _, err := b.Open("x"); !errors.Is(err, secret.ErrNotInitialized) {
+		t.Errorf("Open() = %v, want ErrNotInitialized", err)
+	}
+
+	if got, err := b.Seal(""); got != "" || err != nil {
+		t.Errorf("Seal(\"\") = %q, %v, want \"\", nil", got, err)
+	}
+}

@@ -235,9 +235,18 @@ func (r *SessionRepository) FindCredentials(
 }
 
 // SaveState は発行した state を保存する。
+//
+// CreateSession と同じく、書き込むついでに期限切れを掃除する。ConsumeState
+// だけに任せると、認可画面から戻らなかった分が残り続ける。**ログインを始めて
+// やめるのは異常ではない**ので、掃除を戻ってきた場合だけに置くと表が育つ。
 func (r *SessionRepository) SaveState(
 	ctx context.Context, state string, createdAt, expiresAt time.Time,
 ) error {
+	if _, err := r.db.ExecContext(ctx,
+		`DELETE FROM oauth_states WHERE expires_at <= ?`, formatTime(createdAt)); err != nil {
+		return fmt.Errorf("prune oauth states: %w", err)
+	}
+
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO oauth_states (state, created_at, expires_at) VALUES (?, ?, ?)`,
 		state, formatTime(createdAt), formatTime(expiresAt),
