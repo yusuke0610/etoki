@@ -6,7 +6,6 @@ import { boardsApi } from "../api/boards";
 import type {
   AnnotationStatus,
   BoardDetail,
-  BoardRole,
   Granularity,
   Interpretation,
   ProjectAccess,
@@ -26,19 +25,13 @@ import {
 } from "./AnnotationPanel";
 import { createGenerations } from "./generation";
 import { MemberPanel } from "./MemberPanel";
+import { ROLE_LABELS } from "./roles";
 
 type Props = {
   board: BoardDetail;
   onError: (message: string) => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
-};
-
-/** ロールの表示名。値をそのまま出しても意味が伝わらない。 */
-const ROLE_LABELS: Record<BoardRole, string> = {
-  owner: "オーナー",
-  editor: "編集できる",
-  viewer: "読むだけ",
 };
 
 export function BoardPage({ board, onError, onChangeTarget }: Props) {

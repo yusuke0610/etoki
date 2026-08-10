@@ -2,19 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, membersApi } from "../api/boards";
 import type { BoardMember, BoardRole } from "../api/types";
+import { ROLE_LABELS } from "./roles";
 
 type Props = {
   boardId: string;
   /** 見ている人のロール。owner だけが招待と解除を触れる。 */
   role: BoardRole;
   onClose: () => void;
-};
-
-/** ロールの表示名。値そのものを画面に出すと、意味が伝わらない。 */
-const ROLE_LABELS: Record<BoardRole, string> = {
-  owner: "オーナー",
-  editor: "編集できる",
-  viewer: "読むだけ",
 };
 
 /**
