@@ -375,7 +375,7 @@ func TestDeletingUserCascades(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 所有者による絞り込み（ADR 0016）
+// メンバーシップによる絞り込み（ADR 0016 / 0017）
 // ---------------------------------------------------------------------------
 
 func seedOwnedBoard(t *testing.T, db *sql.DB, id, owner string) {
@@ -383,14 +383,14 @@ func seedOwnedBoard(t *testing.T, db *sql.DB, id, owner string) {
 
 	err := sqlite.NewBoardRepository(db).Create(t.Context(), port.Board{
 		ID: id, Name: "board " + id, Scene: `{"elements":[]}`,
-		OwnerUserID: owner, CreatedAt: baseTime, UpdatedAt: baseTime,
-	})
+		CreatedAt: baseTime, UpdatedAt: baseTime,
+	}, owner)
 	if err != nil {
 		t.Fatalf("seed board: %v", err)
 	}
 }
 
-// 他人のボードは「存在しない」ものとして扱う。権限エラーと区別すると、
+// メンバーでないボードは「存在しない」ものとして扱う。権限エラーと区別すると、
 // ID を総当たりして他人のボードの存在を確かめられる。
 func TestBoards_AreInvisibleToOtherOwners(t *testing.T) {
 	t.Parallel()
@@ -407,9 +407,13 @@ func TestBoards_AreInvisibleToOtherOwners(t *testing.T) {
 		t.Errorf("他人のボードが見えている: %+v", got)
 	}
 
-	// 所有者本人には見える。
-	if got, err = repo.Find(t.Context(), "user-a", "board-a"); err != nil || got == nil {
+	// 所有者本人には見える。作った人は owner のメンバーになる。
+	got, err = repo.Find(t.Context(), "user-a", "board-a")
+	if err != nil || got == nil {
 		t.Fatalf("Find(所有者) = (%+v, %v), want ボード", got, err)
+	}
+	if got.Role != port.RoleOwner {
+		t.Errorf("Role = %q, want %q", got.Role, port.RoleOwner)
 	}
 }
 
@@ -426,7 +430,7 @@ func TestList_ReturnsOnlyOwnBoards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(got) != 1 || got[0].ID != "board-a" {
+	if len(got) != 1 || got[0].Board.ID != "board-a" {
 		t.Fatalf("List(user-a) = %+v, want board-a だけ", got)
 	}
 }
@@ -449,8 +453,8 @@ func TestUpdateScene_RejectsOtherOwners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
-	if got.Scene != `{"elements":[]}` {
-		t.Errorf("他人に書き換えられている: %s", got.Scene)
+	if got.Board.Scene != `{"elements":[]}` {
+		t.Errorf("他人に書き換えられている: %s", got.Board.Scene)
 	}
 }
 
@@ -470,8 +474,8 @@ func TestUpdateTarget_RejectsOtherOwners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
-	if got.Target.Selected() {
-		t.Errorf("他人に作成先を設定されている: %+v", got.Target)
+	if got.Board.Target.Selected() {
+		t.Errorf("他人に作成先を設定されている: %+v", got.Board.Target)
 	}
 }
 

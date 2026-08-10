@@ -112,8 +112,8 @@ func (h *handlers) listBoards(c *gin.Context) {
 
 	// nil を返すと JSON が null になる。一覧は常に配列にする。
 	out := make([]apitypes.BoardSummary, 0, len(boards))
-	for _, b := range boards {
-		out = append(out, toSummary(b))
+	for _, a := range boards {
+		out = append(out, toSummary(a.Board))
 	}
 
 	c.JSON(http.StatusOK, out)
@@ -125,12 +125,8 @@ func (h *handlers) getBoard(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	if b == nil {
-		h.notFound(c)
-		return
-	}
 
-	h.respondBoard(c, http.StatusOK, *b)
+	h.respondBoard(c, http.StatusOK, b.Board)
 }
 
 // setBoardTarget は draft issue の作成先をボードに設定する。
@@ -161,13 +157,8 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	if b == nil {
-		// SetTarget を通った直後なので、消えているのは異常事態。
-		h.notFound(c)
-		return
-	}
 
-	h.respondBoard(c, http.StatusOK, *b)
+	h.respondBoard(c, http.StatusOK, b.Board)
 }
 
 // respondBoard はボードを固定状態つきで返す。
@@ -199,19 +190,11 @@ func (h *handlers) saveScene(c *gin.Context) {
 func (h *handlers) listAnnotations(c *gin.Context) {
 	states, err := h.annotations.ListStates(c.Request.Context(), c.Param("id"))
 	if err != nil {
+		// ボードが無い場合と注釈が 0 件の場合は、ここで区別がついている。
+		// ListStates が引き当てられなければエラーを返すため、ボードを引き直す
+		// 必要が無くなった。
 		h.fail(c, err)
 		return
-	}
-	if states == nil {
-		// ボードが無い場合と、注釈が 0 件の場合を区別する必要がある。
-		// ListStates はボードが無いときだけ nil を返す。
-		if b, findErr := h.boards.Find(c.Request.Context(), c.Param("id")); findErr != nil {
-			h.fail(c, findErr)
-			return
-		} else if b == nil {
-			h.notFound(c)
-			return
-		}
 	}
 
 	out := make([]apitypes.AnnotationStatus, 0, len(states))
@@ -247,8 +230,14 @@ func (h *handlers) fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, usecase.ErrInvalidInput):
 		h.badRequest(c, err)
-	case errors.Is(err, port.ErrNotFound):
+	case errors.Is(err, port.ErrNotFound), errors.Is(err, usecase.ErrBoardNotFound):
+		// メンバーでないボードもここに来る。403 と区別すると、ID を総当たりして
+		// 他人のボードの存在を確かめられる（ADR 0016 / 0017）。
 		h.notFound(c)
+	case errors.Is(err, usecase.ErrForbidden):
+		// ボードの存在をすでに知っている相手にだけ返る。何が足りないのかを
+		// 隠す理由が無い（ADR 0017）。
+		errorJSON(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, port.ErrNotAuthenticated):
 		// セッションが失効した、あるいはトークンを更新できなかった。
 		// UI が「再ログインが要る」と判断できるよう 401 に寄せる。

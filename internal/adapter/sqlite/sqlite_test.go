@@ -44,7 +44,7 @@ func seedBoard(t *testing.T, db *sql.DB, id string) {
 		Scene:     `{"elements":[]}`,
 		CreatedAt: baseTime,
 		UpdatedAt: baseTime,
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("seed board: %v", err)
 	}
@@ -139,14 +139,16 @@ func TestMigrate_ExistingBoardsAreUnselectedAndUnowned(t *testing.T) {
 	if b == nil {
 		t.Fatal("移行でボードが消えている")
 	}
-	if b.Target != (port.BoardTarget{}) {
-		t.Errorf("Target = %+v, want ゼロ値（未選択）", b.Target)
+	if b.Board.Target != (port.BoardTarget{}) {
+		t.Errorf("Target = %+v, want ゼロ値（未選択）", b.Board.Target)
 	}
-	if b.Target.Selected() {
+	if b.Board.Target.Selected() {
 		t.Error("未選択のはずが Selected() が true")
 	}
-	if b.OwnerUserID != "" {
-		t.Errorf("OwnerUserID = %q, want 空文字（所有者なし）", b.OwnerUserID)
+	// 0005 は所有者をメンバー行に移す。空文字の所有者は「認証なしの所有者」
+	// 1 人としてそのまま owner になる（ADR 0016 / 0017）。
+	if b.Role != port.RoleOwner {
+		t.Errorf("Role = %q, want %q", b.Role, port.RoleOwner)
 	}
 
 	// 所有者が無いので、認証を有効にすると引き受けの対象として数えられる。
@@ -552,7 +554,7 @@ func TestBoard_RoundTrip(t *testing.T) {
 		CreatedAt: baseTime,
 		UpdatedAt: baseTime,
 	}
-	if err := repo.Create(t.Context(), want); err != nil {
+	if err := repo.Create(t.Context(), want, ""); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -564,11 +566,11 @@ func TestBoard_RoundTrip(t *testing.T) {
 		t.Fatal("Find returned nil")
 	}
 
-	if got.ID != want.ID || got.Name != want.Name || got.Scene != want.Scene {
-		t.Errorf("got = %+v, want %+v", *got, want)
+	if got.Board.ID != want.ID || got.Board.Name != want.Name || got.Board.Scene != want.Scene {
+		t.Errorf("got = %+v, want %+v", got.Board, want)
 	}
-	if !got.CreatedAt.Equal(want.CreatedAt) {
-		t.Errorf("CreatedAt = %v, want %v", got.CreatedAt, want.CreatedAt)
+	if !got.Board.CreatedAt.Equal(want.CreatedAt) {
+		t.Errorf("CreatedAt = %v, want %v", got.Board.CreatedAt, want.CreatedAt)
 	}
 }
 
@@ -589,14 +591,14 @@ func TestBoard_UpdateScene(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
-	if got.Scene != `{"elements":["updated"]}` {
-		t.Errorf("Scene = %q", got.Scene)
+	if got.Board.Scene != `{"elements":["updated"]}` {
+		t.Errorf("Scene = %q", got.Board.Scene)
 	}
-	if !got.UpdatedAt.Equal(later) {
-		t.Errorf("UpdatedAt = %v, want %v", got.UpdatedAt, later)
+	if !got.Board.UpdatedAt.Equal(later) {
+		t.Errorf("UpdatedAt = %v, want %v", got.Board.UpdatedAt, later)
 	}
-	if !got.CreatedAt.Equal(baseTime) {
-		t.Errorf("CreatedAt = %v, want %v（更新で変わってはいけない）", got.CreatedAt, baseTime)
+	if !got.Board.CreatedAt.Equal(baseTime) {
+		t.Errorf("CreatedAt = %v, want %v（更新で変わってはいけない）", got.Board.CreatedAt, baseTime)
 	}
 }
 
@@ -639,7 +641,7 @@ func TestBoard_ListOrder(t *testing.T) {
 		if err := repo.Create(t.Context(), port.Board{
 			ID: id, Name: id, Scene: "{}",
 			CreatedAt: baseTime, UpdatedAt: updatedAt,
-		}); err != nil {
+		}, ""); err != nil {
 			t.Fatalf("Create(%s): %v", id, err)
 		}
 	}
@@ -654,8 +656,8 @@ func TestBoard_ListOrder(t *testing.T) {
 	}
 
 	var ids []string
-	for _, b := range got {
-		ids = append(ids, b.ID)
+	for _, a := range got {
+		ids = append(ids, a.Board.ID)
 	}
 	want := []string{"newest", "middle", "old"}
 	if len(ids) != len(want) {

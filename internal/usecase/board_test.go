@@ -90,8 +90,10 @@ func TestSetTarget_RejectsUnknownBoard(t *testing.T) {
 
 	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{}, usecase.NewBoardLocks())
 
-	if err := svc.SetTarget(t.Context(), "missing", newTarget()); !errors.Is(err, port.ErrNotFound) {
-		t.Fatalf("SetTarget() = %v, want ErrNotFound", err)
+	// 存在しないボードと、メンバーでないボードは同じ扱いにする。区別すると
+	// ID を総当たりして他人のボードの存在を確かめられる（ADR 0016 / 0017）。
+	if err := svc.SetTarget(t.Context(), "missing", newTarget()); !errors.Is(err, usecase.ErrBoardNotFound) {
+		t.Fatalf("SetTarget() = %v, want ErrBoardNotFound", err)
 	}
 }
 

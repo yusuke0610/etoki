@@ -103,15 +103,14 @@ type racingBoards struct {
 
 // Find は所有者も突き合わせる。実装と同じ形にしておかないと、絞り忘れを
 // フェイクが吸収してしまう（ADR 0016）。
-func (r *racingBoards) Find(_ context.Context, owner, id string) (*port.Board, error) {
+func (r *racingBoards) Find(_ context.Context, actor, id string) (*port.BoardAccess, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.board.ID != id || r.board.OwnerUserID != owner {
+	if r.board.ID != id || actor != "" {
 		return nil, nil
 	}
-	b := r.board
-	return &b, nil
+	return &port.BoardAccess{Board: r.board, Role: port.RoleOwner}, nil
 }
 
 func (r *racingBoards) UpdateTarget(
@@ -125,13 +124,27 @@ func (r *racingBoards) UpdateTarget(
 	return nil
 }
 
-func (r *racingBoards) Create(context.Context, port.Board) error { return nil }
+func (r *racingBoards) Create(context.Context, port.Board, string) error { return nil }
 
 func (r *racingBoards) UpdateScene(context.Context, string, string, string, time.Time) error {
 	return nil
 }
 
-func (r *racingBoards) List(context.Context, string) ([]port.Board, error) { return nil, nil }
+func (r *racingBoards) List(context.Context, string) ([]port.BoardAccess, error) { return nil, nil }
+
+func (r *racingBoards) ListMembers(context.Context, string) ([]port.BoardMember, error) {
+	return nil, nil
+}
+
+func (r *racingBoards) AddMember(context.Context, port.BoardMember) error { return nil }
+
+func (r *racingBoards) UpdateMemberRole(
+	context.Context, string, string, port.BoardRole,
+) error {
+	return nil
+}
+
+func (r *racingBoards) RemoveMember(context.Context, string, string) error { return nil }
 
 func (r *racingBoards) CountUnowned(context.Context) (int, error) { return 0, nil }
 

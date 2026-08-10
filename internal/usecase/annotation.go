@@ -25,27 +25,27 @@ type AnnotationState struct {
 // この層は状態を返すだけで、作成や更新は一切行わない。何をするかは
 // 開発者が明示的にトリガーする。
 type AnnotationService struct {
-	boards   port.BoardRepository
+	boardGuard
 	mappings port.MappingRepository
 }
 
 // NewAnnotationService は AnnotationService を作る。
 func NewAnnotationService(boards port.BoardRepository, mappings port.MappingRepository) *AnnotationService {
-	return &AnnotationService{boards: boards, mappings: mappings}
+	return &AnnotationService{boardGuard: boardGuard{boards: boards}, mappings: mappings}
 }
 
 // ListStates はボード上の全注釈の状態を返す。
-// ボードが存在しなければ (nil, nil) を返す。
+//
+// ボードを引き当てられなければ ErrBoardNotFound。注釈が 0 件の場合と区別が
+// つく必要があるので、空スライスに丸めない。
 func (s *AnnotationService) ListStates(ctx context.Context, boardID string) ([]AnnotationState, error) {
-	board, err := s.boards.Find(ctx, ownerOf(ctx), boardID)
+	// 状態を見るだけなので viewer でよい。
+	acc, err := s.access(ctx, boardID, port.RoleViewer)
 	if err != nil {
 		return nil, err
 	}
-	if board == nil {
-		return nil, nil
-	}
 
-	scene, err := domain.ParseScene([]byte(board.Scene))
+	scene, err := domain.ParseScene([]byte(acc.Board.Scene))
 	if err != nil {
 		return nil, err
 	}
