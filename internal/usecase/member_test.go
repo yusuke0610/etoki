@@ -215,11 +215,14 @@ func TestRemove_RejectsLastOwner(t *testing.T) {
 func TestSetRole_RejectsDemotingLastOwner(t *testing.T) {
 	t.Parallel()
 
-	svc, _ := memberSetup(t, port.RoleOwner)
+	svc, boards := memberSetup(t, port.RoleOwner)
 
 	_, err := svc.SetRole(t.Context(), "board-1", "user-a", port.RoleEditor)
 	if !errors.Is(err, usecase.ErrLastOwner) {
 		t.Fatalf("SetRole() = %v, want ErrLastOwner", err)
+	}
+	if boards.members[0].Role != port.RoleOwner {
+		t.Errorf("弾いたのに降格している: %+v", boards.members)
 	}
 }
 
