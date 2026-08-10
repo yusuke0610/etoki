@@ -114,10 +114,12 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           <p className="hint">読み込み中…</p>
         ) : repositories.length === 0 ? (
           // 権限不足と「本当に 1 つも無い」は API からは区別できない。
-          // どちらの可能性も書いておく。
+          // どちらの可能性も書いておく。**ここで止まる人はボードを作れない**
+          // ので（ADR 0017）、行き止まりの理由が読める必要がある。
           <p className="hint">
             {"リポジトリが 1 つも見つかりませんでした。"}
-            {"ETOKI_GITHUB_TOKEN に repo の read 権限があるか確認してください。"}
+            {"GitHub App を入れたリポジトリがあるか、"}
+            {"PAT で動かしているなら repo の read 権限があるかを確認してください。"}
           </p>
         ) : (
           <ul className="plain-list">

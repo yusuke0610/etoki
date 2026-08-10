@@ -231,6 +231,10 @@ type BoardRepository interface {
 	// （sync_runs と同じ理由、ADR 0016）。
 	ListMembers(ctx context.Context, boardID string) ([]BoardMember, error)
 	// AddMember はメンバーを 1 人足す。すでにメンバーなら ErrAlreadyExists。
+	//
+	// **操作者では絞らない。呼ぶ前に Find で owner であることを確かめること。**
+	// ここに「owner だけ」を書くとロールの上下が SQL と Go の 2 箇所になる
+	// （ADR 0017）。以下の 2 つも同じ。
 	AddMember(ctx context.Context, m BoardMember) error
 	// UpdateMemberRole はメンバーのロールを変える。
 	// メンバーでなければ ErrNotFound。
