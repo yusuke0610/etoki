@@ -243,7 +243,7 @@ func (s *AuthService) Token(ctx context.Context) (string, error) {
 // 失効情報を持たない資格情報は更新しない。App 側で「Expire user authorization
 // tokens」を切っている構成が該当する。
 func (s *AuthService) needsRefresh(c port.Credentials) bool {
-	if !c.Expiring() {
+	if !c.Refreshable() {
 		return false
 	}
 	return !c.ExpiresAt.After(s.now().Add(refreshMargin))

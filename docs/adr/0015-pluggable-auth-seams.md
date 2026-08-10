@@ -59,10 +59,15 @@ GitHub の資格情報は `ETOKI_GITHUB_TOKEN` の PAT 1 本で、利用者が�
 出すことになる。
 
 **利用者は `context.Context` に載せて運ぶ。** `port.GitHubClient` の
-シグネチャを 1 つも変えずに済む。出入口（`port.ContextWithIdentity` /
-`port.IdentityFromContext`）を `port/` に置くのは、外部リポジトリが
+シグネチャを 1 つも変えずに済む。出入口（`port.ContextWithUserID` /
+`port.UserIDFromContext`）を `port/` に置くのは、外部リポジトリが
 `GitHubTokenSource` を自前実装するときに読む必要があり、`internal/` は
 import できないため。
+
+**載せるのは etoki 側の利用者 ID だけ。** `Identity` ごと載せる案は採らない。
+`Identity.Subject` は認証基盤の ID であって `users.id` ではなく、トークンを
+引くのに要るのは後者。表示名まで運ぶ出入口を公開面に置いても、読む側が現れない
+（上と同じ理由）。HTTP 層で表示名が要る場面は gin の context で足りている。
 
 `github.Client` は `Config.TokenSource` で受ける。ADR 0008 が LLM 側で採った
 RoundTripper 方式は採らない。**トークンの出どころが型に出るぶん追いやすい。**

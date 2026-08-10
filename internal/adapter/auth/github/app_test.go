@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,14 +27,39 @@ type capturedRequest struct {
 	Form   url.Values
 }
 
+// recorder は受け取ったリクエストを記録する。
+//
+// httptest のハンドラはサーバーの goroutine で走る。テスト側の goroutine が
+// そのまま読むと競合するので、mutex で挟む。いまは逐次にしか呼ばないが、
+// 並行に叩くケースを足したときに黙って壊れないようにしておく。
+type recorder struct {
+	mu  sync.Mutex
+	all []capturedRequest
+}
+
+func (rec *recorder) add(req capturedRequest) {
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+
+	rec.all = append(rec.all, req)
+}
+
+// requests は記録の写しを返す。中身を渡すと呼び出し側で競合が戻る。
+func (rec *recorder) requests() []capturedRequest {
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+
+	return append([]capturedRequest(nil), rec.all...)
+}
+
 // newProvider は決められた応答を返すサーバーに向いた Provider を返す。
 //
 // path ごとに応答を差し替える。トークン交換と利用者取得でホストが違うので、
 // 1 つのサーバーで両方を受ける。
-func newProvider(t *testing.T, responses map[string]string) (*githubauth.Provider, *[]capturedRequest) {
+func newProvider(t *testing.T, responses map[string]string) (*githubauth.Provider, *recorder) {
 	t.Helper()
 
-	var got []capturedRequest
+	rec := &recorder{}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := capturedRequest{Path: r.URL.Path, Header: r.Header.Clone()}
@@ -41,7 +67,7 @@ func newProvider(t *testing.T, responses map[string]string) (*githubauth.Provide
 			raw, _ := io.ReadAll(r.Body)
 			req.Form, _ = url.ParseQuery(string(raw))
 		}
-		got = append(got, req)
+		rec.add(req)
 
 		body, ok := responses[r.URL.Path]
 		if !ok {
@@ -63,7 +89,7 @@ func newProvider(t *testing.T, responses map[string]string) (*githubauth.Provide
 		t.Fatalf("New() = %v", err)
 	}
 
-	return p, &got
+	return p, rec
 }
 
 func TestNew_RequiresClientCredentials(t *testing.T) {
@@ -154,7 +180,7 @@ func TestExchange(t *testing.T) {
 	if creds.AccessToken != "ghu_1" || creds.RefreshToken != "ghr_1" {
 		t.Errorf("Credentials = %+v", creds)
 	}
-	if !creds.Expiring() {
+	if !creds.Refreshable() {
 		t.Error("失効する資格情報なのに Expiring() が false")
 	}
 	// 8 時間ちょうどを期待すると時計に依存する。幅で見る。
@@ -162,11 +188,11 @@ func TestExchange(t *testing.T) {
 		t.Errorf("ExpiresAt までの残り = %v, want 約 8 時間", d)
 	}
 
-	form := (*got)[0].Form
+	form := got.requests()[0].Form
 	if form.Get("code") != "code-1" || form.Get("client_secret") != testClientSecret {
 		t.Errorf("トークン交換のフォーム = %v", form)
 	}
-	if auth := (*got)[1].Header.Get("authorization"); auth != "Bearer ghu_1" {
+	if auth := got.requests()[1].Header.Get("authorization"); auth != "Bearer ghu_1" {
 		t.Errorf("利用者取得の authorization = %q", auth)
 	}
 }
@@ -202,7 +228,7 @@ func TestExchange_HandlesNonExpiringTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange() = %v", err)
 	}
-	if creds.Expiring() {
+	if creds.Refreshable() {
 		t.Error("失効しない資格情報が Expiring() を返している")
 	}
 	if !creds.ExpiresAt.IsZero() || creds.RefreshToken != "" {
@@ -250,8 +276,8 @@ func TestExchange_RequiresCode(t *testing.T) {
 	if _, _, err := p.Exchange(t.Context(), "", ""); err == nil {
 		t.Fatal("Exchange() = nil, want error")
 	}
-	if len(*got) != 0 {
-		t.Errorf("code が空なのにリクエストを送っている: %d 回", len(*got))
+	if len(got.requests()) != 0 {
+		t.Errorf("code が空なのにリクエストを送っている: %d 回", len(got.requests()))
 	}
 }
 
@@ -271,7 +297,7 @@ func TestRefresh(t *testing.T) {
 		t.Errorf("Credentials = %+v", creds)
 	}
 
-	form := (*got)[0].Form
+	form := got.requests()[0].Form
 	if form.Get("grant_type") != "refresh_token" || form.Get("refresh_token") != "ghr_1" {
 		t.Errorf("更新のフォーム = %v", form)
 	}
@@ -297,8 +323,8 @@ func TestRefresh_RequiresToken(t *testing.T) {
 	if _, err := p.Refresh(t.Context(), ""); !errors.Is(err, port.ErrNotAuthenticated) {
 		t.Fatalf("Refresh() = %v, want ErrNotAuthenticated", err)
 	}
-	if len(*got) != 0 {
-		t.Errorf("refresh token が空なのにリクエストを送っている: %d 回", len(*got))
+	if len(got.requests()) != 0 {
+		t.Errorf("refresh token が空なのにリクエストを送っている: %d 回", len(got.requests()))
 	}
 }
 

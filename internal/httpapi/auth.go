@@ -131,6 +131,19 @@ func (h *handlers) redirectURI(c *gin.Context) string {
 	return (&url.URL{Scheme: scheme, Host: c.Request.Host, Path: callbackPath}).String()
 }
 
+// secureCookie は cookie に Secure を付けるかどうかを返す。
+//
+// `c.Request.TLS` だけを見ると、TLS を終端するリバースプロキシの背後で常に
+// nil になる。https で配信しているのにセッション cookie が平文で載る、という
+// 一番まずい取りこぼしがそこで起きる。公開 URL のスキームも見て補う。
+//
+// 既定の構成（http://127.0.0.1）はどちらも偽なので、Secure は付かない。
+// ここで常に付けると、一部のブラウザが cookie を保存せず、原因の分からない
+// ログイン失敗になる。
+func (h *handlers) secureCookie(c *gin.Context) bool {
+	return c.Request.TLS != nil || strings.HasPrefix(h.publicURL, "https://")
+}
+
 // setSessionCookie はセッション token を cookie に載せる。
 func (h *handlers) setSessionCookie(c *gin.Context, token string) {
 	http.SetCookie(c.Writer, &http.Cookie{
@@ -142,9 +155,7 @@ func (h *handlers) setSessionCookie(c *gin.Context, token string) {
 		// Strict にすると GitHub からの戻りで送られず、初回だけ未ログインに
 		// 見える。Lax はトップレベル GET では送られるので、これでよい。
 		SameSite: http.SameSiteLaxMode,
-		// 既定の構成は http://127.0.0.1。常に Secure を付けると一部のブラウザで
-		// cookie が保存されず、原因の分からないログイン失敗になる。
-		Secure: c.Request.TLS != nil,
+		Secure:   h.secureCookie(c),
 	})
 }
 
@@ -156,7 +167,7 @@ func (h *handlers) clearSessionCookie(c *gin.Context) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   c.Request.TLS != nil,
+		Secure:   h.secureCookie(c),
 	})
 }
 
@@ -229,12 +240,6 @@ func resolveSession(auth *usecase.AuthService, logger *slog.Logger) gin.HandlerF
 		// 下流（port.GitHubTokenSource）は context から利用者を引く。
 		// gin.Context ではなく Request の context に載せる必要がある。
 		ctx := port.ContextWithUserID(c.Request.Context(), user.ID)
-		ctx = port.ContextWithIdentity(ctx, port.Identity{
-			Provider:    user.Provider,
-			Subject:     user.Subject,
-			Login:       user.Login,
-			DisplayName: user.DisplayName,
-		})
 		c.Request = c.Request.WithContext(ctx)
 
 		c.Next()

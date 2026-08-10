@@ -45,8 +45,12 @@ type Credentials struct {
 	RefreshExpiresAt time.Time
 }
 
-// Expiring は失効する資格情報かどうかを返す。
-func (c Credentials) Expiring() bool {
+// Refreshable は更新できる資格情報かどうかを返す。
+//
+// 名前は「失効するか」ではなく「更新できるか」。RefreshToken が無ければ、
+// 失効時刻を持っていても etoki にできることは無く、判定として使えない。
+// App 側で失効を切った構成では両方ともゼロ値になる。
+func (c Credentials) Refreshable() bool {
 	return !c.ExpiresAt.IsZero() && c.RefreshToken != ""
 }
 
@@ -70,7 +74,7 @@ type IdentityProvider interface {
 
 	// Refresh は資格情報を更新する。
 	//
-	// Credentials.Expiring() が false の基盤では呼ばれない。呼ばれたくない
+	// Credentials.Refreshable() が false の基盤では呼ばれない。呼ばれたくない
 	// 実装は ErrNotAuthenticated を返してよい。再ログインに落ちる。
 	Refresh(ctx context.Context, refreshToken string) (Credentials, error)
 }
@@ -152,32 +156,23 @@ type SessionRepository interface {
 	SaveState(ctx context.Context, state string, createdAt, expiresAt time.Time) error
 }
 
-// identityKey は Identity を context に載せるための鍵。
-//
-// 独自型にして衝突を避ける。文字列の鍵は他のパッケージと衝突しうる。
-type identityKey struct{}
-
-// ContextWithIdentity は利用者を載せた context を返す。
-//
-// port に置くのは、外部リポジトリが GitHubTokenSource を自前実装するときに
-// 読む必要があるため。internal/ は他モジュールから import できない（ADR 0001）。
-func ContextWithIdentity(ctx context.Context, id Identity) context.Context {
-	return context.WithValue(ctx, identityKey{}, id)
-}
-
-// IdentityFromContext は context から利用者を取り出す。
-func IdentityFromContext(ctx context.Context) (Identity, bool) {
-	id, ok := ctx.Value(identityKey{}).(Identity)
-	return id, ok
-}
-
 // userIDKey は etoki 側の利用者 ID を context に載せるための鍵。
 //
-// Identity.Subject は認証基盤の ID であって etoki の users.id ではない。
-// トークンを引くのに後者が要るので別に持つ。
+// 独自型にして衝突を避ける。文字列の鍵は他のパッケージと衝突しうる。
+//
+// 運ぶのは利用者 ID だけ。Identity ごと載せる案もあったが、読む側が
+// 現れないまま公開面が増える。**どこからも読まれない出入口は、実装しても
+// 何も起きない。** 必要になってから足す（HeaderIdentityProvider を落とした
+// のと同じ理由）。表示名が要る HTTP 層は gin の context で持ち回っている。
 type userIDKey struct{}
 
 // ContextWithUserID は etoki 側の利用者 ID を載せた context を返す。
+//
+// port に置くのは、外部リポジトリが GitHubTokenSource を自前実装するときに
+// 読む必要があるため。internal/ は他モジュールから import できない（ADR 0001）。
+//
+// Identity.Subject は認証基盤の ID であって etoki の users.id ではない。
+// トークンを引くのに後者が要るので、載せるのはこちら。
 func ContextWithUserID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, userIDKey{}, id)
 }

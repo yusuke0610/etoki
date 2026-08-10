@@ -256,7 +256,7 @@ func TestCredentials_HandlesNonExpiring(t *testing.T) {
 	if !got.ExpiresAt.IsZero() || !got.RefreshExpiresAt.IsZero() {
 		t.Errorf("期限が入っている: %+v", got)
 	}
-	if got.Expiring() {
+	if got.Refreshable() {
 		t.Error("失効しない資格情報が Expiring() を返している")
 	}
 }
