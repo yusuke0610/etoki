@@ -136,6 +136,12 @@ type SessionRepository interface {
 	// 人が打つ識別子は login しかないので、CLI から利用者を指すのに要る。
 	// login は改名で変わるため、同定には使わない（それは Subject の仕事）。
 	FindUserByLogin(ctx context.Context, provider, login string) (*User, error)
+	// FindUsers は ID をまとめて引く。見つからなかった ID は結果に現れない。
+	//
+	// メンバー一覧に表示名を添えるのに要る。1 人ずつ引くと、メンバーの数だけ
+	// 問い合わせが増える。**欠けを誤りにしない。** 利用者を消してもボードは
+	// 残る（ADR 0016）ので、指し先の無いメンバーは普通に起こる。
+	FindUsers(ctx context.Context, ids []string) ([]User, error)
 
 	// CreateSession はセッションを保存する。
 	CreateSession(ctx context.Context, s Session) error

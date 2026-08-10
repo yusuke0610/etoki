@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// Defines values for BoardRole.
+const (
+	BoardRoleEditor BoardRole = "editor"
+	BoardRoleOwner  BoardRole = "owner"
+	BoardRoleViewer BoardRole = "viewer"
+)
+
 // Defines values for Granularity.
 const (
 	GranularityEmpty Granularity = ""
@@ -69,6 +76,15 @@ type BoardDetail struct {
 	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
 	RepositoryOwner string `json:"repositoryOwner"`
 
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+
 	// Scene Excalidraw のシーン JSON をそのまま入れた文字列
 	Scene string `json:"scene"`
 
@@ -79,11 +95,51 @@ type BoardDetail struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+// BoardMember ボードのメンバー 1 人
+type BoardMember struct {
+	CreatedAt   time.Time `json:"createdAt"`
+	DisplayName string    `json:"displayName"`
+
+	// Login 認証基盤上のログイン名。表示用。移行前のボードなど、利用者を
+	// 引けない場合は空文字になる
+	Login string `json:"login"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+
+	// UserID etoki が発番した ID。指し先にはこれを使う
+	UserID string `json:"userId"`
+}
+
+// BoardRole ボードに対する権限の強さ（ADR 0017）。
+//
+//   - `owner` … 招待とロール変更、作成先の変更ができる
+//   - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+//     最終的に決めるのは GitHub
+//   - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+//     あり、閲覧者に許すのは「閲覧」ではない
+type BoardRole string
+
 // BoardSummary 一覧で返すボード。シーンは大きいので含めない
 type BoardSummary struct {
 	CreatedAt time.Time `json:"createdAt"`
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role      BoardRole `json:"role"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
@@ -158,6 +214,21 @@ type InterpretedItem struct {
 	Title         string   `json:"title"`
 }
 
+// InviteMemberRequest 招待のリクエストボディ
+type InviteMemberRequest struct {
+	// Login 招待する相手の login。一度 etoki にログインしている必要がある
+	Login string `json:"login"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+}
+
 // ItemKind GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ
 // （ADR 0006）。
 type ItemKind string
@@ -199,6 +270,18 @@ type SessionStatus struct {
 	User *AuthUser `json:"user,omitempty"`
 }
 
+// SetMemberRoleRequest ロール変更のリクエストボディ
+type SetMemberRoleRequest struct {
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+}
+
 // SyncItem 作成済みの draft issue 1 件
 type SyncItem struct {
 	// ItemID GitHub Projects v2 の item ID
@@ -232,6 +315,9 @@ type RepositoryName = string
 // RepositoryOwner defines model for RepositoryOwner.
 type RepositoryOwner = string
 
+// UserID defines model for UserId.
+type UserID = string
+
 // BadRequest 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type BadRequest = ErrorResponse
 
@@ -240,6 +326,9 @@ type Forbidden = ErrorResponse
 
 // InternalError 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type InternalError = ErrorResponse
+
+// NotConfigured 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+type NotConfigured = ErrorResponse
 
 // NotFound 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type NotFound = ErrorResponse
@@ -258,6 +347,12 @@ type CreateBoardJSONRequestBody = CreateBoardRequest
 
 // CreateItemsJSONRequestBody defines body for CreateItems for application/json ContentType.
 type CreateItemsJSONRequestBody = Interpretation
+
+// InviteBoardMemberJSONRequestBody defines body for InviteBoardMember for application/json ContentType.
+type InviteBoardMemberJSONRequestBody = InviteMemberRequest
+
+// SetBoardMemberRoleJSONRequestBody defines body for SetBoardMemberRole for application/json ContentType.
+type SetBoardMemberRoleJSONRequestBody = SetMemberRoleRequest
 
 // SaveSceneJSONRequestBody defines body for SaveScene for application/json ContentType.
 type SaveSceneJSONRequestBody = SaveSceneRequest

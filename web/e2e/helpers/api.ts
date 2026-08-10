@@ -80,6 +80,8 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     return {
       id: `board-new-${issued}`,
       name,
+      // 作った本人は必ず owner（ADR 0017）。
+      role: "owner",
       createdAt: "2026-08-05T10:00:00Z",
       updatedAt: "2026-08-05T10:00:00Z",
       scene: emptyScene(),
@@ -270,6 +272,7 @@ function summarize(b: BoardDetail): BoardSummary {
   return {
     id: b.id,
     name: b.name,
+    role: b.role,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };

@@ -131,6 +131,22 @@ func (f *fakeSessions) FindUserByLogin(
 	return nil, nil
 }
 
+// FindUsers は見つかった ID だけを返す。欠けを誤りにしない実装と同じ形にする。
+func (f *fakeSessions) FindUsers(_ context.Context, ids []string) ([]port.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var out []port.User
+	for _, id := range ids {
+		for _, u := range f.users {
+			if u.ID == id {
+				out = append(out, u)
+			}
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeSessions) CreateSession(_ context.Context, s port.Session) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

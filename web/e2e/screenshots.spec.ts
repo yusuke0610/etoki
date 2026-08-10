@@ -59,6 +59,7 @@ test.describe("スクリーンショット", () => {
       {
         id: board.id,
         name: board.name,
+        role: board.role,
         createdAt: board.createdAt,
         updatedAt: board.updatedAt,
       },

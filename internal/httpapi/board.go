@@ -15,12 +15,15 @@ import (
 // 境界の DTO は api/openapi.yaml から生成した apitypes を使う。ここで型を
 // 手書きすると、フロントの型との一致を人が保つことになる（ADR 0011）。
 
-func toSummary(b port.Board) apitypes.BoardSummary {
+// role は操作者ごとに変わるので、ボードと一緒に受け取る。画面はこれで
+// 出し入れを分ける（ADR 0017）。
+func toSummary(a port.BoardAccess) apitypes.BoardSummary {
 	return apitypes.BoardSummary{
-		ID:        b.ID,
-		Name:      b.Name,
-		CreatedAt: b.CreatedAt,
-		UpdatedAt: b.UpdatedAt,
+		ID:        a.Board.ID,
+		Name:      a.Board.Name,
+		Role:      apitypes.BoardRole(a.Role),
+		CreatedAt: a.Board.CreatedAt,
+		UpdatedAt: a.Board.UpdatedAt,
 	}
 }
 
@@ -28,16 +31,17 @@ func toSummary(b port.Board) apitypes.BoardSummary {
 // 平坦な struct になり、Go の埋め込みにはならないため共有できない。
 //
 // targetLocked は board だけでは決まらない。run の有無で決まるので引数で受ける。
-func toDetail(b port.Board, targetLocked bool) apitypes.BoardDetail {
+func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
 	return apitypes.BoardDetail{
-		ID:              b.ID,
-		Name:            b.Name,
-		CreatedAt:       b.CreatedAt,
-		UpdatedAt:       b.UpdatedAt,
-		Scene:           b.Scene,
-		RepositoryOwner: b.Target.RepositoryOwner,
-		RepositoryName:  b.Target.RepositoryName,
-		ProjectID:       b.Target.ProjectID,
+		ID:              a.Board.ID,
+		Name:            a.Board.Name,
+		Role:            apitypes.BoardRole(a.Role),
+		CreatedAt:       a.Board.CreatedAt,
+		UpdatedAt:       a.Board.UpdatedAt,
+		Scene:           a.Board.Scene,
+		RepositoryOwner: a.Board.Target.RepositoryOwner,
+		RepositoryName:  a.Board.Target.RepositoryName,
+		ProjectID:       a.Board.Target.ProjectID,
 		TargetLocked:    targetLocked,
 	}
 }
@@ -75,6 +79,8 @@ type handlers struct {
 	creations *usecase.CreationService
 	// catalog は作成先の候補一覧。nil でもよい。その場合は 503 を返す。
 	catalog *usecase.GitHubCatalogService
+	// members はボードの共有。nil でもよい。その場合は 503 を返す。
+	members *usecase.BoardMemberService
 	// auth はログインとセッション。nil なら認証しない。
 	//
 	// nil のときは /api/auth/session が authRequired: false を返し、画面は
@@ -100,7 +106,9 @@ func (h *handlers) createBoard(c *gin.Context) {
 	}
 
 	// 作ったばかりのボードに run はありえないので、照会せず false でよい。
-	c.JSON(http.StatusCreated, toDetail(b, false))
+	// 作った本人は必ず owner（BoardService.Create）。
+	c.JSON(http.StatusCreated,
+		toDetail(port.BoardAccess{Board: b, Role: port.RoleOwner}, false))
 }
 
 func (h *handlers) listBoards(c *gin.Context) {
@@ -113,7 +121,7 @@ func (h *handlers) listBoards(c *gin.Context) {
 	// nil を返すと JSON が null になる。一覧は常に配列にする。
 	out := make([]apitypes.BoardSummary, 0, len(boards))
 	for _, a := range boards {
-		out = append(out, toSummary(a.Board))
+		out = append(out, toSummary(a))
 	}
 
 	c.JSON(http.StatusOK, out)
@@ -126,7 +134,7 @@ func (h *handlers) getBoard(c *gin.Context) {
 		return
 	}
 
-	h.respondBoard(c, http.StatusOK, b.Board)
+	h.respondBoard(c, http.StatusOK, *b)
 }
 
 // setBoardTarget は draft issue の作成先をボードに設定する。
@@ -158,18 +166,18 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 		return
 	}
 
-	h.respondBoard(c, http.StatusOK, b.Board)
+	h.respondBoard(c, http.StatusOK, *b)
 }
 
 // respondBoard はボードを固定状態つきで返す。
-func (h *handlers) respondBoard(c *gin.Context, status int, b port.Board) {
-	locked, err := h.boards.TargetLocked(c.Request.Context(), b.ID)
+func (h *handlers) respondBoard(c *gin.Context, status int, a port.BoardAccess) {
+	locked, err := h.boards.TargetLocked(c.Request.Context(), a.Board.ID)
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
 
-	c.JSON(status, toDetail(b, locked))
+	c.JSON(status, toDetail(a, locked))
 }
 
 func (h *handlers) saveScene(c *gin.Context) {

@@ -23,6 +23,7 @@ export function board(): BoardDetail {
   return {
     id: BOARD_ID,
     name: "認証まわりのブレスト",
+    role: "owner",
     createdAt: "2026-08-01T09:00:00Z",
     updatedAt: "2026-08-05T09:30:00Z",
     scene: emptyScene(),
@@ -180,6 +181,7 @@ export function baseMock(): ApiMock {
       {
         id: detail.id,
         name: detail.name,
+        role: detail.role,
         createdAt: detail.createdAt,
         updatedAt: detail.updatedAt,
       },

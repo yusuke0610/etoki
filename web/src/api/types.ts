@@ -63,3 +63,15 @@ export type AuthUser = Schemas["AuthUser"];
 
 /** 認可画面へ送り出すための URL。 */
 export type LoginResponse = Schemas["LoginResponse"];
+
+/** ボードに対する権限の強さ。owner / editor / viewer の 3 つ。 */
+export type BoardRole = Schemas["BoardRole"];
+
+/** ボードのメンバー 1 人。 */
+export type BoardMember = Schemas["BoardMember"];
+
+/** 招待のリクエストボディ。 */
+export type InviteMemberRequest = Schemas["InviteMemberRequest"];
+
+/** ロール変更のリクエストボディ。 */
+export type SetMemberRoleRequest = Schemas["SetMemberRoleRequest"];

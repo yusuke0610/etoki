@@ -21,9 +21,12 @@ import (
 )
 
 // stubProvider は決められた利用者を返す IdentityProvider。
+//
+// identity を差し替えると別人としてログインできる。共有のテストで 2 人目が要る。
 type stubProvider struct {
 	exchangeErr error
 	redirectURI string
+	identity    *port.Identity
 }
 
 func (s *stubProvider) Name() string { return "github" }
@@ -39,6 +42,9 @@ func (s *stubProvider) Exchange(
 	s.redirectURI = redirectURI
 	if s.exchangeErr != nil {
 		return port.Identity{}, port.Credentials{}, s.exchangeErr
+	}
+	if s.identity != nil {
+		return *s.identity, port.Credentials{AccessToken: "ghu_1"}, nil
 	}
 	return port.Identity{
 			Provider: "github", Subject: "42", Login: "octocat", DisplayName: "Octo Cat",
@@ -82,14 +88,18 @@ func newAuthRouter(
 		}
 
 		sessions = sqlite.NewSessionRepository(db, box)
-		deps.Auth = usecase.NewAuthService(provider, sessions)
+		auth := usecase.NewAuthService(provider, sessions)
+		deps.Auth = auth
+		// 招待は認証が無いと意味を持たない。組み立ての条件を etoki.New と
+		// 揃えておかないと、ここだけ 503 にならない構成になる（ADR 0017）。
+		deps.Members = usecase.NewBoardMemberService(boards, auth)
 	}
 
 	return httpapi.NewRouter(deps), sessions
 }
 
 // login は実際にログインを通し、セッション cookie を返す。
-func login(t *testing.T, r *gin.Engine) *http.Cookie {
+func signIn(t *testing.T, r *gin.Engine) *http.Cookie {
 	t.Helper()
 
 	rec := do(t, r, http.MethodPost, "/api/auth/login", nil)
@@ -185,7 +195,7 @@ func TestLogin_ThenSessionReportsUser(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newAuthRouter(t, &stubProvider{})
-	cookie := login(t, r)
+	cookie := signIn(t, r)
 
 	got := decode[map[string]any](t, withCookie(t, r, http.MethodGet, "/api/auth/session", cookie))
 	if got["authenticated"] != true {
@@ -208,7 +218,7 @@ func TestLogin_CookieIsHardened(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newAuthRouter(t, &stubProvider{})
-	cookie := login(t, r)
+	cookie := signIn(t, r)
 
 	if !cookie.HttpOnly {
 		t.Error("HttpOnly が付いていない")
@@ -339,7 +349,7 @@ func TestLogout(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newAuthRouter(t, &stubProvider{})
-	cookie := login(t, r)
+	cookie := signIn(t, r)
 
 	rec := withCookie(t, r, http.MethodPost, "/api/auth/logout", cookie)
 	if rec.Code != http.StatusNoContent {
@@ -367,7 +377,7 @@ func TestExpiredSessionIsRejected(t *testing.T) {
 	t.Parallel()
 
 	r, sessions := newAuthRouter(t, &stubProvider{})
-	cookie := login(t, r)
+	cookie := signIn(t, r)
 
 	// 有効期間を跨いだ時刻から見ると解決できない。
 	future := time.Now().Add(usecase.SessionTTL + time.Hour)
@@ -430,7 +440,7 @@ func TestBoards_AreIsolatedBetweenUsers(t *testing.T) {
 	}
 
 	alice, bob := newFor(&stubProvider{}), newFor(&otherUserProvider{})
-	aliceCookie, bobCookie := login(t, alice), login(t, bob)
+	aliceCookie, bobCookie := signIn(t, alice), signIn(t, bob)
 
 	rec := doWithCookie(t, alice, http.MethodPost, "/api/boards",
 		map[string]string{"name": "アリスのボード"}, aliceCookie)

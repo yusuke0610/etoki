@@ -3,6 +3,8 @@ import type {
   LoginResponse,
   SessionStatus,
   BoardDetail,
+  BoardMember,
+  BoardRole,
   BoardSummary,
   BoardTarget,
   CreatedRun,
@@ -98,6 +100,35 @@ export const boardsApi = {
     request<CreatedRun>(`/api/boards/${boardId}/annotations/${annotationId}/items`, {
       method: "POST",
       body: JSON.stringify(interpretation),
+    }),
+};
+
+/**
+ * ボードの共有。
+ *
+ * 招待される側にリポジトリのアクセス権は要らない。ブレストに呼ぶ相手と
+ * GitHub に書ける相手は同じではない（ADR 0017）。認証を設定していない構成では
+ * すべて 503 が返る。
+ */
+export const membersApi = {
+  list: (boardId: string) => request<BoardMember[]>(`/api/boards/${boardId}/members`),
+
+  /** login で指す。相手は一度 etoki にログインしている必要がある。 */
+  invite: (boardId: string, login: string, role: BoardRole) =>
+    request<BoardMember>(`/api/boards/${boardId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ login, role }),
+    }),
+
+  setRole: (boardId: string, userId: string, role: BoardRole) =>
+    request<BoardMember>(`/api/boards/${boardId}/members/${encodeURIComponent(userId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    }),
+
+  remove: (boardId: string, userId: string) =>
+    request<void>(`/api/boards/${boardId}/members/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
     }),
 };
 

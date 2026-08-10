@@ -213,6 +213,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/boards/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * ボードのメンバーを返す
+         * @description メンバーなら誰でも見られる。誰と共有しているかを owner だけが知って
+         *     いる状態にすると、招待された側は自分が何に呼ばれたのか分からない。
+         */
+        get: operations["listBoardMembers"];
+        put?: never;
+        /**
+         * メンバーを招待する
+         * @description 招待できるのは owner だけ。**招待される側にリポジトリのアクセス権は
+         *     要らない**（ADR 0017）。ブレストに呼ぶ相手と、GitHub に書ける相手は
+         *     同じではない。
+         *
+         *     指す相手は login だが、一度 etoki にログインしている必要がある。
+         *     未ログインの login 宛に招待を積むと、改名で空いた login を取った別人に
+         *     権限が渡る。その場合は 400 を返す。
+         */
+        post: operations["inviteBoardMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /**
+                 * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+                 *     指し先としては使えない（ADR 0015）。
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * メンバーのロールを変える
+         * @description owner だけ。最後の owner は降格できない。誰も招待できず作成先も
+         *     変えられないボードが残るため。
+         */
+        put: operations["setBoardMemberRole"];
+        post?: never;
+        /**
+         * メンバーを外す
+         * @description owner だけ。最後の owner は外せない。
+         */
+        delete: operations["removeBoardMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/github/repositories": {
         parameters: {
             query?: never;
@@ -386,10 +453,46 @@ export interface components {
          * @enum {string}
          */
         ItemKind: "epic" | "issue";
+        /**
+         * @description ボードに対する権限の強さ（ADR 0017）。
+         *
+         *     - `owner` … 招待とロール変更、作成先の変更ができる
+         *     - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+         *       最終的に決めるのは GitHub
+         *     - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+         *       あり、閲覧者に許すのは「閲覧」ではない
+         * @enum {string}
+         */
+        BoardRole: "owner" | "editor" | "viewer";
+        /** @description ボードのメンバー 1 人 */
+        BoardMember: {
+            /** @description etoki が発番した ID。指し先にはこれを使う */
+            userId: string;
+            /**
+             * @description 認証基盤上のログイン名。表示用。移行前のボードなど、利用者を
+             *     引けない場合は空文字になる
+             */
+            login: string;
+            displayName: string;
+            role: components["schemas"]["BoardRole"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description 招待のリクエストボディ */
+        InviteMemberRequest: {
+            /** @description 招待する相手の login。一度 etoki にログインしている必要がある */
+            login: string;
+            role: components["schemas"]["BoardRole"];
+        };
+        /** @description ロール変更のリクエストボディ */
+        SetMemberRoleRequest: {
+            role: components["schemas"]["BoardRole"];
+        };
         /** @description 一覧で返すボード。シーンは大きいので含めない */
         BoardSummary: {
             id: string;
             name: string;
+            role: components["schemas"]["BoardRole"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -539,10 +642,29 @@ export interface components {
             };
         };
         /**
-         * @description Host または Origin が許可されていない。ブラウザ由来の cross-site
-         *     リクエストを弾いた場合（ADR 0013）。全エンドポイントで起こりうる。
+         * @description 次のどれか。
+         *
+         *     - Host または Origin が許可されていない。ブラウザ由来の cross-site
+         *       リクエストを弾いた場合（ADR 0013）。全エンドポイントで起こりうる
+         *     - ボードのメンバーではあるが、その操作にロールが足りない（ADR 0017）。
+         *       **メンバーでない場合は 404。** 区別すると ID を総当たりして他人の
+         *       ボードの存在を確かめられる
+         *     - GitHub がその Project への書き込みを拒んだ。etoki は実行者の
+         *       トークンで叩くので、リポジトリのアクセス権が無ければここに来る
          */
         Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description その機能に必要な設定がされていない。URL の誤りではないので 404 に
+         *     しない。
+         */
+        NotConfigured: {
             headers: {
                 [name: string]: unknown;
             };
@@ -574,6 +696,11 @@ export interface components {
         BoardId: string;
         /** @description 注釈にした frame の要素 ID */
         AnnotationId: string;
+        /**
+         * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+         *     指し先としては使えない（ADR 0015）。
+         */
+        UserId: string;
         /** @description リポジトリ所有者の login */
         RepositoryOwner: string;
         /** @description リポジトリ名 */
@@ -871,6 +998,163 @@ export interface operations {
                 };
             };
             500: components["responses"]["InternalError"];
+        };
+    };
+    listBoardMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description メンバー */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardMember"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    inviteBoardMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description 招待した */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardMember"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description すでにメンバー */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    setBoardMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /**
+                 * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+                 *     指し先としては使えない（ADR 0015）。
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMemberRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description 変更後のメンバー */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardMember"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description 最後の owner は降格できない */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    removeBoardMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /**
+                 * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+                 *     指し先としては使えない（ADR 0015）。
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 外した */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description 最後の owner は外せない */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
         };
     };
     listRepositories: {
