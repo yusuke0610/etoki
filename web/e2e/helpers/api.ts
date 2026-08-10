@@ -2,7 +2,10 @@ import type { Page, Route } from "@playwright/test";
 
 import type {
   AnnotationStatus,
+  BoardAccess,
   BoardDetail,
+  BoardMember,
+  BoardRole,
   BoardSummary,
   BoardTarget,
   CreatedRun,
@@ -53,6 +56,17 @@ export type ApiMock = {
   boardsError?: Reply<never>;
   /** 作成先の設定を失敗させたいときに指定する。409 の見せ方を確かめる用。 */
   setTargetError?: Reply<never>;
+  /**
+   * そのボードで何ができるか。ボード ID をキーにする。
+   *
+   * 無いボードは role をボードの値から、projectAccess を unknown として返す。
+   * 全 spec に権限を書かせないため。
+   */
+  access?: Record<string, Reply<BoardAccess>>;
+  /** ボード ID をキーにしたメンバー一覧。 */
+  members?: Record<string, BoardMember[]>;
+  /** 招待を失敗させたいときに指定する。 */
+  inviteError?: Reply<never>;
 };
 
 async function json(route: Route, status: number, body: unknown): Promise<void> {
@@ -179,6 +193,84 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
     async (route) => {
       await json(route, 200, mock.annotations[boardIdOf(route)] ?? []);
+    },
+  );
+
+  // 権限はボードの取得とは別に訊かれる。GitHub が未設定・不通でもボードは
+  // 開ける必要があるため（ADR 0017）。
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/access$/.test(url.pathname),
+    async (route) => {
+      const id = boardIdOf(route);
+      const configured = mock.access?.[id];
+      if (configured) {
+        await json(route, configured.status, configured.body);
+        return;
+      }
+
+      await json(route, 200, {
+        role: mock.details[id]?.role ?? "owner",
+        projectAccess: "unknown",
+      } satisfies BoardAccess);
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/members$/.test(url.pathname),
+    async (route) => {
+      const id = boardIdOf(route);
+      mock.members ??= {};
+      mock.members[id] ??= [];
+
+      if (route.request().method() === "POST") {
+        if (mock.inviteError) {
+          await json(route, mock.inviteError.status, mock.inviteError.body);
+          return;
+        }
+
+        const req = route.request().postDataJSON() as { login: string; role: BoardRole };
+        const member: BoardMember = {
+          userId: `user-${req.login}`,
+          login: req.login,
+          displayName: req.login,
+          role: req.role,
+          createdAt: "2026-08-05T10:00:00Z",
+        };
+        mock.members[id] = [...mock.members[id], member];
+        await json(route, 201, member);
+        return;
+      }
+
+      await json(route, 200, mock.members[id]);
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/members\/[^/]+$/.test(url.pathname),
+    async (route) => {
+      const id = boardIdOf(route);
+      const userId = new URL(route.request().url()).pathname.split("/").pop() ?? "";
+      mock.members ??= {};
+      mock.members[id] ??= [];
+
+      if (route.request().method() === "DELETE") {
+        mock.members[id] = mock.members[id].filter((m) => m.userId !== userId);
+        await route.fulfill({ status: 204, body: "" });
+        return;
+      }
+
+      const req = route.request().postDataJSON() as { role: BoardRole };
+      let updated: BoardMember | undefined;
+      mock.members[id] = mock.members[id].map((m) => {
+        if (m.userId !== userId) return m;
+        updated = { ...m, role: req.role };
+        return updated;
+      });
+      if (!updated) {
+        await json(route, 404, { error: "not found" } satisfies ErrorResponse);
+        return;
+      }
+      await json(route, 200, updated);
     },
   );
 
