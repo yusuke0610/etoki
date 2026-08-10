@@ -149,8 +149,11 @@ func New(opts Options) (*Server, error) {
 	locks := usecase.NewBoardLocks()
 
 	deps := httpapi.Deps{
-		Boards:         usecase.NewBoardService(opts.Boards, opts.Mappings, locks),
-		Annotations:    usecase.NewAnnotationService(opts.Boards, opts.Mappings),
+		Boards:      usecase.NewBoardService(opts.Boards, opts.Mappings, locks),
+		Annotations: usecase.NewAnnotationService(opts.Boards, opts.Mappings),
+		// GitHub が nil でも組み立てる。確かめられないことは「分からない」と
+		// して返るので、権限の表示そのものを落とす理由が無い（ADR 0017）。
+		Access:         usecase.NewBoardAccessService(opts.Boards, opts.GitHub, opts.Logger),
 		PublicURL:      opts.PublicURL,
 		Logger:         opts.Logger,
 		AllowedOrigins: opts.AllowedOrigins,

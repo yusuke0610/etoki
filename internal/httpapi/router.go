@@ -33,6 +33,12 @@ type Deps struct {
 	// 決まって初めて意味を持つので、認証を設定していない構成では組み立てない
 	// （ADR 0017）。
 	Members *usecase.BoardMemberService
+	// Access はそのボードで何ができるか。
+	//
+	// GitHub が未設定でも組み立てる。確かめられないことは「分からない」として
+	// 返るので、GitHub の有無で落とす理由が無い（ADR 0017）。nil のときは
+	// 503 を返すが、組み立て口（etoki.New）は必ず渡す。
+	Access *usecase.BoardAccessService
 	// Auth はログインとセッション。nil なら認証しない。
 	//
 	// nil のときは既存の挙動のまま。全エンドポイントが素通しになり、
@@ -75,6 +81,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		creations:       deps.Creations,
 		catalog:         deps.Catalog,
 		members:         deps.Members,
+		access:          deps.Access,
 		auth:            deps.Auth,
 		publicURL:       deps.PublicURL,
 		logger:          logger,
@@ -105,6 +112,10 @@ func NewRouter(deps Deps) *gin.Engine {
 		// （ADR 0014）。
 		api.PUT("/boards/:id/target", h.setBoardTarget)
 		api.GET("/boards/:id/annotations", h.listAnnotations)
+
+		// そのボードで何ができるか。ボード取得とは別に置く。GitHub が
+		// 未設定・不通でもボードは開ける必要がある（ADR 0017）。
+		api.GET("/boards/:id/access", h.getBoardAccess)
 
 		// 共有。招待される側にリポジトリのアクセス権は要らない（ADR 0017）。
 		api.GET("/boards/:id/members", h.listBoardMembers)

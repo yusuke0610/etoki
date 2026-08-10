@@ -320,6 +320,39 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/boards/{id}/access:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [boards]
+      operationId: getBoardAccess
+      summary: そのボードで何ができるかを返す
+      description: |
+        etoki 側のロールと、GitHub 側の書き込み可否を**別々に**返す（ADR 0017）。
+        「開けるが書けない」が普通に起きるので、1 つに畳むと画面に出せない。
+
+        `projectAccess` は**状態であって判定ではない。** 実際に作れるかは作成時に
+        GitHub が返したものが正しい。これを見て作成を止めるのではなく、
+        できない理由を先に見せるために使う。
+
+        ボード取得とは別の呼び出しにしてある。GitHub が未設定・不通でもボードは
+        開ける必要がある。
+      responses:
+        "200":
+          description: 権限
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardAccess"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/boards/{id}/members:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -865,6 +898,29 @@ components:
         - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
           あり、閲覧者に許すのは「閲覧」ではない
       enum: [owner, editor, viewer]
+
+    ProjectAccess:
+      type: string
+      description: |
+        作成先の Project に書けるかどうかの、いまの状態。
+
+        - `allowed` … 書ける
+        - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
+          持たない利用者がこれになる
+        - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
+          問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
+          倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
+      enum: [allowed, denied, unknown]
+
+    BoardAccess:
+      type: object
+      description: そのボードで何ができるか。etoki 側と GitHub 側を別々に返す
+      required: [role, projectAccess]
+      properties:
+        role:
+          $ref: "#/components/schemas/BoardRole"
+        projectAccess:
+          $ref: "#/components/schemas/ProjectAccess"
 
     BoardMember:
       type: object

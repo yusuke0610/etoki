@@ -2,6 +2,7 @@ import type {
   AnnotationStatus,
   LoginResponse,
   SessionStatus,
+  BoardAccess,
   BoardDetail,
   BoardMember,
   BoardRole,
@@ -79,6 +80,15 @@ export const boardsApi = {
 
   annotations: (id: string) =>
     request<AnnotationStatus[]>(`/api/boards/${id}/annotations`),
+
+  /**
+   * そのボードで何ができるかを返す。
+   *
+   * ボード取得とは別に叩く。GitHub が未設定・不通でもボードは開ける必要が
+   * あるため。`projectAccess` は状態であって判定ではない。これを見て作成を
+   * 止めるのではなく、できない理由を先に見せるのに使う（ADR 0017）。
+   */
+  access: (id: string) => request<BoardAccess>(`/api/boards/${id}/access`),
 
   /**
    * 注釈を LLM に解釈させる。

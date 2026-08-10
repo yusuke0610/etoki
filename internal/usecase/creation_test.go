@@ -27,7 +27,10 @@ type githubCall struct {
 // fakeGitHub は作成操作を記録する GitHubClient。
 type fakeGitHub struct {
 	fields []port.ProjectField
-	calls  []githubCall
+	// canWrite は CanWriteProject が返す値。既定の false のままだと
+	// 「書けない」になるので、書ける前提のテストは true を立てる。
+	canWrite bool
+	calls    []githubCall
 	// failOnTitle が空でなければ、その draft issue の作成で失敗する。
 	failOnTitle string
 	// listErr が非 nil なら ListProjectFields が失敗する。
@@ -39,6 +42,12 @@ type fakeGitHub struct {
 	// projectIDs は呼び出しごとに渡された作成先。ボードの Project が
 	// 使われていることを確かめる。
 	projectIDs []string
+}
+
+// CanWriteProject は表示用の可否を返す。作成を弾く判定には使われない
+// （ADR 0017）ので、ここが false でも Create は通る。
+func (f *fakeGitHub) CanWriteProject(context.Context, string) (bool, error) {
+	return f.canWrite, nil
 }
 
 func (f *fakeGitHub) ListRepositories(context.Context) ([]port.Repository, error) {

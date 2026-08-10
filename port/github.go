@@ -82,6 +82,13 @@ type GitHubClient interface {
 	// 種別や親子関係を設定するにはフィールド ID の解決が必要になる。
 	ListProjectFields(ctx context.Context, projectID string) ([]ProjectField, error)
 
+	// CanWriteProject は現在の利用者がその Project に書けるかを返す。
+	//
+	// **判定に使わない。画面に状態として見せるためのもの**（ADR 0017）。
+	// etoki は GitHub 側の権限を複製しないと決めたので、作成できるかを最終的に
+	// 決めるのは作成時の GitHub の応答であり、ここではない。
+	CanWriteProject(ctx context.Context, projectID string) (bool, error)
+
 	// CreateDraftIssue は draft issue を作成し、その ProjectV2Item ID を返す。
 	//
 	// 返すのは ProjectV2Item の ID であり、DraftIssue content の ID ではない。

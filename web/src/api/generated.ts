@@ -213,6 +213,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/boards/{id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * そのボードで何ができるかを返す
+         * @description etoki 側のロールと、GitHub 側の書き込み可否を**別々に**返す（ADR 0017）。
+         *     「開けるが書けない」が普通に起きるので、1 つに畳むと画面に出せない。
+         *
+         *     `projectAccess` は**状態であって判定ではない。** 実際に作れるかは作成時に
+         *     GitHub が返したものが正しい。これを見て作成を止めるのではなく、
+         *     できない理由を先に見せるために使う。
+         *
+         *     ボード取得とは別の呼び出しにしてある。GitHub が未設定・不通でもボードは
+         *     開ける必要がある。
+         */
+        get: operations["getBoardAccess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards/{id}/members": {
         parameters: {
             query?: never;
@@ -464,6 +495,23 @@ export interface components {
          * @enum {string}
          */
         BoardRole: "owner" | "editor" | "viewer";
+        /**
+         * @description 作成先の Project に書けるかどうかの、いまの状態。
+         *
+         *     - `allowed` … 書ける
+         *     - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
+         *       持たない利用者がこれになる
+         *     - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
+         *       問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
+         *       倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
+         * @enum {string}
+         */
+        ProjectAccess: "allowed" | "denied" | "unknown";
+        /** @description そのボードで何ができるか。etoki 側と GitHub 側を別々に返す */
+        BoardAccess: {
+            role: components["schemas"]["BoardRole"];
+            projectAccess: components["schemas"]["ProjectAccess"];
+        };
         /** @description ボードのメンバー 1 人 */
         BoardMember: {
             /** @description etoki が発番した ID。指し先にはこれを使う */
@@ -997,6 +1045,33 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getBoardAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 権限 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardAccess"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
     };

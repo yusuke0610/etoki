@@ -74,6 +74,9 @@ func newAuthRouter(
 	deps := httpapi.Deps{
 		Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 		Annotations: usecase.NewAnnotationService(boards, mappings),
+		// GitHub は渡さない。権限の表示が GitHub 抜きでも動くこと自体が
+		// 確かめたいこと（ADR 0017）。
+		Access: usecase.NewBoardAccessService(boards, nil, nil),
 	}
 
 	var sessions port.SessionRepository

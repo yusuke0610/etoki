@@ -12,6 +12,14 @@ import (
 // か失効しているときに返る。
 var ErrNotAuthenticated = errors.New("etoki: not authenticated")
 
+// ErrForbidden は下流サービスが権限を理由に拒んだことを表す。
+//
+// etoki は実行者のトークンで GitHub を叩くので（ADR 0015）、リポジトリへの
+// アクセス権が無ければここに来る。**etoki 側にその権限を複製しない**と決めた
+// 以上、拒否は実行時にしか分からない（ADR 0017）。500 に丸めると、権限の
+// 問題だと分からない。
+var ErrForbidden = errors.New("etoki: forbidden by the upstream service")
+
 // Identity は認証基盤が返す利用者。
 //
 // 認証基盤ごとに持てる情報は違う。ここに置くのは、どの基盤でも決まる最小限

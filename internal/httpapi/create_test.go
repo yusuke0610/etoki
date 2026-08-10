@@ -25,6 +25,12 @@ type stubGitHub struct {
 	projects []port.Project
 	// listErr が非 nil なら候補一覧が失敗する。
 	listErr error
+	// canWrite は CanWriteProject が返す値。
+	canWrite bool
+}
+
+func (s *stubGitHub) CanWriteProject(context.Context, string) (bool, error) {
+	return s.canWrite, nil
 }
 
 func (s *stubGitHub) ListRepositories(context.Context) ([]port.Repository, error) {

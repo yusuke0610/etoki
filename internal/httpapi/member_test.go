@@ -229,3 +229,30 @@ func TestMembers_WithoutAuthConfigured(t *testing.T) {
 		t.Fatalf("認証なしの members = %d %s, want 503", rec.Code, rec.Body)
 	}
 }
+
+// 作成できるかどうかは、etoki 側のロールとは別に返る。「開けるが書けない」が
+// 普通に起きるので、1 つに畳まない（ADR 0017）。
+func TestBoardAccess_ReportsRoleAndProjectAccess(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	r, _ := newAuthRouter(t, provider)
+
+	alice := signInAs(t, r, provider, "1", "alice")
+	boardID := createSharedBoard(t, r, alice, "ボード")
+
+	rec := withCookie(t, r, http.MethodGet, "/api/boards/"+boardID+"/access", alice)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("access = %d %s", rec.Code, rec.Body)
+	}
+
+	body := decode[map[string]any](t, rec)
+	if body["role"] != "owner" {
+		t.Errorf("role = %v, want owner", body["role"])
+	}
+	// この構成は GitHub を設定していない。確かめていないことを allowed にも
+	// denied にも倒さない。
+	if body["projectAccess"] != "unknown" {
+		t.Errorf("projectAccess = %v, want unknown", body["projectAccess"])
+	}
+}

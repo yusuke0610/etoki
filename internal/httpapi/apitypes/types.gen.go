@@ -27,6 +27,13 @@ const (
 	ItemKindIssue ItemKind = "issue"
 )
 
+// Defines values for ProjectAccess.
+const (
+	ProjectAccessAllowed ProjectAccess = "allowed"
+	ProjectAccessDenied  ProjectAccess = "denied"
+	ProjectAccessUnknown ProjectAccess = "unknown"
+)
+
 // Defines values for SyncState.
 const (
 	SyncStateChanged   SyncState = "changed"
@@ -59,6 +66,28 @@ type AuthUser struct {
 
 	// Provider 認証基盤の識別子。"github" など
 	Provider string `json:"provider"`
+}
+
+// BoardAccess そのボードで何ができるか。etoki 側と GitHub 側を別々に返す
+type BoardAccess struct {
+	// ProjectAccess 作成先の Project に書けるかどうかの、いまの状態。
+	//
+	// - `allowed` … 書ける
+	// - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
+	//   持たない利用者がこれになる
+	// - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
+	//   問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
+	//   倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
+	ProjectAccess ProjectAccess `json:"projectAccess"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
 }
 
 // BoardDetail defines model for BoardDetail.
@@ -247,6 +276,16 @@ type Project struct {
 	Number int    `json:"number"`
 	Title  string `json:"title"`
 }
+
+// ProjectAccess 作成先の Project に書けるかどうかの、いまの状態。
+//
+//   - `allowed` … 書ける
+//   - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
+//     持たない利用者がこれになる
+//   - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
+//     問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
+//     倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
+type ProjectAccess string
 
 // Repository 作成先を選ぶときに見せるリポジトリ
 type Repository struct {

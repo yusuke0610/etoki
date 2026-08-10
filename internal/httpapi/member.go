@@ -18,6 +18,30 @@ import (
 const membersNotConfigured = "sharing requires authentication: " +
 	"set ETOKI_GITHUB_APP_CLIENT_ID and ETOKI_GITHUB_APP_CLIENT_SECRET"
 
+// getBoardAccess はそのボードで何ができるかを返す。
+//
+// **これで作成を止めるのではなく、できない理由を先に見せるために使う**
+// （ADR 0017）。GitHub 側の可否は「いまの状態」であって判定ではない。
+func (h *handlers) getBoardAccess(c *gin.Context) {
+	if h.access == nil {
+		// 組み立て口（etoki.New）は必ず渡すので、production では起きない。
+		// Deps を手で組んだ場合に nil 参照で落ちないようにしておく。
+		errorJSON(c, http.StatusServiceUnavailable, "board access is not configured")
+		return
+	}
+
+	state, err := h.access.Get(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, apitypes.BoardAccess{
+		Role:          apitypes.BoardRole(state.Role),
+		ProjectAccess: apitypes.ProjectAccess(state.ProjectAccess),
+	})
+}
+
 func (h *handlers) listBoardMembers(c *gin.Context) {
 	if h.members == nil {
 		errorJSON(c, http.StatusServiceUnavailable, membersNotConfigured)

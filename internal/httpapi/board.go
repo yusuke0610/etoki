@@ -81,6 +81,11 @@ type handlers struct {
 	catalog *usecase.GitHubCatalogService
 	// members はボードの共有。nil でもよい。その場合は 503 を返す。
 	members *usecase.BoardMemberService
+	// access はそのボードで何ができるか。GitHub が未設定でも組み立てる。
+	//
+	// GitHub 側を確かめられないことは「分からない」として返るので、ここを
+	// nil にする理由が無い（ADR 0017）。
+	access *usecase.BoardAccessService
 	// auth はログインとセッション。nil なら認証しない。
 	//
 	// nil のときは /api/auth/session が authRequired: false を返し、画面は
@@ -245,6 +250,11 @@ func (h *handlers) fail(c *gin.Context, err error) {
 	case errors.Is(err, usecase.ErrForbidden):
 		// ボードの存在をすでに知っている相手にだけ返る。何が足りないのかを
 		// 隠す理由が無い（ADR 0017）。
+		errorJSON(c, http.StatusForbidden, err.Error())
+	case errors.Is(err, port.ErrForbidden):
+		// GitHub がその Project への書き込みを拒んだ。etoki は実行者の
+		// トークンで叩くので、リポジトリのアクセス権が無ければここに来る。
+		// 500 に丸めると、権限の問題だと分からない（ADR 0017）。
 		errorJSON(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, port.ErrNotAuthenticated):
 		// セッションが失効した、あるいはトークンを更新できなかった。
