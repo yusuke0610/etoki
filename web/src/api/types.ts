@@ -42,6 +42,12 @@ export type AnnotationStatus = Schemas["AnnotationStatus"];
 /** 解釈結果に含まれる draft issue 1 件。まだ作成はしていない。 */
 export type InterpretedItem = Schemas["InterpretedItem"];
 
+/** 注釈の frame 範囲だけを写した画像。サーバーは保存しない。 */
+export type AnnotationImage = Schemas["AnnotationImage"];
+
+/** 解釈のリクエストボディ。シーンから作れないものだけを載せる。 */
+export type InterpretRequest = Schemas["InterpretRequest"];
+
 /**
  * LLM が注釈をどう解釈したか。
  *

@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// Defines values for AnnotationImageMediaType.
+const (
+	AnnotationImageMediaTypeImagePng AnnotationImageMediaType = "image/png"
+)
+
 // Defines values for BoardRole.
 const (
 	BoardRoleEditor BoardRole = "editor"
@@ -40,6 +45,23 @@ const (
 	SyncStateCreated   SyncState = "created"
 	SyncStateUncreated SyncState = "uncreated"
 )
+
+// AnnotationImage 注釈の frame 範囲だけを写した画像。frame の外にある要素は含めない。
+//
+// サーバーは保存しない。解釈 1 回のあいだ LLM へ渡すためだけに使う
+// （ADR 0018）。
+type AnnotationImage struct {
+	// Data 画像のバイト列を base64 で表したもの。デコード後のバイト数に上限が
+	// あり、超えると 400 を返す。上限は超えても縮小せず弾く。黙って劣化
+	// させると、渡したはずの情報が消えたことに気づけない（ADR 0018）
+	Data []byte `json:"data"`
+
+	// MediaType 画像の MIME タイプ。PNG だけを受け付ける
+	MediaType AnnotationImageMediaType `json:"mediaType"`
+}
+
+// AnnotationImageMediaType 画像の MIME タイプ。PNG だけを受け付ける
+type AnnotationImageMediaType string
 
 // AnnotationStatus 注釈 1 つの状態
 type AnnotationStatus struct {
@@ -229,6 +251,16 @@ type HealthResponse struct {
 	Status string `json:"status"`
 }
 
+// InterpretRequest 解釈のリクエストボディ。テキストは保存済みシーンから取るので、ここには
+// シーンから作れないものだけを載せる。
+type InterpretRequest struct {
+	// Image 注釈の frame 範囲だけを写した画像。frame の外にある要素は含めない。
+	//
+	// サーバーは保存しない。解釈 1 回のあいだ LLM へ渡すためだけに使う
+	// （ADR 0018）。
+	Image *AnnotationImage `json:"image,omitempty"`
+}
+
 // Interpretation LLM が注釈をどう解釈したか。
 //
 // `summary` は GitHub には作らない。作成前に「こう読んだ」を見せるためだけに
@@ -396,6 +428,9 @@ type CompleteLoginParams struct {
 
 // CreateBoardJSONRequestBody defines body for CreateBoard for application/json ContentType.
 type CreateBoardJSONRequestBody = CreateBoardRequest
+
+// InterpretAnnotationJSONRequestBody defines body for InterpretAnnotation for application/json ContentType.
+type InterpretAnnotationJSONRequestBody = InterpretRequest
 
 // CreateItemsJSONRequestBody defines body for CreateItems for application/json ContentType.
 type CreateItemsJSONRequestBody = Interpretation
