@@ -42,6 +42,8 @@ tags:
     description: 作成先を選ぶための GitHub の一覧
   - name: auth
     description: ログインとセッション
+  - name: members
+    description: ボードの共有
 
 paths:
   /healthz:
@@ -320,6 +322,181 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/boards/{id}/access:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [boards]
+      operationId: getBoardAccess
+      summary: そのボードで何ができるかを返す
+      description: |
+        etoki 側のロールと、GitHub 側の書き込み可否を**別々に**返す（ADR 0017）。
+        「開けるが書けない」が普通に起きるので、1 つに畳むと画面に出せない。
+
+        `projectAccess` は**状態であって判定ではない。** 実際に作れるかは作成時に
+        GitHub が返したものが正しい。これを見て作成を止めるのではなく、
+        できない理由を先に見せるために使う。
+
+        ボード取得とは別の呼び出しにしてある。GitHub が未設定・不通でもボードは
+        開ける必要がある。
+      responses:
+        "200":
+          description: 権限
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardAccess"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/boards/{id}/members:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [members]
+      operationId: listBoardMembers
+      summary: ボードのメンバーを返す
+      description: |
+        メンバーなら誰でも見られる。誰と共有しているかを owner だけが知って
+        いる状態にすると、招待された側は自分が何に呼ばれたのか分からない。
+      responses:
+        "200":
+          description: メンバー
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardMember"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [members]
+      operationId: inviteBoardMember
+      summary: メンバーを招待する
+      description: |
+        招待できるのは owner だけ。**招待される側にリポジトリのアクセス権は
+        要らない**（ADR 0017）。ブレストに呼ぶ相手と、GitHub に書ける相手は
+        同じではない。
+
+        指す相手は login だが、一度 etoki にログインしている必要がある。
+        未ログインの login 宛に招待を積むと、改名で空いた login を取った別人に
+        権限が渡る。その場合は 400 を返す。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteMemberRequest"
+      responses:
+        "201":
+          description: 招待した
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardMember"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: すでにメンバー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/boards/{id}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [members]
+      operationId: setBoardMemberRole
+      summary: メンバーのロールを変える
+      description: |
+        owner だけ。最後の owner は降格できない。誰も招待できず作成先も
+        変えられないボードが残るため。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetMemberRoleRequest"
+      responses:
+        "200":
+          description: 変更後のメンバー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardMember"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: 最後の owner は降格できない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [members]
+      operationId: removeBoardMember
+      summary: メンバーを外す
+      description: owner だけ。最後の owner は外せない。
+      responses:
+        "204":
+          description: 外した
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: 最後の owner は外せない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/github/repositories:
     get:
       tags: [github]
@@ -549,6 +726,16 @@ components:
       schema:
         type: string
 
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: |
+        etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+        指し先としては使えない（ADR 0015）。
+      schema:
+        type: string
+
     RepositoryOwner:
       name: owner
       in: path
@@ -584,8 +771,24 @@ components:
 
     Forbidden:
       description: |
-        Host または Origin が許可されていない。ブラウザ由来の cross-site
-        リクエストを弾いた場合（ADR 0013）。全エンドポイントで起こりうる。
+        次のどれか。
+
+        - Host または Origin が許可されていない。ブラウザ由来の cross-site
+          リクエストを弾いた場合（ADR 0013）。全エンドポイントで起こりうる
+        - ボードのメンバーではあるが、その操作にロールが足りない（ADR 0017）。
+          **メンバーでない場合は 404。** 区別すると ID を総当たりして他人の
+          ボードの存在を確かめられる
+        - GitHub がその Project への書き込みを拒んだ。etoki は実行者の
+          トークンで叩くので、リポジトリのアクセス権が無ければここに来る
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotConfigured:
+      description: |
+        その機能に必要な設定がされていない。URL の誤りではないので 404 に
+        しない。
       content:
         application/json:
           schema:
@@ -688,15 +891,92 @@ components:
         - epic
         - issue
 
+    BoardRole:
+      type: string
+      description: |
+        ボードに対する権限の強さ（ADR 0017）。
+
+        - `owner` … 招待とロール変更、作成先の変更ができる
+        - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+          最終的に決めるのは GitHub
+        - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+          あり、閲覧者に許すのは「閲覧」ではない
+      enum: [owner, editor, viewer]
+
+    ProjectAccess:
+      type: string
+      description: |
+        作成先の Project に書けるかどうかの、いまの状態。
+
+        - `allowed` … 書ける
+        - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
+          持たない利用者がこれになる
+        - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
+          問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
+          倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
+      enum: [allowed, denied, unknown]
+
+    BoardAccess:
+      type: object
+      description: そのボードで何ができるか。etoki 側と GitHub 側を別々に返す
+      required: [role, projectAccess]
+      properties:
+        role:
+          $ref: "#/components/schemas/BoardRole"
+        projectAccess:
+          $ref: "#/components/schemas/ProjectAccess"
+
+    BoardMember:
+      type: object
+      description: ボードのメンバー 1 人
+      required: [userId, login, displayName, role, createdAt]
+      properties:
+        userId:
+          type: string
+          description: etoki が発番した ID。指し先にはこれを使う
+        login:
+          type: string
+          description: |
+            認証基盤上のログイン名。表示用。移行前のボードなど、利用者を
+            引けない場合は空文字になる
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/BoardRole"
+        createdAt:
+          type: string
+          format: date-time
+
+    InviteMemberRequest:
+      type: object
+      description: 招待のリクエストボディ
+      required: [login, role]
+      properties:
+        login:
+          type: string
+          description: 招待する相手の login。一度 etoki にログインしている必要がある
+        role:
+          $ref: "#/components/schemas/BoardRole"
+
+    SetMemberRoleRequest:
+      type: object
+      description: ロール変更のリクエストボディ
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/BoardRole"
+
     BoardSummary:
       type: object
       description: 一覧で返すボード。シーンは大きいので含めない
-      required: [id, name, createdAt, updatedAt]
+      required: [id, name, role, createdAt, updatedAt]
       properties:
         id:
           type: string
         name:
           type: string
+        role:
+          $ref: "#/components/schemas/BoardRole"
         createdAt:
           type: string
           format: date-time
@@ -780,11 +1060,27 @@ components:
 
     CreateBoardRequest:
       type: object
-      description: ボード作成のリクエストボディ
-      required: [name]
+      description: |
+        ボード作成のリクエストボディ。
+
+        **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
+        （ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
+        「ボードの作成にはリポジトリへのアクセス権が要る」はこれで満ちる
+        （ADR 0017）。
+
+        副産物として、作成先が未選択のボードは新規には生まれなくなる。移行前の
+        ボードは未選択のまま残るので、`projectId` が空文字の経路は消えない。
+      required: [name, repositoryOwner, repositoryName, projectId]
       properties:
         name:
           type: string
+        repositoryOwner:
+          type: string
+        repositoryName:
+          type: string
+        projectId:
+          type: string
+          description: draft issue を作る Projects v2 の node ID
         scene:
           type: string
           description: 省略すると空のシーンで作る

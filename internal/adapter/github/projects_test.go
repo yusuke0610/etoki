@@ -421,6 +421,22 @@ func TestHTTPErrors(t *testing.T) {
 			want:    []string{"403", "rate limit resets at", "1780000000"},
 		},
 		{
+			// 二次レート制限。残数は残ったまま retry-after だけが付く。
+			name:    "403 二次レート制限",
+			status:  http.StatusForbidden,
+			headers: map[string]string{"x-ratelimit-remaining": "4999", "retry-after": "60"},
+			body:    `{"message":"You have exceeded a secondary rate limit"}`,
+			want:    []string{"403", "retry-after: 60"},
+		},
+		{
+			// レート制限ではない 403。招待されただけでリポジトリに権限が無い
+			// 利用者はここに来る（ADR 0017）。
+			name:   "403 権限不足",
+			status: http.StatusForbidden,
+			body:   `{"message":"Resource not accessible by integration"}`,
+			want:   []string{"403", "Resource not accessible"},
+		},
+		{
 			name:   "502 JSON ではない応答",
 			status: http.StatusBadGateway,
 			body:   `<html>502 Bad Gateway</html>`,
@@ -461,6 +477,16 @@ func TestHTTPErrors(t *testing.T) {
 			if got := errors.Is(err, port.ErrNotAuthenticated); got != (tt.status == http.StatusUnauthorized) {
 				t.Errorf("errors.Is(err, ErrNotAuthenticated) = %v (status %d): %v",
 					got, tt.status, err)
+			}
+
+			// 403 も sentinel に寄せるが、レート制限は含めない。待てば通るものを
+			// 「権限がありません」と見せない（ADR 0017）。
+			wantForbidden := tt.status == http.StatusForbidden &&
+				tt.headers["x-ratelimit-remaining"] != "0" &&
+				tt.headers["retry-after"] == ""
+			if got := errors.Is(err, port.ErrForbidden); got != wantForbidden {
+				t.Errorf("errors.Is(err, ErrForbidden) = %v, want %v: %v",
+					got, wantForbidden, err)
 			}
 		})
 	}
@@ -871,5 +897,60 @@ func TestListRepositories_AppModeStopsAtMaxRepositories(t *testing.T) {
 	}
 	if len(got) != 500 {
 		t.Errorf("len(repos) = %d, want 500", len(got))
+	}
+}
+
+// GraphQL は権限で拒むとき HTTP 200 のボディに errors を載せる。ステータスだけを
+// 見ていると、権限の問題が 500 に落ちる（ADR 0017）。
+func TestGraphQLForbiddenIsSentinel(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newClient(t,
+		`{"errors":[{"type":"FORBIDDEN","message":"Resource not accessible"}]}`)
+
+	_, err := c.CanWriteProject(t.Context(), "PVT_1")
+	if !errors.Is(err, port.ErrForbidden) {
+		t.Fatalf("CanWriteProject() = %v, want port.ErrForbidden", err)
+	}
+}
+
+// 作成できるかは表示のために引く。判定には使わない（ADR 0017）。
+func TestCanWriteProject(t *testing.T) {
+	t.Parallel()
+
+	for name, tt := range map[string]struct {
+		response string
+		want     bool
+	}{
+		"書ける":  {`{"data":{"node":{"viewerCanUpdate":true}}}`, true},
+		"書けない": {`{"data":{"node":{"viewerCanUpdate":false}}}`, false},
+		// 辿れない ID は node が null で返る。招待されただけでリポジトリに
+		// 権限が無い利用者はこれを受け取る（ADR 0017）。表示は「書けない」で
+		// よい。エラーにすると、権限が無いことを障害として見せてしまう。
+		"辿れない": {`{"data":{"node":null}}`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			c, _ := newClient(t, tt.response)
+
+			got, err := c.CanWriteProject(t.Context(), "PVT_1")
+			if err != nil {
+				t.Fatalf("CanWriteProject() = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("CanWriteProject() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCanWriteProject_RequiresProjectID(t *testing.T) {
+	t.Parallel()
+
+	c, _ := newClient(t)
+
+	if _, err := c.CanWriteProject(t.Context(), ""); err == nil {
+		t.Fatal("CanWriteProject(\"\") = nil, want error")
 	}
 }

@@ -63,3 +63,21 @@ export type AuthUser = Schemas["AuthUser"];
 
 /** 認可画面へ送り出すための URL。 */
 export type LoginResponse = Schemas["LoginResponse"];
+
+/** ボードに対する権限の強さ。owner / editor / viewer の 3 つ。 */
+export type BoardRole = Schemas["BoardRole"];
+
+/** ボードのメンバー 1 人。 */
+export type BoardMember = Schemas["BoardMember"];
+
+/** 招待のリクエストボディ。 */
+export type InviteMemberRequest = Schemas["InviteMemberRequest"];
+
+/** ロール変更のリクエストボディ。 */
+export type SetMemberRoleRequest = Schemas["SetMemberRoleRequest"];
+
+/** 作成先の Project に書けるかどうかの、いまの状態。判定ではない。 */
+export type ProjectAccess = Schemas["ProjectAccess"];
+
+/** そのボードで何ができるか。etoki 側と GitHub 側を別々に持つ。 */
+export type BoardAccess = Schemas["BoardAccess"];

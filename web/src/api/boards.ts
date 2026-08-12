@@ -2,7 +2,10 @@ import type {
   AnnotationStatus,
   LoginResponse,
   SessionStatus,
+  BoardAccess,
   BoardDetail,
+  BoardMember,
+  BoardRole,
   BoardSummary,
   BoardTarget,
   CreatedRun,
@@ -50,10 +53,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const boardsApi = {
   list: () => request<BoardSummary[]>("/api/boards"),
 
-  create: (name: string) =>
+  /**
+   * ボードを作る。
+   *
+   * **作成先は必須。** 候補は書ける Project だけに絞ってあるので、書ける先を
+   * 1 つも持たない人はここまで来られない（ADR 0017）。
+   */
+  create: (name: string, target: BoardTarget) =>
     request<BoardDetail>("/api/boards", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...target }),
     }),
 
   get: (id: string) => request<BoardDetail>(`/api/boards/${id}`),
@@ -79,6 +88,15 @@ export const boardsApi = {
     request<AnnotationStatus[]>(`/api/boards/${id}/annotations`),
 
   /**
+   * そのボードで何ができるかを返す。
+   *
+   * ボード取得とは別に叩く。GitHub が未設定・不通でもボードは開ける必要が
+   * あるため。`projectAccess` は状態であって判定ではない。これを見て作成を
+   * 止めるのではなく、できない理由を先に見せるのに使う（ADR 0017）。
+   */
+  access: (id: string) => request<BoardAccess>(`/api/boards/${id}/access`),
+
+  /**
    * 注釈を LLM に解釈させる。
    *
    * 読むのは保存済みシーン。GitHub には何も作らない。
@@ -98,6 +116,35 @@ export const boardsApi = {
     request<CreatedRun>(`/api/boards/${boardId}/annotations/${annotationId}/items`, {
       method: "POST",
       body: JSON.stringify(interpretation),
+    }),
+};
+
+/**
+ * ボードの共有。
+ *
+ * 招待される側にリポジトリのアクセス権は要らない。ブレストに呼ぶ相手と
+ * GitHub に書ける相手は同じではない（ADR 0017）。認証を設定していない構成では
+ * すべて 503 が返る。
+ */
+export const membersApi = {
+  list: (boardId: string) => request<BoardMember[]>(`/api/boards/${boardId}/members`),
+
+  /** login で指す。相手は一度 etoki にログインしている必要がある。 */
+  invite: (boardId: string, login: string, role: BoardRole) =>
+    request<BoardMember>(`/api/boards/${boardId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ login, role }),
+    }),
+
+  setRole: (boardId: string, userId: string, role: BoardRole) =>
+    request<BoardMember>(`/api/boards/${boardId}/members/${encodeURIComponent(userId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    }),
+
+  remove: (boardId: string, userId: string) =>
+    request<void>(`/api/boards/${boardId}/members/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
     }),
 };
 

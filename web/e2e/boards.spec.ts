@@ -17,19 +17,31 @@ test.describe("ボード", () => {
     await expect(page.getByRole("heading", { name: "選択中のフレーム" })).toBeVisible();
   });
 
-  test("名前を入れて作成すると、そのボードが開く", async ({ page }) => {
+  // 作成先を選ぶまでボードは作られない。書ける Project を 1 つも持たない人は
+  // ここで先に進めず、それが「作成にはリポジトリへのアクセス権が要る」ことの
+  // 表れになる（ADR 0017）。
+  test("名前を入れて作成先を選ぶと、そのボードが開く", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
 
     const name = page.getByLabel("ボード名");
-    const submit = page.getByRole("button", { name: "作成" });
+    const submit = page.getByRole("button", { name: "次へ" });
 
-    // 空のまま作らせない。誤って空名のボードが増えるのを防いでいる。
+    // 空のまま進ませない。誤って空名のボードが増えるのを防いでいる。
     await expect(submit).toBeDisabled();
 
     await name.fill("決済フローのブレスト");
     await expect(submit).toBeEnabled();
     await submit.click();
+
+    // まだ作られていない。先に作成先を選ばせる。
+    await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: "決済フローのブレスト" }),
+    ).toHaveCount(0);
+
+    await page.getByRole("button", { name: "acme/web" }).click();
+    await page.getByRole("button", { name: "#1 ロードマップ" }).click();
 
     await expect(
       page.getByRole("heading", { name: "決済フローのブレスト", level: 1 }),

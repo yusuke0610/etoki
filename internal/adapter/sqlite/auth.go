@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -74,6 +75,42 @@ func (r *SessionRepository) FindUser(ctx context.Context, id string) (*port.User
 	}
 
 	return &u, nil
+}
+
+// FindUsers は ID をまとめて引く。見つからなかった ID は結果に現れない。
+func (r *SessionRepository) FindUsers(ctx context.Context, ids []string) ([]port.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// IN 句のプレースホルダは件数ぶん組み立てる。ids を文字列連結すると
+	// SQL インジェクションになる。
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+userColumns+` FROM users WHERE id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("find users: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var users []port.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate users: %w", err)
+	}
+
+	return users, nil
 }
 
 // FindUserByLogin は login で利用者を引く。存在しなければ (nil, nil) を返す。

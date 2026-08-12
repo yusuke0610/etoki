@@ -3,6 +3,7 @@ import type {
   CreatedRun,
   Granularity,
   Interpretation,
+  ProjectAccess,
   SyncState,
 } from "../api/types";
 import { groupByEpic } from "./interpretation";
@@ -50,6 +51,21 @@ type Props = {
   /** 保存中は作成させない。保存が作成の結果を捨てるため。 */
   saving: boolean;
   onCreate: (annotationId: string, interpretation: Interpretation) => void;
+  /**
+   * 編集できるか。viewer は false（ADR 0017）。
+   *
+   * 解釈も含めて出さない。解釈は LLM を叩く外部呼び出しであり、閲覧者に
+   * 許すのは「閲覧」ではない。
+   */
+  canEdit: boolean;
+  /**
+   * 作成先の Project に書けるかどうかの、いまの状態。
+   *
+   * `denied` でもボタンを黙って消さず、理由を出す。ブレストには参加できて
+   * 作成だけができない、というのがこの機能で普通に起きる状態なので、
+   * 「なぜできないか」が見えていないと使えない（中核思想 3）。
+   */
+  projectAccess: ProjectAccess;
 };
 
 export function AnnotationPanel({
@@ -65,14 +81,24 @@ export function AnnotationPanel({
   creations,
   saving,
   onCreate,
+  canEdit,
+  projectAccess,
 }: Props) {
   return (
     <aside className="panel">
       <h2>注釈</h2>
 
+      {!canEdit && (
+        <p className="hint" role="status">
+          {"読むだけの権限で開いています。編集・解釈・作成はできません。"}
+        </p>
+      )}
+
       <section className="panel-section">
         <h3>選択中のフレーム</h3>
-        {markableFrameIds.length === 0 && unmarkableFrameIds.length === 0 ? (
+        {!canEdit ? (
+          <p className="hint">注釈を付け外しできるのは編集できる人だけです。</p>
+        ) : markableFrameIds.length === 0 && unmarkableFrameIds.length === 0 ? (
           <p className="hint">
             フレームツール（F）で囲んでから、そのフレームを選択してください。
           </p>
@@ -117,6 +143,7 @@ export function AnnotationPanel({
                   粒度
                   <select
                     value={a.granularity}
+                    disabled={!canEdit}
                     onChange={(e) =>
                       onChangeGranularity(a.id, e.target.value as Granularity)
                     }
@@ -142,14 +169,17 @@ export function AnnotationPanel({
                   </details>
                 )}
 
-                <InterpretationSection
-                  state={interpretations[a.id]}
-                  creation={creations[a.id]}
-                  stale={stale}
-                  saving={saving}
-                  onInterpret={() => onInterpret(a.id)}
-                  onCreate={(interpretation) => onCreate(a.id, interpretation)}
-                />
+                {canEdit && (
+                  <InterpretationSection
+                    state={interpretations[a.id]}
+                    creation={creations[a.id]}
+                    stale={stale}
+                    saving={saving}
+                    projectAccess={projectAccess}
+                    onInterpret={() => onInterpret(a.id)}
+                    onCreate={(interpretation) => onCreate(a.id, interpretation)}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -165,6 +195,7 @@ type InterpretationSectionProps = {
   /** 未保存の変更があると、解釈は保存済みシーンに対して行われる。 */
   stale: boolean;
   saving: boolean;
+  projectAccess: ProjectAccess;
   onInterpret: () => void;
   onCreate: (interpretation: Interpretation) => void;
 };
@@ -180,6 +211,7 @@ function InterpretationSection({
   creation,
   stale,
   saving,
+  projectAccess,
   onInterpret,
   onCreate,
 }: InterpretationSectionProps) {
@@ -205,6 +237,7 @@ function InterpretationSection({
           <CreationSection
             state={creation}
             saving={saving}
+            projectAccess={projectAccess}
             onCreate={() => onCreate(state.result)}
           />
         </>
@@ -222,13 +255,28 @@ function InterpretationSection({
 function CreationSection({
   state,
   saving,
+  projectAccess,
   onCreate,
 }: {
   state?: CreationState;
   saving: boolean;
+  projectAccess: ProjectAccess;
   onCreate: () => void;
 }) {
   const running = state?.status === "running";
+
+  // 書けないと分かっているなら、押させずに理由を出す。押せば GitHub が 403 を
+  // 返すので結果は同じだが、理由が読めるのは先に出したときだけ（ADR 0017）。
+  if (projectAccess === "denied") {
+    return (
+      <div className="creation">
+        <p className="hint">
+          {"この Project に書き込む権限がありません。"}
+          {"ブレストと解釈はこのまま続けられます。"}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="creation">

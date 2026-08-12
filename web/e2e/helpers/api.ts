@@ -2,7 +2,10 @@ import type { Page, Route } from "@playwright/test";
 
 import type {
   AnnotationStatus,
+  BoardAccess,
   BoardDetail,
+  BoardMember,
+  BoardRole,
   BoardSummary,
   BoardTarget,
   CreatedRun,
@@ -53,6 +56,17 @@ export type ApiMock = {
   boardsError?: Reply<never>;
   /** 作成先の設定を失敗させたいときに指定する。409 の見せ方を確かめる用。 */
   setTargetError?: Reply<never>;
+  /**
+   * そのボードで何ができるか。ボード ID をキーにする。
+   *
+   * 無いボードは role をボードの値から、projectAccess を unknown として返す。
+   * 全 spec に権限を書かせないため。
+   */
+  access?: Record<string, Reply<BoardAccess>>;
+  /** ボード ID をキーにしたメンバー一覧。 */
+  members?: Record<string, BoardMember[]>;
+  /** 招待を失敗させたいときに指定する。 */
+  inviteError?: Reply<never>;
 };
 
 async function json(route: Route, status: number, body: unknown): Promise<void> {
@@ -73,19 +87,21 @@ async function json(route: Route, status: number, body: unknown): Promise<void> 
 export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   let issued = 0;
 
-  // 新しいボードは作成先が未選択で始まる。開くとリポジトリ選択に入る
-  // （ADR 0014）。
-  const newBoard = (name: string): BoardDetail => {
+  // 新しいボードは作成先を持って生まれる。作成先を選ばないと作れない
+  // （ADR 0017）。
+  const newBoard = (name: string, target: BoardTarget): BoardDetail => {
     issued += 1;
     return {
       id: `board-new-${issued}`,
       name,
+      // 作った本人は必ず owner（ADR 0017）。
+      role: "owner",
       createdAt: "2026-08-05T10:00:00Z",
       updatedAt: "2026-08-05T10:00:00Z",
       scene: emptyScene(),
-      repositoryOwner: "",
-      repositoryName: "",
-      projectId: "",
+      repositoryOwner: target.repositoryOwner,
+      repositoryName: target.repositoryName,
+      projectId: target.projectId,
       targetLocked: false,
     };
   };
@@ -108,8 +124,8 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => url.pathname === "/api/boards",
     async (route) => {
       if (route.request().method() === "POST") {
-        const req = route.request().postDataJSON() as { name: string };
-        const board = newBoard(req.name);
+        const req = route.request().postDataJSON() as { name: string } & BoardTarget;
+        const board = newBoard(req.name, req);
         mock.boards = [summarize(board), ...mock.boards];
         mock.details[board.id] = board;
         mock.annotations[board.id] ??= [];
@@ -177,6 +193,97 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
     async (route) => {
       await json(route, 200, mock.annotations[boardIdOf(route)] ?? []);
+    },
+  );
+
+  // 権限はボードの取得とは別に訊かれる。GitHub が未設定・不通でもボードは
+  // 開ける必要があるため（ADR 0017）。
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/access$/.test(url.pathname),
+    async (route) => {
+      const id = boardIdOf(route);
+      const configured = mock.access?.[id];
+      if (configured) {
+        await json(route, configured.status, configured.body);
+        return;
+      }
+
+      await json(route, 200, {
+        role: mock.details[id]?.role ?? "owner",
+        projectAccess: "unknown",
+      } satisfies BoardAccess);
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/members$/.test(url.pathname),
+    async (route) => {
+      const id = boardIdOf(route);
+      mock.members ??= {};
+      mock.members[id] ??= [];
+
+      if (route.request().method() === "POST") {
+        if (mock.inviteError) {
+          await json(route, mock.inviteError.status, mock.inviteError.body);
+          return;
+        }
+
+        const req = route.request().postDataJSON() as { login: string; role: BoardRole };
+        const member: BoardMember = {
+          userId: `user-${req.login}`,
+          login: req.login,
+          displayName: req.login,
+          role: req.role,
+          createdAt: "2026-08-05T10:00:00Z",
+        };
+        mock.members[id] = [...mock.members[id], member];
+        await json(route, 201, member);
+        return;
+      }
+
+      // GET 以外を一覧で答えない。何でも受けると、フロントが契約と違う
+      // メソッドで叩いていても緑になる。
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+
+      await json(route, 200, mock.members[id]);
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/members\/[^/]+$/.test(url.pathname),
+    async (route) => {
+      const id = boardIdOf(route);
+      const userId = new URL(route.request().url()).pathname.split("/").pop() ?? "";
+      mock.members ??= {};
+      mock.members[id] ??= [];
+
+      if (route.request().method() === "DELETE") {
+        mock.members[id] = mock.members[id].filter((m) => m.userId !== userId);
+        await route.fulfill({ status: 204, body: "" });
+        return;
+      }
+
+      // ロールの変更は PUT だけ。他は捕まえずキャッチオールの 500 に落とす。
+      if (route.request().method() !== "PUT") {
+        await route.fallback();
+        return;
+      }
+
+      const req = route.request().postDataJSON() as { role: BoardRole };
+      let updated: BoardMember | undefined;
+      mock.members[id] = mock.members[id].map((m) => {
+        if (m.userId !== userId) return m;
+        updated = { ...m, role: req.role };
+        return updated;
+      });
+      if (!updated) {
+        await json(route, 404, { error: "not found" } satisfies ErrorResponse);
+        return;
+      }
+      await json(route, 200, updated);
     },
   );
 
@@ -270,6 +377,7 @@ function summarize(b: BoardDetail): BoardSummary {
   return {
     id: b.id,
     name: b.name,
+    role: b.role,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };

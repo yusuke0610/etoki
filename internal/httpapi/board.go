@@ -15,12 +15,15 @@ import (
 // 境界の DTO は api/openapi.yaml から生成した apitypes を使う。ここで型を
 // 手書きすると、フロントの型との一致を人が保つことになる（ADR 0011）。
 
-func toSummary(b port.Board) apitypes.BoardSummary {
+// role は操作者ごとに変わるので、ボードと一緒に受け取る。画面はこれで
+// 出し入れを分ける（ADR 0017）。
+func toSummary(a port.BoardAccess) apitypes.BoardSummary {
 	return apitypes.BoardSummary{
-		ID:        b.ID,
-		Name:      b.Name,
-		CreatedAt: b.CreatedAt,
-		UpdatedAt: b.UpdatedAt,
+		ID:        a.Board.ID,
+		Name:      a.Board.Name,
+		Role:      apitypes.BoardRole(a.Role),
+		CreatedAt: a.Board.CreatedAt,
+		UpdatedAt: a.Board.UpdatedAt,
 	}
 }
 
@@ -28,16 +31,17 @@ func toSummary(b port.Board) apitypes.BoardSummary {
 // 平坦な struct になり、Go の埋め込みにはならないため共有できない。
 //
 // targetLocked は board だけでは決まらない。run の有無で決まるので引数で受ける。
-func toDetail(b port.Board, targetLocked bool) apitypes.BoardDetail {
+func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
 	return apitypes.BoardDetail{
-		ID:              b.ID,
-		Name:            b.Name,
-		CreatedAt:       b.CreatedAt,
-		UpdatedAt:       b.UpdatedAt,
-		Scene:           b.Scene,
-		RepositoryOwner: b.Target.RepositoryOwner,
-		RepositoryName:  b.Target.RepositoryName,
-		ProjectID:       b.Target.ProjectID,
+		ID:              a.Board.ID,
+		Name:            a.Board.Name,
+		Role:            apitypes.BoardRole(a.Role),
+		CreatedAt:       a.Board.CreatedAt,
+		UpdatedAt:       a.Board.UpdatedAt,
+		Scene:           a.Board.Scene,
+		RepositoryOwner: a.Board.Target.RepositoryOwner,
+		RepositoryName:  a.Board.Target.RepositoryName,
+		ProjectID:       a.Board.Target.ProjectID,
 		TargetLocked:    targetLocked,
 	}
 }
@@ -75,6 +79,13 @@ type handlers struct {
 	creations *usecase.CreationService
 	// catalog は作成先の候補一覧。nil でもよい。その場合は 503 を返す。
 	catalog *usecase.GitHubCatalogService
+	// members はボードの共有。nil でもよい。その場合は 503 を返す。
+	members *usecase.BoardMemberService
+	// access はそのボードで何ができるか。GitHub が未設定でも組み立てる。
+	//
+	// GitHub 側を確かめられないことは「分からない」として返るので、ここを
+	// nil にする理由が無い（ADR 0017）。
+	access *usecase.BoardAccessService
 	// auth はログインとセッション。nil なら認証しない。
 	//
 	// nil のときは /api/auth/session が authRequired: false を返し、画面は
@@ -93,14 +104,20 @@ func (h *handlers) createBoard(c *gin.Context) {
 		return
 	}
 
-	b, err := h.boards.Create(c.Request.Context(), req.Name, req.Scene)
+	b, err := h.boards.Create(c.Request.Context(), req.Name, req.Scene, port.BoardTarget{
+		RepositoryOwner: req.RepositoryOwner,
+		RepositoryName:  req.RepositoryName,
+		ProjectID:       req.ProjectID,
+	})
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
 
 	// 作ったばかりのボードに run はありえないので、照会せず false でよい。
-	c.JSON(http.StatusCreated, toDetail(b, false))
+	// 作った本人は必ず owner（BoardService.Create）。
+	c.JSON(http.StatusCreated,
+		toDetail(port.BoardAccess{Board: b, Role: port.RoleOwner}, false))
 }
 
 func (h *handlers) listBoards(c *gin.Context) {
@@ -112,8 +129,8 @@ func (h *handlers) listBoards(c *gin.Context) {
 
 	// nil を返すと JSON が null になる。一覧は常に配列にする。
 	out := make([]apitypes.BoardSummary, 0, len(boards))
-	for _, b := range boards {
-		out = append(out, toSummary(b))
+	for _, a := range boards {
+		out = append(out, toSummary(a))
 	}
 
 	c.JSON(http.StatusOK, out)
@@ -123,10 +140,6 @@ func (h *handlers) getBoard(c *gin.Context) {
 	b, err := h.boards.Find(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		h.fail(c, err)
-		return
-	}
-	if b == nil {
-		h.notFound(c)
 		return
 	}
 
@@ -161,24 +174,19 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	if b == nil {
-		// SetTarget を通った直後なので、消えているのは異常事態。
-		h.notFound(c)
-		return
-	}
 
 	h.respondBoard(c, http.StatusOK, *b)
 }
 
 // respondBoard はボードを固定状態つきで返す。
-func (h *handlers) respondBoard(c *gin.Context, status int, b port.Board) {
-	locked, err := h.boards.TargetLocked(c.Request.Context(), b.ID)
+func (h *handlers) respondBoard(c *gin.Context, status int, a port.BoardAccess) {
+	locked, err := h.boards.TargetLocked(c.Request.Context(), a.Board.ID)
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
 
-	c.JSON(status, toDetail(b, locked))
+	c.JSON(status, toDetail(a, locked))
 }
 
 func (h *handlers) saveScene(c *gin.Context) {
@@ -199,19 +207,11 @@ func (h *handlers) saveScene(c *gin.Context) {
 func (h *handlers) listAnnotations(c *gin.Context) {
 	states, err := h.annotations.ListStates(c.Request.Context(), c.Param("id"))
 	if err != nil {
+		// ボードが無い場合と注釈が 0 件の場合は、ここで区別がついている。
+		// ListStates が引き当てられなければエラーを返すため、ボードを引き直す
+		// 必要が無くなった。
 		h.fail(c, err)
 		return
-	}
-	if states == nil {
-		// ボードが無い場合と、注釈が 0 件の場合を区別する必要がある。
-		// ListStates はボードが無いときだけ nil を返す。
-		if b, findErr := h.boards.Find(c.Request.Context(), c.Param("id")); findErr != nil {
-			h.fail(c, findErr)
-			return
-		} else if b == nil {
-			h.notFound(c)
-			return
-		}
 	}
 
 	out := make([]apitypes.AnnotationStatus, 0, len(states))
@@ -247,8 +247,19 @@ func (h *handlers) fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, usecase.ErrInvalidInput):
 		h.badRequest(c, err)
-	case errors.Is(err, port.ErrNotFound):
+	case errors.Is(err, port.ErrNotFound), errors.Is(err, usecase.ErrBoardNotFound):
+		// メンバーでないボードもここに来る。403 と区別すると、ID を総当たりして
+		// 他人のボードの存在を確かめられる（ADR 0016 / 0017）。
 		h.notFound(c)
+	case errors.Is(err, usecase.ErrForbidden):
+		// ボードの存在をすでに知っている相手にだけ返る。何が足りないのかを
+		// 隠す理由が無い（ADR 0017）。
+		errorJSON(c, http.StatusForbidden, err.Error())
+	case errors.Is(err, port.ErrForbidden):
+		// GitHub がその Project への書き込みを拒んだ。etoki は実行者の
+		// トークンで叩くので、リポジトリのアクセス権が無ければここに来る。
+		// 500 に丸めると、権限の問題だと分からない（ADR 0017）。
+		errorJSON(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, port.ErrNotAuthenticated):
 		// セッションが失効した、あるいはトークンを更新できなかった。
 		// UI が「再ログインが要る」と判断できるよう 401 に寄せる。

@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// Defines values for BoardRole.
+const (
+	BoardRoleEditor BoardRole = "editor"
+	BoardRoleOwner  BoardRole = "owner"
+	BoardRoleViewer BoardRole = "viewer"
+)
+
 // Defines values for Granularity.
 const (
 	GranularityEmpty Granularity = ""
@@ -18,6 +25,13 @@ const (
 const (
 	ItemKindEpic  ItemKind = "epic"
 	ItemKindIssue ItemKind = "issue"
+)
+
+// Defines values for ProjectAccess.
+const (
+	ProjectAccessAllowed ProjectAccess = "allowed"
+	ProjectAccessDenied  ProjectAccess = "denied"
+	ProjectAccessUnknown ProjectAccess = "unknown"
 )
 
 // Defines values for SyncState.
@@ -54,6 +68,28 @@ type AuthUser struct {
 	Provider string `json:"provider"`
 }
 
+// BoardAccess そのボードで何ができるか。etoki 側と GitHub 側を別々に返す
+type BoardAccess struct {
+	// ProjectAccess 作成先の Project に書けるかどうかの、いまの状態。
+	//
+	// - `allowed` … 書ける
+	// - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
+	//   持たない利用者がこれになる
+	// - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
+	//   問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
+	//   倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
+	ProjectAccess ProjectAccess `json:"projectAccess"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+}
+
 // BoardDetail defines model for BoardDetail.
 type BoardDetail struct {
 	CreatedAt time.Time `json:"createdAt"`
@@ -69,6 +105,15 @@ type BoardDetail struct {
 	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
 	RepositoryOwner string `json:"repositoryOwner"`
 
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+
 	// Scene Excalidraw のシーン JSON をそのまま入れた文字列
 	Scene string `json:"scene"`
 
@@ -79,11 +124,51 @@ type BoardDetail struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+// BoardMember ボードのメンバー 1 人
+type BoardMember struct {
+	CreatedAt   time.Time `json:"createdAt"`
+	DisplayName string    `json:"displayName"`
+
+	// Login 認証基盤上のログイン名。表示用。移行前のボードなど、利用者を
+	// 引けない場合は空文字になる
+	Login string `json:"login"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+
+	// UserID etoki が発番した ID。指し先にはこれを使う
+	UserID string `json:"userId"`
+}
+
+// BoardRole ボードに対する権限の強さ（ADR 0017）。
+//
+//   - `owner` … 招待とロール変更、作成先の変更ができる
+//   - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+//     最終的に決めるのは GitHub
+//   - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+//     あり、閲覧者に許すのは「閲覧」ではない
+type BoardRole string
+
 // BoardSummary 一覧で返すボード。シーンは大きいので含めない
 type BoardSummary struct {
 	CreatedAt time.Time `json:"createdAt"`
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role      BoardRole `json:"role"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
@@ -97,9 +182,22 @@ type BoardTarget struct {
 	RepositoryOwner string `json:"repositoryOwner"`
 }
 
-// CreateBoardRequest ボード作成のリクエストボディ
+// CreateBoardRequest ボード作成のリクエストボディ。
+//
+// **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
+// （ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
+// 「ボードの作成にはリポジトリへのアクセス権が要る」はこれで満ちる
+// （ADR 0017）。
+//
+// 副産物として、作成先が未選択のボードは新規には生まれなくなる。移行前の
+// ボードは未選択のまま残るので、`projectId` が空文字の経路は消えない。
 type CreateBoardRequest struct {
 	Name string `json:"name"`
+
+	// ProjectID draft issue を作る Projects v2 の node ID
+	ProjectID       string `json:"projectId"`
+	RepositoryName  string `json:"repositoryName"`
+	RepositoryOwner string `json:"repositoryOwner"`
 
 	// Scene 省略すると空のシーンで作る
 	Scene string `json:"scene,omitempty"`
@@ -158,6 +256,21 @@ type InterpretedItem struct {
 	Title         string   `json:"title"`
 }
 
+// InviteMemberRequest 招待のリクエストボディ
+type InviteMemberRequest struct {
+	// Login 招待する相手の login。一度 etoki にログインしている必要がある
+	Login string `json:"login"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+}
+
 // ItemKind GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ
 // （ADR 0006）。
 type ItemKind string
@@ -176,6 +289,16 @@ type Project struct {
 	Number int    `json:"number"`
 	Title  string `json:"title"`
 }
+
+// ProjectAccess 作成先の Project に書けるかどうかの、いまの状態。
+//
+//   - `allowed` … 書ける
+//   - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
+//     持たない利用者がこれになる
+//   - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
+//     問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
+//     倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
+type ProjectAccess string
 
 // Repository 作成先を選ぶときに見せるリポジトリ
 type Repository struct {
@@ -197,6 +320,18 @@ type SessionStatus struct {
 
 	// User ログイン中の利用者
 	User *AuthUser `json:"user,omitempty"`
+}
+
+// SetMemberRoleRequest ロール変更のリクエストボディ
+type SetMemberRoleRequest struct {
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
 }
 
 // SyncItem 作成済みの draft issue 1 件
@@ -232,6 +367,9 @@ type RepositoryName = string
 // RepositoryOwner defines model for RepositoryOwner.
 type RepositoryOwner = string
 
+// UserID defines model for UserId.
+type UserID = string
+
 // BadRequest 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type BadRequest = ErrorResponse
 
@@ -240,6 +378,9 @@ type Forbidden = ErrorResponse
 
 // InternalError 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type InternalError = ErrorResponse
+
+// NotConfigured 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+type NotConfigured = ErrorResponse
 
 // NotFound 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
 type NotFound = ErrorResponse
@@ -258,6 +399,12 @@ type CreateBoardJSONRequestBody = CreateBoardRequest
 
 // CreateItemsJSONRequestBody defines body for CreateItems for application/json ContentType.
 type CreateItemsJSONRequestBody = Interpretation
+
+// InviteBoardMemberJSONRequestBody defines body for InviteBoardMember for application/json ContentType.
+type InviteBoardMemberJSONRequestBody = InviteMemberRequest
+
+// SetBoardMemberRoleJSONRequestBody defines body for SetBoardMemberRole for application/json ContentType.
+type SetBoardMemberRoleJSONRequestBody = SetMemberRoleRequest
 
 // SaveSceneJSONRequestBody defines body for SaveScene for application/json ContentType.
 type SaveSceneJSONRequestBody = SaveSceneRequest

@@ -180,6 +180,19 @@ func (s *AuthService) Resolve(ctx context.Context, token string) (*port.User, er
 	return s.sessions.FindUser(ctx, session.UserID)
 }
 
+// FindUserByLogin は login で利用者を引く。存在しなければ (nil, nil)。
+//
+// 招待の相手を指すのに使う。認証基盤の識別子はここが知っているので、
+// 呼ぶ側が provider を持ち回らずに済む。
+func (s *AuthService) FindUserByLogin(ctx context.Context, login string) (*port.User, error) {
+	return s.sessions.FindUserByLogin(ctx, s.provider.Name(), login)
+}
+
+// FindUsers は ID をまとめて引く。メンバー一覧に表示名を添えるのに使う。
+func (s *AuthService) FindUsers(ctx context.Context, ids []string) ([]port.User, error) {
+	return s.sessions.FindUsers(ctx, ids)
+}
+
 // Logout はセッションを破棄する。
 //
 // GitHub 側のトークンは取り消さない。同じ利用者が別の端末からも使っている

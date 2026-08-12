@@ -2,7 +2,7 @@ import { test, type Page } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock, signedIn, unselectedBoard } from "./helpers/fixtures";
+import { BOARD_ID, baseMock, board, signedIn, unselectedBoard } from "./helpers/fixtures";
 
 /**
  * 主要な画面のスクリーンショットを撮る。
@@ -59,6 +59,7 @@ test.describe("スクリーンショット", () => {
       {
         id: board.id,
         name: board.name,
+        role: board.role,
         createdAt: board.createdAt,
         updatedAt: board.updatedAt,
       },
@@ -98,6 +99,84 @@ test.describe("スクリーンショット", () => {
     await drawRectangle(page);
     await page.getByText("未保存", { exact: true }).waitFor();
     await shot(page, "08-target-change-blocked");
+  });
+
+  // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある
+  // （ADR 0017）。
+  test("メンバーの一覧を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.members = {
+      [BOARD_ID]: [
+        {
+          userId: "user-alice",
+          login: "alice",
+          displayName: "Alice",
+          role: "owner",
+          createdAt: "2026-08-01T09:00:00Z",
+        },
+        {
+          userId: "user-bob",
+          login: "bob",
+          displayName: "Bob",
+          role: "editor",
+          createdAt: "2026-08-03T09:00:00Z",
+        },
+        {
+          userId: "user-carol",
+          login: "carol",
+          displayName: "Carol",
+          role: "viewer",
+          createdAt: "2026-08-04T09:00:00Z",
+        },
+      ],
+    };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+    await page.getByText("Carol").waitFor();
+    await shot(page, "11-members");
+  });
+
+  // 招待された側にリポジトリのアクセス権は要らない。ブレストと解釈まではでき、
+  // 作成だけができない。**その理由が読める**ことを撮る。
+  test("作成の権限が無い状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), role: "editor" };
+    mock.access = {
+      [BOARD_ID]: { status: 200, body: { role: "editor", projectAccess: "denied" } },
+    };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await annotationCard(page, "ログイン")
+      .getByRole("button", { name: "解釈する" })
+      .click();
+    await page.getByText("この Project に書き込む権限がありません。").waitFor();
+    await shot(page, "12-creation-denied");
+  });
+
+  // 読むだけの参加者。編集・解釈・作成の導線がまとめて消える。
+  test("読むだけの権限で開いた画面を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
+    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page
+      .getByText("読むだけの権限で開いています。編集・解釈・作成はできません。")
+      .waitFor();
+    await shot(page, "13-viewer");
   });
 
   // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。

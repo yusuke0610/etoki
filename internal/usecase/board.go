@@ -19,16 +19,6 @@ import (
 // ErrInvalidInput は入力が要件を満たしていないことを表す。
 var ErrInvalidInput = errors.New("etoki: invalid input")
 
-// ownerOf は ctx から所有者を返す。
-//
-// 認証を設定していなければ空文字になる。空文字は無効値ではなく「認証なしの
-// 所有者」1 人を表すので、その構成では全ボードがその 1 人のものになり、
-// これまでどおり全部が見える（ADR 0016）。
-func ownerOf(ctx context.Context) string {
-	owner, _ := port.UserIDFromContext(ctx)
-	return owner
-}
-
 // ErrTargetLocked は作成先を変えられないことを表す。
 //
 // そのボードで draft issue を 1 件でも作ったら固定する。sync_runs は GitHub 側に
@@ -37,7 +27,7 @@ var ErrTargetLocked = errors.New("etoki: board target is locked")
 
 // BoardService はボードの作成・取得・更新を担う。
 type BoardService struct {
-	boards   port.BoardRepository
+	boardGuard
 	mappings port.MappingRepository
 	locks    *BoardLocks
 	now      func() time.Time
@@ -69,11 +59,11 @@ func NewBoardService(
 	opts ...BoardServiceOption,
 ) *BoardService {
 	s := &BoardService{
-		boards:   boards,
-		mappings: mappings,
-		locks:    locks,
-		now:      time.Now,
-		newID:    uuid.NewString,
+		boardGuard: boardGuard{boards: boards},
+		mappings:   mappings,
+		locks:      locks,
+		now:        time.Now,
+		newID:      uuid.NewString,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -82,9 +72,23 @@ func NewBoardService(
 }
 
 // Create は新しいボードを作る。scene が空なら空のシーンで初期化する。
-func (s *BoardService) Create(ctx context.Context, name, scene string) (port.Board, error) {
+//
+// **作成先は必須。** 候補は書ける Project だけに絞ってあるので（ADR 0014）、
+// 書ける先を 1 つも持たない人はボードを作れない。「ボードの作成にはリポジトリ
+// へのアクセス権が要る」はこの形で満たす（ADR 0017）。
+//
+// GitHub にここで問い合わせて確かめはしない。「どこかに書ける」は「その Project
+// に書ける」ではないし、GitHub 側の権限を etoki が判定に使わないという方針とも
+// 食い違う。
+func (s *BoardService) Create(
+	ctx context.Context, name, scene string, target port.BoardTarget,
+) (port.Board, error) {
 	if name == "" {
 		return port.Board{}, fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
+	if !target.Selected() {
+		return port.Board{}, fmt.Errorf(
+			"%w: repository and project are required", ErrInvalidInput)
 	}
 	if scene == "" {
 		scene = emptyScene
@@ -95,28 +99,31 @@ func (s *BoardService) Create(ctx context.Context, name, scene string) (port.Boa
 
 	now := s.now()
 	b := port.Board{
-		ID:          s.newID(),
-		Name:        name,
-		Scene:       scene,
-		OwnerUserID: ownerOf(ctx),
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:        s.newID(),
+		Name:      name,
+		Scene:     scene,
+		Target:    target,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
-	if err := s.boards.Create(ctx, b); err != nil {
+	// 作った本人が owner になる。ロールの初期値をここ以外で決めさせない。
+	if err := s.boards.Create(ctx, b, actorOf(ctx)); err != nil {
 		return port.Board{}, err
 	}
 
 	return b, nil
 }
 
-// Find は ID でボードを引く。存在しなければ (nil, nil) を返す。
-func (s *BoardService) Find(ctx context.Context, id string) (*port.Board, error) {
-	return s.boards.Find(ctx, ownerOf(ctx), id)
+// Find は ID でボードを操作者のロールつきで引く。
+//
+// メンバーでなければ ErrBoardNotFound。
+func (s *BoardService) Find(ctx context.Context, id string) (*port.BoardAccess, error) {
+	return s.access(ctx, id, port.RoleViewer)
 }
 
-// List は全ボードを更新時刻の降順で返す。
-func (s *BoardService) List(ctx context.Context) ([]port.Board, error) {
-	return s.boards.List(ctx, ownerOf(ctx))
+// List は操作者がメンバーであるボードを更新時刻の降順で返す。
+func (s *BoardService) List(ctx context.Context) ([]port.BoardAccess, error) {
+	return s.boards.List(ctx, actorOf(ctx))
 }
 
 // SaveScene はボードのシーンを更新する。
@@ -124,7 +131,10 @@ func (s *BoardService) SaveScene(ctx context.Context, id, scene string) error {
 	if err := validateScene(scene); err != nil {
 		return err
 	}
-	return s.boards.UpdateScene(ctx, ownerOf(ctx), id, scene, s.now())
+	if _, err := s.access(ctx, id, port.RoleEditor); err != nil {
+		return err
+	}
+	return s.boards.UpdateScene(ctx, actorOf(ctx), id, scene, s.now())
 }
 
 // SetTarget は draft issue の作成先をボードに設定する。
@@ -144,14 +154,10 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 	}
 	defer release()
 
-	owner := ownerOf(ctx)
-
-	b, err := s.boards.Find(ctx, owner, id)
-	if err != nil {
+	// 作成先はそのボードで作られる draft issue の行き先そのものなので、
+	// 変えられるのは owner だけ（ADR 0017）。
+	if _, err := s.access(ctx, id, port.RoleOwner); err != nil {
 		return err
-	}
-	if b == nil {
-		return fmt.Errorf("board %s: %w", id, port.ErrNotFound)
 	}
 
 	locked, err := s.TargetLocked(ctx, id)
@@ -164,7 +170,7 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 		return fmt.Errorf("%w: %s", ErrTargetLocked, id)
 	}
 
-	return s.boards.UpdateTarget(ctx, owner, id, t, s.now())
+	return s.boards.UpdateTarget(ctx, actorOf(ctx), id, t, s.now())
 }
 
 // TargetLocked はそのボードの作成先が固定済みかどうかを返す。

@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { boardsApi, githubApi } from "../api/boards";
-import type { BoardDetail, Project, Repository } from "../api/types";
+import { githubApi } from "../api/boards";
+import type { BoardTarget, Project, Repository } from "../api/types";
 
 type Props = {
-  board: BoardDetail;
-  /** 設定後のボード。呼び出し側が差し替えて、ブレストに進ませる。 */
-  onSelected: (board: BoardDetail) => void;
-  /** 選び直しをやめる。未選択のボードでは呼ばない。 */
+  /** 見出しに出す名前。作成前のボードにはまだ ID が無いので名前だけ受ける。 */
+  title: string;
+  /**
+   * 作成先が決まったときに呼ぶ。
+   *
+   * **保存はここではしない。** 新規作成ではボードごと作り、既存ボードでは
+   * 作成先だけを差し替える。どちらなのかを知っているのは呼び出し側だけ。
+   * 失敗は例外で返してよい。この画面がそのまま表示する。
+   */
+  onSelected: (target: BoardTarget) => Promise<void>;
+  /** 選び直しをやめる。引き返す先が無い場面では渡さない。 */
   onCancel?: () => void;
 };
 
@@ -20,7 +27,7 @@ type Props = {
  * どれかを既定で選んだり、1 件しか無いときに自動で確定したりしない。
  * 作成先は取り返しのつかない選択なので、開発者に選ばせる（中核思想 3）。
  */
-export function RepositoryPicker({ board, onSelected, onCancel }: Props) {
+export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
   const [repositories, setRepositories] = useState<Repository[] | null>(null);
   const [repository, setRepository] = useState<Repository | null>(null);
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -73,25 +80,23 @@ export function RepositoryPicker({ board, onSelected, onCancel }: Props) {
       setSaving(true);
       setError(null);
       try {
-        onSelected(
-          await boardsApi.setTarget(board.id, {
-            repositoryOwner: repository.owner,
-            repositoryName: repository.name,
-            projectId: project.id,
-          }),
-        );
+        await onSelected({
+          repositoryOwner: repository.owner,
+          repositoryName: repository.name,
+          projectId: project.id,
+        });
       } catch (e) {
         setError(`作成先を設定できませんでした: ${String(e)}`);
       } finally {
         setSaving(false);
       }
     },
-    [board.id, onSelected, repository],
+    [onSelected, repository],
   );
 
   return (
     <div className="picker">
-      <h1>{board.name}</h1>
+      <h1>{title}</h1>
       <p className="hint">{"このボードの draft issue を作る先を選びます。"}</p>
       <p className="hint">
         {"最初の draft issue を作ると、以後は変更できなくなります。"}
@@ -109,10 +114,12 @@ export function RepositoryPicker({ board, onSelected, onCancel }: Props) {
           <p className="hint">読み込み中…</p>
         ) : repositories.length === 0 ? (
           // 権限不足と「本当に 1 つも無い」は API からは区別できない。
-          // どちらの可能性も書いておく。
+          // どちらの可能性も書いておく。**ここで止まる人はボードを作れない**
+          // ので（ADR 0017）、行き止まりの理由が読める必要がある。
           <p className="hint">
             {"リポジトリが 1 つも見つかりませんでした。"}
-            {"ETOKI_GITHUB_TOKEN に repo の read 権限があるか確認してください。"}
+            {"GitHub App を入れたリポジトリがあるか、"}
+            {"PAT で動かしているなら repo の read 権限があるかを確認してください。"}
           </p>
         ) : (
           <ul className="plain-list">

@@ -3,7 +3,7 @@ import "@excalidraw/excalidraw/index.css";
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, authApi, boardsApi } from "./api/boards";
-import type { BoardDetail, BoardSummary, SessionStatus } from "./api/types";
+import type { BoardDetail, BoardSummary, BoardTarget, SessionStatus } from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
 import { BoardPage } from "./board/BoardPage";
 import { RepositoryPicker } from "./board/RepositoryPicker";
@@ -15,6 +15,12 @@ export function App() {
   const [name, setName] = useState("");
   // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
   const [picking, setPicking] = useState(false);
+  // 作成しようとしているボードの名前。null なら作成中ではない。
+  //
+  // **作成先はボードを作る前に選ばせる**（ADR 0017）。書ける Project を持たない
+  // 人はここで先へ進めず、それが「作成にはリポジトリへのアクセス権が要る」
+  // ことの表れになる。
+  const [creating, setCreating] = useState<string | null>(null);
   // ログイン状態。null は問い合わせ中。
   const [session, setSession] = useState<SessionStatus | null>(null);
 
@@ -70,30 +76,46 @@ export function App() {
   const open = useCallback(async (id: string) => {
     try {
       setPicking(false);
+      setCreating(null);
       setCurrent(await boardsApi.get(id));
     } catch (e) {
       setError(`ボードを開けませんでした: ${String(e)}`);
     }
   }, []);
 
-  const create = useCallback(async () => {
+  /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
+  const startCreating = useCallback(() => {
     if (!name.trim()) return;
-    try {
-      const board = await boardsApi.create(name.trim());
+    setCurrent(null);
+    setPicking(false);
+    setCreating(name.trim());
+  }, [name]);
+
+  /** 作成先が決まったのでボードを作る。失敗は picker が表示する。 */
+  const createWithTarget = useCallback(
+    async (target: BoardTarget) => {
+      if (creating === null) return;
+
+      const board = await boardsApi.create(creating, target);
       setName("");
+      setCreating(null);
       await reload();
+      setCurrent(board);
+    },
+    [creating, reload],
+  );
+
+  /** 既存ボードの作成先を選び直す。最初の作成より前だけ通る（ADR 0014）。 */
+  const changeTarget = useCallback(
+    async (target: BoardTarget) => {
+      if (current === null) return;
+
+      const board = await boardsApi.setTarget(current.id, target);
       setPicking(false);
       setCurrent(board);
-    } catch (e) {
-      setError(`ボードを作成できませんでした: ${String(e)}`);
-    }
-  }, [name, reload]);
-
-  /** 作成先が決まったら、その姿でボードを差し替えてブレストに進む。 */
-  const targetSelected = useCallback((board: BoardDetail) => {
-    setPicking(false);
-    setCurrent(board);
-  }, []);
+    },
+    [current],
+  );
 
   // 問い合わせ中は何も出さない。ログイン画面を一瞬見せてから消すと、
   // 認証を設定していない構成でもちらつく。
@@ -129,7 +151,7 @@ export function App() {
           className="create-board"
           onSubmit={(e) => {
             e.preventDefault();
-            void create();
+            startCreating();
           }}
         >
           <input
@@ -139,7 +161,7 @@ export function App() {
             onChange={(e) => setName(e.target.value)}
           />
           <button type="submit" disabled={!name.trim()}>
-            作成
+            次へ
           </button>
         </form>
 
@@ -173,13 +195,20 @@ export function App() {
           BoardPage の中ではなく手前で切ることで、作成先が決まるまでキャンバスを
           出さないという要求がそのまま形になる。
         */}
-        {current === null ? (
+        {creating !== null ? (
+          <RepositoryPicker
+            key="creating"
+            title={creating}
+            onSelected={createWithTarget}
+            onCancel={() => setCreating(null)}
+          />
+        ) : current === null ? (
           <p className="hint">左からボードを選ぶか、新しく作成してください。</p>
         ) : picking || current.projectId === "" ? (
           <RepositoryPicker
             key={current.id}
-            board={current}
-            onSelected={targetSelected}
+            title={current.name}
+            onSelected={changeTarget}
             // 未選択のうちは引き返す先が無い。選び直しのときだけ戻れる。
             onCancel={picking ? () => setPicking(false) : undefined}
           />

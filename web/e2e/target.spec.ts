@@ -16,6 +16,7 @@ function withUnselected() {
     {
       id: board.id,
       name: board.name,
+      role: board.role,
       createdAt: board.createdAt,
       updatedAt: board.updatedAt,
     },
@@ -201,12 +202,12 @@ test.describe("作成先の選択", () => {
     await expect(page.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
   });
 
-  test("新しく作ったボードは作成先の選択から始まる", async ({ page }) => {
+  test("新しいボードは作成先の選択から始まる", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
 
     await page.getByLabel("ボード名").fill("決済まわり");
-    await page.getByRole("button", { name: "作成" }).click();
+    await page.getByRole("button", { name: "次へ" }).click();
 
     await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
     await expect(page.locator(".excalidraw canvas")).toHaveCount(0);

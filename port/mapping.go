@@ -12,6 +12,12 @@ import (
 // 更新系でのみ返る。
 var ErrNotFound = errors.New("etoki: not found")
 
+// ErrAlreadyExists は作ろうとしたものがすでにあることを表す。
+//
+// 同じ利用者を 2 回招待した場合に返る。既存の行を黙って書き換えると、
+// 「招待した」と「ロールを変えた」を呼び出し側が区別できなくなる。
+var ErrAlreadyExists = errors.New("etoki: already exists")
+
 // BoardTarget は draft issue の作成先。
 //
 // ボードごとに持つ。3 つとも空なら未選択（ADR 0014）。
@@ -33,6 +39,9 @@ func (t BoardTarget) Selected() bool {
 //
 // スナップショットとバージョニングは行わないため、Scene は常に最新状態のみを
 // 保持する。過去の状態が必要な場合、利用者がボードを複製する運用に委ねる。
+//
+// 所有者は持たない。誰がどう関われるかはボードの属性ではなくメンバーシップ
+// なので、BoardMember が持つ（ADR 0017）。
 type Board struct {
 	// ID はサーバーが発番する UUID。
 	ID string
@@ -40,16 +49,87 @@ type Board struct {
 	Name string
 	// Scene は Excalidraw のシーン JSON。
 	Scene string
-	// OwnerUserID は所有者。
-	//
-	// 空文字は無効値ではなく「認証なしの所有者」1 人を表す（ADR 0016）。
-	OwnerUserID string
 	// Target は draft issue の作成先。未選択ならゼロ値。
 	Target BoardTarget
 	// CreatedAt は作成時刻。
 	CreatedAt time.Time
 	// UpdatedAt は最終更新時刻。
 	UpdatedAt time.Time
+}
+
+// BoardRole はボードに対する権限の強さ（ADR 0017）。
+type BoardRole string
+
+// BoardRole の取りうる値。
+const (
+	// RoleOwner は招待とロール変更、作成先の変更ができる。
+	RoleOwner BoardRole = "owner"
+	// RoleEditor はブレストと解釈と draft issue の作成ができる。
+	//
+	// 作成できるかを最終的に決めるのは GitHub。etoki は実行者のトークンで
+	// 叩くので、リポジトリへのアクセス権が無ければ GitHub 側が拒む。
+	RoleEditor BoardRole = "editor"
+	// RoleViewer は読むだけ。
+	//
+	// 解釈も許さない。解釈は LLM を叩く外部呼び出しであり課金も伴うため、
+	// 閲覧者に許すのは「閲覧」ではない（ADR 0017）。
+	RoleViewer BoardRole = "viewer"
+)
+
+// rank はロールの強さを数にする。定義済みでなければ 0。
+//
+// **ロールの上下を知っているのはここだけ。** SQL にロールの集合を書くと
+// 判定が 2 箇所になり、片方だけ変わる。永続化層が見るのは「メンバーかどうか」
+// までにとどめる（ADR 0017）。
+func (r BoardRole) rank() int {
+	switch r {
+	case RoleOwner:
+		return 3
+	case RoleEditor:
+		return 2
+	case RoleViewer:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// Valid は r が定義済みのロールかどうかを返す。
+func (r BoardRole) Valid() bool { return r.rank() > 0 }
+
+// AtLeast は r が min 以上の権限を持つかどうかを返す。
+//
+// どちらかが未定義なら false。未知のロールを「とりあえず通す」方に倒さない。
+func (r BoardRole) AtLeast(min BoardRole) bool {
+	if !r.Valid() || !min.Valid() {
+		return false
+	}
+	return r.rank() >= min.rank()
+}
+
+// BoardMember は 1 人のメンバー。
+type BoardMember struct {
+	// BoardID は対象ボードの ID。
+	BoardID string
+	// UserID は利用者の ID。
+	//
+	// 空文字は無効値ではなく「認証なしの所有者」1 人を表す（ADR 0016）。
+	UserID string
+	// Role は権限。
+	Role BoardRole
+	// CreatedAt はメンバーになった時刻。
+	CreatedAt time.Time
+}
+
+// BoardAccess は操作者から見たボード 1 枚。
+//
+// ボードとロールを別々に引くと、引き当てと権限判定で 2 往復する。ロールは
+// ボードの属性ではないが、「誰が見ているか」が決まれば 1 つに定まる。
+type BoardAccess struct {
+	// Board はボード本体。
+	Board Board
+	// Role は操作者のロール。
+	Role BoardRole
 }
 
 // ItemKind は draft issue の種別。
@@ -111,29 +191,56 @@ type SyncRun struct {
 	Items []SyncItem
 }
 
-// BoardRepository はボードを永続化する。
+// BoardRepository はボードとそのメンバーを永続化する。
 //
 // 時刻は呼び出し側が与える。実装が time.Now を握ると挙動が時計に依存し、
 // テストが書きづらくなるため。
 //
-// **所有者は引数で受け取る。** ctx から実装が勝手に読む形にすると、絞り忘れても
+// **操作者は引数で受け取る。** ctx から実装が勝手に読む形にすると、絞り忘れても
 // 動いてしまう。引数なら渡し忘れがコンパイルエラーになる（ADR 0016）。
-// 他人のボードは「存在しない」ものとして扱い、権限エラーとは区別しない。
+// メンバーでないボードは「存在しない」ものとして扱い、権限エラーとは区別しない。
+//
+// **ここで見るのは「メンバーかどうか」まで。** ロールの上下は BoardRole.AtLeast が
+// 1 箇所で持つ（ADR 0017）。SQL にロールの集合を書くと判定が 2 箇所になる。
 type BoardRepository interface {
-	// Create は新しいボードを保存する。ID が既存なら誤りとして扱う。
-	// 所有者は Board.OwnerUserID から取る。
-	Create(ctx context.Context, b Board) error
+	// Create は新しいボードを保存し、owner をそのボードの RoleOwner にする。
+	// ID が既存なら誤りとして扱う。
+	//
+	// ボードとメンバーは 1 トランザクションで入れる。片方だけ残ると、誰も
+	// 開けないボードか、指す先の無いメンバーができる。
+	Create(ctx context.Context, b Board, owner string) error
 	// UpdateScene はシーンと更新時刻だけを更新する。CreatedAt は変えない。
-	UpdateScene(ctx context.Context, owner, id, scene string, updatedAt time.Time) error
+	UpdateScene(ctx context.Context, actor, id, scene string, updatedAt time.Time) error
 	// UpdateTarget は作成先と更新時刻だけを更新する。Scene は変えない。
 	//
 	// 固定済みかどうかはここでは見ない。判断に sync_runs が要るため、
 	// ユースケース層が担う（ADR 0014）。
-	UpdateTarget(ctx context.Context, owner, id string, t BoardTarget, updatedAt time.Time) error
-	// Find は ID でボードを引く。存在しない、または他人のものなら (nil, nil)。
-	Find(ctx context.Context, owner, id string) (*Board, error)
-	// List は所有者のボードを UpdatedAt の降順で返す。
-	List(ctx context.Context, owner string) ([]Board, error)
+	UpdateTarget(ctx context.Context, actor, id string, t BoardTarget, updatedAt time.Time) error
+	// Find は ID でボードを操作者のロールつきで引く。
+	//
+	// 存在しない、または操作者がメンバーでなければ (nil, nil)。
+	Find(ctx context.Context, actor, id string) (*BoardAccess, error)
+	// List は操作者がメンバーであるボードを UpdatedAt の降順で返す。
+	List(ctx context.Context, actor string) ([]BoardAccess, error)
+
+	// ListMembers はボードのメンバーを返す。
+	//
+	// **操作者では絞らない。呼ぶ前に Find で確かめること。** メンバー一覧は
+	// board_id でしか引けず、その board を取れるのはメンバーだけなので、
+	// 二重に絞ると、絞り忘れたときにどちらが効いているのか分からなくなる
+	// （sync_runs と同じ理由、ADR 0016）。
+	ListMembers(ctx context.Context, boardID string) ([]BoardMember, error)
+	// AddMember はメンバーを 1 人足す。すでにメンバーなら ErrAlreadyExists。
+	//
+	// **操作者では絞らない。呼ぶ前に Find で owner であることを確かめること。**
+	// ここに「owner だけ」を書くとロールの上下が SQL と Go の 2 箇所になる
+	// （ADR 0017）。以下の 2 つも同じ。
+	AddMember(ctx context.Context, m BoardMember) error
+	// UpdateMemberRole はメンバーのロールを変える。
+	// メンバーでなければ ErrNotFound。
+	UpdateMemberRole(ctx context.Context, boardID, userID string, role BoardRole) error
+	// RemoveMember はメンバーを外す。メンバーでなければ ErrNotFound。
+	RemoveMember(ctx context.Context, boardID, userID string) error
 
 	// CountUnowned は所有者の無いボードの数を返す。
 	//

@@ -11,9 +11,10 @@ import (
 )
 
 // 解釈に固有のエラー。呼び出し側が応答コードを決めるために使う。
+//
+// ボードを引き当てられない場合の ErrBoardNotFound は access.go にある。
+// 認可の判断と同じ場所に置かないと、404 と 403 の分け方が読み取れない。
 var (
-	// ErrBoardNotFound は対象のボードが存在しないことを表す。
-	ErrBoardNotFound = errors.New("etoki: board not found")
 	// ErrAnnotationNotFound は対象の注釈がシーンに無いことを表す。
 	ErrAnnotationNotFound = errors.New("etoki: annotation not found")
 	// ErrInterpretationFailed は上限まで再送しても出力がスキーマを満たさなかった
@@ -40,7 +41,7 @@ const defaultMaxAttempts = 3
 // この層は解釈するだけで、GitHub には何も作らず sync_runs にも書かない。
 // 何を作るかは解釈結果を見た開発者が別途トリガーする。
 type InterpretationService struct {
-	boards      port.BoardRepository
+	boardGuard
 	llm         port.LLMClient
 	maxAttempts int
 }
@@ -70,7 +71,7 @@ func WithMaxAttempts(n int) InterpretationServiceOption {
 // NewInterpretationService は InterpretationService を作る。
 func NewInterpretationService(boards port.BoardRepository, llm port.LLMClient, opts ...InterpretationServiceOption) *InterpretationService {
 	s := &InterpretationService{
-		boards:      boards,
+		boardGuard:  boardGuard{boards: boards},
 		llm:         llm,
 		maxAttempts: defaultMaxAttempts,
 	}
@@ -84,15 +85,14 @@ func NewInterpretationService(boards port.BoardRepository, llm port.LLMClient, o
 //
 // 読むのは保存済みシーンである。フロントで編集中の内容は反映されない。
 func (s *InterpretationService) Interpret(ctx context.Context, boardID, annotationID string) (InterpretationResult, error) {
-	board, err := s.boards.Find(ctx, ownerOf(ctx), boardID)
+	// 解釈は LLM を叩く外部呼び出しなので editor 以上に限る。viewer に許すのは
+	// 「閲覧」ではない（ADR 0017）。
+	acc, err := s.access(ctx, boardID, port.RoleEditor)
 	if err != nil {
 		return InterpretationResult{}, err
 	}
-	if board == nil {
-		return InterpretationResult{}, fmt.Errorf("%w: %s", ErrBoardNotFound, boardID)
-	}
 
-	scene, err := domain.ParseScene([]byte(board.Scene))
+	scene, err := domain.ParseScene([]byte(acc.Board.Scene))
 	if err != nil {
 		return InterpretationResult{}, err
 	}

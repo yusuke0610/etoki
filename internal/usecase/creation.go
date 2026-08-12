@@ -52,7 +52,7 @@ var (
 // 作成先はコンストラクタでは受け取らない。ボードごとに違うので、Create の中で
 // 読み込んだ board から取る（ADR 0014）。
 type CreationService struct {
-	boards      port.BoardRepository
+	boardGuard
 	mappings    port.MappingRepository
 	github      port.GitHubClient
 	locks       *BoardLocks
@@ -92,7 +92,7 @@ func NewCreationService(
 	opts ...CreationServiceOption,
 ) *CreationService {
 	s := &CreationService{
-		boards:      boards,
+		boardGuard:  boardGuard{boards: boards},
 		mappings:    mappings,
 		github:      github,
 		locks:       locks,
@@ -122,13 +122,13 @@ func (s *CreationService) Create(
 	}
 	defer release()
 
-	board, err := s.boards.Find(ctx, ownerOf(ctx), boardID)
+	// 作れるかどうかを最終的に決めるのは GitHub。ここで見るのは etoki 側の
+	// メンバーシップだけで、リポジトリの権限は複製しない（ADR 0017）。
+	acc, err := s.access(ctx, boardID, port.RoleEditor)
 	if err != nil {
 		return nil, err
 	}
-	if board == nil {
-		return nil, fmt.Errorf("%w: %s", ErrBoardNotFound, boardID)
-	}
+	board := acc.Board
 
 	// 作成先はボードが持つ。未選択なら止める。ここを通すと、置き場所の無い
 	// draft issue を GitHub 側のエラーとして受け取ることになり、原因が

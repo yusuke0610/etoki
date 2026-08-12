@@ -380,6 +380,25 @@ func nextCursor(what string, hasNext bool, endCursor string, after *string) (*st
 	return &endCursor, nil
 }
 
+// CanWriteProject は現在の利用者がその Project に書けるかを返す。
+//
+// **これで作成を弾かない。表示にだけ使う**（ADR 0017）。実際の可否は作成時に
+// GitHub が返したものが正しく、その間に権限が変わることもある。ここが返すのは
+// 「いまの状態」であって判定ではない。
+func (c *Client) CanWriteProject(ctx context.Context, projectID string) (bool, error) {
+	if projectID == "" {
+		return false, errors.New("github: project id is required")
+	}
+
+	var resp projectPermissionResponse
+	if err := c.do(ctx, queryProjectPermission,
+		map[string]any{"projectId": projectID}, &resp); err != nil {
+		return false, err
+	}
+
+	return resp.Node.ViewerCanUpdate, nil
+}
+
 // ListProjectFields はプロジェクトのカスタムフィールド定義を返す。
 //
 // ページングを辿る。途中で打ち切ると、後ろにあるフィールドが「存在しない」
@@ -527,6 +546,12 @@ func (c *Client) do(ctx context.Context, query string, vars map[string]any, out 
 	// GraphQL は HTTP 200 でもボディに errors を返す。ステータスコードだけを
 	// 見て成功と判断すると、何も作られていないのに成功として進んでしまう。
 	if len(envelope.Errors) > 0 {
+		// 権限不足は HTTP 200 のボディに載って返る。文字列のままだと呼び出し側が
+		// 「作れない相手だった」と判断できず、500 に落ちる（ADR 0017）。
+		if hasForbidden(envelope.Errors) {
+			return fmt.Errorf("%w: github graphql: %s",
+				port.ErrForbidden, joinErrors(envelope.Errors))
+		}
 		return fmt.Errorf("github graphql: %s", joinErrors(envelope.Errors))
 	}
 	if len(envelope.Data) == 0 {
@@ -559,12 +584,43 @@ func statusError(resp *http.Response, raw []byte) error {
 		return fmt.Errorf("%w: github api: %d: %s", port.ErrNotAuthenticated, resp.StatusCode, detail)
 	}
 
+	// **レート制限の判定を 403 より先に置く。** GitHub はレート制限も 403 で
+	// 返すが、それは権限の問題ではない。待てば通るものを「権限がありません」と
+	// 見せると、利用者は直しようのない原因を疑うことになる。
+	//
+	// 二次レート制限は残数を減らさず、retry-after だけを付けて 403 を返す。
+	// 残数しか見ていないと、これが権限不足に化ける。
+	if after := resp.Header.Get("retry-after"); after != "" {
+		return fmt.Errorf("github api: %d: %s (rate limited, retry-after: %s)",
+			resp.StatusCode, detail, after)
+	}
 	if remaining := resp.Header.Get("x-ratelimit-remaining"); remaining == "0" {
 		return fmt.Errorf("github api: %d: %s (rate limit resets at %s)",
 			resp.StatusCode, detail, resp.Header.Get("x-ratelimit-reset"))
 	}
 
+	// 403 も 401 と同じく sentinel に寄せる。ただし分けておく。ログインし直しても
+	// 解決しないので、UI の打ち手が違う。招待されただけでリポジトリに権限が無い
+	// 利用者はここに来る（ADR 0017）。
+	if resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("%w: github api: %d: %s", port.ErrForbidden, resp.StatusCode, detail)
+	}
+
 	return fmt.Errorf("github api: %d: %s", resp.StatusCode, detail)
+}
+
+// hasForbidden は GraphQL のエラーに権限不足が含まれるかを返す。
+//
+// GitHub は権限で拒むとき type に FORBIDDEN、スコープ不足のときに
+// INSUFFICIENT_SCOPES を入れる。前者は相手の権限、後者はトークンの権限で、
+// 利用者から見ればどちらも「書けない」。
+func hasForbidden(errs []graphQLError) bool {
+	for _, e := range errs {
+		if e.Type == "FORBIDDEN" || e.Type == "INSUFFICIENT_SCOPES" {
+			return true
+		}
+	}
+	return false
 }
 
 // joinErrors は GraphQL のエラーを 1 行にまとめる。
@@ -719,6 +775,23 @@ type fieldsResponse struct {
 				} `json:"options"`
 			} `json:"nodes"`
 		} `json:"fields"`
+	} `json:"node"`
+}
+
+// queryProjectPermission は現在の利用者がその Project に書けるかを取る。
+//
+// projectsV2(minPermissionLevel: WRITE) で候補を絞る形（ADR 0014）は
+// 「リポジトリ経由で辿れるか」しか見ない。招待されただけの利用者はその
+// リポジトリを辿れないので、Project を直接引いて訊く。
+const queryProjectPermission = `query($projectId: ID!) {
+  node(id: $projectId) {
+    ... on ProjectV2 { viewerCanUpdate }
+  }
+}`
+
+type projectPermissionResponse struct {
+	Node struct {
+		ViewerCanUpdate bool `json:"viewerCanUpdate"`
 	} `json:"node"`
 }
 

@@ -72,12 +72,21 @@ func countBoards(t *testing.T, r *gin.Engine) int {
 // Origin を送らないクライアント（curl / スクリプト）は従来どおり通す。
 // ブラウザは cross-origin の POST に必ず Origin を付けるので、ここを塞ぐと
 // 守れるものが増えないまま CLI からの利用だけが壊れる。
+// boardJSON は作成先つきのボード作成ボディを JSON 文字列で返す。
+//
+// 作成先は必須（ADR 0017）。ここで省くと Origin ではなく入力検証で落ちて、
+// 何を確かめたテストなのか分からなくなる。
+func boardJSON(name string) string {
+	return `{"name":"` + name +
+		`","repositoryOwner":"acme","repositoryName":"web","projectId":"PVT_1"}`
+}
+
 func TestOriginGuard_AllowsRequestWithoutOrigin(t *testing.T) {
 	t.Parallel()
 
 	r := newGuardedRouter(t)
 	rec := request(t, r, http.MethodPost, "/api/boards", loopbackHost,
-		map[string]string{"Content-Type": "application/json"}, `{"name":"cli"}`)
+		map[string]string{"Content-Type": "application/json"}, boardJSON("cli"))
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusCreated, rec.Body)
@@ -104,7 +113,7 @@ func TestOriginGuard_AllowsLoopbackOrigins(t *testing.T) {
 			r := newGuardedRouter(t)
 			rec := request(t, r, http.MethodPost, "/api/boards", tc.host,
 				map[string]string{"Content-Type": "application/json", "Origin": tc.origin},
-				`{"name":"local"}`)
+				boardJSON("local"))
 
 			if rec.Code != http.StatusCreated {
 				t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusCreated, rec.Body)
@@ -122,7 +131,7 @@ func TestOriginGuard_RejectsCrossSiteOrigin(t *testing.T) {
 
 	rec := request(t, r, http.MethodPost, "/api/boards", loopbackHost,
 		map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"},
-		`{"name":"attacker"}`)
+		boardJSON("attacker"))
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusForbidden, rec.Body)
@@ -143,7 +152,7 @@ func TestOriginGuard_RejectsCrossSiteSimpleRequest(t *testing.T) {
 
 	rec := request(t, r, http.MethodPost, "/api/boards", loopbackHost,
 		map[string]string{"Content-Type": "text/plain;charset=UTF-8", "Origin": "https://evil.example"},
-		`{"name":"attacker"}`)
+		boardJSON("attacker"))
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusForbidden, rec.Body)
@@ -161,7 +170,7 @@ func TestOriginGuard_RejectsNullOrigin(t *testing.T) {
 	r := newGuardedRouter(t)
 	rec := request(t, r, http.MethodPost, "/api/boards", loopbackHost,
 		map[string]string{"Content-Type": "application/json", "Origin": "null"},
-		`{"name":"sandboxed"}`)
+		boardJSON("sandboxed"))
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
@@ -222,7 +231,7 @@ func TestOriginGuard_AllowsConfiguredOrigin(t *testing.T) {
 	r := newGuardedRouter(t, "http://192.168.1.5:8080")
 	rec := request(t, r, http.MethodPost, "/api/boards", "192.168.1.5:8080",
 		map[string]string{"Content-Type": "application/json", "Origin": "http://192.168.1.5:8080"},
-		`{"name":"lan"}`)
+		boardJSON("lan"))
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusCreated, rec.Body)
@@ -236,7 +245,7 @@ func TestOriginGuard_ConfiguredOriginDoesNotOpenOthers(t *testing.T) {
 	r := newGuardedRouter(t, "http://192.168.1.5:8080")
 	rec := request(t, r, http.MethodPost, "/api/boards", loopbackHost,
 		map[string]string{"Content-Type": "application/json", "Origin": "http://192.168.1.6:8080"},
-		`{"name":"other"}`)
+		boardJSON("other"))
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)

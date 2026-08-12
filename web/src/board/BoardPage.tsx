@@ -8,6 +8,7 @@ import type {
   BoardDetail,
   Granularity,
   Interpretation,
+  ProjectAccess,
 } from "../api/types";
 import {
   isAnnotation,
@@ -23,6 +24,8 @@ import {
   type InterpretationState,
 } from "./AnnotationPanel";
 import { createGenerations } from "./generation";
+import { MemberPanel } from "./MemberPanel";
+import { ROLE_LABELS } from "./roles";
 
 type Props = {
   board: BoardDetail;
@@ -32,6 +35,9 @@ type Props = {
 };
 
 export function BoardPage({ board, onError, onChangeTarget }: Props) {
+  // viewer は読むだけ。解釈も許さない（ADR 0017）。
+  const canEdit = board.role !== "viewer";
+
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationStatus[]>([]);
   const [selectedFrames, setSelectedFrames] = useState<string[]>([]);
@@ -46,6 +52,31 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
   // 作成は解釈とは別の世代で管理する。共有すると、片方の実行がもう片方の
   // 応答まで無効にしてしまう。
   const [creationGenerations] = useState(createGenerations);
+  // メンバーの一覧を開いているかどうか。
+  const [showingMembers, setShowingMembers] = useState(false);
+  // 作成先の Project に書けるかどうか。確かめるまでは unknown。
+  //
+  // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
+  // あるため（ADR 0017）。
+  const [projectAccess, setProjectAccess] = useState<ProjectAccess>("unknown");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const access = await boardsApi.access(board.id);
+        if (!cancelled) setProjectAccess(access.projectAccess);
+      } catch {
+        // 確かめられなかったことをエラーにしない。GitHub が落ちているだけで
+        // ボードが開けなくなる理由が無い。unknown のままにする。
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [board.id]);
 
   const initialData = useMemo(() => {
     try {
@@ -255,6 +286,14 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
         <h1>{board.name}</h1>
         <div className="board-actions">
           {/*
+            自分が何をできるのかは、操作して断られる前に見えている必要がある。
+            共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
+          */}
+          <span className="badge badge-role">{ROLE_LABELS[board.role]}</span>
+          <button type="button" onClick={() => setShowingMembers((v) => !v)}>
+            {showingMembers ? "メンバーを閉じる" : "メンバー"}
+          </button>
+          {/*
             どこに作られるのかは、作る直前ではなく常に見えている必要がある。
             作った draft issue は取り消せない（ADR 0009）。
           */}
@@ -266,7 +305,11 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
             読めず、disabled なボタンはフォーカスも当たらないので、キーボードと
             読み上げの利用者には理由が届かない。
           */}
-          {board.targetLocked ? (
+          {board.role !== "owner" ? (
+            // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
+            // 断るより、押せないことを見せるほうが状態として正しい。
+            <span className="hint">作成先を変えられるのはオーナーだけです</span>
+          ) : board.targetLocked ? (
             // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
             // 押せないことを見せるほうが状態として正しい。
             <span className="hint">作成先は確定（draft issue を作成済み）</span>
@@ -290,16 +333,26 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
             </>
           )}
           {dirty && <span className="dirty">未保存</span>}
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={saving || creating || !api}
-            title={creating ? "作成が終わるまで保存できません" : undefined}
-          >
-            {saving ? "保存中…" : "保存"}
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving || creating || !api}
+              title={creating ? "作成が終わるまで保存できません" : undefined}
+            >
+              {saving ? "保存中…" : "保存"}
+            </button>
+          )}
         </div>
       </header>
+
+      {showingMembers && (
+        <MemberPanel
+          boardId={board.id}
+          role={board.role}
+          onClose={() => setShowingMembers(false)}
+        />
+      )}
 
       <div className="board-body">
         <div className="canvas">
@@ -308,6 +361,9 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
             initialData={initialData as never}
             onChange={handleChange as never}
             langCode="ja-JP"
+            // viewer には描かせない。描けるのに保存できないと、描いた内容を
+            // 黙って捨てることになる（ADR 0017）。
+            viewModeEnabled={!canEdit}
           />
         </div>
 
@@ -324,6 +380,8 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
           creations={creations}
           saving={saving}
           onCreate={(id, interpretation) => void create(id, interpretation)}
+          canEdit={canEdit}
+          projectAccess={projectAccess}
         />
       </div>
     </div>

@@ -20,3 +20,4 @@
 | [0014](0014-board-scoped-github-target.md) | 作成先の Projects v2 はボードごとに持ち、最初の作成で固定する | 採用 |
 | [0015](0015-pluggable-auth-seams.md) | 認証は 3 つの継ぎ目で受け、GitHub App を既定実装にする | 採用 |
 | [0016](0016-boards-have-owners.md) | 単一ユーザー前提を捨て、ボードに所有者を持たせる | 採用 |
+| [0017](0017-board-sharing-and-permissions.md) | ボードを共有し、etoki の権限と GitHub の権限を別々に持つ | 採用 |

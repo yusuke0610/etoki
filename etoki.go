@@ -149,13 +149,21 @@ func New(opts Options) (*Server, error) {
 	locks := usecase.NewBoardLocks()
 
 	deps := httpapi.Deps{
-		Boards:         usecase.NewBoardService(opts.Boards, opts.Mappings, locks),
-		Annotations:    usecase.NewAnnotationService(opts.Boards, opts.Mappings),
+		Boards:      usecase.NewBoardService(opts.Boards, opts.Mappings, locks),
+		Annotations: usecase.NewAnnotationService(opts.Boards, opts.Mappings),
+		// GitHub が nil でも組み立てる。確かめられないことは「分からない」と
+		// して返るので、権限の表示そのものを落とす理由が無い（ADR 0017）。
+		Access:         usecase.NewBoardAccessService(opts.Boards, opts.GitHub, opts.Logger),
 		PublicURL:      opts.PublicURL,
 		Logger:         opts.Logger,
 		AllowedOrigins: opts.AllowedOrigins,
 	}
 	deps.Auth = opts.Auth
+	// 招待は「誰であるか」が決まって初めて意味を持つ。認証を設定していない
+	// 構成は利用者 1 人なので、共有する相手がいない（ADR 0017）。
+	if opts.Auth != nil {
+		deps.Members = usecase.NewBoardMemberService(opts.Boards, opts.Auth, locks)
+	}
 	// LLM が無いときはサービスを組み立てない。nil のまま渡し、ハンドラ側で
 	// 「設定されていない」と返す。
 	if opts.LLM != nil {
