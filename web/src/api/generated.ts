@@ -399,6 +399,10 @@ export interface paths {
          * 注釈を LLM に解釈させる
          * @description GitHub には何も作らず、sync_runs にも書かない。何を作るかは結果を見た
          *     開発者が別途トリガーする（中核思想 3）。
+         *
+         *     テキストは保存済みシーンから取る。`image` はフロントが書き出した注釈
+         *     範囲の画像で、矢印やグルーピングのようにテキストに現れない構造を渡す
+         *     ためのもの（ADR 0018）。ボディごと省略できる。
          */
         post: operations["interpretAnnotation"];
         delete?: never;
@@ -649,6 +653,33 @@ export interface components {
             title: string;
             body: string;
             parentLocalId?: string;
+        };
+        /**
+         * @description 注釈の frame 範囲だけを写した画像。frame の外にある要素は含めない。
+         *
+         *     サーバーは保存しない。解釈 1 回のあいだ LLM へ渡すためだけに使う
+         *     （ADR 0018）。
+         */
+        AnnotationImage: {
+            /**
+             * @description 画像の MIME タイプ。PNG だけを受け付ける
+             * @enum {string}
+             */
+            mediaType: "image/png";
+            /**
+             * Format: byte
+             * @description 画像のバイト列を base64 で表したもの。デコード後のバイト数に上限が
+             *     あり、超えると 400 を返す。上限は超えても縮小せず弾く。黙って劣化
+             *     させると、渡したはずの情報が消えたことに気づけない（ADR 0018）
+             */
+            data: string;
+        };
+        /**
+         * @description 解釈のリクエストボディ。テキストは保存済みシーンから取るので、ここには
+         *     シーンから作れないものだけを載せる。
+         */
+        InterpretRequest: {
+            image?: components["schemas"]["AnnotationImage"];
         };
         /**
          * @description LLM が注釈をどう解釈したか。
@@ -1374,7 +1405,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description 省略すると、これまでどおりテキストだけで解釈する。 */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["InterpretRequest"];
+            };
+        };
         responses: {
             /** @description 解釈の結果 */
             200: {

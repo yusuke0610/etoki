@@ -1,5 +1,7 @@
 import type {
+  AnnotationImage,
   AnnotationStatus,
+  InterpretRequest,
   LoginResponse,
   SessionStatus,
   BoardAccess,
@@ -99,12 +101,16 @@ export const boardsApi = {
   /**
    * 注釈を LLM に解釈させる。
    *
-   * 読むのは保存済みシーン。GitHub には何も作らない。
+   * テキストを読むのは保存済みシーン。GitHub には何も作らない。
+   *
+   * `image` は注釈範囲を写した画像で、矢印やグルーピングのようにテキストに
+   * 現れない構造を渡す（ADR 0018）。画像は画面から書き出すので、保存済みシーン
+   * と揃っているあいだしか呼んではならない。
    */
-  interpret: (boardId: string, annotationId: string) =>
+  interpret: (boardId: string, annotationId: string, image?: AnnotationImage) =>
     request<Interpretation>(
       `/api/boards/${boardId}/annotations/${annotationId}/interpret`,
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify({ image } satisfies InterpretRequest) },
     ),
 
   /**

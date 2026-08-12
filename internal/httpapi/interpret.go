@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
+	"github.com/yusuke0610/etoki/port"
 )
 
 // interpretAnnotation は注釈を LLM に解釈させて結果を返す。
@@ -23,14 +25,53 @@ func (h *handlers) interpretAnnotation(c *gin.Context) {
 		return
 	}
 
+	images, ok := h.bindInterpretImages(c)
+	if !ok {
+		return
+	}
+
 	in, err := h.interpretations.Interpret(
-		c.Request.Context(), c.Param("id"), c.Param("annotationId"))
+		c.Request.Context(), c.Param("id"), c.Param("annotationId"), images)
 	if err != nil {
 		h.failInterpret(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, toInterpretationResponse(in))
+}
+
+// maxInterpretBody は解釈のリクエストボディを読む上限。
+//
+// 画像そのものの上限はユースケース層が持つ（usecase.MaxImageBytes）。ここで
+// 重ねて持つのは、上限を超えたボディを全部メモリに載せてからでないと判定できない
+// のを避けるため。base64 は 4/3 に膨らむので、その分と JSON の包みを足して余裕を
+// 取る。判定の正本はあくまでユースケース層側で、ここは読み込みの歯止めである。
+const maxInterpretBody = usecase.MaxImageBytes*usecase.MaxImages*4/3 + 4<<10
+
+// bindInterpretImages はリクエストボディから LLM に渡す画像を取り出す。
+//
+// ボディごと省略できる（ADR 0018）。省略されたときは画像なしで解釈する。
+func (h *handlers) bindInterpretImages(c *gin.Context) ([]port.Image, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxInterpretBody)
+
+	var req apitypes.InterpretRequest
+	// 空のボディは「画像なし」であってエラーではない。JSON デコーダは
+	// その場合に io.EOF を返す。
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		h.badRequest(c, err)
+		return nil, false
+	}
+
+	if req.Image == nil {
+		return nil, true
+	}
+
+	// バイト数と形式はユースケース層が見る。ここは詰め替えるだけ。判定を
+	// ハンドラにも置くと、API を通らない経路で抜ける。
+	return []port.Image{{
+		MediaType: string(req.Image.MediaType),
+		Data:      req.Image.Data,
+	}}, true
 }
 
 // failInterpret は解釈のエラーを HTTP ステータスに写す。

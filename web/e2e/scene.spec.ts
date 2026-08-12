@@ -66,9 +66,7 @@ test.describe("シーンの保存", () => {
     await drawRectangle(page);
 
     await expect(
-      page
-        .getByText("未保存の変更は解釈に含まれません。保存してから実行してください。")
-        .first(),
+      page.getByText("保存してから解釈できます", { exact: false }).first(),
     ).toBeVisible();
   });
 

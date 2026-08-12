@@ -171,6 +171,7 @@ export function AnnotationPanel({
 
                 {canEdit && (
                   <InterpretationSection
+                    annotationId={a.id}
                     state={interpretations[a.id]}
                     creation={creations[a.id]}
                     stale={stale}
@@ -190,9 +191,11 @@ export function AnnotationPanel({
 }
 
 type InterpretationSectionProps = {
+  /** 説明文の id を注釈ごとに分けるために持つ。一覧に複数並ぶため。 */
+  annotationId: string;
   state?: InterpretationState;
   creation?: CreationState;
-  /** 未保存の変更があると、解釈は保存済みシーンに対して行われる。 */
+  /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
   stale: boolean;
   saving: boolean;
   projectAccess: ProjectAccess;
@@ -207,6 +210,7 @@ type InterpretationSectionProps = {
  * 開発者が別途トリガーする。
  */
 function InterpretationSection({
+  annotationId,
   state,
   creation,
   stale,
@@ -216,16 +220,29 @@ function InterpretationSection({
   onCreate,
 }: InterpretationSectionProps) {
   const running = state?.status === "running";
+  // 押せない理由は title に隠さず本文として出す。disabled なボタンはフォーカスも
+  // 当たらないので、title ではキーボードと読み上げの利用者に理由が届かない。
+  const blockedId = `interpret-blocked-${annotationId}`;
 
   return (
     <div className="interpretation">
-      <button type="button" onClick={onInterpret} disabled={running}>
+      {/*
+        未保存のあいだは押させない。テキストは保存済みシーンから、画像は画面
+        から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
+      */}
+      <button
+        type="button"
+        onClick={onInterpret}
+        disabled={running || stale}
+        aria-describedby={stale ? blockedId : undefined}
+      >
         {running ? "解釈中…" : "解釈する"}
       </button>
 
       {stale && (
-        <p className="hint">
-          未保存の変更は解釈に含まれません。保存してから実行してください。
+        <p className="hint" id={blockedId}>
+          保存してから解釈できます。テキストは保存済みのシーンから、
+          画像は画面から取るためです。
         </p>
       )}
 

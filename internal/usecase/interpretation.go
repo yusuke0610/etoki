@@ -33,6 +33,28 @@ var (
 // 出力に対して呼び出しを繰り返しても課金が増えるだけであるため。
 const defaultMaxAttempts = 3
 
+// 画像の上限。超えたら縮小せずに弾く（ADR 0018）。
+//
+// 上限を持つのはここだけである。フロントは書き出しの解像度を抑えるが、バイト数
+// の判定は持たない。両方に持たせると、片方だけ変えたときに「フロントは通すが
+// サーバーが弾く」がどちらの言い分か分からなくなる。
+//
+// 呼び出し側がリクエストボディの大きさを見積もれるよう公開している。
+const (
+	// MaxImageBytes は画像 1 枚のバイト数の上限。
+	MaxImageBytes = 4 << 20
+	// MaxImages は解釈 1 回に渡せる画像の枚数の上限。
+	//
+	// 注釈は 1 つの frame なので、写すべき範囲も 1 つ。
+	MaxImages = 1
+)
+
+// supportedImageMediaType は受け付ける画像の MIME タイプ。
+//
+// フロントの書き出しに合わせて PNG だけにする。増やすなら、モデル側が扱える
+// かどうかをアダプタごとに確かめてからにする。
+const supportedImageMediaType = "image/png"
+
 // InterpretationService は注釈範囲を LLM に解釈させる。
 //
 // プロンプト構築・スキーマ検証・修正指示つき再送をこの層が持つ。port.LLMClient
@@ -83,12 +105,25 @@ func NewInterpretationService(boards port.BoardRepository, llm port.LLMClient, o
 
 // Interpret は注釈範囲を LLM に解釈させ、スキーマを満たした結果を返す。
 //
-// 読むのは保存済みシーンである。フロントで編集中の内容は反映されない。
-func (s *InterpretationService) Interpret(ctx context.Context, boardID, annotationID string) (InterpretationResult, error) {
+// テキストを読むのは保存済みシーンである。フロントで編集中の内容は反映されない。
+//
+// images は注釈範囲を写した画像で、矢印やグルーピングのようにテキストに現れない
+// 構造を渡すためのもの。空でもよく、その場合はテキストだけで解釈する。画像は
+// フロントが画面から書き出すため、保存済みシーンと一致している保証はここには
+// 無い。揃えるのは UI の責務にしてある（ADR 0018）。
+func (s *InterpretationService) Interpret(
+	ctx context.Context, boardID, annotationID string, images []port.Image,
+) (InterpretationResult, error) {
 	// 解釈は LLM を叩く外部呼び出しなので editor 以上に限る。viewer に許すのは
 	// 「閲覧」ではない（ADR 0017）。
 	acc, err := s.access(ctx, boardID, port.RoleEditor)
 	if err != nil {
+		return InterpretationResult{}, err
+	}
+
+	// LLM を叩く前に弾く。弾くと決めた入力で呼ぶと、結果は捨てるのに課金だけ
+	// 発生する。
+	if err := validateImages(images); err != nil {
 		return InterpretationResult{}, err
 	}
 
@@ -109,7 +144,7 @@ func (s *InterpretationService) Interpret(ctx context.Context, boardID, annotati
 			ErrInvalidInput, annotation.Granularity, annotationID)
 	}
 
-	in, err := s.complete(ctx, annotation, scene.AnnotationTexts(annotationID))
+	in, err := s.complete(ctx, annotation, scene.AnnotationTexts(annotationID), images)
 	if err != nil {
 		return InterpretationResult{}, err
 	}
@@ -120,15 +155,42 @@ func (s *InterpretationService) Interpret(ctx context.Context, boardID, annotati
 	}, nil
 }
 
+// validateImages は LLM に渡す画像が上限と形式を満たすかを見る。
+//
+// 超えたものを縮小したり落としたりはしない。渡したはずの情報が黙って消えたこと
+// に、開発者は気づけないため（ADR 0018）。
+func validateImages(images []port.Image) error {
+	if len(images) > MaxImages {
+		return fmt.Errorf("%w: at most %d image(s) per interpretation, got %d",
+			ErrInvalidInput, MaxImages, len(images))
+	}
+
+	for i, img := range images {
+		if img.MediaType != supportedImageMediaType {
+			return fmt.Errorf("%w: images[%d] media type %q is not supported, want %q",
+				ErrInvalidInput, i, img.MediaType, supportedImageMediaType)
+		}
+		if len(img.Data) == 0 {
+			return fmt.Errorf("%w: images[%d] is empty", ErrInvalidInput, i)
+		}
+		if len(img.Data) > MaxImageBytes {
+			return fmt.Errorf("%w: images[%d] is %d bytes, limit is %d",
+				ErrInvalidInput, i, len(img.Data), MaxImageBytes)
+		}
+	}
+
+	return nil
+}
+
 // complete は検証を満たす出力が得られるまで、修正指示を添えて呼び直す。
-func (s *InterpretationService) complete(ctx context.Context, a domain.Annotation, texts []domain.TextElement) (domain.Interpretation, error) {
-	base := buildUserMessage(a, texts)
+func (s *InterpretationService) complete(
+	ctx context.Context, a domain.Annotation, texts []domain.TextElement, images []port.Image,
+) (domain.Interpretation, error) {
+	base := buildUserMessage(a, texts, len(images) > 0)
 	req := port.VisionRequest{
 		System: interpretationSystemPrompt,
 		Text:   base,
-		// 画像はまだ渡していない。図形や矢印はここに現れないため、構造は
-		// テキストから読める範囲でしか解釈されない。
-		Images: nil,
+		Images: images,
 	}
 
 	var last error
@@ -208,14 +270,16 @@ func extractJSON(text string) string {
 }
 
 // buildUserMessage は注釈範囲のテキストと粒度指定を 1 通のメッセージにする。
-func buildUserMessage(a domain.Annotation, texts []domain.TextElement) string {
+//
+// hasImage は画像を添えたかどうか。画像の話は添えたときにだけ書く。常に書くと、
+// 画像なしの解釈でモデルが「見えるはずの図」を前提に埋め合わせを始める。
+func buildUserMessage(a domain.Annotation, texts []domain.TextElement, hasImage bool) string {
 	var b strings.Builder
 
 	b.WriteString("囲みに含まれるテキスト:\n")
 	if len(texts) == 0 {
 		// テキストが無くても解釈は試みる。図形と矢印だけの囲みがありうるため
-		// で、その中身は画像でしか渡せない（#9）。ここで打ち切ると、画像を
-		// 足したときに解禁し直すことになる。
+		// で、その中身は画像でしか渡せない。
 		//
 		// 「無い」ことは明示する。黙って空にすると、モデルが入力の欠落を
 		// 疑って作り話を始める。
@@ -229,12 +293,27 @@ func buildUserMessage(a domain.Annotation, texts []domain.TextElement) string {
 		b.WriteString("\n")
 	}
 
+	if hasImage {
+		b.WriteString("\n")
+		b.WriteString(imageInstruction)
+	}
+
 	b.WriteString("\n")
 	b.WriteString(granularityInstruction(a.Granularity))
 	b.WriteString("\n")
 
 	return b.String()
 }
+
+// imageInstruction は添えた画像とテキスト一覧の役割分担を伝える。
+//
+// 分担を書かないとモデルは画像の文字を読み直す。画像は frame の範囲を写した
+// ものなので囲みの外は入らないが、読み取りの誤りは入る。文言の正はテキスト
+// 一覧に置き、画像はテキストに現れない関係のためだけに使わせる。
+const imageInstruction = `この囲みを写した画像を添えています。矢印の向き、囲みの入れ子、
+配置の近さといった、上のテキスト一覧には現れない関係を読み取るために使ってください。
+文言は上のテキスト一覧が正です。画像から文字を読み取り直さないでください。
+`
 
 // granularityInstruction は開発者の粒度指定を指示文にする。
 func granularityInstruction(g domain.Granularity) string {

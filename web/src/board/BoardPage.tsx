@@ -18,6 +18,7 @@ import {
   type SceneElement,
 } from "../excalidraw/annotation";
 import { sceneSignature } from "../excalidraw/dirty";
+import { exportAnnotationImage } from "../excalidraw/image";
 import {
   AnnotationPanel,
   type CreationState,
@@ -212,7 +213,13 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
       }));
 
       try {
-        const result = await boardsApi.interpret(board.id, annotationId);
+        // 画像は画面から書き出す。テキストは保存済みシーンから取るので、
+        // 未保存のあいだは押させない（ADR 0018）。ここに来た時点で両者は
+        // 揃っている。
+        const image = api ? await exportAnnotationImage(api, annotationId) : undefined;
+        if (!generations.isCurrent(annotationId, generation)) return;
+
+        const result = await boardsApi.interpret(board.id, annotationId, image);
         if (!generations.isCurrent(annotationId, generation)) return;
         setInterpretations((prev) => ({
           ...prev,
@@ -229,7 +236,7 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
         }));
       }
     },
-    [board.id, generations],
+    [api, board.id, generations],
   );
 
   /**

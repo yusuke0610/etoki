@@ -1,8 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
-import { annotationCard, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock, createdRun } from "./helpers/fixtures";
+import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
+import {
+  annotatedScene,
+  baseMock,
+  board,
+  BOARD_ID,
+  createdRun,
+} from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 
@@ -19,6 +25,63 @@ test.describe("解釈と作成", () => {
     await card.getByRole("button", { name: "解釈する" }).click();
 
     await expect(card.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+  });
+
+  // 解釈はテキストを保存済みシーンから、画像を画面から取る。揃っていないと
+  // 1 回の解釈の入力が食い違う（ADR 0018）。
+  test("未保存の変更があるあいだは解釈できない", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    const button = card.getByRole("button", { name: "解釈する" });
+    await expect(button).toBeEnabled();
+
+    await drawRectangle(page);
+
+    await expect(button).toBeDisabled();
+    // 押せない理由は title に隠さない。disabled なボタンはフォーカスも当たらず、
+    // キーボードと読み上げの利用者に理由が届かない。
+    await expect(
+      card.getByText("保存してから解釈できます", { exact: false }),
+    ).toBeVisible();
+  });
+
+  test("解釈すると注釈範囲の画像を添えて送る", async ({ page }) => {
+    const mock = baseMock();
+    // 画像の書き出しには frame の実体が要る。
+    mock.details[BOARD_ID] = { ...board(), scene: annotatedScene() };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(
+      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+    ).toBeVisible();
+
+    // 矢印やグルーピングはテキストに現れない。画像でしか渡せない（中核思想 2）。
+    expect(mock.interpretRequests).toHaveLength(1);
+    expect(mock.interpretRequests[0]?.image?.mediaType).toBe("image/png");
+    expect(mock.interpretRequests[0]?.image?.data ?? "").not.toHaveLength(0);
+  });
+
+  // 画像は任意。frame が見つからなくても解釈そのものは止めない（ADR 0018）。
+  test("frame が無くてもテキストだけで解釈できる", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await expect(
+      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+    ).toBeVisible();
+    expect(mock.interpretRequests[0]?.image).toBeUndefined();
   });
 
   test("解釈すると summary と epic / issue の階層が出る", async ({ page }) => {
