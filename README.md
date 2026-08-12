@@ -74,6 +74,31 @@ direnv allow
 `ETOKI_ALLOWED_ORIGINS` にそのオリジンを足さないと自分のブラウザからも
 届かなくなります。
 
+### 鍵を `.env` に置く
+
+毎回 `export` する代わりに、`.env` に置けます。雛形が `.env.example` にあります。
+
+```sh
+cp .env.example .env
+$EDITOR .env
+make dev
+```
+
+読むのは `make dev` / `make dev-api` だけです。**etoki のバイナリは環境変数しか
+見ません。** 設定ファイルを読ませると、`cmd/etoki` を写して独自のアダプタを
+差し込む使い方に、その前提まで付いていくためです。
+
+そのため `etoki claim` のように make を通さず叩くコマンドには効きません。
+必要なら自分でシェルに読み込ませてください。
+
+```sh
+set -a; . ./.env; set +a
+go run ./cmd/etoki claim <login>
+```
+
+`.env` は gitignore 済みです。**`.env.example` に実際の値を書かないでください。**
+こちらは追跡されます。
+
 ### Anthropic API を使う
 
 ```sh

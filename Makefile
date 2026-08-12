@@ -6,6 +6,18 @@ BINARY  := $(BIN_DIR)/etoki
 WEB_DIR := web
 DB_PATH ?= etoki.db
 
+# ローカルで動かすときの鍵の置き場（gitignore 済み）。無くてもよい。
+#
+# make の include ではなく shell の `.` で読む。include すると `$` を含む値が
+# make の変数展開に食われ、書き手側から逃がす手段が無い。shell なら
+# クォートの規則が普段 export を書くときと同じになる。
+#
+# 読むのは recipe の中だけで、Go 側は環境変数しか見ない。バイナリに設定
+# ファイルを読ませると、main を写して使う経路（cmd/etoki の冒頭）にその
+# 前提まで付いていく。
+ENV_FILE := .env
+LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
+
 .PHONY: help setup dev dev-api dev-web build build-api build-web \
         test test-go test-web test-e2e lint lint-go lint-web fmt \
         codegen codegen-go codegen-web migrate clean
@@ -31,7 +43,9 @@ dev: ## バックエンドとフロントエンドを同時に起動する
 	wait
 
 dev-api: ## バックエンドのみ起動する（ホットリロード有効）
-	air
+	@# 鍵が要るのはサーバーだけなので、$(ENV_FILE) を読むのもここだけにする。
+	@# migrate は ETOKI_DB_PATH しか要らず、それは DB_PATH で渡している。
+	$(LOAD_ENV) air
 
 dev-web: ## フロントエンドのみ起動する（ホットリロード有効）
 	cd $(WEB_DIR) && bun run dev
