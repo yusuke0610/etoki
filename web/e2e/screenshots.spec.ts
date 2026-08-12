@@ -3,7 +3,6 @@ import { test, type Page } from "@playwright/test";
 import { installApi } from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
 import { BOARD_ID, baseMock, board, signedIn, unselectedBoard } from "./helpers/fixtures";
-import { richAnnotations, richScene, VIEWS, type View } from "./helpers/richscene";
 
 /**
  * 主要な画面のスクリーンショットを撮る。
@@ -194,36 +193,6 @@ test.describe("スクリーンショット", () => {
       .getByText("読むだけの権限で開いています。編集・解釈・作成はできません。")
       .waitFor();
     await shot(page, "13-viewer");
-  });
-
-  // ブレストらしい中身が入ったボード。空のキャンバスでは、注釈の frame が図を
-  // どう囲むのか、粒度の違う付箋がどう見えるのかが分からない。
-  test("中身のあるボードを撮る", async ({ page }) => {
-    const mock = baseMock();
-    const show = async (view: View, name: string) => {
-      mock.details[BOARD_ID] = { ...board(), scene: richScene(view) };
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
-      // canvas は要素が出てから描かれる。ここで待たないと描画途中を撮る。
-      await page.waitForTimeout(1_000);
-      await shot(page, name);
-    };
-
-    mock.annotations[BOARD_ID] = richAnnotations();
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await show(VIEWS.overview, "14-rich-overview");
-
-    // 解釈のカードは図の複雑さに関わらず同じ形で出る。全体表示のまま撮る。
-    const card = annotationCard(page, "認証まわりの発散");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
-    await shot(page, "15-rich-interpretation");
-
-    // 45% では付箋の字が読めない。図そのものは拡大して撮る。
-    await show(VIEWS.mindmap, "16-rich-mindmap");
-    await show(VIEWS.sequence, "17-rich-sequence");
   });
 
   // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。
