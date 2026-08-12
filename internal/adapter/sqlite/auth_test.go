@@ -682,3 +682,19 @@ func TestBoardMembers_MissingIsNotFound(t *testing.T) {
 		t.Errorf("RemoveMember(未知) = %v, want ErrNotFound", err)
 	}
 }
+
+// 無いボードへの招待は外部キーで弾く。通ると、ボードを消したあとに残る
+// メンバー行と同じ「指し先の無い行」を自分で作ることになる。
+func TestAddMember_RejectsUnknownBoard(t *testing.T) {
+	t.Parallel()
+
+	repo := sqlite.NewBoardRepository(newDB(t))
+
+	err := repo.AddMember(t.Context(), port.BoardMember{
+		BoardID: "no-such-board", UserID: "user-a",
+		Role: port.RoleEditor, CreatedAt: baseTime,
+	})
+	if err == nil {
+		t.Fatal("AddMember: want foreign key error, got nil")
+	}
+}
