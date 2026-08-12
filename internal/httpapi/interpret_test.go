@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -20,10 +21,13 @@ type stubLLM struct {
 	text  string
 	err   error
 	calls int
+	// last は最後に受け取った入力。画像が届いたかを確かめるために持つ。
+	last port.VisionRequest
 }
 
-func (s *stubLLM) Complete(context.Context, port.VisionRequest) (port.VisionResponse, error) {
+func (s *stubLLM) Complete(_ context.Context, req port.VisionRequest) (port.VisionResponse, error) {
 	s.calls++
+	s.last = req
 	if s.err != nil {
 		return port.VisionResponse{}, s.err
 	}
@@ -111,6 +115,133 @@ func TestInterpretAnnotation(t *testing.T) {
 
 	if llm.calls != 1 {
 		t.Errorf("LLM 呼び出し回数 = %d, want 1", llm.calls)
+	}
+}
+
+// imageBody は画像 1 枚を載せた解釈のリクエストボディを組み立てる。
+//
+// data は base64 の文字列として送る。契約が format: byte だからで、Go の
+// encoding/json はこれを []byte に復号する。
+func imageBody(mediaType string, size int) map[string]any {
+	return map[string]any{
+		"image": map[string]any{
+			"mediaType": mediaType,
+			"data":      base64.StdEncoding.EncodeToString(make([]byte, size)),
+		},
+	}
+}
+
+// 画像はテキストに現れない構造を渡すためのもの（ADR 0018）。
+func TestInterpretAnnotation_ForwardsImage(t *testing.T) {
+	t.Parallel()
+
+	llm := &stubLLM{text: validInterpretation}
+	r := newInterpretRouter(t, llm)
+
+	id := createBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	rec := do(t, r, http.MethodPost, interpretPath(id, "annot-1"), imageBody("image/png", 32))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+
+	if len(llm.last.Images) != 1 {
+		t.Fatalf("len(Images) = %d, want 1", len(llm.last.Images))
+	}
+	if llm.last.Images[0].MediaType != "image/png" {
+		t.Errorf("MediaType = %q", llm.last.Images[0].MediaType)
+	}
+	// base64 のまま渡すと、アダプタが二重にエンコードする。
+	if len(llm.last.Images[0].Data) != 32 {
+		t.Errorf("len(Data) = %d, want 32", len(llm.last.Images[0].Data))
+	}
+}
+
+// 画像は任意。省略した経路をこれまでどおり動かす（ADR 0018）。
+func TestInterpretAnnotation_WithoutImage(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]any{
+		"ボードごと省略":   nil,
+		"image を省略": map[string]any{},
+	}
+
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			llm := &stubLLM{text: validInterpretation}
+			r := newInterpretRouter(t, llm)
+
+			id := createBoard(t, r, "設計会")
+			saveAnnotatedScene(t, r, id)
+
+			rec := do(t, r, http.MethodPost, interpretPath(id, "annot-1"), body)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+			}
+			if len(llm.last.Images) != 0 {
+				t.Errorf("len(Images) = %d, want 0", len(llm.last.Images))
+			}
+		})
+	}
+}
+
+// 上限を超えた画像は縮小せずに弾く（ADR 0018）。
+func TestInterpretAnnotation_RejectsBadImage(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]any{
+		"上限を超えた画像": imageBody("image/png", usecase.MaxImageBytes+1),
+		"PNG 以外":   imageBody("image/jpeg", 32),
+		"data が base64 でない": map[string]any{
+			"image": map[string]any{"mediaType": "image/png", "data": "!!!"},
+		},
+	}
+
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			llm := &stubLLM{text: validInterpretation}
+			r := newInterpretRouter(t, llm)
+
+			id := createBoard(t, r, "設計会")
+			saveAnnotatedScene(t, r, id)
+
+			rec := do(t, r, http.MethodPost, interpretPath(id, "annot-1"), body)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+			}
+			// 弾くと決めた入力で叩くと、結果は捨てるのに課金だけ発生する。
+			if llm.calls != 0 {
+				t.Errorf("弾いたのに LLM を呼んでいる: %d 回", llm.calls)
+			}
+		})
+	}
+}
+
+// 画像の上限はユースケース層が持つが、その判定はボディを全部メモリに載せた
+// あとにしかできない。読み込み自体にも歯止めを置いてある。
+func TestInterpretAnnotation_RejectsOversizedBody(t *testing.T) {
+	t.Parallel()
+
+	llm := &stubLLM{text: validInterpretation}
+	r := newInterpretRouter(t, llm)
+
+	id := createBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	// base64 は 4/3 に膨らむので、上限の倍を送れば読み込みの歯止めに当たる。
+	body := imageBody("image/png", usecase.MaxImageBytes*2)
+
+	rec := do(t, r, http.MethodPost, interpretPath(id, "annot-1"), body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+	}
+	if llm.calls != 0 {
+		t.Errorf("弾いたのに LLM を呼んでいる: %d 回", llm.calls)
 	}
 }
 

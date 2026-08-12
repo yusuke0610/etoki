@@ -170,7 +170,7 @@ func TestInterpret_Succeeds(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, boards := newInterpretService(t, newBoard(interpretScene), llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
@@ -204,7 +204,7 @@ func TestInterpret_BuildsPrompt(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1"); err != nil {
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
 
@@ -225,9 +225,104 @@ func TestInterpret_BuildsPrompt(t *testing.T) {
 	if !strings.Contains(req.System, "epic") || !strings.Contains(req.System, "localId") {
 		t.Errorf("システム指示にスキーマの説明が無い:\n%s", req.System)
 	}
-	// 画像は #9 で扱う。今は載せない。
+	// 画像なしでも解釈は成立する（ADR 0018）。無いものを添えたことにしない。
 	if len(req.Images) != 0 {
 		t.Errorf("len(Images) = %d, want 0", len(req.Images))
+	}
+	if strings.Contains(req.Text, "画像") {
+		t.Errorf("画像を渡していないのに画像の話がプロンプトにある:\n%s", req.Text)
+	}
+}
+
+// pngImage はテスト用の画像。中身は検証していないので PNG である必要はない。
+func pngImage(size int) port.Image {
+	return port.Image{MediaType: "image/png", Data: make([]byte, size)}
+}
+
+func TestInterpret_PassesImageToLLM(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+	img := pngImage(16)
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", []port.Image{img}); err != nil {
+		t.Fatalf("Interpret() = %v", err)
+	}
+
+	req := llm.requests[0]
+	if len(req.Images) != 1 {
+		t.Fatalf("len(Images) = %d, want 1", len(req.Images))
+	}
+	if req.Images[0].MediaType != "image/png" || len(req.Images[0].Data) != 16 {
+		t.Errorf("Images[0] = %+v", req.Images[0])
+	}
+	// テキストと画像の役割分担を書かないと、モデルは画像の文字を読み直して
+	// 囲みの外の文言まで拾う。
+	if !strings.Contains(req.Text, "画像") {
+		t.Errorf("画像の役割がプロンプトに書かれていない:\n%s", req.Text)
+	}
+	// 文言はテキスト一覧が正。ここが崩れると、囲みの範囲を frame で決めている
+	// 意味が無くなる。
+	if !strings.Contains(req.Text, "テキスト一覧") {
+		t.Errorf("文言の正がどちらかがプロンプトに書かれていない:\n%s", req.Text)
+	}
+}
+
+// 再送は元の指示ごと組み立て直す。画像を落とすと、2 回目以降は入力が変わる。
+func TestInterpret_KeepsImageOnRetry(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{invalidLLMOutput, validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+	if _, err := svc.Interpret(
+		t.Context(), "board-1", "annot-1", []port.Image{pngImage(16)}); err != nil {
+		t.Fatalf("Interpret() = %v", err)
+	}
+
+	if len(llm.requests) != 2 {
+		t.Fatalf("LLM 呼び出し回数 = %d, want 2", len(llm.requests))
+	}
+	if len(llm.requests[1].Images) != 1 {
+		t.Errorf("再送の len(Images) = %d, want 1", len(llm.requests[1].Images))
+	}
+}
+
+// 上限を超えても縮小せず弾く。黙って劣化させると、渡したはずの情報が消えた
+// ことに気づけない（ADR 0018）。
+func TestInterpret_RejectsInvalidImages(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string][]port.Image{
+		"上限を超えた画像": {pngImage(usecase.MaxImageBytes + 1)},
+		"枚数が上限を超える": func() []port.Image {
+			imgs := make([]port.Image, usecase.MaxImages+1)
+			for i := range imgs {
+				imgs[i] = pngImage(16)
+			}
+			return imgs
+		}(),
+		"PNG 以外": {{MediaType: "image/jpeg", Data: make([]byte, 16)}},
+		"中身が空":   {{MediaType: "image/png"}},
+	}
+
+	for name, images := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			llm := &fakeLLM{responses: []string{validLLMOutput}}
+			svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+			_, err := svc.Interpret(t.Context(), "board-1", "annot-1", images)
+			if !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("Interpret() = %v, want ErrInvalidInput", err)
+			}
+			// 弾くと決めた入力で LLM を叩くと、弾いたのに課金だけ発生する。
+			if len(llm.requests) != 0 {
+				t.Errorf("弾いたのに LLM を呼んでいる: %d 回", len(llm.requests))
+			}
+		})
 	}
 }
 
@@ -254,7 +349,7 @@ func TestInterpret_PassesGranularityInstruction(t *testing.T) {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
 			svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-			_, _ = svc.Interpret(t.Context(), "board-1", "annot-1")
+			_, _ = svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 
 			if len(llm.requests) == 0 {
 				t.Fatal("LLM が呼ばれていない")
@@ -273,7 +368,7 @@ func TestInterpret_RetriesWithCorrections(t *testing.T) {
 	llm := &fakeLLM{responses: []string{invalidLLMOutput, validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
@@ -309,7 +404,7 @@ func TestInterpret_GivesUpAfterMaxAttempts(t *testing.T) {
 	boards := &fakeBoards{board: newBoard(interpretScene)}
 	svc := usecase.NewInterpretationService(boards, llm, usecase.WithMaxAttempts(2))
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrInterpretationFailed) {
 		t.Fatalf("Interpret() = %v, want ErrInterpretationFailed", err)
 	}
@@ -339,7 +434,7 @@ func TestInterpret_AcceptsFencedOutput(t *testing.T) {
 			llm := &fakeLLM{responses: []string{output}}
 			svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-			result, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+			result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 			if err != nil {
 				t.Fatalf("Interpret() = %v", err)
 			}
@@ -361,7 +456,7 @@ func TestInterpret_RetriesOnUnparsableOutput(t *testing.T) {
 	llm := &fakeLLM{responses: []string{"JSON は出せません。", validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1"); err != nil {
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
 	if len(llm.requests) != 2 {
@@ -380,7 +475,7 @@ func TestInterpret_DoesNotRetryTransportErrors(t *testing.T) {
 	llm := &fakeLLM{err: wantErr}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Interpret() = %v, want %v", err, wantErr)
 	}
@@ -405,7 +500,7 @@ func TestInterpret_NotFound(t *testing.T) {
 		llm := &fakeLLM{responses: []string{validLLMOutput}}
 		svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-		_, err := svc.Interpret(t.Context(), "no-such-board", "annot-1")
+		_, err := svc.Interpret(t.Context(), "no-such-board", "annot-1", nil)
 		if !errors.Is(err, usecase.ErrBoardNotFound) {
 			t.Fatalf("Interpret() = %v, want ErrBoardNotFound", err)
 		}
@@ -420,7 +515,7 @@ func TestInterpret_NotFound(t *testing.T) {
 		llm := &fakeLLM{responses: []string{validLLMOutput}}
 		svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-		_, err := svc.Interpret(t.Context(), "board-1", "no-such-annot")
+		_, err := svc.Interpret(t.Context(), "board-1", "no-such-annot", nil)
 		if !errors.Is(err, usecase.ErrAnnotationNotFound) {
 			t.Fatalf("Interpret() = %v, want ErrAnnotationNotFound", err)
 		}
@@ -437,7 +532,7 @@ func TestInterpret_NotFound(t *testing.T) {
 		llm := &fakeLLM{responses: []string{validLLMOutput}}
 		svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-		_, err := svc.Interpret(t.Context(), "board-1", "f1")
+		_, err := svc.Interpret(t.Context(), "board-1", "f1", nil)
 		if !errors.Is(err, usecase.ErrAnnotationNotFound) {
 			t.Fatalf("Interpret() = %v, want ErrAnnotationNotFound", err)
 		}
@@ -445,7 +540,7 @@ func TestInterpret_NotFound(t *testing.T) {
 }
 
 // 図形と矢印だけの囲みがありうるので、テキストが無くても打ち切らない。
-// 中身を渡す手段は画像（#9）であって、ここで弾くと後で解禁し直すことになる。
+// その中身は画像でしか渡せないので、ここで弾くと画像を添えた解釈まで塞ぐ。
 func TestInterpret_InterpretsAnnotationWithoutTexts(t *testing.T) {
 	t.Parallel()
 
@@ -454,7 +549,7 @@ func TestInterpret_InterpretsAnnotationWithoutTexts(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1"); err != nil {
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
 	if len(llm.requests) != 1 {
@@ -474,7 +569,7 @@ func TestInterpret_IgnoresNonPositiveMaxAttempts(t *testing.T) {
 	boards := &fakeBoards{board: newBoard(interpretScene)}
 	svc := usecase.NewInterpretationService(boards, llm, usecase.WithMaxAttempts(0))
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1"); err != nil {
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
 	if len(llm.requests) != 1 {
@@ -490,7 +585,7 @@ func TestInterpret_RejectsUnknownGranularity(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrInvalidInput) {
 		t.Fatalf("Interpret() = %v, want ErrInvalidInput", err)
 	}
@@ -511,7 +606,7 @@ func TestInterpret_EnforcesGranularityOnOutput(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput, onlyIssues}}
 	svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1")
+	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
 		t.Fatalf("Interpret() = %v", err)
 	}
