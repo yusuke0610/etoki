@@ -300,6 +300,13 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/interpret$/.test(url.pathname),
     async (route) => {
+      // POST 以外は捕まえず、キャッチオールの 500 に落とす。何でも受けると、
+      // フロントが契約と違うメソッドで叩いていても緑になる。
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+
       mock.interpretRequests.push(
         (route.request().postDataJSON() ?? {}) as InterpretRequest,
       );
