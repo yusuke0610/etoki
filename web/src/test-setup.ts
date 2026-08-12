@@ -31,3 +31,16 @@ const stub2DContext = {
 HTMLCanvasElement.prototype.getContext = function getContext(contextID: string): unknown {
   return contextID === "2d" ? stub2DContext : null;
 } as typeof HTMLCanvasElement.prototype.getContext;
+
+// jsdom の Blob は arrayBuffer を実装していない。ブラウザにはあるので、無い側に
+// 合わせて FileReader で書き直すのではなく、ここで補う。
+if (typeof Blob.prototype.arrayBuffer !== "function") {
+  Blob.prototype.arrayBuffer = function arrayBuffer(this: Blob): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}

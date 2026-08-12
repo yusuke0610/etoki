@@ -34,6 +34,79 @@ export function board(): BoardDetail {
   };
 }
 
+/**
+ * 注釈の frame を 1 つ持つシーン。
+ *
+ * ほとんどの spec は空のシーンで足りるが、画像の書き出しは frame の実体を要る。
+ * frame の ID は uncreated の注釈に合わせてあり、パネルの「ログイン」と同じ
+ * ものを指す。
+ */
+export function annotatedScene(): string {
+  const base = {
+    angle: 0,
+    strokeColor: "#1e1e1e",
+    backgroundColor: "transparent",
+    fillStyle: "solid",
+    strokeWidth: 1,
+    strokeStyle: "solid",
+    roughness: 1,
+    opacity: 100,
+    groupIds: [],
+    roundness: null,
+    seed: 1,
+    version: 1,
+    versionNonce: 1,
+    isDeleted: false,
+    boundElements: null,
+    updated: 1,
+    link: null,
+    locked: false,
+    index: null,
+  };
+
+  return JSON.stringify({
+    type: "excalidraw",
+    version: 2,
+    source: "etoki-e2e",
+    elements: [
+      {
+        ...base,
+        id: ANNOTATION_IDS.uncreated,
+        type: "frame",
+        name: "ログイン",
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 300,
+        frameId: null,
+        // これがあって初めて注釈になる。frame 単体を条件にすると、ブレスト中に
+        // 使った frame まで注釈と誤認する。
+        customData: { etoki: { granularity: "" } },
+      },
+      {
+        ...base,
+        id: "text-in-frame",
+        type: "text",
+        x: 40,
+        y: 40,
+        width: 200,
+        height: 24,
+        text: "ログインの入口",
+        originalText: "ログインの入口",
+        fontSize: 20,
+        fontFamily: 1,
+        textAlign: "left",
+        verticalAlign: "top",
+        lineHeight: 1.25,
+        containerId: null,
+        frameId: ANNOTATION_IDS.uncreated,
+      },
+    ],
+    appState: {},
+    files: {},
+  });
+}
+
 /** まだ作成先を選んでいないボード。開くとリポジトリ選択に入る。 */
 export function unselectedBoard(): BoardDetail {
   return {
@@ -189,6 +262,7 @@ export function baseMock(): ApiMock {
     details: { [detail.id]: detail },
     annotations: { [detail.id]: annotations() },
     interpret: { status: 200, body: interpretation() },
+    interpretRequests: [],
     createItems: { status: 201, body: createdRun() },
     // 既定は認証を設定していない構成。ログインの導線を見る spec だけが
     // 書き換える。

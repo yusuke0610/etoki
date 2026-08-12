@@ -11,6 +11,7 @@ import type {
   CreatedRun,
   ErrorResponse,
   Interpretation,
+  InterpretRequest,
   LoginResponse,
   Project,
   Repository,
@@ -38,6 +39,13 @@ export type ApiMock = {
   /** ボード ID をキーにした注釈の状態。 */
   annotations: Record<string, AnnotationStatus[]>;
   interpret: Reply<Interpretation>;
+  /**
+   * 解釈で受け取ったリクエストボディ。届いた順に積む。
+   *
+   * 画像を添えているかを確かめるために持つ。画像はフロントが画面から書き出す
+   * ので、送れたかどうかは実ブラウザでしか分からない（ADR 0018）。
+   */
+  interpretRequests: InterpretRequest[];
   createItems: Reply<CreatedRun>;
   /** 作成先の候補。リポジトリ選択の画面が読む。 */
   repositories: Reply<Repository[]>;
@@ -292,6 +300,9 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/interpret$/.test(url.pathname),
     async (route) => {
+      mock.interpretRequests.push(
+        (route.request().postDataJSON() ?? {}) as InterpretRequest,
+      );
       await json(route, mock.interpret.status, mock.interpret.body);
     },
   );

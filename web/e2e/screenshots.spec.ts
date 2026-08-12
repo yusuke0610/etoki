@@ -51,6 +51,22 @@ test.describe("スクリーンショット", () => {
     await shot(page, "04-created");
   });
 
+  // 未保存のあいだは解釈できない。テキストは保存済みシーンから、画像は画面から
+  // 取るので、揃っていないと入力が食い違う（ADR 0018）。
+  test("未保存で解釈できない状態を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+
+    await annotationCard(page, "ログイン")
+      .getByText("保存してから解釈できます", { exact: false })
+      .waitFor();
+    await shot(page, "05-interpret-blocked");
+  });
+
   // ブレストに入る前の画面。作成先を選ばないとキャンバスが出ない（ADR 0014）。
   test("作成先の選択を撮る", async ({ page }) => {
     const mock = baseMock();
