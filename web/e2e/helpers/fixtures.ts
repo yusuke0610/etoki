@@ -7,7 +7,7 @@ import type {
   Repository,
   SessionStatus,
 } from "../../src/api/types";
-import { emptyScene, type ApiMock } from "./api";
+import { emptyScene, summarize, type ApiMock } from "./api";
 
 export const BOARD_ID = "board-1";
 
@@ -30,6 +30,9 @@ export function board(): BoardDetail {
     repositoryOwner: "acme",
     repositoryName: "web",
     projectId: "PVT_1",
+    // 表示名は作成先を選んだ時点のスナップショット（ADR 0019）。
+    projectNumber: 1,
+    projectTitle: "ロードマップ",
     targetLocked: false,
   };
 }
@@ -116,6 +119,8 @@ export function unselectedBoard(): BoardDetail {
     repositoryOwner: "",
     repositoryName: "",
     projectId: "",
+    projectNumber: 0,
+    projectTitle: "",
   };
 }
 
@@ -250,15 +255,7 @@ export function createdRun(): CreatedRun {
 export function baseMock(): ApiMock {
   const detail = board();
   return {
-    boards: [
-      {
-        id: detail.id,
-        name: detail.name,
-        role: detail.role,
-        createdAt: detail.createdAt,
-        updatedAt: detail.updatedAt,
-      },
-    ],
+    boards: [summarize(detail)],
     details: { [detail.id]: detail },
     annotations: { [detail.id]: annotations() },
     interpret: { status: 200, body: interpretation() },

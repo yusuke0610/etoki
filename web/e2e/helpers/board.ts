@@ -13,6 +13,27 @@ export async function openBoard(page: Page, name: string): Promise<void> {
   await expect(page.getByRole("heading", { name: "注釈" })).toBeVisible();
 }
 
+/**
+ * 作成先の選択画面。
+ *
+ * **リポジトリを押すときは必ずここで絞る。** サイドバーの木にも同じ
+ * `acme/web` という名前のボタンが並ぶので（ADR 0019）、ページ全体から
+ * 名前で引くと 2 つ見つかって落ちる。
+ */
+export function picker(page: Page): Locator {
+  return page.locator(".picker");
+}
+
+/** リポジトリと Project を順に選んで作成先を決める。 */
+export async function chooseTarget(
+  page: Page,
+  repository: string | RegExp,
+  project: string,
+): Promise<void> {
+  await picker(page).getByRole("button", { name: repository }).click();
+  await picker(page).getByRole("button", { name: project }).click();
+}
+
 /** 注釈 1 つぶんのカード。名前で絞り込む。 */
 export function annotationCard(page: Page, name: string): Locator {
   return page.locator("li.annotation").filter({ hasText: name });

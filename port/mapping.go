@@ -28,9 +28,17 @@ type BoardTarget struct {
 	RepositoryName string
 	// ProjectID は draft issue を作る Projects v2 の node ID。
 	ProjectID string
+	// ProjectNumber は Project の番号。表示用のスナップショット（ADR 0019）。
+	ProjectNumber int
+	// ProjectTitle は Project の名前。表示用のスナップショット（ADR 0019）。
+	ProjectTitle string
 }
 
 // Selected は作成先が選ばれているかどうかを返す。
+//
+// **見るのは 3 つだけ。** ProjectNumber と ProjectTitle は表示用であり、
+// 取得できていなくても作成先は決まっている（ADR 0019）。ここに足すと、
+// 名前を送らずに設定した正しい作成先が「未選択」に落ちる。
 func (t BoardTarget) Selected() bool {
 	return t.RepositoryOwner != "" && t.RepositoryName != "" && t.ProjectID != ""
 }

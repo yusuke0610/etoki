@@ -121,6 +121,14 @@ type BoardDetail struct {
 	// ProjectID draft issue を作る Projects v2 の node ID。未選択なら空文字
 	ProjectID string `json:"projectId"`
 
+	// ProjectNumber 作成先 Project の番号。作成先を選んだ時点のスナップショット
+	// （ADR 0019）。取得していなければ 0
+	ProjectNumber int `json:"projectNumber"`
+
+	// ProjectTitle 作成先 Project の名前。作成先を選んだ時点のスナップショット
+	// （ADR 0019）。取得していなければ空文字
+	ProjectTitle string `json:"projectTitle"`
+
 	// RepositoryName 作成先リポジトリの名前。未選択なら空文字
 	RepositoryName string `json:"repositoryName"`
 
@@ -177,11 +185,32 @@ type BoardMember struct {
 //     あり、閲覧者に許すのは「閲覧」ではない
 type BoardRole string
 
-// BoardSummary 一覧で返すボード。シーンは大きいので含めない
+// BoardSummary 一覧で返すボード。シーンは大きいので含めない。
+//
+// 作成先は含める。一覧をリポジトリと Project でまとめて見せるため
+// （ADR 0019）。含めないのは `targetLocked` だけで、これは算出に run の
+// 照会が要り、ボード数だけ問い合わせが増える。
 type BoardSummary struct {
 	CreatedAt time.Time `json:"createdAt"`
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+
+	// ProjectID draft issue を作る Projects v2 の node ID。未選択なら空文字
+	ProjectID string `json:"projectId"`
+
+	// ProjectNumber 作成先 Project の番号。作成先を選んだ時点のスナップショット
+	// （ADR 0019）。取得していなければ 0
+	ProjectNumber int `json:"projectNumber"`
+
+	// ProjectTitle 作成先 Project の名前。作成先を選んだ時点のスナップショット
+	// （ADR 0019）。取得していなければ空文字
+	ProjectTitle string `json:"projectTitle"`
+
+	// RepositoryName 作成先リポジトリの名前。未選択なら空文字
+	RepositoryName string `json:"repositoryName"`
+
+	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
+	RepositoryOwner string `json:"repositoryOwner"`
 
 	// Role ボードに対する権限の強さ（ADR 0017）。
 	//
@@ -198,8 +227,17 @@ type BoardSummary struct {
 //
 // リポジトリと Project の両方を持つ。保存先として効くのは projectId
 // だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
+//
+// projectNumber と projectTitle は**表示用のスナップショット**であり、
+// 作成先そのものではない（ADR 0019）。未選択の判定にも、固定済みかどうかの
+// 判定にも使わない。選ばせた画面が見せていた名前をそのまま送る。
+//
+// 表示名は任意。省略すると「名前を知らない」（0 と空文字）として保存する。
+// 必須にすると、画面を通さない呼び出し側が値をでっち上げることになる。
 type BoardTarget struct {
 	ProjectID       string `json:"projectId"`
+	ProjectNumber   int    `json:"projectNumber,omitempty"`
+	ProjectTitle    string `json:"projectTitle,omitempty"`
 	RepositoryName  string `json:"repositoryName"`
 	RepositoryOwner string `json:"repositoryOwner"`
 }
@@ -217,7 +255,15 @@ type CreateBoardRequest struct {
 	Name string `json:"name"`
 
 	// ProjectID draft issue を作る Projects v2 の node ID
-	ProjectID       string `json:"projectId"`
+	ProjectID string `json:"projectId"`
+
+	// ProjectNumber 作成先 Project の番号。表示用のスナップショット（ADR 0019）。
+	// 省略すると 0（名前を知らない）で保存する
+	ProjectNumber int `json:"projectNumber,omitempty"`
+
+	// ProjectTitle 作成先 Project の名前。表示用のスナップショット（ADR 0019）。
+	// 省略すると空文字（名前を知らない）で保存する
+	ProjectTitle    string `json:"projectTitle,omitempty"`
 	RepositoryName  string `json:"repositoryName"`
 	RepositoryOwner string `json:"repositoryOwner"`
 

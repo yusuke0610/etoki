@@ -6,6 +6,7 @@ import { ApiError, authApi, boardsApi } from "./api/boards";
 import type { BoardDetail, BoardSummary, BoardTarget, SessionStatus } from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
 import { BoardPage } from "./board/BoardPage";
+import { BoardTree } from "./board/BoardTree";
 import { RepositoryPicker } from "./board/RepositoryPicker";
 
 export function App() {
@@ -165,19 +166,15 @@ export function App() {
           </button>
         </form>
 
-        <ul className="board-list">
-          {boards.map((b) => (
-            <li key={b.id}>
-              <button
-                type="button"
-                className={b.id === current?.id ? "active" : ""}
-                onClick={() => void open(b.id)}
-              >
-                {b.name}
-              </button>
-            </li>
-          ))}
-        </ul>
+        {/*
+          一覧はリポジトリと Project でまとめる（ADR 0019）。作成先はボードの
+          属性なので、開くまで分からないままだと取り違えたまま作成に進める。
+        */}
+        <BoardTree
+          boards={boards}
+          currentId={current?.id ?? null}
+          onOpen={(id) => void open(id)}
+        />
       </nav>
 
       <main className="main">

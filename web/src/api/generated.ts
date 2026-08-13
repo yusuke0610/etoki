@@ -540,7 +540,13 @@ export interface components {
         SetMemberRoleRequest: {
             role: components["schemas"]["BoardRole"];
         };
-        /** @description 一覧で返すボード。シーンは大きいので含めない */
+        /**
+         * @description 一覧で返すボード。シーンは大きいので含めない。
+         *
+         *     作成先は含める。一覧をリポジトリと Project でまとめて見せるため
+         *     （ADR 0019）。含めないのは `targetLocked` だけで、これは算出に run の
+         *     照会が要り、ボード数だけ問い合わせが増える。
+         */
         BoardSummary: {
             id: string;
             name: string;
@@ -549,22 +555,27 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
-        };
-        /**
-         * @description シーンと作成先を含むボード。
-         *
-         *     作成先は一覧（BoardSummary）には含めない。`targetLocked` の算出に
-         *     run の照会が要るので、ボード数だけ問い合わせが増える。
-         */
-        BoardDetail: components["schemas"]["BoardSummary"] & {
-            /** @description Excalidraw のシーン JSON をそのまま入れた文字列 */
-            scene: string;
             /** @description 作成先リポジトリの所有者。未選択なら空文字 */
             repositoryOwner: string;
             /** @description 作成先リポジトリの名前。未選択なら空文字 */
             repositoryName: string;
             /** @description draft issue を作る Projects v2 の node ID。未選択なら空文字 */
             projectId: string;
+            /**
+             * @description 作成先 Project の番号。作成先を選んだ時点のスナップショット
+             *     （ADR 0019）。取得していなければ 0
+             */
+            projectNumber: number;
+            /**
+             * @description 作成先 Project の名前。作成先を選んだ時点のスナップショット
+             *     （ADR 0019）。取得していなければ空文字
+             */
+            projectTitle: string;
+        };
+        /** @description シーンと作成先の固定状態を加えたボード */
+        BoardDetail: components["schemas"]["BoardSummary"] & {
+            /** @description Excalidraw のシーン JSON をそのまま入れた文字列 */
+            scene: string;
             /**
              * @description 作成先を変更できないことを表す。そのボードで draft issue を
              *     1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
@@ -577,11 +588,20 @@ export interface components {
          *
          *     リポジトリと Project の両方を持つ。保存先として効くのは projectId
          *     だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
+         *
+         *     projectNumber と projectTitle は**表示用のスナップショット**であり、
+         *     作成先そのものではない（ADR 0019）。未選択の判定にも、固定済みかどうかの
+         *     判定にも使わない。選ばせた画面が見せていた名前をそのまま送る。
+         *
+         *     表示名は任意。省略すると「名前を知らない」（0 と空文字）として保存する。
+         *     必須にすると、画面を通さない呼び出し側が値をでっち上げることになる。
          */
         BoardTarget: {
             repositoryOwner: string;
             repositoryName: string;
             projectId: string;
+            projectNumber?: number;
+            projectTitle?: string;
         };
         /** @description 作成先を選ぶときに見せるリポジトリ */
         Repository: {
@@ -614,6 +634,16 @@ export interface components {
             repositoryName: string;
             /** @description draft issue を作る Projects v2 の node ID */
             projectId: string;
+            /**
+             * @description 作成先 Project の番号。表示用のスナップショット（ADR 0019）。
+             *     省略すると 0（名前を知らない）で保存する
+             */
+            projectNumber?: number;
+            /**
+             * @description 作成先 Project の名前。表示用のスナップショット（ADR 0019）。
+             *     省略すると空文字（名前を知らない）で保存する
+             */
+            projectTitle?: string;
             /** @description 省略すると空のシーンで作る */
             scene?: string;
         };
