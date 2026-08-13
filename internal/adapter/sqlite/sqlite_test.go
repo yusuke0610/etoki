@@ -574,6 +574,93 @@ func TestBoard_RoundTrip(t *testing.T) {
 	}
 }
 
+// D-1a: 作成先の表示名も一緒に読み戻せる（ADR 0019）。
+//
+// project_id は不透明な node ID なので、一覧を Project 名でまとめるには
+// 選んだ時点の番号と名前が要る。Create と UpdateTarget の両方で残ること。
+func TestBoard_TargetDisplayNameRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+
+	created := port.BoardTarget{
+		RepositoryOwner: "acme",
+		RepositoryName:  "web",
+		ProjectID:       "PVT_1",
+		ProjectNumber:   3,
+		ProjectTitle:    "ロードマップ",
+	}
+	if err := repo.Create(t.Context(), port.Board{
+		ID: "board-1", Name: "b", Scene: "{}", Target: created,
+		CreatedAt: baseTime, UpdatedAt: baseTime,
+	}, ""); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := repo.Find(t.Context(), "", "board-1")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.Board.Target != created {
+		t.Errorf("Target = %+v, want %+v", got.Board.Target, created)
+	}
+
+	updated := port.BoardTarget{
+		RepositoryOwner: "acme",
+		RepositoryName:  "api",
+		ProjectID:       "PVT_2",
+		ProjectNumber:   7,
+		ProjectTitle:    "技術的負債",
+	}
+	if err := repo.UpdateTarget(t.Context(), "", "board-1", updated, baseTime); err != nil {
+		t.Fatalf("UpdateTarget: %v", err)
+	}
+
+	got, err = repo.Find(t.Context(), "", "board-1")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.Board.Target != updated {
+		t.Errorf("Target = %+v, want %+v", got.Board.Target, updated)
+	}
+}
+
+// D-1b: 表示名を送らずに設定した作成先は「名前を知らない」として残る。
+//
+// 表示名は任意（ADR 0019）。0 と空文字で保存され、それでも作成先としては
+// 選ばれている。ここが崩れると、画面を通さずに設定したボードが未選択に見える。
+func TestBoard_TargetWithoutDisplayNameIsStillSelected(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+
+	target := port.BoardTarget{
+		RepositoryOwner: "acme",
+		RepositoryName:  "web",
+		ProjectID:       "PVT_1",
+	}
+	if err := repo.Create(t.Context(), port.Board{
+		ID: "board-1", Name: "b", Scene: "{}", Target: target,
+		CreatedAt: baseTime, UpdatedAt: baseTime,
+	}, ""); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := repo.Find(t.Context(), "", "board-1")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.Board.Target.ProjectNumber != 0 || got.Board.Target.ProjectTitle != "" {
+		t.Errorf("表示名 = %d/%q, want 0 と空文字",
+			got.Board.Target.ProjectNumber, got.Board.Target.ProjectTitle)
+	}
+	if !got.Board.Target.Selected() {
+		t.Error("表示名が無いだけで未選択になっている")
+	}
+}
+
 // D-2: シーン更新で updated_at は進み、created_at は変わらない。
 func TestBoard_UpdateScene(t *testing.T) {
 	t.Parallel()

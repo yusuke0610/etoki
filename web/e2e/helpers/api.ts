@@ -110,6 +110,9 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       repositoryOwner: target.repositoryOwner,
       repositoryName: target.repositoryName,
       projectId: target.projectId,
+      // 表示名は任意（ADR 0019）。送ってこなければ「名前を知らない」で残る。
+      projectNumber: target.projectNumber ?? 0,
+      projectTitle: target.projectTitle ?? "",
       targetLocked: false,
     };
   };
@@ -190,7 +193,14 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       }
 
       const target = route.request().postDataJSON() as BoardTarget;
-      const next: BoardDetail = { ...detail, ...target };
+      const next: BoardDetail = {
+        ...detail,
+        ...target,
+        // 表示名は任意なので、送られてこなければ「名前を知らない」に落とす。
+        // undefined のまま混ぜると、契約では必須の項目が消える。
+        projectNumber: target.projectNumber ?? 0,
+        projectTitle: target.projectTitle ?? "",
+      };
       mock.details[id] = next;
       mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
       await json(route, 200, next);
@@ -391,13 +401,24 @@ function boardIdOf(route: Route): string {
   return segments[3] ?? "";
 }
 
-function summarize(b: BoardDetail): BoardSummary {
+/**
+ * 詳細から一覧の 1 件を作る。
+ *
+ * 一覧は作成先も返す（ADR 0019）。詰め替えを spec ごとに手で書くと、契約に
+ * 項目が増えたときに直す場所が散る。
+ */
+export function summarize(b: BoardDetail): BoardSummary {
   return {
     id: b.id,
     name: b.name,
     role: b.role,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
+    repositoryOwner: b.repositoryOwner,
+    repositoryName: b.repositoryName,
+    projectId: b.projectId,
+    projectNumber: b.projectNumber,
+    projectTitle: b.projectTitle,
   };
 }
 

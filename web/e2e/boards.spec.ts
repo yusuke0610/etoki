@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { openBoard } from "./helpers/board";
-import { baseMock } from "./helpers/fixtures";
+import { installApi, summarize } from "./helpers/api";
+import { chooseTarget, openBoard } from "./helpers/board";
+import { baseMock, board, unselectedBoard } from "./helpers/fixtures";
 
 test.describe("ボード", () => {
   test("一覧から選ぶとキャンバスと注釈パネルが開く", async ({ page }) => {
@@ -40,8 +40,7 @@ test.describe("ボード", () => {
       page.locator(".board-list").getByRole("button", { name: "決済フローのブレスト" }),
     ).toHaveCount(0);
 
-    await page.getByRole("button", { name: "acme/web" }).click();
-    await page.getByRole("button", { name: "#1 ロードマップ" }).click();
+    await chooseTarget(page, "acme/web", "#1 ロードマップ");
 
     await expect(
       page.getByRole("heading", { name: "決済フローのブレスト", level: 1 }),
@@ -51,6 +50,64 @@ test.describe("ボード", () => {
     await expect(
       page.locator(".board-list").getByRole("button", { name: "決済フローのブレスト" }),
     ).toBeVisible();
+  });
+
+  // 作成先はボードの属性なので、開くまで分からないと取り違えたまま作成に
+  // 進める。一覧をリポジトリ → Project でまとめて見せる（ADR 0019）。
+  test("一覧は作成先ごとにまとまり、未選択は末尾に出る", async ({ page }) => {
+    const mock = baseMock();
+    const other = {
+      ...board(),
+      id: "board-other",
+      name: "別プロジェクトのブレスト",
+      projectId: "PVT_2",
+      projectNumber: 4,
+      projectTitle: "技術的負債",
+    };
+    const legacy = unselectedBoard();
+
+    mock.boards = [summarize(other), ...mock.boards, summarize(legacy)];
+    mock.details[other.id] = other;
+    mock.details[legacy.id] = legacy;
+    mock.annotations[other.id] = [];
+    mock.annotations[legacy.id] = [];
+
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const tree = page.locator(".board-tree");
+    // 枝はリポジトリ、その下が Project、その下がボード。同じリポジトリの
+    // Project 違いは 1 つの枝にまとまる。
+    await expect(tree.getByRole("button", { name: "acme/web" })).toHaveCount(1);
+    await expect(
+      tree.getByRole("button", { name: "#4 技術的負債", exact: true }),
+    ).toBeVisible();
+
+    // 作成先が未選択なのは移行前のボードだけ。末尾にまとめる。
+    // 三角は装飾なので読み上げ名には出ない。名前で確かめる。
+    const branches = tree.getByRole("button", { expanded: true });
+    await expect(branches.last()).toHaveAccessibleName("作成先なし");
+    await expect(tree.getByRole("button", { name: legacy.name })).toBeVisible();
+  });
+
+  // 既定は開いた状態。畳むのは利用者が押したときだけ（中核思想 3）。
+  test("枝を畳むとボードが隠れ、もう一度押すと戻る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+
+    const tree = page.locator(".board-tree");
+    const branch = tree.getByRole("button", { name: "acme/web" });
+    const boardButton = tree.getByRole("button", { name: "認証まわりのブレスト" });
+
+    await expect(branch).toHaveAttribute("aria-expanded", "true");
+    await expect(boardButton).toBeVisible();
+
+    await branch.click();
+    await expect(branch).toHaveAttribute("aria-expanded", "false");
+    await expect(boardButton).toHaveCount(0);
+
+    await branch.click();
+    await expect(boardButton).toBeVisible();
   });
 
   test("一覧の取得に失敗したらエラーを出し、閉じられる", async ({ page }) => {

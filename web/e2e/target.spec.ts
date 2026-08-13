@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { drawRectangle, openBoard } from "./helpers/board";
+import { installApi, summarize } from "./helpers/api";
+import { chooseTarget, drawRectangle, openBoard, picker } from "./helpers/board";
 import { BOARD_ID, baseMock, board, unselectedBoard } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
@@ -12,16 +12,7 @@ function withUnselected() {
   const mock = baseMock();
   const board = unselectedBoard();
 
-  mock.boards = [
-    {
-      id: board.id,
-      name: board.name,
-      role: board.role,
-      createdAt: board.createdAt,
-      updatedAt: board.updatedAt,
-    },
-    ...mock.boards,
-  ];
+  mock.boards = [summarize(board), ...mock.boards];
   mock.details[board.id] = board;
   mock.annotations[board.id] = [];
 
@@ -58,13 +49,19 @@ test.describe("作成先の選択", () => {
     await page.goto("/");
     await openUnselected(page);
 
-    await page.getByRole("button", { name: /acme\/web/ }).click();
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
 
     await expect(
       page.getByRole("heading", { name: "acme/web のプロジェクト" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "#1 ロードマップ" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "#4 技術的負債" })).toBeVisible();
+    await expect(
+      picker(page).getByRole("button", { name: "#1 ロードマップ" }),
+    ).toBeVisible();
+    await expect(
+      picker(page).getByRole("button", { name: "#4 技術的負債" }),
+    ).toBeVisible();
   });
 
   test("プロジェクトを選ぶとブレストに進み、作成先が見えている", async ({ page }) => {
@@ -72,8 +69,7 @@ test.describe("作成先の選択", () => {
     await page.goto("/");
     await openUnselected(page);
 
-    await page.getByRole("button", { name: /acme\/web/ }).click();
-    await page.getByRole("button", { name: "#1 ロードマップ" }).click();
+    await chooseTarget(page, /acme\/web/, "#1 ロードマップ");
 
     await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
     // どこに作られるのかは常に見えている必要がある。作った draft issue は
@@ -93,7 +89,9 @@ test.describe("作成先の選択", () => {
     await installApi(page, mock);
     await page.goto("/");
     await openUnselected(page);
-    await page.getByRole("button", { name: /acme\/web/ }).click();
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
 
     await expect(
       page.getByRole("button", { name: "#1 唯一のプロジェクト" }),
@@ -163,8 +161,7 @@ test.describe("作成先の選択", () => {
     await page.goto("/");
     await openUnselected(page);
 
-    await page.getByRole("button", { name: /acme\/web/ }).click();
-    await page.getByRole("button", { name: "#1 ロードマップ" }).click();
+    await chooseTarget(page, /acme\/web/, "#1 ロードマップ");
 
     await expect(page.getByRole("alert")).toContainText("作成先を設定できませんでした");
     // 失敗したのだからブレストには進ませない。
@@ -179,7 +176,9 @@ test.describe("作成先の選択", () => {
     await page.getByRole("button", { name: "作成先を変更" }).click();
     await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
 
-    await page.getByRole("button", { name: /acme\/api/ }).click();
+    await picker(page)
+      .getByRole("button", { name: /acme\/api/ })
+      .click();
     await expect(page.getByText("紐づく Projects v2 がありません")).toBeVisible();
 
     // やめればブレストに戻れる。未選択のときは戻る先が無いので出さない。

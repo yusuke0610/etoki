@@ -19,11 +19,16 @@ import (
 // 出し入れを分ける（ADR 0017）。
 func toSummary(a port.BoardAccess) apitypes.BoardSummary {
 	return apitypes.BoardSummary{
-		ID:        a.Board.ID,
-		Name:      a.Board.Name,
-		Role:      apitypes.BoardRole(a.Role),
-		CreatedAt: a.Board.CreatedAt,
-		UpdatedAt: a.Board.UpdatedAt,
+		ID:              a.Board.ID,
+		Name:            a.Board.Name,
+		Role:            apitypes.BoardRole(a.Role),
+		CreatedAt:       a.Board.CreatedAt,
+		UpdatedAt:       a.Board.UpdatedAt,
+		RepositoryOwner: a.Board.Target.RepositoryOwner,
+		RepositoryName:  a.Board.Target.RepositoryName,
+		ProjectID:       a.Board.Target.ProjectID,
+		ProjectNumber:   a.Board.Target.ProjectNumber,
+		ProjectTitle:    a.Board.Target.ProjectTitle,
 	}
 }
 
@@ -42,6 +47,8 @@ func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
 		RepositoryOwner: a.Board.Target.RepositoryOwner,
 		RepositoryName:  a.Board.Target.RepositoryName,
 		ProjectID:       a.Board.Target.ProjectID,
+		ProjectNumber:   a.Board.Target.ProjectNumber,
+		ProjectTitle:    a.Board.Target.ProjectTitle,
 		TargetLocked:    targetLocked,
 	}
 }
@@ -108,6 +115,8 @@ func (h *handlers) createBoard(c *gin.Context) {
 		RepositoryOwner: req.RepositoryOwner,
 		RepositoryName:  req.RepositoryName,
 		ProjectID:       req.ProjectID,
+		ProjectNumber:   req.ProjectNumber,
+		ProjectTitle:    req.ProjectTitle,
 	})
 	if err != nil {
 		h.fail(c, err)
@@ -161,6 +170,8 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 		RepositoryOwner: req.RepositoryOwner,
 		RepositoryName:  req.RepositoryName,
 		ProjectID:       req.ProjectID,
+		ProjectNumber:   req.ProjectNumber,
+		ProjectTitle:    req.ProjectTitle,
 	}
 
 	if err := h.boards.SetTarget(c.Request.Context(), id, target); err != nil {

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
+import { chooseTarget } from "./helpers/board";
 import { AUTHORIZE_URL, baseMock, signedIn } from "./helpers/fixtures";
 
 /** 認証を設定した構成のモック。既定は未ログイン。 */
@@ -136,8 +137,7 @@ test.describe("ログイン", () => {
     // 作成先を選ばないとボードは作られないので、選択まで進める（ADR 0017）。
     await page.getByLabel("ボード名").fill("失効の確認");
     await page.getByRole("button", { name: "次へ" }).click();
-    await page.getByRole("button", { name: "acme/web" }).click();
-    await page.getByRole("button", { name: "#1 ロードマップ" }).click();
+    await chooseTarget(page, "acme/web", "#1 ロードマップ");
     await sessionRefetch;
 
     await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
