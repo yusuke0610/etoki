@@ -166,10 +166,14 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
 要求できるのは GitHub App だけで、OAuth App では全リポジトリの読み書きを
 預かることになるためです。
 
+**作成先の Projects v2 は Organization 所有である必要があります。** 個人
+アカウントの Project は GitHub App からは触れません（後述）。
+
 1. [GitHub App を作る](https://github.com/settings/apps/new)
    - **Callback URL**: `http://127.0.0.1:5173/api/auth/callback`
      （`make dev` の場合。ブラウザがいるポートに合わせる）
-   - **Permissions**: `Metadata: Read-only` と `Projects: Read and write`
+   - **Repository permissions**: `Metadata: Read-only`
+   - **Organization permissions**: `Projects: Read and write`
    - Webhook は要りません（Active のチェックを外す）
 2. 使いたいリポジトリにインストールする。**候補に出るのはここで許可した
    リポジトリだけ**です。
@@ -189,6 +193,51 @@ export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき
 トークンは既定で 8 時間で失効しますが、`refresh_token` で自動更新するので
 再ログインは要りません。App の設定で「Expire user authorization tokens」を
 切っている場合も動きます。
+
+#### 個人アカウントの Projects v2 は使えない
+
+**GitHub App からはユーザー所有の Projects v2 に触れません。** GitHub App の
+権限には Projects v2 をユーザー所有のスコープで許可する項目が無く、Repository
+と Organization の permissions にしか `Projects` が現れないためです。
+
+`https://github.com/users/<login>/projects/N` を作成先にしようとすると、
+リポジトリの一覧までは通り、Project の取得で 502 になります。
+
+```
+github graphql: FORBIDDEN: Resource not accessible by integration
+```
+
+Project が 0 件のうちは空の 200 が返るので、**Project を作った瞬間に失敗し
+始めます。** 設定を触っていないのに壊れたように見えますが、原因はこれです。
+
+対処は Organization 所有にすることです。
+
+1. Organization を作る（**Free で足ります**。Projects v2 も使えます）
+2. リポジトリを移す。Settings → Danger Zone → Transfer ownership で
+   **1 つずつ**移せます。org を作っても全部を移す必要はありません
+3. **Project は org 側で作り直す。** Projects v2 にユーザー ↔ org の移管は
+   ありません。作ったらリポジトリに紐づけます。紐づけないと候補に出ません
+   （etoki が引くのは `repository.projectsV2` のため）
+4. App を org にインストールする
+
+4 で 2 つ引っかかります。**App を「Only on this account」で作っていると org に
+入れられません。** Where can this app be installed? を Any account に変えて
+ください。App を org 所有で作れば開かずに済みますが、client ID / secret を
+取り直すことになります。
+
+もう 1 つは権限です。**Organization permissions の `Projects` を足します。**
+Repository permissions にも同名の項目がありますが、org 所有の Projects v2 に
+効くのは Organization 側です。**権限を後から変えた場合、インストール側で承認
+するまで反映されません。** [installations](https://github.com/settings/installations)
+にバナーが出ていないか確認してください。
+
+最後にブラウザで**ログアウトして入り直します。** 新しいインストールと権限は
+トークンに反映されるので、サーバーの再起動では直りません。
+
+個人アカウントのまま試したいなら、GitHub App ではなく **PAT** を使ってください
+（認証は無効になり、ログイン画面は出ません）。ユーザー所有の Projects v2 を
+扱うには classic PAT の `repo` と `project` スコープが要ります。上の表に書いた
+fine-grained PAT の権限は、org / リポジトリ所有の Project 向けです。
 
 #### 認証を有効にすると、それ以前のボードは見えなくなる
 
