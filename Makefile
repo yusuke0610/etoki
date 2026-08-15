@@ -1,6 +1,46 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
+# devShell の外から呼ばれたら、nix develop の中で make をやり直す。
+#
+# devShell に入り忘れても道具の無いまま走らないようにするため。README と
+# CLAUDE.md の「すべて nix develop の中で実行する」を、書き手の記憶ではなく
+# Makefile 側で満たす。
+#
+# 印は flake.nix の devShell が渡す ETOKI_DEVSHELL を見る。IN_NIX_SHELL では
+# 判定しない。あれは「何かの nix shell の中」としか言わないので、別プロジェクト
+# の shell から呼ぶと包み直しを飛ばしてしまう。direnv を使っているなら
+# devShell がすでに有効なので、この分岐には来ない。
+ifndef ETOKI_DEVSHELL
+
+# 目標はまとめて 1 回だけ包む。ターゲットごとに包むと、dev のように $(MAKE) を
+# 呼ぶターゲットで nix develop が入れ子になる。
+NIX_GOALS := $(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))
+
+.PHONY: $(NIX_GOALS) nix-develop
+
+$(NIX_GOALS): nix-develop
+	@:
+
+nix-develop:
+	@command -v nix >/dev/null 2>&1 || { \
+		echo "nix が見つかりません。https://nixos.org/download を参照してください。" >&2; \
+		exit 1; \
+	}
+	@# 先頭の + は -n でもこの行を実行させる指定。飛ばすと make -n が
+	@# 「nix develop を呼ぶ」としか出さず、中で何が走るのか見えない。-n 自体は
+	@# MAKEFLAGS で中の make に渡るので、実際に走るのは包み直しまで。
+	@# warn-dirty は切る。作業中は常に uncommitted な木で走るので、残すと make の
+	@# たびに同じ警告が出て本当の警告が埋もれる。--no-print-directory は、
+	@# MAKELEVEL が上がって Entering/Leaving directory が出るのを止める。
+	@# $(MAKE) とは書かない。外側の make（macOS なら 3.81）を呼び直すことになり、
+	@# devShell が固定している gnumake が使われない。make migrate DB_PATH=… の
+	@# ような指定は MAKEFLAGS が環境変数として引き継がれるので書き足さずに届く。
+	+nix develop --option warn-dirty false \
+		--command make --no-print-directory $(NIX_GOALS)
+
+else
+
 BIN_DIR := bin
 BINARY  := $(BIN_DIR)/etoki
 WEB_DIR := web
@@ -101,3 +141,5 @@ migrate: ## マイグレーションを適用する
 clean: ## 生成物を削除する
 	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
 	rm -f $(DB_PATH) $(DB_PATH)-shm $(DB_PATH)-wal
+
+endif

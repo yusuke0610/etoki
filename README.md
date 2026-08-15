@@ -27,6 +27,10 @@ make test-e2e    # Playwright による E2E テスト
 make help        # ターゲット一覧
 ```
 
+`nix develop` に入り忘れても構いません。`make` は開発用シェルの外から呼ばれた
+ことを見て、`nix develop --command` で自分をやり直します。入っていれば包み直しは
+起きないので、シェルの中と外で結果は変わりません。
+
 HTTP API の仕様は [`api/openapi.yaml`](api/openapi.yaml) にあります。これが
 契約の正本で、Go と TypeScript の型はここから生成しています。仕様を変えたら
 `make codegen` で生成物を作り直してください。

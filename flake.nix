@@ -24,6 +24,11 @@
         default = pkgs.mkShell {
           name = "etoki";
 
+          # Makefile が「devShell の中か」を判定するための印。shellHook ではなく
+          # derivation の環境に置く。nix develop も nix-direnv も derivation の
+          # 環境変数は必ず渡すが、shellHook が走るかは経路によって変わるため。
+          ETOKI_DEVSHELL = "1";
+
           # バージョンは二重に固定している:
           #   - どの Go / Bun が入るかは flake.lock の nixpkgs リビジョンが決める
           #   - Go は go_1_26 と系列を明示し、nix flake update が想定外の
@@ -58,7 +63,12 @@
             export PLAYWRIGHT_BROWSERS_PATH="${pkgs.playwright-driver.browsers}"
             export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-            echo "etoki devShell: $(go version | cut -d' ' -f3), bun $(bun --version)"
+            # 対話的に入ったときだけ挨拶する。Makefile は devShell の外から
+            # 呼ばれるたびに nix develop --command で包み直すので、無条件に
+            # 出すと make のたびにこの 1 行が混ざる。
+            if [[ $- == *i* ]]; then
+              echo "etoki devShell: $(go version | cut -d' ' -f3), bun $(bun --version)"
+            fi
           '';
         };
       });
