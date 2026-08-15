@@ -26,13 +26,17 @@ git diff --cached
 2. 下の観点で点検する。
 3. 見つけたものを分類する（後述）。
 4. 「直す」に分類したものを直す。
-5. `nix develop -c make lint` と `nix develop -c make test` を通す。UI か
-   ハンドラを触っているなら `nix develop -c make test-e2e` も通す。
+5. `make lint` と `make test` を通す。UI かハンドラを触っているなら
+   `make test-e2e` も通す（`make` は devShell の外からでも自分を包み直す）。
 6. 直したものがあれば次の周へ。なければ終了。
 
 ## 観点
 
 CLAUDE.md に書いてある規約が守られているかを見る。以下は落としやすい順。
+
+**規約は 1 ファイルではない。** ルートの `CLAUDE.md` に全体の規約があり、
+領域ごとの約束は触ったディレクトリの `CLAUDE.md`（`internal/` / `web/` / `api/`）
+にある。差分がそのディレクトリに及んでいるなら、そちらも読んで照らす。
 
 **中核思想（最優先）**
 
@@ -107,4 +111,4 @@ CLAUDE.md に書いてある規約が守られているかを見る。以下は�
 - ユーザーの判断を待つもの
 - `make lint` / `make test` の結果
 - UI を触ったなら `make test-e2e` の結果と、`web/e2e-output/screenshots/` の
-  スクリーンショット（CLAUDE.md「報告にブラウザの実行結果を添える」）
+  スクリーンショット（`web/CLAUDE.md`「報告にブラウザの実行結果を添える」）
