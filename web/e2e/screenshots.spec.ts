@@ -1,7 +1,7 @@
 import { test, type Page } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
+import { installApi, summarize } from "./helpers/api";
+import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
 import { BOARD_ID, baseMock, board, signedIn, unselectedBoard } from "./helpers/fixtures";
 
 /**
@@ -71,15 +71,7 @@ test.describe("スクリーンショット", () => {
   test("作成先の選択を撮る", async ({ page }) => {
     const mock = baseMock();
     const board = unselectedBoard();
-    mock.boards = [
-      {
-        id: board.id,
-        name: board.name,
-        role: board.role,
-        createdAt: board.createdAt,
-        updatedAt: board.updatedAt,
-      },
-    ];
+    mock.boards = [summarize(board)];
     mock.details = { [board.id]: board };
     mock.annotations = { [board.id]: [] };
 
@@ -91,11 +83,13 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("heading", { name: "リポジトリ" }).waitFor();
     await shot(page, "05-target-repositories");
 
-    await page.getByRole("button", { name: /acme\/web/ }).click();
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
     await page.getByRole("button", { name: "#1 ロードマップ" }).waitFor();
     await shot(page, "06-target-projects");
 
-    await page.getByRole("button", { name: "#1 ロードマップ" }).click();
+    await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
     await page.locator(".badge-target").waitFor();
     // バッジはキャンバスより先に出る。ここで待たないと Excalidraw の
     // 「Loading scene...」を撮ってしまい、報告に使えない画像になる。
@@ -193,6 +187,48 @@ test.describe("スクリーンショット", () => {
       .getByText("読むだけの権限で開いています。編集・解釈・作成はできません。")
       .waitFor();
     await shot(page, "13-viewer");
+  });
+
+  // 一覧をリポジトリと Project でまとめた姿（ADR 0019）。ボードが 1 枚の
+  // 01 では枝が 1 本しか出ず、まとまっていることが見えない。
+  test("作成先ごとにまとまった一覧を撮る", async ({ page }) => {
+    const mock = baseMock();
+    const another = {
+      ...board(),
+      id: "board-another",
+      name: "課金まわりのブレスト",
+      projectId: "PVT_2",
+      projectNumber: 4,
+      projectTitle: "技術的負債",
+    };
+    const otherRepo = {
+      ...board(),
+      id: "board-api",
+      name: "配信基盤の棚卸し",
+      repositoryName: "api",
+      projectId: "PVT_3",
+      projectNumber: 2,
+      projectTitle: "インフラ",
+    };
+    const legacy = unselectedBoard();
+
+    mock.boards = [
+      summarize(otherRepo),
+      summarize(another),
+      ...mock.boards,
+      summarize(legacy),
+    ];
+    for (const b of [another, otherRepo, legacy]) {
+      mock.details[b.id] = b;
+      mock.annotations[b.id] = [];
+    }
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await shot(page, "14-board-tree");
   });
 
   // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。

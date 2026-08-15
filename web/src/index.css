@@ -14,7 +14,8 @@ body {
 }
 
 .sidebar {
-  width: 200px;
+  /* 入れ子のぶん字下げが要るので、平坦な一覧だったときより広い（ADR 0019）。 */
+  width: 240px;
   flex-shrink: 0;
   border-right: 1px solid #ddd;
   padding: 12px;
@@ -58,6 +59,28 @@ body {
 .board-list button.active {
   background: #e7f0ff;
   font-weight: 600;
+}
+
+/* 入れ子の一覧。ul は上で list-style を消してあるので、字下げだけ足す。 */
+.board-tree ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 10px;
+}
+
+/* リポジトリと Project の見出し。ボードそのものではないので弱く出す。 */
+.board-tree .tree-branch {
+  color: #555;
+  font-size: 12px;
+  /* 名前が長いと折り返して縦に伸びる。1 行に収めて省略する。 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 畳んでいるかどうかを出す三角。名前と詰まらないよう間を空ける。 */
+.board-tree .tree-mark {
+  margin-right: 4px;
 }
 
 .main {

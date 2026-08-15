@@ -199,6 +199,49 @@ func TestListBoards_EmptyIsArrayNotNull(t *testing.T) {
 	}
 }
 
+// 一覧にも作成先が載る。サイドバーはこれでリポジトリと Project ごとに
+// ボードをまとめる（ADR 0019）。詳細を 1 件ずつ引かせない。
+func TestListBoards_IncludesTarget(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+
+	rec := do(t, r, http.MethodPost, "/api/boards", map[string]any{
+		"name":            "決済まわり",
+		"repositoryOwner": "acme",
+		"repositoryName":  "web",
+		"projectId":       "PVT_1",
+		"projectNumber":   3,
+		"projectTitle":    "ロードマップ",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d (%s)", rec.Code, http.StatusCreated, rec.Body)
+	}
+
+	list := decode[[]map[string]any](t, do(t, r, http.MethodGet, "/api/boards", nil))
+	if len(list) != 1 {
+		t.Fatalf("len = %d, want 1", len(list))
+	}
+
+	for key, want := range map[string]any{
+		"repositoryOwner": "acme",
+		"repositoryName":  "web",
+		"projectId":       "PVT_1",
+		// JSON の数値は float64 で戻る。
+		"projectNumber": float64(3),
+		"projectTitle":  "ロードマップ",
+	} {
+		if got := list[0][key]; got != want {
+			t.Errorf("%s = %v, want %v", key, got, want)
+		}
+	}
+
+	// targetLocked は一覧に載せない。run の照会がボード数だけ増える。
+	if _, ok := list[0]["targetLocked"]; ok {
+		t.Error("一覧に targetLocked が載っている")
+	}
+}
+
 func TestSaveScene(t *testing.T) {
 	t.Parallel()
 

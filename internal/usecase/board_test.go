@@ -11,7 +11,13 @@ import (
 // 作成先はボードごとに持ち、最初の draft issue を作ると固定される（ADR 0014）。
 
 func newTarget() port.BoardTarget {
-	return port.BoardTarget{RepositoryOwner: "acme", RepositoryName: "web", ProjectID: "PVT_2"}
+	return port.BoardTarget{
+		RepositoryOwner: "acme",
+		RepositoryName:  "web",
+		ProjectID:       "PVT_2",
+		ProjectNumber:   4,
+		ProjectTitle:    "技術的負債",
+	}
 }
 
 // run が 1 件も無いうちは選び直せる。ブレストを始める前なら GitHub 側に
@@ -71,6 +77,9 @@ func TestSetTarget_RejectsIncompleteTarget(t *testing.T) {
 		"project が無い": {RepositoryOwner: "acme", RepositoryName: "web"},
 		"リポジトリ名が無い":   {RepositoryOwner: "acme", ProjectID: "PVT_2"},
 		"リポジトリ所有者が無い": {RepositoryName: "web", ProjectID: "PVT_2"},
+		// 表示名は作成先そのものではない（ADR 0019）。埋まっていても
+		// 作成先が決まったことにはならない。
+		"表示名だけある": {ProjectNumber: 3, ProjectTitle: "ロードマップ"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
