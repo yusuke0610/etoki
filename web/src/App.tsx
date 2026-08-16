@@ -24,6 +24,10 @@ export function App() {
   const [creating, setCreating] = useState<string | null>(null);
   // ログイン状態。null は問い合わせ中。
   const [session, setSession] = useState<SessionStatus | null>(null);
+  // 開いているボードに未保存の変更があるか。BoardPage から上がってくる。
+  //
+  // キャンバスから離れる導線はこちら側にあるので、判断の材料をここに置く。
+  const [unsaved, setUnsaved] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -62,7 +66,23 @@ export function App() {
     void reload();
   }, [reload, signedIn]);
 
+  /**
+   * 未保存の変更を捨ててよいかを確かめる。捨てないなら false。
+   *
+   * キャンバスを外すとその場で消えるので、確認は外す前に置く。保存はしない。
+   * 自動で保存すると、捨てるつもりの試し描きまで残る（中核思想 3）。
+   */
+  const confirmDiscard = useCallback(() => {
+    if (!unsaved) return true;
+    return window.confirm(
+      "未保存の変更があります。このまま移動すると、描いた内容は失われます。",
+    );
+  }, [unsaved]);
+
   const logout = useCallback(async () => {
+    // ログアウトもキャンバスを外す。押した理由が何であれ、消えるものは同じ。
+    if (!confirmDiscard()) return;
+
     try {
       await authApi.logout();
       // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
@@ -72,25 +92,35 @@ export function App() {
     } catch (e) {
       setError(`ログアウトできませんでした: ${String(e)}`);
     }
-  }, []);
+  }, [confirmDiscard]);
 
-  const open = useCallback(async (id: string) => {
-    try {
-      setPicking(false);
-      setCreating(null);
-      setCurrent(await boardsApi.get(id));
-    } catch (e) {
-      setError(`ボードを開けませんでした: ${String(e)}`);
-    }
-  }, []);
+  const open = useCallback(
+    async (id: string) => {
+      // 切り替えると Excalidraw ごと作り直すので、未保存の編集はその場で消える。
+      if (!confirmDiscard()) return;
+
+      try {
+        setPicking(false);
+        setCreating(null);
+        setCurrent(await boardsApi.get(id));
+      } catch (e) {
+        setError(`ボードを開けませんでした: ${String(e)}`);
+      }
+    },
+    [confirmDiscard],
+  );
 
   /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
   const startCreating = useCallback(() => {
     if (!name.trim()) return;
+    // 作成先の選択画面に移ると、開いていたボードのキャンバスが外れる。
+    // 「作成先を変更」を dirty で止めてあるのと揃える。
+    if (!confirmDiscard()) return;
+
     setCurrent(null);
     setPicking(false);
     setCreating(name.trim());
-  }, [name]);
+  }, [confirmDiscard, name]);
 
   /** 作成先が決まったのでボードを作る。失敗は picker が表示する。 */
   const createWithTarget = useCallback(
@@ -217,6 +247,7 @@ export function App() {
             board={current}
             onError={setError}
             onChangeTarget={() => setPicking(true)}
+            onDirtyChange={setUnsaved}
           />
         )}
       </main>
