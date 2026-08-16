@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  frameIds,
   granularityOf,
   isAnnotation,
   markAsAnnotation,
-  selectableFrameIds,
+  selectableFrames,
   unmarkAnnotation,
   type SceneElement,
 } from "./annotation";
@@ -124,23 +125,44 @@ describe("granularityOf", () => {
   });
 });
 
-describe("selectableFrameIds", () => {
-  it("選択中の frame だけを返す", () => {
-    const got = selectableFrameIds([plainFrame, annotation, text], {
+describe("selectableFrames", () => {
+  it("選択中の frame だけを名前つきで返す", () => {
+    const got = selectableFrames([plainFrame, annotation, text], {
       f1: true,
       t1: true,
     });
 
-    expect(got).toEqual(["f1"]);
+    expect(got).toEqual([{ id: "f1", name: "ただの枠" }]);
+  });
+
+  // Excalidraw の frame は既定で name が null。パネルはこれを空文字として
+  // 受け取り、見出しの決め方を 1 箇所（annotationLabel）に寄せる。
+  it("名前が無ければ空文字にする", () => {
+    expect(selectableFrames([{ id: "f1", type: "frame" }], { f1: true })).toEqual([
+      { id: "f1", name: "" },
+    ]);
+    expect(
+      selectableFrames([{ id: "f1", type: "frame", name: null }], { f1: true }),
+    ).toEqual([{ id: "f1", name: "" }]);
   });
 
   it("削除済みの frame は除く", () => {
-    const got = selectableFrameIds([{ ...plainFrame, isDeleted: true }], { f1: true });
+    const got = selectableFrames([{ ...plainFrame, isDeleted: true }], { f1: true });
 
     expect(got).toEqual([]);
   });
 
   it("選択が無ければ空", () => {
-    expect(selectableFrameIds([plainFrame], {})).toEqual([]);
+    expect(selectableFrames([plainFrame], {})).toEqual([]);
+  });
+});
+
+describe("frameIds", () => {
+  it("注釈かどうかに関係なく frame を返す", () => {
+    expect(frameIds([plainFrame, annotation, text])).toEqual(["f1", "f2"]);
+  });
+
+  it("削除済みは除く", () => {
+    expect(frameIds([{ ...plainFrame, isDeleted: true }])).toEqual([]);
   });
 });

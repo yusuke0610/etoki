@@ -2,7 +2,14 @@ import { test, type Page } from "@playwright/test";
 
 import { installApi, summarize } from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
-import { BOARD_ID, baseMock, board, signedIn, unselectedBoard } from "./helpers/fixtures";
+import {
+  BOARD_ID,
+  baseMock,
+  board,
+  multiFrameMock,
+  signedIn,
+  unselectedBoard,
+} from "./helpers/fixtures";
 
 /**
  * 主要な画面のスクリーンショットを撮る。
@@ -49,6 +56,21 @@ test.describe("スクリーンショット", () => {
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
     await card.getByText("3 件を作成しました。").waitFor();
     await shot(page, "04-created");
+  });
+
+  // 複数フレームのとき、パネルの項目とキャンバスのフレームが対応して見える
+  // ことを撮る（ADR 0022）。
+  test("カードとフレームの対応を撮る", async ({ page }) => {
+    await installApi(page, multiFrameMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await annotationCard(page, "注釈 2").getByRole("button", { name: "注釈 2" }).click();
+    // 寄せる動きはアニメーションする。終わる前に撮ると、途中の位置が写る。
+    await page.waitForTimeout(1000);
+    await shot(page, "16-frame-focused");
   });
 
   // 未保存のあいだは解釈できない。テキストは保存済みシーンから、画像は画面から

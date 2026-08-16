@@ -25,3 +25,4 @@
 | [0019](0019-group-boards-by-target.md) | ボードは作成先でまとめて見せ、Project の表示名はスナップショットで持つ | 採用 |
 | [0020](0020-detect-scene-save-conflicts.md) | シーンの保存は版を照合し、衝突を検知だけする | 採用 |
 | [0021](0021-warn-before-leaving-with-unsaved-changes.md) | 未保存のまま離れる直前に確認を出す（自動保存も下書きも持たない） | 採用 |
+| [0022](0022-link-panel-items-to-frames.md) | パネルの項目とキャンバスのフレームは選択で結ぶ | 採用 |
