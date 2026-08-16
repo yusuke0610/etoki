@@ -34,7 +34,8 @@ func TestRolePermissions(t *testing.T) {
 			return err
 		}},
 		{"シーン保存", func(ctx context.Context, boards *fakeBoards) error {
-			return newBoardService(boards).SaveScene(ctx, "board-1", emptyScene)
+			_, err := newBoardService(boards).SaveScene(ctx, "board-1", emptyScene, baseTime)
+			return err
 		}},
 		{"解釈", func(ctx context.Context, boards *fakeBoards) error {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}

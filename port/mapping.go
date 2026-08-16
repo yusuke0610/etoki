@@ -18,6 +18,12 @@ var ErrNotFound = errors.New("etoki: not found")
 // 「招待した」と「ロールを変えた」を呼び出し側が区別できなくなる。
 var ErrAlreadyExists = errors.New("etoki: already exists")
 
+// ErrConflict は更新の基準にした版が、いまの版と食い違うことを表す。
+//
+// ErrNotFound と分ける。「書けなかった」は同じでも、直し方が違う。無いものは
+// 待っても現れないが、食い違いは相手の変更を取り込めば進める（ADR 0020）。
+var ErrConflict = errors.New("etoki: stale base version")
+
 // BoardTarget は draft issue の作成先。
 //
 // ボードごとに持つ。3 つとも空なら未選択（ADR 0014）。
@@ -218,7 +224,11 @@ type BoardRepository interface {
 	// 開けないボードか、指す先の無いメンバーができる。
 	Create(ctx context.Context, b Board, owner string) error
 	// UpdateScene はシーンと更新時刻だけを更新する。CreatedAt は変えない。
-	UpdateScene(ctx context.Context, actor, id, scene string, updatedAt time.Time) error
+	//
+	// base は呼び出し側が編集の基準にした UpdatedAt。いまの版と違えば何も
+	// 書かずに ErrConflict を返す（ADR 0020）。**照合と更新は 1 文で行う。**
+	// 読んでから書く形にすると、その隙間に入った保存を上書きする。
+	UpdateScene(ctx context.Context, actor, id, scene string, base, updatedAt time.Time) error
 	// UpdateTarget は作成先と更新時刻だけを更新する。Scene は変えない。
 	//
 	// 固定済みかどうかはここでは見ない。判断に sync_runs が要るため、

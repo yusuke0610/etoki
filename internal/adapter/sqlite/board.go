@@ -78,18 +78,65 @@ func (r *BoardRepository) Create(ctx context.Context, b port.Board, owner string
 }
 
 // UpdateScene はシーンと更新時刻だけを更新する。
+//
+// base がいまの版と違えば何も書かず port.ErrConflict を返す（ADR 0020）。
 func (r *BoardRepository) UpdateScene(
-	ctx context.Context, actor, id, scene string, updatedAt time.Time,
+	ctx context.Context, actor, id, scene string, base, updatedAt time.Time,
 ) error {
 	// メンバーであることを WHERE に入れる。ここは Find を通らずに直接 UPDATE
 	// する経路なので、絞り忘れると他人のボードを書き換えられる（ADR 0016）。
 	//
 	// **ロールは見ない。** editor 以上かどうかはユースケース層が
 	// BoardRole.AtLeast で判断する。ここに書くと判定が 2 箇所になる（ADR 0017）。
-	return r.exec(ctx, "board "+id,
+	//
+	// 版の照合も同じ 1 文に置く。先に SELECT して比べる形にすると、比べてから
+	// 書くまでの隙間に入った保存を上書きする。照合したい相手はその隙間に
+	// 現れるので、隙間を作った時点で守れない。
+	res, err := r.db.ExecContext(ctx,
 		`UPDATE boards SET scene = ?, updated_at = ?
-		 WHERE id = ? AND `+memberExists,
-		scene, formatTime(updatedAt), id, actor)
+		 WHERE id = ? AND updated_at = ? AND `+memberExists,
+		scene, formatTime(updatedAt), id, formatTime(base), actor)
+	if err != nil {
+		return fmt.Errorf("update board %s: %w", id, err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected for board %s: %w", id, err)
+	}
+	if n > 0 {
+		return nil
+	}
+
+	// 0 行の理由は 2 つある。触れないボードなのか、版が古いのか。UPDATE は
+	// どちらかを返さないので、触れるかどうかだけを引き直して分ける。ボードを
+	// 消す経路が無いので、この 2 文の間に「触れたものが触れなくなる」は起きない。
+	ok, err := r.readable(ctx, actor, id)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return fmt.Errorf("update board %s: %w", id, port.ErrConflict)
+	}
+	return fmt.Errorf("update board %s: %w", id, port.ErrNotFound)
+}
+
+// readable は操作者がそのボードを読めるかどうかを返す。
+//
+// 絞りは参照系と同じ結合を通す。ここに条件を書き下すと「メンバーかどうか」の
+// 定義が 2 箇所になる。Find で引き直さないのは、判断に要らないシーンまで
+// 読み出すことになるため。
+func (r *BoardRepository) readable(ctx context.Context, actor, id string) (bool, error) {
+	var one int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT 1 `+memberJoin+` WHERE b.id = ?`, actor, id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check access to board %s: %w", id, err)
+	}
+	return true, nil
 }
 
 // UpdateTarget は作成先と更新時刻だけを更新する。

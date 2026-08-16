@@ -2,7 +2,7 @@ import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { boardsApi } from "../api/boards";
+import { ApiError, boardsApi } from "../api/boards";
 import type {
   AnnotationStatus,
   BoardDetail,
@@ -51,6 +51,9 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
   const [selectedFrames, setSelectedFrames] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
+  // 未保存のまま残すので、dirty とは別に持つ。
+  const [conflicted, setConflicted] = useState(false);
   const [interpretations, setInterpretations] = useState<
     Record<string, InterpretationState>
   >({});
@@ -121,6 +124,17 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
   // null は Excalidraw から最初の onChange がまだ来ていない状態。
   const savedSignature = useRef<string | null>(null);
   const latestSignature = useRef<string | null>(null);
+
+  // 保存の基準にする版。「サーバーが持っているシーンはどれか」を指す（ADR 0020）。
+  // 署名が「何を描いたか」を持つのに対して、こちらは「何の上に描いたか」を持つ。
+  const baseUpdatedAt = useRef(board.updatedAt);
+
+  // 作成先の変更などでボードを取り直したら基準も差し替える。据え置くと、
+  // 自分の操作でずれた版のせいで以後の保存が必ず衝突する。
+  useEffect(() => {
+    baseUpdatedAt.current = board.updatedAt;
+    setConflicted(false);
+  }, [board.updatedAt]);
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -210,7 +224,14 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
       // 未保存のまま残す必要があるので、setDirty(false) とは書かない。
       const sent = sceneSignature(elements as unknown as SceneElement[]);
 
-      await boardsApi.saveScene(board.id, scene);
+      const { updatedAt } = await boardsApi.saveScene(
+        board.id,
+        scene,
+        baseUpdatedAt.current,
+      );
+      // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
+      baseUpdatedAt.current = updatedAt;
+      setConflicted(false);
       savedSignature.current = sent;
       setDirty(latestSignature.current !== sent);
       // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
@@ -222,6 +243,13 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
       setCreations({});
       await refreshAnnotations();
     } catch (e) {
+      // 409 は「保存に失敗した」ではなく「他の人が先に保存した」という状態。
+      // こちらの編集は未保存のまま残す。捨てて読み直すと、消えるのは相手では
+      // なくこちらの作業になる（ADR 0020）。
+      if (e instanceof ApiError && e.status === 409) {
+        setConflicted(true);
+        return;
+      }
       onError(`保存できませんでした: ${String(e)}`);
     } finally {
       setSaving(false);
@@ -384,6 +412,18 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
           )}
         </div>
       </header>
+
+      {/*
+        上書きしなかったことと、いま何ができるのかを本文で出す。バッジに畳むと
+        「保存できていない」ことしか伝わらず、相手の変更を消したのかどうかが
+        読めない（ADR 0020）。
+      */}
+      {conflicted && (
+        <p className="conflict" role="alert">
+          {"他の人がこのボードを保存しました。上書きしないよう未保存のまま残しています。"}
+          {"いまの内容を控えてから開き直してください。"}
+        </p>
+      )}
 
       {showingMembers && (
         <MemberPanel

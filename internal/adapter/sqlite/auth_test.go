@@ -444,9 +444,16 @@ func TestUpdateScene_RejectsOtherOwners(t *testing.T) {
 	repo := sqlite.NewBoardRepository(db)
 	seedOwnedBoard(t, db, "board-a", "user-a")
 
-	err := repo.UpdateScene(t.Context(), "user-b", "board-a", `{"elements":["tampered"]}`, baseTime)
+	// 版は合っている。落ちる理由がメンバーでないことだけになるようにする。
+	err := repo.UpdateScene(t.Context(), "user-b", "board-a", `{"elements":["tampered"]}`,
+		baseTime, baseTime.Add(time.Hour))
 	if !errors.Is(err, port.ErrNotFound) {
 		t.Fatalf("UpdateScene = %v, want ErrNotFound", err)
+	}
+	// 非メンバーには「無い」としか返さない。版の食い違いとして返すと、
+	// 書けなかった理由からボードの存在を確かめられる（ADR 0016 / 0017）。
+	if errors.Is(err, port.ErrConflict) {
+		t.Error("非メンバーに版の食い違いを返している")
 	}
 
 	got, err := repo.Find(t.Context(), "user-a", "board-a")

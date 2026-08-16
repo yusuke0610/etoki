@@ -15,6 +15,8 @@ import type {
   Interpretation,
   Project,
   Repository,
+  SaveSceneRequest,
+  SaveSceneResponse,
 } from "./types";
 
 /** API が返したエラー。呼び出し側でステータスに応じて分岐するために持つ。 */
@@ -69,10 +71,20 @@ export const boardsApi = {
 
   get: (id: string) => request<BoardDetail>(`/api/boards/${id}`),
 
-  saveScene: (id: string, scene: string) =>
-    request<void>(`/api/boards/${id}/scene`, {
+  /**
+   * シーンを保存する。
+   *
+   * `baseUpdatedAt` は編集の基準にした版。ボードは共有できるので、照合せずに
+   * 書くと後勝ちで相手の作業がまるごと消える（ADR 0020）。食い違えば 409 が
+   * 返り、サーバー側のシーンは書き換わらない。
+   *
+   * 返る `updatedAt` が次の保存の基準になる。捨てると、2 回目の保存が必ず
+   * 409 になる。
+   */
+  saveScene: (id: string, scene: string, baseUpdatedAt: string) =>
+    request<SaveSceneResponse>(`/api/boards/${id}/scene`, {
       method: "PUT",
-      body: JSON.stringify({ scene }),
+      body: JSON.stringify({ scene, baseUpdatedAt } satisfies SaveSceneRequest),
     }),
 
   /**

@@ -111,6 +111,22 @@ test.describe("スクリーンショット", () => {
     await shot(page, "08-target-change-blocked");
   });
 
+  // 他の人が先に保存した状態（ADR 0020）。上書きしなかったことと、この後どう
+  // すればよいかが読める必要がある。
+  test("保存が衝突した状態を撮る", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+    await page.getByText("他の人がこのボードを保存しました").waitFor();
+    await shot(page, "15-save-conflict");
+  });
+
   // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある
   // （ADR 0017）。
   test("メンバーの一覧を撮る", async ({ page }) => {
