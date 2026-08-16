@@ -46,8 +46,18 @@ func (f *fakeBoards) Create(context.Context, port.Board, string) error {
 	return nil
 }
 
-func (f *fakeBoards) UpdateScene(context.Context, string, string, string, time.Time) error {
+// UpdateScene は版の照合まで真似る。素通しにすると、ユースケースが基準を
+// 渡し忘れても緑のままになる（ADR 0020）。
+func (f *fakeBoards) UpdateScene(
+	_ context.Context, _, _, _ string, base, updatedAt time.Time,
+) error {
+	if f.board != nil && !base.Equal(f.board.UpdatedAt) {
+		return port.ErrConflict
+	}
 	f.writes++
+	if f.board != nil {
+		f.board.UpdatedAt = updatedAt
+	}
 	return nil
 }
 
@@ -149,10 +159,13 @@ const invalidLLMOutput = `{"summary":"決済まわりの課題出し","items":[
 // 見るテストだけが、ここから Target を落として使う。
 func newBoard(scene string) *port.Board {
 	return &port.Board{
-		ID:     "board-1",
-		Name:   "設計会",
-		Scene:  scene,
-		Target: port.BoardTarget{RepositoryOwner: "acme", RepositoryName: "web", ProjectID: "PVT_1"},
+		ID:    "board-1",
+		Name:  "設計会",
+		Scene: scene,
+		// 保存は基準にした版を伴う（ADR 0020）。ゼロ値のままにすると、保存を
+		// 通したいテストが「基準が無い」で 400 に落ちる。
+		UpdatedAt: baseTime,
+		Target:    port.BoardTarget{RepositoryOwner: "acme", RepositoryName: "web", ProjectID: "PVT_1"},
 	}
 }
 

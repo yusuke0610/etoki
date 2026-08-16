@@ -177,6 +177,10 @@ export interface paths {
          * シーンを保存する
          * @description 3 状態の判定は保存済みシーンを基準にする。保存するまで編集中の内容は
          *     注釈の状態に反映されない。
+         *
+         *     保存はシーン全体を書く。ボードは共有できるので（ADR 0017）、後勝ちを
+         *     許すと失われるのは「相手が触った要素」ではなく相手の作業すべてになる。
+         *     `baseUpdatedAt` が現在の版と違えば 409 を返し、何も書かない（ADR 0020）。
          */
         put: operations["saveScene"];
         post?: never;
@@ -647,9 +651,34 @@ export interface components {
             /** @description 省略すると空のシーンで作る */
             scene?: string;
         };
-        /** @description シーン保存のリクエストボディ */
+        /**
+         * @description シーン保存のリクエストボディ。
+         *
+         *     `baseUpdatedAt` は任意にしない。任意にすると API を直接叩く経路で照合を
+         *     素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
+         */
         SaveSceneRequest: {
             scene: string;
+            /**
+             * Format: date-time
+             * @description 編集の基準にしたボードの `updatedAt`。取得時に返ったものをそのまま
+             *     送り返す。現在の版と違えば 409 になり、シーンは書き換わらない
+             *     （ADR 0020）
+             */
+            baseUpdatedAt: string;
+        };
+        /**
+         * @description 保存後のボードの版。
+         *
+         *     返さないと、クライアントは保存のたびにボードを取り直さないと次の保存が
+         *     できない。取り直すとシーンまで運ぶことになる。
+         */
+        SaveSceneResponse: {
+            /**
+             * Format: date-time
+             * @description 保存後の `updatedAt`。次の保存の `baseUpdatedAt` になる
+             */
+            updatedAt: string;
         };
         /** @description 作成済みの draft issue 1 件 */
         SyncItem: {
@@ -1068,17 +1097,28 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 保存した */
-            204: {
+            /** @description 保存した。次の保存の基準になる版を返す */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SaveSceneResponse"];
+                };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description 基準にした版が古い。他の誰かがすでに保存している */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             500: components["responses"]["InternalError"];
         };
     };

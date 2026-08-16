@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
@@ -103,6 +104,96 @@ func TestSetTarget_RejectsUnknownBoard(t *testing.T) {
 	// ID を総当たりして他人のボードの存在を確かめられる（ADR 0016 / 0017）。
 	if err := svc.SetTarget(t.Context(), "missing", newTarget()); !errors.Is(err, usecase.ErrBoardNotFound) {
 		t.Fatalf("SetTarget() = %v, want ErrBoardNotFound", err)
+	}
+}
+
+// 共有ボードの同時編集は後勝ちにしない。保存はシーン全体を書くので、通すと
+// 消えるのは「相手が触った要素」ではなく相手の作業すべてになる（ADR 0020）。
+func TestSaveScene_RejectsStaleBase(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	svc := newBoardService(boards)
+
+	// 相手が先に保存した後の姿。こちらが開いたときの版はもう古い。
+	stale := boards.board.UpdatedAt.Add(-time.Hour)
+
+	_, err := svc.SaveScene(t.Context(), "board-1", emptyScene, stale)
+	if !errors.Is(err, usecase.ErrSceneConflict) {
+		t.Fatalf("SaveScene() = %v, want ErrSceneConflict", err)
+	}
+	if boards.writes != 0 {
+		t.Errorf("食い違っているのに書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
+// 保存できたら次の基準を返す。返さないと、続けて保存するたびにボードを
+// 取り直すことになる。
+func TestSaveScene_ReturnsNextBase(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	saved := boards.board.UpdatedAt.Add(time.Hour)
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
+		usecase.WithClock(func() time.Time { return saved }))
+
+	got, err := svc.SaveScene(t.Context(), "board-1", emptyScene, boards.board.UpdatedAt)
+	if err != nil {
+		t.Fatalf("SaveScene() = %v", err)
+	}
+	if !got.Equal(saved) {
+		t.Errorf("返った版 = %v, want %v", got, saved)
+	}
+
+	// 返った版で続けて保存できる。ここが食い違うと、2 回目の保存が必ず衝突する。
+	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, got); err != nil {
+		t.Errorf("返った版で保存できない: %v", err)
+	}
+}
+
+// 時計の分解能に検知を預けない。同じ時刻の読みで 2 回保存できてしまうと、
+// 後から来た古い基準が一致し、照合を置いた意味が無くなる（ADR 0020）。
+//
+// 時計を止めて、同時刻の連続保存を強制的に作って確かめる。
+func TestSaveScene_AdvancesVersionWhenTheClockDoesNot(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	stopped := boards.board.UpdatedAt
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
+		usecase.WithClock(func() time.Time { return stopped }))
+
+	saved, err := svc.SaveScene(t.Context(), "board-1", emptyScene, stopped)
+	if err != nil {
+		t.Fatalf("SaveScene() = %v", err)
+	}
+	if !saved.After(stopped) {
+		t.Errorf("版 = %v, want %v より後（時計が止まっていても進める）", saved, stopped)
+	}
+
+	// 同じ基準での 2 回目は、時計が動いていなくても弾かれる。
+	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, stopped); !errors.Is(err, usecase.ErrSceneConflict) {
+		t.Fatalf("SaveScene() = %v, want ErrSceneConflict", err)
+	}
+	// 返った版では続けて保存できる。進めた版が次の基準として使える。
+	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, saved); err != nil {
+		t.Errorf("進めた版で保存できない: %v", err)
+	}
+}
+
+// 基準の未指定は「照合しない」に倒さない。倒すと API を直接叩く経路で照合を
+// 素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
+func TestSaveScene_RequiresBase(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+
+	_, err := newBoardService(boards).SaveScene(t.Context(), "board-1", emptyScene, time.Time{})
+	if !errors.Is(err, usecase.ErrInvalidInput) {
+		t.Fatalf("SaveScene() = %v, want ErrInvalidInput", err)
+	}
+	if boards.writes != 0 {
+		t.Errorf("基準が無いのに書き込んでいる: writes = %d", boards.writes)
 	}
 }
 

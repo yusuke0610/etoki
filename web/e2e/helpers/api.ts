@@ -15,6 +15,8 @@ import type {
   LoginResponse,
   Project,
   Repository,
+  SaveSceneRequest,
+  SaveSceneResponse,
   SessionStatus,
 } from "../../src/api/types";
 
@@ -165,9 +167,57 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     },
   );
 
+  // 保存は版を照合する。素通しにすると、フロントが基準を送っていなくても、
+  // 古い基準を送り続けていても E2E は緑のまま通り、2 回目の保存が実物で初めて
+  // 落ちる（ADR 0020）。
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/scene$/.test(url.pathname),
-    (route) => route.fulfill({ status: 204, body: "" }),
+    async (route) => {
+      if (route.request().method() !== "PUT") {
+        await route.fallback();
+        return;
+      }
+
+      const id = boardIdOf(route);
+      const detail = mock.details[id];
+      if (!detail) {
+        await json(route, 404, { error: "not found" } satisfies ErrorResponse);
+        return;
+      }
+
+      // 基準が無いのは「古い」ではなく「契約から外れている」。サーバーは 400 を
+      // 返すので、モックも同じにする。409 に混ぜると、フロントが必須項目を
+      // 落としても衝突のテストが通ってしまう。
+      const req = route.request().postDataJSON() as Partial<SaveSceneRequest>;
+      if (typeof req.baseUpdatedAt !== "string" || req.baseUpdatedAt === "") {
+        await json(route, 400, {
+          error: "baseUpdatedAt is required",
+        } satisfies ErrorResponse);
+        return;
+      }
+      if (typeof req.scene !== "string") {
+        await json(route, 400, { error: "scene is required" } satisfies ErrorResponse);
+        return;
+      }
+
+      if (req.baseUpdatedAt !== detail.updatedAt) {
+        await json(route, 409, {
+          error: "他の人がこのボードを保存しています",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      // 版を進める。据え置くと、基準を更新し損ねたフロントでも保存し続けられて
+      // しまい、照合が効いているように見えるだけになる。
+      const next: BoardDetail = {
+        ...detail,
+        scene: req.scene,
+        updatedAt: new Date(Date.parse(detail.updatedAt) + 1000).toISOString(),
+      };
+      mock.details[id] = next;
+      mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
+      await json(route, 200, { updatedAt: next.updatedAt } satisfies SaveSceneResponse);
+    },
   );
 
   await page.route(

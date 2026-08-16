@@ -399,7 +399,7 @@ func TestInterpretAnnotation_InvalidGranularity(t *testing.T) {
 	scene := `{"type":"excalidraw","elements":[
 		{"id":"annot-1","type":"frame","name":"決済まわり","customData":{"etoki":{"granularity":"project"}}}]}`
 	if rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
-		map[string]string{"scene": scene}); rec.Code != http.StatusNoContent {
+		saveSceneBody(scene, fixedTime)); rec.Code != http.StatusOK {
 		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
 	}
 
