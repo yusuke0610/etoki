@@ -229,6 +229,7 @@ export function AnnotationPanel({
                         {a.items.map((it) => (
                           <li key={it.itemId}>
                             <span className="kind">{it.kind}</span> {it.title}
+                            <ItemBody body={it.body} />
                           </li>
                         ))}
                       </ul>
@@ -391,6 +392,7 @@ function CreationSection({
             {state.run.items.map((it) => (
               <li key={it.itemId}>
                 <span className="kind">{it.kind}</span> {it.title}
+                <ItemBody body={it.body} />
               </li>
             ))}
           </ul>
@@ -401,10 +403,14 @@ function CreationSection({
 }
 
 /**
- * 解釈結果。summary を最初に見せる。
+ * 解釈結果。summary を最初に見せ、item ごとの本文も読める形で出す。
  *
  * summary は GitHub には作らない。LLM がこの囲みをどう読んだかを開発者が
- * 確かめるための材料。
+ * 確かめるための材料（ADR 0006）。
+ *
+ * 本文は summary とは別に要る。summary は解釈全体の要約であって、これから
+ * 作られる draft issue の中身ではない。作成は取り消せない（ADR 0009）ので、
+ * 押す前に中身が読めていなければならない。
  */
 function InterpretationResult({ result }: { result: Interpretation }) {
   const groups = groupByEpic(result.items);
@@ -422,6 +428,7 @@ function InterpretationResult({ result }: { result: Interpretation }) {
               {g.epic ? (
                 <>
                   <span className="kind">epic</span> {g.epic.title}
+                  <ItemBody body={g.epic.body} />
                 </>
               ) : (
                 <span className="hint">epic に属さない issue</span>
@@ -432,6 +439,7 @@ function InterpretationResult({ result }: { result: Interpretation }) {
                   {g.issues.map((it) => (
                     <li key={it.localId}>
                       <span className="kind">issue</span> {it.title}
+                      <ItemBody body={it.body} />
                     </li>
                   ))}
                 </ul>
@@ -441,5 +449,28 @@ function InterpretationResult({ result }: { result: Interpretation }) {
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * draft issue の本文。既定は畳んでおく。
+ *
+ * これから作るものと、前回作ったものの両方で使う。同じものを見ているので
+ * 見え方を変えない。
+ *
+ * **markdown として整形しない。** GitHub に送るのはこの生テキストそのもの
+ * なので、整形して見せると「確認したもの」と「作られるもの」がずれる。
+ */
+function ItemBody({ body }: { body: string }) {
+  // 契約上は必須の string なので undefined にはならない。空文字だけを見る。
+  if (body === "") {
+    return <p className="hint">本文なし</p>;
+  }
+
+  return (
+    <details className="item-body">
+      <summary>本文</summary>
+      <pre>{body}</pre>
+    </details>
   );
 }

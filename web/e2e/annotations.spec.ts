@@ -49,6 +49,34 @@ test.describe("注釈の状態", () => {
     await expect(item).toBeVisible();
   });
 
+  // 逆方向同期は実装しないので、作成時に記録したものが唯一の手がかり
+  // （ADR 0023）。
+  test("前回作成した項目の本文が読める", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await card.getByText("前回作成した 2 件").click();
+
+    const item = card.locator("li").filter({ hasText: "再設定メールを送る" }).last();
+    await item.getByText("本文", { exact: true }).click();
+    await expect(item.getByText("有効期限つきのリンクを送る")).toBeVisible();
+  });
+
+  // 記録を始める前に作った item は本文を持たない。GitHub からは取り直せない
+  // ので、無いことをそのまま出す。
+  test("本文を記録していない項目は、無いことが分かる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByText("前回作成した 1 件").click();
+
+    await expect(card.getByText("本文なし")).toBeVisible();
+  });
+
   // 名前を付けていない frame は Excalidraw 側も `Frame` としか描かないので、
   // 名前を頼りにすると全部同じ見出しで並ぶ（ADR 0022）。
   test("名前の無い注釈は一覧上の位置で採番して出す", async ({ page }) => {

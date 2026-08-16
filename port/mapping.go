@@ -175,6 +175,12 @@ type SyncItem struct {
 	Kind ItemKind
 	// Title は作成時のタイトル。
 	Title string
+	// Body は作成時の本文。
+	//
+	// Title と同じく作成時点のスナップショットである。GitHub からは取り
+	// 直せないので、ここで控えなければ後から追えない（ADR 0023）。
+	// 記録していなかった頃の run では空。
+	Body string
 	// LocalID は LLM 出力内の一時 ID。同一 run 内で一意。
 	LocalID string
 	// ParentLocalID は親の LocalID。トップレベルなら nil。

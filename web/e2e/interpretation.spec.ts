@@ -107,6 +107,32 @@ test.describe("解釈と作成", () => {
     await expect(epic.getByText("ログイン失敗を数える")).toBeVisible();
   });
 
+  // 作成は取り消せない（ADR 0009）。押す前に本文が読めていなければならない。
+  test("解釈結果の本文は畳まれていて、開くと読める", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    const epic = card.locator("li").filter({ hasText: "ログイン基盤" }).first();
+
+    // 既定は畳む。全部開くと一覧が縦に伸びて、作られるものの全体像が追えない。
+    await expect(epic.getByText("入口をまとめる")).toBeHidden();
+
+    await epic.getByText("本文", { exact: true }).first().click();
+    await expect(epic.getByText("入口をまとめる")).toBeVisible();
+
+    // issue の側も同じように開ける。
+    const issue = card
+      .locator("li")
+      .filter({ hasText: "メールとパスワードでログインする" })
+      .last();
+    await issue.getByText("本文", { exact: true }).click();
+    await expect(issue.getByText("フォームと検証")).toBeVisible();
+  });
+
   test("作成すると件数が出て、状態が作成済みに変わる", async ({ page }) => {
     const mock = await installApi(page, baseMock());
     await page.goto("/");

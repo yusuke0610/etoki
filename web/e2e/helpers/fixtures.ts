@@ -239,12 +239,14 @@ export function annotations(): AnnotationStatus[] {
           itemId: "PVTI_epic",
           kind: "epic",
           title: "パスワード再設定",
+          body: "忘れたときの導線をまとめる",
           localId: "e1",
         },
         {
           itemId: "PVTI_issue",
           kind: "issue",
           title: "再設定メールを送る",
+          body: "有効期限つきのリンクを送る",
           localId: "i1",
           parentLocalId: "e1",
         },
@@ -261,6 +263,8 @@ export function annotations(): AnnotationStatus[] {
           itemId: "PVTI_old",
           kind: "issue",
           title: "セッションの有効期限",
+          // 本文を記録していなかった頃に作られた item。空文字で返る。
+          body: "",
           localId: "i9",
         },
       ],
@@ -297,11 +301,19 @@ export function createdRun(): CreatedRun {
     runId: 7,
     createdAt: "2026-08-05T10:00:00Z",
     items: [
-      { itemId: "PVTI_1", kind: "epic", title: "ログイン基盤", localId: "e1" },
+      // 解釈結果と同じ本文で作られる。作成後もそのまま読める（ADR 0022）。
+      {
+        itemId: "PVTI_1",
+        kind: "epic",
+        title: "ログイン基盤",
+        body: "入口をまとめる",
+        localId: "e1",
+      },
       {
         itemId: "PVTI_2",
         kind: "issue",
         title: "メールとパスワードでログインする",
+        body: "フォームと検証",
         localId: "i1",
         parentLocalId: "e1",
       },
@@ -309,6 +321,7 @@ export function createdRun(): CreatedRun {
         itemId: "PVTI_3",
         kind: "issue",
         title: "ログイン失敗を数える",
+        body: "連続失敗の記録",
         localId: "i2",
         parentLocalId: "e1",
       },

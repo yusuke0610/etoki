@@ -26,3 +26,4 @@
 | [0020](0020-detect-scene-save-conflicts.md) | シーンの保存は版を照合し、衝突を検知だけする | 採用 |
 | [0021](0021-warn-before-leaving-with-unsaved-changes.md) | 未保存のまま離れる直前に確認を出す（自動保存も下書きも持たない） | 採用 |
 | [0022](0022-link-panel-items-to-frames.md) | パネルの項目とキャンバスのフレームは選択で結ぶ | 採用 |
+| [0023](0023-record-created-issue-body.md) | 作成した draft issue の本文を記録する（作成時に控えなければ取れない） | 採用 |

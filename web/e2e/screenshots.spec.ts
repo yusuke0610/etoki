@@ -42,6 +42,11 @@ test.describe("スクリーンショット", () => {
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
     await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    // 本文が読めることがこの画面の要点なので、開いた状態で撮る。作成は
+    // 取り消せない（ADR 0009）。
+    for (const summary of await card.getByText("本文", { exact: true }).all()) {
+      await summary.click();
+    }
     await shot(page, "03-interpretation");
 
     mock.annotations[BOARD_ID] = [

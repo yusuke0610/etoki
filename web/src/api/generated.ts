@@ -686,6 +686,8 @@ export interface components {
             itemId: string;
             kind: components["schemas"]["ItemKind"];
             title: string;
+            /** @description 作成時の本文。記録していなかった頃の run では空 */
+            body: string;
             /** @description 解釈結果の中でだけ通じる ID。親子の対応づけに使う */
             localId: string;
             /** @description epic に属する issue のとき、その epic の localId */

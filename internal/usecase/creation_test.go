@@ -18,6 +18,7 @@ var createdAt = time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
 type githubCall struct {
 	op       string // "create" | "field"
 	title    string
+	body     string
 	itemID   string
 	fieldID  string
 	text     string
@@ -73,7 +74,7 @@ func (f *fakeGitHub) CreateDraftIssue(_ context.Context, projectID string, item 
 	}
 	f.seq++
 	id := "PVTI_" + string(rune('a'+f.seq-1))
-	f.calls = append(f.calls, githubCall{op: "create", title: item.Title, itemID: id})
+	f.calls = append(f.calls, githubCall{op: "create", title: item.Title, body: item.Body, itemID: id})
 	return id, nil
 }
 
@@ -305,6 +306,51 @@ func TestCreate_RecordsRunWithCurrentHash(t *testing.T) {
 	}
 	if run.Items[0].Kind != port.KindEpic {
 		t.Errorf("Items[0].Kind = %q, want epic", run.Items[0].Kind)
+	}
+}
+
+// GitHub に送った本文をそのまま run にも控える（ADR 0023）。逆方向同期は
+// 実装しないので、ここで取らなければ何を作ったのか二度と分からない。
+func TestCreate_RecordsBodySentToGitHub(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1",
+		currentContentHash(t), interpretation()); err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+
+	if len(mappings.runs) != 1 {
+		t.Fatalf("保存された run = %d 件, want 1", len(mappings.runs))
+	}
+
+	// 送った本文を itemID で引けるようにしておき、控えたものと突き合わせる。
+	sent := make(map[string]string)
+	for _, c := range gh.calls {
+		if c.op == "create" {
+			sent[c.itemID] = c.body
+		}
+	}
+
+	bodies := make(map[string]string)
+	for _, saved := range mappings.runs[0].Items {
+		want, ok := sent[saved.ItemID]
+		if !ok {
+			t.Fatalf("記録された item %q に対応する作成が無い", saved.ItemID)
+		}
+		if saved.Body != want {
+			t.Errorf("%q の Body = %q, want %q", saved.LocalID, saved.Body, want)
+		}
+		bodies[saved.LocalID] = saved.Body
+	}
+
+	// 本文を持つ item が 1 件も無いと、上のループは全部空文字どうしの比較で
+	// 素通りする。fixture で本文を入れてある e1 を名指しで見る。
+	if bodies["e1"] != "全体の方針" {
+		t.Errorf("e1 の Body = %q, want %q", bodies["e1"], "全体の方針")
 	}
 }
 

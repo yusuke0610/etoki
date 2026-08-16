@@ -401,8 +401,8 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		ContentHash:  hash,
 		CreatedAt:    fixedTime,
 		Items: []port.SyncItem{
-			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", LocalID: "e1", CreatedAt: fixedTime},
-			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", LocalID: "i1", ParentLocalID: &parent, CreatedAt: fixedTime},
+			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", CreatedAt: fixedTime},
+			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, CreatedAt: fixedTime},
 		},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -418,7 +418,16 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 	}
 	items, _ := got[0]["items"].([]any)
 	if len(items) != 2 {
-		t.Errorf("items = %d 件, want 2", len(items))
+		// 以降で添字を引くので、ここで止める。
+		t.Fatalf("items = %d 件, want 2", len(items))
+	}
+	// 何を作ったのかを追えるのは etoki の記録だけ。逆方向同期は実装しないので
+	// GitHub からは取り直せない（ADR 0023）。epic と issue の両方を見る。
+	for i, want := range []string{"決済まわりの入口", "SDK の更新内容"} {
+		it, _ := items[i].(map[string]any)
+		if it["body"] != want {
+			t.Errorf("items[%d].body = %v, want %v", i, it["body"], want)
+		}
 	}
 
 	// 付箋の文言を変えると changed になる。基準は 1 回目の保存が返した版。
