@@ -33,9 +33,16 @@ type Props = {
   onError: (message: string) => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
+  /**
+   * 未保存かどうかを親に伝える。
+   *
+   * キャンバスから離れる導線（ボードの切り替え、作成先の選択）は親が持って
+   * いるので、止めるかどうかを判断する材料をそこへ渡す必要がある。
+   */
+  onDirtyChange: (dirty: boolean) => void;
 };
 
-export function BoardPage({ board, onError, onChangeTarget }: Props) {
+export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
   const canEdit = board.role !== "viewer";
 
@@ -128,6 +135,31 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
     baseUpdatedAt.current = board.updatedAt;
     setConflicted(false);
   }, [board.updatedAt]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  // 外れるときは未保存を下ろす。残すと、キャンバスがもう無いのに親が止め続ける。
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+
+  // 未保存のあいだだけ離脱を確認する。ブレストは etoki の最初のフェーズなので、
+  // ここで失うと後段（注釈・解釈・作成）が全部やり直しになる。保存は明示操作で
+  // ある以上（中核思想 3）押し忘れは構造的に起きるので、**自動で保存しないなら
+  // 失う直前に知らせる責任が対になる。**
+  useEffect(() => {
+    if (!dirty) return;
+
+    const confirmLeave = (e: BeforeUnloadEvent) => {
+      // 文面はブラウザが決める。ここで渡した文字列は表示されない。
+      e.preventDefault();
+      // preventDefault だけを見ないブラウザが残っているので両方立てる。
+      e.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", confirmLeave);
+    return () => window.removeEventListener("beforeunload", confirmLeave);
+  }, [dirty]);
 
   /** 署名を取り込み、保存済みと違えば未保存にする。 */
   const applySignature = useCallback((signature: string) => {
