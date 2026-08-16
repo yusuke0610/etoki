@@ -185,7 +185,21 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         return;
       }
 
-      const req = route.request().postDataJSON() as SaveSceneRequest;
+      // 基準が無いのは「古い」ではなく「契約から外れている」。サーバーは 400 を
+      // 返すので、モックも同じにする。409 に混ぜると、フロントが必須項目を
+      // 落としても衝突のテストが通ってしまう。
+      const req = route.request().postDataJSON() as Partial<SaveSceneRequest>;
+      if (typeof req.baseUpdatedAt !== "string" || req.baseUpdatedAt === "") {
+        await json(route, 400, {
+          error: "baseUpdatedAt is required",
+        } satisfies ErrorResponse);
+        return;
+      }
+      if (typeof req.scene !== "string") {
+        await json(route, 400, { error: "scene is required" } satisfies ErrorResponse);
+        return;
+      }
+
       if (req.baseUpdatedAt !== detail.updatedAt) {
         await json(route, 409, {
           error: "他の人がこのボードを保存しています",

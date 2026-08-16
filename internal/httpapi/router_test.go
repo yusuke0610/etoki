@@ -383,7 +383,7 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 
 	r, mappings := newRouter(t)
 	id := createBoard(t, r, "ボード")
-	saveAnnotatedScene(t, r, id)
+	base := saveAnnotatedScene(t, r, id)
 
 	// 現在のハッシュを API 経由では取れないので、いったん状態を引いてから
 	// 同じ内容で run を記録する。ハッシュ自体は domain 側のテストで担保済み。
@@ -421,12 +421,13 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		t.Errorf("items = %d 件, want 2", len(items))
 	}
 
-	// 付箋の文言を変えると changed になる。
+	// 付箋の文言を変えると changed になる。基準は 1 回目の保存が返した版。
+	// 時計は止めてあるが版は進んでいるので、fixedTime を送り直すと 409 になる。
 	changed := `{"type":"excalidraw","elements":[
 		{"id":"annot-1","type":"frame","name":"決済まわり","customData":{"etoki":{"granularity":"epic"}}},
 		{"id":"t1","type":"text","text":"Stripe の SDK が古い（急ぎ）","frameId":"annot-1"}]}`
 	if rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
-		saveSceneBody(changed, fixedTime)); rec.Code != http.StatusOK {
+		saveSceneBody(changed, base)); rec.Code != http.StatusOK {
 		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
 	}
 
@@ -462,15 +463,22 @@ const annotatedScene = `{"type":"excalidraw","elements":[
 	{"id":"annot-1","type":"frame","name":"決済まわり","customData":{"etoki":{"granularity":"epic"}}},
 	{"id":"t1","type":"text","text":"Stripe の SDK が古い","frameId":"annot-1"}]}`
 
-func saveAnnotatedScene(t *testing.T, r *gin.Engine, boardID string) {
+// saveAnnotatedScene は注釈つきのシーンを保存し、保存後の版を返す。
+//
+// **返った版を次の保存に使う。** テストの時計は fixedTime に固定してあるので、
+// 続けて保存すると同じ時刻の読みが 2 回続く。それでも版は進むので（ADR 0020）、
+// 基準を送り直さないと 409 になる。実際のクライアントと同じ経路。
+func saveAnnotatedScene(t *testing.T, r *gin.Engine, boardID string) any {
 	t.Helper()
 
-	// 時計は fixedTime に固定してあるので、作った直後の版もこれになる。
+	// 作った直後の版は fixedTime。ボードの作成もこの時計を使っている。
 	rec := do(t, r, http.MethodPut, "/api/boards/"+boardID+"/scene",
 		saveSceneBody(annotatedScene, fixedTime))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
 	}
+
+	return decode[map[string]any](t, rec)["updatedAt"]
 }
 
 // currentHash は保存済みシーンから現在のハッシュを求める。

@@ -155,7 +155,16 @@ func (s *BoardService) SaveScene(
 
 	// 引き当てた Board の UpdatedAt とはここで比べない。比べてから書くまでの
 	// 隙間に入った保存を上書きするので、照合は UPDATE と同じ 1 文に任せる。
+	//
+	// **時計が進まなくても版は必ず進める。** 同じ時刻を書くと、次に来た古い
+	// 基準がそのまま一致してしまい、照合を置いた意味が無くなる（ADR 0020）。
+	// 書けた保存は base = そのときの版なので、base より後にすれば必ず進む。
+	// 時計が巻き戻ったときも同じ理由でここを通る。
 	now := s.now()
+	if !now.After(base) {
+		now = base.Add(time.Nanosecond)
+	}
+
 	if err := s.boards.UpdateScene(ctx, actorOf(ctx), id, scene, base, now); err != nil {
 		if errors.Is(err, port.ErrConflict) {
 			// 「保存に失敗した」ではなく「他の人が保存している」という状態。

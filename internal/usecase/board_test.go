@@ -151,6 +151,36 @@ func TestSaveScene_ReturnsNextBase(t *testing.T) {
 	}
 }
 
+// 時計の分解能に検知を預けない。同じ時刻の読みで 2 回保存できてしまうと、
+// 後から来た古い基準が一致し、照合を置いた意味が無くなる（ADR 0020）。
+//
+// 時計を止めて、同時刻の連続保存を強制的に作って確かめる。
+func TestSaveScene_AdvancesVersionWhenTheClockDoesNot(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	stopped := boards.board.UpdatedAt
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
+		usecase.WithClock(func() time.Time { return stopped }))
+
+	saved, err := svc.SaveScene(t.Context(), "board-1", emptyScene, stopped)
+	if err != nil {
+		t.Fatalf("SaveScene() = %v", err)
+	}
+	if !saved.After(stopped) {
+		t.Errorf("版 = %v, want %v より後（時計が止まっていても進める）", saved, stopped)
+	}
+
+	// 同じ基準での 2 回目は、時計が動いていなくても弾かれる。
+	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, stopped); !errors.Is(err, usecase.ErrSceneConflict) {
+		t.Fatalf("SaveScene() = %v, want ErrSceneConflict", err)
+	}
+	// 返った版では続けて保存できる。進めた版が次の基準として使える。
+	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, saved); err != nil {
+		t.Errorf("進めた版で保存できない: %v", err)
+	}
+}
+
 // 基準の未指定は「照合しない」に倒さない。倒すと API を直接叩く経路で照合を
 // 素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
 func TestSaveScene_RequiresBase(t *testing.T) {
