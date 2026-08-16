@@ -55,6 +55,7 @@ func item(localID, itemID string, kind port.ItemKind, parent *string) port.SyncI
 		ItemID:        itemID,
 		Kind:          kind,
 		Title:         "title-" + localID,
+		Body:          "body-" + localID,
 		LocalID:       localID,
 		ParentLocalID: parent,
 		CreatedAt:     baseTime,
@@ -212,6 +213,11 @@ func TestSaveRun_RoundTrip(t *testing.T) {
 	if epic.LocalID != "e1" || epic.Kind != port.KindEpic || epic.ItemID != "PVTI_epic" {
 		t.Errorf("epic = %+v", epic)
 	}
+	// body は GitHub から取り直せない。往復で落ちると二度と分からなくなる
+	// （ADR 0022）。
+	if epic.Title != "title-e1" || epic.Body != "body-e1" {
+		t.Errorf("epic.Title = %q, epic.Body = %q", epic.Title, epic.Body)
+	}
 	if epic.ParentLocalID != nil {
 		t.Errorf("epic.ParentLocalID = %v, want nil", *epic.ParentLocalID)
 	}
@@ -251,6 +257,46 @@ func TestSaveRun_NoItems(t *testing.T) {
 	}
 	if len(got.Items) != 0 {
 		t.Errorf("Items の件数 = %d, want 0", len(got.Items))
+	}
+}
+
+// body を記録していなかった頃に作られた行も読める。0007 が足した既定値の
+// 空文字が効いていることを固定する。空文字は「読むものが無い」として扱う。
+func TestFindLatestRun_ItemWithoutBody(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID:      "board-1",
+		AnnotationID: "annot-1",
+		ContentHash:  "hash-1",
+		CreatedAt:    baseTime,
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	// 移行前の INSERT を再現する。body を書かずに入れられることそのものが、
+	// 既存の行が読めることの条件。
+	if _, err := db.ExecContext(t.Context(),
+		`INSERT INTO sync_items (run_id, item_id, kind, title, local_id, created_at)
+		 VALUES ((SELECT MAX(id) FROM sync_runs), 'PVTI_old', 'epic', '古い item', 'e1', ?)`,
+		baseTime.UTC().Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert legacy sync_item: %v", err)
+	}
+
+	got, err := repo.FindLatestRun(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("FindLatestRun: %v", err)
+	}
+	if got == nil || len(got.Items) != 1 {
+		t.Fatalf("Items = %+v, want 1 件", got)
+	}
+	if got.Items[0].Body != "" {
+		t.Errorf("Body = %q, want 空文字", got.Items[0].Body)
 	}
 }
 

@@ -264,10 +264,13 @@ func (s *CreationService) createOne(
 		return port.SyncItem{}, fmt.Errorf("set kind on %q: %w", item.Title, err)
 	}
 
+	// GitHub に送ったものをそのまま控える。逆方向同期を実装しない以上、
+	// ここで取らなければ何を作ったのか二度と分からない（ADR 0022）。
 	saved := port.SyncItem{
 		ItemID:        itemID,
 		Kind:          toPortKind(item.Kind),
 		Title:         item.Title,
+		Body:          item.Body,
 		LocalID:       item.LocalID,
 		ParentLocalID: item.ParentLocalID,
 		CreatedAt:     now,

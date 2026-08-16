@@ -58,9 +58,9 @@ func (r *MappingRepository) SaveRun(ctx context.Context, run port.SyncRun) (int6
 	for _, it := range run.Items {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO sync_items
-			   (run_id, item_id, kind, title, local_id, parent_local_id, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			runID, it.ItemID, string(it.Kind), it.Title,
+			   (run_id, item_id, kind, title, body, local_id, parent_local_id, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			runID, it.ItemID, string(it.Kind), it.Title, it.Body,
 			it.LocalID, it.ParentLocalID, formatTime(it.CreatedAt),
 		); err != nil {
 			return 0, fmt.Errorf("insert sync_item %q: %w", it.LocalID, err)
@@ -169,7 +169,7 @@ func (r *MappingRepository) itemsByRunIDs(ctx context.Context, runIDs []int64) (
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, run_id, item_id, kind, title, local_id, parent_local_id, created_at
+		`SELECT id, run_id, item_id, kind, title, body, local_id, parent_local_id, created_at
 		   FROM sync_items
 		  WHERE run_id IN (`+placeholders+`)
 		  ORDER BY id`,
@@ -187,7 +187,7 @@ func (r *MappingRepository) itemsByRunIDs(ctx context.Context, runIDs []int64) (
 			createdAt string
 		)
 		if err := rows.Scan(
-			&it.ID, &it.RunID, &it.ItemID, &kind, &it.Title,
+			&it.ID, &it.RunID, &it.ItemID, &kind, &it.Title, &it.Body,
 			&it.LocalID, &it.ParentLocalID, &createdAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan sync_item: %w", err)

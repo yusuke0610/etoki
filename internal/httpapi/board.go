@@ -60,6 +60,7 @@ func toSyncItem(it port.SyncItem) apitypes.SyncItem {
 		ItemID:  it.ItemID,
 		Kind:    apitypes.ItemKind(it.Kind),
 		Title:   it.Title,
+		Body:    it.Body,
 		LocalID: it.LocalID,
 	}
 	if it.ParentLocalID != nil {

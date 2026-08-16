@@ -430,6 +430,9 @@ type SetMemberRoleRequest struct {
 
 // SyncItem 作成済みの draft issue 1 件
 type SyncItem struct {
+	// Body 作成時の本文。記録していなかった頃の run では空
+	Body string `json:"body"`
+
 	// ItemID GitHub Projects v2 の item ID
 	ItemID string `json:"itemId"`
 
