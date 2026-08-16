@@ -11,11 +11,13 @@ import type {
   ProjectAccess,
 } from "../api/types";
 import {
+  frameIds,
   isAnnotation,
   markAsAnnotation,
-  selectableFrameIds,
+  selectableFrames,
   unmarkAnnotation,
   type SceneElement,
+  type SelectableFrame,
 } from "../excalidraw/annotation";
 import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
@@ -41,7 +43,13 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
 
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationStatus[]>([]);
-  const [selectedFrames, setSelectedFrames] = useState<string[]>([]);
+  const [selectedFrames, setSelectedFrames] = useState<SelectableFrame[]>([]);
+  // キャンバスにいま在る frame。状態欄のカードが飛べるかどうかの判定に使う。
+  // 状態は保存済みシーンが基準なので、未保存で消したフレームは一覧に残る。
+  //
+  // null は「Excalidraw からまだ聞いていない」。空配列と混ぜると、マウント直後の
+  // 一瞬だけ全部のカードが「キャンバスにありません」になる。
+  const [canvasFrameIds, setCanvasFrameIds] = useState<string[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [interpretations, setInterpretations] = useState<
@@ -132,7 +140,8 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
     ) => {
       const els = elements as SceneElement[];
       applySignature(sceneSignature(els));
-      setSelectedFrames(selectableFrameIds(els, appState.selectedElementIds));
+      setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
+      setCanvasFrameIds(frameIds(els));
     },
     [applySignature],
   );
@@ -165,6 +174,25 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
       updateElements(unmarkAnnotation(currentElements(), frameId));
     },
     [currentElements, updateElements],
+  );
+
+  /**
+   * キャンバスをそのフレームへ寄せて選択する。
+   *
+   * パネルの項目とキャンバスのフレームを結ぶ唯一の手段（ADR 0021）。
+   * 選択とスクロールは appState 側の話で、`sceneSignature` は elements しか
+   * 見ないので、これで未保存にはならない。
+   */
+  const focusFrame = useCallback(
+    (frameId: string) => {
+      if (!api) return;
+      const frame = currentElements().find((el) => el.id === frameId);
+      if (!frame) return;
+
+      api.updateScene({ appState: { selectedElementIds: { [frameId]: true } } } as never);
+      api.scrollToContent(frame as never, { fitToContent: true, animate: true });
+    },
+    [api, currentElements],
   );
 
   const save = useCallback(async () => {
@@ -280,12 +308,13 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
   // draft issue を重複させる。保存側は creating で、作成側は saving を渡して止める。
   const creating = Object.values(creations).some((c) => c.status === "running");
 
-  const markable = selectedFrames.filter(
-    (id) => !currentElements().some((el) => el.id === id && isAnnotation(el)),
+  const annotationIdsOnCanvas = new Set(
+    currentElements()
+      .filter((el) => isAnnotation(el))
+      .map((el) => el.id),
   );
-  const unmarkable = selectedFrames.filter((id) =>
-    currentElements().some((el) => el.id === id && isAnnotation(el)),
-  );
+  const markable = selectedFrames.filter((f) => !annotationIdsOnCanvas.has(f.id));
+  const unmarkable = selectedFrames.filter((f) => annotationIdsOnCanvas.has(f.id));
 
   return (
     <div className="board">
@@ -376,8 +405,11 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
 
         <AnnotationPanel
           annotations={annotations}
-          markableFrameIds={markable}
-          unmarkableFrameIds={unmarkable}
+          markableFrames={markable}
+          unmarkableFrames={unmarkable}
+          canvasFrameIds={canvasFrameIds}
+          selectedFrameIds={selectedFrames.map((f) => f.id)}
+          onFocusFrame={focusFrame}
           onMark={handleMark}
           onUnmark={handleUnmark}
           onChangeGranularity={(id, g) => handleMark(id, g)}

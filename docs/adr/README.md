@@ -23,3 +23,4 @@
 | [0017](0017-board-sharing-and-permissions.md) | ボードを共有し、etoki の権限と GitHub の権限を別々に持つ | 採用 |
 | [0018](0018-annotation-image-for-interpretation.md) | 注釈範囲の画像はフロントで書き出し、保存済みシーンと揃ってからだけ渡す | 採用 |
 | [0019](0019-group-boards-by-target.md) | ボードは作成先でまとめて見せ、Project の表示名はスナップショットで持つ | 採用 |
+| [0021](0021-link-panel-items-to-frames.md) | パネルの項目とキャンバスのフレームは選択で結ぶ | 採用 |
