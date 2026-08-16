@@ -670,7 +670,9 @@ func TestBoard_UpdateScene(t *testing.T) {
 	seedBoard(t, db, "board-1")
 
 	later := baseTime.Add(time.Hour)
-	if err := repo.UpdateScene(t.Context(), "", "board-1", `{"elements":["updated"]}`, later); err != nil {
+	if err := repo.UpdateScene(
+		t.Context(), "", "board-1", `{"elements":["updated"]}`, baseTime, later,
+	); err != nil {
 		t.Fatalf("UpdateScene: %v", err)
 	}
 
@@ -695,9 +697,51 @@ func TestBoard_UpdateSceneNotFound(t *testing.T) {
 	db := newDB(t)
 	repo := sqlite.NewBoardRepository(db)
 
-	err := repo.UpdateScene(t.Context(), "", "no-such-board", "{}", baseTime)
+	err := repo.UpdateScene(t.Context(), "", "no-such-board", "{}", baseTime, baseTime)
 	if !errors.Is(err, port.ErrNotFound) {
 		t.Errorf("UpdateScene = %v, want port.ErrNotFound", err)
+	}
+}
+
+// 基準が古ければ 1 文の中で弾く。ボードは共有できるので、2 人が同じボードを
+// 開いて別々に描く状況は例外ではない（ADR 0020）。
+func TestBoard_UpdateSceneRejectsStaleBase(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedBoard(t, db, "board-1")
+
+	// 先に保存した側。ここで版が baseTime から later に進む。
+	later := baseTime.Add(time.Hour)
+	if err := repo.UpdateScene(
+		t.Context(), "", "board-1", `{"elements":["first"]}`, baseTime, later,
+	); err != nil {
+		t.Fatalf("UpdateScene（先に保存した側）: %v", err)
+	}
+
+	// 後から保存する側は、開いたときの版のまま送ってくる。
+	err := repo.UpdateScene(
+		t.Context(), "", "board-1", `{"elements":["second"]}`, baseTime, later.Add(time.Minute))
+	if !errors.Is(err, port.ErrConflict) {
+		t.Fatalf("UpdateScene = %v, want port.ErrConflict", err)
+	}
+
+	// 「無い」と混ぜない。無いものは待っても現れないが、食い違いは相手の
+	// 変更を取り込めば進める。
+	if errors.Is(err, port.ErrNotFound) {
+		t.Error("版の食い違いを ErrNotFound で返している")
+	}
+
+	got, err := repo.Find(t.Context(), "", "board-1")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.Board.Scene != `{"elements":["first"]}` {
+		t.Errorf("Scene = %q, want 先に保存した側のまま", got.Board.Scene)
+	}
+	if !got.Board.UpdatedAt.Equal(later) {
+		t.Errorf("UpdatedAt = %v, want %v（弾いたのに進んでいる）", got.Board.UpdatedAt, later)
 	}
 }
 

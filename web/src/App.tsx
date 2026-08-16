@@ -1,6 +1,6 @@
 import "@excalidraw/excalidraw/index.css";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, authApi, boardsApi } from "./api/boards";
 import type { BoardDetail, BoardSummary, BoardTarget, SessionStatus } from "./api/types";
@@ -24,6 +24,12 @@ export function App() {
   const [creating, setCreating] = useState<string | null>(null);
   // ログイン状態。null は問い合わせ中。
   const [session, setSession] = useState<SessionStatus | null>(null);
+  // 開いているボードに未保存の変更があるか。BoardPage から上がってくる。
+  //
+  // キャンバスから離れる導線はこちら側にあるので、判断の材料をここに置く。
+  // **state ではなく ref で持つ。** 描くたびに再描画する必要が無いのに加えて、
+  // state だと通信の待ちを挟んだ判定が、待ち始めた時点の値を見てしまう。
+  const unsaved = useRef(false);
 
   useEffect(() => {
     void (async () => {
@@ -62,35 +68,89 @@ export function App() {
     void reload();
   }, [reload, signedIn]);
 
+  /**
+   * 未保存かどうかを覚える。BoardPage から呼ばれる。
+   *
+   * 同じ関数を渡し続ける必要がある。作り直すと、BoardPage 側の登録し直しが
+   * 走って「外れたので下ろす」が誤って動く。
+   */
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    unsaved.current = dirty;
+  }, []);
+
+  /**
+   * 未保存の変更を捨ててよいかを確かめる。捨てないなら false。
+   *
+   * **確認とキャンバスを外すことのあいだに待ちを挟まない。** 挟むと、待って
+   * いるあいだに描き足したぶんを確認なしで捨てる。JS は 1 本なので、間に
+   * await が無ければ描き込む隙も無い。
+   *
+   * 保存はしない。自動で保存すると、捨てるつもりの試し描きまで残る
+   * （中核思想 3）。
+   */
+  const confirmDiscard = useCallback(() => {
+    if (!unsaved.current) return true;
+    return window.confirm(
+      "未保存の変更があります。このまま移動すると、描いた内容は失われます。",
+    );
+  }, []);
+
   const logout = useCallback(async () => {
+    // ログアウトもキャンバスを外す。押した理由が何であれ、消えるものは同じ。
+    if (!confirmDiscard()) return;
+
+    // 捨ててよいと言われたので、通信を待たずにここで外す。待ってから外すと、
+    // 待っているあいだの描き足しを確認なしで捨てることになる。
+    setCurrent(null);
+    setBoards([]);
+
     try {
       await authApi.logout();
       // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
       setSession(await authApi.session());
-      setCurrent(null);
-      setBoards([]);
     } catch (e) {
       setError(`ログアウトできませんでした: ${String(e)}`);
+      // 失敗したらログインしたまま。一覧を空のままにすると、何も操作できない
+      // 画面が残る。
+      await reload();
     }
-  }, []);
+  }, [confirmDiscard, reload]);
 
-  const open = useCallback(async (id: string) => {
-    try {
+  const open = useCallback(
+    async (id: string) => {
+      // **取ってから訊く。** 訊いてから取ると、取っているあいだに描き足せて
+      // しまい、そのぶんを確認なしで捨てる。取得が失敗したときに、捨てるか
+      // どうかを訊いてしまうことも無くなる。
+      let next: BoardDetail;
+      try {
+        next = await boardsApi.get(id);
+      } catch (e) {
+        setError(`ボードを開けませんでした: ${String(e)}`);
+        return;
+      }
+
+      // ここから先に待ちは無い。切り替えると Excalidraw ごと作り直すので、
+      // 未保存の編集はその場で消える。
+      if (!confirmDiscard()) return;
+
       setPicking(false);
       setCreating(null);
-      setCurrent(await boardsApi.get(id));
-    } catch (e) {
-      setError(`ボードを開けませんでした: ${String(e)}`);
-    }
-  }, []);
+      setCurrent(next);
+    },
+    [confirmDiscard],
+  );
 
   /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
   const startCreating = useCallback(() => {
     if (!name.trim()) return;
+    // 作成先の選択画面に移ると、開いていたボードのキャンバスが外れる。
+    // 「作成先を変更」を dirty で止めてあるのと揃える。
+    if (!confirmDiscard()) return;
+
     setCurrent(null);
     setPicking(false);
     setCreating(name.trim());
-  }, [name]);
+  }, [confirmDiscard, name]);
 
   /** 作成先が決まったのでボードを作る。失敗は picker が表示する。 */
   const createWithTarget = useCallback(
@@ -217,6 +277,7 @@ export function App() {
             board={current}
             onError={setError}
             onChangeTarget={() => setPicking(true)}
+            onDirtyChange={handleDirtyChange}
           />
         )}
       </main>

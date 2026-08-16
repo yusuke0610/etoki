@@ -385,9 +385,25 @@ type Repository struct {
 	Owner       string `json:"owner"`
 }
 
-// SaveSceneRequest シーン保存のリクエストボディ
+// SaveSceneRequest シーン保存のリクエストボディ。
+//
+// `baseUpdatedAt` は任意にしない。任意にすると API を直接叩く経路で照合を
+// 素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
 type SaveSceneRequest struct {
-	Scene string `json:"scene"`
+	// BaseUpdatedAt 編集の基準にしたボードの `updatedAt`。取得時に返ったものをそのまま
+	// 送り返す。現在の版と違えば 409 になり、シーンは書き換わらない
+	// （ADR 0020）
+	BaseUpdatedAt time.Time `json:"baseUpdatedAt"`
+	Scene         string    `json:"scene"`
+}
+
+// SaveSceneResponse 保存後のボードの版。
+//
+// 返さないと、クライアントは保存のたびにボードを取り直さないと次の保存が
+// できない。取り直すとシーンまで運ぶことになる。
+type SaveSceneResponse struct {
+	// UpdatedAt 保存後の `updatedAt`。次の保存の `baseUpdatedAt` になる
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // SessionStatus ログイン状態。認証を設定していない構成でも 200 で返る。

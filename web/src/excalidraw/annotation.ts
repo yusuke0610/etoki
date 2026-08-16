@@ -88,7 +88,7 @@ export type SelectableFrame = {
  *
  * 注釈は frame にしか付けられないので、UI 側で「何を選べばよいか」を
  * 案内できるようにここで絞り込む。ID だけでなく名前も返すのは、複数を選んだ
- * ときにパネルの項目が区別できなければ案内にならないため（ADR 0021）。
+ * ときにパネルの項目が区別できなければ案内にならないため（ADR 0022）。
  */
 export function selectableFrames(
   elements: readonly SceneElement[],

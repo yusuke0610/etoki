@@ -16,7 +16,7 @@ export const ANNOTATION_IDS = {
   uncreated: "frame-uncreated",
   created: "frame-created",
   changed: "frame-changed",
-  /** 名前を付けていない frame。Excalidraw の既定はこちら（ADR 0021）。 */
+  /** 名前を付けていない frame。Excalidraw の既定はこちら（ADR 0022）。 */
   unnamed: "frame-unnamed",
 } as const;
 
@@ -66,7 +66,7 @@ const ELEMENT_BASE = {
  * 注釈の frame。
  *
  * `name` に null を渡せるのは、Excalidraw が作る frame の既定がそれだから
- * （ADR 0021）。名前なしの見え方は既定の再現でしか確かめられない。
+ * （ADR 0022）。名前なしの見え方は既定の再現でしか確かめられない。
  */
 function annotationFrame(id: string, name: string | null, x: number) {
   return {
@@ -131,7 +131,7 @@ export function annotatedScene(): string {
  *
  * 既定のボードはこれで開く。注釈だけあって frame が無いシーンは実際には
  * 起こらない状態で、そのままだと全部のカードが「キャンバスにありません」に
- * なる（ADR 0021）。
+ * なる（ADR 0022）。
  */
 function statesScene(): string {
   return sceneOf([

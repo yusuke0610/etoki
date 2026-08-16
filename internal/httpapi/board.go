@@ -207,12 +207,16 @@ func (h *handlers) saveScene(c *gin.Context) {
 		return
 	}
 
-	if err := h.boards.SaveScene(c.Request.Context(), c.Param("id"), req.Scene); err != nil {
+	updatedAt, err := h.boards.SaveScene(
+		c.Request.Context(), c.Param("id"), req.Scene, req.BaseUpdatedAt)
+	if err != nil {
 		h.fail(c, err)
 		return
 	}
 
-	c.Status(http.StatusNoContent)
+	// 保存後の版を返す。返さないと、クライアントは次の保存の基準を得るために
+	// 毎回ボードを取り直すことになり、シーンまで運ぶ（ADR 0020）。
+	c.JSON(http.StatusOK, apitypes.SaveSceneResponse{UpdatedAt: updatedAt})
 }
 
 func (h *handlers) listAnnotations(c *gin.Context) {
@@ -275,8 +279,10 @@ func (h *handlers) fail(c *gin.Context, err error) {
 		// セッションが失効した、あるいはトークンを更新できなかった。
 		// UI が「再ログインが要る」と判断できるよう 401 に寄せる。
 		errorJSON(c, http.StatusUnauthorized, err.Error())
-	case errors.Is(err, usecase.ErrTargetLocked):
+	case errors.Is(err, usecase.ErrTargetLocked), errors.Is(err, usecase.ErrSceneConflict):
 		// 状態が食い違っていて進めない、という点で contentHash の不一致と同類。
+		// シーンの衝突も同じ扱いにする。上書きして進めるより、食い違っている
+		// ことを見せて選ばせる（ADR 0020）。
 		errorJSON(c, http.StatusConflict, err.Error())
 	default:
 		// レスポンスには内部情報を載せないが、原因が分からないままだと

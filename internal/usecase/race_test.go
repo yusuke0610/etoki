@@ -126,7 +126,9 @@ func (r *racingBoards) UpdateTarget(
 
 func (r *racingBoards) Create(context.Context, port.Board, string) error { return nil }
 
-func (r *racingBoards) UpdateScene(context.Context, string, string, string, time.Time) error {
+func (r *racingBoards) UpdateScene(
+	context.Context, string, string, string, time.Time, time.Time,
+) error {
 	return nil
 }
 

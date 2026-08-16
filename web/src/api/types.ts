@@ -27,6 +27,12 @@ export type BoardDetail = Schemas["BoardDetail"];
 /** draft issue の作成先。設定のリクエストボディ。 */
 export type BoardTarget = Schemas["BoardTarget"];
 
+/** シーン保存のリクエストボディ。編集の基準にした版を伴う。 */
+export type SaveSceneRequest = Schemas["SaveSceneRequest"];
+
+/** 保存後のボードの版。次の保存の基準になる。 */
+export type SaveSceneResponse = Schemas["SaveSceneResponse"];
+
 /** 作成先を選ぶときに見せるリポジトリ。 */
 export type Repository = Schemas["Repository"];
 

@@ -59,7 +59,7 @@ test.describe("スクリーンショット", () => {
   });
 
   // 複数フレームのとき、パネルの項目とキャンバスのフレームが対応して見える
-  // ことを撮る（ADR 0021）。
+  // ことを撮る（ADR 0022）。
   test("カードとフレームの対応を撮る", async ({ page }) => {
     await installApi(page, multiFrameMock());
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -70,7 +70,7 @@ test.describe("スクリーンショット", () => {
     await annotationCard(page, "注釈 2").getByRole("button", { name: "注釈 2" }).click();
     // 寄せる動きはアニメーションする。終わる前に撮ると、途中の位置が写る。
     await page.waitForTimeout(1000);
-    await shot(page, "15-frame-focused");
+    await shot(page, "16-frame-focused");
   });
 
   // 未保存のあいだは解釈できない。テキストは保存済みシーンから、画像は画面から
@@ -131,6 +131,22 @@ test.describe("スクリーンショット", () => {
     await drawRectangle(page);
     await page.getByText("未保存", { exact: true }).waitFor();
     await shot(page, "08-target-change-blocked");
+  });
+
+  // 他の人が先に保存した状態（ADR 0020）。上書きしなかったことと、この後どう
+  // すればよいかが読める必要がある。
+  test("保存が衝突した状態を撮る", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+    await page.getByText("他の人がこのボードを保存しました").waitFor();
+    await shot(page, "15-save-conflict");
   });
 
   // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある

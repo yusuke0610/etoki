@@ -18,7 +18,7 @@ describe("sceneSignature", () => {
   // Excalidraw は選択やスクロールでも onChange を発火するが、そのとき要素の
   // version は上がらない。ここが「開いただけで未保存になる」を防ぐ要であり、
   // パネルからキャンバスへ寄せる focusFrame が未保存にしない根拠でもある
-  // （ADR 0021）。
+  // （ADR 0022）。
   it("version が変わらない限り署名は変わらない", () => {
     const selected = [el({ id: "a" })];
     // 選択状態は appState にあり要素には現れないので、同じ配列で表せる。

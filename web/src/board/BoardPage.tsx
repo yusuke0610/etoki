@@ -2,7 +2,7 @@ import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { boardsApi } from "../api/boards";
+import { ApiError, boardsApi } from "../api/boards";
 import type {
   AnnotationStatus,
   BoardDetail,
@@ -35,9 +35,16 @@ type Props = {
   onError: (message: string) => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
+  /**
+   * 未保存かどうかを親に伝える。
+   *
+   * キャンバスから離れる導線（ボードの切り替え、作成先の選択）は親が持って
+   * いるので、止めるかどうかを判断する材料をそこへ渡す必要がある。
+   */
+  onDirtyChange: (dirty: boolean) => void;
 };
 
-export function BoardPage({ board, onError, onChangeTarget }: Props) {
+export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
   const canEdit = board.role !== "viewer";
 
@@ -52,6 +59,9 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
   const [canvasFrameIds, setCanvasFrameIds] = useState<string[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
+  // 未保存のまま残すので、dirty とは別に持つ。
+  const [conflicted, setConflicted] = useState(false);
   const [interpretations, setInterpretations] = useState<
     Record<string, InterpretationState>
   >({});
@@ -123,6 +133,42 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
   const savedSignature = useRef<string | null>(null);
   const latestSignature = useRef<string | null>(null);
 
+  // 保存の基準にする版。「サーバーが持っているシーンはどれか」を指す（ADR 0020）。
+  // 署名が「何を描いたか」を持つのに対して、こちらは「何の上に描いたか」を持つ。
+  const baseUpdatedAt = useRef(board.updatedAt);
+
+  // 作成先の変更などでボードを取り直したら基準も差し替える。据え置くと、
+  // 自分の操作でずれた版のせいで以後の保存が必ず衝突する。
+  useEffect(() => {
+    baseUpdatedAt.current = board.updatedAt;
+    setConflicted(false);
+  }, [board.updatedAt]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  // 外れるときは未保存を下ろす。残すと、キャンバスがもう無いのに親が止め続ける。
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+
+  // 未保存のあいだだけ離脱を確認する。ブレストは etoki の最初のフェーズなので、
+  // ここで失うと後段（注釈・解釈・作成）が全部やり直しになる。保存は明示操作で
+  // ある以上（中核思想 3）押し忘れは構造的に起きるので、**自動で保存しないなら
+  // 失う直前に知らせる責任が対になる。**
+  useEffect(() => {
+    if (!dirty) return;
+
+    const confirmLeave = (e: BeforeUnloadEvent) => {
+      // 文面はブラウザが決める。ここで渡した文字列は表示されない。
+      e.preventDefault();
+      // preventDefault だけを見ないブラウザが残っているので両方立てる。
+      e.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", confirmLeave);
+    return () => window.removeEventListener("beforeunload", confirmLeave);
+  }, [dirty]);
+
   /** 署名を取り込み、保存済みと違えば未保存にする。 */
   const applySignature = useCallback((signature: string) => {
     latestSignature.current = signature;
@@ -179,7 +225,7 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
   /**
    * キャンバスをそのフレームへ寄せて選択する。
    *
-   * パネルの項目とキャンバスのフレームを結ぶ唯一の手段（ADR 0021）。
+   * パネルの項目とキャンバスのフレームを結ぶ唯一の手段（ADR 0022）。
    * 選択とスクロールは appState 側の話で、`sceneSignature` は elements しか
    * 見ないので、これで未保存にはならない。
    */
@@ -206,7 +252,14 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
       // 未保存のまま残す必要があるので、setDirty(false) とは書かない。
       const sent = sceneSignature(elements as unknown as SceneElement[]);
 
-      await boardsApi.saveScene(board.id, scene);
+      const { updatedAt } = await boardsApi.saveScene(
+        board.id,
+        scene,
+        baseUpdatedAt.current,
+      );
+      // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
+      baseUpdatedAt.current = updatedAt;
+      setConflicted(false);
       savedSignature.current = sent;
       setDirty(latestSignature.current !== sent);
       // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
@@ -218,6 +271,13 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
       setCreations({});
       await refreshAnnotations();
     } catch (e) {
+      // 409 は「保存に失敗した」ではなく「他の人が先に保存した」という状態。
+      // こちらの編集は未保存のまま残す。捨てて読み直すと、消えるのは相手では
+      // なくこちらの作業になる（ADR 0020）。
+      if (e instanceof ApiError && e.status === 409) {
+        setConflicted(true);
+        return;
+      }
       onError(`保存できませんでした: ${String(e)}`);
     } finally {
       setSaving(false);
@@ -381,6 +441,18 @@ export function BoardPage({ board, onError, onChangeTarget }: Props) {
           )}
         </div>
       </header>
+
+      {/*
+        上書きしなかったことと、いま何ができるのかを本文で出す。バッジに畳むと
+        「保存できていない」ことしか伝わらず、相手の変更を消したのかどうかが
+        読めない（ADR 0020）。
+      */}
+      {conflicted && (
+        <p className="conflict" role="alert">
+          {"他の人がこのボードを保存しました。上書きしないよう未保存のまま残しています。"}
+          {"いまの内容を控えてから開き直してください。"}
+        </p>
+      )}
 
       {showingMembers && (
         <MemberPanel

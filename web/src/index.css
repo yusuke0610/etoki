@@ -250,6 +250,20 @@ body {
   gap: 8px;
 }
 
+/*
+ * 他の人が先に保存していて、こちらの保存を拒んだ状態（ADR 0020）。
+ *
+ * ヘッダーのバッジではなく帯で出す。上書きしていないことと、この後どうすれば
+ * よいかを続けて読ませる必要があり、バッジに収まる長さにならない。
+ */
+.conflict {
+  background: #fdf0d5;
+  color: #8a5a00;
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
 .badge-target {
   background: #eef2f7;
   color: #3a4a5c;

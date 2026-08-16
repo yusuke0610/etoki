@@ -1,10 +1,24 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
+import { installApi, summarize, type ApiMock } from "./helpers/api";
 import { drawRectangle, openBoard } from "./helpers/board";
-import { baseMock } from "./helpers/fixtures";
+import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
+const OTHER_NAME = "課金まわりのブレスト";
+const OTHER_ID = "board-other";
+
+/** 切り替え先のあるボード一覧。離脱の確認は 2 枚ないと確かめられない。 */
+function twoBoards(): ApiMock {
+  const mock = baseMock();
+  const other = { ...board(), id: OTHER_ID, name: OTHER_NAME };
+
+  mock.boards = [...mock.boards, summarize(other)];
+  mock.details[other.id] = other;
+  mock.annotations[other.id] = [];
+
+  return mock;
+}
 
 test.describe("シーンの保存", () => {
   // Excalidraw はマウント時にも onChange を発火する。それを編集として扱うと、
@@ -56,6 +70,167 @@ test.describe("シーンの保存", () => {
 
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     await expect(page.getByText("未保存の変更あり")).toBeHidden();
+  });
+
+  // ブレストは最初のフェーズなので、ここで失うと後段が全部やり直しになる。
+  // 保存が明示操作である以上、押し忘れは構造的に起きる。
+  test("未保存のままボードを切り替えようとすると、確認が出て残る", async ({ page }) => {
+    await installApi(page, twoBoards());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+
+    const messages: string[] = [];
+    // 断る側。confirm を出しただけで移動していては止めたことにならない。
+    page.on("dialog", (dialog) => {
+      messages.push(dialog.message());
+      void dialog.dismiss();
+    });
+    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
+
+    // 確認は切り替え先を取ってから出る。押した直後には出ていないので待つ。
+    await expect.poll(() => messages.length).toBe(1);
+    expect(messages[0]).toContain("未保存の変更があります");
+
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  });
+
+  // 押した時点では未保存でなくても、切り替え先を取っているあいだに描き足せる。
+  // 確認と外すことのあいだに待ちがあると、そのぶんを確認なしで捨てる。
+  test("切り替え先を待っているあいだに描いても、確認なしでは捨てない", async ({
+    page,
+  }) => {
+    await installApi(page, twoBoards());
+
+    // 切り替え先の取得を、こちらが放すまで返さない。待ち時間を作るのが目的。
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === `/api/boards/${OTHER_ID}`,
+      async (route) => {
+        await held;
+        // 応答そのものは installApi のモックに任せる。ここは遅らせるだけ。
+        await route.fallback();
+      },
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const messages: string[] = [];
+    page.on("dialog", (dialog) => {
+      messages.push(dialog.message());
+      void dialog.dismiss();
+    });
+
+    // 押した時点では未保存ではない。取得を待っているあいだに描く。
+    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    release();
+
+    // 描いたぶんは確認を経ずに捨てられない。断ったので元のボードに残る。
+    await expect.poll(() => messages.length).toBe(1);
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  });
+
+  // リロードとタブを閉じる操作はアプリ側で止められない。beforeunload を登録して
+  // ブラウザに確認させる。**登録漏れは画面の見た目に出ない**ので、ここで固定する。
+  test("未保存のままタブを閉じようとすると、ブラウザの確認が出る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+
+    const types: string[] = [];
+    page.on("dialog", (dialog) => {
+      types.push(dialog.type());
+      void dialog.dismiss();
+    });
+
+    // runBeforeUnload を付けないとハンドラごと飛ばして閉じる。閉じ終わるのは
+    // 待たないので、確認が出たかどうかは後から見る。
+    await page.close({ runBeforeUnload: true });
+    await expect.poll(() => types).toContain("beforeunload");
+  });
+
+  // 止めるのは「知らせずに捨てる」ことだけ。捨てると決めたなら通す（中核思想 3）。
+  test("確認を承諾すれば、ボードは切り替わる", async ({ page }) => {
+    await installApi(page, twoBoards());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+
+    page.on("dialog", (dialog) => void dialog.accept());
+    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
+
+    await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
+    // 切り替えた先は未保存ではない。持ち越すと、開いただけで止められる。
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
+  // 保存済みなら黙って切り替わる。毎回確認を出すと、確認そのものが読まれなくなる。
+  test("保存してあれば、確認なしで切り替わる", async ({ page }) => {
+    await installApi(page, twoBoards());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    // 出た確認は控えておく。Playwright は既定で dialog を閉じるので、拾わずに
+    // おくと「出たが自動で閉じられた」と「出なかった」を取り違える。
+    const messages: string[] = [];
+    page.on("dialog", (dialog) => {
+      messages.push(dialog.message());
+      void dialog.dismiss();
+    });
+    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
+
+    await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
+    expect(messages).toEqual([]);
+  });
+
+  // 保存のたびに基準の版を取り直す。取りこぼすと 2 回目が必ず衝突する
+  // （ADR 0020）。モックが版を照合しているので、ここが落ちれば基準の更新漏れ。
+  test("続けて 2 回保存できる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    for (let i = 0; i < 2; i++) {
+      await drawRectangle(page);
+      await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "保存" }).click();
+      await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    }
+
+    await expect(page.getByText("他の人がこのボードを保存しました")).toBeHidden();
+  });
+
+  // 共有ボードでは 2 人が同時に描くのが普通に起きる（ADR 0017）。後勝ちで
+  // 上書きすると、消えるのは相手の作業すべてになる（ADR 0020）。
+  test("他の人が先に保存していると、上書きせずに知らせる", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    // こちらが開いた後に、他の人が保存した状況。版が進むので基準は古くなる。
+    mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
+
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+
+    await expect(page.getByText("他の人がこのボードを保存しました")).toBeVisible();
+    // 未保存のまま残す。ここが消えると、保存できたと誤解したまま閉じられる。
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+    // 相手のシーンはそのまま。上書きしていないことをモック側でも確かめる。
+    expect(mock.details[BOARD_ID]?.scene).toBe(board().scene);
   });
 
   test("未保存のまま解釈しようとすると、保存を促す", async ({ page }) => {

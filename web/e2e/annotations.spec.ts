@@ -50,7 +50,7 @@ test.describe("注釈の状態", () => {
   });
 
   // 名前を付けていない frame は Excalidraw 側も `Frame` としか描かないので、
-  // 名前を頼りにすると全部同じ見出しで並ぶ（ADR 0021）。
+  // 名前を頼りにすると全部同じ見出しで並ぶ（ADR 0022）。
   test("名前の無い注釈は一覧上の位置で採番して出す", async ({ page }) => {
     await installApi(page, multiFrameMock());
 
