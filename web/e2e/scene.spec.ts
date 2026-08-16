@@ -6,11 +6,12 @@ import { baseMock, board } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 const OTHER_NAME = "課金まわりのブレスト";
+const OTHER_ID = "board-other";
 
 /** 切り替え先のあるボード一覧。離脱の確認は 2 枚ないと確かめられない。 */
 function twoBoards(): ApiMock {
   const mock = baseMock();
-  const other = { ...board(), id: "board-other", name: OTHER_NAME };
+  const other = { ...board(), id: OTHER_ID, name: OTHER_NAME };
 
   mock.boards = [...mock.boards, summarize(other)];
   mock.details[other.id] = other;
@@ -87,10 +88,55 @@ test.describe("シーンの保存", () => {
     });
     await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
 
+    // 確認は切り替え先を取ってから出る。押した直後には出ていないので待つ。
+    await expect.poll(() => messages.length).toBe(1);
+    expect(messages[0]).toContain("未保存の変更があります");
+
     await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain("未保存の変更があります");
+  });
+
+  // 押した時点では未保存でなくても、切り替え先を取っているあいだに描き足せる。
+  // 確認と外すことのあいだに待ちがあると、そのぶんを確認なしで捨てる。
+  test("切り替え先を待っているあいだに描いても、確認なしでは捨てない", async ({
+    page,
+  }) => {
+    await installApi(page, twoBoards());
+
+    // 切り替え先の取得を、こちらが放すまで返さない。待ち時間を作るのが目的。
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === `/api/boards/${OTHER_ID}`,
+      async (route) => {
+        await held;
+        // 応答そのものは installApi のモックに任せる。ここは遅らせるだけ。
+        await route.fallback();
+      },
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const messages: string[] = [];
+    page.on("dialog", (dialog) => {
+      messages.push(dialog.message());
+      void dialog.dismiss();
+    });
+
+    // 押した時点では未保存ではない。取得を待っているあいだに描く。
+    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    release();
+
+    // 描いたぶんは確認を経ずに捨てられない。断ったので元のボードに残る。
+    await expect.poll(() => messages.length).toBe(1);
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 
   // リロードとタブを閉じる操作はアプリ側で止められない。beforeunload を登録して

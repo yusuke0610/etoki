@@ -1,6 +1,6 @@
 import "@excalidraw/excalidraw/index.css";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, authApi, boardsApi } from "./api/boards";
 import type { BoardDetail, BoardSummary, BoardTarget, SessionStatus } from "./api/types";
@@ -27,7 +27,9 @@ export function App() {
   // 開いているボードに未保存の変更があるか。BoardPage から上がってくる。
   //
   // キャンバスから離れる導線はこちら側にあるので、判断の材料をここに置く。
-  const [unsaved, setUnsaved] = useState(false);
+  // **state ではなく ref で持つ。** 描くたびに再描画する必要が無いのに加えて、
+  // state だと通信の待ちを挟んだ判定が、待ち始めた時点の値を見てしまう。
+  const unsaved = useRef(false);
 
   useEffect(() => {
     void (async () => {
@@ -67,45 +69,73 @@ export function App() {
   }, [reload, signedIn]);
 
   /**
+   * 未保存かどうかを覚える。BoardPage から呼ばれる。
+   *
+   * 同じ関数を渡し続ける必要がある。作り直すと、BoardPage 側の登録し直しが
+   * 走って「外れたので下ろす」が誤って動く。
+   */
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    unsaved.current = dirty;
+  }, []);
+
+  /**
    * 未保存の変更を捨ててよいかを確かめる。捨てないなら false。
    *
-   * キャンバスを外すとその場で消えるので、確認は外す前に置く。保存はしない。
-   * 自動で保存すると、捨てるつもりの試し描きまで残る（中核思想 3）。
+   * **確認とキャンバスを外すことのあいだに待ちを挟まない。** 挟むと、待って
+   * いるあいだに描き足したぶんを確認なしで捨てる。JS は 1 本なので、間に
+   * await が無ければ描き込む隙も無い。
+   *
+   * 保存はしない。自動で保存すると、捨てるつもりの試し描きまで残る
+   * （中核思想 3）。
    */
   const confirmDiscard = useCallback(() => {
-    if (!unsaved) return true;
+    if (!unsaved.current) return true;
     return window.confirm(
       "未保存の変更があります。このまま移動すると、描いた内容は失われます。",
     );
-  }, [unsaved]);
+  }, []);
 
   const logout = useCallback(async () => {
     // ログアウトもキャンバスを外す。押した理由が何であれ、消えるものは同じ。
     if (!confirmDiscard()) return;
 
+    // 捨ててよいと言われたので、通信を待たずにここで外す。待ってから外すと、
+    // 待っているあいだの描き足しを確認なしで捨てることになる。
+    setCurrent(null);
+    setBoards([]);
+
     try {
       await authApi.logout();
       // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
       setSession(await authApi.session());
-      setCurrent(null);
-      setBoards([]);
     } catch (e) {
       setError(`ログアウトできませんでした: ${String(e)}`);
+      // 失敗したらログインしたまま。一覧を空のままにすると、何も操作できない
+      // 画面が残る。
+      await reload();
     }
-  }, [confirmDiscard]);
+  }, [confirmDiscard, reload]);
 
   const open = useCallback(
     async (id: string) => {
-      // 切り替えると Excalidraw ごと作り直すので、未保存の編集はその場で消える。
-      if (!confirmDiscard()) return;
-
+      // **取ってから訊く。** 訊いてから取ると、取っているあいだに描き足せて
+      // しまい、そのぶんを確認なしで捨てる。取得が失敗したときに、捨てるか
+      // どうかを訊いてしまうことも無くなる。
+      let next: BoardDetail;
       try {
-        setPicking(false);
-        setCreating(null);
-        setCurrent(await boardsApi.get(id));
+        next = await boardsApi.get(id);
       } catch (e) {
         setError(`ボードを開けませんでした: ${String(e)}`);
+        return;
       }
+
+      // ここから先に待ちは無い。切り替えると Excalidraw ごと作り直すので、
+      // 未保存の編集はその場で消える。
+      if (!confirmDiscard()) return;
+
+      setPicking(false);
+      setCreating(null);
+      setCurrent(next);
     },
     [confirmDiscard],
   );
@@ -247,7 +277,7 @@ export function App() {
             board={current}
             onError={setError}
             onChangeTarget={() => setPicking(true)}
-            onDirtyChange={setUnsaved}
+            onDirtyChange={handleDirtyChange}
           />
         )}
       </main>
