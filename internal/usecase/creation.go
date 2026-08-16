@@ -265,7 +265,7 @@ func (s *CreationService) createOne(
 	}
 
 	// GitHub に送ったものをそのまま控える。逆方向同期を実装しない以上、
-	// ここで取らなければ何を作ったのか二度と分からない（ADR 0022）。
+	// ここで取らなければ何を作ったのか二度と分からない（ADR 0023）。
 	saved := port.SyncItem{
 		ItemID:        itemID,
 		Kind:          toPortKind(item.Kind),

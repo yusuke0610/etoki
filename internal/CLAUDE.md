@@ -49,7 +49,7 @@ UI は未保存の変更があることを表示する。
   GitHub 側に残っている draft issue を追跡できなくなるため（ADR 0007）。
 - **`sync_items` の `title` と `body` は作成時点のスナップショット。**
   逆方向同期を実装しないので、**作成の瞬間に控えなければ二度と取れない**
-  （ADR 0022）。詰め替えの経路（`CreationService.createOne` →
+  （ADR 0023）。詰め替えの経路（`CreationService.createOne` →
   `port.SyncItem` → `toSyncItem`）でどれか 1 つでも写し忘れると、何を作ったのか
   が etoki から消える。転送量を惜しんで経路ごとに出し分けないこと。
 - **最新 run は `created_at` ではなく `id` で決める。** 時刻は呼び出し側が与える

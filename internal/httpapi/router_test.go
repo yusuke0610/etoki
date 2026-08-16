@@ -421,7 +421,7 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		t.Errorf("items = %d 件, want 2", len(items))
 	}
 	// 何を作ったのかを追えるのは etoki の記録だけ。逆方向同期は実装しないので
-	// GitHub からは取り直せない（ADR 0022）。
+	// GitHub からは取り直せない（ADR 0023）。
 	if first, _ := items[0].(map[string]any); first["body"] != "決済まわりの入口" {
 		t.Errorf("items[0].body = %v, want 決済まわりの入口", first["body"])
 	}

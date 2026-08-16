@@ -309,7 +309,7 @@ func TestCreate_RecordsRunWithCurrentHash(t *testing.T) {
 	}
 }
 
-// GitHub に送った本文をそのまま run にも控える（ADR 0022）。逆方向同期は
+// GitHub に送った本文をそのまま run にも控える（ADR 0023）。逆方向同期は
 // 実装しないので、ここで取らなければ何を作ったのか二度と分からない。
 func TestCreate_RecordsBodySentToGitHub(t *testing.T) {
 	t.Parallel()

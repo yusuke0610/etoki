@@ -163,6 +163,12 @@ body {
   margin-bottom: 8px;
 }
 
+/* キャンバスで選択中のフレームに対応するカード。作成先の選択と同じ色を使う。 */
+.annotation.selected {
+  border-color: #3a4a5c;
+  background: #eef2f7;
+}
+
 .annotation-head {
   display: flex;
   align-items: center;
@@ -171,9 +177,27 @@ body {
   margin-bottom: 6px;
 }
 
+/* 押すとキャンバスがそのフレームへ寄る。見た目は見出しのまま保つ。 */
 .annotation-name {
+  flex: 1;
+  font: inherit;
   font-weight: 600;
   overflow-wrap: anywhere;
+  text-align: left;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.annotation-name:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.annotation-name:disabled {
+  color: #777;
+  cursor: default;
 }
 
 .badge {

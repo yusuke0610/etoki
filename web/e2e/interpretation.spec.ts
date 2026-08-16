@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
+import { emptyScene, installApi } from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
 import {
   annotatedScene,
@@ -71,7 +71,11 @@ test.describe("解釈と作成", () => {
 
   // 画像は任意。frame が見つからなくても解釈そのものは止めない（ADR 0018）。
   test("frame が無くてもテキストだけで解釈できる", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
+    // frame が無いことがこのテストの前提。既定のシーンには注釈の frame が
+    // 入っているので、ここでは明示的に空のシーンで開く。
+    const empty = baseMock();
+    empty.details[BOARD_ID] = { ...board(), scene: emptyScene() };
+    const mock = await installApi(page, empty);
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 

@@ -6,6 +6,8 @@ import type {
   ProjectAccess,
   SyncState,
 } from "../api/types";
+import type { SelectableFrame } from "../excalidraw/annotation";
+import { annotationLabels, frameLabel } from "./annotationLabel";
 import { groupByEpic } from "./interpretation";
 
 /** 注釈 1 つぶんの作成の進み具合。 */
@@ -35,9 +37,24 @@ const GRANULARITY_LABEL: Record<Granularity, string> = {
 type Props = {
   annotations: AnnotationStatus[];
   /** 選択中の frame のうち、まだ注釈になっていないもの。 */
-  markableFrameIds: string[];
+  markableFrames: SelectableFrame[];
   /** 選択中の frame のうち、すでに注釈になっているもの。 */
-  unmarkableFrameIds: string[];
+  unmarkableFrames: SelectableFrame[];
+  /**
+   * キャンバスにいま在る frame の ID。まだ分からなければ null。
+   *
+   * 状態は保存済みシーンが基準なので、未保存で消したフレームの注釈が一覧に
+   * 残る。そのカードは押しても飛び先が無い（ADR 0022）。**分からないうちは
+   * 無いことにしない。** 空配列と同じ扱いにすると、マウント直後の一瞬だけ
+   * 全部のカードが「キャンバスにありません」になる。
+   */
+  canvasFrameIds: string[] | null;
+  /**
+   * キャンバスで選択中の frame の ID。対応するカードを強調するために使う。
+   */
+  selectedFrameIds: string[];
+  /** カードを押したとき、キャンバスをそのフレームへ寄せて選択する。 */
+  onFocusFrame: (frameId: string) => void;
   onMark: (frameId: string, granularity: Granularity) => void;
   onUnmark: (frameId: string) => void;
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
@@ -70,8 +87,11 @@ type Props = {
 
 export function AnnotationPanel({
   annotations,
-  markableFrameIds,
-  unmarkableFrameIds,
+  markableFrames,
+  unmarkableFrames,
+  canvasFrameIds,
+  selectedFrameIds,
+  onFocusFrame,
   onMark,
   onUnmark,
   onChangeGranularity,
@@ -84,6 +104,10 @@ export function AnnotationPanel({
   canEdit,
   projectAccess,
 }: Props) {
+  // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
+  // 出ると、同じものが 2 つあるように見える。
+  const labels = annotationLabels(annotations);
+
   return (
     <aside className="panel">
       <h2>注釈</h2>
@@ -98,23 +122,29 @@ export function AnnotationPanel({
         <h3>選択中のフレーム</h3>
         {!canEdit ? (
           <p className="hint">注釈を付け外しできるのは編集できる人だけです。</p>
-        ) : markableFrameIds.length === 0 && unmarkableFrameIds.length === 0 ? (
+        ) : markableFrames.length === 0 && unmarkableFrames.length === 0 ? (
           <p className="hint">
             フレームツール（F）で囲んでから、そのフレームを選択してください。
           </p>
         ) : (
           <ul className="plain-list">
-            {markableFrameIds.map((id) => (
-              <li key={id}>
-                <button type="button" onClick={() => onMark(id, "")}>
-                  このフレームを注釈にする
+            {/*
+              どのフレームに対する操作なのかを項目ごとに出す。複数を選んだとき、
+              ボタンの文言だけでは項目が区別できない（ADR 0022）。
+            */}
+            {markableFrames.map((frame) => (
+              <li key={frame.id}>
+                <button type="button" onClick={() => onMark(frame.id, "")}>
+                  {frameLabel(frame.name)}
+                  <span className="kind">を注釈にする</span>
                 </button>
               </li>
             ))}
-            {unmarkableFrameIds.map((id) => (
-              <li key={id}>
-                <button type="button" onClick={() => onUnmark(id)}>
-                  注釈の指定を外す
+            {unmarkableFrames.map((frame) => (
+              <li key={frame.id}>
+                <button type="button" onClick={() => onUnmark(frame.id)}>
+                  {labels.get(frame.id) ?? frameLabel(frame.name)}
+                  <span className="kind">の注釈を外す</span>
                 </button>
               </li>
             ))}
@@ -132,58 +162,95 @@ export function AnnotationPanel({
           <p className="hint">保存済みの注釈はありません。</p>
         ) : (
           <ul className="annotation-list">
-            {annotations.map((a) => (
-              <li key={a.id} className="annotation">
-                <div className="annotation-head">
-                  <span className="annotation-name">{a.name || "（名前なし）"}</span>
-                  <span className={`badge badge-${a.state}`}>{STATE_LABEL[a.state]}</span>
-                </div>
+            {annotations.map((a) => {
+              const onCanvas = canvasFrameIds === null || canvasFrameIds.includes(a.id);
+              const selected = selectedFrameIds.includes(a.id);
+              const missingId = `annotation-missing-${a.id}`;
 
-                <label className="granularity">
-                  粒度
-                  <select
-                    value={a.granularity}
-                    disabled={!canEdit}
-                    onChange={(e) =>
-                      onChangeGranularity(a.id, e.target.value as Granularity)
-                    }
-                  >
-                    {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
-                      <option key={g} value={g}>
-                        {GRANULARITY_LABEL[g]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              return (
+                <li
+                  key={a.id}
+                  className={`annotation${selected ? " selected" : ""}`}
+                  // キャンバスで選択したフレームがどのカードなのかを、色だけに
+                  // 頼らず読み上げにも届く形で示す。
+                  aria-current={selected ? "true" : undefined}
+                >
+                  <div className="annotation-head">
+                    {/*
+                      見出しを押すとキャンバスがそのフレームへ寄る。名前に頼らず
+                      対応を確かめられる唯一の手段なので、名前の有無に関わらず
+                      押せるようにしてある（ADR 0022）。
+                    */}
+                    <button
+                      type="button"
+                      className="annotation-name"
+                      onClick={() => onFocusFrame(a.id)}
+                      disabled={!onCanvas}
+                      aria-describedby={onCanvas ? undefined : missingId}
+                    >
+                      {labels.get(a.id)}
+                    </button>
+                    <span className={`badge badge-${a.state}`}>
+                      {STATE_LABEL[a.state]}
+                    </span>
+                  </div>
 
-                {a.items && a.items.length > 0 && (
-                  <details>
-                    <summary>前回作成した {a.items.length} 件</summary>
-                    <ul className="plain-list">
-                      {a.items.map((it) => (
-                        <li key={it.itemId}>
-                          <span className="kind">{it.kind}</span> {it.title}
-                          <ItemBody body={it.body} />
-                        </li>
+                  {/*
+                    状態は保存済みシーンが基準なので、未保存で消したフレームの
+                    注釈がここに残る。押せない理由は title に隠さず本文で出す。
+                  */}
+                  {!onCanvas && (
+                    <p className="hint" id={missingId}>
+                      このフレームはキャンバスにありません。保存すると一覧からも消えます。
+                    </p>
+                  )}
+
+                  <label className="granularity">
+                    粒度
+                    <select
+                      value={a.granularity}
+                      disabled={!canEdit}
+                      onChange={(e) =>
+                        onChangeGranularity(a.id, e.target.value as Granularity)
+                      }
+                    >
+                      {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
+                        <option key={g} value={g}>
+                          {GRANULARITY_LABEL[g]}
+                        </option>
                       ))}
-                    </ul>
-                  </details>
-                )}
+                    </select>
+                  </label>
 
-                {canEdit && (
-                  <InterpretationSection
-                    annotationId={a.id}
-                    state={interpretations[a.id]}
-                    creation={creations[a.id]}
-                    stale={stale}
-                    saving={saving}
-                    projectAccess={projectAccess}
-                    onInterpret={() => onInterpret(a.id)}
-                    onCreate={(interpretation) => onCreate(a.id, interpretation)}
-                  />
-                )}
-              </li>
-            ))}
+                  {a.items && a.items.length > 0 && (
+                    <details>
+                      <summary>前回作成した {a.items.length} 件</summary>
+                      <ul className="plain-list">
+                        {a.items.map((it) => (
+                          <li key={it.itemId}>
+                            <span className="kind">{it.kind}</span> {it.title}
+                            <ItemBody body={it.body} />
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+
+                  {canEdit && (
+                    <InterpretationSection
+                      annotationId={a.id}
+                      state={interpretations[a.id]}
+                      creation={creations[a.id]}
+                      stale={stale}
+                      saving={saving}
+                      projectAccess={projectAccess}
+                      onInterpret={() => onInterpret(a.id)}
+                      onCreate={(interpretation) => onCreate(a.id, interpretation)}
+                    />
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

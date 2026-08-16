@@ -76,17 +76,30 @@ export function unmarkAnnotation(
   });
 }
 
+/** 選択中の frame 1 つ。名前はパネルが見出しを出すために持つ。 */
+export type SelectableFrame = {
+  id: string;
+  /** frame のラベル。Excalidraw の既定は null なので空文字に寄せてある。 */
+  name: string;
+};
+
 /**
- * 選択中の要素のうち、注釈にできる frame の ID を返す。
+ * 選択中の要素のうち、注釈にできる frame を返す。
  *
  * 注釈は frame にしか付けられないので、UI 側で「何を選べばよいか」を
- * 案内できるようにここで絞り込む。
+ * 案内できるようにここで絞り込む。ID だけでなく名前も返すのは、複数を選んだ
+ * ときにパネルの項目が区別できなければ案内にならないため（ADR 0022）。
  */
-export function selectableFrameIds(
+export function selectableFrames(
   elements: readonly SceneElement[],
   selectedIds: Readonly<Record<string, boolean>>,
-): string[] {
+): SelectableFrame[] {
   return elements
     .filter((el) => el.type === "frame" && !el.isDeleted && selectedIds[el.id])
-    .map((el) => el.id);
+    .map((el) => ({ id: el.id, name: el.name ?? "" }));
+}
+
+/** シーンにいま在る frame の ID。パネルが「押しても飛べない」項目を出すために使う。 */
+export function frameIds(elements: readonly SceneElement[]): string[] {
+  return elements.filter((el) => el.type === "frame" && !el.isDeleted).map((el) => el.id);
 }

@@ -214,7 +214,7 @@ func TestSaveRun_RoundTrip(t *testing.T) {
 		t.Errorf("epic = %+v", epic)
 	}
 	// body は GitHub から取り直せない。往復で落ちると二度と分からなくなる
-	// （ADR 0022）。
+	// （ADR 0023）。
 	if epic.Title != "title-e1" || epic.Body != "body-e1" {
 		t.Errorf("epic.Title = %q, epic.Body = %q", epic.Title, epic.Body)
 	}
