@@ -7,7 +7,7 @@ import type {
   Repository,
   SessionStatus,
 } from "../../src/api/types";
-import { emptyScene, summarize, type ApiMock } from "./api";
+import { summarize, type ApiMock } from "./api";
 
 export const BOARD_ID = "board-1";
 
@@ -16,6 +16,8 @@ export const ANNOTATION_IDS = {
   uncreated: "frame-uncreated",
   created: "frame-created",
   changed: "frame-changed",
+  /** 名前を付けていない frame。Excalidraw の既定はこちら（ADR 0021）。 */
+  unnamed: "frame-unnamed",
 } as const;
 
 /** 作成先を選び終えたボード。ほとんどのテストはここから始まる。 */
@@ -26,7 +28,7 @@ export function board(): BoardDetail {
     role: "owner",
     createdAt: "2026-08-01T09:00:00Z",
     updatedAt: "2026-08-05T09:30:00Z",
-    scene: emptyScene(),
+    scene: statesScene(),
     repositoryOwner: "acme",
     repositoryName: "web",
     projectId: "PVT_1",
@@ -37,77 +39,140 @@ export function board(): BoardDetail {
   };
 }
 
-/**
- * 注釈の frame を 1 つ持つシーン。
- *
- * ほとんどの spec は空のシーンで足りるが、画像の書き出しは frame の実体を要る。
- * frame の ID は uncreated の注釈に合わせてあり、パネルの「ログイン」と同じ
- * ものを指す。
- */
-export function annotatedScene(): string {
-  const base = {
-    angle: 0,
-    strokeColor: "#1e1e1e",
-    backgroundColor: "transparent",
-    fillStyle: "solid",
-    strokeWidth: 1,
-    strokeStyle: "solid",
-    roughness: 1,
-    opacity: 100,
-    groupIds: [],
-    roundness: null,
-    seed: 1,
-    version: 1,
-    versionNonce: 1,
-    isDeleted: false,
-    boundElements: null,
-    updated: 1,
-    link: null,
-    locked: false,
-    index: null,
-  };
+/** Excalidraw の要素が必ず持つフィールド。中身はテストでは読まない。 */
+const ELEMENT_BASE = {
+  angle: 0,
+  strokeColor: "#1e1e1e",
+  backgroundColor: "transparent",
+  fillStyle: "solid",
+  strokeWidth: 1,
+  strokeStyle: "solid",
+  roughness: 1,
+  opacity: 100,
+  groupIds: [],
+  roundness: null,
+  seed: 1,
+  version: 1,
+  versionNonce: 1,
+  isDeleted: false,
+  boundElements: null,
+  updated: 1,
+  link: null,
+  locked: false,
+  index: null,
+};
 
+/**
+ * 注釈の frame。
+ *
+ * `name` に null を渡せるのは、Excalidraw が作る frame の既定がそれだから
+ * （ADR 0021）。名前なしの見え方は既定の再現でしか確かめられない。
+ */
+function annotationFrame(id: string, name: string | null, x: number) {
+  return {
+    ...ELEMENT_BASE,
+    id,
+    type: "frame",
+    name,
+    x,
+    y: 0,
+    width: 400,
+    height: 300,
+    frameId: null,
+    // これがあって初めて注釈になる。frame 単体を条件にすると、ブレスト中に
+    // 使った frame まで注釈と誤認する。
+    customData: { etoki: { granularity: "" } },
+  };
+}
+
+function sceneOf(elements: unknown[]): string {
   return JSON.stringify({
     type: "excalidraw",
     version: 2,
     source: "etoki-e2e",
-    elements: [
-      {
-        ...base,
-        id: ANNOTATION_IDS.uncreated,
-        type: "frame",
-        name: "ログイン",
-        x: 0,
-        y: 0,
-        width: 400,
-        height: 300,
-        frameId: null,
-        // これがあって初めて注釈になる。frame 単体を条件にすると、ブレスト中に
-        // 使った frame まで注釈と誤認する。
-        customData: { etoki: { granularity: "" } },
-      },
-      {
-        ...base,
-        id: "text-in-frame",
-        type: "text",
-        x: 40,
-        y: 40,
-        width: 200,
-        height: 24,
-        text: "ログインの入口",
-        originalText: "ログインの入口",
-        fontSize: 20,
-        fontFamily: 1,
-        textAlign: "left",
-        verticalAlign: "top",
-        lineHeight: 1.25,
-        containerId: null,
-        frameId: ANNOTATION_IDS.uncreated,
-      },
-    ],
+    elements,
     appState: {},
     files: {},
   });
+}
+
+/**
+ * 注釈の frame と、その中のテキストを持つシーン。
+ *
+ * 既定の `statesScene` と違って中身がある。画像の書き出しは frame の実体を
+ * 要り、写るものが無いと書き出せたのかが分からない。
+ */
+export function annotatedScene(): string {
+  return sceneOf([
+    annotationFrame(ANNOTATION_IDS.uncreated, "ログイン", 0),
+    {
+      ...ELEMENT_BASE,
+      id: "text-in-frame",
+      type: "text",
+      x: 40,
+      y: 40,
+      width: 200,
+      height: 24,
+      text: "ログインの入口",
+      originalText: "ログインの入口",
+      fontSize: 20,
+      fontFamily: 1,
+      textAlign: "left",
+      verticalAlign: "top",
+      lineHeight: 1.25,
+      containerId: null,
+      frameId: ANNOTATION_IDS.uncreated,
+    },
+  ]);
+}
+
+/**
+ * `annotations()` の 3 つに対応する frame を持つシーン。
+ *
+ * 既定のボードはこれで開く。注釈だけあって frame が無いシーンは実際には
+ * 起こらない状態で、そのままだと全部のカードが「キャンバスにありません」に
+ * なる（ADR 0021）。
+ */
+function statesScene(): string {
+  return sceneOf([
+    annotationFrame(ANNOTATION_IDS.uncreated, "ログイン", 0),
+    annotationFrame(ANNOTATION_IDS.created, "パスワード再設定", 600),
+    annotationFrame(ANNOTATION_IDS.changed, "セッション管理", 1200),
+  ]);
+}
+
+/**
+ * 注釈の frame を 2 つ持ち、2 つ目に名前が無いシーン。
+ *
+ * 名前だけでは項目を見分けられない状態そのもの。`annotations()` の 3 つとは
+ * 対応しないので、`multiFrameAnnotations` と組で使う。
+ */
+function multiFrameScene(): string {
+  return sceneOf([
+    annotationFrame(ANNOTATION_IDS.uncreated, "ログイン", 0),
+    annotationFrame(ANNOTATION_IDS.unnamed, null, 600),
+  ]);
+}
+
+/** `multiFrameScene` に対応する注釈の状態。2 つ目は名前が空。 */
+function multiFrameAnnotations(): AnnotationStatus[] {
+  return [
+    {
+      id: ANNOTATION_IDS.uncreated,
+      name: "ログイン",
+      granularity: "",
+      state: "uncreated",
+    },
+    { id: ANNOTATION_IDS.unnamed, name: "", granularity: "", state: "uncreated" },
+  ];
+}
+
+/** シーンと注釈の両方を差し替えた、名前なしの注釈を含むボード。 */
+export function multiFrameMock(): ApiMock {
+  const mock = baseMock();
+  mock.details[BOARD_ID] = { ...board(), scene: multiFrameScene() };
+  mock.annotations[BOARD_ID] = multiFrameAnnotations();
+  return mock;
 }
 
 /** まだ作成先を選んでいないボード。開くとリポジトリ選択に入る。 */
