@@ -104,12 +104,16 @@ func TestInvitedEditorCanUseBoard(t *testing.T) {
 	}
 
 	// 招待後は開けて、保存もできる。
-	if rec := withCookie(t, r, http.MethodGet, "/api/boards/"+boardID, bob); rec.Code != http.StatusOK {
-		t.Fatalf("招待後の GET = %d %s", rec.Code, rec.Body)
+	opened := withCookie(t, r, http.MethodGet, "/api/boards/"+boardID, bob)
+	if opened.Code != http.StatusOK {
+		t.Fatalf("招待後の GET = %d %s", opened.Code, opened.Body)
 	}
+
+	// 開いたときの版をそのまま送り返す。実際のクライアントと同じ経路（ADR 0020）。
+	base := decode[map[string]any](t, opened)["updatedAt"]
 	rec = doJSON(t, r, http.MethodPut, "/api/boards/"+boardID+"/scene", bob,
-		map[string]string{"scene": `{"type":"excalidraw","elements":[]}`})
-	if rec.Code != http.StatusNoContent {
+		saveSceneBody(`{"type":"excalidraw","elements":[]}`, base))
+	if rec.Code != http.StatusOK {
 		t.Fatalf("editor のシーン保存 = %d %s", rec.Code, rec.Body)
 	}
 
@@ -146,8 +150,10 @@ func TestInvitedViewerCannotWrite(t *testing.T) {
 		t.Fatalf("viewer の注釈一覧 = %d %s", rec.Code, rec.Body)
 	}
 
+	// 版は正しい形で送る。基準の欠落で 400 になると、ロールの判定を通っていない
+	// まま緑になる。
 	rec = doJSON(t, r, http.MethodPut, "/api/boards/"+boardID+"/scene", bob,
-		map[string]string{"scene": `{"type":"excalidraw","elements":[]}`})
+		saveSceneBody(`{"type":"excalidraw","elements":[]}`, fixedTime))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("viewer のシーン保存 = %d %s, want 403", rec.Code, rec.Body)
 	}

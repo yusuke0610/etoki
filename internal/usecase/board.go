@@ -25,6 +25,14 @@ var ErrInvalidInput = errors.New("etoki: invalid input")
 // 残っている item の追跡表であり、作成先が変わると記録が指す先を見失う（ADR 0014）。
 var ErrTargetLocked = errors.New("etoki: board target is locked")
 
+// ErrSceneConflict は保存の基準にした版が古いことを表す。
+//
+// ボードは共有できるので（ADR 0017）、2 人が同時に描くのは例外ではない。保存は
+// シーン全体を書くため、後勝ちで通すと消えるのは「相手が触った要素」ではなく
+// 相手の作業すべてになる。黙って一方を採るのではなく、食い違っていることを
+// 呼び出し側に返す（ADR 0020）。
+var ErrSceneConflict = errors.New("etoki: board scene was updated by someone else")
+
 // BoardService はボードの作成・取得・更新を担う。
 type BoardService struct {
 	boardGuard
@@ -126,15 +134,38 @@ func (s *BoardService) List(ctx context.Context) ([]port.BoardAccess, error) {
 	return s.boards.List(ctx, actorOf(ctx))
 }
 
-// SaveScene はボードのシーンを更新する。
-func (s *BoardService) SaveScene(ctx context.Context, id, scene string) error {
+// SaveScene はボードのシーンを更新し、保存後の版を返す。
+//
+// base は編集の基準にした更新時刻。いまの版と違えば何も書かずに
+// ErrSceneConflict を返す（ADR 0020）。返した時刻が次の保存の基準になる。
+func (s *BoardService) SaveScene(
+	ctx context.Context, id, scene string, base time.Time,
+) (time.Time, error) {
 	if err := validateScene(scene); err != nil {
-		return err
+		return time.Time{}, err
+	}
+	// 未指定を「照合しない」に倒さない。倒すと API を直接叩く経路で照合を
+	// 素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
+	if base.IsZero() {
+		return time.Time{}, fmt.Errorf("%w: baseUpdatedAt is required", ErrInvalidInput)
 	}
 	if _, err := s.access(ctx, id, port.RoleEditor); err != nil {
-		return err
+		return time.Time{}, err
 	}
-	return s.boards.UpdateScene(ctx, actorOf(ctx), id, scene, s.now())
+
+	// 引き当てた Board の UpdatedAt とはここで比べない。比べてから書くまでの
+	// 隙間に入った保存を上書きするので、照合は UPDATE と同じ 1 文に任せる。
+	now := s.now()
+	if err := s.boards.UpdateScene(ctx, actorOf(ctx), id, scene, base, now); err != nil {
+		if errors.Is(err, port.ErrConflict) {
+			// 「保存に失敗した」ではなく「他の人が保存している」という状態。
+			// 呼び出し側が上書きせずに見せられるよう、専用のエラーに写す。
+			return time.Time{}, fmt.Errorf("%w: %s", ErrSceneConflict, id)
+		}
+		return time.Time{}, err
+	}
+
+	return now, nil
 }
 
 // SetTarget は draft issue の作成先をボードに設定する。

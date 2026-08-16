@@ -466,8 +466,10 @@ func TestBoards_AreIsolatedBetweenUsers(t *testing.T) {
 	}
 
 	// 書き換えもできない。ここは Find を通らない経路。
+	// 版は正しい形で送る。基準の欠落で 400 になると、メンバーシップの判定を
+	// 通っていないまま緑になる。
 	rec = doWithCookie(t, bob, http.MethodPut, "/api/boards/"+boardID+"/scene",
-		map[string]string{"scene": `{"type":"excalidraw","elements":[],"appState":{}}`}, bobCookie)
+		saveSceneBody(`{"type":"excalidraw","elements":[],"appState":{}}`, fixedTime), bobCookie)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("PUT scene = %d, want 404 (%s)", rec.Code, rec.Body)
 	}

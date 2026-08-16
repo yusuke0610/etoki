@@ -242,6 +242,15 @@ func TestListBoards_IncludesTarget(t *testing.T) {
 	}
 }
 
+// saveSceneBody は保存のボディを組み立てる。
+//
+// 基準の版は必須（ADR 0020）。省くと 400 になるので、保存を通すテストは
+// これを通す。base を any で受けるのは、取得したボードの updatedAt（文字列）を
+// クライアントと同じようにそのまま送り返すテストがあるため。
+func saveSceneBody(scene string, base any) map[string]any {
+	return map[string]any{"scene": scene, "baseUpdatedAt": base}
+}
+
 func TestSaveScene(t *testing.T) {
 	t.Parallel()
 
@@ -249,14 +258,55 @@ func TestSaveScene(t *testing.T) {
 	id := createBoard(t, r, "ボード")
 
 	scene := `{"type":"excalidraw","elements":[{"id":"t1","type":"text","text":"付箋"}]}`
-	if rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
-		map[string]string{"scene": scene}); rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusNoContent, rec.Body)
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(scene, fixedTime))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+	// 次の保存の基準を返す。返さないと、保存のたびにボードを取り直すことになる。
+	if got := decode[map[string]any](t, rec)["updatedAt"]; got == nil || got == "" {
+		t.Errorf("updatedAt = %v, want 保存後の版", got)
 	}
 
 	got := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
 	if got["scene"] != scene {
 		t.Errorf("scene = %v", got["scene"])
+	}
+}
+
+// 共有ボードの後勝ちを拒む。上書きすると相手の作業がまるごと消える（ADR 0020）。
+func TestSaveScene_RejectsStaleBase(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+	before := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+
+	// 開いたときの版がもう古い状態。相手が先に保存したのと同じことになる。
+	stale := fixedTime.Add(-time.Hour)
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(`{"type":"excalidraw","elements":[]}`, stale))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusConflict, rec.Body)
+	}
+
+	got := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	if got["scene"] != before["scene"] {
+		t.Errorf("409 を返したのに書き換わっている: %v", got["scene"])
+	}
+}
+
+// 基準を省いた保存は通さない。通すと、照合を素通りする経路が残る。
+func TestSaveScene_RequiresBase(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		map[string]any{"scene": `{"elements":[]}`})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d (%s)", rec.Code, http.StatusBadRequest, rec.Body)
 	}
 }
 
@@ -266,7 +316,7 @@ func TestSaveScene_NotFound(t *testing.T) {
 	r, _ := newRouter(t)
 
 	rec := do(t, r, http.MethodPut, "/api/boards/no-such-id/scene",
-		map[string]string{"scene": `{"elements":[]}`})
+		saveSceneBody(`{"elements":[]}`, fixedTime))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
@@ -376,7 +426,7 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		{"id":"annot-1","type":"frame","name":"決済まわり","customData":{"etoki":{"granularity":"epic"}}},
 		{"id":"t1","type":"text","text":"Stripe の SDK が古い（急ぎ）","frameId":"annot-1"}]}`
 	if rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
-		map[string]string{"scene": changed}); rec.Code != http.StatusNoContent {
+		saveSceneBody(changed, fixedTime)); rec.Code != http.StatusOK {
 		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
 	}
 
@@ -415,9 +465,10 @@ const annotatedScene = `{"type":"excalidraw","elements":[
 func saveAnnotatedScene(t *testing.T, r *gin.Engine, boardID string) {
 	t.Helper()
 
+	// 時計は fixedTime に固定してあるので、作った直後の版もこれになる。
 	rec := do(t, r, http.MethodPut, "/api/boards/"+boardID+"/scene",
-		map[string]string{"scene": annotatedScene})
-	if rec.Code != http.StatusNoContent {
+		saveSceneBody(annotatedScene, fixedTime))
+	if rec.Code != http.StatusOK {
 		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
 	}
 }
