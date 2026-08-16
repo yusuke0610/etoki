@@ -1,10 +1,62 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
+# devShell の外から呼ばれたら、nix develop の中で make をやり直す。
+#
+# devShell に入り忘れても道具の無いまま走らないようにするため。README と
+# CLAUDE.md の「すべて nix develop の中で実行する」を、書き手の記憶ではなく
+# Makefile 側で満たす。
+#
+# 印は flake.nix の devShell が渡す ETOKI_DEVSHELL を見る。IN_NIX_SHELL では
+# 判定しない。あれは「何かの nix shell の中」としか言わないので、別プロジェクト
+# の shell から呼ぶと包み直しを飛ばしてしまう。direnv を使っているなら
+# devShell がすでに有効なので、この分岐には来ない。
+ifndef ETOKI_DEVSHELL
+
+# 目標はまとめて 1 回だけ包む。ターゲットごとに包むと、dev のように $(MAKE) を
+# 呼ぶターゲットで nix develop が入れ子になる。
+NIX_GOALS := $(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))
+
+.PHONY: $(NIX_GOALS) nix-develop
+
+$(NIX_GOALS): nix-develop
+	@:
+
+nix-develop:
+	@command -v nix >/dev/null 2>&1 || { \
+		echo "nix が見つかりません。https://nixos.org/download を参照してください。" >&2; \
+		exit 1; \
+	}
+	@# 先頭の + は -n でもこの行を実行させる指定。飛ばすと make -n が
+	@# 「nix develop を呼ぶ」としか出さず、中で何が走るのか見えない。-n 自体は
+	@# MAKEFLAGS で中の make に渡るので、実際に走るのは包み直しまで。
+	@# warn-dirty は切る。作業中は常に uncommitted な木で走るので、残すと make の
+	@# たびに同じ警告が出て本当の警告が埋もれる。--no-print-directory は、
+	@# MAKELEVEL が上がって Entering/Leaving directory が出るのを止める。
+	@# $(MAKE) とは書かない。外側の make（macOS なら 3.81）を呼び直すことになり、
+	@# devShell が固定している gnumake が使われない。make migrate DB_PATH=… の
+	@# ような指定は MAKEFLAGS が環境変数として引き継がれるので書き足さずに届く。
+	+nix develop --option warn-dirty false \
+		--command make --no-print-directory $(NIX_GOALS)
+
+else
+
 BIN_DIR := bin
 BINARY  := $(BIN_DIR)/etoki
 WEB_DIR := web
 DB_PATH ?= etoki.db
+
+# ローカルで動かすときの鍵の置き場（gitignore 済み）。無くてもよい。
+#
+# make の include ではなく shell の `.` で読む。include すると `$` を含む値が
+# make の変数展開に食われ、書き手側から逃がす手段が無い。shell なら
+# クォートの規則が普段 export を書くときと同じになる。
+#
+# 読むのは recipe の中だけで、Go 側は環境変数しか見ない。バイナリに設定
+# ファイルを読ませると、main を写して使う経路（cmd/etoki の冒頭）にその
+# 前提まで付いていく。
+ENV_FILE := .env
+LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web \
         test test-go test-web test-e2e lint lint-go lint-web fmt \
@@ -31,7 +83,9 @@ dev: ## バックエンドとフロントエンドを同時に起動する
 	wait
 
 dev-api: ## バックエンドのみ起動する（ホットリロード有効）
-	air
+	@# 鍵が要るのはサーバーだけなので、$(ENV_FILE) を読むのもここだけにする。
+	@# migrate は ETOKI_DB_PATH しか要らず、それは DB_PATH で渡している。
+	$(LOAD_ENV) air
 
 dev-web: ## フロントエンドのみ起動する（ホットリロード有効）
 	cd $(WEB_DIR) && bun run dev
@@ -87,3 +141,5 @@ migrate: ## マイグレーションを適用する
 clean: ## 生成物を削除する
 	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
 	rm -f $(DB_PATH) $(DB_PATH)-shm $(DB_PATH)-wal
+
+endif
