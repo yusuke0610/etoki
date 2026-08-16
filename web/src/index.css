@@ -211,6 +211,29 @@ body {
   color: #777;
 }
 
+/*
+ * draft issue の本文。作成は取り消せないので、押す前に読めている必要がある
+ * （ADR 0009）。ただし既定で開くと一覧が縦に伸びて全体像が追えなくなるため
+ * 畳んでおく。
+ */
+.item-body > summary {
+  font-size: 11px;
+  color: #777;
+  cursor: pointer;
+}
+
+.item-body > pre {
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  background: #f7f7f7;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  /* パネルは 280px しかない。改行は残したまま、長い行は折り返す。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .dirty,
 .stale {
   color: #8a5a00;
