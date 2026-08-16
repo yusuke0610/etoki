@@ -11,6 +11,12 @@ result
 result-*
 .direnv/
 
+# git worktree（作業ツリーの中に作られる）
+# 無視しないと `git add -A` が gitlink として拾い、関係ないコミットに
+# 存在しない commit への参照が混ざる。ファイルではなく 1 エントリなので
+# 差分を眺めても気づきにくい。
+/.claude/worktrees/
+
 # local state
 *.db
 *.db-shm
