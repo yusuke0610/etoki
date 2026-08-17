@@ -53,7 +53,7 @@ nix develop      # 開発シェル（Go / Bun / SQLite / golangci-lint / air）
 make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
-make lint        # golangci-lint + eslint + tsc + 整形検査（gofmt / prettier）
+make lint        # golangci-lint + eslint + tsc + markdownlint + 整形検査
 make fmt         # Go / Nix / フロントエンドを整形する
 make test        # go test + vitest
 make test-e2e    # Playwright（test には含まれない）
@@ -169,6 +169,10 @@ GitHub の形しか差せなくなる。
   — `web/node_modules` に Go ファイルを同梱した npm パッケージ（`flatted`）が
   あり、`go ./...` と golangci-lint が拾ってしまう。`bun install` 後にしか
   再現しない。
+- **`.markdownlint-cli2.yaml` の `gitignore: true`** — Markdown の検査対象は
+  `**/*.md` なので、`bun install` 後は `web/node_modules` の README まで拾う。
+  除外を自前で列挙せず `.gitignore` を見ているのは、上の 2 つと同じ知識を
+  3 箇所目に増やさないため。こちらも `bun install` 後にしか再現しない。
 - **Makefile の `ifndef ETOKI_DEVSHELL` による包み直し** — devShell の外から
   呼ばれたら `nix develop --command make` で全ターゲットをやり直す。判定に
   `IN_NIX_SHELL` を使わないのは、あれが「何かの nix shell の中」としか言わず、

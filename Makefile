@@ -59,7 +59,7 @@ ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web \
-        test test-go test-web test-e2e lint lint-go lint-web fmt \
+        test test-go test-web test-e2e lint lint-go lint-web lint-docs fmt \
         codegen codegen-go codegen-web migrate clean
 
 help: ## ターゲット一覧を表示する
@@ -111,7 +111,7 @@ test-e2e: ## Playwright で E2E テストを実行する（test には含めな�
 	@# ここの画像を報告に添える（CLAUDE.md の「報告にスクリーンショットを添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
 
-lint: lint-go lint-web ## golangci-lint とフロントエンドの lint / 整形検査を実行する
+lint: lint-go lint-web lint-docs ## golangci-lint / フロントエンド / Markdown の lint と整形検査を実行する
 
 lint-go:
 	golangci-lint run
@@ -121,6 +121,12 @@ lint-go:
 
 lint-web:
 	cd $(WEB_DIR) && bun run lint
+
+lint-docs:
+	@# 対象と規則は .markdownlint-cli2.yaml にある。引数で glob を渡さないのは、
+	@# 検査対象の定義がここと設定ファイルの 2 箇所に散るのを避けるため。
+	@# web/ 配下の Markdown も通る（prettier は整形、こちらは構造を見る）。
+	markdownlint-cli2
 
 fmt: ## Go / Nix / フロントエンドをフォーマットする
 	golangci-lint fmt

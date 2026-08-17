@@ -46,6 +46,10 @@
             # アプリの依存グラフに乗り、x/net などの共有依存まで引き上げられて
             # しまうため。go.mod は動かすものの依存だけに保つ（ADR 0011）。
             oapi-codegen
+            # Markdown の検査。web/package.json ではなくここに置くのは、対象が
+            # docs/adr やルートの CLAUDE.md まで及ぶので、web/ の依存として持つと
+            # 「フロントエンドを触らない変更」で道具が入らないことになる。
+            markdownlint-cli2
           ];
 
           shellHook = ''
