@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -98,6 +100,9 @@ func (s *BoardService) Create(
 		return port.Board{}, fmt.Errorf(
 			"%w: repository and project are required", ErrInvalidInput)
 	}
+	if err := validateProjectURL(target.ProjectURL); err != nil {
+		return port.Board{}, err
+	}
 	if scene == "" {
 		scene = emptyScene
 	}
@@ -184,6 +189,9 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 	if !t.Selected() {
 		return fmt.Errorf("%w: repository and project are required", ErrInvalidInput)
 	}
+	if err := validateProjectURL(t.ProjectURL); err != nil {
+		return err
+	}
 
 	// 作成中のボードは待つ。作成が終われば run が残るので、待った先で
 	// ErrTargetLocked になる。「作成が始まっていたなら変えられない」が
@@ -227,6 +235,47 @@ func (s *BoardService) TargetLocked(ctx context.Context, id string) (bool, error
 		return false, err
 	}
 	return len(runs) > 0, nil
+}
+
+// projectURLHost は作成先 URL に許すホスト。
+//
+// GHES では変わるが、いまはホストを設定する導線が無い（`github.Config.BaseURL`
+// は env から埋めていない）。導線を足すときはここも一緒に設定可能にする。
+const projectURLHost = "github.com"
+
+// validateProjectURL は作成先 URL が GitHub のものかを見る。
+//
+// **これが唯一の門番。** 保存された値はフロントがそのまま `href` に入れるので、
+// ここを通り抜けたものは開発者のブラウザで開かれる。owner は招待した相手に
+// 画面を見せられる（ADR 0017）ので、`javascript:` を保存できると招待した相手の
+// ブラウザで実行できてしまう。外部ドメインを通すと、「GitHub でこの Project を
+// 開く」という文言で別の場所へ送れる。
+//
+// **フロント側には同じ判定を置かない。** この列は新規なので、壊れた値が入る
+// 経路はここしか無い。両側に置くと判定が 2 箇所になり、片方だけ変わる。
+//
+// **パスの形は見ない。** `/orgs/...` か `/users/...` かは owner が user か org
+// かで変わり、etoki はどちらなのかを知らない（ADR 0025）。ここで形を決めると、
+// 知らないと言った判断を裏で覆すことになる。
+func validateProjectURL(raw string) error {
+	// 空文字は「URL を知らない」。移行前のボードと、URL を送らずに設定した
+	// 作成先が該当する。フロントがリポジトリの Projects へ落とす。
+	if raw == "" {
+		return nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%w: projectUrl is not a URL: %w", ErrInvalidInput, err)
+	}
+	// 認証情報つきの URL は弾く。ホストは合っていても、表示上どこへ向かうのかが
+	// 読みにくくなる。
+	if u.Scheme != "https" || !strings.EqualFold(u.Host, projectURLHost) || u.User != nil {
+		return fmt.Errorf("%w: projectUrl must be an https://%s URL (got %q)",
+			ErrInvalidInput, projectURLHost, raw)
+	}
+
+	return nil
 }
 
 // emptyScene は Excalidraw が読み込める最小のシーン。

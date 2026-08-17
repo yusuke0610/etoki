@@ -27,17 +27,6 @@ export type ProjectLink = {
 };
 
 /**
- * リンクを組むのに要る部分だけを受け取る。
- *
- * 契約のフィールド名をそのまま使う。別名を付けると、契約を直したときに
- * 追随先を機械的に辿れなくなる（`web/CLAUDE.md`）。
- */
-type Target = Pick<
-  BoardSummary,
-  "repositoryOwner" | "repositoryName" | "projectId" | "projectUrl"
->;
-
-/**
  * 作成先へのリンクを返す。組めなければ null。
  *
  * 順に、
@@ -47,7 +36,7 @@ type Target = Pick<
  * 3. 無ければリポジトリの Projects タブ。`projectUrl` を保存する前に作成先を
  *    選んだボードが該当する。**番号からは組み立てない。**
  */
-export function projectLink(target: Target): ProjectLink | null {
+export function projectLink(target: BoardSummary): ProjectLink | null {
   const { repositoryOwner: owner, repositoryName: name, projectId } = target;
 
   // 判定に使うのは projectId / owner / name の 3 つだけ。表示用のスナップ
