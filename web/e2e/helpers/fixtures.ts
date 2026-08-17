@@ -338,6 +338,7 @@ export function baseMock(): ApiMock {
     annotations: { [detail.id]: annotations() },
     interpret: { status: 200, body: interpretation() },
     interpretRequests: [],
+    createRequests: [],
     createItems: { status: 201, body: createdRun() },
     // 既定は認証を設定していない構成。ログインの導線を見る spec だけが
     // 書き換える。

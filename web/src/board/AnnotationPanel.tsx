@@ -1,14 +1,28 @@
+import { useState } from "react";
+
 import type {
   AnnotationStatus,
   CreatedRun,
   Granularity,
   Interpretation,
+  InterpretedItem,
+  ItemKind,
   ProjectAccess,
   SyncState,
 } from "../api/types";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { annotationLabels, frameLabel } from "./annotationLabel";
 import { groupByEpic } from "./interpretation";
+import {
+  blockingReasons,
+  buildInterpretation,
+  createDraft,
+  orphanedLocalIds,
+  setBody,
+  setKind,
+  setTitle,
+  toggleItem,
+} from "./interpretationDraft";
 
 /** 注釈 1 つぶんの作成の進み具合。 */
 export type CreationState =
@@ -239,6 +253,7 @@ export function AnnotationPanel({
                   {canEdit && (
                     <InterpretationSection
                       annotationId={a.id}
+                      granularity={a.granularity}
                       state={interpretations[a.id]}
                       creation={creations[a.id]}
                       stale={stale}
@@ -261,6 +276,8 @@ export function AnnotationPanel({
 type InterpretationSectionProps = {
   /** 説明文の id を注釈ごとに分けるために持つ。一覧に複数並ぶため。 */
   annotationId: string;
+  /** 注釈の粒度。作成前に手直しできる範囲がこれで変わる。 */
+  granularity: Granularity;
   state?: InterpretationState;
   creation?: CreationState;
   /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
@@ -279,6 +296,7 @@ type InterpretationSectionProps = {
  */
 function InterpretationSection({
   annotationId,
+  granularity,
   state,
   creation,
   stale,
@@ -317,15 +335,15 @@ function InterpretationSection({
       {state?.status === "error" && <p className="error">{state.message}</p>}
 
       {state?.status === "done" && (
-        <>
-          <InterpretationResult result={state.result} />
-          <CreationSection
-            state={creation}
-            saving={saving}
-            projectAccess={projectAccess}
-            onCreate={() => onCreate(state.result)}
-          />
-        </>
+        <InterpretationDraft
+          annotationId={annotationId}
+          granularity={granularity}
+          result={state.result}
+          creation={creation}
+          saving={saving}
+          projectAccess={projectAccess}
+          onCreate={onCreate}
+        />
       )}
     </div>
   );
@@ -338,17 +356,23 @@ function InterpretationSection({
  * （中核思想 3）。
  */
 function CreationSection({
+  annotationId,
   state,
   saving,
+  reasons,
   projectAccess,
   onCreate,
 }: {
+  annotationId: string;
   state?: CreationState;
   saving: boolean;
+  /** このまま作らせない理由。空なら押させる。 */
+  reasons: string[];
   projectAccess: ProjectAccess;
   onCreate: () => void;
 }) {
   const running = state?.status === "running";
+  const blockedId = `create-blocked-${annotationId}`;
 
   // 書けないと分かっているなら、押させずに理由を出す。押せば GitHub が 403 を
   // 返すので結果は同じだが、理由が読めるのは先に出したときだけ（ADR 0017）。
@@ -368,11 +392,22 @@ function CreationSection({
       <button
         type="button"
         onClick={onCreate}
-        disabled={running || saving}
+        disabled={running || saving || reasons.length > 0}
         title={saving ? "保存が終わるまで作成できません" : undefined}
+        aria-describedby={reasons.length > 0 ? blockedId : undefined}
       >
         {running ? "作成中…" : "GitHub に作成する"}
       </button>
+
+      {/*
+        押せない理由は本文として出す。disabled なボタンはフォーカスも当たらない
+        ので、title ではキーボードと読み上げの利用者に理由が届かない。
+      */}
+      {reasons.length > 0 && (
+        <p className="hint" id={blockedId}>
+          {reasons.join(" ")}
+        </p>
+      )}
 
       {state?.status === "error" && <p className="error">{state.message}</p>}
 
@@ -403,52 +438,225 @@ function CreationSection({
 }
 
 /**
- * 解釈結果。summary を最初に見せ、item ごとの本文も読める形で出す。
+ * 解釈結果を見せ、作るものを選ばせ、手直しさせる。
  *
  * summary は GitHub には作らない。LLM がこの囲みをどう読んだかを開発者が
- * 確かめるための材料（ADR 0006）。
+ * 確かめるための材料（ADR 0006）なので、編集もさせない。
  *
- * 本文は summary とは別に要る。summary は解釈全体の要約であって、これから
- * 作られる draft issue の中身ではない。作成は取り消せない（ADR 0009）ので、
- * 押す前に中身が読めていなければならない。
+ * 作成は取り消せない（ADR 0009）。押す前に中身が読めているだけでなく、
+ * **LLM が決めたとおりに作るしかない状態にしない**（中核思想 3、ADR 0024）。
+ *
+ * **下書きをここで持つ。`BoardPage` に上げない。** 保存も解釈のやり直しも
+ * `InterpretationState` を done から外すので、この枝ごと unmount されて編集は
+ * 捨てられる。上げると `save` と `interpret` の両方に破棄を書き足すことになり、
+ * 片方を忘れると保存したあとに古い編集が残る。
  */
-function InterpretationResult({ result }: { result: Interpretation }) {
-  const groups = groupByEpic(result.items);
+function InterpretationDraft({
+  annotationId,
+  granularity,
+  result,
+  creation,
+  saving,
+  projectAccess,
+  onCreate,
+}: {
+  annotationId: string;
+  granularity: Granularity;
+  result: Interpretation;
+  creation?: CreationState;
+  saving: boolean;
+  projectAccess: ProjectAccess;
+  onCreate: (interpretation: Interpretation) => void;
+}) {
+  const [draft, setDraft] = useState(() => createDraft(result));
+
+  // 編集後の kind で組み直す。構造を変えたことがその場で見えるようにする。
+  const groups = groupByEpic(draft.items.map((d) => d.item));
+  // groupByEpic は下書きの項目そのものを並べ替えて返すので、引けない localId は
+  // 無い。それでも既定を持つのは、無いものを「選ばれている」と倒さないため。
+  const selected = new Map(draft.items.map((d) => [d.item.localId, d.selected]));
+  const orphans = orphanedLocalIds(draft);
+  const reasons = blockingReasons(draft, granularity);
+
+  // 作成中と保存中は入力も止める。ボタンだけ止めても、押せないあいだに
+  // 編集できるのでは何を作っているのかが定まらない。
+  const frozen = creation?.status === "running" || saving;
+
+  // 粒度に issue を指定した注釈では epic を 1 件も作れない（サーバーの
+  // Validate が弾く）。選ばせる理由が無いので種別は変えさせない。
+  const editableKind = granularity !== "issue";
+
+  const fields = (item: InterpretedItem) => (
+    <DraftItemFields
+      item={item}
+      selected={selected.get(item.localId) ?? false}
+      orphan={orphans.has(item.localId)}
+      frozen={frozen}
+      editableKind={editableKind}
+      onToggle={() => setDraft((d) => toggleItem(d, item.localId))}
+      onKind={(kind) => setDraft((d) => setKind(d, item.localId, kind))}
+      onTitle={(title) => setDraft((d) => setTitle(d, item.localId, title))}
+      onBody={(body) => setDraft((d) => setBody(d, item.localId, body))}
+    />
+  );
 
   return (
-    <div className="interpretation-result">
-      <p className="summary">{result.summary}</p>
+    <>
+      <div className="interpretation-result">
+        <p className="summary">{draft.summary}</p>
 
-      {groups.length === 0 ? (
-        <p className="hint">作成される項目はありません。</p>
-      ) : (
-        <ul className="plain-list">
-          {groups.map((g, i) => (
-            <li key={g.epic?.localId ?? `orphans-${i}`}>
-              {g.epic ? (
-                <>
-                  <span className="kind">epic</span> {g.epic.title}
-                  <ItemBody body={g.epic.body} />
-                </>
-              ) : (
-                <span className="hint">epic に属さない issue</span>
-              )}
+        {groups.length === 0 ? (
+          <p className="hint">作成される項目はありません。</p>
+        ) : (
+          <ul className="plain-list">
+            {groups.map((g, i) => (
+              <li key={g.epic?.localId ?? `orphans-${i}`}>
+                {g.epic ? (
+                  fields(g.epic)
+                ) : (
+                  <span className="hint">epic に属さない issue</span>
+                )}
 
-              {g.issues.length > 0 && (
-                <ul className="plain-list">
-                  {g.issues.map((it) => (
-                    <li key={it.localId}>
-                      <span className="kind">issue</span> {it.title}
-                      <ItemBody body={it.body} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+                {g.issues.length > 0 && (
+                  <ul className="plain-list">
+                    {g.issues.map((it) => (
+                      <li key={it.localId}>{fields(it)}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <CreationSection
+        annotationId={annotationId}
+        state={creation}
+        saving={saving}
+        reasons={reasons}
+        projectAccess={projectAccess}
+        onCreate={() => onCreate(buildInterpretation(draft))}
+      />
+    </>
+  );
+}
+
+/**
+ * 解釈結果 1 件ぶんの、作るかどうかと中身。
+ *
+ * ラベルは `localId` で分ける。一覧に同じ役割の入力が何組も並ぶので、
+ * タイトルで分けると編集の途中でラベルが変わってしまう。
+ */
+function DraftItemFields({
+  item,
+  selected,
+  orphan,
+  frozen,
+  editableKind,
+  onToggle,
+  onKind,
+  onTitle,
+  onBody,
+}: {
+  item: InterpretedItem;
+  selected: boolean;
+  /**
+   * 親を失ったまま作られる issue かどうか。
+   *
+   * 選ばれていない項目は最初から含まれない（`orphanedLocalIds`）。ここで
+   * `selected` と重ねて判定しない。同じことを 2 箇所で決めることになる。
+   */
+  orphan: boolean;
+  frozen: boolean;
+  editableKind: boolean;
+  onToggle: () => void;
+  onKind: (kind: ItemKind) => void;
+  onTitle: (title: string) => void;
+  onBody: (body: string) => void;
+}) {
+  return (
+    <div className={`draft-item${selected ? "" : " unselected"}`}>
+      <div className="draft-head">
+        <input
+          type="checkbox"
+          checked={selected}
+          disabled={frozen}
+          onChange={onToggle}
+          aria-label={`${item.localId} を作成する`}
+        />
+
+        {editableKind ? (
+          <select
+            className="draft-kind"
+            value={item.kind}
+            disabled={frozen}
+            onChange={(e) => onKind(e.target.value as ItemKind)}
+            aria-label={`${item.localId} の種別`}
+          >
+            <option value="epic">epic</option>
+            <option value="issue">issue</option>
+          </select>
+        ) : (
+          <span className="kind">{item.kind}</span>
+        )}
+
+        <input
+          className="draft-title"
+          value={item.title}
+          disabled={frozen}
+          onChange={(e) => onTitle(e.target.value)}
+          aria-label={`${item.localId} のタイトル`}
+        />
+      </div>
+
+      {/*
+        親が消えたことを黙って起こさない（ADR 0024）。作られるものが変わって
+        いるので、押す前に見えている必要がある。
+      */}
+      {orphan && <p className="hint">epic に属さない issue として作られます。</p>}
+
+      <DraftItemBody
+        localId={item.localId}
+        body={item.body}
+        frozen={frozen}
+        onBody={onBody}
+      />
     </div>
+  );
+}
+
+/**
+ * これから作る draft issue の本文。既定は畳んでおく。
+ *
+ * `ItemBody` と見え方を揃える。畳んであること、生テキストのまま出すこと、
+ * 空なら空と分かること。**整形しない。** GitHub に送るのはこのテキスト
+ * そのもので、整形すると「確認したもの」と「作られるもの」がずれる。
+ */
+function DraftItemBody({
+  localId,
+  body,
+  frozen,
+  onBody,
+}: {
+  localId: string;
+  body: string;
+  frozen: boolean;
+  onBody: (body: string) => void;
+}) {
+  return (
+    <details className="item-body">
+      {/* 空のときの文言は `ItemBody` と揃える。同じものを見ているのに、
+          読むときと直すときで呼び方が変わると別物に見える（ADR 0023）。 */}
+      <summary>{body === "" ? "本文なし" : "本文"}</summary>
+      <textarea
+        value={body}
+        rows={6}
+        disabled={frozen}
+        onChange={(e) => onBody(e.target.value)}
+        aria-label={`${localId} の本文`}
+      />
+    </details>
   );
 }
 

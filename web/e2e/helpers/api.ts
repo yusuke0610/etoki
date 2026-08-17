@@ -49,6 +49,14 @@ export type ApiMock = {
    */
   interpretRequests: InterpretRequest[];
   createItems: Reply<CreatedRun>;
+  /**
+   * 作成で受け取ったリクエストボディ。届いた順に積む。
+   *
+   * 何を作らせたのかはここにしか現れない。画面で外した項目や手直しした本文が
+   * GitHub に届く形になっているかは、送ったボディを見ないと確かめられない
+   * （ADR 0024）。
+   */
+  createRequests: Interpretation[];
   /** 作成先の候補。リポジトリ選択の画面が読む。 */
   repositories: Reply<Repository[]>;
   /** `owner/name` をキーにした Projects v2。 */
@@ -377,6 +385,12 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/items$/.test(url.pathname),
     async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+
+      mock.createRequests.push((route.request().postDataJSON() ?? {}) as Interpretation);
       await json(route, mock.createItems.status, mock.createItems.body);
     },
   );
