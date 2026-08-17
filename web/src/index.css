@@ -251,6 +251,9 @@ body {
   padding: 6px 8px;
   background: #f7f7f7;
   border-radius: 4px;
+  /* pre の既定は等幅。textarea 側と揃えないと、読むときと直すときで書体が
+     変わり、同じ本文が別物に見える。 */
+  font-family: inherit;
   font-size: 12px;
   line-height: 1.6;
   /* パネルは 280px しかない。改行は残したまま、長い行は折り返す。 */
