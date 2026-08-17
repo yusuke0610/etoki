@@ -32,9 +32,10 @@ export function board(): BoardDetail {
     repositoryOwner: "acme",
     repositoryName: "web",
     projectId: "PVT_1",
-    // 表示名は作成先を選んだ時点のスナップショット（ADR 0019）。
+    // 表示用の値は作成先を選んだ時点のスナップショット（ADR 0019 / 0025）。
     projectNumber: 1,
     projectTitle: "ロードマップ",
+    projectUrl: "https://github.com/orgs/acme/projects/1",
     targetLocked: false,
   };
 }
@@ -215,8 +216,20 @@ export function repositories(): Repository[] {
 
 export function projects(): Project[] {
   return [
-    { id: "PVT_1", number: 1, title: "ロードマップ" },
-    { id: "PVT_2", number: 4, title: "技術的負債" },
+    // URL は GitHub が返すもので、番号から組み立てたものではない。owner が
+    // user か org かで形が変わる（ADR 0025）。両方の形を混ぜてある。
+    {
+      id: "PVT_1",
+      number: 1,
+      title: "ロードマップ",
+      url: "https://github.com/orgs/acme/projects/1",
+    },
+    {
+      id: "PVT_2",
+      number: 4,
+      title: "技術的負債",
+      url: "https://github.com/users/acme/projects/4",
+    },
   ];
 }
 

@@ -120,9 +120,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       repositoryOwner: target.repositoryOwner,
       repositoryName: target.repositoryName,
       projectId: target.projectId,
-      // 表示名は任意（ADR 0019）。送ってこなければ「名前を知らない」で残る。
+      // 表示用の値は任意（ADR 0019 / 0025）。送ってこなければ「知らない」で
+      // 残り、リンクはリポジトリの Projects へ落ちる。
       projectNumber: target.projectNumber ?? 0,
       projectTitle: target.projectTitle ?? "",
+      projectUrl: target.projectUrl ?? "",
       targetLocked: false,
     };
   };
@@ -483,6 +485,7 @@ export function summarize(b: BoardDetail): BoardSummary {
     projectId: b.projectId,
     projectNumber: b.projectNumber,
     projectTitle: b.projectTitle,
+    projectUrl: b.projectUrl,
   };
 }
 
