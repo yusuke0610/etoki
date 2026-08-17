@@ -219,7 +219,9 @@ func (c *Client) ListRepositoryProjects(
 			if n.Closed {
 				continue
 			}
-			projects = append(projects, port.Project{ID: n.ID, Number: n.Number, Title: n.Title})
+			projects = append(projects, port.Project{
+				ID: n.ID, Number: n.Number, Title: n.Title, URL: n.URL,
+			})
 		}
 
 		page := resp.Repository.ProjectsV2.PageInfo
@@ -705,6 +707,9 @@ type repositoriesResponse struct {
 // draft issue の作成先はリポジトリではなく Project（ADR 0014）。番号順に
 // 並べるのは、GitHub の URL に出る番号と一覧の並びを揃えるため。
 //
+// **url は自分で組まずに取る。** owner が user か org かで形が変わり、etoki は
+// どちらなのかを知らない（ADR 0025）。
+//
 // **minPermissionLevel は WRITE。** 既定の READ だと、読めるだけで書けない
 // Project まで候補に出る。選んだ時点では通り、最初の draft issue を作る
 // ところで初めて GitHub 側の権限エラーになる。そこは固定の時点でもあるので、
@@ -718,7 +723,7 @@ const queryRepositoryProjects = `query($owner: String!, $name: String!, $first: 
       orderBy: {field: NUMBER, direction: ASC}
     ) {
       pageInfo { hasNextPage endCursor }
-      nodes { id number title closed }
+      nodes { id number title url closed }
     }
   }
 }`
@@ -731,6 +736,7 @@ type repositoryProjectsResponse struct {
 				ID     string `json:"id"`
 				Number int    `json:"number"`
 				Title  string `json:"title"`
+				URL    string `json:"url"`
 				Closed bool   `json:"closed"`
 			} `json:"nodes"`
 		} `json:"projectsV2"`

@@ -23,6 +23,7 @@ import {
   setTitle,
   toggleItem,
 } from "./interpretationDraft";
+import type { ProjectLink } from "./projectLink";
 
 /** 注釈 1 つぶんの作成の進み具合。 */
 export type CreationState =
@@ -97,6 +98,14 @@ type Props = {
    * 「なぜできないか」が見えていないと使えない（中核思想 3）。
    */
   projectAccess: ProjectAccess;
+  /**
+   * 作成先へのリンク。組めなければ null（ADR 0025）。
+   *
+   * draft issue 個別の URL は組めないので、飛び先は注釈ごとではなく
+   * ボードごとに 1 つ。**行ごとにリンクを置かない。** 置くと、行ごとに
+   * 違う場所へ飛ぶように読めてしまう。
+   */
+  projectLink: ProjectLink | null;
 };
 
 export function AnnotationPanel({
@@ -117,6 +126,7 @@ export function AnnotationPanel({
   onCreate,
   canEdit,
   projectAccess,
+  projectLink,
 }: Props) {
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
   // 出ると、同じものが 2 つあるように見える。
@@ -247,6 +257,7 @@ export function AnnotationPanel({
                           </li>
                         ))}
                       </ul>
+                      <ProjectLinkLine link={projectLink} />
                     </details>
                   )}
 
@@ -259,6 +270,7 @@ export function AnnotationPanel({
                       stale={stale}
                       saving={saving}
                       projectAccess={projectAccess}
+                      projectLink={projectLink}
                       onInterpret={() => onInterpret(a.id)}
                       onCreate={(interpretation) => onCreate(a.id, interpretation)}
                     />
@@ -284,6 +296,8 @@ type InterpretationSectionProps = {
   stale: boolean;
   saving: boolean;
   projectAccess: ProjectAccess;
+  /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
+  projectLink: ProjectLink | null;
   onInterpret: () => void;
   onCreate: (interpretation: Interpretation) => void;
 };
@@ -302,6 +316,7 @@ function InterpretationSection({
   stale,
   saving,
   projectAccess,
+  projectLink,
   onInterpret,
   onCreate,
 }: InterpretationSectionProps) {
@@ -342,6 +357,7 @@ function InterpretationSection({
           creation={creation}
           saving={saving}
           projectAccess={projectAccess}
+          projectLink={projectLink}
           onCreate={onCreate}
         />
       )}
@@ -361,6 +377,7 @@ function CreationSection({
   saving,
   reasons,
   projectAccess,
+  projectLink,
   onCreate,
 }: {
   annotationId: string;
@@ -369,6 +386,8 @@ function CreationSection({
   /** このまま作らせない理由。空なら押させる。 */
   reasons: string[];
   projectAccess: ProjectAccess;
+  /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
+  projectLink: ProjectLink | null;
   onCreate: () => void;
 }) {
   const running = state?.status === "running";
@@ -431,6 +450,7 @@ function CreationSection({
               </li>
             ))}
           </ul>
+          <ProjectLinkLine link={projectLink} />
         </div>
       )}
     </div>
@@ -458,6 +478,7 @@ function InterpretationDraft({
   creation,
   saving,
   projectAccess,
+  projectLink,
   onCreate,
 }: {
   annotationId: string;
@@ -466,6 +487,7 @@ function InterpretationDraft({
   creation?: CreationState;
   saving: boolean;
   projectAccess: ProjectAccess;
+  projectLink: ProjectLink | null;
   onCreate: (interpretation: Interpretation) => void;
 }) {
   const [draft, setDraft] = useState(() => createDraft(result));
@@ -536,6 +558,7 @@ function InterpretationDraft({
         saving={saving}
         reasons={reasons}
         projectAccess={projectAccess}
+        projectLink={projectLink}
         onCreate={() => onCreate(buildInterpretation(draft))}
       />
     </>
@@ -657,6 +680,31 @@ function DraftItemBody({
         aria-label={`${localId} の本文`}
       />
     </details>
+  );
+}
+
+/**
+ * 作成した draft issue を確かめにいくリンク 1 行（ADR 0025）。
+ *
+ * **リストごとに 1 本で、行ごとには置かない。** draft issue には個別の URL が
+ * 無く、飛び先はどの行でも同じ Project になる。行ごとに並べると、行ごとに
+ * 違う場所へ飛ぶように読めてしまう。
+ *
+ * Project そのものに着地しないときは、そう書く。リポジトリの Projects まで
+ * しか辿れないのに「Project を開く」と言うと、リンクの約束が崩れる。
+ */
+function ProjectLinkLine({ link }: { link: ProjectLink | null }) {
+  // 作成先が未選択のボードでは飛び先が無い。何も出さない。
+  if (!link) return null;
+
+  return (
+    <p className="hint">
+      <a href={link.href} target="_blank" rel="noreferrer">
+        {link.exact
+          ? "GitHub でこの Project を開く"
+          : "GitHub でリポジトリの Projects を開く"}
+      </a>
+    </p>
   );
 }
 

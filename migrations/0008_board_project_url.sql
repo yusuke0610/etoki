@@ -1,0 +1,15 @@
+-- 作成先 Project の URL を、選んだ時点のスナップショットとして持つ（ADR 0025）。
+--
+-- project_number と project_title（0006）と同じ扱いで、**判定には使わない**。
+-- 作成先が選ばれているかどうかも、固定済みかどうかも、この列とは無関係に決まる。
+--
+-- URL を組まずに保存するのは、owner が user か org かを etoki が知らないため。
+-- Projects v2 の URL は /orgs/{owner}/projects/{n} と /users/{owner}/projects/{n}
+-- に分かれるが、boards が持つのは repository_owner の文字列だけで、どちらの形に
+-- なるかを決める材料が無い。決め打つと外したほうのボードで 404 になる。
+-- GitHub に URL そのものを返させれば推測が要らない。
+--
+-- 空文字は「URL を知らない」を表す。移行前のボードと、URL を送らずに API を
+-- 直接叩いて設定した作成先が該当する。そのときフロントはリポジトリの Projects
+-- タブへ落とす（web/src/board/projectLink.ts）。
+ALTER TABLE boards ADD COLUMN project_url TEXT NOT NULL DEFAULT '';

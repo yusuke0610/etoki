@@ -28,6 +28,7 @@ import {
 } from "./AnnotationPanel";
 import { createGenerations } from "./generation";
 import { MemberPanel } from "./MemberPanel";
+import { projectLink } from "./projectLink";
 import { ROLE_LABELS } from "./roles";
 
 type Props = {
@@ -376,6 +377,9 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
   const markable = selectedFrames.filter((f) => !annotationIdsOnCanvas.has(f.id));
   const unmarkable = selectedFrames.filter((f) => annotationIdsOnCanvas.has(f.id));
 
+  // 作った draft issue を確かめにいく先。未選択のボードでは null（ADR 0025）。
+  const link = projectLink(board);
+
   return (
     <div className="board">
       <header className="board-header">
@@ -392,10 +396,30 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
           {/*
             どこに作られるのかは、作る直前ではなく常に見えている必要がある。
             作った draft issue は取り消せない（ADR 0009）。
+
+            飛び先が組めるならリンクにする。取り消せない操作の結果を確かめる
+            導線がここから始まる（ADR 0025）。組めないのは作成先が未選択の
+            ボードだけなので、そのときはこれまでどおり文字のまま出す。
           */}
-          <span className="badge badge-target">
-            {board.repositoryOwner}/{board.repositoryName}
-          </span>
+          {link ? (
+            <a
+              className="badge badge-target"
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              title={
+                link.exact
+                  ? "作成先の Project を GitHub で開く"
+                  : "リポジトリの Projects を GitHub で開く"
+              }
+            >
+              {board.repositoryOwner}/{board.repositoryName}
+            </a>
+          ) : (
+            <span className="badge badge-target">
+              {board.repositoryOwner}/{board.repositoryName}
+            </span>
+          )}
           {/*
             押せない理由は title に隠さず、本文として出す。title はホバーでしか
             読めず、disabled なボタンはフォーカスも当たらないので、キーボードと
@@ -493,6 +517,7 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
           onCreate={(id, interpretation) => void create(id, interpretation)}
           canEdit={canEdit}
           projectAccess={projectAccess}
+          projectLink={link}
         />
       </div>
     </div>

@@ -29,6 +29,7 @@ func toSummary(a port.BoardAccess) apitypes.BoardSummary {
 		ProjectID:       a.Board.Target.ProjectID,
 		ProjectNumber:   a.Board.Target.ProjectNumber,
 		ProjectTitle:    a.Board.Target.ProjectTitle,
+		ProjectURL:      a.Board.Target.ProjectURL,
 	}
 }
 
@@ -49,6 +50,7 @@ func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
 		ProjectID:       a.Board.Target.ProjectID,
 		ProjectNumber:   a.Board.Target.ProjectNumber,
 		ProjectTitle:    a.Board.Target.ProjectTitle,
+		ProjectURL:      a.Board.Target.ProjectURL,
 		TargetLocked:    targetLocked,
 	}
 }
@@ -118,6 +120,7 @@ func (h *handlers) createBoard(c *gin.Context) {
 		ProjectID:       req.ProjectID,
 		ProjectNumber:   req.ProjectNumber,
 		ProjectTitle:    req.ProjectTitle,
+		ProjectURL:      req.ProjectURL,
 	})
 	if err != nil {
 		h.fail(c, err)
@@ -173,6 +176,7 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 		ProjectID:       req.ProjectID,
 		ProjectNumber:   req.ProjectNumber,
 		ProjectTitle:    req.ProjectTitle,
+		ProjectURL:      req.ProjectURL,
 	}
 
 	if err := h.boards.SetTarget(c.Request.Context(), id, target); err != nil {

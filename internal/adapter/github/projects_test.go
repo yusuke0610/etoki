@@ -648,8 +648,8 @@ func TestListRepositoryProjects(t *testing.T) {
 	body := `{"data":{"repository":{"projectsV2":{
 		"pageInfo":{"hasNextPage":false,"endCursor":"c1"},
 		"nodes":[
-			{"id":"PVT_1","number":1,"title":"ロードマップ","closed":false},
-			{"id":"PVT_2","number":2,"title":"終わったやつ","closed":true}
+			{"id":"PVT_1","number":1,"title":"ロードマップ","url":"https://github.com/orgs/acme/projects/1","closed":false},
+			{"id":"PVT_2","number":2,"title":"終わったやつ","url":"https://github.com/orgs/acme/projects/2","closed":true}
 		]}}}}`
 
 	c, got := newClient(t, body)
@@ -663,7 +663,12 @@ func TestListRepositoryProjects(t *testing.T) {
 	if len(projects) != 1 {
 		t.Fatalf("len(projects) = %d, want 1 (%+v)", len(projects), projects)
 	}
-	want := port.Project{ID: "PVT_1", Number: 1, Title: "ロードマップ"}
+	// URL は番号から組み立てず GitHub が返したものを運ぶ。owner が user か
+	// org かで形が変わり、etoki はどちらなのかを知らない（ADR 0025）。
+	want := port.Project{
+		ID: "PVT_1", Number: 1, Title: "ロードマップ",
+		URL: "https://github.com/orgs/acme/projects/1",
+	}
 	if projects[0] != want {
 		t.Errorf("projects[0] = %+v, want %+v", projects[0], want)
 	}

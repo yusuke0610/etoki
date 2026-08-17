@@ -575,6 +575,15 @@ export interface components {
              *     （ADR 0019）。取得していなければ空文字
              */
             projectTitle: string;
+            /**
+             * @description 作成先 Project の URL。作成先を選んだ時点のスナップショット
+             *     （ADR 0025）。取得していなければ空文字。
+             *
+             *     番号から組み立てたものではなく GitHub が返したもの。Projects v2 の
+             *     URL は owner が user か org かで形が変わり、etoki はどちらなのかを
+             *     知らない
+             */
+            projectUrl: string;
         };
         /** @description シーンと作成先の固定状態を加えたボード */
         BoardDetail: components["schemas"]["BoardSummary"] & {
@@ -593,11 +602,12 @@ export interface components {
          *     リポジトリと Project の両方を持つ。保存先として効くのは projectId
          *     だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
          *
-         *     projectNumber と projectTitle は**表示用のスナップショット**であり、
-         *     作成先そのものではない（ADR 0019）。未選択の判定にも、固定済みかどうかの
-         *     判定にも使わない。選ばせた画面が見せていた名前をそのまま送る。
+         *     projectNumber と projectTitle と projectUrl は**表示用のスナップショット**
+         *     であり、作成先そのものではない（ADR 0019 / 0025）。未選択の判定にも、
+         *     固定済みかどうかの判定にも使わない。選ばせた画面が見せていたものを
+         *     そのまま送る。
          *
-         *     表示名は任意。省略すると「名前を知らない」（0 と空文字）として保存する。
+         *     表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存する。
          *     必須にすると、画面を通さない呼び出し側が値をでっち上げることになる。
          */
         BoardTarget: {
@@ -606,6 +616,7 @@ export interface components {
             projectId: string;
             projectNumber?: number;
             projectTitle?: string;
+            projectUrl?: string;
         };
         /** @description 作成先を選ぶときに見せるリポジトリ */
         Repository: {
@@ -620,6 +631,12 @@ export interface components {
             /** @description リポジトリ内での番号。GitHub の URL に出る */
             number: number;
             title: string;
+            /**
+             * @description Project のページ。**番号から組み立てず GitHub が返したものを運ぶ。**
+             *     Projects v2 の URL は owner が user か org かで形が変わり、etoki は
+             *     どちらなのかを知らない（ADR 0025）
+             */
+            url: string;
         };
         /**
          * @description ボード作成のリクエストボディ。
@@ -648,6 +665,11 @@ export interface components {
              *     省略すると空文字（名前を知らない）で保存する
              */
             projectTitle?: string;
+            /**
+             * @description 作成先 Project の URL。表示用のスナップショット（ADR 0025）。
+             *     省略すると空文字（URL を知らない）で保存する
+             */
+            projectUrl?: string;
             /** @description 省略すると空のシーンで作る */
             scene?: string;
         };

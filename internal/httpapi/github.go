@@ -58,7 +58,7 @@ func (h *handlers) listRepositoryProjects(c *gin.Context) {
 
 	out := make([]apitypes.Project, 0, len(projects))
 	for _, p := range projects {
-		out = append(out, apitypes.Project{ID: p.ID, Number: p.Number, Title: p.Title})
+		out = append(out, apitypes.Project{ID: p.ID, Number: p.Number, Title: p.Title, URL: p.URL})
 	}
 
 	c.JSON(http.StatusOK, out)

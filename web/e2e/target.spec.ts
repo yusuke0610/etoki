@@ -83,7 +83,14 @@ test.describe("作成先の選択", () => {
     const mock = withUnselected();
     mock.projects["acme/web"] = {
       status: 200,
-      body: [{ id: "PVT_only", number: 1, title: "唯一のプロジェクト" }],
+      body: [
+        {
+          id: "PVT_only",
+          number: 1,
+          title: "唯一のプロジェクト",
+          url: "https://github.com/orgs/acme/projects/1",
+        },
+      ],
     };
 
     await installApi(page, mock);

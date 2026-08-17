@@ -69,12 +69,19 @@ UI は未保存の変更があることを表示する。
   作成先を変えられる。`BoardService` と `CreationService` には**同じ
   `*BoardLocks` を渡す**。別々に持たせると直列化が素通りするので、任意の設定
   ではなくコンストラクタの引数にしてある。
-- **`project_number` / `project_title` は表示用のスナップショット。**
+- **`project_number` / `project_title` / `project_url` は表示用のスナップショット。**
   作成先を選んだ時点の値を保存するだけで、**判定には使わない**。
   `BoardTarget.Selected` は 3 つ（owner / name / projectId）だけを見る。ここに
   足すと、名前を送らずに設定した正しい作成先が「未選択」に落ちる。古くなったら
-  選び直しで直す。**自動で GitHub に取りにいって書き戻さない。** この 2 つを
-  返しているのは、一覧を作成先でまとめて見せるため（ADR 0019、`web/CLAUDE.md`）。
+  選び直しで直す。**自動で GitHub に取りにいって書き戻さない。** 番号と名前を
+  返しているのは一覧を作成先でまとめて見せるため（ADR 0019、`web/CLAUDE.md`）、
+  URL は作った draft issue を確かめにいくため（ADR 0025）。
+- **URL は組み立てず、GitHub が返した `ProjectV2.url` を運ぶ。** Projects v2 の
+  URL は owner が user か org かで `/orgs/...` と `/users/...` に分かれるが、
+  etoki が持っているのは `repository_owner` の文字列だけで、どちらなのかを
+  決める材料が無い（ADR 0025）。**番号から組み立てないこと。** 決め打つと外した
+  ほうのボードで 404 になる。確認のための導線が 404 を返すのは、リンクが無いより
+  悪い。空文字は「URL を知らない」で、フロントがリポジトリの Projects へ落とす。
 
 ## Gin ハンドラ
 
