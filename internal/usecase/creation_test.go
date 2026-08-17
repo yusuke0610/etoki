@@ -698,3 +698,243 @@ func TestCreate_UsesConfiguredFieldNames(t *testing.T) {
 }
 
 func ptrTo[T any](v T) *T { return &v }
+
+// ---------------------------------------------------------------------------
+// changed の注釈に対する更新（ADR 0026）
+// ---------------------------------------------------------------------------
+
+// seedRun は前回ぶんの run を積む。更新の相手を用意するために使う。
+func seedRun(t *testing.T, mappings *fakeMappings, items ...port.SyncItem) {
+	t.Helper()
+
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "old",
+		CreatedAt: createdAt, Items: items,
+	}); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+}
+
+func savedItem(itemID, localID string, kind port.ItemKind, title string) port.SyncItem {
+	return port.SyncItem{
+		ItemID: itemID, LocalID: localID, Kind: kind, Title: title,
+		Action: port.ActionCreated, CreatedAt: createdAt,
+	}
+}
+
+// 更新は作成と同じ run に混ざる。何をしたのかは Action に残る。
+func TestCreate_UpdatesPreviousItems(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{}
+	seedRun(t, mappings, savedItem("PVTI_old_epic", "e1", port.KindEpic, "決済フローの見直し"))
+
+	svc := newCreationService(t, gh, mappings)
+
+	previous := "PVTI_old_epic"
+	in := domain.Interpretation{
+		Summary: "文言を直した",
+		Items: []domain.InterpretedItem{
+			{
+				LocalID: "e1", Kind: domain.KindEpic, Title: "決済フローの作り直し",
+				Body: "方針を書き直した", PreviousItemID: &previous,
+			},
+			{LocalID: "i1", Kind: domain.KindIssue, Title: "新しく足す issue"},
+		},
+	}
+
+	run, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in)
+	if err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+
+	if len(run.Items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(run.Items))
+	}
+
+	// 更新した item は前回の ID を保つ。新しく作り直すと GitHub 側に重複が残る。
+	if run.Items[0].ItemID != "PVTI_old_epic" {
+		t.Errorf("更新した item の ID = %q, want PVTI_old_epic", run.Items[0].ItemID)
+	}
+	if run.Items[0].Action != port.ActionUpdated {
+		t.Errorf("action = %q, want %q", run.Items[0].Action, port.ActionUpdated)
+	}
+	if run.Items[1].Action != port.ActionCreated {
+		t.Errorf("新規の action = %q, want %q", run.Items[1].Action, port.ActionCreated)
+	}
+
+	// 書き換えたのであって作り直していない。
+	var created, updated int
+	for _, c := range gh.calls {
+		switch c.op {
+		case "create":
+			created++
+		case "update":
+			updated++
+		}
+	}
+	if created != 1 || updated != 1 {
+		t.Errorf("create = %d, update = %d, want 1 と 1", created, updated)
+	}
+
+	// 記録するのは更新後のシーンのハッシュ。次の判定が created にならないと、
+	// 更新したのに「変更あり」のまま残る。
+	if run.ContentHash != currentContentHash(t) {
+		t.Errorf("ContentHash = %q, want 更新後の値", run.ContentHash)
+	}
+}
+
+// 更新先がその注釈のものでなければ、1 件も作らず 1 件も更新せずに止める。
+// 確かめずに通すと、任意の node ID で無関係な draft issue を書き換えられる。
+func TestCreate_RejectsUnknownPreviousItem(t *testing.T) {
+	t.Parallel()
+
+	for name, seed := range map[string][]port.SyncItem{
+		"一度も作っていない":    nil,
+		"別の item は作った": {savedItem("PVTI_mine", "e1", port.KindEpic, "自分のもの")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			gh := &fakeGitHub{fields: projectFields()}
+			mappings := &fakeMappings{}
+			if seed != nil {
+				seedRun(t, mappings, seed...)
+			}
+			before := len(mappings.runs)
+
+			svc := newCreationService(t, gh, mappings)
+
+			stranger := "PVTI_someone_else"
+			in := domain.Interpretation{
+				Summary: "s",
+				Items: []domain.InterpretedItem{
+					{LocalID: "i1", Kind: domain.KindIssue, Title: "t", PreviousItemID: &stranger},
+				},
+			}
+
+			_, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in)
+			if !errors.Is(err, usecase.ErrPreviousItemUnknown) {
+				t.Fatalf("Create() = %v, want ErrPreviousItemUnknown", err)
+			}
+			if len(gh.calls) != 0 {
+				t.Errorf("GitHub を叩いている: %+v", gh.calls)
+			}
+			if len(mappings.runs) != before {
+				t.Error("run を記録している")
+			}
+		})
+	}
+}
+
+// 途中で失敗しても、そこまでの更新は run に残す。GitHub 側の書き換えは
+// 取り消せないので、記録しないと何が変わったのか追えない（ADR 0009）。
+func TestCreate_RecordsPartialUpdate(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields(), failOnTitle: "こけるほう"}
+	mappings := &fakeMappings{}
+	seedRun(t, mappings,
+		savedItem("PVTI_a", "e1", port.KindEpic, "先に通るほう"),
+		savedItem("PVTI_b", "i1", port.KindIssue, "こけるほう"),
+	)
+
+	svc := newCreationService(t, gh, mappings)
+
+	first, second := "PVTI_a", "PVTI_b"
+	in := domain.Interpretation{
+		Summary: "s",
+		Items: []domain.InterpretedItem{
+			{LocalID: "e1", Kind: domain.KindEpic, Title: "書き換えたほう", PreviousItemID: &first},
+			{LocalID: "i1", Kind: domain.KindIssue, Title: "こけるほう", PreviousItemID: &second},
+		},
+	}
+
+	run, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in)
+	if !errors.Is(err, usecase.ErrCreationIncomplete) {
+		t.Fatalf("Create() = %v, want ErrCreationIncomplete", err)
+	}
+	if run == nil {
+		t.Fatal("run が nil。途中まで進んだことを記録していない")
+	}
+	if len(run.Items) != 1 || run.Items[0].ItemID != "PVTI_a" {
+		t.Errorf("items = %+v, want PVTI_a だけ", run.Items)
+	}
+}
+
+// 親子は epic のタイトルによる手作りの外部キー（ADR 0006）。epic のタイトルを
+// 書き換えたら、同じ解釈に入っている子の Parent も張り直さないと迷子になる。
+func TestCreate_RepointsChildrenWhenEpicTitleChanges(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{}
+	seedRun(t, mappings,
+		savedItem("PVTI_epic", "e1", port.KindEpic, "古い epic のタイトル"),
+		savedItem("PVTI_child", "i1", port.KindIssue, "子"),
+	)
+
+	svc := newCreationService(t, gh, mappings)
+
+	epicID, childID := "PVTI_epic", "PVTI_child"
+	parent := "e1"
+	in := domain.Interpretation{
+		Summary: "s",
+		Items: []domain.InterpretedItem{
+			{LocalID: "e1", Kind: domain.KindEpic, Title: "新しい epic のタイトル", PreviousItemID: &epicID},
+			{
+				LocalID: "i1", Kind: domain.KindIssue, Title: "子",
+				ParentLocalID: &parent, PreviousItemID: &childID,
+			},
+		},
+	}
+
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in); err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+
+	var parentSet string
+	for _, c := range gh.calls {
+		if c.op == "field" && c.itemID == "PVTI_child" && c.fieldID == "F_parent" {
+			parentSet = c.text
+		}
+	}
+	if parentSet != "新しい epic のタイトル" {
+		t.Errorf("子の Parent = %q, want 新しい epic のタイトル", parentSet)
+	}
+}
+
+// 手直しで kind を変えられる（ADR 0024）。更新でも Kind フィールドを張り直さないと、
+// 中身と種別が食い違ったまま GitHub に残る。
+func TestCreate_RepointsKindOnUpdate(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{}
+	seedRun(t, mappings, savedItem("PVTI_was_epic", "e1", port.KindEpic, "元は epic"))
+
+	svc := newCreationService(t, gh, mappings)
+
+	id := "PVTI_was_epic"
+	in := domain.Interpretation{
+		Summary: "s",
+		Items: []domain.InterpretedItem{
+			{LocalID: "i1", Kind: domain.KindIssue, Title: "issue に変えた", PreviousItemID: &id},
+		},
+	}
+
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in); err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+
+	var optionID string
+	for _, c := range gh.calls {
+		if c.op == "field" && c.itemID == "PVTI_was_epic" && c.fieldID == "F_kind" {
+			optionID = c.optionID
+		}
+	}
+	if optionID != "O_issue" {
+		t.Errorf("Kind = %q, want O_issue", optionID)
+	}
+}
