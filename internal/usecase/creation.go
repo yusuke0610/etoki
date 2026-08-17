@@ -273,6 +273,7 @@ func (s *CreationService) createOne(
 		Body:          item.Body,
 		LocalID:       item.LocalID,
 		ParentLocalID: item.ParentLocalID,
+		Action:        port.ActionCreated,
 		CreatedAt:     now,
 	}
 

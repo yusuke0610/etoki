@@ -163,7 +163,23 @@ func (k ItemKind) Valid() bool {
 	return k == KindEpic || k == KindIssue
 }
 
-// SyncItem は 1 回の実行で作成した draft issue 1 件。
+// SyncAction は 1 つの run がその item に対して何をしたかを表す。
+type SyncAction string
+
+// SyncAction の取りうる値。
+const (
+	// ActionCreated は draft issue を新しく作ったことを表す。
+	ActionCreated SyncAction = "created"
+	// ActionUpdated は既存の draft issue を書き換えたことを表す。
+	ActionUpdated SyncAction = "updated"
+)
+
+// Valid は a が定義済みの操作かどうかを返す。
+func (a SyncAction) Valid() bool {
+	return a == ActionCreated || a == ActionUpdated
+}
+
+// SyncItem は 1 回の実行で作成または更新した draft issue 1 件。
 type SyncItem struct {
 	// ID は永続化層が発番する ID。保存前は 0。
 	ID int64
@@ -185,7 +201,12 @@ type SyncItem struct {
 	LocalID string
 	// ParentLocalID は親の LocalID。トップレベルなら nil。
 	ParentLocalID *string
-	// CreatedAt は作成時刻。
+	// Action はこの run がこの item に対して何をしたか（ADR 0026）。
+	//
+	// 記録していなかった頃の run では ActionCreated。当時は更新の経路が
+	// 無かったので、すべて新規作成だった。
+	Action SyncAction
+	// CreatedAt は作成時刻。更新のときは書き換えた時刻。
 	CreatedAt time.Time
 }
 
@@ -288,4 +309,17 @@ type MappingRepository interface {
 	FindLatestRun(ctx context.Context, boardID, annotationID string) (*SyncRun, error)
 	// ListLatestRunsByBoard はボード内の注釈ごとに最新の run を返す。
 	ListLatestRunsByBoard(ctx context.Context, boardID string) ([]SyncRun, error)
+
+	// ListItemsByAnnotation はその注釈が GitHub に在らしめているものを返す。
+	//
+	// **最新 run の Items ではない。** run 履歴を ItemID で畳み、item ごとに
+	// いちばん新しい記録を採る（ADR 0026）。更新は同じ ItemID に吸収され、
+	// 今回触らなかった item も残り続ける。
+	//
+	// 最新 run だけを見ると、更新の run のあとに「前回作ったが今回は触らなかった」
+	// item が画面から消える。GitHub 側には残っているのに etoki が見せなくなるのは、
+	// 状態を見せるという方針に反する（中核思想 3）。
+	//
+	// 一度も実行していなければ空を返す。並びは記録された順。
+	ListItemsByAnnotation(ctx context.Context, boardID, annotationID string) ([]SyncItem, error)
 }

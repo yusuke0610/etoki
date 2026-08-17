@@ -401,8 +401,8 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		ContentHash:  hash,
 		CreatedAt:    fixedTime,
 		Items: []port.SyncItem{
-			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", CreatedAt: fixedTime},
-			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, CreatedAt: fixedTime},
+			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime},
+			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, Action: port.ActionCreated, CreatedAt: fixedTime},
 		},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)

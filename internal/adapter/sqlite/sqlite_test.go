@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -58,6 +59,7 @@ func item(localID, itemID string, kind port.ItemKind, parent *string) port.SyncI
 		Body:          "body-" + localID,
 		LocalID:       localID,
 		ParentLocalID: parent,
+		Action:        port.ActionCreated,
 		CreatedAt:     baseTime,
 	}
 }
@@ -297,6 +299,127 @@ func TestFindLatestRun_ItemWithoutBody(t *testing.T) {
 	}
 	if got.Items[0].Body != "" {
 		t.Errorf("Body = %q, want 空文字", got.Items[0].Body)
+	}
+}
+
+// C-3b: 履歴を item_id で畳むと「いま GitHub に在るもの」が出る（ADR 0026）。
+//
+// **最新 run の items ではない。** 最新 run だけを見ると、更新の run のあとに
+// 「前回作ったが今回は触らなかった」item が消える。GitHub 側には残っているのに
+// etoki が見せなくなるのは、状態を見せるという方針に反する（中核思想 3）。
+func TestListItemsByAnnotation_FoldsHistory(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	// run1: A と B を作る。
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-1", CreatedAt: baseTime,
+		Items: []port.SyncItem{
+			item("e1", "PVTI_a", port.KindEpic, nil),
+			item("i1", "PVTI_b", port.KindIssue, ptr("e1")),
+		},
+	}); err != nil {
+		t.Fatalf("run1: %v", err)
+	}
+
+	// run2: A を更新し、C を新しく作る。B は触らない。
+	updated := item("x1", "PVTI_a", port.KindEpic, nil)
+	updated.Title = "書き直したタイトル"
+	updated.Body = "書き直した本文"
+	updated.Action = port.ActionUpdated
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-2", CreatedAt: baseTime,
+		Items: []port.SyncItem{
+			updated,
+			item("x2", "PVTI_c", port.KindIssue, ptr("x1")),
+		},
+	}); err != nil {
+		t.Fatalf("run2: %v", err)
+	}
+
+	items, err := repo.ListItemsByAnnotation(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("ListItemsByAnnotation: %v", err)
+	}
+
+	// **並びは最初に作られた順。** 更新しても末尾へ動かさない。中身を書き換えた
+	// だけで並びが変わると、同じものを見ていることを確かめ直すことになる。
+	var ids []string
+	for _, it := range items {
+		ids = append(ids, it.ItemID)
+	}
+	if want := []string{"PVTI_a", "PVTI_b", "PVTI_c"}; !slices.Equal(ids, want) {
+		t.Fatalf("item = %v, want %v", ids, want)
+	}
+
+	// A は更新後の中身になる。
+	if items[0].Title != "書き直したタイトル" || items[0].Body != "書き直した本文" {
+		t.Errorf("A = %q/%q, want 更新後の中身", items[0].Title, items[0].Body)
+	}
+	if items[0].Action != port.ActionUpdated {
+		t.Errorf("A の action = %q, want %q", items[0].Action, port.ActionUpdated)
+	}
+
+	// B は触っていないので run1 のまま残る。ここが消えるのがいちばん困る。
+	if items[1].Title != "title-i1" {
+		t.Errorf("B = %q, want run1 のまま", items[1].Title)
+	}
+	if items[1].Action != port.ActionCreated {
+		t.Errorf("B の action = %q, want %q", items[1].Action, port.ActionCreated)
+	}
+}
+
+// 一度も実行していない注釈では空。nil ではなく空スライスを返す。
+func TestListItemsByAnnotation_Empty(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	items, err := repo.ListItemsByAnnotation(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("ListItemsByAnnotation: %v", err)
+	}
+	if len(items) != 0 {
+		t.Errorf("items = %v, want 空", items)
+	}
+}
+
+// 畳み込みは注釈ごと。別の注釈や別のボードの item を混ぜない。
+func TestListItemsByAnnotation_ScopedToAnnotation(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	seedBoard(t, db, "board-2")
+	repo := sqlite.NewMappingRepository(db)
+
+	for _, run := range []port.SyncRun{
+		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime,
+			Items: []port.SyncItem{item("e1", "PVTI_mine", port.KindEpic, nil)}},
+		{BoardID: "board-1", AnnotationID: "annot-2", ContentHash: "h", CreatedAt: baseTime,
+			Items: []port.SyncItem{item("e1", "PVTI_other_annot", port.KindEpic, nil)}},
+		{BoardID: "board-2", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime,
+			Items: []port.SyncItem{item("e1", "PVTI_other_board", port.KindEpic, nil)}},
+	} {
+		if _, err := repo.SaveRun(t.Context(), run); err != nil {
+			t.Fatalf("SaveRun: %v", err)
+		}
+	}
+
+	items, err := repo.ListItemsByAnnotation(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("ListItemsByAnnotation: %v", err)
+	}
+	if len(items) != 1 || items[0].ItemID != "PVTI_mine" {
+		t.Errorf("items = %+v, want PVTI_mine だけ", items)
 	}
 }
 

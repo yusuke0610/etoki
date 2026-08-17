@@ -137,6 +137,36 @@ func (f *fakeMappings) ListLatestRunsByBoard(
 	return runs, nil
 }
 
+// ListItemsByAnnotation は run 履歴を ItemID で畳んで返す（ADR 0026）。
+//
+// **実装と同じく畳む。** 最新 run の Items を返すフェイクにすると、更新の run の
+// あとに取り残しが消える不具合をテストが素通しする。並びは最初に作られた順で、
+// 更新しても動かさない。
+func (f *fakeMappings) ListItemsByAnnotation(
+	_ context.Context, boardID, annotationID string,
+) ([]port.SyncItem, error) {
+	latest := map[string]port.SyncItem{}
+	var order []string
+
+	for _, run := range f.runs {
+		if run.BoardID != boardID || run.AnnotationID != annotationID {
+			continue
+		}
+		for _, it := range run.Items {
+			if _, seen := latest[it.ItemID]; !seen {
+				order = append(order, it.ItemID)
+			}
+			latest[it.ItemID] = it
+		}
+	}
+
+	items := make([]port.SyncItem, 0, len(order))
+	for _, id := range order {
+		items = append(items, latest[id])
+	}
+	return items, nil
+}
+
 // projectFields は etoki が必要とするフィールドが揃った状態。
 func projectFields() []port.ProjectField {
 	return []port.ProjectField{
