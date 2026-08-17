@@ -167,6 +167,32 @@ func (f *fakeMappings) ListItemsByAnnotation(
 	return items, nil
 }
 
+// ListItemsByBoard は畳み込みをボード全体で行い、注釈ごとに束ねて返す。
+func (f *fakeMappings) ListItemsByBoard(
+	ctx context.Context, boardID string,
+) (map[string][]port.SyncItem, error) {
+	byAnnotation := make(map[string][]port.SyncItem)
+	seen := map[string]struct{}{}
+
+	for _, run := range f.runs {
+		if run.BoardID != boardID {
+			continue
+		}
+		if _, done := seen[run.AnnotationID]; done {
+			continue
+		}
+		seen[run.AnnotationID] = struct{}{}
+
+		items, err := f.ListItemsByAnnotation(ctx, boardID, run.AnnotationID)
+		if err != nil {
+			return nil, err
+		}
+		byAnnotation[run.AnnotationID] = items
+	}
+
+	return byAnnotation, nil
+}
+
 // projectFields は etoki が必要とするフィールドが揃った状態。
 func projectFields() []port.ProjectField {
 	return []port.ProjectField{

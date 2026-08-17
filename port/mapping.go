@@ -322,4 +322,10 @@ type MappingRepository interface {
 	//
 	// 一度も実行していなければ空を返す。並びは記録された順。
 	ListItemsByAnnotation(ctx context.Context, boardID, annotationID string) ([]SyncItem, error)
+
+	// ListItemsByBoard は同じ畳み込みをボード全体で行い、注釈ごとに束ねて返す。
+	//
+	// 注釈ごとに ListItemsByAnnotation を呼ぶと、注釈の数だけ問い合わせが増える。
+	// 一覧は全注釈を一度に描くので、まとめて引く経路を分けてある。
+	ListItemsByBoard(ctx context.Context, boardID string) (map[string][]SyncItem, error)
 }

@@ -200,27 +200,28 @@ func resolvePreviousRefs(wire interpretationWire, previous []PreviousItem) (Inte
 			field := fmt.Sprintf("items[%d].previousRef", i)
 			ref := *w.PreviousRef
 
-			switch itemID, ok := itemIDByRef[ref]; {
-			case !ok && len(previous) == 0:
+			itemID, known := itemIDByRef[ref]
+			owner, claimed := claimedBy[ref]
+
+			switch {
+			case !known && len(previous) == 0:
 				errs = append(errs, ValidationError{
 					Field:   field,
 					Message: "この囲みから作ったものはまだありません。previousRef は null にしてください",
 				})
-			case !ok:
+			case !known:
 				errs = append(errs, ValidationError{
 					Field: field,
 					Message: fmt.Sprintf(
 						"previousRef %q に対応するものがありません。前回作成したものの ID か null にしてください", ref),
 				})
+			case claimed:
+				errs = append(errs, ValidationError{
+					Field: field,
+					Message: fmt.Sprintf(
+						"previousRef %q を %q と取り合っています。1 つにつき 1 件までです", ref, owner),
+				})
 			default:
-				if owner, dup := claimedBy[ref]; dup {
-					errs = append(errs, ValidationError{
-						Field: field,
-						Message: fmt.Sprintf(
-							"previousRef %q を %q と取り合っています。1 つにつき 1 件までです", ref, owner),
-					})
-					break
-				}
 				claimedBy[ref] = w.LocalID
 				item.PreviousItemID = &itemID
 			}

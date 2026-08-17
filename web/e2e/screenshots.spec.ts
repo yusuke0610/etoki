@@ -3,6 +3,7 @@ import { test, type Page } from "@playwright/test";
 import { installApi, summarize } from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
 import {
+  ANNOTATION_IDS,
   BOARD_ID,
   baseMock,
   board,
@@ -61,6 +62,65 @@ test.describe("スクリーンショット", () => {
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
     await card.getByText("3 件を作成しました。").waitFor();
     await shot(page, "04-created");
+  });
+
+  // changed の注釈に更新の出口ができた（ADR 0026）。何が書き換わり、何が
+  // GitHub 側に取り残されるのかを、押す前に見せている画面を撮る。
+  test("更新と取り残しの内訳を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.annotations[BOARD_ID] = (mock.annotations[BOARD_ID] ?? []).map((a) =>
+      a.id !== ANNOTATION_IDS.changed
+        ? a
+        : {
+            ...a,
+            items: [
+              {
+                itemId: "PVTI_old",
+                kind: "issue",
+                title: "セッションの有効期限",
+                body: "",
+                localId: "i9",
+                action: "created",
+              },
+              {
+                itemId: "PVTI_kept",
+                kind: "issue",
+                title: "触らないほう",
+                body: "",
+                localId: "i8",
+                action: "created",
+              },
+            ],
+          },
+    );
+    mock.interpret = {
+      status: 200,
+      body: {
+        summary: "前回の続きとして読みました。",
+        contentHash: "sha256:e2e",
+        items: [
+          {
+            localId: "i1",
+            kind: "issue",
+            title: "セッションの有効期限を延ばす",
+            body: "書き直した本文",
+            previousItemId: "PVTI_old",
+          },
+          { localId: "i2", kind: "issue", title: "新しく足す issue", body: "" },
+        ],
+      },
+    };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.locator(".left-behind").scrollIntoViewIfNeeded();
+    await shot(page, "19-update-and-left-behind");
   });
 
   // 作る前に選び直せること、選び直した結果がどう見えるかを撮る（ADR 0024）。

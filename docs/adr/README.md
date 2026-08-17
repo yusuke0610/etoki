@@ -28,3 +28,4 @@
 | [0022](0022-link-panel-items-to-frames.md) | パネルの項目とキャンバスのフレームは選択で結ぶ | 採用 |
 | [0023](0023-record-created-issue-body.md) | 作成した draft issue の本文を記録する（作成時に控えなければ取れない） | 採用 |
 | [0024](0024-select-and-edit-before-creating.md) | 作る前に選ばせ、手直しさせる（構造の変更は画面に出す） | 採用 |
+| [0026](0026-update-changed-drafts.md) | changed の出口を作る（対応づけは LLM に解釈させ、決めるのは開発者） | 採用 |

@@ -301,3 +301,67 @@ func scanRun(s rowScanner) (port.SyncRun, error) {
 
 	return run, nil
 }
+
+// ListItemsByBoard は畳み込みをボード全体で行い、注釈ごとに束ねて返す。
+//
+// 畳み込みの規則は ListItemsByAnnotation と同じ（ADR 0026）。違うのは
+// グループの単位が (注釈, item_id) になることだけ。注釈ごとに呼び分けると、
+// 一覧を描くたびに注釈の数だけ問い合わせが増える。
+func (r *MappingRepository) ListItemsByBoard(
+	ctx context.Context, boardID string,
+) (map[string][]port.SyncItem, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT folded.annot,
+		        i.id, i.run_id, i.item_id, i.kind, i.title, i.body,
+		        i.local_id, i.parent_local_id, i.action, i.created_at
+		   FROM sync_items i
+		   JOIN (
+		     SELECT r2.annotation_element_id AS annot,
+		            i2.item_id,
+		            MIN(i2.id) AS first_id,
+		            MAX(i2.id) AS last_id
+		       FROM sync_items i2
+		       JOIN sync_runs r2 ON r2.id = i2.run_id
+		      WHERE r2.board_id = ?
+		      GROUP BY r2.annotation_element_id, i2.item_id
+		   ) folded ON folded.last_id = i.id
+		  ORDER BY folded.annot, folded.first_id`,
+		boardID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select sync_items by board: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	byAnnotation := make(map[string][]port.SyncItem)
+
+	for rows.Next() {
+		var (
+			annotationID string
+			it           port.SyncItem
+			kind         string
+			action       string
+			createdAt    string
+		)
+		if err := rows.Scan(
+			&annotationID,
+			&it.ID, &it.RunID, &it.ItemID, &kind, &it.Title, &it.Body,
+			&it.LocalID, &it.ParentLocalID, &action, &createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan sync_item: %w", err)
+		}
+
+		it.Kind = port.ItemKind(kind)
+		it.Action = port.SyncAction(action)
+		if it.CreatedAt, err = parseTime(createdAt); err != nil {
+			return nil, err
+		}
+
+		byAnnotation[annotationID] = append(byAnnotation[annotationID], it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sync_items: %w", err)
+	}
+
+	return byAnnotation, nil
+}

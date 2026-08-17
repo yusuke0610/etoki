@@ -372,6 +372,40 @@ func TestCreateItems_RejectsInvalidBody(t *testing.T) {
 	}
 }
 
+// previousItemId はリクエストから来る。確かめずに通すと、任意の node ID を書いて
+// 無関係な draft issue を書き換えられる（ADR 0026）。
+func TestCreateItems_RejectsUnknownPreviousItem(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{}
+	r, mappings := newCreateRouter(t, gh)
+
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	body := createBody(currentHash(t, r, id))
+	items, _ := body["items"].([]map[string]any)
+	items[0]["previousItemId"] = "PVTI_someone_else"
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), body)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (%s)", rec.Code, rec.Body)
+	}
+
+	// 1 件も作らず 1 件も更新しない。半分だけ進めると、取り消せないのに
+	// どこまで進んだのかが分からなくなる。
+	if gh.seq != 0 {
+		t.Errorf("見知らぬ更新先なのに GitHub を呼んでいる: %d 回", gh.seq)
+	}
+	run, err := mappings.FindLatestRun(t.Context(), id, "annot-1")
+	if err != nil {
+		t.Fatalf("FindLatestRun: %v", err)
+	}
+	if run != nil {
+		t.Errorf("止めたのに run が記録されている: %+v", run)
+	}
+}
+
 func TestCreateItems_RejectsMismatchedContentHash(t *testing.T) {
 	t.Parallel()
 

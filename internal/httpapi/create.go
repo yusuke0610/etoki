@@ -109,6 +109,11 @@ func toInterpretation(req apitypes.Interpretation) domain.Interpretation {
 			parent := it.ParentLocalID
 			item.ParentLocalID = &parent
 		}
+		// 空文字は「新規」。ユースケース層がその注釈のものかを確かめる。
+		if it.PreviousItemID != "" {
+			previous := it.PreviousItemID
+			item.PreviousItemID = &previous
+		}
 		in.Items = append(in.Items, item)
 	}
 

@@ -241,6 +241,7 @@ export function annotations(): AnnotationStatus[] {
           title: "パスワード再設定",
           body: "忘れたときの導線をまとめる",
           localId: "e1",
+          action: "created",
         },
         {
           itemId: "PVTI_issue",
@@ -249,6 +250,7 @@ export function annotations(): AnnotationStatus[] {
           body: "有効期限つきのリンクを送る",
           localId: "i1",
           parentLocalId: "e1",
+          action: "created",
         },
       ],
     },
@@ -266,6 +268,7 @@ export function annotations(): AnnotationStatus[] {
           // 本文を記録していなかった頃に作られた item。空文字で返る。
           body: "",
           localId: "i9",
+          action: "created",
         },
       ],
     },
@@ -308,6 +311,7 @@ export function createdRun(): CreatedRun {
         title: "ログイン基盤",
         body: "入口をまとめる",
         localId: "e1",
+        action: "created",
       },
       {
         itemId: "PVTI_2",
@@ -316,6 +320,7 @@ export function createdRun(): CreatedRun {
         body: "フォームと検証",
         localId: "i1",
         parentLocalId: "e1",
+        action: "created",
       },
       {
         itemId: "PVTI_3",
@@ -324,6 +329,7 @@ export function createdRun(): CreatedRun {
         body: "連続失敗の記録",
         localId: "i2",
         parentLocalId: "e1",
+        action: "created",
       },
     ],
   };
