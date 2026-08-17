@@ -28,7 +28,7 @@ var _ port.BoardRepository = (*BoardRepository)(nil)
 // 末尾の role はボードの列ではなく、操作者から見たロール（ADR 0017）。
 const boardColumns = `b.id, b.name, b.scene,
 	b.repository_owner, b.repository_name, b.project_id,
-	b.project_number, b.project_title,
+	b.project_number, b.project_title, b.project_url,
 	b.created_at, b.updated_at, m.role`
 
 // memberJoin は操作者がメンバーであるボードだけに絞る結合。
@@ -49,12 +49,12 @@ func (r *BoardRepository) Create(ctx context.Context, b port.Board, owner string
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO boards (id, name, scene,
 		                     repository_owner, repository_name, project_id,
-		                     project_number, project_title,
+		                     project_number, project_title, project_url,
 		                     created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		b.ID, b.Name, b.Scene,
 		b.Target.RepositoryOwner, b.Target.RepositoryName, b.Target.ProjectID,
-		b.Target.ProjectNumber, b.Target.ProjectTitle,
+		b.Target.ProjectNumber, b.Target.ProjectTitle, b.Target.ProjectURL,
 		formatTime(b.CreatedAt), formatTime(b.UpdatedAt),
 	); err != nil {
 		return fmt.Errorf("insert board %s: %w", b.ID, err)
@@ -146,10 +146,11 @@ func (r *BoardRepository) UpdateTarget(
 	return r.exec(ctx, "board "+id,
 		`UPDATE boards
 		 SET repository_owner = ?, repository_name = ?, project_id = ?,
-		     project_number = ?, project_title = ?, updated_at = ?
+		     project_number = ?, project_title = ?, project_url = ?,
+		     updated_at = ?
 		 WHERE id = ? AND `+memberExists,
 		t.RepositoryOwner, t.RepositoryName, t.ProjectID,
-		t.ProjectNumber, t.ProjectTitle, formatTime(updatedAt), id, actor)
+		t.ProjectNumber, t.ProjectTitle, t.ProjectURL, formatTime(updatedAt), id, actor)
 }
 
 // memberExists は更新系で操作者がメンバーであることを確かめる述語。
@@ -353,6 +354,7 @@ func scanBoard(s rowScanner) (port.BoardAccess, error) {
 		&a.Board.Target.RepositoryOwner, &a.Board.Target.RepositoryName,
 		&a.Board.Target.ProjectID,
 		&a.Board.Target.ProjectNumber, &a.Board.Target.ProjectTitle,
+		&a.Board.Target.ProjectURL,
 		&createdAt, &updatedAt, &role); err != nil {
 		return port.BoardAccess{}, err
 	}

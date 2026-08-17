@@ -38,6 +38,12 @@ type BoardTarget struct {
 	ProjectNumber int
 	// ProjectTitle は Project の名前。表示用のスナップショット（ADR 0019）。
 	ProjectTitle string
+	// ProjectURL は Project の URL。表示用のスナップショット（ADR 0025）。
+	//
+	// 組み立てずに GitHub が返したものを控える。Projects v2 の URL は owner が
+	// user か org かで形が変わるが、etoki はどちらなのかを知らない。空文字は
+	// 「URL を知らない」で、そのときフロントはリポジトリの Projects タブへ落とす。
+	ProjectURL string
 }
 
 // Selected は作成先が選ばれているかどうかを返す。
