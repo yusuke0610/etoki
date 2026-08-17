@@ -464,6 +464,58 @@ func (c *Client) CreateDraftIssue(ctx context.Context, projectID string, item po
 	return id, nil
 }
 
+// UpdateDraftIssue は既存の draft issue の title と body を書き換える。
+//
+// **2 往復する。** 受け取るのは ProjectV2Item の ID だが、GitHub の更新
+// mutation が要求するのは DraftIssue content の ID で、この 2 つは別物。
+// sync_items が控えているのは前者だけなので（ADR 0007）、後者はここで引き直す。
+//
+// 控える側を content の ID に変える手もあるが、そうすると列を足す前に作った
+// run だけが更新できないまま残る。引き直せば古い run も救える。
+func (c *Client) UpdateDraftIssue(ctx context.Context, itemID string, item port.DraftIssue) error {
+	if itemID == "" {
+		return errors.New("github: item id is required")
+	}
+	if item.Title == "" {
+		return errors.New("github: draft issue title is required")
+	}
+
+	draftID, err := c.draftIssueContentID(ctx, itemID)
+	if err != nil {
+		return err
+	}
+
+	var resp updateDraftIssueResponse
+	vars := map[string]any{"draftIssueId": draftID, "title": item.Title, "body": item.Body}
+
+	return c.do(ctx, mutationUpdateDraftIssue, vars, &resp)
+}
+
+// draftIssueContentID は ProjectV2Item の ID から DraftIssue content の ID を引く。
+//
+// **draft issue でなければ書き換えない。** Project には本物の issue や PR も
+// 並ぶ。etoki が作った item が誰かの手で置き換わっている可能性もあるので、
+// 中身を確かめずに更新を投げると、他人の issue を書き換えうる。
+func (c *Client) draftIssueContentID(ctx context.Context, itemID string) (string, error) {
+	var resp itemContentResponse
+	if err := c.do(ctx, queryItemContent, map[string]any{"itemId": itemID}, &resp); err != nil {
+		return "", err
+	}
+
+	content := resp.Node.Content
+	if content.ID == "" {
+		// __typename は DraftIssue 以外のときに何であるかを示す。空なら item
+		// そのものが無い（消された、別の Project を指している）。
+		kind := content.Typename
+		if kind == "" {
+			kind = "not found"
+		}
+		return "", fmt.Errorf("github: item %s is not a draft issue (%s)", itemID, kind)
+	}
+
+	return content.ID, nil
+}
+
 // SetItemFieldValue はアイテムのカスタムフィールドに値を設定する。
 func (c *Client) SetItemFieldValue(ctx context.Context, projectID, itemID string, v port.FieldValue) error {
 	value, err := fieldValue(v)
@@ -808,6 +860,48 @@ type createDraftIssueResponse struct {
 			ID string `json:"id"`
 		} `json:"projectItem"`
 	} `json:"addProjectV2DraftIssue"`
+}
+
+// queryItemContent は ProjectV2Item の中身を取る。
+//
+// **`... on DraftIssue` を通らなければ id は返らない。** 本物の issue や PR が
+// 紐づいた item では `__typename` だけが返り、それが「draft issue ではない」の
+// 判定材料になる。
+const queryItemContent = `query($itemId: ID!) {
+  node(id: $itemId) {
+    ... on ProjectV2Item {
+      content {
+        __typename
+        ... on DraftIssue { id }
+      }
+    }
+  }
+}`
+
+type itemContentResponse struct {
+	Node struct {
+		Content struct {
+			Typename string `json:"__typename"`
+			ID       string `json:"id"`
+		} `json:"content"`
+	} `json:"node"`
+}
+
+// mutationUpdateDraftIssue は draft issue の title と body を書き換える。
+//
+// 要求するのは DraftIssue content の ID であって ProjectV2Item の ID ではない。
+const mutationUpdateDraftIssue = `mutation($draftIssueId: ID!, $title: String!, $body: String) {
+  updateProjectV2DraftIssue(input: {draftIssueId: $draftIssueId, title: $title, body: $body}) {
+    draftIssue { id }
+  }
+}`
+
+type updateDraftIssueResponse struct {
+	UpdateProjectV2DraftIssue struct {
+		DraftIssue struct {
+			ID string `json:"id"`
+		} `json:"draftIssue"`
+	} `json:"updateProjectV2DraftIssue"`
 }
 
 // mutationSetItemFieldValue はアイテムのフィールドに値を設定する。

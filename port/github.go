@@ -95,6 +95,18 @@ type GitHubClient interface {
 	// 後続の SetItemFieldValue が前者を要求するため。
 	CreateDraftIssue(ctx context.Context, projectID string, item DraftIssue) (itemID string, err error)
 
+	// UpdateDraftIssue は既存の draft issue の title と body を書き換える。
+	//
+	// itemID は CreateDraftIssue が返した ProjectV2Item の ID。**GitHub の更新は
+	// DraftIssue content の ID を要求するので、実装がそれを自分で引き直す。**
+	// 呼び出し側に 2 種類の ID を持ち分けさせない。sync_items が控えているのは
+	// ProjectV2Item の ID だけであり（ADR 0007）、どちらを控えたのかが run ごとに
+	// 変わると、あとから更新できる run とできない run が混ざる。
+	//
+	// item が draft issue でなくなっていたら（Project に本物の issue が
+	// 紐づけられた等）、何も書き換えずにエラーを返す。
+	UpdateDraftIssue(ctx context.Context, itemID string, item DraftIssue) error
+
 	// SetItemFieldValue はアイテムのカスタムフィールドに値を設定する。
 	SetItemFieldValue(ctx context.Context, projectID, itemID string, v FieldValue) error
 }

@@ -78,6 +78,20 @@ func (f *fakeGitHub) CreateDraftIssue(_ context.Context, projectID string, item 
 	return id, nil
 }
 
+// UpdateDraftIssue は既存の draft issue を書き換えたことにする。
+//
+// projectID を取らない。更新は content の ID で行うので、GitHub 側も Project を
+// 要求しない（ADR 0026）。
+func (f *fakeGitHub) UpdateDraftIssue(_ context.Context, itemID string, item port.DraftIssue) error {
+	if f.failOnTitle != "" && item.Title == f.failOnTitle {
+		return errors.New("github: boom")
+	}
+	f.calls = append(f.calls, githubCall{
+		op: "update", itemID: itemID, title: item.Title, body: item.Body,
+	})
+	return nil
+}
+
 func (f *fakeGitHub) SetItemFieldValue(_ context.Context, projectID, itemID string, v port.FieldValue) error {
 	f.projectIDs = append(f.projectIDs, projectID)
 	call := githubCall{op: "field", itemID: itemID, fieldID: v.FieldID}

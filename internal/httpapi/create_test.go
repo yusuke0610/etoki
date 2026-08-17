@@ -53,6 +53,13 @@ func (s *stubGitHub) ListProjectFields(context.Context, string) ([]port.ProjectF
 	}, nil
 }
 
+func (s *stubGitHub) UpdateDraftIssue(_ context.Context, _ string, item port.DraftIssue) error {
+	if item.Title == s.failOnTitle {
+		return errors.New("github: boom")
+	}
+	return nil
+}
+
 func (s *stubGitHub) CreateDraftIssue(_ context.Context, _ string, item port.DraftIssue) (string, error) {
 	if item.Title == s.failOnTitle {
 		return "", errors.New("github: boom")
