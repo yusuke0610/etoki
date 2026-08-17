@@ -15,6 +15,7 @@ function board(name: string, target: Partial<BoardSummary> = {}): BoardSummary {
     projectId: "PVT_1",
     projectNumber: 1,
     projectTitle: "ロードマップ",
+    projectUrl: "https://github.com/orgs/acme/projects/1",
     ...target,
   };
 }

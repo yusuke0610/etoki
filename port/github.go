@@ -62,6 +62,12 @@ type Project struct {
 	Number int
 	// Title は表示名。
 	Title string
+	// URL は Project のページ。
+	//
+	// **番号から組み立てず、GitHub が返したものをそのまま運ぶ。** Projects v2 の
+	// URL は owner が user か org かで形が変わり、etoki はどちらなのかを知らない
+	// （ADR 0025）。
+	URL string
 }
 
 // GitHubClient は GitHub Projects v2 を操作する。

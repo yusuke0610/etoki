@@ -47,10 +47,21 @@
 - **一覧は作成先でまとめて見せる**（ADR 0019）。木は実体の包含ではなく射影。
   1 つの Project に複数のボードがぶら下がる。組み立ては
   `web/src/board/grouping.ts` の純関数にある。
-- **`project_number` / `project_title` は表示用のスナップショット。** 作成先を
-  選んだ時点の値で、判定には使わない。古くなったら選び直しで直す（詳細は
+- **`project_number` / `project_title` / `project_url` は表示用のスナップショット。**
+  作成先を選んだ時点の値で、判定には使わない。古くなったら選び直しで直す（詳細は
   `internal/CLAUDE.md`）。
 
+## GitHub へ辿るリンク（ADR 0025）
+
+- **URL を組み立てない。** 規則は `web/src/board/projectLink.ts` の純関数 1 つに
+  閉じてある。Projects v2 の URL は owner が user か org かで形が変わり、etoki は
+  どちらなのかを知らない。**番号から `/orgs/{owner}/projects/{n}` を組まないこと。**
+  外すと 404 になる。保存された URL が無いときはリポジトリの Projects へ落とす。
+- **一覧止まりであることを隠さない。** Project 本体に着地しないときは文言を
+  変える。Project へ飛ぶと言って一覧に着地させると、リンクの約束が崩れる。
+- **リンクは行ごとではなくリストごとに 1 本。** draft issue には個別の URL が
+  無く、飛び先はどの行でも同じ Project になる。行ごとに並べると、行ごとに違う
+  場所へ飛ぶように読める。
 ## 更新と取り残しの見せ方（ADR 0026）
 
 - **`AnnotationStatus.items` は「前回作ったもの」ではなく「いま GitHub に在る

@@ -61,6 +61,9 @@ test.describe("スクリーンショット", () => {
     ];
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
     await card.getByText("3 件を作成しました。").waitFor();
+    // 結果はパネルの下端に出る。寄せずに撮ると、この画面の要点である作成結果と
+    // GitHub へ辿るリンク（ADR 0025）が画面の外に残る。
+    await card.locator(".creation-result").scrollIntoViewIfNeeded();
     await shot(page, "04-created");
   });
 

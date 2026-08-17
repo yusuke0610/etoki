@@ -140,6 +140,14 @@ type BoardDetail struct {
 	// （ADR 0019）。取得していなければ空文字
 	ProjectTitle string `json:"projectTitle"`
 
+	// ProjectURL 作成先 Project の URL。作成先を選んだ時点のスナップショット
+	// （ADR 0025）。取得していなければ空文字。
+	//
+	// 番号から組み立てたものではなく GitHub が返したもの。Projects v2 の
+	// URL は owner が user か org かで形が変わり、etoki はどちらなのかを
+	// 知らない
+	ProjectURL string `json:"projectUrl"`
+
 	// RepositoryName 作成先リポジトリの名前。未選択なら空文字
 	RepositoryName string `json:"repositoryName"`
 
@@ -217,6 +225,14 @@ type BoardSummary struct {
 	// （ADR 0019）。取得していなければ空文字
 	ProjectTitle string `json:"projectTitle"`
 
+	// ProjectURL 作成先 Project の URL。作成先を選んだ時点のスナップショット
+	// （ADR 0025）。取得していなければ空文字。
+	//
+	// 番号から組み立てたものではなく GitHub が返したもの。Projects v2 の
+	// URL は owner が user か org かで形が変わり、etoki はどちらなのかを
+	// 知らない
+	ProjectURL string `json:"projectUrl"`
+
 	// RepositoryName 作成先リポジトリの名前。未選択なら空文字
 	RepositoryName string `json:"repositoryName"`
 
@@ -239,16 +255,18 @@ type BoardSummary struct {
 // リポジトリと Project の両方を持つ。保存先として効くのは projectId
 // だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
 //
-// projectNumber と projectTitle は**表示用のスナップショット**であり、
-// 作成先そのものではない（ADR 0019）。未選択の判定にも、固定済みかどうかの
-// 判定にも使わない。選ばせた画面が見せていた名前をそのまま送る。
+// projectNumber と projectTitle と projectUrl は**表示用のスナップショット**
+// であり、作成先そのものではない（ADR 0019 / 0025）。未選択の判定にも、
+// 固定済みかどうかの判定にも使わない。選ばせた画面が見せていたものを
+// そのまま送る。
 //
-// 表示名は任意。省略すると「名前を知らない」（0 と空文字）として保存する。
+// 表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存する。
 // 必須にすると、画面を通さない呼び出し側が値をでっち上げることになる。
 type BoardTarget struct {
 	ProjectID       string `json:"projectId"`
 	ProjectNumber   int    `json:"projectNumber,omitempty"`
 	ProjectTitle    string `json:"projectTitle,omitempty"`
+	ProjectURL      string `json:"projectUrl,omitempty"`
 	RepositoryName  string `json:"repositoryName"`
 	RepositoryOwner string `json:"repositoryOwner"`
 }
@@ -274,7 +292,11 @@ type CreateBoardRequest struct {
 
 	// ProjectTitle 作成先 Project の名前。表示用のスナップショット（ADR 0019）。
 	// 省略すると空文字（名前を知らない）で保存する
-	ProjectTitle    string `json:"projectTitle,omitempty"`
+	ProjectTitle string `json:"projectTitle,omitempty"`
+
+	// ProjectURL 作成先 Project の URL。表示用のスナップショット（ADR 0025）。
+	// 省略すると空文字（URL を知らない）で保存する
+	ProjectURL      string `json:"projectUrl,omitempty"`
 	RepositoryName  string `json:"repositoryName"`
 	RepositoryOwner string `json:"repositoryOwner"`
 
@@ -385,6 +407,11 @@ type Project struct {
 	// Number リポジトリ内での番号。GitHub の URL に出る
 	Number int    `json:"number"`
 	Title  string `json:"title"`
+
+	// URL Project のページ。**番号から組み立てず GitHub が返したものを運ぶ。**
+	// Projects v2 の URL は owner が user か org かで形が変わり、etoki は
+	// どちらなのかを知らない（ADR 0025）
+	URL string `json:"url"`
 }
 
 // ProjectAccess 作成先の Project に書けるかどうかの、いまの状態。

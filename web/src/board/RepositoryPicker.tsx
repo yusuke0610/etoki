@@ -84,11 +84,16 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           repositoryOwner: repository.owner,
           repositoryName: repository.name,
           projectId: project.id,
-          // 番号と名前は表示用のスナップショット（ADR 0019）。この画面が
-          // 見せていたものをそのまま送る。projectId は不透明な node ID なので、
-          // 送らないと一覧に「名称未取得」と出るしかなくなる。
+          // 番号と名前と URL は表示用のスナップショット（ADR 0019 / 0025）。
+          // この画面が見せていたものをそのまま送る。projectId は不透明な
+          // node ID なので、送らないと一覧に「名称未取得」と出るしかなくなる。
+          //
+          // **URL も組み立てずに送る。** owner が user か org かで形が変わり、
+          // フロントもサーバーもどちらなのかを知らない。GitHub が返したものを
+          // ここまで運んできてある。
           projectNumber: project.number,
           projectTitle: project.title,
+          projectUrl: project.url,
         });
       } catch (e) {
         setError(`作成先を設定できませんでした: ${String(e)}`);

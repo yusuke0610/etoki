@@ -95,6 +95,73 @@ func TestSetTarget_RejectsIncompleteTarget(t *testing.T) {
 	}
 }
 
+// 作成先 URL はリクエストから来る。保存された値はフロントがそのまま href に
+// 入れるので、ここが唯一の門番になる（ADR 0025）。owner は招待した相手に画面を
+// 見せられる（ADR 0017）ため、`javascript:` を保存できると相手のブラウザで走る。
+// 外部ドメインは「GitHub でこの Project を開く」の文言で別の場所へ送れる。
+func TestSetTarget_RejectsUnsafeProjectURL(t *testing.T) {
+	t.Parallel()
+
+	selected := func(u string) port.BoardTarget {
+		return port.BoardTarget{
+			RepositoryOwner: "acme", RepositoryName: "web", ProjectID: "PVT_1",
+			ProjectURL: u,
+		}
+	}
+
+	for name, raw := range map[string]string{
+		"javascript": "javascript:alert(1)",
+		"data":       "data:text/html,<script>alert(1)</script>",
+		"http":       "http://github.com/orgs/acme/projects/1",
+		"別ドメイン":      "https://evil.example/orgs/acme/projects/1",
+		"ホストの後ろに足したドメイン": "https://github.com.evil.example/orgs/acme/projects/1",
+		"認証情報つき":         "https://evil.example@github.com/orgs/acme/projects/1",
+		"スキームなし":         "github.com/orgs/acme/projects/1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			boards := &fakeBoards{board: newBoard(interpretScene)}
+			svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
+
+			if err := svc.SetTarget(t.Context(), "board-1", selected(raw)); !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("SetTarget(%q) = %v, want ErrInvalidInput", raw, err)
+			}
+			if _, err := svc.Create(t.Context(), "b", "", selected(raw)); !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("Create(%q) = %v, want ErrInvalidInput", raw, err)
+			}
+		})
+	}
+}
+
+// 空文字は「URL を知らない」で、弾く相手ではない（ADR 0025）。パスの形は見ない。
+// /orgs か /users かは owner が user か org かで変わり、etoki は知らない。
+func TestSetTarget_AcceptsGitHubProjectURL(t *testing.T) {
+	t.Parallel()
+
+	for name, raw := range map[string]string{
+		"知らない":    "",
+		"org":     "https://github.com/orgs/acme/projects/1",
+		"user":    "https://github.com/users/yusuke0610/projects/4",
+		"見慣れないパス": "https://github.com/acme/web/projects",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			boards := &fakeBoards{board: newBoard(interpretScene)}
+			svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
+
+			target := port.BoardTarget{
+				RepositoryOwner: "acme", RepositoryName: "web", ProjectID: "PVT_1",
+				ProjectURL: raw,
+			}
+			if err := svc.SetTarget(t.Context(), "board-1", target); err != nil {
+				t.Fatalf("SetTarget(%q) = %v", raw, err)
+			}
+		})
+	}
+}
+
 func TestSetTarget_RejectsUnknownBoard(t *testing.T) {
 	t.Parallel()
 

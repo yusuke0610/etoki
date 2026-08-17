@@ -120,9 +120,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       repositoryOwner: target.repositoryOwner,
       repositoryName: target.repositoryName,
       projectId: target.projectId,
-      // 表示名は任意（ADR 0019）。送ってこなければ「名前を知らない」で残る。
+      // 表示用の値は任意（ADR 0019 / 0025）。送ってこなければ「知らない」で
+      // 残り、リンクはリポジトリの Projects へ落ちる。
       projectNumber: target.projectNumber ?? 0,
       projectTitle: target.projectTitle ?? "",
+      projectUrl: target.projectUrl ?? "",
       targetLocked: false,
     };
   };
@@ -254,10 +256,13 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       const next: BoardDetail = {
         ...detail,
         ...target,
-        // 表示名は任意なので、送られてこなければ「名前を知らない」に落とす。
-        // undefined のまま混ぜると、契約では必須の項目が消える。
+        // 表示用の値は任意なので、送られてこなければ「知らない」に落とす。
+        // **spread に任せない。** 送られてこないキーは上書きされないので、
+        // 前の作成先の値が残る。サーバーは空文字で保存するので、モックだけが
+        // 前の Project を指し続けることになる（ADR 0012）。
         projectNumber: target.projectNumber ?? 0,
         projectTitle: target.projectTitle ?? "",
+        projectUrl: target.projectUrl ?? "",
       };
       mock.details[id] = next;
       mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
@@ -483,6 +488,7 @@ export function summarize(b: BoardDetail): BoardSummary {
     projectId: b.projectId,
     projectNumber: b.projectNumber,
     projectTitle: b.projectTitle,
+    projectUrl: b.projectUrl,
   };
 }
 

@@ -746,7 +746,8 @@ func TestBoard_RoundTrip(t *testing.T) {
 // D-1a: 作成先の表示名も一緒に読み戻せる（ADR 0019）。
 //
 // project_id は不透明な node ID なので、一覧を Project 名でまとめるには
-// 選んだ時点の番号と名前が要る。Create と UpdateTarget の両方で残ること。
+// 選んだ時点の番号と名前が要る。URL も同じ扱いで、GitHub へ辿る導線に要る
+// （ADR 0025）。Create と UpdateTarget の両方で残ること。
 func TestBoard_TargetDisplayNameRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -759,6 +760,7 @@ func TestBoard_TargetDisplayNameRoundTrip(t *testing.T) {
 		ProjectID:       "PVT_1",
 		ProjectNumber:   3,
 		ProjectTitle:    "ロードマップ",
+		ProjectURL:      "https://github.com/orgs/acme/projects/3",
 	}
 	if err := repo.Create(t.Context(), port.Board{
 		ID: "board-1", Name: "b", Scene: "{}", Target: created,
@@ -781,6 +783,7 @@ func TestBoard_TargetDisplayNameRoundTrip(t *testing.T) {
 		ProjectID:       "PVT_2",
 		ProjectNumber:   7,
 		ProjectTitle:    "技術的負債",
+		ProjectURL:      "https://github.com/users/acme/projects/7",
 	}
 	if err := repo.UpdateTarget(t.Context(), "", "board-1", updated, baseTime); err != nil {
 		t.Fatalf("UpdateTarget: %v", err)
@@ -821,9 +824,11 @@ func TestBoard_TargetWithoutDisplayNameIsStillSelected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
-	if got.Board.Target.ProjectNumber != 0 || got.Board.Target.ProjectTitle != "" {
-		t.Errorf("表示名 = %d/%q, want 0 と空文字",
-			got.Board.Target.ProjectNumber, got.Board.Target.ProjectTitle)
+	if got.Board.Target.ProjectNumber != 0 || got.Board.Target.ProjectTitle != "" ||
+		got.Board.Target.ProjectURL != "" {
+		t.Errorf("表示用の値 = %d/%q/%q, want 0 と空文字",
+			got.Board.Target.ProjectNumber, got.Board.Target.ProjectTitle,
+			got.Board.Target.ProjectURL)
 	}
 	if !got.Board.Target.Selected() {
 		t.Error("表示名が無いだけで未選択になっている")

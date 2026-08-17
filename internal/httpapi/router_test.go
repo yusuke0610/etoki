@@ -213,9 +213,17 @@ func TestListBoards_IncludesTarget(t *testing.T) {
 		"projectId":       "PVT_1",
 		"projectNumber":   3,
 		"projectTitle":    "ロードマップ",
+		"projectUrl":      "https://github.com/orgs/acme/projects/3",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want %d (%s)", rec.Code, http.StatusCreated, rec.Body)
+	}
+
+	// 詰め替えは toDetail と toSummary の 2 経路あり、どちらも写し忘れても
+	// コンパイルは通る。作成の応答と一覧の両方で確かめる。
+	detail := decode[map[string]any](t, rec)
+	if got := detail["projectUrl"]; got != "https://github.com/orgs/acme/projects/3" {
+		t.Errorf("作成の応答の projectUrl = %v", got)
 	}
 
 	list := decode[[]map[string]any](t, do(t, r, http.MethodGet, "/api/boards", nil))
@@ -230,6 +238,8 @@ func TestListBoards_IncludesTarget(t *testing.T) {
 		// JSON の数値は float64 で戻る。
 		"projectNumber": float64(3),
 		"projectTitle":  "ロードマップ",
+		// URL は番号から組み立てず、送られたものをそのまま控える（ADR 0025）。
+		"projectUrl": "https://github.com/orgs/acme/projects/3",
 	} {
 		if got := list[0][key]; got != want {
 			t.Errorf("%s = %v, want %v", key, got, want)
