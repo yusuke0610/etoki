@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+
+# PR に付く CodeRabbit のレビュー設定。既定で足りるものは書かない。
+# 指摘への対応手順は .claude/skills/pr-review/SKILL.md。
+
+# レビューコメントと要約を日本語にする（既定は en-US）。
+language: ja
+
+# 自動修正系（finishing_touches / pre_merge_checks / auto_apply_labels）は
+# 入れない。指摘を「直す」「理由を返す」に振り分けるのは開発者の判断で、
+# 先に手が入っていると判断の対象が消える（pr-review の運用）。
+
+reviews:
+  auto_review:
+    # 既定の 5 は「5 コミット分レビューしたら自動レビューを止める」。
+    # pr-review は push ごとの再レビューを見て次の一手を決めるので、途中で
+    # 止まると「指摘が無い」と「レビューが来ていない」を区別できなくなる。
+    auto_pause_after_reviewed_commits: 0
