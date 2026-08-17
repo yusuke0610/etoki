@@ -173,7 +173,7 @@ func newInterpretService(t *testing.T, board *port.Board, llm *fakeLLM) (*usecas
 	t.Helper()
 
 	boards := &fakeBoards{board: board}
-	svc := usecase.NewInterpretationService(boards, llm, usecase.WithMaxAttempts(3))
+	svc := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, usecase.WithMaxAttempts(3))
 	return svc, boards
 }
 
@@ -415,7 +415,7 @@ func TestInterpret_GivesUpAfterMaxAttempts(t *testing.T) {
 
 	llm := &fakeLLM{responses: []string{invalidLLMOutput}}
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	svc := usecase.NewInterpretationService(boards, llm, usecase.WithMaxAttempts(2))
+	svc := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, usecase.WithMaxAttempts(2))
 
 	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrInterpretationFailed) {
@@ -580,7 +580,7 @@ func TestInterpret_IgnoresNonPositiveMaxAttempts(t *testing.T) {
 
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	svc := usecase.NewInterpretationService(boards, llm, usecase.WithMaxAttempts(0))
+	svc := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, usecase.WithMaxAttempts(0))
 
 	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
 		t.Fatalf("Interpret() = %v", err)
