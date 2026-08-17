@@ -82,6 +82,9 @@ test.describe("スクリーンショット", () => {
 
     // 1 件も選ばれていないと押せない。理由が読めるかを見る。
     await card.getByLabel("i1 を作成する").uncheck();
+    // 理由が出るのを待ってから撮る。待たないと、まだ止まっていない画面が
+    // 写る。
+    await card.getByText("作るものが 1 件も選ばれていません。").waitFor();
     await shot(page, "18-creation-blocked");
   });
 

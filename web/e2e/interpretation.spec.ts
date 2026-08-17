@@ -201,6 +201,11 @@ test.describe("解釈と作成", () => {
 
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
 
+    // ボディが積まれるのは応答が返ってから。押した直後に読むと、まだ空の
+    // createRequests を見て通ることがある。件数は「作成が終わった」ことの
+    // 目印で、送った件数ではない（モックの応答は固定）。
+    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+
     // parentLocalId を残すとサーバーが 400 で弾く。
     expect(mock.createRequests[0]?.items).toHaveLength(1);
     expect(mock.createRequests[0]?.items[0]?.localId).toBe("i1");
@@ -225,6 +230,10 @@ test.describe("解釈と作成", () => {
     await card.getByLabel("i1 の本文").fill("認可コードフローで受ける");
 
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    // 押した直後に読むと、まだ積まれていない createRequests を見て通ることが
+    // ある。
+    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
 
     const sent = mock.createRequests[0]?.items.find((it) => it.localId === "i1");
     expect(sent?.title).toBe("OAuth でログインする");
