@@ -6,7 +6,7 @@
 
 これが etoki の中心。複数ファイルにまたがるので全体像を把握しておく。
 
-```
+```text
 boards.scene （SQLite に保存された Excalidraw シーン JSON）
    ↓ domain.ParseScene
 Scene.Annotations()           … customData.etoki を持つ frame 要素

@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
 
 ## etoki とは
 
@@ -82,7 +83,7 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 
 ### 依存の方向
 
-```
+```text
 フロントエンド → Gin ハンドラ → ユースケース層 → port のインターフェース → アダプタ実装
 ```
 

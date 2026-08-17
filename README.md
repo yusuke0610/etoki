@@ -207,7 +207,7 @@ export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき
 `https://github.com/users/<login>/projects/N` を作成先にしようとすると、
 リポジトリの一覧までは通り、Project の取得で 502 になります。
 
-```
+```text
 github graphql: FORBIDDEN: Resource not accessible by integration
 ```
 

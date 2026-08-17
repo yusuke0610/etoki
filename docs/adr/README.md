@@ -3,7 +3,7 @@
 設計上の判断とその理由を記録する。実装を読んでも分からない「なぜそうしたか」だけを書く。
 
 | # | タイトル | ステータス |
-|---|---|---|
+| --- | --- | --- |
 | [0001](0001-dependency-direction-and-ports.md) | 依存の方向とポートの配置 | 採用 |
 | [0002](0002-toolchain.md) | 開発ツールチェーンは flake.nix と Makefile に限定する | 採用 |
 | [0003](0003-sqlite-and-migrations.md) | SQLite は modernc.org/sqlite、マイグレーションは embed + 自前 runner | 採用 |
