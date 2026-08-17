@@ -8,6 +8,7 @@ import {
   board,
   BOARD_ID,
   createdRun,
+  interpretation,
 } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
@@ -101,10 +102,17 @@ test.describe("解釈と作成", () => {
       card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
 
-    const epic = card.locator("li").filter({ hasText: "ログイン基盤" }).first();
-    await expect(epic.getByText("epic", { exact: true }).first()).toBeVisible();
-    await expect(epic.getByText("メールとパスワードでログインする")).toBeVisible();
-    await expect(epic.getByText("ログイン失敗を数える")).toBeVisible();
+    // タイトルは手直しできるので入力欄に出る（ADR 0024）。
+    await expect(card.getByLabel("e1 の種別")).toHaveValue("epic");
+    await expect(card.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+    await expect(card.getByLabel("i1 のタイトル")).toHaveValue(
+      "メールとパスワードでログインする",
+    );
+    await expect(card.getByLabel("i2 のタイトル")).toHaveValue("ログイン失敗を数える");
+
+    // 親子は epic の下に issue が入る形で出る（ADR 0006）。
+    const epic = card.locator("li").filter({ has: page.getByLabel("e1 のタイトル") });
+    await expect(epic.getByLabel("i1 のタイトル")).toBeVisible();
   });
 
   // 作成は取り消せない（ADR 0009）。押す前に本文が読めていなければならない。
@@ -116,21 +124,175 @@ test.describe("解釈と作成", () => {
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
 
-    const epic = card.locator("li").filter({ hasText: "ログイン基盤" }).first();
+    const epicBody = card.getByLabel("e1 の本文");
 
     // 既定は畳む。全部開くと一覧が縦に伸びて、作られるものの全体像が追えない。
-    await expect(epic.getByText("入口をまとめる")).toBeHidden();
+    await expect(epicBody).toBeHidden();
 
+    const epic = card.locator("li").filter({ has: page.getByLabel("e1 のタイトル") });
     await epic.getByText("本文", { exact: true }).first().click();
-    await expect(epic.getByText("入口をまとめる")).toBeVisible();
+    await expect(epicBody).toBeVisible();
+    await expect(epicBody).toHaveValue("入口をまとめる");
 
-    // issue の側も同じように開ける。
+    // issue の側も同じように開ける。epic の li も i1 を含むので、内側を取る。
     const issue = card
       .locator("li")
-      .filter({ hasText: "メールとパスワードでログインする" })
+      .filter({ has: page.getByLabel("i1 のタイトル") })
       .last();
     await issue.getByText("本文", { exact: true }).click();
-    await expect(issue.getByText("フォームと検証")).toBeVisible();
+    await expect(card.getByLabel("i1 の本文")).toHaveValue("フォームと検証");
+  });
+
+  // ここから下は「何を作るか」を開発者に選ばせる約束（ADR 0024）。
+  // 見せるだけで LLM の決めたとおりに作らせるのは中核思想 3 に反する。
+  test("外した項目は作成リクエストに載らない", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await card.getByLabel("i2 を作成する").uncheck();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    // モックの応答は固定なので、この件数は「作成が終わった」ことの目印。
+    // 何を作らせたのかはリクエストボディにしか現れない。
+    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    expect(mock.createRequests).toHaveLength(1);
+    expect(mock.createRequests[0]?.items.map((it) => it.localId)).toEqual(["e1", "i1"]);
+
+    // 手直ししてもハッシュの照合は成立する。縛っているのは解釈の入力になった
+    // 保存済みシーンであって、解釈結果ではない（ADR 0010）。
+    expect(mock.createRequests[0]?.contentHash).toBe(interpretation().contentHash);
+    expect(mock.createRequests[0]?.summary).toBe(interpretation().summary);
+  });
+
+  // 親だけ消えて子が残ると、選んだつもりのない親なしの issue が GitHub にできる。
+  test("epic を外すと配下の issue も外れる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await card.getByLabel("e1 を作成する").uncheck();
+
+    await expect(card.getByLabel("i1 を作成する")).not.toBeChecked();
+    await expect(card.getByLabel("i2 を作成する")).not.toBeChecked();
+  });
+
+  // 親を失ったことは黙って起こさない。作られるものが変わっている。
+  test("epic を外して戻した issue は、親なしで作ると分かる形で送る", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await card.getByLabel("e1 を作成する").uncheck();
+    await card.getByLabel("i1 を作成する").check();
+
+    await expect(
+      card.getByText("epic に属さない issue として作られます。"),
+    ).toBeVisible();
+
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    // parentLocalId を残すとサーバーが 400 で弾く。
+    expect(mock.createRequests[0]?.items).toHaveLength(1);
+    expect(mock.createRequests[0]?.items[0]?.localId).toBe("i1");
+    expect(mock.createRequests[0]?.items[0]?.parentLocalId).toBeUndefined();
+  });
+
+  test("手直しした title と body が作成リクエストに載る", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await card.getByLabel("i1 のタイトル").fill("OAuth でログインする");
+
+    const issue = card
+      .locator("li")
+      .filter({ has: page.getByLabel("i1 のタイトル") })
+      .last();
+    await issue.getByText("本文", { exact: true }).click();
+    await card.getByLabel("i1 の本文").fill("認可コードフローで受ける");
+
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const sent = mock.createRequests[0]?.items.find((it) => it.localId === "i1");
+    expect(sent?.title).toBe("OAuth でログインする");
+    expect(sent?.body).toBe("認可コードフローで受ける");
+  });
+
+  test("1 件も選ばれていなければ作成させず、理由を出す", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    // epic を外すと配下も外れるので、これで 3 件とも外れる。
+    await card.getByLabel("e1 を作成する").uncheck();
+
+    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toBeDisabled();
+    // 押せない理由は title に隠さない。disabled なボタンには理由が届かない。
+    await expect(card.getByText("作るものが 1 件も選ばれていません。")).toBeVisible();
+    expect(mock.createRequests).toHaveLength(0);
+  });
+
+  // 粒度に issue を指定した注釈では epic を 1 件も作れない（サーバーが弾く）。
+  // 選ばせておいて必ず断るより、選ばせないほうがよい。
+  test("粒度が issue の注釈では種別を変えさせない", async ({ page }) => {
+    const mock = baseMock();
+    // 粒度 issue の注釈に返るのは issue だけ。epic が混ざった結果は返らない。
+    mock.interpret = {
+      status: 200,
+      body: {
+        ...interpretation(),
+        items: [
+          { localId: "i1", kind: "issue", title: "期限切れを弾く", body: "TTL の確認" },
+        ],
+      },
+    };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await expect(card.getByLabel("i1 のタイトル")).toHaveValue("期限切れを弾く");
+    await expect(card.getByLabel("i1 の種別")).toHaveCount(0);
+  });
+
+  // 解釈をやり直したら、前の結果に対する手直しは捨てる。残すと、いま画面に
+  // 出ている解釈とは別のものに対する編集が混ざる。
+  test("解釈し直すと手直しは捨てられる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await card.getByLabel("i1 のタイトル").fill("書き換えたタイトル");
+    await card.getByLabel("i2 を作成する").uncheck();
+
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await expect(card.getByLabel("i1 のタイトル")).toHaveValue(
+      "メールとパスワードでログインする",
+    );
+    await expect(card.getByLabel("i2 を作成する")).toBeChecked();
   });
 
   test("作成すると件数が出て、状態が作成済みに変わる", async ({ page }) => {

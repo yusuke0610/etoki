@@ -258,6 +258,65 @@ body {
   overflow-wrap: anywhere;
 }
 
+/*
+ * 作る前に手直しする本文。読むときの pre と同じ見え方にする（ADR 0024）。
+ * 揃えないと、確認した本文と作られる本文が別物に見える。
+ */
+.item-body > textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  background: #f7f7f7;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+/* 解釈結果の 1 件。作るかどうかと、作られる中身をひとまとめに出す。 */
+.draft-item {
+  margin: 2px 0 6px;
+}
+
+/*
+ * epic の下に入る issue を下げる。作るのは epic ← issue の 2 階層だけなので
+ * （ADR 0006）、どちらに属するのかが見えていないと、外したときに何が一緒に
+ * 外れるのかが読めない。
+ */
+.interpretation-result .plain-list .plain-list {
+  padding-left: 12px;
+}
+
+.draft-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/*
+ * 外した項目も残して薄くする。消すと、何を外したのかが確かめられない
+ * （中核思想 3）。
+ */
+.draft-item.unselected {
+  opacity: 0.55;
+}
+
+.draft-kind,
+.draft-title {
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.draft-title {
+  /* パネルが狭いので、余った幅は全部タイトルに渡す。 */
+  flex: 1;
+  min-width: 0;
+}
+
 .dirty,
 .stale {
   color: #8a5a00;

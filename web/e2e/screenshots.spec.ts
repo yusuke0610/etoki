@@ -63,6 +63,28 @@ test.describe("スクリーンショット", () => {
     await shot(page, "04-created");
   });
 
+  // 作る前に選び直せること、選び直した結果がどう見えるかを撮る（ADR 0024）。
+  test("作るものを選び直した画面を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+
+    // 親を外して子だけ戻した状態。構造が変わったことが出ているかを見る。
+    await card.getByLabel("e1 を作成する").uncheck();
+    await card.getByLabel("i1 を作成する").check();
+    await shot(page, "17-interpretation-selected");
+
+    // 1 件も選ばれていないと押せない。理由が読めるかを見る。
+    await card.getByLabel("i1 を作成する").uncheck();
+    await shot(page, "18-creation-blocked");
+  });
+
   // 複数フレームのとき、パネルの項目とキャンバスのフレームが対応して見える
   // ことを撮る（ADR 0022）。
   test("カードとフレームの対応を撮る", async ({ page }) => {
