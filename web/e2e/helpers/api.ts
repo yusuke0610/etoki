@@ -464,6 +464,44 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   return mock;
 }
 
+/**
+ * 応答を壊して、描画中に落ちる状況を作る。
+ *
+ * **ここだけ本文を生成型で書かない**（`web/CLAUDE.md`）。壊れていること自体が
+ * 入力なので、型に合わせると再現しない。フロントは応答を検証せずに型として
+ * 扱うので、契約から外れた本文はそのまま render まで届く。
+ *
+ * `installApi` の**後**に呼ぶ。Playwright のルートは後勝ち。
+ */
+async function breakList(page: Page, match: (url: URL) => boolean): Promise<void> {
+  await page.route(match, async (route) => {
+    // 壊すのは一覧の取得だけ。同じパスの POST（ボードの作成）まで奪うと、
+    // installApi が組み立てた振る舞いが静かに消える。
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([null]),
+    });
+  });
+}
+
+/** 注釈の一覧を壊す。落ちるのは注釈パネルの中だけ。 */
+export function breakAnnotations(page: Page): Promise<void> {
+  return breakList(page, (url) =>
+    /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
+  );
+}
+
+/** ボードの一覧を壊す。キャンバスへ入る前の画面ごと落ちる。 */
+export function breakBoards(page: Page): Promise<void> {
+  return breakList(page, (url) => url.pathname === "/api/boards");
+}
+
 function boardIdOf(route: Route): string {
   const segments = new URL(route.request().url()).pathname.split("/");
   // /api/boards/<id>/... の 4 番目が ID。
