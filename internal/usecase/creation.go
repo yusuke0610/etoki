@@ -37,6 +37,14 @@ var (
 	// ErrContentHashMismatch は解釈時点と作成時点の保存済みシーンが違うことを表す。
 	ErrContentHashMismatch = errors.New("etoki: board changed after interpretation")
 
+	// ErrPreviousItemUnknown は更新先がその注釈のものではないことを表す。
+	//
+	// **これが唯一の関門。** previousItemId はリクエストから来るので、確かめずに
+	// 通すと、任意の node ID を書いて無関係な draft issue を書き換えられる。
+	// 解釈と作成のあいだに別の run が積まれて対応づけが古くなった場合もここに来る。
+	// どちらも打ち手は同じで、解釈からやり直す。
+	ErrPreviousItemUnknown = errors.New("etoki: previous item does not belong to this annotation")
+
 	// ErrTargetNotSelected はボードに作成先が設定されていないことを表す。
 	//
 	// 作成先はボードごとに持つ（ADR 0014）。未選択のまま作ると、どこにも
@@ -169,6 +177,17 @@ func (s *CreationService) Create(
 		return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
+	// 更新先がこの注釈のものであることを確かめる。畳み込みが「いま GitHub に
+	// 在らしめているもの」なので、そこに無い ID は更新してよい相手ではない
+	// （ADR 0026）。
+	known, err := s.mappings.ListItemsByAnnotation(ctx, boardID, annotationID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPreviousItems(in, known); err != nil {
+		return nil, err
+	}
+
 	fields, err := s.resolveFields(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -183,7 +202,7 @@ func (s *CreationService) Create(
 		CreatedAt:    s.now(),
 	}
 
-	items, createErr := s.createItems(ctx, projectID, in, fields, run.CreatedAt)
+	items, createErr := s.applyItems(ctx, projectID, in, fields, run.CreatedAt)
 	run.Items = items
 
 	// 1 件も作れていないなら記録するものが無い。空の run を残すと、状態が
@@ -206,11 +225,36 @@ func (s *CreationService) Create(
 	return &run, createErr
 }
 
-// createItems は epic を先に、次に issue を作る。
+// checkPreviousItems は更新先がその注釈のものかを確かめる。
+//
+// 1 件でも見知らぬ ID があれば、何も作らず何も更新せずに止める。半分だけ
+// 進めると、作成は取り消せないのに「どこまで進んだか」が分からなくなる。
+func checkPreviousItems(in domain.Interpretation, known []port.SyncItem) error {
+	allowed := make(map[string]struct{}, len(known))
+	for _, it := range known {
+		allowed[it.ItemID] = struct{}{}
+	}
+
+	for _, item := range in.Items {
+		if item.PreviousItemID == nil {
+			continue
+		}
+		if _, ok := allowed[*item.PreviousItemID]; !ok {
+			return fmt.Errorf("%w: %s (%q): interpret again before creating",
+				ErrPreviousItemUnknown, *item.PreviousItemID, item.Title)
+		}
+	}
+
+	return nil
+}
+
+// applyItems は epic を先に、次に issue を作る（または書き換える）。
 //
 // 順序に意味がある。issue の親フィールドには epic のタイトルを入れるため、
-// epic が確定していないと値を決められない。
-func (s *CreationService) createItems(
+// epic が確定していないと値を決められない。**epic のタイトルを書き換えたときも
+// この順序が効く。** 先に epic を書き換えてから子の Parent を張り直すので、
+// 同じ解釈に入っている子は新しいタイトルを指す。
+func (s *CreationService) applyItems(
 	ctx context.Context, projectID string, in domain.Interpretation,
 	fields projectFields, now time.Time,
 ) ([]port.SyncItem, error) {
@@ -225,8 +269,15 @@ func (s *CreationService) createItems(
 				continue
 			}
 
-			saved, err := s.createOne(ctx, projectID, item, fields, epicTitles, now)
+			saved, err := s.applyOne(ctx, projectID, item, fields, epicTitles, now)
 			if err != nil {
+				// **済んだところまでは記録する。** draft issue そのものは書けて
+				// いて、あとのフィールド設定で失敗した、という並びがある。捨てると
+				// GitHub 側は変わったのに履歴は古いままになり、次の 3 状態判定が
+				// 実物と食い違う（ADR 0009 / 0026）。
+				if saved.ItemID != "" {
+					created = append(created, saved)
+				}
 				return created, fmt.Errorf("%w: %w", ErrCreationIncomplete, err)
 			}
 
@@ -240,8 +291,12 @@ func (s *CreationService) createItems(
 	return created, nil
 }
 
-// createOne は draft issue を 1 件作り、種別と親を設定する。
-func (s *CreationService) createOne(
+// applyOne は draft issue を 1 件作るか書き換え、種別と親を設定し直す。
+//
+// **種別と親は更新でも張り直す。** 手直しで kind を変えられるし（ADR 0024）、
+// 親の epic のタイトルが変われば子の Parent 値は古くなる。作成時と同じ経路を
+// 通しておけば、片方だけ古いフィールドが残らない。
+func (s *CreationService) applyOne(
 	ctx context.Context,
 	projectID string,
 	item domain.InterpretedItem,
@@ -249,10 +304,26 @@ func (s *CreationService) createOne(
 	epicTitles map[string]string,
 	now time.Time,
 ) (port.SyncItem, error) {
-	itemID, err := s.github.CreateDraftIssue(ctx, projectID,
-		port.DraftIssue{Title: item.Title, Body: item.Body})
+	itemID, action, err := s.writeDraftIssue(ctx, projectID, item)
 	if err != nil {
-		return port.SyncItem{}, fmt.Errorf("create %q: %w", item.Title, err)
+		return port.SyncItem{}, err
+	}
+
+	// GitHub に送ったものをそのまま控える。逆方向同期を実装しない以上、
+	// ここで取らなければ何を作ったのか二度と分からない（ADR 0023）。
+	//
+	// **書き込みが済んだ直後に組み立てる。** このあとのフィールド設定で失敗
+	// しても、draft issue そのものはもう変わっている。呼び出し側が記録できる
+	// よう、エラーと一緒にこれを返す（ADR 0009 / 0026）。
+	saved := port.SyncItem{
+		ItemID:        itemID,
+		Kind:          toPortKind(item.Kind),
+		Title:         item.Title,
+		Body:          item.Body,
+		LocalID:       item.LocalID,
+		ParentLocalID: item.ParentLocalID,
+		Action:        action,
+		CreatedAt:     now,
 	}
 
 	optionID := fields.epicOptionID
@@ -261,22 +332,21 @@ func (s *CreationService) createOne(
 	}
 	if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
 		port.FieldValue{FieldID: fields.kindID, OptionID: &optionID}); err != nil {
-		return port.SyncItem{}, fmt.Errorf("set kind on %q: %w", item.Title, err)
-	}
-
-	// GitHub に送ったものをそのまま控える。逆方向同期を実装しない以上、
-	// ここで取らなければ何を作ったのか二度と分からない（ADR 0023）。
-	saved := port.SyncItem{
-		ItemID:        itemID,
-		Kind:          toPortKind(item.Kind),
-		Title:         item.Title,
-		Body:          item.Body,
-		LocalID:       item.LocalID,
-		ParentLocalID: item.ParentLocalID,
-		CreatedAt:     now,
+		return saved, fmt.Errorf("set kind on %q: %w", item.Title, err)
 	}
 
 	if item.ParentLocalID == nil {
+		// 子だったものが top-level（または epic）に変わったら、GitHub 側に
+		// 残っている Parent 値を消す。放っておくと、親を外したはずの item が
+		// 古い epic にぶら下がったままになる。**新規作成では消さない。**
+		// 空のフィールドをわざわざ空で上書きする往復が増えるだけ。
+		if action == port.ActionUpdated {
+			empty := ""
+			if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
+				port.FieldValue{FieldID: fields.parentID, Text: &empty}); err != nil {
+				return saved, fmt.Errorf("clear parent on %q: %w", item.Title, err)
+			}
+		}
 		return saved, nil
 	}
 
@@ -285,15 +355,40 @@ func (s *CreationService) createOne(
 	title, ok := epicTitles[*item.ParentLocalID]
 	if !ok {
 		// 検証を通っていれば起きない。起きたら親子が壊れるので止める。
-		return port.SyncItem{}, fmt.Errorf("parent %q of %q was not created",
+		return saved, fmt.Errorf("parent %q of %q was not created",
 			*item.ParentLocalID, item.Title)
 	}
 	if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
 		port.FieldValue{FieldID: fields.parentID, Text: &title}); err != nil {
-		return port.SyncItem{}, fmt.Errorf("set parent on %q: %w", item.Title, err)
+		return saved, fmt.Errorf("set parent on %q: %w", item.Title, err)
 	}
 
 	return saved, nil
+}
+
+// writeDraftIssue は draft issue を作るか書き換え、その item ID を返す。
+//
+// 分岐はここだけ。呼び出し側は「作った」か「書き換えた」かを Action で受け取る。
+func (s *CreationService) writeDraftIssue(
+	ctx context.Context, projectID string, item domain.InterpretedItem,
+) (string, port.SyncAction, error) {
+	draft := port.DraftIssue{Title: item.Title, Body: item.Body}
+
+	if item.PreviousItemID == nil {
+		itemID, err := s.github.CreateDraftIssue(ctx, projectID, draft)
+		if err != nil {
+			return "", "", fmt.Errorf("create %q: %w", item.Title, err)
+		}
+		return itemID, port.ActionCreated, nil
+	}
+
+	// 更新先が本当にこの注釈のものかは Create の入口で確かめてある。
+	itemID := *item.PreviousItemID
+	if err := s.github.UpdateDraftIssue(ctx, itemID, draft); err != nil {
+		return "", "", fmt.Errorf("update %q: %w", item.Title, err)
+	}
+
+	return itemID, port.ActionUpdated, nil
 }
 
 // projectFields は作成に必要なカスタムフィールドの ID。

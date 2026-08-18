@@ -122,6 +122,11 @@ func toInterpretationResponse(result usecase.InterpretationResult) apitypes.Inte
 		if it.ParentLocalID != nil {
 			item.ParentLocalID = *it.ParentLocalID
 		}
+		// LLM が対応づけた候補。決めるのは開発者で、確認画面で外せる
+		// （中核思想 3、ADR 0026）。
+		if it.PreviousItemID != nil {
+			item.PreviousItemID = *it.PreviousItemID
+		}
 		out.Items = append(out.Items, item)
 	}
 

@@ -706,7 +706,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: 解釈時点と現在のシーンの contentHash が食い違う
+          description: |
+            解釈時点と現在のシーンの contentHash が食い違うか、`previousItemId` が
+            その注釈のものではない。どちらも解釈からやり直す
           content:
             application/json:
               schema:
@@ -1218,10 +1220,19 @@ components:
           format: date-time
           description: 保存後の `updatedAt`。次の保存の `baseUpdatedAt` になる
 
+    SyncAction:
+      type: string
+      description: |
+        1 つの run がその item に対して何をしたか（ADR 0026）。
+
+        `created` は新しく作った、`updated` は既存の draft issue を書き換えた。
+        記録していなかった頃の run はすべて `created`。当時は更新の経路が無かった。
+      enum: [created, updated]
+
     SyncItem:
       type: object
       description: 作成済みの draft issue 1 件
-      required: [itemId, kind, title, body, localId]
+      required: [itemId, kind, title, body, localId, action]
       properties:
         itemId:
           type: string
@@ -1240,6 +1251,8 @@ components:
           type: string
           description: epic に属する issue のとき、その epic の localId
           x-go-type-skip-optional-pointer: true
+        action:
+          $ref: "#/components/schemas/SyncAction"
 
     AnnotationStatus:
       type: object
@@ -1260,7 +1273,13 @@ components:
           description: 前回実行の時刻。未実行なら省略する
         items:
           type: array
-          description: 前回実行で作られた draft issue。未実行なら省略する
+          description: |
+            この注釈が GitHub に在らしめている draft issue（ADR 0026）。
+
+            **前回実行で作られたものではなく、run 履歴を itemId で畳んだもの。**
+            更新は同じ itemId に吸収され、今回触らなかったものも残り続ける。
+            最新 run だけを返すと、更新のあとに取り残しが画面から消える。
+            1 件も無ければ省略する
           items:
             $ref: "#/components/schemas/SyncItem"
           x-go-type-skip-optional-pointer: true
@@ -1280,6 +1299,16 @@ components:
           type: string
         parentLocalId:
           type: string
+          x-go-type-skip-optional-pointer: true
+        previousItemId:
+          type: string
+          description: |
+            書き換える対象の itemId（ADR 0026）。新しく作るなら省略する。
+
+            解釈のレスポンスでは LLM が対応づけた候補が入る。作成のリクエストでは
+            開発者が確かめた結果として送り返す。**サーバーはこの値がその注釈の
+            ものであることを確かめる。** 確かめずに通すと、任意の node ID を
+            書いて無関係な draft issue を書き換えられる
           x-go-type-skip-optional-pointer: true
 
     AnnotationImage:

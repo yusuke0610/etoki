@@ -15,9 +15,16 @@ type AnnotationState struct {
 	State domain.SyncState
 	// LatestRun は最後に issue 化したときの記録。未実行なら nil。
 	//
-	// 「変更あり」のときに前回何を作ったかを見せるために返す。判定に使うのは
-	// ハッシュだけだが、開発者が判断するには前回の作成物が要る。
+	// 判定に使うのはハッシュと実行時刻だけ。**中身を見せるのに使わない。**
+	// 何が GitHub に在るかは Items が持つ。
 	LatestRun *port.SyncRun
+	// Items はこの注釈が GitHub に在らしめているもの（ADR 0026）。
+	//
+	// **最新 run の Items ではなく、run 履歴を畳んだもの。** 最新 run だけを
+	// 見せると、更新の run のあとに「前回作ったが今回は触らなかった」item が
+	// 画面から消える。GitHub 側には残っているのに etoki が見せなくなるのは、
+	// 状態を見せるという方針に反する（中核思想 3）。
+	Items []port.SyncItem
 }
 
 // AnnotationService は注釈の状態を組み立てる。
@@ -55,6 +62,13 @@ func (s *AnnotationService) ListStates(ctx context.Context, boardID string) ([]A
 		return nil, err
 	}
 
+	// 見せるものは畳み込みから取る。判定に使う最新 run とは出どころを分ける
+	// （ADR 0026）。
+	itemsByAnnotation, err := s.mappings.ListItemsByBoard(ctx, boardID)
+	if err != nil {
+		return nil, err
+	}
+
 	latestByAnnotation := make(map[string]port.SyncRun, len(runs))
 	for _, r := range runs {
 		latestByAnnotation[r.AnnotationID] = r
@@ -82,6 +96,7 @@ func (s *AnnotationService) ListStates(ctx context.Context, boardID string) ([]A
 			Annotation: a,
 			State:      domain.DecideState(latestHash, current),
 			LatestRun:  latestRun,
+			Items:      itemsByAnnotation[a.ID],
 		})
 	}
 

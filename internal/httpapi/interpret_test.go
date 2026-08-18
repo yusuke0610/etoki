@@ -59,7 +59,7 @@ func newInterpretRouter(t *testing.T, llm port.LLMClient) *gin.Engine {
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 	}
 	if llm != nil {
-		deps.Interpretations = usecase.NewInterpretationService(boards, llm,
+		deps.Interpretations = usecase.NewInterpretationService(boards, mappings, llm,
 			usecase.WithMaxAttempts(2))
 	}
 
@@ -262,7 +262,7 @@ func TestInterpretAnnotation_DoesNotRecordRun(t *testing.T) {
 	r := httpapi.NewRouter(httpapi.Deps{
 		Boards:          boardSvc,
 		Annotations:     usecase.NewAnnotationService(boards, mappings),
-		Interpretations: usecase.NewInterpretationService(boards, &stubLLM{text: validInterpretation}),
+		Interpretations: usecase.NewInterpretationService(boards, mappings, &stubLLM{text: validInterpretation}),
 	})
 
 	id := createBoard(t, r, "設計会")

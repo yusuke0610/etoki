@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { Interpretation, InterpretedItem } from "../api/types";
+import type { Interpretation, InterpretedItem, SyncItem } from "../api/types";
 import {
   blockingReasons,
   buildInterpretation,
   createDraft,
   type Draft,
+  leftBehindItemIds,
   orphanedLocalIds,
   setBody,
   setKind,
@@ -222,5 +223,84 @@ describe("blockingReasons", () => {
 
   it("粒度 epic でも epic が残っていれば止めない", () => {
     expect(blockingReasons(createDraft(sample()), "epic")).toEqual([]);
+  });
+});
+
+describe("leftBehindItemIds", () => {
+  const previous: SyncItem[] = [
+    {
+      itemId: "PVTI_a",
+      kind: "epic",
+      title: "epic",
+      body: "",
+      localId: "e1",
+      action: "created",
+    },
+    {
+      itemId: "PVTI_b",
+      kind: "issue",
+      title: "issue",
+      body: "",
+      localId: "i1",
+      action: "created",
+    },
+  ];
+
+  function draftWith(items: InterpretedItem[]) {
+    return createDraft({ summary: "s", contentHash: "h", items });
+  }
+
+  it("どの項目からも指されていないものが取り残される", () => {
+    const draft = draftWith([
+      { localId: "n1", kind: "issue", title: "t", body: "", previousItemId: "PVTI_a" },
+    ]);
+
+    expect([...leftBehindItemIds(draft, previous)]).toEqual(["PVTI_b"]);
+  });
+
+  it("全部が対応づいていれば取り残しは無い", () => {
+    const draft = draftWith([
+      { localId: "n1", kind: "epic", title: "t", body: "", previousItemId: "PVTI_a" },
+      { localId: "n2", kind: "issue", title: "t", body: "", previousItemId: "PVTI_b" },
+    ]);
+
+    expect(leftBehindItemIds(draft, previous).size).toBe(0);
+  });
+
+  // 外した項目は作られないので、その更新先は取り残しに戻る。**選択を外した
+  // ことで何が起きるかを、押す前に見せる**のがこの表示の目的（中核思想 3）。
+  it("選択を外すと、その更新先は取り残しに戻る", () => {
+    let draft = draftWith([
+      { localId: "n1", kind: "issue", title: "t", body: "", previousItemId: "PVTI_a" },
+      { localId: "n2", kind: "issue", title: "t", body: "", previousItemId: "PVTI_b" },
+    ]);
+    expect(leftBehindItemIds(draft, previous).size).toBe(0);
+
+    draft = toggleItem(draft, "n1");
+    expect([...leftBehindItemIds(draft, previous)]).toEqual(["PVTI_a"]);
+  });
+
+  it("前回ぶんが無ければ取り残しも無い", () => {
+    const draft = draftWith([{ localId: "n1", kind: "issue", title: "t", body: "" }]);
+
+    expect(leftBehindItemIds(draft, []).size).toBe(0);
+  });
+});
+
+// 対応づけは開発者が確かめたまま送り返す（ADR 0026）。
+describe("buildInterpretation と previousItemId", () => {
+  it("選んだ項目の previousItemId が載る", () => {
+    const draft = createDraft({
+      summary: "s",
+      contentHash: "h",
+      items: [
+        { localId: "n1", kind: "issue", title: "t", body: "", previousItemId: "PVTI_a" },
+        { localId: "n2", kind: "issue", title: "t", body: "" },
+      ],
+    });
+
+    const built = buildInterpretation(draft);
+    expect(built.items[0]?.previousItemId).toBe("PVTI_a");
+    expect(built.items[1]?.previousItemId).toBeUndefined();
   });
 });

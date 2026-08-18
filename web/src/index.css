@@ -555,3 +555,22 @@ a.badge-target:hover {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/*
+ * 書き換える項目の印（ADR 0026）。作るのか書き換えるのかは押す前に見えている
+ * 必要がある。どちらも取り消せないが、書き換えは前の内容を消す。
+ */
+.badge-updated {
+  background: #fdf0d5;
+  color: #8a5a00;
+}
+
+/*
+ * 今回の作成で置き去りになるもの。作成ボタンの手前に置く。押したあとに
+ * 気づいても、draft issue は削除できない。
+ */
+.left-behind {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border-left: 2px solid #ddd;
+}

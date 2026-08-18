@@ -39,7 +39,7 @@ func TestRolePermissions(t *testing.T) {
 		}},
 		{"解釈", func(ctx context.Context, boards *fakeBoards) error {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
-			_, err := usecase.NewInterpretationService(boards, llm).
+			_, err := usecase.NewInterpretationService(boards, &fakeMappings{}, llm).
 				Interpret(ctx, "board-1", "annot-1", nil)
 			return err
 		}},
