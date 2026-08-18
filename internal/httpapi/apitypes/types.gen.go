@@ -298,6 +298,24 @@ type BoardTarget struct {
 	RepositoryOwner string `json:"repositoryOwner"`
 }
 
+// Capabilities いま使える機能。**プロセスの設定であって、利用者ごとの権限ではない。**
+//
+// false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
+// `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
+// 原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
+type Capabilities struct {
+	// Creation draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
+	// 引けない**ので、新しいボードも作れない（ADR 0017）
+	Creation bool `json:"creation"`
+
+	// Interpretation 注釈を解釈できるか。false は LLM が未設定（ADR 0008）
+	Interpretation bool `json:"interpretation"`
+
+	// Sharing ボードを共有できるか。false は認証が未設定。招待は「誰であるか」が
+	// 決まって初めて意味を持つ（ADR 0016 / 0017）
+	Sharing bool `json:"sharing"`
+}
+
 // CreateBoardRequest ボード作成のリクエストボディ。
 //
 // **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので

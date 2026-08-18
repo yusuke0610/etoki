@@ -27,6 +27,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * いま使える機能を返す
+         * @description LLM や GitHub を設定していなくても etoki は起動する（ADR 0008）。
+         *     設定していない機能のエンドポイントは 503 を返すが、**それは押した後に
+         *     しか分からない。** 押す前に「いまできないこと」を見せるための口。
+         *
+         *     返すのはプロセスの設定であって、利用者ごとの権限ではない。ボード単位の
+         *     可否は `GET /api/boards/{id}/access`（ADR 0017）。**混ぜないこと。**
+         *     片方が「できる」でもう片方が「できない」は普通に起きる。
+         */
+        get: operations["getCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/session": {
         parameters: {
             query?: never;
@@ -454,6 +480,27 @@ export interface components {
             provider: string;
             login: string;
             displayName: string;
+        };
+        /**
+         * @description いま使える機能。**プロセスの設定であって、利用者ごとの権限ではない。**
+         *
+         *     false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
+         *     `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
+         *     原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
+         */
+        Capabilities: {
+            /** @description 注釈を解釈できるか。false は LLM が未設定（ADR 0008） */
+            interpretation: boolean;
+            /**
+             * @description draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
+             *     引けない**ので、新しいボードも作れない（ADR 0017）
+             */
+            creation: boolean;
+            /**
+             * @description ボードを共有できるか。false は認証が未設定。招待は「誰であるか」が
+             *     決まって初めて意味を持つ（ADR 0016 / 0017）
+             */
+            sharing: boolean;
         };
         /** @description ログイン状態。認証を設定していない構成でも 200 で返る。 */
         SessionStatus: {
@@ -951,6 +998,29 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description いま使える機能 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
         };
     };
     getSession: {

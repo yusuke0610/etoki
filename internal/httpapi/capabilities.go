@@ -1,0 +1,30 @@
+package httpapi
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
+)
+
+// getCapabilities はいま使える機能を返す。
+//
+// **押した後にしか分からない 503 を、押す前に見せるための口**（ADR 0008 で
+// 「LLM を設定しなくても起動する」と決めた帰結）。判定材料は各エンドポイントと
+// 同じ `handlers` の nil なので、ここが true なのに 503 が返ることはない。
+//
+// **利用者ごとの権限は返さない。** そちらはボード単位で
+// `GET /api/boards/{id}/access` が返す（ADR 0017）。プロセスの設定と利用者の
+// 権限を 1 つに畳むと、「GitHub は設定されているが自分は書けない」を表現できない。
+func (h *handlers) getCapabilities(c *gin.Context) {
+	c.JSON(http.StatusOK, apitypes.Capabilities{
+		Interpretation: h.interpretations != nil,
+		// 作成先の候補（catalog）も同じ GitHub の設定で決まる。片方だけ nil に
+		// なる配線は cmd/etoki には無いので、1 つにまとめて返す。
+		Creation: h.creations != nil && h.catalog != nil,
+		// 招待は「誰であるか」が決まって初めて意味を持つ。片方だけあっても
+		// 共有の画面は成り立たないので、両方揃って初めて true にする。
+		Sharing: h.members != nil && h.access != nil,
+	})
+}

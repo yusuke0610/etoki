@@ -120,6 +120,11 @@ UI は未保存の変更があることを表示する。
   書く。
 - **`error` 本文は手掛かりであって利用者向けの文言ではない。** Go の内部文言
   （`etoki: ...`）を画面向けに書き換えない。画面は code から日本語を引く。
+- **`GET /api/capabilities` は `Deps` の nil をそのまま返す**（ADR 0030）。
+  押す前に「いまできないこと」を見せるための口で、**判定材料は各エンドポイントと
+  同じ nil**。別の材料で組み立てると、案内と 503 が食い違う。
+  `TestGetCapabilities_MatchesUnavailableEndpoints` がそこを見ている。
+  **利用者ごとの権限は返さない。** そちらはボード単位（ADR 0017）。
 - **ハンドラのテストは Host を明示する。** `httptest.NewRequest` の既定は
   `example.com` なので、指定を忘れると Origin 検証で 403 になる。
 

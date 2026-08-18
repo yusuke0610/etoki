@@ -44,6 +44,8 @@ tags:
     description: ログインとセッション
   - name: members
     description: ボードの共有
+  - name: capabilities
+    description: いま使える機能
 
 paths:
   /healthz:
@@ -63,6 +65,33 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /api/capabilities:
+    get:
+      tags: [capabilities]
+      operationId: getCapabilities
+      summary: いま使える機能を返す
+      description: |
+        LLM や GitHub を設定していなくても etoki は起動する（ADR 0008）。
+        設定していない機能のエンドポイントは 503 を返すが、**それは押した後に
+        しか分からない。** 押す前に「いまできないこと」を見せるための口。
+
+        返すのはプロセスの設定であって、利用者ごとの権限ではない。ボード単位の
+        可否は `GET /api/boards/{id}/access`（ADR 0017）。**混ぜないこと。**
+        片方が「できる」でもう片方が「できない」は普通に起きる。
+      responses:
+        "200":
+          description: いま使える機能
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Capabilities"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   /api/auth/session:
     get:
@@ -849,6 +878,30 @@ components:
           type: string
         displayName:
           type: string
+
+    Capabilities:
+      type: object
+      description: |
+        いま使える機能。**プロセスの設定であって、利用者ごとの権限ではない。**
+
+        false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
+        `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
+        原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
+      required: [interpretation, creation, sharing]
+      properties:
+        interpretation:
+          type: boolean
+          description: 注釈を解釈できるか。false は LLM が未設定（ADR 0008）
+        creation:
+          type: boolean
+          description: |
+            draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
+            引けない**ので、新しいボードも作れない（ADR 0017）
+        sharing:
+          type: boolean
+          description: |
+            ボードを共有できるか。false は認証が未設定。招待は「誰であるか」が
+            決まって初めて意味を持つ（ADR 0016 / 0017）
 
     SessionStatus:
       type: object

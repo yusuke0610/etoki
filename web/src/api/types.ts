@@ -70,6 +70,9 @@ export type ErrorResponse = Schemas["ErrorResponse"];
 /** 失敗の原因を表す符号。画面はこれで打ち手を分ける。 */
 export type ErrorCode = Schemas["ErrorCode"];
 
+/** いま使える機能。プロセスの設定であって、利用者ごとの権限ではない。 */
+export type Capabilities = Schemas["Capabilities"];
+
 /** ログイン状態。認証を設定していない構成でも返る。 */
 export type SessionStatus = Schemas["SessionStatus"];
 
