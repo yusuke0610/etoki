@@ -126,6 +126,10 @@ cd web && bunx playwright test --ui
 
 触る前に理由を把握しておくべきもの。消すと壊れる。
 
+- **整形は `make fmt`。`web/package.json` に prettier は無い。** 設定は
+  ルートの `.prettierrc.json` で、道具は devShell にある。対象は
+  リポジトリ全体で、`web/` の中から prettier を呼ぶと `docs/adr` とルートの
+  Markdown が外れる。`bun run lint` が見るのは eslint と `tsc` だけ。
 - **`web/vite.config.ts` の test セクション** — excalidraw を vitest で読むのに
   3 つ必要。prod バンドルへの `alias`、`open-color`（実体が JSON）の `inline`、
   そして `src/test-setup.ts` の canvas スタブ（import 時に 2D コンテキストの

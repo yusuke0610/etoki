@@ -59,7 +59,7 @@ ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web \
-        test test-go test-web test-e2e lint lint-go lint-web lint-docs fmt \
+        test test-go test-web test-e2e lint lint-go lint-web lint-docs lint-fmt fmt \
         codegen codegen-go codegen-web migrate clean
 
 help: ## ターゲット一覧を表示する
@@ -111,7 +111,7 @@ test-e2e: ## Playwright で E2E テストを実行する（test には含めな�
 	@# ここの画像を報告に添える（CLAUDE.md の「報告にスクリーンショットを添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
 
-lint: lint-go lint-web lint-docs ## golangci-lint / フロントエンド / Markdown の lint と整形検査を実行する
+lint: lint-go lint-web lint-docs lint-fmt ## golangci-lint / フロントエンド / Markdown の lint と整形検査を実行する
 
 lint-go:
 	golangci-lint run
@@ -125,13 +125,18 @@ lint-web:
 lint-docs:
 	@# 対象と規則は .markdownlint-cli2.yaml にある。引数で glob を渡さないのは、
 	@# 検査対象の定義がここと設定ファイルの 2 箇所に散るのを避けるため。
-	@# web/ 配下の Markdown も通る（prettier は整形、こちらは構造を見る）。
+	@# 対象は prettier と同じリポジトリ全体。あちらが整形を、こちらが構造を見る。
 	markdownlint-cli2
 
-fmt: ## Go / Nix / フロントエンドをフォーマットする
+lint-fmt:
+	@# リポジトリ全体を見る。web/ の中から呼ぶと docs/adr やルートの Markdown が
+	@# 対象から外れる。除外は .prettierignore と .gitignore が決める。
+	prettier --check .
+
+fmt: ## Go / Nix / Markdown / フロントエンドをフォーマットする
 	golangci-lint fmt
 	nix fmt -- flake.nix
-	cd $(WEB_DIR) && bun run fmt
+	prettier --write .
 
 codegen: codegen-go codegen-web ## api/openapi.yaml から Go / TypeScript の型を再生成する
 

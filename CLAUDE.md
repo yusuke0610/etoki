@@ -54,7 +54,7 @@ make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
 make lint        # golangci-lint + eslint + tsc + markdownlint + 整形検査
-make fmt         # Go / Nix / フロントエンドを整形する
+make fmt         # Go / Nix / フロントエンド / Markdown を整形する
 make test        # go test + vitest
 make test-e2e    # Playwright（test には含まれない）
 make codegen     # api/openapi.yaml から Go / TS の型を再生成する
@@ -173,6 +173,11 @@ GitHub の形しか差せなくなる。
   `**/*.md` なので、`bun install` 後は `web/node_modules` の README まで拾う。
   除外を自前で列挙せず `.gitignore` を見ているのは、上の 2 つと同じ知識を
   3 箇所目に増やさないため。こちらも `bun install` 後にしか再現しない。
+- **`.prettierignore` の `web/bun.lock`** — prettier は bun のロックファイルを
+  解析できず、対象に入ると落ちる。`web/node_modules` や `web/dist` を書いて
+  いないのは、prettier が `.gitignore` も既定で見るため。整形の対象は
+  リポジトリ全体で、`web/` の中から呼ぶと `docs/adr` とルートの Markdown が
+  外れる。
 - **Makefile の `ifndef ETOKI_DEVSHELL` による包み直し** — devShell の外から
   呼ばれたら `nix develop --command make` で全ターゲットをやり直す。判定に
   `IN_NIX_SHELL` を使わないのは、あれが「何かの nix shell の中」としか言わず、

@@ -2,10 +2,10 @@
 # コマンド名だけを置く（make lint-docs）。
 #
 # 表の桁の書き方（MD060）は既定の `any` のままにしてある。表ごとの一貫性だけを
-# 見て、リポジトリ全体の形は決めない。style を compact に固定しないのは、web/
-# 配下の Markdown は prettier も通っていて、prettier が表をそろえる形（aligned）
-# に整形するため。固定すると、web/CLAUDE.md に表を足した日に prettier と
-# markdownlint が互いを直し合う。
+# 見て、リポジトリ全体の形は決めない。Markdown は prettier も通っていて、表の
+# 形を決めているのはそちら（aligned にそろえる）。ここで style も固定すると
+# 同じことを 2 つの道具が決めることになり、食い違った日にどちらが正なのかが
+# 無くなる。
 
 globs:
   - "**/*.md"
