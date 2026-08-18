@@ -87,6 +87,10 @@ func ComputeContentHash(elements []TextElement, g Granularity) ContentHash {
 //
 // 正規化しないと、編集環境の違い（改行コード）や入力方式の違い（合成済みか
 // 結合文字か）だけで「変更あり」と誤判定してしまう。
+//
+// **epic のタイトルの重複判定（normalizeTitle）も同じ正規化を使う**（ADR 0028）。
+// 「見た目が同じものは同じ」の定義をここ 1 つに保つため。ハッシュの都合だけで
+// 変えると、タイトルの衝突判定も一緒に動く。
 func normalizeText(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")

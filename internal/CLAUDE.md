@@ -75,6 +75,12 @@ UI は未保存の変更があることを表示する。
   設計なので同一時刻の run がありうる。
 - **GitHub に作るのは epic と issue の 2 階層のみ。** LLM 出力の最上位
   `summary` は作成前の確認表示にだけ使い、GitHub には作らない（ADR 0006）。
+- **同じ解釈の中で epic のタイトルは一意**（ADR 0028）。親は epic のタイトル
+  文字列で指す（ADR 0006）ので、同名の epic が並ぶとその配下は GitHub 上で
+  1 つにまとまり、エラーにならないまま構造が壊れる。判定は
+  `domain.validateItems` にあり、比較の正規形は `normalizeTitle`（前後の空白を
+  落として NFC。**大文字小文字と全角半角は畳まない**）。**タイトルを etoki が
+  付け替えて一意にしない。** 弾いて直させる。
 - **作成先の Projects v2 はボードごと。** プロセス全体の設定ではない
   （`ETOKI_GITHUB_PROJECT_ID` は廃止済み）。`boards` の
   `repository_owner` / `repository_name` / `project_id` に持つ。**作成時に必須**

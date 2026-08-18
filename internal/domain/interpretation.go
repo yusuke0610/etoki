@@ -284,6 +284,12 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 
 	var errs ValidationErrors
 	seen := make(map[string]struct{}, len(items))
+	// epic のタイトルから localId を引く表。**先に出たほうを残す。**
+	//
+	// 親は epic のタイトル文字列で指す（ADR 0006）ので、同名の epic が並ぶと
+	// その配下は GitHub 上で 1 つにまとまり、どちらの子なのか区別が付かなく
+	// なる。draft issue は削除できないため、作ってからでは取り返せない。
+	epicTitles := make(map[string]string, len(items))
 	// 更新先の取り合いはここでも見る。解釈の出口では resolvePreviousRefs が
 	// 弾いているが、作成のリクエストは画面から送られてくるので、そこを通らない
 	// 経路でも 1 つの draft issue に 2 件が向かうのを防ぐ必要がある。
@@ -318,11 +324,29 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 			})
 		}
 
-		if strings.TrimSpace(it.Title) == "" {
+		title := normalizeTitle(it.Title)
+		switch owner, dup := epicTitles[title]; {
+		case title == "":
 			errs = append(errs, ValidationError{
 				Field:   field("title"),
 				Message: "title を空にはできません",
 			})
+
+		case it.Kind != KindEpic:
+			// issue のタイトルは重複してよい。親として指されないので、
+			// 同名でも構造は壊れない。
+
+		case dup:
+			errs = append(errs, ValidationError{
+				Field: field("title"),
+				Message: fmt.Sprintf(
+					"epic の title %q が localId %q のものと重複しています。子は親の"+
+						"epic をタイトルで指すため、どちらの配下なのか区別が付かなく"+
+						"なります。どちらかを別のタイトルにしてください", it.Title, owner),
+			})
+
+		default:
+			epicTitles[title] = it.LocalID
 		}
 
 		if it.LocalID == "" {
@@ -344,6 +368,21 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 	}
 
 	return errs
+}
+
+// normalizeTitle は epic のタイトルの重複判定に使う正規形を返す。
+//
+// **見分けが付かないものを同じとみなす。** 前後の空白と Unicode の正規化形の
+// 違いは GitHub 上では別の文字列になるが、人には見分けが付かない。「なぜか
+// 1 つにまとまっている」も「なぜか 2 つある」も同じように起きるので、どちらも
+// 衝突として扱う。
+//
+// **大文字小文字と全角半角は畳まない。** どちらも見分けが付くうえ GitHub 側でも
+// 別の文字列なので、畳むと壊れないものを弾くことになる。正規化を NFC で止めて
+// あるのは ComputeContentHash と揃えるため。別の正規化を 2 つ持つと、どちらが
+// 正しい「同じ」なのかが決まらない。
+func normalizeTitle(s string) string {
+	return strings.TrimSpace(normalizeText(s))
 }
 
 // validateParent は 1 項目の親参照を検べる。
