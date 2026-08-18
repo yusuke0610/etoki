@@ -53,8 +53,8 @@ nix develop      # 開発シェル（Go / Bun / SQLite / golangci-lint / air）
 make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
-make lint        # golangci-lint + eslint + tsc + markdownlint + 整形検査
-make fmt         # Go / Nix / フロントエンド / Markdown を整形する
+make lint        # Go / フロントエンド / Markdown / Nix を検査する
+make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest
 make test-e2e    # Playwright（test には含まれない）
 make codegen     # api/openapi.yaml から Go / TS の型を再生成する
@@ -190,7 +190,9 @@ GitHub の形しか差せなくなる。
   Go より新しいと Go がツールチェーンを自動ダウンロードし、Nix による固定が
   無意味になる。
 - **`nix flake check` は Nix コードのフォーマット検査のみ。** Go とフロント
-  エンドのビルドは Makefile と CI に任せる（ADR 0002）。
+  エンドのビルドは Makefile と CI に任せる（ADR 0002）。同じ検査は
+  `make lint`（`lint-nix`）にもある。重複しているのは、`nix flake check` が
+  CI でしか回らず、手元で `make lint` だけ通すと整形崩れを見落とすため。
 
 ## ブランチ運用
 

@@ -52,6 +52,10 @@
             # 道具が入らないことになる。
             markdownlint-cli2
             prettier
+            # Nix の整形。formatter output と同じものを Makefile から直接呼ぶ。
+            # `nix fmt` 経由にすると、検査（nixfmt --check）と整形で呼び方が
+            # 2 つになる。他のターゲットと同じく道具をそのまま呼ぶ。
+            nixfmt
           ];
 
           shellHook = ''

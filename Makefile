@@ -59,7 +59,8 @@ ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web \
-        test test-go test-web test-e2e lint lint-go lint-web lint-docs lint-fmt fmt \
+        test test-go test-web test-e2e lint lint-go lint-web lint-docs lint-fmt \
+        lint-nix fmt \
         codegen codegen-go codegen-web migrate clean
 
 help: ## ターゲット一覧を表示する
@@ -111,7 +112,7 @@ test-e2e: ## Playwright で E2E テストを実行する（test には含めな�
 	@# ここの画像を報告に添える（CLAUDE.md の「報告にスクリーンショットを添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
 
-lint: lint-go lint-web lint-docs lint-fmt ## golangci-lint / フロントエンド / Markdown の lint と整形検査を実行する
+lint: lint-go lint-web lint-docs lint-fmt lint-nix ## Go / フロントエンド / Markdown / Nix を検査する
 
 lint-go:
 	golangci-lint run
@@ -133,9 +134,14 @@ lint-fmt:
 	@# 対象から外れる。除外は .prettierignore と .gitignore が決める。
 	prettier --check .
 
-fmt: ## Go / Nix / Markdown / フロントエンドをフォーマットする
+lint-nix:
+	@# nix flake check も同じ検査をするが、そちらは CI でしか回らない。手元で
+	@# make lint だけ通したときに Nix の整形崩れを見落とさないよう、ここにも置く。
+	nixfmt --check flake.nix
+
+fmt: ## Go / フロントエンド / Markdown / Nix を整形する
 	golangci-lint fmt
-	nix fmt -- flake.nix
+	nixfmt flake.nix
 	prettier --write .
 
 codegen: codegen-go codegen-web ## api/openapi.yaml から Go / TypeScript の型を再生成する
