@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki/internal/httpapi"
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
@@ -303,7 +304,12 @@ func TestInterpretAnnotation_WithoutLLM(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (%s)", rec.Code, rec.Body)
 	}
-	if msg := decode[map[string]string](t, rec)["error"]; msg == "" {
+	body := decode[map[string]string](t, rec)
+	// GitHub 未設定と同じ code に畳まない。設定するものが違う（#48 が使う）。
+	if body["code"] != string(apitypes.ErrorCodeLlmNotConfigured) {
+		t.Errorf("code = %q, want %q", body["code"], apitypes.ErrorCodeLlmNotConfigured)
+	}
+	if body["error"] == "" {
 		t.Error("エラーメッセージが空")
 	}
 }

@@ -23,7 +23,7 @@ import (
 // （中核思想 3）。
 func (h *handlers) createItems(c *gin.Context) {
 	if h.creations == nil {
-		errorJSON(c, http.StatusServiceUnavailable, githubNotConfigured)
+		githubNotConfigured(c)
 		return
 	}
 
@@ -60,35 +60,18 @@ func (h *handlers) createItems(c *gin.Context) {
 	c.JSON(http.StatusCreated, out)
 }
 
-// failCreate は作成のエラーを HTTP ステータスに写す。
+// failCreate は作成のエラーを応答にする。
+//
+// 写し替えは errors.go の表が持つ。ここに残すのは記録だけで、ステータスと code を
+// 決め直さない。
 func (h *handlers) failCreate(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, usecase.ErrBoardNotFound), errors.Is(err, usecase.ErrAnnotationNotFound):
-		h.notFound(c)
-
-	case errors.Is(err, usecase.ErrInvalidInput):
-		h.badRequest(c, err)
-
-	case errors.Is(err, usecase.ErrProjectFieldMissing),
-		errors.Is(err, usecase.ErrTargetNotSelected):
-		// 設定不足であって、リクエストの誤りではない。何をすればよいかを返す。
-		errorJSON(c, http.StatusUnprocessableEntity, err.Error())
-
-	case errors.Is(err, usecase.ErrContentHashMismatch),
-		errors.Is(err, usecase.ErrPreviousItemUnknown):
-		// どちらも「解釈が古い」。解釈のやり直しは開発者が決めるので、ここで
-		// 解釈し直して作成を続けない。
-		errorJSON(c, http.StatusConflict, err.Error())
-
-	case errors.Is(err, usecase.ErrCreationIncomplete):
-		// 1 件も作れずに失敗した場合。GitHub 側の問題として返す。
+	if errors.Is(err, usecase.ErrCreationIncomplete) {
+		// 1 件も作れずに失敗した。GitHub 側の問題なので手元の記録に残す。
 		h.logger.ErrorContext(c.Request.Context(), "creation failed",
 			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
-		errorJSON(c, http.StatusBadGateway, err.Error())
-
-	default:
-		h.fail(c, err)
 	}
+
+	h.fail(c, err)
 }
 
 // toInterpretation は境界の DTO をドメインの解釈結果に詰め替える。
