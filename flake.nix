@@ -56,6 +56,10 @@
             # `nix fmt` 経由にすると、検査（nixfmt --check）と整形で呼び方が
             # 2 つになる。他のターゲットと同じく道具をそのまま呼ぶ。
             nixfmt
+            # GitHub Actions の検証。shellcheck を併せて入れるのは、actionlint が
+            # あれば自動で拾い、run: の中のシェルまで見るため。
+            actionlint
+            shellcheck
           ];
 
           shellHook = ''

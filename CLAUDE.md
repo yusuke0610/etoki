@@ -53,7 +53,7 @@ nix develop      # 開発シェル（Go / Bun / SQLite / golangci-lint / air）
 make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
-make lint        # Go / フロントエンド / Markdown / Nix を検査する
+make lint        # Go / フロントエンド / Markdown / Nix / Actions を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest
 make test-e2e    # Playwright（test には含まれない）
@@ -193,6 +193,11 @@ GitHub の形しか差せなくなる。
   エンドのビルドは Makefile と CI に任せる（ADR 0002）。同じ検査は
   `make lint`（`lint-nix`）にもある。重複しているのは、`nix flake check` が
   CI でしか回らず、手元で `make lint` だけ通すと整形崩れを見落とすため。
+- **YAML を見ているのは prettier と actionlint。yamllint は入れていない。**
+  構文エラーと重複キーは prettier がパースに失敗して落とす。yamllint を足して
+  増えるのは `document-start` のような様式の指摘だけで、`line-length` は
+  prettier の `printWidth` と食い違う。ワークフロー固有の検証（式、
+  コンテキスト、`run:` の中のシェル）は actionlint の担当。
 
 ## ブランチ運用
 
