@@ -3,6 +3,7 @@ package domain_test
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/yusuke0610/etoki/internal/domain"
@@ -52,7 +53,7 @@ func TestParseInterpretation(t *testing.T) {
 			]
 		}`)
 
-		in, err := domain.ParseInterpretation(raw)
+		in, err := domain.ParseInterpretation(raw, nil)
 		if err != nil {
 			t.Fatalf("ParseInterpretation() = %v", err)
 		}
@@ -76,7 +77,7 @@ func TestParseInterpretation(t *testing.T) {
 
 		raw := []byte(`{"summary": "s", "items": [{"localId": "e1", "kind": "epic", "title": "t", "body": ""}]}`)
 
-		in, err := domain.ParseInterpretation(raw)
+		in, err := domain.ParseInterpretation(raw, nil)
 		if err != nil {
 			t.Fatalf("ParseInterpretation() = %v", err)
 		}
@@ -91,7 +92,7 @@ func TestParseInterpretation(t *testing.T) {
 
 		raw := []byte(`{"summary": "s", "items": [{"localId": "i1", "kind": "issue", "title": "t", "parentId": "e1"}]}`)
 
-		if _, err := domain.ParseInterpretation(raw); err == nil {
+		if _, err := domain.ParseInterpretation(raw, nil); err == nil {
 			t.Fatal("ParseInterpretation() = nil, want error")
 		}
 	})
@@ -101,7 +102,7 @@ func TestParseInterpretation(t *testing.T) {
 
 		raw := []byte(`{"summary": "s", "items": []} 以上が解釈結果です。`)
 
-		if _, err := domain.ParseInterpretation(raw); err == nil {
+		if _, err := domain.ParseInterpretation(raw, nil); err == nil {
 			t.Fatal("ParseInterpretation() = nil, want error")
 		}
 	})
@@ -109,7 +110,7 @@ func TestParseInterpretation(t *testing.T) {
 	t.Run("壊れた JSON を誤りとして扱う", func(t *testing.T) {
 		t.Parallel()
 
-		if _, err := domain.ParseInterpretation([]byte(`{"summary":`)); err == nil {
+		if _, err := domain.ParseInterpretation([]byte(`{"summary":`), nil); err == nil {
 			t.Fatal("ParseInterpretation() = nil, want error")
 		}
 	})
@@ -342,5 +343,132 @@ func TestItemKind_Valid(t *testing.T) {
 		if got := k.Valid(); got != want {
 			t.Errorf("ItemKind(%q).Valid() = %t, want %t", k, got, want)
 		}
+	}
+}
+
+// 対応づけの解決（ADR 0026）。
+//
+// LLM には `p1` のような短い ref を出させ、境界へ出るのは解決済みの item ID に
+// する。node ID は長く不透明で、復唱させると取り違える。
+func TestParseInterpretation_ResolvesPreviousRefs(t *testing.T) {
+	t.Parallel()
+
+	previous := []domain.PreviousItem{
+		{Ref: "p1", ItemID: "PVTI_a", Kind: domain.KindEpic, Title: "決済基盤", Body: "入口"},
+		{Ref: "p2", ItemID: "PVTI_b", Kind: domain.KindIssue, Title: "カード決済", Body: ""},
+	}
+
+	item := func(localID string, ref string) string {
+		if ref == "" {
+			return `{"localId":"` + localID + `","kind":"issue","title":"t","body":"",` +
+				`"parentLocalId":null,"previousRef":null}`
+		}
+		return `{"localId":"` + localID + `","kind":"issue","title":"t","body":"",` +
+			`"parentLocalId":null,"previousRef":"` + ref + `"}`
+	}
+	doc := func(items ...string) []byte {
+		return []byte(`{"summary":"s","items":[` + strings.Join(items, ",") + `]}`)
+	}
+
+	t.Run("既知の ref は item ID に解決される", func(t *testing.T) {
+		t.Parallel()
+
+		in, err := domain.ParseInterpretation(doc(item("i1", "p2")), previous)
+		if err != nil {
+			t.Fatalf("ParseInterpretation() = %v", err)
+		}
+		if in.Items[0].PreviousItemID == nil {
+			t.Fatal("previousItemId が nil のまま")
+		}
+		if got := *in.Items[0].PreviousItemID; got != "PVTI_b" {
+			t.Errorf("previousItemId = %q, want PVTI_b", got)
+		}
+	})
+
+	// 新しく作るほうが取り返しがつく。既定はこちら。
+	t.Run("ref が無ければ新規のまま", func(t *testing.T) {
+		t.Parallel()
+
+		in, err := domain.ParseInterpretation(doc(item("i1", "")), previous)
+		if err != nil {
+			t.Fatalf("ParseInterpretation() = %v", err)
+		}
+		if in.Items[0].PreviousItemID != nil {
+			t.Errorf("previousItemId = %v, want nil", *in.Items[0].PreviousItemID)
+		}
+	})
+
+	// 綴り間違いはそのまま修正指示になって再送で直る（ADR 0005）。
+	t.Run("未知の ref は検証エラー", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := domain.ParseInterpretation(doc(item("i1", "p9")), previous)
+
+		var verrs domain.ValidationErrors
+		if !errors.As(err, &verrs) {
+			t.Fatalf("ParseInterpretation() = %v, want ValidationErrors", err)
+		}
+		if !strings.Contains(verrs.Error(), "p9") {
+			t.Errorf("どの ref が問題かが読めない: %s", verrs.Error())
+		}
+	})
+
+	// 1 つの draft issue を 2 件で奪い合えない。通すと、あとに処理したほうの
+	// 内容だけが残り、もう片方は「作ったつもり」で消える。
+	t.Run("同じ ref を 2 件が指すと検証エラー", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := domain.ParseInterpretation(doc(item("i1", "p1"), item("i2", "p1")), previous)
+
+		var verrs domain.ValidationErrors
+		if !errors.As(err, &verrs) {
+			t.Fatalf("ParseInterpretation() = %v, want ValidationErrors", err)
+		}
+	})
+
+	// 前回ぶんを渡していない解釈で ref が出てきたら、モデルが作り話をしている。
+	t.Run("前回ぶんが無いのに ref があれば検証エラー", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := domain.ParseInterpretation(doc(item("i1", "p1")), nil)
+
+		var verrs domain.ValidationErrors
+		if !errors.As(err, &verrs) {
+			t.Fatalf("ParseInterpretation() = %v, want ValidationErrors", err)
+		}
+	})
+
+	t.Run("前回ぶんが無く ref も無ければ全件新規", func(t *testing.T) {
+		t.Parallel()
+
+		in, err := domain.ParseInterpretation(doc(item("i1", ""), item("i2", "")), nil)
+		if err != nil {
+			t.Fatalf("ParseInterpretation() = %v", err)
+		}
+		for _, it := range in.Items {
+			if it.PreviousItemID != nil {
+				t.Errorf("%s が新規になっていない", it.LocalID)
+			}
+		}
+	})
+}
+
+// 作成のリクエストは画面から送られてくるので、解釈の出口を通らない。
+// 取り合いは Validate 側でも見る必要がある。
+func TestValidate_RejectsDuplicatePreviousItemID(t *testing.T) {
+	t.Parallel()
+
+	id := "PVTI_a"
+	in := domain.Interpretation{
+		Summary: "s",
+		Items: []domain.InterpretedItem{
+			{LocalID: "i1", Kind: domain.KindIssue, Title: "t", PreviousItemID: &id},
+			{LocalID: "i2", Kind: domain.KindIssue, Title: "t", PreviousItemID: &id},
+		},
+	}
+
+	var verrs domain.ValidationErrors
+	if err := in.Validate(domain.GranularityAuto); !errors.As(err, &verrs) {
+		t.Fatalf("Validate() = %v, want ValidationErrors", err)
 	}
 }

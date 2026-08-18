@@ -8,6 +8,7 @@ import type {
   InterpretedItem,
   ItemKind,
   ProjectAccess,
+  SyncItem,
   SyncState,
 } from "../api/types";
 import type { SelectableFrame } from "../excalidraw/annotation";
@@ -17,6 +18,7 @@ import {
   blockingReasons,
   buildInterpretation,
   createDraft,
+  leftBehindItemIds,
   orphanedLocalIds,
   setBody,
   setKind,
@@ -248,7 +250,7 @@ export function AnnotationPanel({
 
                   {a.items && a.items.length > 0 && (
                     <details>
-                      <summary>前回作成した {a.items.length} 件</summary>
+                      <summary>GitHub にある {a.items.length} 件</summary>
                       <ul className="plain-list">
                         {a.items.map((it) => (
                           <li key={it.itemId}>
@@ -270,6 +272,7 @@ export function AnnotationPanel({
                       stale={stale}
                       saving={saving}
                       projectAccess={projectAccess}
+                      previous={a.items ?? []}
                       projectLink={projectLink}
                       onInterpret={() => onInterpret(a.id)}
                       onCreate={(interpretation) => onCreate(a.id, interpretation)}
@@ -296,6 +299,8 @@ type InterpretationSectionProps = {
   stale: boolean;
   saving: boolean;
   projectAccess: ProjectAccess;
+  /** この注釈が GitHub に在らしめているもの（ADR 0026）。 */
+  previous: SyncItem[];
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
   projectLink: ProjectLink | null;
   onInterpret: () => void;
@@ -316,6 +321,7 @@ function InterpretationSection({
   stale,
   saving,
   projectAccess,
+  previous,
   projectLink,
   onInterpret,
   onCreate,
@@ -357,6 +363,7 @@ function InterpretationSection({
           creation={creation}
           saving={saving}
           projectAccess={projectAccess}
+          previous={previous}
           projectLink={projectLink}
           onCreate={onCreate}
         />
@@ -436,16 +443,22 @@ function CreationSection({
               誤解して再実行すると、GitHub 側に重複が増える。 */}
           {state.run.incomplete ? (
             <p className="error">
-              途中で失敗しました（{state.run.items.length} 件は作成済み）:{" "}
-              {state.run.error}
+              途中で失敗しました（{partialSummary(state.run.items)}）: {state.run.error}
             </p>
           ) : (
-            <p className="hint">{state.run.items.length} 件を作成しました。</p>
+            <p className="hint">{resultSummary(state.run.items)}。</p>
           )}
           <ul className="plain-list">
             {state.run.items.map((it) => (
               <li key={it.itemId}>
                 <span className="kind">{it.kind}</span> {it.title}
+                {/*
+                  作ったのか書き換えたのかを残す。GitHub 側に何が増えたのかは
+                  この内訳でしか数えられない（ADR 0026）。
+                */}
+                {it.action === "updated" && (
+                  <span className="badge badge-updated">更新</span>
+                )}
                 <ItemBody body={it.body} />
               </li>
             ))}
@@ -478,6 +491,7 @@ function InterpretationDraft({
   creation,
   saving,
   projectAccess,
+  previous,
   projectLink,
   onCreate,
 }: {
@@ -487,6 +501,8 @@ function InterpretationDraft({
   creation?: CreationState;
   saving: boolean;
   projectAccess: ProjectAccess;
+  /** この注釈が GitHub に在らしめているもの。取り残しの算出に使う。 */
+  previous: SyncItem[];
   projectLink: ProjectLink | null;
   onCreate: (interpretation: Interpretation) => void;
 }) {
@@ -499,6 +515,8 @@ function InterpretationDraft({
   const selected = new Map(draft.items.map((d) => [d.item.localId, d.selected]));
   const orphans = orphanedLocalIds(draft);
   const reasons = blockingReasons(draft, granularity);
+  // 今回の作成で GitHub 側に置き去りになるもの（ADR 0026）。
+  const leftBehind = leftBehindItemIds(draft, previous);
 
   // 作成中と保存中は入力も止める。ボタンだけ止めても、押せないあいだに
   // 編集できるのでは何を作っているのかが定まらない。
@@ -551,6 +569,8 @@ function InterpretationDraft({
           </ul>
         )}
       </div>
+
+      <LeftBehind items={previous.filter((it) => leftBehind.has(it.itemId))} />
 
       <CreationSection
         annotationId={annotationId}
@@ -631,6 +651,13 @@ function DraftItemFields({
           onChange={(e) => onTitle(e.target.value)}
           aria-label={`${item.localId} のタイトル`}
         />
+
+        {/*
+          作るのか書き換えるのかは、押す前に見えている必要がある（ADR 0026）。
+          どちらも取り消せないが、取り返しのつかなさが違う。書き換えは前の内容を
+          消す。
+        */}
+        {item.previousItemId && <span className="badge badge-updated">更新</span>}
       </div>
 
       {/*
@@ -680,6 +707,71 @@ function DraftItemBody({
         aria-label={`${localId} の本文`}
       />
     </details>
+  );
+}
+
+/**
+ * 作成結果の内訳を 1 行にする（ADR 0026）。
+ *
+ * 件数だけでは、GitHub 側に何が増えたのかが分からない。更新は増えないので、
+ * 「5 件を作成しました」と出しておいて実際に増えたのが 2 件、ということが起きる。
+ */
+function resultSummary(items: SyncItem[]): string {
+  const { created, updated } = countByAction(items);
+
+  if (updated === 0) return `${created} 件を作成しました`;
+  if (created === 0) return `${updated} 件を更新しました`;
+
+  return `${created} 件を作成し、${updated} 件を更新しました`;
+}
+
+/**
+ * 途中で失敗した run の内訳（ADR 0009 / 0026）。
+ *
+ * **完了したときとは言い回しを変える。** ここで伝えたいのは「もう GitHub 側に
+ * 在る」ことで、何も作られていないと誤解させると再実行で重複が増える。
+ */
+function partialSummary(items: SyncItem[]): string {
+  const { created, updated } = countByAction(items);
+
+  if (updated === 0) return `${created} 件は作成済み`;
+  if (created === 0) return `${updated} 件は更新済み`;
+
+  return `${created} 件は作成済み、${updated} 件は更新済み`;
+}
+
+function countByAction(items: SyncItem[]): { created: number; updated: number } {
+  const updated = items.filter((it) => it.action === "updated").length;
+  return { created: items.length - updated, updated };
+}
+
+/**
+ * 今回の作成で GitHub 側に置き去りになるもの（ADR 0026）。
+ *
+ * **消す判断はしない。** draft issue は削除できないので、etoki にできるのは
+ * 「残ります」と見せるところまで。黙って落とすと、開発者は自分が何を置き去りに
+ * したのかを確かめられない（中核思想 3）。
+ *
+ * 0 件なら何も出さない。常に枠を出すと、取り残しが無いことと 0 件であることの
+ * 区別に注意を割かせる。
+ */
+function LeftBehind({ items }: { items: SyncItem[] }) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="left-behind">
+      <p className="hint">
+        {`前回作った ${items.length} 件は、今回の作成では書き換わりません。`}
+        {"GitHub 側にそのまま残ります。"}
+      </p>
+      <ul className="plain-list">
+        {items.map((it) => (
+          <li key={it.itemId}>
+            <span className="kind">{it.kind}</span> {it.title}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

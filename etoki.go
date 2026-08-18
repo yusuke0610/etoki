@@ -167,7 +167,10 @@ func New(opts Options) (*Server, error) {
 	// LLM が無いときはサービスを組み立てない。nil のまま渡し、ハンドラ側で
 	// 「設定されていない」と返す。
 	if opts.LLM != nil {
-		deps.Interpretations = usecase.NewInterpretationService(opts.Boards, opts.LLM)
+		// Mappings も渡す。解釈の入力には「前回この囲みから何を作ったか」も
+		// 含まれる（ADR 0026）。
+		deps.Interpretations = usecase.NewInterpretationService(
+			opts.Boards, opts.Mappings, opts.LLM)
 	}
 	// 作成先はボードごとに持つので、ここで要るのは GitHub クライアントだけ
 	// （ADR 0014）。未選択のボードは作成の手前で 422 として止まる。

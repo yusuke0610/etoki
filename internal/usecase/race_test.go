@@ -158,6 +158,20 @@ type racingMappings struct {
 	runs []port.SyncRun
 }
 
+// ListItemsByAnnotation はこの試験では使わない。直列化を見るための
+// フェイクなので、畳み込みの中身は fakeMappings 側で確かめる。
+func (r *racingMappings) ListItemsByBoard(
+	context.Context, string,
+) (map[string][]port.SyncItem, error) {
+	return nil, nil
+}
+
+func (r *racingMappings) ListItemsByAnnotation(
+	context.Context, string, string,
+) ([]port.SyncItem, error) {
+	return nil, nil
+}
+
 func (r *racingMappings) SaveRun(_ context.Context, run port.SyncRun) (int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

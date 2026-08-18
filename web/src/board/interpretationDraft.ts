@@ -3,6 +3,7 @@ import type {
   Interpretation,
   InterpretedItem,
   ItemKind,
+  SyncItem,
 } from "../api/types";
 
 /** 解釈結果の 1 件と、それを作るかどうか。 */
@@ -140,6 +141,9 @@ export function buildInterpretation(draft: Draft): Interpretation {
         body: d.item.body,
       };
       if (parentLocalId !== undefined) item.parentLocalId = parentLocalId;
+      // 対応づけは開発者が確かめたまま送り返す。外したければ項目ごと外す
+      // （ADR 0026）。
+      if (d.item.previousItemId) item.previousItemId = d.item.previousItemId;
       return item;
     });
 
@@ -194,4 +198,23 @@ export function blockingReasons(draft: Draft, granularity: Granularity): string[
   }
 
   return reasons;
+}
+
+/**
+ * 今回の作成で取り残される draft issue の itemId（ADR 0026）。
+ *
+ * 前回までに作ったもののうち、選ばれている項目のどれからも指されていないもの。
+ *
+ * **消す判断はしない。** GitHub の draft issue は削除できないので、etoki に
+ * できるのは「これは GitHub 側に残ります」と見せるところまで。黙って落とすと、
+ * 開発者は自分が何を置き去りにしたのかを確かめられない（中核思想 3）。
+ */
+export function leftBehindItemIds(draft: Draft, previous: SyncItem[]): Set<string> {
+  const claimed = new Set(
+    draft.items
+      .filter((d) => d.selected && d.item.previousItemId)
+      .map((d) => d.item.previousItemId as string),
+  );
+
+  return new Set(previous.map((it) => it.itemId).filter((id) => !claimed.has(id)));
 }

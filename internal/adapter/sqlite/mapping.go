@@ -33,6 +33,9 @@ func (r *MappingRepository) SaveRun(ctx context.Context, run port.SyncRun) (int6
 		if !it.Kind.Valid() {
 			return 0, fmt.Errorf("invalid kind %q for local_id %q", it.Kind, it.LocalID)
 		}
+		if !it.Action.Valid() {
+			return 0, fmt.Errorf("invalid action %q for local_id %q", it.Action, it.LocalID)
+		}
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -58,10 +61,11 @@ func (r *MappingRepository) SaveRun(ctx context.Context, run port.SyncRun) (int6
 	for _, it := range run.Items {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO sync_items
-			   (run_id, item_id, kind, title, body, local_id, parent_local_id, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			   (run_id, item_id, kind, title, body, local_id, parent_local_id,
+			    action, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			runID, it.ItemID, string(it.Kind), it.Title, it.Body,
-			it.LocalID, it.ParentLocalID, formatTime(it.CreatedAt),
+			it.LocalID, it.ParentLocalID, string(it.Action), formatTime(it.CreatedAt),
 		); err != nil {
 			return 0, fmt.Errorf("insert sync_item %q: %w", it.LocalID, err)
 		}
@@ -169,7 +173,8 @@ func (r *MappingRepository) itemsByRunIDs(ctx context.Context, runIDs []int64) (
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, run_id, item_id, kind, title, body, local_id, parent_local_id, created_at
+		`SELECT id, run_id, item_id, kind, title, body, local_id, parent_local_id,
+		        action, created_at
 		   FROM sync_items
 		  WHERE run_id IN (`+placeholders+`)
 		  ORDER BY id`,
@@ -184,16 +189,18 @@ func (r *MappingRepository) itemsByRunIDs(ctx context.Context, runIDs []int64) (
 		var (
 			it        port.SyncItem
 			kind      string
+			action    string
 			createdAt string
 		)
 		if err := rows.Scan(
 			&it.ID, &it.RunID, &it.ItemID, &kind, &it.Title, &it.Body,
-			&it.LocalID, &it.ParentLocalID, &createdAt,
+			&it.LocalID, &it.ParentLocalID, &action, &createdAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan sync_item: %w", err)
 		}
 
 		it.Kind = port.ItemKind(kind)
+		it.Action = port.SyncAction(action)
 		if it.CreatedAt, err = parseTime(createdAt); err != nil {
 			return nil, err
 		}
@@ -205,6 +212,75 @@ func (r *MappingRepository) itemsByRunIDs(ctx context.Context, runIDs []int64) (
 	}
 
 	return result, nil
+}
+
+// ListItemsByAnnotation はその注釈が GitHub に在らしめているものを返す。
+//
+// **run 履歴を item_id で畳む（ADR 0026）。** 最新 run の items ではない。
+// 更新は同じ item_id に吸収され、今回触らなかった item も残り続ける。
+//
+// 採るのは item ごとの `MAX(sync_items.id)`、並べるのは `MIN` の順。created_at は
+// 呼び出し側が与えるので同一時刻がありえて順序が定まらない（最新 run を id で
+// 決めているのと同じ理由）。
+//
+// **並びは「最初に作られた順」で固定する。** 最新の記録の順に並べると、1 件
+// 更新しただけでその item が一覧の末尾へ動く。中身を書き換えただけで並びが
+// 変わると、開発者は同じものを見ていることを確かめ直すことになる。
+func (r *MappingRepository) ListItemsByAnnotation(
+	ctx context.Context, boardID, annotationID string,
+) ([]port.SyncItem, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT i.id, i.run_id, i.item_id, i.kind, i.title, i.body,
+		        i.local_id, i.parent_local_id, i.action, i.created_at
+		   FROM sync_items i
+		   JOIN (
+		     SELECT i2.item_id,
+		            MIN(i2.id) AS first_id,
+		            MAX(i2.id) AS last_id
+		       FROM sync_items i2
+		       JOIN sync_runs r2 ON r2.id = i2.run_id
+		      WHERE r2.board_id = ? AND r2.annotation_element_id = ?
+		      GROUP BY i2.item_id
+		   ) folded ON folded.last_id = i.id
+		  ORDER BY folded.first_id`,
+		boardID, annotationID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select sync_items by annotation: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// nil ではなく空スライスを返す。「一度も実行していない」と「実行したが
+	// 0 件だった」を呼び出し側が区別する必要はなく、どちらも在るものが無い。
+	items := []port.SyncItem{}
+
+	for rows.Next() {
+		var (
+			it        port.SyncItem
+			kind      string
+			action    string
+			createdAt string
+		)
+		if err := rows.Scan(
+			&it.ID, &it.RunID, &it.ItemID, &kind, &it.Title, &it.Body,
+			&it.LocalID, &it.ParentLocalID, &action, &createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan sync_item: %w", err)
+		}
+
+		it.Kind = port.ItemKind(kind)
+		it.Action = port.SyncAction(action)
+		if it.CreatedAt, err = parseTime(createdAt); err != nil {
+			return nil, err
+		}
+
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sync_items: %w", err)
+	}
+
+	return items, nil
 }
 
 func scanRun(s rowScanner) (port.SyncRun, error) {
@@ -224,4 +300,68 @@ func scanRun(s rowScanner) (port.SyncRun, error) {
 	}
 
 	return run, nil
+}
+
+// ListItemsByBoard は畳み込みをボード全体で行い、注釈ごとに束ねて返す。
+//
+// 畳み込みの規則は ListItemsByAnnotation と同じ（ADR 0026）。違うのは
+// グループの単位が (注釈, item_id) になることだけ。注釈ごとに呼び分けると、
+// 一覧を描くたびに注釈の数だけ問い合わせが増える。
+func (r *MappingRepository) ListItemsByBoard(
+	ctx context.Context, boardID string,
+) (map[string][]port.SyncItem, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT folded.annot,
+		        i.id, i.run_id, i.item_id, i.kind, i.title, i.body,
+		        i.local_id, i.parent_local_id, i.action, i.created_at
+		   FROM sync_items i
+		   JOIN (
+		     SELECT r2.annotation_element_id AS annot,
+		            i2.item_id,
+		            MIN(i2.id) AS first_id,
+		            MAX(i2.id) AS last_id
+		       FROM sync_items i2
+		       JOIN sync_runs r2 ON r2.id = i2.run_id
+		      WHERE r2.board_id = ?
+		      GROUP BY r2.annotation_element_id, i2.item_id
+		   ) folded ON folded.last_id = i.id
+		  ORDER BY folded.annot, folded.first_id`,
+		boardID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select sync_items by board: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	byAnnotation := make(map[string][]port.SyncItem)
+
+	for rows.Next() {
+		var (
+			annotationID string
+			it           port.SyncItem
+			kind         string
+			action       string
+			createdAt    string
+		)
+		if err := rows.Scan(
+			&annotationID,
+			&it.ID, &it.RunID, &it.ItemID, &kind, &it.Title, &it.Body,
+			&it.LocalID, &it.ParentLocalID, &action, &createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan sync_item: %w", err)
+		}
+
+		it.Kind = port.ItemKind(kind)
+		it.Action = port.SyncAction(action)
+		if it.CreatedAt, err = parseTime(createdAt); err != nil {
+			return nil, err
+		}
+
+		byAnnotation[annotationID] = append(byAnnotation[annotationID], it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sync_items: %w", err)
+	}
+
+	return byAnnotation, nil
 }

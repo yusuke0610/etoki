@@ -293,6 +293,103 @@ func TestCreateDraftIssue_Errors(t *testing.T) {
 	})
 }
 
+// 更新は 2 往復する。受け取るのは ProjectV2Item の ID だが、GitHub の更新が
+// 要求するのは DraftIssue content の ID で、この 2 つは別物（ADR 0026）。
+func TestUpdateDraftIssue(t *testing.T) {
+	t.Parallel()
+
+	c, got := newClient(t,
+		`{"data":{"node":{"content":{"__typename":"DraftIssue","id":"DI_draft1"}}}}`,
+		`{"data":{"updateProjectV2DraftIssue":{"draftIssue":{"id":"DI_draft1"}}}}`,
+	)
+
+	err := c.UpdateDraftIssue(t.Context(), "PVTI_item1",
+		port.DraftIssue{Title: "決済フローの見直し", Body: "方針を書き直した"})
+	if err != nil {
+		t.Fatalf("UpdateDraftIssue() = %v", err)
+	}
+
+	if len(*got) != 2 {
+		t.Fatalf("リクエスト数 = %d, want 2", len(*got))
+	}
+
+	// 1 往復目は item から content を辿るだけ。ここで書き換えない。
+	lookup := (*got)[0]
+	if lookup.Variables["itemId"] != "PVTI_item1" {
+		t.Errorf("itemId = %v", lookup.Variables["itemId"])
+	}
+	if strings.Contains(lookup.Query, "mutation") {
+		t.Errorf("引き当てで書き換えている:\n%s", lookup.Query)
+	}
+
+	// 2 往復目が更新。送る ID は content のもので、item のものではない。
+	update := (*got)[1]
+	if !strings.Contains(update.Query, "updateProjectV2DraftIssue") {
+		t.Errorf("クエリが違う:\n%s", update.Query)
+	}
+	if update.Variables["draftIssueId"] != "DI_draft1" {
+		t.Errorf("draftIssueId = %v, want DI_draft1", update.Variables["draftIssueId"])
+	}
+	if update.Variables["title"] != "決済フローの見直し" {
+		t.Errorf("title = %v", update.Variables["title"])
+	}
+	if update.Variables["body"] != "方針を書き直した" {
+		t.Errorf("body = %v", update.Variables["body"])
+	}
+}
+
+func TestUpdateDraftIssue_Errors(t *testing.T) {
+	t.Parallel()
+
+	// Project には本物の issue も並ぶ。etoki が作った item が誰かの手で
+	// 置き換わっていることもあるので、中身を確かめずに更新を投げると
+	// 他人の issue を書き換えうる。
+	t.Run("draft issue ではない", func(t *testing.T) {
+		t.Parallel()
+
+		c, got := newClient(t, `{"data":{"node":{"content":{"__typename":"Issue"}}}}`)
+
+		if err := c.UpdateDraftIssue(t.Context(), "PVTI_item1",
+			port.DraftIssue{Title: "t"}); err == nil {
+			t.Fatal("UpdateDraftIssue() = nil, want error")
+		}
+		// 引き当てだけで止まる。更新を投げていない。
+		if len(*got) != 1 {
+			t.Errorf("リクエスト数 = %d, want 1", len(*got))
+		}
+	})
+
+	t.Run("item が無い", func(t *testing.T) {
+		t.Parallel()
+
+		c, got := newClient(t, `{"data":{"node":null}}`)
+
+		if err := c.UpdateDraftIssue(t.Context(), "PVTI_gone",
+			port.DraftIssue{Title: "t"}); err == nil {
+			t.Fatal("UpdateDraftIssue() = nil, want error")
+		}
+		if len(*got) != 1 {
+			t.Errorf("リクエスト数 = %d, want 1", len(*got))
+		}
+	})
+
+	t.Run("入口で弾く", func(t *testing.T) {
+		t.Parallel()
+
+		c, got := newClient(t, `{"data":{}}`)
+
+		if err := c.UpdateDraftIssue(t.Context(), "", port.DraftIssue{Title: "t"}); err == nil {
+			t.Error("item id が空なのにエラーにならない")
+		}
+		if err := c.UpdateDraftIssue(t.Context(), "PVTI_1", port.DraftIssue{}); err == nil {
+			t.Error("タイトルが空なのにエラーにならない")
+		}
+		if len(*got) != 0 {
+			t.Errorf("入口で弾かずに送信している: %d 回", len(*got))
+		}
+	})
+}
+
 func TestSetItemFieldValue(t *testing.T) {
 	t.Parallel()
 
