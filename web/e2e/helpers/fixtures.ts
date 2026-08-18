@@ -370,3 +370,62 @@ export function baseMock(): ApiMock {
     },
   };
 }
+
+/**
+ * `changed` の注釈で、LLM が前回ぶんとの対応づけを返した解釈（ADR 0026）。
+ *
+ * `i1` は前回の `PVTI_old` を書き換え、`i2` は新しく作る。前回ぶんの
+ * `PVTI_kept` はどこからも指されないので取り残しになる。
+ *
+ * **spec ごとに書かない。** 同じ筋書きを 2 箇所で組むと、片方だけ直したときに
+ * 食い違う。
+ */
+export function matchedInterpretationMock(): ApiMock {
+  const mock = baseMock();
+
+  mock.annotations[BOARD_ID] = (mock.annotations[BOARD_ID] ?? []).map((a) =>
+    a.id !== ANNOTATION_IDS.changed
+      ? a
+      : {
+          ...a,
+          items: [
+            {
+              itemId: "PVTI_old",
+              kind: "issue",
+              title: "セッションの有効期限",
+              body: "",
+              localId: "i9",
+              action: "created",
+            },
+            {
+              itemId: "PVTI_kept",
+              kind: "issue",
+              title: "触らないほう",
+              body: "",
+              localId: "i8",
+              action: "created",
+            },
+          ],
+        },
+  );
+
+  mock.interpret = {
+    status: 200,
+    body: {
+      summary: "前回の続きとして読みました。",
+      contentHash: "sha256:e2e",
+      items: [
+        {
+          localId: "i1",
+          kind: "issue",
+          title: "セッションの有効期限を延ばす",
+          body: "書き直した本文",
+          previousItemId: "PVTI_old",
+        },
+        { localId: "i2", kind: "issue", title: "新しく足す issue", body: "" },
+      ],
+    },
+  };
+
+  return mock;
+}

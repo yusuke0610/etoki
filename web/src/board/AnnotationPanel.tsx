@@ -250,7 +250,7 @@ export function AnnotationPanel({
 
                   {a.items && a.items.length > 0 && (
                     <details>
-                      <summary>前回作成した {a.items.length} 件</summary>
+                      <summary>GitHub にある {a.items.length} 件</summary>
                       <ul className="plain-list">
                         {a.items.map((it) => (
                           <li key={it.itemId}>

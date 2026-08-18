@@ -271,6 +271,13 @@ func (s *CreationService) applyItems(
 
 			saved, err := s.applyOne(ctx, projectID, item, fields, epicTitles, now)
 			if err != nil {
+				// **済んだところまでは記録する。** draft issue そのものは書けて
+				// いて、あとのフィールド設定で失敗した、という並びがある。捨てると
+				// GitHub 側は変わったのに履歴は古いままになり、次の 3 状態判定が
+				// 実物と食い違う（ADR 0009 / 0026）。
+				if saved.ItemID != "" {
+					created = append(created, saved)
+				}
 				return created, fmt.Errorf("%w: %w", ErrCreationIncomplete, err)
 			}
 
@@ -302,17 +309,12 @@ func (s *CreationService) applyOne(
 		return port.SyncItem{}, err
 	}
 
-	optionID := fields.epicOptionID
-	if item.Kind == domain.KindIssue {
-		optionID = fields.issueOptionID
-	}
-	if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
-		port.FieldValue{FieldID: fields.kindID, OptionID: &optionID}); err != nil {
-		return port.SyncItem{}, fmt.Errorf("set kind on %q: %w", item.Title, err)
-	}
-
 	// GitHub に送ったものをそのまま控える。逆方向同期を実装しない以上、
 	// ここで取らなければ何を作ったのか二度と分からない（ADR 0023）。
+	//
+	// **書き込みが済んだ直後に組み立てる。** このあとのフィールド設定で失敗
+	// しても、draft issue そのものはもう変わっている。呼び出し側が記録できる
+	// よう、エラーと一緒にこれを返す（ADR 0009 / 0026）。
 	saved := port.SyncItem{
 		ItemID:        itemID,
 		Kind:          toPortKind(item.Kind),
@@ -324,7 +326,27 @@ func (s *CreationService) applyOne(
 		CreatedAt:     now,
 	}
 
+	optionID := fields.epicOptionID
+	if item.Kind == domain.KindIssue {
+		optionID = fields.issueOptionID
+	}
+	if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
+		port.FieldValue{FieldID: fields.kindID, OptionID: &optionID}); err != nil {
+		return saved, fmt.Errorf("set kind on %q: %w", item.Title, err)
+	}
+
 	if item.ParentLocalID == nil {
+		// 子だったものが top-level（または epic）に変わったら、GitHub 側に
+		// 残っている Parent 値を消す。放っておくと、親を外したはずの item が
+		// 古い epic にぶら下がったままになる。**新規作成では消さない。**
+		// 空のフィールドをわざわざ空で上書きする往復が増えるだけ。
+		if action == port.ActionUpdated {
+			empty := ""
+			if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
+				port.FieldValue{FieldID: fields.parentID, Text: &empty}); err != nil {
+				return saved, fmt.Errorf("clear parent on %q: %w", item.Title, err)
+			}
+		}
 		return saved, nil
 	}
 
@@ -333,12 +355,12 @@ func (s *CreationService) applyOne(
 	title, ok := epicTitles[*item.ParentLocalID]
 	if !ok {
 		// 検証を通っていれば起きない。起きたら親子が壊れるので止める。
-		return port.SyncItem{}, fmt.Errorf("parent %q of %q was not created",
+		return saved, fmt.Errorf("parent %q of %q was not created",
 			*item.ParentLocalID, item.Title)
 	}
 	if err := s.github.SetItemFieldValue(ctx, projectID, itemID,
 		port.FieldValue{FieldID: fields.parentID, Text: &title}); err != nil {
-		return port.SyncItem{}, fmt.Errorf("set parent on %q: %w", item.Title, err)
+		return saved, fmt.Errorf("set parent on %q: %w", item.Title, err)
 	}
 
 	return saved, nil

@@ -34,6 +34,9 @@ type fakeGitHub struct {
 	calls    []githubCall
 	// failOnTitle が空でなければ、その draft issue の作成で失敗する。
 	failOnTitle string
+	// failOnField が空でなければ、そのフィールドの設定で失敗する。
+	// draft issue は書けたが後続で失敗する並びを作るために使う。
+	failOnField string
 	// listErr が非 nil なら ListProjectFields が失敗する。
 	listErr error
 	seq     int
@@ -94,6 +97,9 @@ func (f *fakeGitHub) UpdateDraftIssue(_ context.Context, itemID string, item por
 
 func (f *fakeGitHub) SetItemFieldValue(_ context.Context, projectID, itemID string, v port.FieldValue) error {
 	f.projectIDs = append(f.projectIDs, projectID)
+	if f.failOnField != "" && v.FieldID == f.failOnField {
+		return errors.New("github: boom")
+	}
 	call := githubCall{op: "field", itemID: itemID, fieldID: v.FieldID}
 	if v.Text != nil {
 		call.text = *v.Text
@@ -962,5 +968,97 @@ func TestCreate_RepointsKindOnUpdate(t *testing.T) {
 	}
 	if optionID != "O_issue" {
 		t.Errorf("Kind = %q, want O_issue", optionID)
+	}
+}
+
+// 子だったものを top-level に変えたら、GitHub 側の Parent 値を消す。
+// 放っておくと、親を外したはずの item が古い epic にぶら下がったまま残る。
+func TestCreate_ClearsParentWhenItemBecomesTopLevel(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{}
+	seedRun(t, mappings, savedItem("PVTI_child", "i1", port.KindIssue, "子だったもの"))
+
+	svc := newCreationService(t, gh, mappings)
+
+	id := "PVTI_child"
+	in := domain.Interpretation{
+		Summary: "s",
+		Items: []domain.InterpretedItem{
+			{LocalID: "i1", Kind: domain.KindIssue, Title: "独り立ちした", PreviousItemID: &id},
+		},
+	}
+
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in); err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+
+	var cleared bool
+	for _, c := range gh.calls {
+		if c.op == "field" && c.itemID == "PVTI_child" && c.fieldID == "F_parent" && c.text == "" {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Errorf("Parent を消していない: %+v", gh.calls)
+	}
+}
+
+// 新規作成では消さない。空のフィールドを空で上書きする往復が増えるだけ。
+func TestCreate_DoesNotClearParentOnNewItems(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	svc := newCreationService(t, gh, &fakeMappings{})
+
+	in := domain.Interpretation{
+		Summary: "s",
+		Items:   []domain.InterpretedItem{{LocalID: "i1", Kind: domain.KindIssue, Title: "新規"}},
+	}
+
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in); err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+
+	for _, c := range gh.calls {
+		if c.op == "field" && c.fieldID == "F_parent" {
+			t.Errorf("新規なのに Parent を触っている: %+v", c)
+		}
+	}
+}
+
+// draft issue は書けたが、そのあとのフィールド設定で失敗した並び。
+// 捨てると GitHub 側は変わったのに履歴は古いままになり、次の 3 状態判定が
+// 実物と食い違う（ADR 0009 / 0026）。
+func TestCreate_RecordsItemWhenFieldWriteFails(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields(), failOnField: "F_kind"}
+	mappings := &fakeMappings{}
+	seedRun(t, mappings, savedItem("PVTI_a", "e1", port.KindEpic, "前のタイトル"))
+
+	svc := newCreationService(t, gh, mappings)
+
+	id := "PVTI_a"
+	in := domain.Interpretation{
+		Summary: "s",
+		Items: []domain.InterpretedItem{
+			{LocalID: "e1", Kind: domain.KindEpic, Title: "書き換えたタイトル", PreviousItemID: &id},
+		},
+	}
+
+	run, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in)
+	if !errors.Is(err, usecase.ErrCreationIncomplete) {
+		t.Fatalf("Create() = %v, want ErrCreationIncomplete", err)
+	}
+	if run == nil {
+		t.Fatal("run が nil。draft issue は書き換わっているのに記録が残らない")
+	}
+	if len(run.Items) != 1 || run.Items[0].Title != "書き換えたタイトル" {
+		t.Fatalf("items = %+v, want 書き換え後の 1 件", run.Items)
+	}
+	if run.Items[0].Action != port.ActionUpdated {
+		t.Errorf("action = %q, want %q", run.Items[0].Action, port.ActionUpdated)
 	}
 }

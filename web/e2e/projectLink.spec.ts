@@ -47,13 +47,13 @@ test.describe("GitHub へ辿る導線", () => {
     );
   });
 
-  test("前回作成したぶんから Project へ飛べる", async ({ page }) => {
+  test("GitHub にある項目から Project へ飛べる", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "パスワード再設定");
-    await card.getByText("前回作成した 2 件").click();
+    await card.getByText("GitHub にある 2 件").click();
 
     await expect(
       card.getByRole("link", { name: "GitHub でこの Project を開く" }),
@@ -84,7 +84,7 @@ test.describe("GitHub へ辿る導線", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "パスワード再設定");
-    await card.getByText("前回作成した 2 件").click();
+    await card.getByText("GitHub にある 2 件").click();
 
     await expect(
       card.getByRole("link", { name: "GitHub でリポジトリの Projects を開く" }),

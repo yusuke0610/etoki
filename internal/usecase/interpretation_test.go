@@ -632,3 +632,73 @@ func TestInterpret_EnforcesGranularityOnOutput(t *testing.T) {
 		}
 	}
 }
+
+// 前回ぶんはプロンプトに載り、LLM は node ID ではなく短い ref を見る（ADR 0026）。
+//
+// ここが抜けると、対応づけの入力そのものが届いていなくても他のテストは緑のまま
+// 通る。ref の採番とプロンプトの節を固定する。
+func TestInterpret_ShowsPreviousItemsAsRefs(t *testing.T) {
+	t.Parallel()
+
+	mappings := &fakeMappings{}
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "old", CreatedAt: baseTime,
+		Items: []port.SyncItem{
+			{
+				ItemID: "PVTI_first", LocalID: "e1", Kind: port.KindEpic,
+				Title: "決済基盤", Body: "入口をまとめる",
+				Action: port.ActionCreated, CreatedAt: baseTime,
+			},
+			{
+				ItemID: "PVTI_second", LocalID: "i1", Kind: port.KindIssue,
+				Title: "カード決済", Action: port.ActionCreated, CreatedAt: baseTime,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc := usecase.NewInterpretationService(
+		&fakeBoards{board: newBoard(interpretScene)}, mappings, llm, usecase.WithMaxAttempts(1))
+
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("Interpret() = %v", err)
+	}
+	if len(llm.requests) != 1 {
+		t.Fatalf("LLM の呼び出し = %d 回, want 1", len(llm.requests))
+	}
+
+	sent := llm.requests[0].Text
+
+	// 畳み込みの並び順に p1 から振る。番号がずれると対応づけ先が入れ替わる。
+	for _, want := range []string{"p1", "決済基盤", "入口をまとめる", "p2", "カード決済"} {
+		if !strings.Contains(sent, want) {
+			t.Errorf("プロンプトに %q が無い:\n%s", want, sent)
+		}
+	}
+
+	// **node ID は見せない。** 長く不透明で、復唱させると取り違える。
+	for _, unwanted := range []string{"PVTI_first", "PVTI_second"} {
+		if strings.Contains(sent, unwanted) {
+			t.Errorf("プロンプトに node ID が漏れている（%q）:\n%s", unwanted, sent)
+		}
+	}
+}
+
+// 前回ぶんが無ければ節ごと省く。空の一覧を見せると、モデルが「あるはずのもの」を
+// 埋め合わせ始める。
+func TestInterpret_OmitsPreviousSectionWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("Interpret() = %v", err)
+	}
+
+	if sent := llm.requests[0].Text; strings.Contains(sent, "前回までにこの囲みから作ったもの") {
+		t.Errorf("前回ぶんが無いのに節が出ている:\n%s", sent)
+	}
+}

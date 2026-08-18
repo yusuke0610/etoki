@@ -2,71 +2,15 @@ import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { annotationCard, openBoard } from "./helpers/board";
-import { ANNOTATION_IDS, BOARD_ID, baseMock } from "./helpers/fixtures";
+import { matchedInterpretationMock } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
-
-/**
- * `changed` の注釈で、LLM が前回ぶんとの対応づけを返した解釈。
- *
- * `i1` は前回の `PVTI_old` を書き換える。`i2` は新しく作る。前回ぶんには
- * `PVTI_kept` もあるが、今回はどこからも指されないので取り残しになる。
- */
-function withMatchedInterpretation() {
-  const mock = baseMock();
-
-  mock.annotations[BOARD_ID] = (mock.annotations[BOARD_ID] ?? []).map((a) =>
-    a.id !== ANNOTATION_IDS.changed
-      ? a
-      : {
-          ...a,
-          items: [
-            {
-              itemId: "PVTI_old",
-              kind: "issue",
-              title: "セッションの有効期限",
-              body: "",
-              localId: "i9",
-              action: "created",
-            },
-            {
-              itemId: "PVTI_kept",
-              kind: "issue",
-              title: "触らないほう",
-              body: "",
-              localId: "i8",
-              action: "created",
-            },
-          ],
-        },
-  );
-
-  mock.interpret = {
-    status: 200,
-    body: {
-      summary: "前回の続きとして読みました。",
-      contentHash: "sha256:e2e",
-      items: [
-        {
-          localId: "i1",
-          kind: "issue",
-          title: "セッションの有効期限を延ばす",
-          body: "書き直した本文",
-          previousItemId: "PVTI_old",
-        },
-        { localId: "i2", kind: "issue", title: "新しく足す issue", body: "" },
-      ],
-    },
-  };
-
-  return mock;
-}
 
 // 3 状態判定の changed には、これまで「重複を作るか、何もしないか」しか出口が
 // 無かった（ADR 0026）。作る前に何が起きるのかを見せる。
 test.describe("changed の注釈を更新する", () => {
   test("書き換える項目には更新の印が付く", async ({ page }) => {
-    await installApi(page, withMatchedInterpretation());
+    await installApi(page, matchedInterpretationMock());
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
@@ -87,7 +31,7 @@ test.describe("changed の注釈を更新する", () => {
 
   // draft issue は削除できない。etoki にできるのは「残ります」と見せるところまで。
   test("今回書き換わらないものを取り残しとして出す", async ({ page }) => {
-    await installApi(page, withMatchedInterpretation());
+    await installApi(page, matchedInterpretationMock());
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
@@ -103,7 +47,7 @@ test.describe("changed の注釈を更新する", () => {
 
   // 外した項目は作られないので、その更新先は取り残しに戻る。押す前に見せる。
   test("更新する項目を外すと取り残しが増える", async ({ page }) => {
-    await installApi(page, withMatchedInterpretation());
+    await installApi(page, matchedInterpretationMock());
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
@@ -119,7 +63,7 @@ test.describe("changed の注釈を更新する", () => {
 
   // 件数だけでは GitHub 側に何が増えたのか分からない。更新は増えない。
   test("作成結果に作成と更新の内訳が出る", async ({ page }) => {
-    const mock = withMatchedInterpretation();
+    const mock = matchedInterpretationMock();
     mock.createItems = {
       status: 201,
       body: {
@@ -166,7 +110,7 @@ test.describe("changed の注釈を更新する", () => {
   });
 
   test("対応づけは作成リクエストにそのまま載る", async ({ page }) => {
-    const mock = await installApi(page, withMatchedInterpretation());
+    const mock = await installApi(page, matchedInterpretationMock());
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
