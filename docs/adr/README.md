@@ -30,3 +30,4 @@
 | [0024](0024-select-and-edit-before-creating.md) | 作る前に選ばせ、手直しさせる（構造の変更は画面に出す） | 採用 |
 | [0025](0025-link-to-created-drafts.md) | 作成先の URL は組み立てず、GitHub が返したものを控える | 採用 |
 | [0026](0026-update-changed-drafts.md) | changed の出口を作る（対応づけは LLM に解釈させ、決めるのは開発者） | 採用 |
+| [0029](0029-error-codes-in-the-contract.md) | エラーは契約の code で表し、文言は画面が持つ | 採用 |
