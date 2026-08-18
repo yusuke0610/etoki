@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 import { breakAnnotations, breakBoards, installApi } from "./helpers/api";
-import { baseMock } from "./helpers/fixtures";
+import { drawRectangle, openBoard } from "./helpers/board";
+import { BOARD_ID, baseMock } from "./helpers/fixtures";
 
 /**
  * 描画中に落ちたときの見せ方（ADR 0027）。
@@ -18,19 +19,39 @@ import { baseMock } from "./helpers/fixtures";
 const BOARD_NAME = "認証まわりのブレスト";
 
 test.describe("描画に失敗したとき", () => {
-  test("注釈パネルが落ちてもキャンバスは残る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await breakAnnotations(page);
+  test("注釈パネルが落ちても、落ちる前に描いたものは保存できる", async ({ page }) => {
+    // 落ちる時刻をこちらで決める。マウント直後に落とすと描く隙が無く、
+    // 「キャンバスが見えている」ことしか確かめられない。境界がキャンバスごと
+    // 作り直していても、保存済みシーンから描き直されるので同じ見た目になる。
+    let crash!: () => void;
+    const held = new Promise<void>((resolve) => (crash = resolve));
+
+    const mock = await installApi(page, baseMock());
+    await breakAnnotations(page, held);
 
     await page.goto("/");
-    await page.locator(".board-list").getByRole("button", { name: BOARD_NAME }).click();
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
 
-    // 落ちたのはパネルだけ。キャンバスと保存の導線が生きていることが要点で、
-    // ここが消えるなら未保存のブレストごと消えている。
+    crash();
     await expect(page.getByRole("alert")).toContainText("この部分を表示できませんでした");
+
+    // 未保存の印が残っていること自体が、BoardPage が作り直されていない証拠。
+    // 作り直されると dirty は初期値に戻る。
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
     await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "保存" })).toBeEnabled();
     await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
+
+    // 描いたものがサーバーまで届くところまで見る。ここが要点で、届かないなら
+    // 未保存のブレストは失われている。既定のシーンに rectangle は無い。
+    await page.getByRole("button", { name: "保存" }).click();
+    await expect(page.getByText("未保存", { exact: true })).toHaveCount(0);
+
+    const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
+      elements?: { type: string }[];
+    };
+    expect(saved.elements?.some((el) => el.type === "rectangle")).toBe(true);
   });
 
   test("パネルの中で落ちても、外側は読み込み直しを迫らない", async ({ page }) => {

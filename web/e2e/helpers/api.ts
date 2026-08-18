@@ -473,7 +473,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
  *
  * `installApi` の**後**に呼ぶ。Playwright のルートは後勝ち。
  */
-async function breakList(page: Page, match: (url: URL) => boolean): Promise<void> {
+async function breakList(
+  page: Page,
+  match: (url: URL) => boolean,
+  hold?: Promise<void>,
+): Promise<void> {
   await page.route(match, async (route) => {
     // 壊すのは一覧の取得だけ。同じパスの POST（ボードの作成）まで奪うと、
     // installApi が組み立てた振る舞いが静かに消える。
@@ -481,6 +485,10 @@ async function breakList(page: Page, match: (url: URL) => boolean): Promise<void
       await route.fallback();
       return;
     }
+
+    // 落ちる時刻をテストに決めさせる。マウント直後にしか落とせないと、
+    // 「落ちる前の描き込みが残るか」を確かめられない。
+    await hold;
 
     await route.fulfill({
       status: 200,
@@ -490,10 +498,17 @@ async function breakList(page: Page, match: (url: URL) => boolean): Promise<void
   });
 }
 
-/** 注釈の一覧を壊す。落ちるのは注釈パネルの中だけ。 */
-export function breakAnnotations(page: Page): Promise<void> {
-  return breakList(page, (url) =>
-    /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
+/**
+ * 注釈の一覧を壊す。落ちるのは注釈パネルの中だけ。
+ *
+ * `hold` を渡すと、それが解決するまで応答を返さない。ボードを開いて描いた
+ * あとで落とす、という順番を作るために使う。
+ */
+export function breakAnnotations(page: Page, hold?: Promise<void>): Promise<void> {
+  return breakList(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
+    hold,
   );
 }
 
