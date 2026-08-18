@@ -29,3 +29,4 @@
 | [0023](0023-record-created-issue-body.md) | 作成した draft issue の本文を記録する（作成時に控えなければ取れない） | 採用 |
 | [0024](0024-select-and-edit-before-creating.md) | 作る前に選ばせ、手直しさせる（構造の変更は画面に出す） | 採用 |
 | [0025](0025-link-to-created-drafts.md) | 作成先の URL は組み立てず、GitHub が返したものを控える | 採用 |
+| [0027](0027-error-boundaries-keep-the-canvas.md) | 描画に失敗しても真っ白にせず、境界はキャンバスの外側に置く | 採用 |
