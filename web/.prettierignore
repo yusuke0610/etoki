@@ -1,5 +1,0 @@
-dist
-node_modules
-bun.lock
-e2e-output
-src/api/generated.ts

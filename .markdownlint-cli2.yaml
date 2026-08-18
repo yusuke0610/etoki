@@ -1,0 +1,29 @@
+# markdownlint-cli2 の設定。検査の対象はここだけで決め、Makefile 側には
+# コマンド名だけを置く（make lint-docs）。
+#
+# 規則は原則ここに集約するが、.github/ だけはディレクトリ固有の設定を持つ
+# （.github/.markdownlint-cli2.yaml）。本文の雛形にだけ規則を緩める手段が、
+# markdownlint-cli2 にはその置き方しかない。
+#
+# 表の桁の書き方（MD060）は既定の `any` のままにしてある。表ごとの一貫性だけを
+# 見て、リポジトリ全体の形は決めない。Markdown は prettier も通っていて、表の
+# 形を決めているのはそちら（aligned にそろえる）。ここで style も固定すると
+# 同じことを 2 つの道具が決めることになり、食い違った日にどちらが正なのかが
+# 無くなる。
+
+globs:
+  - "**/*.md"
+
+# 無視するものは列挙せず .gitignore を見る。web/node_modules には Markdown を
+# 同梱した npm パッケージが混ざるが、それを 2 箇所目の除外リストに書き足すと
+# go.mod の `ignore ./web` や .golangci.yml と同じ知識が 3 つ目になる。
+gitignore: true
+
+config:
+  # 日本語の本文は 80 桁の見た目で折り返してあり、文字数では 40 前後に収まる。
+  # 既定の 80 文字で足りるのは本文だけ。表の行とコードブロックは折り返す先が
+  # 無いので検査から外す。守れない規則を残すと、違反が出たとき規則の側を
+  # 緩める判断に流れる。
+  MD013:
+    tables: false
+    code_blocks: false

@@ -27,11 +27,11 @@ ADR 0005 の答えは 3 にしか効かない。1 と 2 まで「`port.LLMClient
 
 差し替えを 2 段の継ぎ目で受ける。**どちらの段にも etoki 側の分岐を作らない。**
 
-| 何が違うか | 継ぎ目 | 既定実装 |
-| --- | --- | --- |
-| 向き先だけ | `Config.BaseURL` | そのまま使う |
-| 認証・ヘッダ | `Config.HTTPClient` の `RoundTripper` | そのまま使う |
-| wire format | `port.LLMClient` を自前実装（ADR 0005） | 使わない |
+| 何が違うか   | 継ぎ目                                  | 既定実装     |
+| ------------ | --------------------------------------- | ------------ |
+| 向き先だけ   | `Config.BaseURL`                        | そのまま使う |
+| 認証・ヘッダ | `Config.HTTPClient` の `RoundTripper`   | そのまま使う |
+| wire format  | `port.LLMClient` を自前実装（ADR 0005） | 使わない     |
 
 あわせて **API キーを任意にする。** 空なら `x-api-key` ヘッダ自体を送らない。
 
