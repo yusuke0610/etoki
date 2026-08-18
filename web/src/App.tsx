@@ -2,9 +2,15 @@ import "@excalidraw/excalidraw/index.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, authApi, boardsApi } from "./api/boards";
+import { ApiError, authApi, boardsApi, capabilitiesApi } from "./api/boards";
 import { describeFailure, type Failure } from "./api/errorMessage";
-import type { BoardDetail, BoardSummary, BoardTarget, SessionStatus } from "./api/types";
+import type {
+  BoardDetail,
+  BoardSummary,
+  BoardTarget,
+  Capabilities,
+  SessionStatus,
+} from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
 import { ErrorNotice } from "./ErrorNotice";
 import { BoardPage } from "./board/BoardPage";
@@ -26,6 +32,11 @@ export function App() {
   const [creating, setCreating] = useState<string | null>(null);
   // ログイン状態。null は問い合わせ中。
   const [session, setSession] = useState<SessionStatus | null>(null);
+  // いま使える機能。**null は「まだ確かめていない」。**
+  //
+  // LLM や GitHub を設定しなくても etoki は起動する（ADR 0008）。設定していない
+  // 機能は押した後に 503 で返るだけなので、押す前に見せるために引く。
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   // 開いているボードに未保存の変更があるか。BoardPage から上がってくる。
   //
   // キャンバスから離れる導線はこちら側にあるので、判断の材料をここに置く。
@@ -68,6 +79,16 @@ export function App() {
   useEffect(() => {
     if (!signedIn) return;
     void reload();
+
+    void (async () => {
+      try {
+        setCapabilities(await capabilitiesApi.get());
+      } catch {
+        // 引けなくても止めない。null のままなら押させる側に倒れ、これまで
+        // どおり押した後に 503 の理由が出る。**確かめられなかったことを
+        // 「使えない」として見せない**（中核思想 3）。
+      }
+    })();
   }, [reload, signedIn]);
 
   /**
@@ -270,6 +291,7 @@ export function App() {
           <BoardPage
             key={current.id}
             board={current}
+            capabilities={capabilities}
             onError={setError}
             onChangeTarget={() => setPicking(true)}
             onDirtyChange={handleDirtyChange}

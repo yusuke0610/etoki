@@ -91,6 +91,22 @@
 - `ApiError.code` は `ErrorCode` ではなく `string`。サーバーが画面より新しいと
   知らない code が来るので、型で締めると漏れに気づけない。
 
+## 設定していない機能の見せ方（ADR 0030）
+
+- **押す前に見せる。** `GET /api/capabilities` を App が 1 度だけ引き、使えない
+  機能は押させずに理由を出す。**ボタンを黙って消さない**（中核思想 3）。
+- **文言を新しく書かない。** `web/src/capability.ts` が capability → `ErrorCode`
+  を引き、文言は `ERROR_MESSAGES` から取る。押した後に 503 で返る理由と同じ文に
+  なる。別々に持つと片方だけ古くなる。
+- **`capabilities` が null のうちは止めない。** 「まだ確かめていない」を「使え
+  ない」に倒さない。押せば 503 が同じ理由を返す。`projectAccess` の `unknown` と
+  同じ扱い。
+- **プロセスの設定とボードの権限を混ぜない。** `capabilities` は etoki の設定、
+  `projectAccess` はこのボードの Project に書けるか（ADR 0017）。設定されていても
+  書けない、は普通に起きる。
+- 理由はパネルに 1 つだけ出し、押せないボタンから `aria-describedby` で指す。
+  注釈ごとに並べると、読むべき状態が埋もれる。
+
 ## 契約の型
 
 - **`web/src/api/types.ts` の名前を import する。** `components["schemas"][...]`

@@ -7,10 +7,12 @@ import { describeFailure, type Failure } from "../api/errorMessage";
 import type {
   AnnotationStatus,
   BoardDetail,
+  Capabilities,
   Granularity,
   Interpretation,
   ProjectAccess,
 } from "../api/types";
+import { unavailableReason } from "../capability";
 import {
   frameIds,
   isAnnotation,
@@ -34,6 +36,13 @@ import { ROLE_LABELS } from "./roles";
 
 type Props = {
   board: BoardDetail;
+  /**
+   * いま使える機能。null は「まだ確かめていない」（ADR 0030）。
+   *
+   * ボード単位の権限（`projectAccess`）とは別物。プロセスの設定なので、
+   * ボードを開くたびに変わりはしない。**混ぜない。**
+   */
+  capabilities: Capabilities | null;
   onError: (failure: Failure) => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
@@ -46,7 +55,13 @@ type Props = {
   onDirtyChange: (dirty: boolean) => void;
 };
 
-export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Props) {
+export function BoardPage({
+  board,
+  capabilities,
+  onError,
+  onChangeTarget,
+  onDirtyChange,
+}: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
   const canEdit = board.role !== "viewer";
 
@@ -373,6 +388,15 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
   // draft issue を重複させる。保存側は creating で、作成側は saving を渡して止める。
   const creating = Object.values(creations).some((c) => c.status === "running");
 
+  // 設定していない機能は、押す前に理由を出す（ADR 0030）。null は使える、
+  // または「まだ確かめていない」。
+  //
+  // **引くのはここ 1 箇所で、下へは文言として渡す。** 各コンポーネントで
+  // 引き直すと、同じ判定が枝の数だけ増える。
+  const interpretationUnavailable = unavailableReason(capabilities, "interpretation");
+  const creationUnavailable = unavailableReason(capabilities, "creation");
+  const sharingUnavailable = unavailableReason(capabilities, "sharing");
+
   const annotationIdsOnCanvas = new Set(
     currentElements()
       .filter((el) => isAnnotation(el))
@@ -394,9 +418,18 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
             共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
           */}
           <span className="badge badge-role">{ROLE_LABELS[board.role]}</span>
-          <button type="button" onClick={() => setShowingMembers((v) => !v)}>
-            {showingMembers ? "メンバーを閉じる" : "メンバー"}
-          </button>
+          {/*
+            共有が組み立てられていない構成では、押しても 503 しか返らない。
+            ボタンを黙って消さず、代わりに理由を出す（中核思想 3）。作成先の
+            変更を owner 以外に出さないのと同じ形。
+          */}
+          {sharingUnavailable !== null ? (
+            <span className="hint">{sharingUnavailable}</span>
+          ) : (
+            <button type="button" onClick={() => setShowingMembers((v) => !v)}>
+              {showingMembers ? "メンバーを閉じる" : "メンバー"}
+            </button>
+          )}
           {/*
             どこに作られるのかは、作る直前ではなく常に見えている必要がある。
             作った draft issue は取り消せない（ADR 0009）。
@@ -521,6 +554,8 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
           onCreate={(id, interpretation) => void create(id, interpretation)}
           canEdit={canEdit}
           projectAccess={projectAccess}
+          interpretationUnavailable={interpretationUnavailable}
+          creationUnavailable={creationUnavailable}
           projectLink={link}
         />
       </div>

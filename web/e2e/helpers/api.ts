@@ -8,6 +8,7 @@ import type {
   BoardRole,
   BoardSummary,
   BoardTarget,
+  Capabilities,
   CreatedRun,
   ErrorResponse,
   Interpretation,
@@ -61,6 +62,14 @@ export type ApiMock = {
   repositories: Reply<Repository[]>;
   /** `owner/name` をキーにした Projects v2。 */
   projects: Record<string, Reply<Project[]>>;
+  /**
+   * いま使える機能。既定は全部そろった構成。
+   *
+   * 落とすと、押す前に理由が出る側の見せ方になる（ADR 0030）。**エンドポイント
+   * 側も 503 に揃えること。** 片方だけ落とすと、画面が案内しないのに 503 が
+   * 返る（またはその逆）という、実物では起きない組み合わせを緑にしてしまう。
+   */
+  capabilities: Reply<Capabilities>;
   /**
    * ログイン状態。既定は「認証を設定していない」。
    *
@@ -415,6 +424,17 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
 
       mock.createRequests.push((route.request().postDataJSON() ?? {}) as Interpretation);
       await json(route, mock.createItems.status, mock.createItems.body);
+    },
+  );
+
+  await page.route(
+    (url) => url.pathname === "/api/capabilities",
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await json(route, mock.capabilities.status, mock.capabilities.body);
     },
   );
 

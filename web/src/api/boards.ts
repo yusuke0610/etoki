@@ -1,6 +1,7 @@
 import type {
   AnnotationImage,
   AnnotationStatus,
+  Capabilities,
   InterpretRequest,
   LoginResponse,
   SessionStatus,
@@ -73,6 +74,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (await res.json()) as T;
 }
+
+/**
+ * いま使える機能。
+ *
+ * **押した後にしか分からない 503 を、押す前に見せるために引く**（ADR 0008 で
+ * 「LLM を設定しなくても起動する」と決めた帰結）。プロセスの設定なので
+ * ボードには紐づかない。ボード単位の可否は `boardsApi.access`（ADR 0017）で、
+ * **混ぜない。**
+ */
+export const capabilitiesApi = {
+  get: () => request<Capabilities>("/api/capabilities"),
+};
 
 export const boardsApi = {
   list: () => request<BoardSummary[]>("/api/boards"),

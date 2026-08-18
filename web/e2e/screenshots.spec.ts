@@ -198,6 +198,25 @@ test.describe("スクリーンショット", () => {
     await shot(page, "15-save-conflict");
   });
 
+  // 設定していない機能の見せ方（ADR 0030）。LLM を設定しない構成は README が
+  // 想定している使い方なので、その画面が行き止まりに見えないかを画像で見る。
+  test("設定していない機能の見せ方を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = {
+      status: 200,
+      body: { interpretation: false, creation: false, sharing: false },
+    };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    // 理由はパネルに 1 つだけ出る（注釈ごとには並べない）。
+    await page.getByText("ETOKI_LLM_API_KEY").waitFor();
+    await shot(page, "21-not-configured");
+  });
+
   // 失敗の見せ方（#86）。**打ち手を前に、サーバーの文言は畳んだ側に。**
   // 同じ 409 でもすべきことは違うので、code から引いた文を先に読ませる。
   test("失敗したときの見せ方を撮る", async ({ page }) => {
