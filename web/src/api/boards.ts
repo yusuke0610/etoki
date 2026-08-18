@@ -19,14 +19,29 @@ import type {
   SaveSceneResponse,
 } from "./types";
 
-/** API が返したエラー。呼び出し側でステータスに応じて分岐するために持つ。 */
+/**
+ * API が返したエラー。呼び出し側で分岐するために持つ。
+ *
+ * **分岐は `code` で行う。** ステータスだけでは打ち手が決まらない（409 には
+ * 6 つの原因が同居し、打ち手は全部違う）。文言の照合で分けると、Go のエラー
+ * 文言が事実上の API 契約になる。表示用の日本語は `errorMessage.ts` が引く。
+ */
 export class ApiError extends Error {
   readonly status: number;
+  /**
+   * 契約の `ErrorCode`。
+   *
+   * **`ErrorCode` ではなく `string` で持つ。** サーバーが画面より新しいと、
+   * まだ知らない code が来る。型で締めると、知らない値を「知っている」ものとして
+   * 扱うことになり、対応表から漏れたことに気づけない。
+   */
+  readonly code: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, code: string, message: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -40,12 +55,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // エラーボディが JSON とは限らないので、読めなければ本文をそのまま使う。
     const body = await res.text();
     let message = body;
+    // 契約では必須だが、プロキシが返した応答など契約の外から来ることもある。
+    // その場合は internal に寄せる。画面は本文を畳んだ側に出す。
+    let code = "internal";
     try {
-      message = (JSON.parse(body) as Partial<ErrorResponse>).error ?? body;
+      const parsed = JSON.parse(body) as Partial<ErrorResponse>;
+      message = parsed.error ?? body;
+      code = parsed.code ?? code;
     } catch {
       // JSON でなければ本文をそのまま使う
     }
-    throw new ApiError(res.status, message || res.statusText);
+    throw new ApiError(res.status, code, message || res.statusText);
   }
 
   if (res.status === 204) {

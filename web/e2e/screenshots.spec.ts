@@ -198,6 +198,37 @@ test.describe("スクリーンショット", () => {
     await shot(page, "15-save-conflict");
   });
 
+  // 失敗の見せ方（#86）。**打ち手を前に、サーバーの文言は畳んだ側に。**
+  // 同じ 409 でもすべきことは違うので、code から引いた文を先に読ませる。
+  test("失敗したときの見せ方を撮る", async ({ page }) => {
+    const mock = baseMock();
+    const target = unselectedBoard();
+    mock.boards = [summarize(target)];
+    mock.details = { [target.id]: target };
+    mock.annotations = { [target.id]: [] };
+    // 固定済みのボードに作成先を設定しようとした状態。API を直接叩けば起きる。
+    mock.setTargetError = {
+      status: 409,
+      body: { code: "target_locked", error: "etoki: board target is locked" },
+    };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+    await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+
+    const alert = page.getByRole("alert");
+    await alert.waitFor();
+    // 畳んだ側に何が入っているかも報告に写す。開いた状態で撮る。
+    await alert.locator("summary").click();
+    await shot(page, "20-error-notice");
+  });
+
   // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある
   // （ADR 0017）。
   test("メンバーの一覧を撮る", async ({ page }) => {

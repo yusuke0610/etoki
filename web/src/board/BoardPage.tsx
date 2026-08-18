@@ -3,6 +3,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, boardsApi } from "../api/boards";
+import { describeFailure, type Failure } from "../api/errorMessage";
 import type {
   AnnotationStatus,
   BoardDetail,
@@ -33,7 +34,7 @@ import { ROLE_LABELS } from "./roles";
 
 type Props = {
   board: BoardDetail;
-  onError: (message: string) => void;
+  onError: (failure: Failure) => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
   /**
@@ -103,7 +104,10 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
       return JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
-      onError("シーンを読み込めませんでした。空のボードとして開きます。");
+      onError({
+        message: "シーンを読み込めませんでした。空のボードとして開きます。",
+        detail: "",
+      });
       return { elements: [], appState: {} };
     }
   }, [board.scene, onError]);
@@ -121,7 +125,7 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
       setAnnotations(next);
     } catch (e) {
       if (request !== annotationsRequest.current) return;
-      onError(`注釈の状態を取得できませんでした: ${String(e)}`);
+      onError(describeFailure("注釈の状態を取得できませんでした", e));
     }
   }, [board.id, onError]);
 
@@ -275,11 +279,11 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
       // 409 は「保存に失敗した」ではなく「他の人が先に保存した」という状態。
       // こちらの編集は未保存のまま残す。捨てて読み直すと、消えるのは相手では
       // なくこちらの作業になる（ADR 0020）。
-      if (e instanceof ApiError && e.status === 409) {
+      if (e instanceof ApiError && e.code === "scene_conflict") {
         setConflicted(true);
         return;
       }
-      onError(`保存できませんでした: ${String(e)}`);
+      onError(describeFailure("保存できませんでした", e));
     } finally {
       setSaving(false);
     }
@@ -320,7 +324,7 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
           ...prev,
           [annotationId]: {
             status: "error",
-            message: e instanceof Error ? e.message : String(e),
+            failure: describeFailure("解釈できませんでした", e),
           },
         }));
       }
@@ -354,7 +358,7 @@ export function BoardPage({ board, onError, onChangeTarget, onDirtyChange }: Pro
           ...prev,
           [annotationId]: {
             status: "error",
-            message: e instanceof Error ? e.message : String(e),
+            failure: describeFailure("作成できませんでした", e),
           },
         }));
       }

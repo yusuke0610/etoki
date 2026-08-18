@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import type { Failure } from "../api/errorMessage";
 import type {
   AnnotationStatus,
   CreatedRun,
@@ -11,6 +12,7 @@ import type {
   SyncItem,
   SyncState,
 } from "../api/types";
+import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { annotationLabels, frameLabel } from "./annotationLabel";
 import { groupByEpic } from "./interpretation";
@@ -31,13 +33,13 @@ import type { ProjectLink } from "./projectLink";
 export type CreationState =
   | { status: "running" }
   | { status: "done"; run: CreatedRun }
-  | { status: "error"; message: string };
+  | { status: "error"; failure: Failure };
 
 /** 注釈 1 つぶんの解釈の進み具合。 */
 export type InterpretationState =
   | { status: "running" }
   | { status: "done"; result: Interpretation }
-  | { status: "error"; message: string };
+  | { status: "error"; failure: Failure };
 
 const STATE_LABEL: Record<SyncState, string> = {
   uncreated: "未作成",
@@ -353,7 +355,7 @@ function InterpretationSection({
         </p>
       )}
 
-      {state?.status === "error" && <p className="error">{state.message}</p>}
+      {state?.status === "error" && <ErrorNotice failure={state.failure} />}
 
       {state?.status === "done" && (
         <InterpretationDraft
@@ -435,16 +437,22 @@ function CreationSection({
         </p>
       )}
 
-      {state?.status === "error" && <p className="error">{state.message}</p>}
+      {state?.status === "error" && <ErrorNotice failure={state.failure} />}
 
       {state?.status === "done" && (
         <div className="creation-result">
           {/* 途中で失敗しても作れたぶんは残る。何も作られていないと
               誤解して再実行すると、GitHub 側に重複が増える。 */}
           {state.run.incomplete ? (
-            <p className="error">
-              途中で失敗しました（{partialSummary(state.run.items)}）: {state.run.error}
-            </p>
+            // 部分失敗の本文には code を足さない。1 件ずつ理由が違いうるので
+            // 1 つの code に落ちない。畳んで見せる扱いだけ揃える。
+            <ErrorNotice
+              failure={{
+                message: `途中で失敗しました（${partialSummary(state.run.items)}）`,
+                // 契約上は任意。incomplete なら必ず入るが、型に従って畳む。
+                detail: state.run.error ?? "",
+              }}
+            />
           ) : (
             <p className="hint">{resultSummary(state.run.items)}。</p>
           )}

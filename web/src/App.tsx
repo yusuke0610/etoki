@@ -3,8 +3,10 @@ import "@excalidraw/excalidraw/index.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, authApi, boardsApi } from "./api/boards";
+import { describeFailure, type Failure } from "./api/errorMessage";
 import type { BoardDetail, BoardSummary, BoardTarget, SessionStatus } from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
+import { ErrorNotice } from "./ErrorNotice";
 import { BoardPage } from "./board/BoardPage";
 import { BoardTree } from "./board/BoardTree";
 import { RepositoryPicker } from "./board/RepositoryPicker";
@@ -12,7 +14,7 @@ import { RepositoryPicker } from "./board/RepositoryPicker";
 export function App() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [current, setCurrent] = useState<BoardDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
   const [name, setName] = useState("");
   // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
   const [picking, setPicking] = useState(false);
@@ -38,7 +40,7 @@ export function App() {
       } catch (e) {
         // 状態が分からないなら、ログインを求めない側に倒す。求める側に倒すと、
         // 認証を設定していない構成が API の一時的な失敗で使えなくなる。
-        setError(`ログイン状態を取得できませんでした: ${String(e)}`);
+        setError(describeFailure("ログイン状態を取得できませんでした", e));
         setSession({ authRequired: false, authenticated: false });
       }
     })();
@@ -51,11 +53,11 @@ export function App() {
       // 使っている最中の失効はここで初めて分かる。エラーだけ出すと、画面は
       // ログイン済みのまま何も操作できず、リロードするまで戻れない。
       // 状態を読み直せばログイン画面に落ちる。
-      if (e instanceof ApiError && e.status === 401) {
+      if (e instanceof ApiError && e.code === "login_required") {
         setSession(await authApi.session());
         return;
       }
-      setError(`ボード一覧を取得できませんでした: ${String(e)}`);
+      setError(describeFailure("ボード一覧を取得できませんでした", e));
     }
   }, []);
 
@@ -109,7 +111,7 @@ export function App() {
       // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
       setSession(await authApi.session());
     } catch (e) {
-      setError(`ログアウトできませんでした: ${String(e)}`);
+      setError(describeFailure("ログアウトできませんでした", e));
       // 失敗したらログインしたまま。一覧を空のままにすると、何も操作できない
       // 画面が残る。
       await reload();
@@ -125,7 +127,7 @@ export function App() {
       try {
         next = await boardsApi.get(id);
       } catch (e) {
-        setError(`ボードを開けませんでした: ${String(e)}`);
+        setError(describeFailure("ボードを開けませんでした", e));
         return;
       }
 
@@ -238,14 +240,7 @@ export function App() {
       </nav>
 
       <main className="main">
-        {error && (
-          <div className="error" role="alert">
-            {error}
-            <button type="button" onClick={() => setError(null)}>
-              閉じる
-            </button>
-          </div>
-        )}
+        {error && <ErrorNotice failure={error} onClose={() => setError(null)} />}
 
         {/*
           「ボードに入る → 対象リポジトリ選択 → ブレスト開始」の分岐はここに置く。

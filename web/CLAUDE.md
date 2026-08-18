@@ -77,6 +77,20 @@
   押す前に見せる。ADR 0024 の「親を失うことは黙って起こさない」と同じ形で、
   判定は `interpretationDraft.ts` の純関数に置く。
 
+## 失敗の見せ方（ADR 0029）
+
+- **分岐は `code` で行う。ステータスや文言で分けない。** 409 には 6 つの原因が
+  同居し、403 は 2 層ある（ADR 0017）。文字列で照合すると、Go のエラー文言が
+  事実上の契約になる。
+- **文言を持つのは `web/src/api/errorMessage.ts` だけ。** コンポーネントが持つ
+  のは操作の名前（`保存できませんでした`）まで。`Record<ErrorCode, string>` に
+  してあるので、契約に code が増えて文言を書き忘れると `tsc` が落ちる。
+- **サーバーの `error` 本文は既定で畳む**（`ErrorNotice` の `<details>`）。
+  捨てはしない。GitHub のレート制限や LLM の設定不足は本文にしか手掛かりが無い。
+  **知らない code のときだけ本文を前に出す。**
+- `ApiError.code` は `ErrorCode` ではなく `string`。サーバーが画面より新しいと
+  知らない code が来るので、型で締めると漏れに気づけない。
+
 ## 契約の型
 
 - **`web/src/api/types.ts` の名前を import する。** `components["schemas"][...]`

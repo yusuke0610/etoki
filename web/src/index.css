@@ -335,6 +335,39 @@ body {
   gap: 8px;
 }
 
+/* 読むべき文（次に何をすればよいか）と、畳んだ手掛かりを縦に積む。
+   min-width: 0 が無いと、長い 1 語の詳細が帯を押し広げる。 */
+.error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.error-message {
+  margin: 0;
+}
+
+/*
+ * サーバーが返した本文は既定で畳む。`etoki: insufficient role` のような内部
+ * 文言を前に出すと、読むべき文が埋もれる。捨てはしない。GitHub や LLM の
+ * 本文が実際の手掛かりになる経路がある。
+ */
+.error-detail > summary {
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.error-detail > pre {
+  margin: 4px 0 0;
+  /* pre の既定は等幅。周りと書体が変わると、同じ文が別物に見える。 */
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /*
  * 他の人が先に保存していて、こちらの保存を拒んだ状態（ADR 0020）。
  *
