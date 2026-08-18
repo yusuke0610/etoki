@@ -1,5 +1,9 @@
-# markdownlint-cli2 の設定。対象と規則をここに集約し、Makefile 側には
+# markdownlint-cli2 の設定。検査の対象はここだけで決め、Makefile 側には
 # コマンド名だけを置く（make lint-docs）。
+#
+# 規則は原則ここに集約するが、.github/ だけはディレクトリ固有の設定を持つ
+# （.github/.markdownlint-cli2.yaml）。本文の雛形にだけ規則を緩める手段が、
+# markdownlint-cli2 にはその置き方しかない。
 #
 # 表の桁の書き方（MD060）は既定の `any` のままにしてある。表ごとの一貫性だけを
 # 見て、リポジトリ全体の形は決めない。Markdown は prettier も通っていて、表の
@@ -23,7 +27,3 @@ config:
   MD013:
     tables: false
     code_blocks: false
-  # 先頭行を h1 にする規則（MD041）は切る。.github/pull_request_template.md は
-  # 文書ではなく本文の雛形で、見出しから始まらないのが正しい。テンプレートは
-  # issue の分も増えうるので、規則を残して除外を書き足していく形にはしない。
-  MD041: false
