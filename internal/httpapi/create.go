@@ -74,8 +74,10 @@ func (h *handlers) failCreate(c *gin.Context, err error) {
 		// 設定不足であって、リクエストの誤りではない。何をすればよいかを返す。
 		errorJSON(c, http.StatusUnprocessableEntity, err.Error())
 
-	case errors.Is(err, usecase.ErrContentHashMismatch):
-		// 解釈のやり直しは開発者が決める。ここで解釈し直して作成を続けない。
+	case errors.Is(err, usecase.ErrContentHashMismatch),
+		errors.Is(err, usecase.ErrPreviousItemUnknown):
+		// どちらも「解釈が古い」。解釈のやり直しは開発者が決めるので、ここで
+		// 解釈し直して作成を続けない。
 		errorJSON(c, http.StatusConflict, err.Error())
 
 	case errors.Is(err, usecase.ErrCreationIncomplete):
@@ -106,6 +108,11 @@ func toInterpretation(req apitypes.Interpretation) domain.Interpretation {
 		if it.ParentLocalID != "" {
 			parent := it.ParentLocalID
 			item.ParentLocalID = &parent
+		}
+		// 空文字は「新規」。ユースケース層がその注釈のものかを確かめる。
+		if it.PreviousItemID != "" {
+			previous := it.PreviousItemID
+			item.PreviousItemID = &previous
 		}
 		in.Items = append(in.Items, item)
 	}

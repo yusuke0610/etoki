@@ -301,6 +301,9 @@ ID を知っていても 404 になります（[ADR 0017](docs/adr/0017-board-sh
 
 設計判断の記録は [`docs/adr/`](docs/adr/) にあります。
 
+変更を送るときの約束（ブランチ・コミット・PR 本文・レビュー対応）は
+[`CONTRIBUTING.md`](CONTRIBUTING.md) にあります。
+
 ## ライセンス
 
 [MIT](LICENSE)

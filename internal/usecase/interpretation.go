@@ -64,6 +64,9 @@ const supportedImageMediaType = "image/png"
 // 何を作るかは解釈結果を見た開発者が別途トリガーする。
 type InterpretationService struct {
 	boardGuard
+	// mappings は前回までに作ったものを引くために持つ。解釈の入力にするのは
+	// テキストと画像だけではなく、「前回何を作ったか」も含まれる（ADR 0026）。
+	mappings    port.MappingRepository
 	llm         port.LLMClient
 	maxAttempts int
 }
@@ -91,9 +94,13 @@ func WithMaxAttempts(n int) InterpretationServiceOption {
 }
 
 // NewInterpretationService は InterpretationService を作る。
-func NewInterpretationService(boards port.BoardRepository, llm port.LLMClient, opts ...InterpretationServiceOption) *InterpretationService {
+func NewInterpretationService(
+	boards port.BoardRepository, mappings port.MappingRepository, llm port.LLMClient,
+	opts ...InterpretationServiceOption,
+) *InterpretationService {
 	s := &InterpretationService{
 		boardGuard:  boardGuard{boards: boards},
+		mappings:    mappings,
 		llm:         llm,
 		maxAttempts: defaultMaxAttempts,
 	}
@@ -144,7 +151,16 @@ func (s *InterpretationService) Interpret(
 			ErrInvalidInput, annotation.Granularity, annotationID)
 	}
 
-	in, err := s.complete(ctx, annotation, scene.AnnotationTexts(annotationID), images)
+	// 前回までに作ったものを見せて、「これは前回のどれの更新か」を答えさせる。
+	// 対応づけを座標や文字列一致でルールベースに推測せず、LLM に解釈させる
+	// （中核思想 2、ADR 0026）。決めるのは開発者で、これは候補にすぎない。
+	saved, err := s.mappings.ListItemsByAnnotation(ctx, boardID, annotationID)
+	if err != nil {
+		return InterpretationResult{}, err
+	}
+	previous := toPreviousItems(saved)
+
+	in, err := s.complete(ctx, annotation, scene.AnnotationTexts(annotationID), images, previous)
 	if err != nil {
 		return InterpretationResult{}, err
 	}
@@ -153,6 +169,26 @@ func (s *InterpretationService) Interpret(
 		Interpretation: in,
 		ContentHash:    string(scene.AnnotationHash(annotation)),
 	}, nil
+}
+
+// toPreviousItems は保存済みの記録を、解釈に見せる形へ詰め替える。
+//
+// ref は並び順に `p1` から振る。畳み込みの並びは最初に作られた順で固定して
+// あるので（ADR 0026）、同じ状態なら同じ ref になる。**この ref を保存しない。**
+// 1 回の解釈のあいだだけ通じる一時 ID であり、次の解釈では振り直される。
+// LocalID が解釈ごとに振り直されるのと同じ扱い。
+func toPreviousItems(items []port.SyncItem) []domain.PreviousItem {
+	previous := make([]domain.PreviousItem, 0, len(items))
+	for i, it := range items {
+		previous = append(previous, domain.PreviousItem{
+			Ref:    fmt.Sprintf("p%d", i+1),
+			ItemID: it.ItemID,
+			Kind:   domain.ItemKind(it.Kind),
+			Title:  it.Title,
+			Body:   it.Body,
+		})
+	}
+	return previous
 }
 
 // validateImages は LLM に渡す画像が上限と形式を満たすかを見る。
@@ -185,8 +221,9 @@ func validateImages(images []port.Image) error {
 // complete は検証を満たす出力が得られるまで、修正指示を添えて呼び直す。
 func (s *InterpretationService) complete(
 	ctx context.Context, a domain.Annotation, texts []domain.TextElement, images []port.Image,
+	previous []domain.PreviousItem,
 ) (domain.Interpretation, error) {
-	base := buildUserMessage(a, texts, len(images) > 0)
+	base := buildUserMessage(a, texts, len(images) > 0, previous)
 	req := port.VisionRequest{
 		System: interpretationSystemPrompt,
 		Text:   base,
@@ -202,7 +239,7 @@ func (s *InterpretationService) complete(
 			return domain.Interpretation{}, fmt.Errorf("%w (attempt %d): %w", ErrLLMUnavailable, attempt, err)
 		}
 
-		in, err := parseInterpretation(resp.Text, a.Granularity)
+		in, err := parseInterpretation(resp.Text, a.Granularity, previous)
 		if err == nil {
 			return in, nil
 		}
@@ -217,8 +254,10 @@ func (s *InterpretationService) complete(
 }
 
 // parseInterpretation は LLM の出力テキストを解釈結果に変換して検証する。
-func parseInterpretation(text string, g domain.Granularity) (domain.Interpretation, error) {
-	in, err := domain.ParseInterpretation([]byte(extractJSON(text)))
+func parseInterpretation(
+	text string, g domain.Granularity, previous []domain.PreviousItem,
+) (domain.Interpretation, error) {
+	in, err := domain.ParseInterpretation([]byte(extractJSON(text)), previous)
 	if err != nil {
 		return domain.Interpretation{}, err
 	}
@@ -273,7 +312,9 @@ func extractJSON(text string) string {
 //
 // hasImage は画像を添えたかどうか。画像の話は添えたときにだけ書く。常に書くと、
 // 画像なしの解釈でモデルが「見えるはずの図」を前提に埋め合わせを始める。
-func buildUserMessage(a domain.Annotation, texts []domain.TextElement, hasImage bool) string {
+func buildUserMessage(
+	a domain.Annotation, texts []domain.TextElement, hasImage bool, previous []domain.PreviousItem,
+) string {
 	var b strings.Builder
 
 	b.WriteString("囲みに含まれるテキスト:\n")
@@ -298,12 +339,62 @@ func buildUserMessage(a domain.Annotation, texts []domain.TextElement, hasImage 
 		b.WriteString(imageInstruction)
 	}
 
+	b.WriteString(previousInstruction(previous))
+
 	b.WriteString("\n")
 	b.WriteString(granularityInstruction(a.Granularity))
 	b.WriteString("\n")
 
 	return b.String()
 }
+
+// previousInstruction は前回までに作ったものを ref つきで並べる。
+//
+// **node ID は見せない。** `PVTI_lADOA...` を復唱させると取り違えるので、`p1` の
+// ような短い ref にして、解決は etoki 側で行う（ADR 0026）。
+//
+// 1 件も無ければ節ごと省く。空の一覧を見せると、モデルが「あるはずのもの」を
+// 埋め合わせ始める。
+func previousInstruction(previous []domain.PreviousItem) string {
+	if len(previous) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n前回までにこの囲みから作ったもの:\n")
+
+	for _, p := range previous {
+		fmt.Fprintf(&b, "- %s (%s) %s\n", p.Ref, p.Kind, oneLine(p.Title))
+		if body := strings.TrimSpace(p.Body); body != "" {
+			fmt.Fprintf(&b, "    本文: %s\n", oneLine(body))
+		}
+	}
+
+	b.WriteString(previousMatchInstruction)
+
+	return b.String()
+}
+
+// oneLine は一覧に載せるために改行を潰す。
+//
+// 箇条書きの途中で改行されると、次の行が別の項目に見える。
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// previousMatchInstruction は対応づけの出し方を伝える。
+const previousMatchInstruction = `
+上の一覧と今回の項目が同じものを指しているなら、その項目の previousRef に
+一覧の ID（p1 など）を入れてください。書き換えではなく新しく作るものは
+previousRef を null にしてください。
+
+- タイトルが変わっていても、同じことを指しているなら対応づけてください。
+  文言の見直しはよくある変更です。
+- 迷ったら null にしてください。**新しく作るほうが取り返しがつきます。**
+  対応づけを間違えると、別のものを書き換えてしまいます。
+- 1 つの previousRef を 2 つの項目に使わないでください。
+- 今回の出力に対応するものが無い項目が一覧に残っていても構いません。
+`
 
 // imageInstruction は添えた画像とテキスト一覧の役割分担を伝える。
 //
@@ -381,8 +472,8 @@ draft issue に落とせる形へ整理してください。
 {
   "summary": "この範囲をどう解釈したかの説明",
   "items": [
-    {"localId": "e1", "kind": "epic",  "title": "...", "body": "...", "parentLocalId": null},
-    {"localId": "i1", "kind": "issue", "title": "...", "body": "...", "parentLocalId": "e1"}
+    {"localId": "e1", "kind": "epic",  "title": "...", "body": "...", "parentLocalId": null,  "previousRef": null},
+    {"localId": "i1", "kind": "issue", "title": "...", "body": "...", "parentLocalId": "e1", "previousRef": "p1"}
   ]
 }
 
@@ -398,5 +489,8 @@ draft issue に落とせる形へ整理してください。
 - title は空にできません。
 - summary は GitHub には作りません。解釈が意図どおりかを開発者が確かめるための
   ものなので、何をどうまとめたのかが分かる文にしてください。
+- previousRef は、前回までに作ったものを書き換える場合にだけ、その ID
+  （p1 など）を入れます。**前回の一覧を渡していないときは必ず null です。**
+  新しく作るものも null です。1 つの ID を 2 つの項目に使わないでください。
 - 上に挙げたフィールド以外を出力しないでください。
 `

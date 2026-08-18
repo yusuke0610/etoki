@@ -6,6 +6,7 @@ import {
   BOARD_ID,
   baseMock,
   board,
+  matchedInterpretationMock,
   multiFrameMock,
   signedIn,
   unselectedBoard,
@@ -64,6 +65,21 @@ test.describe("スクリーンショット", () => {
     // GitHub へ辿るリンク（ADR 0025）が画面の外に残る。
     await card.locator(".creation-result").scrollIntoViewIfNeeded();
     await shot(page, "04-created");
+  });
+
+  // changed の注釈に更新の出口ができた（ADR 0026）。何が書き換わり、何が
+  // GitHub 側に取り残されるのかを、押す前に見せている画面を撮る。
+  test("更新と取り残しの内訳を撮る", async ({ page }) => {
+    await installApi(page, matchedInterpretationMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.locator(".left-behind").scrollIntoViewIfNeeded();
+    await shot(page, "19-update-and-left-behind");
   });
 
   // 作る前に選び直せること、選び直した結果がどう見えるかを撮る（ADR 0024）。

@@ -39,6 +39,12 @@ const (
 	ProjectAccessUnknown ProjectAccess = "unknown"
 )
 
+// Defines values for SyncAction.
+const (
+	SyncActionCreated SyncAction = "created"
+	SyncActionUpdated SyncAction = "updated"
+)
+
 // Defines values for SyncState.
 const (
 	SyncStateChanged   SyncState = "changed"
@@ -69,7 +75,12 @@ type AnnotationStatus struct {
 	Granularity Granularity `json:"granularity"`
 	ID          string      `json:"id"`
 
-	// Items 前回実行で作られた draft issue。未実行なら省略する
+	// Items この注釈が GitHub に在らしめている draft issue（ADR 0026）。
+	//
+	// **前回実行で作られたものではなく、run 履歴を itemId で畳んだもの。**
+	// 更新は同じ itemId に吸収され、今回触らなかったものも残り続ける。
+	// 最新 run だけを返すと、更新のあとに取り残しが画面から消える。
+	// 1 件も無ければ省略する
 	Items []SyncItem `json:"items,omitempty"`
 
 	// LastSyncedAt 前回実行の時刻。未実行なら省略する
@@ -353,7 +364,15 @@ type InterpretedItem struct {
 	Kind          ItemKind `json:"kind"`
 	LocalID       string   `json:"localId"`
 	ParentLocalID string   `json:"parentLocalId,omitempty"`
-	Title         string   `json:"title"`
+
+	// PreviousItemID 書き換える対象の itemId（ADR 0026）。新しく作るなら省略する。
+	//
+	// 解釈のレスポンスでは LLM が対応づけた候補が入る。作成のリクエストでは
+	// 開発者が確かめた結果として送り返す。**サーバーはこの値がその注釈の
+	// ものであることを確かめる。** 確かめずに通すと、任意の node ID を
+	// 書いて無関係な draft issue を書き換えられる
+	PreviousItemID string `json:"previousItemId,omitempty"`
+	Title          string `json:"title"`
 }
 
 // InviteMemberRequest 招待のリクエストボディ
@@ -455,8 +474,20 @@ type SetMemberRoleRequest struct {
 	Role BoardRole `json:"role"`
 }
 
+// SyncAction 1 つの run がその item に対して何をしたか（ADR 0026）。
+//
+// `created` は新しく作った、`updated` は既存の draft issue を書き換えた。
+// 記録していなかった頃の run はすべて `created`。当時は更新の経路が無かった。
+type SyncAction string
+
 // SyncItem 作成済みの draft issue 1 件
 type SyncItem struct {
+	// Action 1 つの run がその item に対して何をしたか（ADR 0026）。
+	//
+	// `created` は新しく作った、`updated` は既存の draft issue を書き換えた。
+	// 記録していなかった頃の run はすべて `created`。当時は更新の経路が無かった。
+	Action SyncAction `json:"action"`
+
 	// Body 作成時の本文。記録していなかった頃の run では空
 	Body string `json:"body"`
 

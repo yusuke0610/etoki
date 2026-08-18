@@ -64,6 +64,7 @@ func toSyncItem(it port.SyncItem) apitypes.SyncItem {
 		Title:   it.Title,
 		Body:    it.Body,
 		LocalID: it.LocalID,
+		Action:  apitypes.SyncAction(it.Action),
 	}
 	if it.ParentLocalID != nil {
 		out.ParentLocalID = *it.ParentLocalID
@@ -253,7 +254,10 @@ func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {
 	if s.LatestRun != nil {
 		syncedAt := s.LatestRun.CreatedAt
 		res.LastSyncedAt = &syncedAt
-		res.Items = toSyncItems(s.LatestRun.Items)
+	}
+	// 中身は最新 run ではなく畳み込みから出す（ADR 0026）。0 件なら省く。
+	if len(s.Items) > 0 {
+		res.Items = toSyncItems(s.Items)
 	}
 
 	return res

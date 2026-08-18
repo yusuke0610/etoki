@@ -23,3 +23,7 @@ config:
   MD013:
     tables: false
     code_blocks: false
+  # 先頭行を h1 にする規則（MD041）は切る。.github/pull_request_template.md は
+  # 文書ではなく本文の雛形で、見出しから始まらないのが正しい。テンプレートは
+  # issue の分も増えうるので、規則を残して除外を書き足していく形にはしない。
+  MD041: false

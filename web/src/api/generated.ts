@@ -702,6 +702,14 @@ export interface components {
              */
             updatedAt: string;
         };
+        /**
+         * @description 1 つの run がその item に対して何をしたか（ADR 0026）。
+         *
+         *     `created` は新しく作った、`updated` は既存の draft issue を書き換えた。
+         *     記録していなかった頃の run はすべて `created`。当時は更新の経路が無かった。
+         * @enum {string}
+         */
+        SyncAction: "created" | "updated";
         /** @description 作成済みの draft issue 1 件 */
         SyncItem: {
             /** @description GitHub Projects v2 の item ID */
@@ -714,6 +722,7 @@ export interface components {
             localId: string;
             /** @description epic に属する issue のとき、その epic の localId */
             parentLocalId?: string;
+            action: components["schemas"]["SyncAction"];
         };
         /** @description 注釈 1 つの状態 */
         AnnotationStatus: {
@@ -726,7 +735,14 @@ export interface components {
              * @description 前回実行の時刻。未実行なら省略する
              */
             lastSyncedAt?: string;
-            /** @description 前回実行で作られた draft issue。未実行なら省略する */
+            /**
+             * @description この注釈が GitHub に在らしめている draft issue（ADR 0026）。
+             *
+             *     **前回実行で作られたものではなく、run 履歴を itemId で畳んだもの。**
+             *     更新は同じ itemId に吸収され、今回触らなかったものも残り続ける。
+             *     最新 run だけを返すと、更新のあとに取り残しが画面から消える。
+             *     1 件も無ければ省略する
+             */
             items?: components["schemas"]["SyncItem"][];
         };
         /** @description 解釈結果に含まれる draft issue 1 件。まだ作成はしていない */
@@ -736,6 +752,15 @@ export interface components {
             title: string;
             body: string;
             parentLocalId?: string;
+            /**
+             * @description 書き換える対象の itemId（ADR 0026）。新しく作るなら省略する。
+             *
+             *     解釈のレスポンスでは LLM が対応づけた候補が入る。作成のリクエストでは
+             *     開発者が確かめた結果として送り返す。**サーバーはこの値がその注釈の
+             *     ものであることを確かめる。** 確かめずに通すと、任意の node ID を
+             *     書いて無関係な draft issue を書き換えられる
+             */
+            previousItemId?: string;
         };
         /**
          * @description 注釈の frame 範囲だけを写した画像。frame の外にある要素は含めない。
@@ -1575,7 +1600,10 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description 解釈時点と現在のシーンの contentHash が食い違う */
+            /**
+             * @description 解釈時点と現在のシーンの contentHash が食い違うか、`previousItemId` が
+             *     その注釈のものではない。どちらも解釈からやり直す
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
