@@ -26,13 +26,13 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 **このファイルには全体に効くものだけを置く。** 領域ごとの約束はその
 ディレクトリの `CLAUDE.md` にあり、そこを触るときに読み込まれる。
 
-| 場所 | 中身 |
-| --- | --- |
-| `internal/CLAUDE.md` | 3 状態判定のデータフロー、ハンドラ、メンバーと権限、Origin 検証 |
-| `web/CLAUDE.md` | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
-| `api/CLAUDE.md` | OpenAPI が正本、生成器のバージョン |
-| `.claude/skills/rv/` | 実装後のセルフレビュー（`/rv`） |
-| `.claude/skills/pr-review/` | PR に付いたレビュー指摘への対応 |
+| 場所                        | 中身                                                                   |
+| --------------------------- | ---------------------------------------------------------------------- |
+| `internal/CLAUDE.md`        | 3 状態判定のデータフロー、ハンドラ、メンバーと権限、Origin 検証        |
+| `web/CLAUDE.md`             | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
+| `api/CLAUDE.md`             | OpenAPI が正本、生成器のバージョン                                     |
+| `.claude/skills/rv/`        | 実装後のセルフレビュー（`/rv`）                                        |
+| `.claude/skills/pr-review/` | PR に付いたレビュー指摘への対応                                        |
 
 **分割の判断基準は「どこを触るときに要るか」。** 片側だけを触るときにも要る
 規約（フロントとバックで一致させる定義など）は、遅延して読まれる場所に
@@ -115,9 +115,9 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 
 **注釈の判定規則が 2 箇所にある。片方だけ変えると壊れる。**
 
-| 実装 | 場所 |
-| --- | --- |
-| Go | `internal/domain/scene.go` の `Element.isAnnotation` |
+| 実装       | 場所                                                 |
+| ---------- | ---------------------------------------------------- |
+| Go         | `internal/domain/scene.go` の `Element.isAnnotation` |
 | TypeScript | `web/src/excalidraw/annotation.ts` の `isAnnotation` |
 
 規則は「`type === "frame"` かつ `customData.etoki` を持つ」。frame 単体を条件に
@@ -137,11 +137,11 @@ GitHub App を設定するとログインを要求する（ADR 0015）。継ぎ�
 ある**。1 つにまとめないこと。まとめると「GitHub 以外を差せる」と言いながら
 GitHub の形しか差せなくなる。
 
-| 差し替える対象 | 継ぎ目 |
-| --- | --- |
-| 誰であるかを決める基盤 | `port.IdentityProvider` |
+| 差し替える対象                  | 継ぎ目                   |
+| ------------------------------- | ------------------------ |
+| 誰であるかを決める基盤          | `port.IdentityProvider`  |
 | GitHub を叩くトークンの出どころ | `port.GitHubTokenSource` |
-| セッションの置き場所 | `port.SessionRepository` |
+| セッションの置き場所            | `port.SessionRepository` |
 
 - **利用者は `context.Context` で運ぶ。** 出入口は `port.ContextWithUserID` /
   `port.UserIDFromContext`。`port/` に置いてあるのは、外部リポジトリが

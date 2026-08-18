@@ -54,21 +54,21 @@ direnv allow
 エンドポイントだけが「設定されていない」と返し、ボードの編集と注釈の状態表示は
 そのまま使えます。ブレストだけ先にやる、という使い方を潰さないためです。
 
-| 変数 | 既定値 | 用途 |
-| --- | --- | --- |
-| `ETOKI_ADDR` | `127.0.0.1:8080` | リッスンアドレス |
-| `ETOKI_ALLOWED_ORIGINS` | （なし） | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す |
-| `ETOKI_DB_PATH` | `etoki.db` | SQLite ファイルのパス |
-| `ETOKI_LLM_BASE_URL` | `https://api.anthropic.com` | LLM のエンドポイント |
-| `ETOKI_LLM_API_KEY` | （なし） | LLM の API キー。認証不要なら未設定でよい |
-| `ETOKI_LLM_MODEL` | `claude-opus-5` | モデル ID |
-| `ETOKI_GITHUB_TOKEN` | （なし） | GitHub のトークン。認証を設定した場合は使わない |
-| `ETOKI_GITHUB_APP_CLIENT_ID` | （なし） | GitHub App の client ID。設定するとログインを要求する |
-| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし） | 同 client secret |
-| `ETOKI_TOKEN_ENCRYPTION_KEY` | （なし） | 保存するトークンの暗号化鍵（base64 の 32 バイト） |
-| `ETOKI_PUBLIC_URL` | （なし） | 認可から戻る先。空ならリクエストの Host から組む |
-| `ETOKI_GITHUB_KIND_FIELD` | `Kind` | 種別のカスタムフィールド名 |
-| `ETOKI_GITHUB_PARENT_FIELD` | `Parent` | 親のカスタムフィールド名 |
+| 変数                             | 既定値                      | 用途                                                       |
+| -------------------------------- | --------------------------- | ---------------------------------------------------------- |
+| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                           |
+| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す |
+| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                      |
+| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント                                       |
+| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                  |
+| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                  |
+| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない            |
+| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する      |
+| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                           |
+| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）          |
+| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む           |
+| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                 |
+| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                   |
 
 認証は既定では持ちません。GitHub App を設定するとログインを要求します（後述）。
 どちらの構成でも、許可していない Host / Origin を持つブラウザからのリクエストは
@@ -151,10 +151,10 @@ repo の read はリポジトリの一覧に使います。無いと選択肢が
 ラベルを付けられず native な親子関係も持てないため、種別と親はカスタム
 フィールドで表します（[ADR 0006](docs/adr/0006-two-level-hierarchy.md)）。
 
-| フィールド | 種類 | 内容 |
-| --- | --- | --- |
-| `Kind` | 単一選択 | 選択肢に `epic` と `issue` |
-| `Parent` | テキスト | 親 epic のタイトルが入る |
+| フィールド | 種類     | 内容                       |
+| ---------- | -------- | -------------------------- |
+| `Kind`     | 単一選択 | 選択肢に `epic` と `issue` |
+| `Parent`   | テキスト | 親 epic のタイトルが入る   |
 
 名前は `ETOKI_GITHUB_KIND_FIELD` / `ETOKI_GITHUB_PARENT_FIELD` で変えられます。
 足りない場合、作成は実行せずに何を作ればよいかを返します。黙って作ると種別も
@@ -265,14 +265,14 @@ ID を知っていても 404 になります（[ADR 0017](docs/adr/0017-board-sh
 ロールは 3 つです。**招待される側にリポジトリへのアクセス権は要りません。**
 ブレストに呼ぶ相手と、GitHub に書ける相手は同じではないためです。
 
-| | オーナー | 編集できる | 読むだけ |
-| --- | --- | --- | --- |
-| 閲覧・注釈の状態・メンバー一覧 | ✓ | ✓ | ✓ |
-| シーンの保存 | ✓ | ✓ | |
-| 注釈の解釈 | ✓ | ✓ | |
-| draft issue の作成 | ✓ ※ | ✓ ※ | |
-| 作成先の変更 | ✓ | | |
-| 招待・解除・ロール変更 | ✓ | | |
+|                                | オーナー | 編集できる | 読むだけ |
+| ------------------------------ | -------- | ---------- | -------- |
+| 閲覧・注釈の状態・メンバー一覧 | ✓        | ✓          | ✓        |
+| シーンの保存                   | ✓        | ✓          |          |
+| 注釈の解釈                     | ✓        | ✓          |          |
+| draft issue の作成             | ✓ ※      | ✓ ※        |          |
+| 作成先の変更                   | ✓        |            |          |
+| 招待・解除・ロール変更         | ✓        |            |          |
 
 ※ **作成できるかを最終的に決めるのは GitHub です。** etoki は実行者のトークンで
 叩くので、その Project に書けない人の作成は GitHub 側が拒みます。画面には
@@ -291,11 +291,11 @@ ID を知っていても 404 になります（[ADR 0017](docs/adr/0017-board-sh
 差し替えの継ぎ目は 2 段あります。詳細は
 [ADR 0008](docs/adr/0008-llm-swap-seams.md) を参照してください。
 
-| 何が違うか | 継ぎ目 |
-| --- | --- |
-| 向き先だけ | `ETOKI_LLM_BASE_URL` |
-| 認証・ヘッダ | `llm.Config.HTTPClient` に `RoundTripper` を差す |
-| wire format | `port.LLMClient` を自前実装して `etoki.New` に渡す |
+| 何が違うか   | 継ぎ目                                             |
+| ------------ | -------------------------------------------------- |
+| 向き先だけ   | `ETOKI_LLM_BASE_URL`                               |
+| 認証・ヘッダ | `llm.Config.HTTPClient` に `RoundTripper` を差す   |
+| wire format  | `port.LLMClient` を自前実装して `etoki.New` に渡す |
 
 ## ドキュメント
 
