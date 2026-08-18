@@ -882,14 +882,57 @@ components:
           type: string
           example: ok
 
+    ErrorCode:
+      type: string
+      description: |
+        失敗の原因を表す機械可読な符号。**画面はこれで打ち手を分ける。**
+
+        ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
+        「解釈からやり直す」「入力を変える」が同居していて、利用者がすべきことは
+        すべて違う。403 も etoki のロール不足（`forbidden_role`）と GitHub 側の
+        拒否（`forbidden_project`）で直す場所が違い、2 層に分けて持つと決めた
+        （ADR 0017）のに、文言に畳むと画面でその区別が消える。
+
+        **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
+        畳むと画面が「何を設定すればよいか」を言えなくなる。
+      enum:
+        - invalid_input
+        - login_required
+        - forbidden_role
+        - forbidden_project
+        - cross_site_rejected
+        - not_found
+        - scene_conflict
+        - target_locked
+        - content_hash_mismatch
+        - previous_item_unknown
+        - already_member
+        - last_owner
+        - target_not_selected
+        - project_field_missing
+        - llm_unavailable
+        - interpretation_failed
+        - creation_incomplete
+        - github_unavailable
+        - internal
+        - llm_not_configured
+        - github_not_configured
+        - auth_not_configured
+        - sharing_not_configured
+
     ErrorResponse:
       type: object
       description: |
-        失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
-      required: [error]
+        失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+      required: [error, code]
       properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
         error:
           type: string
+          description: |
+            原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
+            GitHub や LLM が返した本文が実際の手掛かりになる経路があるので残す
 
     SyncState:
       type: string

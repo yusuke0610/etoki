@@ -19,6 +19,33 @@ const (
 	BoardRoleViewer BoardRole = "viewer"
 )
 
+// Defines values for ErrorCode.
+const (
+	ErrorCodeAlreadyMember        ErrorCode = "already_member"
+	ErrorCodeAuthNotConfigured    ErrorCode = "auth_not_configured"
+	ErrorCodeContentHashMismatch  ErrorCode = "content_hash_mismatch"
+	ErrorCodeCreationIncomplete   ErrorCode = "creation_incomplete"
+	ErrorCodeCrossSiteRejected    ErrorCode = "cross_site_rejected"
+	ErrorCodeForbiddenProject     ErrorCode = "forbidden_project"
+	ErrorCodeForbiddenRole        ErrorCode = "forbidden_role"
+	ErrorCodeGithubNotConfigured  ErrorCode = "github_not_configured"
+	ErrorCodeGithubUnavailable    ErrorCode = "github_unavailable"
+	ErrorCodeInternal             ErrorCode = "internal"
+	ErrorCodeInterpretationFailed ErrorCode = "interpretation_failed"
+	ErrorCodeInvalidInput         ErrorCode = "invalid_input"
+	ErrorCodeLastOwner            ErrorCode = "last_owner"
+	ErrorCodeLlmNotConfigured     ErrorCode = "llm_not_configured"
+	ErrorCodeLlmUnavailable       ErrorCode = "llm_unavailable"
+	ErrorCodeLoginRequired        ErrorCode = "login_required"
+	ErrorCodeNotFound             ErrorCode = "not_found"
+	ErrorCodePreviousItemUnknown  ErrorCode = "previous_item_unknown"
+	ErrorCodeProjectFieldMissing  ErrorCode = "project_field_missing"
+	ErrorCodeSceneConflict        ErrorCode = "scene_conflict"
+	ErrorCodeSharingNotConfigured ErrorCode = "sharing_not_configured"
+	ErrorCodeTargetLocked         ErrorCode = "target_locked"
+	ErrorCodeTargetNotSelected    ErrorCode = "target_not_selected"
+)
+
 // Defines values for Granularity.
 const (
 	GranularityEmpty Granularity = ""
@@ -317,8 +344,34 @@ type CreatedRun struct {
 	RunID      int64      `json:"runId"`
 }
 
-// ErrorResponse 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+// ErrorCode 失敗の原因を表す機械可読な符号。**画面はこれで打ち手を分ける。**
+//
+// ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
+// 「解釈からやり直す」「入力を変える」が同居していて、利用者がすべきことは
+// すべて違う。403 も etoki のロール不足（`forbidden_role`）と GitHub 側の
+// 拒否（`forbidden_project`）で直す場所が違い、2 層に分けて持つと決めた
+// （ADR 0017）のに、文言に畳むと画面でその区別が消える。
+//
+// **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
+// 畳むと画面が「何を設定すればよいか」を言えなくなる。
+type ErrorCode string
+
+// ErrorResponse 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type ErrorResponse struct {
+	// Code 失敗の原因を表す機械可読な符号。**画面はこれで打ち手を分ける。**
+	//
+	// ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
+	// 「解釈からやり直す」「入力を変える」が同居していて、利用者がすべきことは
+	// すべて違う。403 も etoki のロール不足（`forbidden_role`）と GitHub 側の
+	// 拒否（`forbidden_project`）で直す場所が違い、2 層に分けて持つと決めた
+	// （ADR 0017）のに、文言に畳むと画面でその区別が消える。
+	//
+	// **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
+	// 畳むと画面が「何を設定すればよいか」を言えなくなる。
+	Code ErrorCode `json:"code"`
+
+	// Error 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
+	// GitHub や LLM が返した本文が実際の手掛かりになる経路があるので残す
 	Error string `json:"error"`
 }
 
@@ -525,22 +578,22 @@ type RepositoryOwner = string
 // UserID defines model for UserId.
 type UserID = string
 
-// BadRequest 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+// BadRequest 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type BadRequest = ErrorResponse
 
-// Forbidden 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+// Forbidden 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type Forbidden = ErrorResponse
 
-// InternalError 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+// InternalError 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type InternalError = ErrorResponse
 
-// NotConfigured 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+// NotConfigured 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type NotConfigured = ErrorResponse
 
-// NotFound 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+// NotFound 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type NotFound = ErrorResponse
 
-// Unauthorized 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。
+// Unauthorized 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type Unauthorized = ErrorResponse
 
 // CompleteLoginParams defines parameters for CompleteLogin.

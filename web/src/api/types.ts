@@ -67,6 +67,9 @@ export type CreatedRun = Schemas["CreatedRun"];
 /** 失敗したときのレスポンスボディ。 */
 export type ErrorResponse = Schemas["ErrorResponse"];
 
+/** 失敗の原因を表す符号。画面はこれで打ち手を分ける。 */
+export type ErrorCode = Schemas["ErrorCode"];
+
 /** ログイン状態。認証を設定していない構成でも返る。 */
 export type SessionStatus = Schemas["SessionStatus"];
 
