@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { log, setLogLevel } from "./logger";
+import { log, logUncaught, setLogLevel } from "./logger";
 
 // spy はテストごとに張り直す。restoreAllMocks で console が元に戻るため。
 let spies: Record<"debug" | "info" | "warn" | "error", ReturnType<typeof vi.spyOn>>;
@@ -69,5 +69,56 @@ describe("setLogLevel", () => {
 
     expect(spies.warn).toHaveBeenCalledTimes(1);
     expect(spies.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("logUncaught", () => {
+  // 境界（ErrorBoundary）が拾うのはレンダリング中の例外だけ。ここが無いと、
+  // イベントハンドラの中で落ちた失敗は console のスタックだけになり、自前の
+  // 行として残らない。
+  it("捕まえていない例外を error として残す", () => {
+    const stop = logUncaught(window);
+    const cause = new Error("boom");
+
+    window.dispatchEvent(new ErrorEvent("error", { error: cause, message: "boom" }));
+
+    expect(spies.error).toHaveBeenCalledWith("[etoki] 捕まえていない例外", cause);
+    stop();
+  });
+
+  // error が載らない経路（クロスオリジンのスクリプト）では message しか無い。
+  it("例外が載っていなければ message を残す", () => {
+    const stop = logUncaught(window);
+
+    window.dispatchEvent(new ErrorEvent("error", { message: "Script error." }));
+
+    expect(spies.error).toHaveBeenCalledWith(
+      "[etoki] 捕まえていない例外",
+      "Script error.",
+    );
+    stop();
+  });
+
+  it("拾われていない reject を error として残す", () => {
+    const stop = logUncaught(window);
+    const reason = new Error("rejected");
+    const event = Object.assign(new Event("unhandledrejection"), { reason });
+
+    window.dispatchEvent(event);
+
+    expect(spies.error).toHaveBeenCalledWith(
+      "[etoki] 拾われていない Promise の reject",
+      reason,
+    );
+    stop();
+  });
+
+  it("返した関数で登録を外せる", () => {
+    const stop = logUncaught(window);
+
+    stop();
+    window.dispatchEvent(new ErrorEvent("error", { message: "boom" }));
+
+    expect(spies.error).not.toHaveBeenCalled();
   });
 });
