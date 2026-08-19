@@ -31,3 +31,4 @@
 | [0025](0025-link-to-created-drafts.md)                   | 作成先の URL は組み立てず、GitHub が返したものを控える                 | 採用                 |
 | [0026](0026-update-changed-drafts.md)                    | changed の出口を作る（対応づけは LLM に解釈させ、決めるのは開発者）    | 採用                 |
 | [0027](0027-error-boundaries-keep-the-canvas.md)         | 描画に失敗しても真っ白にせず、境界はキャンバスの外側に置く             | 採用                 |
+| [0029](0029-review-derived-rules.md)                     | レビュー由来の落とし穴は `.claude/rules/` にテーマ別で集める           | 採用                 |
