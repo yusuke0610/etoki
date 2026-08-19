@@ -649,3 +649,178 @@ func TestInterpretation_Validate_DuplicateEpicTitleMessage(t *testing.T) {
 		}
 	}
 }
+
+// errorRules は検証エラーが名乗った制約を出た順に返す。
+func errorRules(t *testing.T, err error) []domain.RuleID {
+	t.Helper()
+
+	var errs domain.ValidationErrors
+	if !errors.As(err, &errs) {
+		t.Fatalf("ValidationErrors ではない: %#v", err)
+	}
+
+	rules := make([]domain.RuleID, len(errs))
+	for i, e := range errs {
+		rules[i] = e.Rule
+	}
+	return rules
+}
+
+// 検査と LLM への指示が食い違わないことを固定する。
+//
+// **これが落ちるのは、検査を足してプロンプトに書かなかったとき（またはその逆）。**
+// 指示していない制約で弾くと、LLM は直しようのない再送を繰り返す。逆に、検査の
+// 無い制約を指示すると、守らせるつもりの無いことを指示していることになる。
+//
+// 固定できないもの: 既存の RuleID を使い回して、その指示文が実際には覆っていない
+// 検査を足す経路。文の意味までは機械で見られない。
+func TestRules_MatchValidation(t *testing.T) {
+	t.Parallel()
+
+	// 制約ごとに、それを破る解釈結果。**Rules に足したらここにも足す。**
+	broken := map[domain.RuleID]struct {
+		in domain.Interpretation
+		g  domain.Granularity
+	}{
+		domain.RuleSummary: {in: domain.Interpretation{
+			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "t"}},
+		}},
+		domain.RuleItemsPresent: {in: domain.Interpretation{Summary: "s"}},
+		domain.RuleKind: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{LocalID: "x1", Kind: "project", Title: "t"}},
+		}},
+		domain.RuleTitle: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "  "}},
+		}},
+		domain.RuleEpicTitleUnique: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証"},
+			},
+		}},
+		domain.RuleLocalID: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{LocalID: "", Kind: domain.KindEpic, Title: "t"}},
+		}},
+		domain.RuleLocalIDUnique: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t1"},
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t2"},
+			},
+		}},
+		domain.RuleEpicHasNoParent: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "t1"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "t2", ParentLocalID: ptr("e1")},
+			},
+		}},
+		domain.RuleParentExists: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t", ParentLocalID: ptr("e9")},
+			},
+		}},
+		domain.RuleParentIsEpic: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t1"},
+				{LocalID: "i2", Kind: domain.KindIssue, Title: "t2", ParentLocalID: ptr("i1")},
+			},
+		}},
+		domain.RulePreviousItemID: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t1", PreviousItemID: ptr("PVTI_a")},
+				{LocalID: "i2", Kind: domain.KindIssue, Title: "t2", PreviousItemID: ptr("PVTI_a")},
+			},
+		}},
+		domain.RuleGranularityIssue: {
+			in: domain.Interpretation{Summary: "s",
+				Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "t"}},
+			},
+			g: domain.GranularityIssue,
+		},
+		domain.RuleGranularityEpic: {
+			in: domain.Interpretation{Summary: "s",
+				Items: []domain.InterpretedItem{{LocalID: "i1", Kind: domain.KindIssue, Title: "t"}},
+			},
+			g: domain.GranularityEpic,
+		},
+	}
+
+	known := make(map[domain.RuleID]bool, len(domain.Rules))
+	for _, r := range domain.Rules {
+		known[r.ID] = true
+	}
+
+	seen := make(map[domain.RuleID]bool, len(domain.Rules))
+
+	for rule, tt := range broken {
+		err := tt.in.Validate(tt.g)
+		if err == nil {
+			t.Errorf("%s: Validate() = nil, want error", rule)
+			continue
+		}
+		for _, got := range errorRules(t, err) {
+			if !known[got] {
+				t.Errorf("%s: 未登録の RuleID %q を名乗っている。Rules に足すこと", rule, got)
+			}
+			seen[got] = true
+		}
+		if !seen[rule] {
+			t.Errorf("%s: この制約を破ったのに、その RuleID が報告されていない", rule)
+		}
+	}
+
+	// previousRef は ParseInterpretation でだけ解決する（ADR 0026）ので、
+	// Validate を通らない。入口が違うだけで、同じ制約表に載る。
+	_, err := domain.ParseInterpretation(
+		[]byte(`{"summary":"s","items":[{"localId":"i1","kind":"issue","title":"t","body":"","parentLocalId":null,"previousRef":"p9"}]}`),
+		[]domain.PreviousItem{{Ref: "p1", ItemID: "PVTI_a", Kind: domain.KindIssue, Title: "t"}},
+	)
+	if err == nil {
+		t.Fatal("ParseInterpretation() = nil, want error")
+	}
+	for _, got := range errorRules(t, err) {
+		if !known[got] {
+			t.Errorf("未登録の RuleID %q を名乗っている", got)
+		}
+		seen[got] = true
+	}
+
+	// **登録した制約はすべて到達可能でなければならない。** 到達しないものは、
+	// 検査の無い指示を出しているか、破り方を書き忘れているかのどちらか。
+	for _, r := range domain.Rules {
+		if !seen[r.ID] {
+			t.Errorf("RuleID %q を報告する経路が無い。検査が無いか、破る例が足りない", r.ID)
+		}
+	}
+}
+
+// プロンプトに載る制約は Rules から組み立てる。手で書き写さない。
+func TestInterpretationConstraints_RendersEveryInstruction(t *testing.T) {
+	t.Parallel()
+
+	got := domain.InterpretationConstraints()
+
+	for _, r := range domain.Rules {
+		// 指示が空なのは「LLM の出力では起こりえない」もの。出しようのない
+		// フィールドの説明がプロンプトに混ざらないよう、載せない。
+		if r.Instruction == "" {
+			continue
+		}
+		if !strings.Contains(got, "- "+r.Instruction+"\n") {
+			t.Errorf("RuleID %q の指示が制約一覧に出ていない", r.ID)
+		}
+	}
+
+	if lines := strings.Count(got, "\n"); lines != countInstructed() {
+		t.Errorf("制約一覧の行数 = %d, want %d（指示のある制約の件数）", lines, countInstructed())
+	}
+}
+
+func countInstructed() int {
+	n := 0
+	for _, r := range domain.Rules {
+		if r.Instruction != "" {
+			n++
+		}
+	}
+	return n
+}
