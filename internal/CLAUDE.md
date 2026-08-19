@@ -78,9 +78,12 @@ UI は未保存の変更があることを表示する。
 - **同じ解釈の中で epic のタイトルは一意**（ADR 0028）。親は epic のタイトル
   文字列で指す（ADR 0006）ので、同名の epic が並ぶとその配下は GitHub 上で
   1 つにまとまり、エラーにならないまま構造が壊れる。判定は
-  `domain.validateItems` にあり、比較の正規形は `normalizeTitle`（前後の空白を
-  落として NFC。**大文字小文字と全角半角は畳まない**）。**タイトルを etoki が
-  付け替えて一意にしない。** 弾いて直させる。
+  `domain.validateItems`。比較の正規形は `normalizeTitle` =
+  **`normalizeText` の結果から前後の空白を除いたもの**なので、`normalizeText` が
+  畳むぶん（改行コード、各行末の空白とタブ、Unicode の合成済みと結合文字）も
+  一緒に畳まれる。**基準は「人に見分けが付くかどうか」**で、畳むのは画面上に
+  現れない違いだけ。**大文字小文字・全角半角・行の途中の空白は畳まない。**
+  **タイトルを etoki が付け替えて一意にしない。** 弾いて直させる。
 - **作成先の Projects v2 はボードごと。** プロセス全体の設定ではない
   （`ETOKI_GITHUB_PROJECT_ID` は廃止済み）。`boards` の
   `repository_owner` / `repository_name` / `project_id` に持つ。**作成時に必須**
