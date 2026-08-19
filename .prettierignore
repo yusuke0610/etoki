@@ -1,0 +1,4 @@
+# prettier は .gitignore も既定で見る。dist / node_modules / e2e-output は
+# そちらで外れるので、ここに書くのは「追跡しているが整形しない」ものだけ。
+web/bun.lock
+web/src/api/generated.ts

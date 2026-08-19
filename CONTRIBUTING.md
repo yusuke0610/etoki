@@ -72,7 +72,7 @@ git switch -c <prefix>/<短い説明>
 コミットと同じ Conventional Commits 形式だが、**要約は日本語**にする。一覧で読む
 ものなので、変更の中身より「何が変わるか」が伝わる書き方を選ぶ。
 
-```
+```text
 feat(web): 作るものを選び、手直しできるようにする
 fix: ブラウザ由来の cross-site リクエストを Host と Origin で弾く
 ```
@@ -154,11 +154,11 @@ PR を作ると CodeRabbit のレビューが付く。**作りっぱなしにせ
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が PR ごとに走る。
 
-| ステップ | 中身 |
-| --- | --- |
-| `nix flake check` | Nix コードのフォーマット検査（[ADR 0002](docs/adr/0002-toolchain.md)） |
-| `setup` / `lint` / `test` / `e2e` / `build` | 手元と同じ `make` ターゲット |
-| `codegen drift` | 生成物が `api/openapi.yaml` と一致し、コミットされていること |
+| ステップ                                    | 中身                                                                   |
+| ------------------------------------------- | ---------------------------------------------------------------------- |
+| `nix flake check`                           | Nix コードのフォーマット検査（[ADR 0002](docs/adr/0002-toolchain.md)） |
+| `setup` / `lint` / `test` / `e2e` / `build` | 手元と同じ `make` ターゲット                                           |
+| `codegen drift`                             | 生成物が `api/openapi.yaml` と一致し、コミットされていること           |
 
 **CI は手元と同じ入口（`nix develop --command make …`）を通る。** CI 専用の
 セットアップ手順を持たないことで、「手元では通るが CI で落ちる」の原因を devShell の

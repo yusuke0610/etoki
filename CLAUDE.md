@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
 
 ## etoki とは
 
@@ -25,15 +26,15 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 **このファイルには全体に効くものだけを置く。** 領域ごとの約束はその
 ディレクトリの `CLAUDE.md` にあり、そこを触るときに読み込まれる。
 
-| 場所 | 中身 |
-| --- | --- |
-| `CONTRIBUTING.md` | ブランチ・コミット・PR 本文・レビュー対応・CI |
-| `.github/pull_request_template.md` | PR 本文の雛形 |
-| `internal/CLAUDE.md` | 3 状態判定のデータフロー、ハンドラ、メンバーと権限、Origin 検証 |
-| `web/CLAUDE.md` | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
-| `api/CLAUDE.md` | OpenAPI が正本、生成器のバージョン |
-| `.claude/skills/rv/` | 実装後のセルフレビュー（`/rv`） |
-| `.claude/skills/pr-review/` | PR に付いたレビュー指摘への対応 |
+| 場所                               | 中身                                                                   |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| `CONTRIBUTING.md`                  | ブランチ・コミット・PR 本文・レビュー対応・CI                          |
+| `.github/pull_request_template.md` | PR 本文の雛形                                                          |
+| `internal/CLAUDE.md`               | 3 状態判定のデータフロー、ハンドラ、メンバーと権限、Origin 検証        |
+| `web/CLAUDE.md`                    | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
+| `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
+| `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
+| `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
 
 `CONTRIBUTING.md` だけは**ディレクトリに紐づかないので自動では読み込まれない**。
 **ブランチを切る前に読む。**
@@ -57,8 +58,8 @@ nix develop      # 開発シェル（Go / Bun / SQLite / golangci-lint / air）
 make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
-make lint        # golangci-lint + eslint + tsc + 整形検査（gofmt / prettier）
-make fmt         # Go / Nix / フロントエンドを整形する
+make lint        # Go / フロントエンド / Markdown / Nix / Actions と整形を検査する
+make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest
 make test-e2e    # Playwright（test には含まれない）
 make codegen     # api/openapi.yaml から Go / TS の型を再生成する
@@ -87,7 +88,7 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 
 ### 依存の方向
 
-```
+```text
 フロントエンド → Gin ハンドラ → ユースケース層 → port のインターフェース → アダプタ実装
 ```
 
@@ -119,9 +120,9 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 
 **注釈の判定規則が 2 箇所にある。片方だけ変えると壊れる。**
 
-| 実装 | 場所 |
-| --- | --- |
-| Go | `internal/domain/scene.go` の `Element.isAnnotation` |
+| 実装       | 場所                                                 |
+| ---------- | ---------------------------------------------------- |
+| Go         | `internal/domain/scene.go` の `Element.isAnnotation` |
 | TypeScript | `web/src/excalidraw/annotation.ts` の `isAnnotation` |
 
 規則は「`type === "frame"` かつ `customData.etoki` を持つ」。frame 単体を条件に
@@ -141,11 +142,11 @@ GitHub App を設定するとログインを要求する（ADR 0015）。継ぎ�
 ある**。1 つにまとめないこと。まとめると「GitHub 以外を差せる」と言いながら
 GitHub の形しか差せなくなる。
 
-| 差し替える対象 | 継ぎ目 |
-| --- | --- |
-| 誰であるかを決める基盤 | `port.IdentityProvider` |
+| 差し替える対象                  | 継ぎ目                   |
+| ------------------------------- | ------------------------ |
+| 誰であるかを決める基盤          | `port.IdentityProvider`  |
 | GitHub を叩くトークンの出どころ | `port.GitHubTokenSource` |
-| セッションの置き場所 | `port.SessionRepository` |
+| セッションの置き場所            | `port.SessionRepository` |
 
 - **利用者は `context.Context` で運ぶ。** 出入口は `port.ContextWithUserID` /
   `port.UserIDFromContext`。`port/` に置いてあるのは、外部リポジトリが
@@ -173,6 +174,15 @@ GitHub の形しか差せなくなる。
   — `web/node_modules` に Go ファイルを同梱した npm パッケージ（`flatted`）が
   あり、`go ./...` と golangci-lint が拾ってしまう。`bun install` 後にしか
   再現しない。
+- **`.markdownlint-cli2.yaml` の `gitignore: true`** — Markdown の検査対象は
+  `**/*.md` なので、`bun install` 後は `web/node_modules` の README まで拾う。
+  除外を自前で列挙せず `.gitignore` を見ているのは、上の 2 つと同じ知識を
+  3 箇所目に増やさないため。こちらも `bun install` 後にしか再現しない。
+- **`.prettierignore` の `web/bun.lock`** — prettier は bun のロックファイルを
+  解析できず、対象に入ると落ちる。`web/node_modules` や `web/dist` を書いて
+  いないのは、prettier が `.gitignore` も既定で見るため。整形の対象は
+  リポジトリ全体で、`web/` の中から呼ぶと `docs/adr` とルートの Markdown が
+  外れる。
 - **Makefile の `ifndef ETOKI_DEVSHELL` による包み直し** — devShell の外から
   呼ばれたら `nix develop --command make` で全ターゲットをやり直す。判定に
   `IN_NIX_SHELL` を使わないのは、あれが「何かの nix shell の中」としか言わず、
@@ -185,7 +195,14 @@ GitHub の形しか差せなくなる。
   Go より新しいと Go がツールチェーンを自動ダウンロードし、Nix による固定が
   無意味になる。
 - **`nix flake check` は Nix コードのフォーマット検査のみ。** Go とフロント
-  エンドのビルドは Makefile と CI に任せる（ADR 0002）。
+  エンドのビルドは Makefile と CI に任せる（ADR 0002）。同じ検査は
+  `make lint`（`lint-nix`）にもある。重複しているのは、`nix flake check` が
+  CI でしか回らず、手元で `make lint` だけ通すと整形崩れを見落とすため。
+- **YAML を見ているのは prettier と actionlint。yamllint は入れていない。**
+  構文エラーと重複キーは prettier がパースに失敗して落とす。yamllint を足して
+  増えるのは `document-start` のような様式の指摘だけで、`line-length` は
+  prettier の `printWidth` と食い違う。ワークフロー固有の検証（式、
+  コンテキスト、`run:` の中のシェル）は actionlint の担当。
 
 ## 貢献の手順
 
