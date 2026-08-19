@@ -7,10 +7,10 @@ HTTP 契約を触るときの約束。全体の規約はリポジトリルート
 **`api/openapi.yaml` が境界の DTO の唯一の定義。Go も TypeScript も生成物。**
 手で型を足すと、そこだけ二重定義に戻る（ADR 0011）。
 
-| 生成物 | 生成元 | 使う側 |
-| --- | --- | --- |
-| `internal/httpapi/apitypes/types.gen.go` | `oapi-codegen` | Gin ハンドラ |
-| `web/src/api/generated.ts` | `openapi-typescript` | `web/src/api/types.ts` 経由でフロント全体 |
+| 生成物                                   | 生成元               | 使う側                                    |
+| ---------------------------------------- | -------------------- | ----------------------------------------- |
+| `internal/httpapi/apitypes/types.gen.go` | `oapi-codegen`       | Gin ハンドラ                              |
+| `web/src/api/generated.ts`               | `openapi-typescript` | `web/src/api/types.ts` 経由でフロント全体 |
 
 - **契約を変えたら `make codegen` を実行し、生成物を同じコミットに含める。**
   忘れると CI の codegen drift で落ちる。

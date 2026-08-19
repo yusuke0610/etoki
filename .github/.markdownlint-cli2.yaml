@@ -1,0 +1,11 @@
+# .github/ の Markdown にだけ効く設定。markdownlint-cli2 はディレクトリごとの
+# 設定ファイルを見るので、ルートの設定はそのまま残る。
+#
+# 規則をファイル単位で切り替える手段は、この置き方しかない。設定スキーマに
+# overrides / filter のようなキーは無く、本文に markdownlint-disable-file を
+# 書く手は PR 本文へコピーされてしまう。
+config:
+  # 本文の雛形は文書ではないので、先頭行を h1 にする規則から外す。
+  # pull_request_template.md は見出しではなく Closes の行から始まるのが正しい。
+  # ルートで切ると README や docs/adr にも効いてしまう。
+  MD041: false
