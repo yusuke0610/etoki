@@ -120,7 +120,9 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 			if rec.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status = %d, want 503 (%s)", rec.Code, rec.Body)
 			}
-			if code := decode[map[string]string](t, rec)["code"]; code != string(tt.code) {
+			// 本文は契約の型で受ける。手書きの map で受けると、契約が変わっても
+			// テストだけ古い形のまま通る（ADR 0011）。
+			if code := decode[apitypes.ErrorResponse](t, rec).Code; code != tt.code {
 				t.Errorf("code = %q, want %q", code, tt.code)
 			}
 		})

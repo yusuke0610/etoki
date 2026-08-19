@@ -235,7 +235,7 @@ func TestMembers_WithoutAuthConfigured(t *testing.T) {
 		t.Fatalf("認証なしの members = %d %s, want 503", rec.Code, rec.Body)
 	}
 	// 設定するものが違うので、LLM / GitHub の未設定と同じ code に畳まない。
-	if code := decode[map[string]string](t, rec)["code"]; code != string(apitypes.ErrorCodeSharingNotConfigured) {
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeSharingNotConfigured {
 		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeSharingNotConfigured)
 	}
 }

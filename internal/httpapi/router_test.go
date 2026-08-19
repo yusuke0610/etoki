@@ -302,7 +302,7 @@ func TestSaveScene_RejectsStaleBase(t *testing.T) {
 	}
 	// 409 には 6 つの原因が同居する。画面が「開き直す」を案内できるよう、
 	// どれなのかを code で返す。
-	if code := decode[map[string]string](t, rec)["code"]; code != string(apitypes.ErrorCodeSceneConflict) {
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeSceneConflict {
 		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeSceneConflict)
 	}
 

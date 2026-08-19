@@ -290,7 +290,7 @@ func TestCreateItems_WithoutGitHub(t *testing.T) {
 	}
 	// 未設定は 1 つの code に畳まない。設定するものが違うので、畳むと画面が
 	// 「何を設定すればよいか」を言えなくなる（#48 が使う）。
-	if code := decode[map[string]string](t, rec)["code"]; code != string(apitypes.ErrorCodeGithubNotConfigured) {
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeGithubNotConfigured {
 		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeGithubNotConfigured)
 	}
 }
@@ -427,12 +427,12 @@ func TestCreateItems_RejectsMismatchedContentHash(t *testing.T) {
 	}
 	// 同じ 409 でも打ち手は「解釈からやり直す」。文言ではなく code で分かる形に
 	// しておく（画面は code から日本語を引く）。
-	body := decode[map[string]string](t, rec)
-	if body["code"] != string(apitypes.ErrorCodeContentHashMismatch) {
-		t.Errorf("code = %q, want %q", body["code"], apitypes.ErrorCodeContentHashMismatch)
+	body := decode[apitypes.ErrorResponse](t, rec)
+	if body.Code != apitypes.ErrorCodeContentHashMismatch {
+		t.Errorf("code = %q, want %q", body.Code, apitypes.ErrorCodeContentHashMismatch)
 	}
-	if !strings.Contains(body["error"], "interpret again") {
-		t.Errorf("解釈し直すべきことが返っていない: %q", body["error"])
+	if !strings.Contains(body.Error, "interpret again") {
+		t.Errorf("解釈し直すべきことが返っていない: %q", body.Error)
 	}
 	if gh.seq != 0 {
 		t.Errorf("hash が食い違っているのに GitHub を呼んでいる: %d 回", gh.seq)
@@ -684,7 +684,7 @@ func TestListRepositories_UnavailableWithoutGitHub(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (%s)", rec.Code, rec.Body)
 	}
-	if code := decode[map[string]string](t, rec)["code"]; code != string(apitypes.ErrorCodeGithubNotConfigured) {
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeGithubNotConfigured {
 		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeGithubNotConfigured)
 	}
 }
