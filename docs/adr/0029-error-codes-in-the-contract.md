@@ -18,13 +18,13 @@ Go の内部文言が境界を越えて画面に出ていた。**写し替え（
 
 問題は文言の散らばりよりも、**ステータスだけでは打ち手が決まらない**ことにある。
 
-| 409 の原因 | 利用者がすべきこと |
-| --- | --- |
-| `ErrSceneConflict` | いまの内容を控えて開き直す |
-| `ErrTargetLocked` | 作成先はもう変えられない（諦める） |
-| `ErrContentHashMismatch` | 解釈からやり直す |
-| `ErrPreviousItemUnknown` | 解釈からやり直す |
-| `ErrAlreadyMember` / `ErrLastOwner` | 入力を変える |
+| 409 の原因                          | 利用者がすべきこと                 |
+| ----------------------------------- | ---------------------------------- |
+| `ErrSceneConflict`                  | いまの内容を控えて開き直す         |
+| `ErrTargetLocked`                   | 作成先はもう変えられない（諦める） |
+| `ErrContentHashMismatch`            | 解釈からやり直す                   |
+| `ErrPreviousItemUnknown`            | 解釈からやり直す                   |
+| `ErrAlreadyMember` / `ErrLastOwner` | 入力を変える                       |
 
 403 も 2 つある。`usecase.ErrForbidden`（etoki のロール不足 → owner に頼む）と
 `port.ErrForbidden`（GitHub が拒んだ → リポジトリの権限）で直す場所が違う。
@@ -102,9 +102,9 @@ Go の内部文言（`etoki: ...`）は**書き換えない**。表示に出な�
 `code` が必須なので、写し替えを足し忘れるとコンパイルが通らず、文言を足し
 忘れると `tsc` が落ちる。
 
-**表そのものの取りこぼしはコンパイラでは防げない**ので、`internal/httpapi/
-errors_test.go` が `usecase` と `port` のソースから `Err*` を数え直し、表に無い
-sentinel があれば落とす。境界に出てこない 2 つ（`port.ErrConflict` /
+**表そのものの取りこぼしはコンパイラでは防げない**ので、
+`internal/httpapi/errors_test.go` が `usecase` と `port` のソースから `Err*` を
+数え直し、表に無い sentinel があれば落とす。境界に出てこない 2 つ（`port.ErrConflict` /
 `port.ErrAlreadyExists`）は理由つきで除外してある。ユースケース層が自分の
 エラーに写し替えて返すので、ハンドラまで届かない。
 
