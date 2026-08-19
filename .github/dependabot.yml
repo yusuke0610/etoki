@@ -1,0 +1,75 @@
+# 依存の更新を知るための設定（ADR 0032）。
+#
+# **更新 PR がそのまま緑になることは前提にしていない。** このリポジトリは
+# バージョンの連動が多く、生成器が動けば生成物も作り直す必要がある。落ちたら
+# その PR で `make codegen` なり `make test-e2e` なりを回して直す。
+# **落ちること自体が「連動しているものが動いた」という知らせ。**
+#
+# **flake.lock はここでは扱えない。** Dependabot は Nix に対応していないので、
+# nixpkgs 側（Go / Bun / oapi-codegen / playwright-driver）は手で
+# `nix flake update` を回すまま。理由は ADR 0032。
+version: 2
+
+updates:
+  # まとめる先はエコシステムごとに 1 本。散らばると誰も見なくなる。
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    groups:
+      go:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    open-pull-requests-limit: 2
+
+  # web は bun のロックファイルを見る（`package-ecosystem: bun`）。npm として
+  # 扱わせると bun.lock が更新されず、手元と CI で解決結果が食い違う。
+  - package-ecosystem: "bun"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    groups:
+      web:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    open-pull-requests-limit: 2
+    # 固定してあるものは外す。**外す理由は web/CLAUDE.md にあり、ここには
+    # 書き写さない。** 同じ知識を 2 箇所に置くと、片方だけ変わる。
+    ignore:
+      # devShell の playwright-driver.browsers と対で決まる。Dependabot は
+      # nixpkgs 側を動かせないので、ここだけ上げると E2E が起動しなくなる。
+      - dependency-name: "@playwright/test"
+      # React は 18 系に固定。マイナーとパッチは受ける。
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]

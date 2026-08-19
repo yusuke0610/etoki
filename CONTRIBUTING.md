@@ -166,3 +166,18 @@ PR を作ると CodeRabbit のレビューが付く。**作りっぱなしにせ
 
 e2e が落ちたときは Playwright のレポートが artifact（`playwright-report`）に
 上がる。
+
+## 依存の更新
+
+[`.github/dependabot.yml`](.github/dependabot.yml) が週次で更新の PR を出す
+（[ADR 0032](docs/adr/0032-know-about-dependency-updates.md)）。
+
+**更新 PR は緑で出てくるとは限らない。落ちたら、落ちた理由がそのまま作業。**
+生成器（`openapi-typescript`）が上がった PR は codegen drift で落ちるので、その
+ブランチで `make codegen` を回して同じコミットに含める。**赤いのは知らせであって、
+設定の不具合ではない。**
+
+**`flake.lock` は Dependabot の対象外。** Nix は非対応なので、nixpkgs 側
+（Go / Bun / `oapi-codegen` / `playwright-driver`）は手で `nix flake update` を
+回す。回したあとに `@playwright/test` を揃える手順は
+[`web/CLAUDE.md`](web/CLAUDE.md)。
