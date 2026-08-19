@@ -245,4 +245,14 @@ func TestCheckWebDir(t *testing.T) {
 	if err := httpapi.CheckWebDir(filepath.Join(empty, "missing")); err == nil {
 		t.Error("CheckWebDir() = nil, want error")
 	}
+
+	// 存在するだけでは足りない。ディレクトリでも os.Stat は成功するが、
+	// 配信は 404 にするので、ここを通すと起動時に落とす意味が無くなる。
+	asDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(asDir, "index.html"), 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := httpapi.CheckWebDir(asDir); err == nil {
+		t.Error("CheckWebDir() = nil, want error")
+	}
 }

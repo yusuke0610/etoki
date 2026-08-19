@@ -18,10 +18,18 @@ const indexFile = "index.html"
 // 起動時に落とすために公開している。指定したのに配られない、を黙って通すと、
 // 画面が開けない原因がパスの打ち間違いなのか、bun run build を忘れたのか、
 // フロントエンド側の不具合なのかを、404 の並びから切り分けることになる。
+//
+// 存在するだけでは足りず、通常ファイルであることまで見る。ディレクトリでも
+// os.Stat は成功するが、配信は 404 にする。ここを通してしまうと、起動時に
+// 落とす意味が無くなる。
 func CheckWebDir(dir string) error {
 	index := filepath.Join(dir, indexFile)
-	if _, err := os.Stat(index); err != nil {
+	info, err := os.Stat(index)
+	if err != nil {
 		return fmt.Errorf("web dir %q has no %s: %w", dir, indexFile, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("web dir %q has a non-regular %s", dir, indexFile)
 	}
 	return nil
 }
