@@ -515,6 +515,33 @@ func TestInterpretation_Validate_RejectsDuplicateEpicTitle(t *testing.T) {
 			wantFields: []string{"items[1].title"},
 		},
 		{
+			// 行末の空白は画面上に現れない。前後の空白と同じ扱いにする。
+			// normalizeText を再利用しているので、ここは自動的に畳まれる。
+			name: "行末の空白だけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証 \n方式"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証\n方式"},
+			},
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// 改行コードの違いも同じ。編集環境の差でしかない。
+			name: "改行コードだけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証\r\n方式"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証\n方式"},
+			},
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// 行の途中の空白は見分けが付く。畳むと壊れないものを弾くことになる。
+			name: "行の途中の空白だけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証 方式"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証方式"},
+			},
+		},
+		{
 			// 3 件目も 1 件目と衝突する。最初の 1 件で打ち切ると、LLM は
 			// 1 往復で 1 箇所しか直せない（ADR 0005）。
 			name: "同じタイトルの epic が 3 件",
