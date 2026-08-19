@@ -24,6 +24,7 @@ import {
 } from "../excalidraw/annotation";
 import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
+import { ErrorBoundary } from "../ErrorBoundary";
 import {
   AnnotationPanel,
   type CreationState,
@@ -515,12 +516,19 @@ export function BoardPage({
         </p>
       )}
 
+      {/*
+        パネルは境界で包み、キャンバスを巻き込ませない。落ちたのがパネルでも、
+        外側の 1 枚だけで受けるとツリーごと外れ、保存していないブレストが
+        その場で消える（ADR 0027）。
+      */}
       {showingMembers && (
-        <MemberPanel
-          boardId={board.id}
-          role={board.role}
-          onClose={() => setShowingMembers(false)}
-        />
+        <ErrorBoundary name="メンバーパネル" recovery="remount">
+          <MemberPanel
+            boardId={board.id}
+            role={board.role}
+            onClose={() => setShowingMembers(false)}
+          />
+        </ErrorBoundary>
       )}
 
       <div className="board-body">
@@ -536,28 +544,30 @@ export function BoardPage({
           />
         </div>
 
-        <AnnotationPanel
-          annotations={annotations}
-          markableFrames={markable}
-          unmarkableFrames={unmarkable}
-          canvasFrameIds={canvasFrameIds}
-          selectedFrameIds={selectedFrames.map((f) => f.id)}
-          onFocusFrame={focusFrame}
-          onMark={handleMark}
-          onUnmark={handleUnmark}
-          onChangeGranularity={(id, g) => handleMark(id, g)}
-          stale={dirty}
-          interpretations={interpretations}
-          onInterpret={(id) => void interpret(id)}
-          creations={creations}
-          saving={saving}
-          onCreate={(id, interpretation) => void create(id, interpretation)}
-          canEdit={canEdit}
-          projectAccess={projectAccess}
-          interpretationUnavailable={interpretationUnavailable}
-          creationUnavailable={creationUnavailable}
-          projectLink={link}
-        />
+        <ErrorBoundary name="注釈パネル" recovery="remount">
+          <AnnotationPanel
+            annotations={annotations}
+            markableFrames={markable}
+            unmarkableFrames={unmarkable}
+            canvasFrameIds={canvasFrameIds}
+            selectedFrameIds={selectedFrames.map((f) => f.id)}
+            onFocusFrame={focusFrame}
+            onMark={handleMark}
+            onUnmark={handleUnmark}
+            onChangeGranularity={(id, g) => handleMark(id, g)}
+            stale={dirty}
+            interpretations={interpretations}
+            onInterpret={(id) => void interpret(id)}
+            creations={creations}
+            saving={saving}
+            onCreate={(id, interpretation) => void create(id, interpretation)}
+            canEdit={canEdit}
+            projectAccess={projectAccess}
+            interpretationUnavailable={interpretationUnavailable}
+            creationUnavailable={creationUnavailable}
+            projectLink={link}
+          />
+        </ErrorBoundary>
       </div>
     </div>
   );

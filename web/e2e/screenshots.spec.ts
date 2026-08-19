@@ -1,6 +1,6 @@
 import { test, type Page } from "@playwright/test";
 
-import { installApi, summarize } from "./helpers/api";
+import { breakAnnotations, breakBoards, installApi, summarize } from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
 import {
   BOARD_ID,
@@ -385,5 +385,30 @@ test.describe("スクリーンショット", () => {
     await page.reload();
     await page.getByText("Octo Cat").waitFor();
     await shot(page, "10-signed-in");
+  });
+
+  // 描画に失敗した状態（ADR 0027）。真っ白にせず、キャンバスを巻き込まずに
+  // 出せているかは画像でしか分からない。
+  test("落ちたパネルとアプリ全体を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await breakAnnotations(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.locator(".board-list").getByRole("button", { name: BOARD_NAME }).click();
+    await page.getByRole("alert").waitFor();
+    // キャンバスが載ったままであることが要点なので、描画を待ってから撮る。
+    await page.locator(".excalidraw canvas").first().waitFor();
+    await shot(page, "19-panel-error");
+  });
+
+  test("アプリ全体が落ちた画面を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await breakBoards(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.getByRole("alert").waitFor();
+    await shot(page, "20-app-error");
   });
 });
