@@ -30,4 +30,5 @@
 | [0024](0024-select-and-edit-before-creating.md)          | 作る前に選ばせ、手直しさせる（構造の変更は画面に出す）                 | 採用                 |
 | [0025](0025-link-to-created-drafts.md)                   | 作成先の URL は組み立てず、GitHub が返したものを控える                 | 採用                 |
 | [0026](0026-update-changed-drafts.md)                    | changed の出口を作る（対応づけは LLM に解釈させ、決めるのは開発者）    | 採用                 |
+| [0027](0027-error-boundaries-keep-the-canvas.md)         | 描画に失敗しても真っ白にせず、境界はキャンバスの外側に置く             | 採用                 |
 | [0031](0031-record-llm-usage-in-logs.md)                 | LLM の呼び出し実績はログに残す（port は任意の口で受ける）              | 採用                 |
