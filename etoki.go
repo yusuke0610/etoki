@@ -82,6 +82,15 @@ type Options struct {
 	// 組み立ててもらうのはそのためで、ここで作ると 2 つできてしまう。
 	Auth *Authenticator
 
+	// WebDir はビルド済みフロントエンド（web/dist）の置き場所。任意。
+	//
+	// 空なら画面を配らない。make dev では Vite が同じものを持っているので、
+	// 両方が配ると画面の出どころが構成によって変わる（ADR 0032）。
+	//
+	// 指定するとその場で index.html の有無を確かめ、無ければ New が落ちる。
+	// 「設定したのに配られない」を実行時の 404 に持ち越さないため。
+	WebDir string
+
 	// PublicURL は認可から戻ってくる先の組み立てに使う。任意。
 	//
 	// 空ならリクエストの Host から組む。リバースプロキシの背後など、
@@ -143,6 +152,11 @@ func New(opts Options) (*Server, error) {
 	if opts.Mappings == nil {
 		return nil, errors.New("etoki: Options.Mappings is required")
 	}
+	if opts.WebDir != "" {
+		if err := httpapi.CheckWebDir(opts.WebDir); err != nil {
+			return nil, fmt.Errorf("etoki: %w", err)
+		}
+	}
 
 	// 作成先の固定を守るには、固定を判定する側と、判定の前提を崩す側とが
 	// 同じ排他を見ている必要がある（usecase.BoardLocks）。
@@ -154,6 +168,7 @@ func New(opts Options) (*Server, error) {
 		// GitHub が nil でも組み立てる。確かめられないことは「分からない」と
 		// して返るので、権限の表示そのものを落とす理由が無い（ADR 0017）。
 		Access:         usecase.NewBoardAccessService(opts.Boards, opts.GitHub, opts.Logger),
+		WebDir:         opts.WebDir,
 		PublicURL:      opts.PublicURL,
 		Logger:         opts.Logger,
 		AllowedOrigins: opts.AllowedOrigins,
