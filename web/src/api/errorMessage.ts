@@ -120,6 +120,21 @@ export function sceneUnreadableFailure(): Failure {
 }
 
 /**
+ * 作成先の Project が GitHub 側で見つからなかった（ADR 0036）。
+ *
+ * `ErrorCode` を持たない。GitHub も etoki も 200 を返していて、一覧に
+ * 目当ての ID が無かっただけ。**それでも文言はここに置く**（`web/CLAUDE.md`）。
+ * コンポーネントに書くと、同じ「見つかりません」がまた散る。
+ */
+export function targetProjectMissingFailure(): Failure {
+  return {
+    message:
+      "作成先の Project が GitHub 側で見つかりませんでした。消されたか、権限が変わっています。",
+    detail: "",
+  };
+}
+
+/**
  * draft issue の作成が途中で止まった（ADR 0009 / 0026）。
  *
  * **`code` では表せない。** 1 件ずつ理由が違いうるので 1 つの `ErrorCode` に

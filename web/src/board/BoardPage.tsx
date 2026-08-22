@@ -6,6 +6,7 @@ import { ApiError, boardsApi, githubApi } from "../api/boards";
 import {
   describeFailure,
   sceneUnreadableFailure,
+  targetProjectMissingFailure,
   type Failure,
 } from "../api/errorMessage";
 import type {
@@ -136,11 +137,7 @@ export function BoardPage({
       if (!project) {
         // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので
         // 選び直しでは直せない。分かったことをそのまま出す。
-        onError({
-          message:
-            "作成先の Project が GitHub 側で見つかりませんでした。消されたか、権限が変わっています。",
-          detail: "",
-        });
+        onError(targetProjectMissingFailure());
         return;
       }
 
@@ -565,14 +562,22 @@ export function BoardPage({
             // 無いと、GitHub 側で改名されたボードは古い名前を出し続ける。
             <>
               <span className="hint">作成先は確定（draft issue を作成済み）</span>
-              <button
-                type="button"
-                onClick={() => void refreshTargetDisplay()}
-                disabled={refreshingTarget}
-                title="GitHub から Project の名前を取り直します"
-              >
-                {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
-              </button>
+              {/*
+                GitHub が組み立てられていない構成では、押しても Project の
+                一覧を引けない。ボタンを黙って消さず、代わりに理由を出す
+                （ADR 0030）。メンバーの口と同じ形。
+              */}
+              {creationUnavailable !== null ? (
+                <span className="hint">{creationUnavailable}</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void refreshTargetDisplay()}
+                  disabled={refreshingTarget}
+                >
+                  {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -648,8 +653,13 @@ export function BoardPage({
           {/*
             注釈の frame を見分けられるようにする。Excalidraw の外に重ねる
             だけで、要素には触らない（AnnotationOverlay の doc）。
+
+            **枠も境界で包む。** 包まずに落ちると外側の 1 枚が受けることになり、
+            キャンバスごと外れて未保存のブレストが消える（ADR 0027）。
           */}
-          <AnnotationOverlay boxes={overlayBoxes} />
+          <ErrorBoundary name="注釈の枠" recovery="remount">
+            <AnnotationOverlay boxes={overlayBoxes} />
+          </ErrorBoundary>
         </div>
 
         <ErrorBoundary name="注釈パネル" recovery="remount">

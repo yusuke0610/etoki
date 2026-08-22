@@ -131,7 +131,7 @@ test.describe("スクリーンショット", () => {
 
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
-    await page.getByTestId("annotation-overlay-frame").first().waitFor();
+    await page.locator(".annotation-overlay-frame").first().waitFor();
     await shot(page, "20-annotation-marks");
   });
 

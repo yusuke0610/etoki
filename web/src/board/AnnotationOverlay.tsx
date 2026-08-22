@@ -30,7 +30,6 @@ export function AnnotationOverlay({ boxes }: Props) {
         <div
           key={box.id}
           className="annotation-overlay-frame"
-          data-testid="annotation-overlay-frame"
           style={{
             left: `${box.left}px`,
             top: `${box.top}px`,

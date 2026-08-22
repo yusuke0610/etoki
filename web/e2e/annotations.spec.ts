@@ -120,7 +120,7 @@ test.describe("注釈の状態", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
-    const marks = page.getByTestId("annotation-overlay-frame");
+    const marks = page.locator(".annotation-overlay-frame");
     await expect(marks).toHaveCount(2);
     // 粒度も見分けられる。パネルを開かないと epic か issue か分からない状態に
     // しない。
@@ -136,7 +136,7 @@ test.describe("注釈の状態", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
-    const mark = page.getByTestId("annotation-overlay-frame").first();
+    const mark = page.locator(".annotation-overlay-frame").first();
     const before = await mark.boundingBox();
     if (!before) throw new Error("印が出ていない");
 
@@ -162,7 +162,7 @@ test.describe("注釈の状態", () => {
       .click();
     await page.getByRole("button", { name: /の注釈を外す/ }).click();
 
-    await expect(page.getByTestId("annotation-overlay-frame")).toHaveCount(1);
+    await expect(page.locator(".annotation-overlay-frame")).toHaveCount(1);
   });
 
   test("注釈が無いボードでは案内を出す", async ({ page }) => {

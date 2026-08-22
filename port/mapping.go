@@ -46,19 +46,6 @@ type BoardTarget struct {
 	ProjectURL string
 }
 
-// Display は表示用のスナップショットだけを取り出す。
-//
-// 取り直しの経路（BoardRepository.UpdateTargetDisplay）に渡すのはこちら。
-// BoardTarget をそのまま渡せる形にすると、作成先そのものを書ける口が
-// 2 つになる（ADR 0036）。
-func (t BoardTarget) Display() BoardTargetDisplay {
-	return BoardTargetDisplay{
-		ProjectNumber: t.ProjectNumber,
-		ProjectTitle:  t.ProjectTitle,
-		ProjectURL:    t.ProjectURL,
-	}
-}
-
 // BoardTargetDisplay は作成先の表示用スナップショット（ADR 0019 / 0025）。
 //
 // **作成先そのもの（owner / name / projectId）を含まない。** 固定後に更新

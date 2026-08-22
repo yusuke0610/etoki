@@ -105,10 +105,19 @@ UI は未保存の変更があることを表示する。
 - **`project_number` / `project_title` / `project_url` は表示用のスナップショット。**
   作成先を選んだ時点の値を保存するだけで、**判定には使わない**。
   `BoardTarget.Selected` は 3 つ（owner / name / projectId）だけを見る。ここに
-  足すと、名前を送らずに設定した正しい作成先が「未選択」に落ちる。古くなったら
-  選び直しで直す。**自動で GitHub に取りにいって書き戻さない。** 番号と名前を
-  返しているのは一覧を作成先でまとめて見せるため（ADR 0019、`web/CLAUDE.md`）、
+  足すと、名前を送らずに設定した正しい作成先が「未選択」に落ちる。
+  **固定するのは作成先そのものであって、この 3 つではない**（ADR 0036）。
+  古くなったら、固定前は選び直しで、固定後は
+  `BoardService.RefreshTargetDisplay`（`PUT /api/boards/{id}/target/display`）で
+  直す。**表示用の 3 つだけを書ける経路を分けてあり、`SetTarget` の固定判定は
+  緩めない。** 緩めると「変更できた」と「たまたま同じだった」を呼び出し側が
+  区別できなくなる。取り直しは projectId を伴い、保存済みのものと違えば
+  `ErrTargetMismatch`。**自動で GitHub に取りにいって書き戻さない。** 画面が
+  押されたときにだけ引く（中核思想 3）。
+
+  番号と名前を返しているのは一覧を作成先でまとめて見せるため（ADR 0019、`web/CLAUDE.md`）、
   URL は作った draft issue を確かめにいくため（ADR 0025）。
+
 - **URL は組み立てず、GitHub が返した `ProjectV2.url` を運ぶ。** Projects v2 の
   URL は owner が user か org かで `/orgs/...` と `/users/...` に分かれるが、
   etoki が持っているのは `repository_owner` の文字列だけで、どちらなのかを
