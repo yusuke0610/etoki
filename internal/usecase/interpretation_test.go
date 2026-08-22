@@ -1,8 +1,10 @@
 package usecase_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -125,8 +127,11 @@ func (f *fakeBoards) ClaimUnowned(context.Context, string) (int64, error) {
 // 書きやすくするため。
 type fakeLLM struct {
 	responses []string
-	err       error
-	requests  []port.VisionRequest
+	// usages は応答ごとに返すトークン数。空なら報告しない実装を真似る
+	// （port.Usage は埋めるかどうかが任意）。
+	usages   []port.Usage
+	err      error
+	requests []port.VisionRequest
 }
 
 func (f *fakeLLM) Complete(_ context.Context, req port.VisionRequest) (port.VisionResponse, error) {
@@ -136,7 +141,11 @@ func (f *fakeLLM) Complete(_ context.Context, req port.VisionRequest) (port.Visi
 	}
 
 	i := min(len(f.requests)-1, len(f.responses)-1)
-	return port.VisionResponse{Text: f.responses[i]}, nil
+	resp := port.VisionResponse{Text: f.responses[i]}
+	if len(f.usages) > 0 {
+		resp.Usage = f.usages[min(len(f.requests)-1, len(f.usages)-1)]
+	}
+	return resp, nil
 }
 
 const interpretScene = `{"type":"excalidraw","elements":[
@@ -700,5 +709,140 @@ func TestInterpret_OmitsPreviousSectionWhenEmpty(t *testing.T) {
 
 	if sent := llm.requests[0].Text; strings.Contains(sent, "前回までにこの囲みから作ったもの") {
 		t.Errorf("前回ぶんが無いのに節が出ている:\n%s", sent)
+	}
+}
+
+// captureLogs は実績ログを受け取るバッファとロガーを返す。
+func captureLogs() (*bytes.Buffer, *slog.Logger) {
+	var buf bytes.Buffer
+	return &buf, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
+// newLoggingInterpretService は実績ログを捕まえられる解釈サービスを返す。
+func newLoggingInterpretService(
+	t *testing.T, llm *fakeLLM, maxAttempts int,
+) (*usecase.InterpretationService, *bytes.Buffer) {
+	t.Helper()
+
+	buf, logger := captureLogs()
+	svc := usecase.NewInterpretationService(
+		&fakeBoards{board: newBoard(interpretScene)}, &fakeMappings{}, llm,
+		usecase.WithMaxAttempts(maxAttempts), usecase.WithLogger(logger),
+	)
+	return svc, buf
+}
+
+// 解釈は課金を伴う外部呼び出しなのに、成功したぶんは took 以外どこにも
+// 残っていなかった（ADR 0031）。#45 で決める上限の根拠になる。
+func TestInterpret_LogsUsage(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{
+		responses: []string{validLLMOutput},
+		usages:    []port.Usage{{InputTokens: 1500, OutputTokens: 200}},
+	}
+	svc, buf := newLoggingInterpretService(t, llm, 3)
+
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("Interpret() = %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{
+		"attempts=1", "inputTokens=1500", "outputTokens=200", "ok=true",
+		"boardId=board-1", "annotationId=annot-1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("実績ログに %s が無い: %q", want, out)
+		}
+	}
+}
+
+// スキーマ違反による再送はそのぶん課金される。1 回ぶんだけを見ても払った量に
+// ならないので、解釈 1 回ぶんに積んでから残す。
+func TestInterpret_LogsUsageAcrossRetries(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{
+		responses: []string{invalidLLMOutput, validLLMOutput},
+		usages: []port.Usage{
+			{InputTokens: 1000, OutputTokens: 100},
+			// 再送は修正指示を足すぶん入力が増える。ここが見えないと
+			// interpretationSystemPrompt を直す判断ができない。
+			{InputTokens: 1200, OutputTokens: 150},
+		},
+	}
+	svc, buf := newLoggingInterpretService(t, llm, 3)
+
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("Interpret() = %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"attempts=2", "inputTokens=2200", "outputTokens=250", "ok=true"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("実績ログに %s が無い: %q", want, out)
+		}
+	}
+}
+
+// 直らなかったぶんも課金されている。成功したときだけ残すと、実績が実際より
+// 小さく見える。
+func TestInterpret_LogsUsageWhenSchemaNeverSatisfied(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{
+		responses: []string{invalidLLMOutput},
+		usages:    []port.Usage{{InputTokens: 900, OutputTokens: 80}},
+	}
+	svc, buf := newLoggingInterpretService(t, llm, 2)
+
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err == nil {
+		t.Fatal("Interpret() = nil, want error")
+	}
+
+	out := buf.String()
+	for _, want := range []string{"attempts=2", "inputTokens=1800", "outputTokens=160", "ok=false"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("実績ログに %s が無い: %q", want, out)
+		}
+	}
+}
+
+// 呼び出しそのものが落ちた回も「呼んだ」に含める。含めないと、上限に対して
+// 実際に何回叩いているのかが読めない。
+func TestInterpret_LogsAttemptWhenCallFails(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}, err: errors.New("connection refused")}
+	svc, buf := newLoggingInterpretService(t, llm, 3)
+
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err == nil {
+		t.Fatal("Interpret() = nil, want error")
+	}
+
+	out := buf.String()
+	// 接続が落ちた回は再送しないので 1 回で終わる。トークンは報告されない。
+	for _, want := range []string{"attempts=1", "inputTokens=0", "outputTokens=0", "ok=false"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("実績ログに %s が無い: %q", want, out)
+		}
+	}
+}
+
+// LLM を呼ぶ前に弾いた入力では、払っていないので実績も出ない（ADR 0018）。
+func TestInterpret_DoesNotLogUsageWhenRejectedBeforeCalling(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, buf := newLoggingInterpretService(t, llm, 3)
+
+	images := []port.Image{{MediaType: "image/gif", Data: []byte{1}}}
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", images); err == nil {
+		t.Fatal("Interpret() = nil, want error")
+	}
+
+	if out := buf.String(); strings.Contains(out, "interpretation llm usage") {
+		t.Errorf("呼んでいないのに実績ログが出ている: %q", out)
 	}
 }

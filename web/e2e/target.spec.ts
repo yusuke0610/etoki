@@ -122,7 +122,7 @@ test.describe("作成先の選択", () => {
     const mock = withUnselected();
     mock.repositories = {
       status: 502,
-      body: { error: "github api: 401: Bad credentials" },
+      body: { code: "github_unavailable", error: "github api: 401: Bad credentials" },
     };
 
     await installApi(page, mock);
@@ -161,7 +161,10 @@ test.describe("作成先の選択", () => {
     const mock = withUnselected();
     mock.setTargetError = {
       status: 409,
-      body: { error: "etoki: board target is locked: board-unselected" },
+      body: {
+        code: "target_locked",
+        error: "etoki: board target is locked: board-unselected",
+      },
     };
 
     await installApi(page, mock);

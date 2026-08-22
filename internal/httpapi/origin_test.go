@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki/internal/httpapi"
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 )
 
@@ -215,8 +216,12 @@ func TestOriginGuard_RejectBodyMatchesContract(t *testing.T) {
 	}
 
 	body := decode[map[string]any](t, rec)
-	if len(body) != 1 {
+	if len(body) != 2 {
 		t.Errorf("ErrorResponse に無いキーが混ざっている: %v", body)
+	}
+	// 画面はこの code で「cross-site として弾かれた」と分かる。文言を読ませない。
+	if code, _ := body["code"].(string); code != string(apitypes.ErrorCodeCrossSiteRejected) {
+		t.Errorf("code = %v, want %s", body["code"], apitypes.ErrorCodeCrossSiteRejected)
 	}
 	if msg, _ := body["error"].(string); msg == "" {
 		t.Errorf("error = %v, want 非空の文字列", body["error"])

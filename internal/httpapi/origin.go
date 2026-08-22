@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 )
 
 // originGuard はブラウザ由来の cross-site リクエストを弾く。
@@ -159,7 +161,7 @@ func (g originGuard) reject(c *gin.Context, logger *slog.Logger, msg string, att
 	// 何を許すかは応答に載せない。攻撃者が許可リストを総当たりで
 	// 探れるようにする理由がない。
 	c.Abort()
-	errorJSON(c, http.StatusForbidden,
+	errorJSON(c, http.StatusForbidden, apitypes.ErrorCodeCrossSiteRejected,
 		"forbidden: request did not come from a local origin. "+
 			"set ETOKI_ALLOWED_ORIGINS if etoki is bound beyond loopback")
 }
