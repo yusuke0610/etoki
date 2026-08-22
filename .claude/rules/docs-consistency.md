@@ -4,6 +4,8 @@ paths:
   - "README.md"
   - "CLAUDE.md"
   - "**/CLAUDE.md"
+  # `##` の説明と CLAUDE.md のコマンド説明がずれる形をここで見ている。
+  - "Makefile"
 ---
 
 # 記述と実装の整合
