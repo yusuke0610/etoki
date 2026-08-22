@@ -98,6 +98,33 @@ func TestGetCapabilities(t *testing.T) {
 	}
 }
 
+// Access が組み立てられていないのは「共有が未設定」ではない。
+//
+// 共有が使えるかは Members だけで決まる（上の表）。この口が
+// sharing_not_configured を名乗ると、**「共有は使える」と案内した直後に
+// 「共有は未設定」と返る**組み合わせができる。組み立て漏れは配線の不具合なので
+// 500 に落とす。
+func TestGetBoardAccess_NotWiredIsNotSharingNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	boards, mappings := newRepos(t)
+	deps := httpapi.Deps{
+		Boards:  usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
+		Members: usecase.NewBoardMemberService(boards, nil, usecase.NewBoardLocks()),
+		// Access は渡さない。etoki.New は必ず渡すので production では起きない。
+	}
+	r := httpapi.NewRouter(deps)
+	id := createBoard(t, r, "設計会")
+
+	rec := do(t, r, http.MethodGet, "/api/boards/"+id+"/access", nil)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (%s)", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeInternal {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeInternal)
+	}
+}
+
 // false を返した機能は、実際に叩くと 503 になる。**片方だけ直すと、押す前の
 // 案内と押した後の応答が食い違う。**
 func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {

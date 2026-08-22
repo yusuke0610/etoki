@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,9 +17,18 @@ import (
 // （ADR 0017）。GitHub 側の可否は「いまの状態」であって判定ではない。
 func (h *handlers) getBoardAccess(c *gin.Context) {
 	if h.access == nil {
-		// 組み立て口（etoki.New）は必ず渡すので、production では起きない。
-		// Deps を手で組んだ場合に nil 参照で落ちないようにしておく。
-		sharingNotConfigured(c)
+		// 組み立て口（etoki.New）は Auth の有無によらず必ず渡すので、
+		// production では起きない。ここに来るのは Deps を手で組んで足りて
+		// いないときだけで、それは**設定の不足ではなく配線の不具合**。
+		//
+		// **sharing_not_configured は使わない。** 共有が使えるかは
+		// getCapabilities が h.members だけで答える（この口は材料に入って
+		// いない）ので、ここで共有未設定を名乗ると「共有は使える」と案内した
+		// 直後に「共有は未設定」と返る組み合わせが作れる。
+		h.logger.ErrorContext(c.Request.Context(), "board access service is not configured",
+			slog.String("path", c.Request.URL.Path),
+		)
+		errorJSON(c, http.StatusInternalServerError, apitypes.ErrorCodeInternal, "internal error")
 		return
 	}
 

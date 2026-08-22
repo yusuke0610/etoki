@@ -103,3 +103,35 @@ export function describeFailure(action: string, e: unknown): Failure {
 
   return { message: `${action}: ${known}`, detail: e.message };
 }
+
+/**
+ * 保存されたシーンが読めなかった。
+ *
+ * `ErrorCode` を持たない。応答ではなく手元の JSON.parse が落ちた失敗で、
+ * サーバーは 200 を返している。**それでも文言はここに置く**（`web/CLAUDE.md`）。
+ * コンポーネントに書くと、同じ「読み込めませんでした」がまた散る。
+ */
+export function sceneUnreadableFailure(): Failure {
+  return {
+    message: "シーンを読み込めませんでした。空のボードとして開きます。",
+    detail: "",
+  };
+}
+
+/**
+ * draft issue の作成が途中で止まった（ADR 0009 / 0026）。
+ *
+ * **`code` では表せない。** 1 件ずつ理由が違いうるので 1 つの `ErrorCode` に
+ * 落ちない。`summary` は「何件までは GitHub 側に残っているか」で、数える側
+ * （項目の内訳を持つのはコンポーネント）から受け取る。
+ *
+ * `detail` はサーバーが `SyncRun.error` で返した本文。例外ではないので畳んで
+ * 残す（`web/CLAUDE.md` の「失敗の見せ方」）。
+ */
+export function partialCreationFailure(
+  summary: string,
+  detail: string | undefined,
+): Failure {
+  // 契約上は任意。incomplete なら必ず入るが、型に従って畳む。
+  return { message: `途中で失敗しました（${summary}）`, detail: detail ?? "" };
+}

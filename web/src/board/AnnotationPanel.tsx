@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { Failure } from "../api/errorMessage";
+import { partialCreationFailure, type Failure } from "../api/errorMessage";
 import type {
   AnnotationStatus,
   CreatedRun,
@@ -514,13 +514,13 @@ function CreationSection({
               誤解して再実行すると、GitHub 側に重複が増える。 */}
           {state.run.incomplete ? (
             // 部分失敗の本文には code を足さない。1 件ずつ理由が違いうるので
-            // 1 つの code に落ちない。畳んで見せる扱いだけ揃える。
+            // 1 つの code に落ちない。畳んで見せる扱いだけ揃える。文言は
+            // errorMessage.ts、数えるのはこちら。
             <ErrorNotice
-              failure={{
-                message: `途中で失敗しました（${partialSummary(state.run.items)}）`,
-                // 契約上は任意。incomplete なら必ず入るが、型に従って畳む。
-                detail: state.run.error ?? "",
-              }}
+              failure={partialCreationFailure(
+                partialSummary(state.run.items),
+                state.run.error,
+              )}
             />
           ) : (
             <p className="hint">{resultSummary(state.run.items)}。</p>

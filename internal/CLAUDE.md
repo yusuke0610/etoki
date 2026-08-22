@@ -139,6 +139,10 @@ UI は未保存の変更があることを表示する。
   同じ nil**。別の材料で組み立てると、案内と 503 が食い違う。
   `TestGetCapabilities_MatchesUnavailableEndpoints` がそこを見ている。
   **利用者ごとの権限は返さない。** そちらはボード単位（ADR 0017）。
+- **`*_not_configured` を名乗れるのは、capabilities が材料にしている nil だけ。**
+  `etoki.New` が必ず渡す依存（`Access`）が nil なのは設定の不足ではなく配線の
+  不具合なので、ログを残して 500 に落とす。ここで共有未設定を名乗ると、
+  「共有は使える」と案内した直後に「共有は未設定」と返る組み合わせができる。
 - **ハンドラのテストは Host を明示する。** `httptest.NewRequest` の既定は
   `example.com` なので、指定を忘れると Origin 検証で 403 になる。
 

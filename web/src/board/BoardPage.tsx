@@ -3,7 +3,11 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, boardsApi } from "../api/boards";
-import { describeFailure, type Failure } from "../api/errorMessage";
+import {
+  describeFailure,
+  sceneUnreadableFailure,
+  type Failure,
+} from "../api/errorMessage";
 import type {
   AnnotationStatus,
   BoardDetail,
@@ -120,10 +124,7 @@ export function BoardPage({
       return JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
-      onError({
-        message: "シーンを読み込めませんでした。空のボードとして開きます。",
-        detail: "",
-      });
+      onError(sceneUnreadableFailure());
       return { elements: [], appState: {} };
     }
   }, [board.scene, onError]);

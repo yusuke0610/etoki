@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "./boards";
-import { describeFailure, ERROR_MESSAGES } from "./errorMessage";
+import {
+  describeFailure,
+  ERROR_MESSAGES,
+  partialCreationFailure,
+  sceneUnreadableFailure,
+} from "./errorMessage";
 
 describe("describeFailure", () => {
   it("既知の code は表の文言を出し、サーバーの本文は畳んだ側に回す", () => {
@@ -60,6 +65,30 @@ describe("describeFailure", () => {
 
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("保存できませんでした"), e);
     spy.mockRestore();
+  });
+});
+
+// code を持たない失敗も文言はこのモジュールが持つ。コンポーネントに書くと、
+// 同じ言い回しがまた散る（`web/CLAUDE.md`）。
+describe("code を持たない失敗", () => {
+  it("シーンが読めないときは、そのあとどうなるかまで言う", () => {
+    const failure = sceneUnreadableFailure();
+
+    expect(failure.message).toContain("空のボードとして開きます");
+    expect(failure.detail).toBe("");
+  });
+
+  // 取り消せない作成の結果なので、サーバーの本文は畳んで残す（ADR 0009）。
+  it("部分失敗は件数を前に、サーバーの本文を畳んだ側に置く", () => {
+    expect(partialCreationFailure("2 件は作成済み", "etoki: github rejected")).toEqual({
+      message: "途中で失敗しました（2 件は作成済み）",
+      detail: "etoki: github rejected",
+    });
+  });
+
+  // 契約上 SyncRun.error は任意。無くても detail は文字列でなければならない。
+  it("本文が無ければ畳む側は空になる", () => {
+    expect(partialCreationFailure("2 件は作成済み", undefined).detail).toBe("");
   });
 });
 

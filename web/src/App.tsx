@@ -65,7 +65,15 @@ export function App() {
       // ログイン済みのまま何も操作できず、リロードするまで戻れない。
       // 状態を読み直せばログイン画面に落ちる。
       if (e instanceof ApiError && e.code === "login_required") {
-        setSession(await authApi.session());
+        // 読み直しにも失敗したら、初回と同じ側に倒す。ここで投げると、
+        // 呼び出し側は void reload() なので誰も受けず、画面はログイン済みの
+        // ままボード一覧だけが空という、戻れない状態で止まる。
+        try {
+          setSession(await authApi.session());
+        } catch (sessionError) {
+          setError(describeFailure("ログイン状態を取得できませんでした", sessionError));
+          setSession({ authRequired: false, authenticated: false });
+        }
         return;
       }
       setError(describeFailure("ボード一覧を取得できませんでした", e));
