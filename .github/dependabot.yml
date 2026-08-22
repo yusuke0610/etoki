@@ -63,7 +63,13 @@ updates:
     ignore:
       # devShell の playwright-driver.browsers と対で決まる。Dependabot は
       # nixpkgs 側を動かせないので、ここだけ上げると E2E が起動しなくなる。
+      # **外すのは version updates だけ。** `update-types` を書かずに依存名だけで
+      # 外すと security updates も止まり、脆弱性の知らせごと消える。
       - dependency-name: "@playwright/test"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
       # React は 18 系に固定。マイナーとパッチは受ける。
       - dependency-name: "react"
         update-types: ["version-update:semver-major"]

@@ -59,6 +59,12 @@ Renovate のほうが表現力は上で、`postUpgradeTasks` を使えば更新 
 片方だけ変わる（`.markdownlint-cli2.yaml` が除外を自前で列挙せず `.gitignore` を
 見ているのと同じ判断）。
 
+**外すのは version updates だけで、`update-types` に 3 種類とも並べる。**
+`ignore` に依存名だけを書くと、その依存は security updates も出なくなる
+（`update-types` を書いたときだけ version updates に限定される）。ここで
+止めたいのは「勝手に上がること」であって、**脆弱性の知らせまで止めると、
+固定したことが黙って危険を抱える形になる。**
+
 ### flake.lock は自動化しない
 
 Dependabot は Nix に対応していない。定期実行の workflow で `nix flake update` の
@@ -79,5 +85,7 @@ PAT を置けば回避できるが、それは長命の資格情報を 1 つ増�
   このリポジトリでいちばん連動が多いのがそこなので、穴はここに残る。
   `nix flake update` を回したあとに `@playwright/test` を揃える手順は
   `web/CLAUDE.md` のまま変わらない
-- 脆弱性由来の更新（Dependabot alerts / security updates）はこの設定とは独立に
-  効く。ここで決めたのは version updates の出し方だけ
+- 脆弱性由来の更新（Dependabot alerts / security updates）は、ここで決めた
+  version updates の出し方とは別に効く。**ただし完全に独立ではない。**
+  `ignore` に依存名だけを書いた依存は security updates も出なくなるので、
+  外すときは `update-types` で version updates に限定する（上記）
