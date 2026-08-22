@@ -975,6 +975,52 @@ func TestBoard_ListOrder(t *testing.T) {
 	}
 }
 
+// 一覧はシーンを読まない。読むと、返さないもののために全ボードぶんの
+// シーン JSON をメモリへ載せることになる（画像は base64 で入りうる）。
+//
+// ここが落ちるのは List が boardColumns 側に戻ったとき。Find は逆に
+// シーンを返し続ける必要があるので、両方を 1 つのテストで固定する。
+func TestBoard_ListOmitsScene(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+
+	const scene = `{"elements":[{"id":"a"}]}`
+	if err := repo.Create(t.Context(), port.Board{
+		ID: "board-1", Name: "決済まわりのブレスト", Scene: scene,
+		CreatedAt: baseTime, UpdatedAt: baseTime,
+	}, ""); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := repo.List(t.Context(), "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("件数 = %d, want 1", len(got))
+	}
+	if got[0].Board.Scene != "" {
+		t.Errorf("List が Scene を返している: %q", got[0].Board.Scene)
+	}
+	// シーン以外は一覧に要る。落とすと表示名も作成先も出せなくなる。
+	if got[0].Board.Name != "決済まわりのブレスト" {
+		t.Errorf("Name = %q", got[0].Board.Name)
+	}
+	if !got[0].Board.UpdatedAt.Equal(baseTime) {
+		t.Errorf("UpdatedAt = %v, want %v", got[0].Board.UpdatedAt, baseTime)
+	}
+
+	found, err := repo.Find(t.Context(), "", "board-1")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if found.Board.Scene != scene {
+		t.Errorf("Find の Scene = %q, want %q", found.Board.Scene, scene)
+	}
+}
+
 func TestBoard_ListEmpty(t *testing.T) {
 	t.Parallel()
 
