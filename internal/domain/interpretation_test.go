@@ -472,3 +472,355 @@ func TestValidate_RejectsDuplicatePreviousItemID(t *testing.T) {
 		t.Fatalf("Validate() = %v, want ValidationErrors", err)
 	}
 }
+
+// 親は epic のタイトル文字列で指す（ADR 0006）。同名の epic が並ぶと、その配下は
+// GitHub 上で 1 つにまとまり、どちらの子なのか区別が付かなくなる。エラーにならず
+// 作成は最後まで通り、draft issue は削除できないので気づいた時点では取り返せない。
+// **作る前に弾く。**
+func TestInterpretation_Validate_RejectsDuplicateEpicTitle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		items []domain.InterpretedItem
+		// wantFields は報告されてほしい Field。nil ならエラーなしを期待する。
+		wantFields []string
+	}{
+		{
+			name: "同じタイトルの epic が 2 件",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証"},
+			},
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// Parent には生の title が入るので GitHub 上では別文字列になるが、
+			// 人には見分けが付かない。「なぜか 2 つある」は同じように起きる。
+			name: "前後の空白だけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "  認証\n"},
+			},
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// 合成済みと結合文字。入力方式が違うだけで表示は同じ。
+			// ComputeContentHash が NFC で揃えているのと同じ扱いにする。
+			name: "Unicode の正規化形だけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "ガード"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "ガード"},
+			},
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// 行末の空白は画面上に現れない。前後の空白と同じ扱いにする。
+			// normalizeText を再利用しているので、ここは自動的に畳まれる。
+			name: "行末の空白だけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証 \n方式"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証\n方式"},
+			},
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// 改行コードの違いも同じ。編集環境の差でしかない。
+			name: "改行コードだけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証\r\n方式"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証\n方式"},
+			},
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// 行の途中の空白は見分けが付く。畳むと壊れないものを弾くことになる。
+			name: "行の途中の空白だけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証 方式"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証方式"},
+			},
+		},
+		{
+			// 3 件目も 1 件目と衝突する。最初の 1 件で打ち切ると、LLM は
+			// 1 往復で 1 箇所しか直せない（ADR 0005）。
+			name: "同じタイトルの epic が 3 件",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "e3", Kind: domain.KindEpic, Title: "認証"},
+			},
+			wantFields: []string{"items[1].title", "items[2].title"},
+		},
+		{
+			// issue は親として指されない。同名でも構造は壊れないので弾かない。
+			name: "同じタイトルの issue が 2 件",
+			items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "ログイン"},
+				{LocalID: "i2", Kind: domain.KindIssue, Title: "ログイン"},
+			},
+		},
+		{
+			name: "epic と issue が同じタイトル",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "認証"},
+			},
+		},
+		{
+			// 見分けが付くうえ、GitHub 側でも別文字列。畳むと壊れないものを弾く。
+			name: "大文字小文字だけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "API 設計"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "api 設計"},
+			},
+		},
+		{
+			// NFKC まで掛ければ同一視されるが、正規化は NFC で止める。
+			name: "全角半角だけが違う epic",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "API 設計"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "ＡＰＩ 設計"},
+			},
+		},
+		{
+			// 空のタイトルは title 自体の指摘で出る。重複としても報告すると、
+			// 元を 1 箇所直せば消える指摘が修正指示に混ざる。
+			name: "タイトルが空の epic が 2 件",
+			items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: ""},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "   "},
+			},
+			wantFields: []string{"items[0].title", "items[1].title"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := domain.Interpretation{Summary: "この囲みの解釈", Items: tt.items}
+
+			err := in.Validate(domain.GranularityAuto)
+			if tt.wantFields == nil {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatal("Validate() = nil, want error")
+			}
+			got := errorFields(t, err)
+			if !slices.Equal(got, tt.wantFields) {
+				t.Errorf("報告された Field = %v, want %v", got, tt.wantFields)
+			}
+		})
+	}
+}
+
+// 重複の指摘は、どちらと衝突しているのかが読み取れる文にする。この文は
+// そのまま LLM への修正指示になる（buildRetryMessage）。
+func TestInterpretation_Validate_DuplicateEpicTitleMessage(t *testing.T) {
+	t.Parallel()
+
+	in := domain.Interpretation{
+		Summary: "この囲みの解釈",
+		Items: []domain.InterpretedItem{
+			{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
+			{LocalID: "e2", Kind: domain.KindEpic, Title: "認証"},
+		},
+	}
+
+	var verrs domain.ValidationErrors
+	if err := in.Validate(domain.GranularityAuto); !errors.As(err, &verrs) {
+		t.Fatalf("Validate() = %v, want ValidationErrors", err)
+	}
+	if len(verrs) != 1 {
+		t.Fatalf("報告された件数 = %d, want 1 (%v)", len(verrs), verrs)
+	}
+
+	// 衝突した相手を localId で名指しする。タイトルだけを出すと、同じ文字列が
+	// 並ぶ出力の中でどれを直せばよいかが決まらない。
+	for _, want := range []string{`"認証"`, `"e1"`} {
+		if !strings.Contains(verrs[0].Message, want) {
+			t.Errorf("Message に %s が含まれていない: %q", want, verrs[0].Message)
+		}
+	}
+}
+
+// errorRules は検証エラーが名乗った制約を出た順に返す。
+func errorRules(t *testing.T, err error) []domain.RuleID {
+	t.Helper()
+
+	var errs domain.ValidationErrors
+	if !errors.As(err, &errs) {
+		t.Fatalf("ValidationErrors ではない: %#v", err)
+	}
+
+	rules := make([]domain.RuleID, len(errs))
+	for i, e := range errs {
+		rules[i] = e.Rule
+	}
+	return rules
+}
+
+// 検査と LLM への指示が食い違わないことを固定する。
+//
+// **これが落ちるのは、検査を足してプロンプトに書かなかったとき（またはその逆）。**
+// 指示していない制約で弾くと、LLM は直しようのない再送を繰り返す。逆に、検査の
+// 無い制約を指示すると、守らせるつもりの無いことを指示していることになる。
+//
+// 固定できないもの: 既存の RuleID を使い回して、その指示文が実際には覆っていない
+// 検査を足す経路。文の意味までは機械で見られない。
+func TestRules_MatchValidation(t *testing.T) {
+	t.Parallel()
+
+	// 制約ごとに、それを破る解釈結果。**Rules に足したらここにも足す。**
+	broken := map[domain.RuleID]struct {
+		in domain.Interpretation
+		g  domain.Granularity
+	}{
+		domain.RuleSummary: {in: domain.Interpretation{
+			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "t"}},
+		}},
+		domain.RuleItemsPresent: {in: domain.Interpretation{Summary: "s"}},
+		domain.RuleKind: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{LocalID: "x1", Kind: "project", Title: "t"}},
+		}},
+		domain.RuleTitle: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "  "}},
+		}},
+		domain.RuleEpicTitleUnique: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証"},
+			},
+		}},
+		domain.RuleLocalID: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{LocalID: "", Kind: domain.KindEpic, Title: "t"}},
+		}},
+		domain.RuleLocalIDUnique: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t1"},
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t2"},
+			},
+		}},
+		domain.RuleEpicHasNoParent: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "t1"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "t2", ParentLocalID: ptr("e1")},
+			},
+		}},
+		domain.RuleParentExists: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t", ParentLocalID: ptr("e9")},
+			},
+		}},
+		domain.RuleParentIsEpic: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t1"},
+				{LocalID: "i2", Kind: domain.KindIssue, Title: "t2", ParentLocalID: ptr("i1")},
+			},
+		}},
+		domain.RulePreviousItemID: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "t1", PreviousItemID: ptr("PVTI_a")},
+				{LocalID: "i2", Kind: domain.KindIssue, Title: "t2", PreviousItemID: ptr("PVTI_a")},
+			},
+		}},
+		domain.RuleGranularityIssue: {
+			in: domain.Interpretation{Summary: "s",
+				Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "t"}},
+			},
+			g: domain.GranularityIssue,
+		},
+		domain.RuleGranularityEpic: {
+			in: domain.Interpretation{Summary: "s",
+				Items: []domain.InterpretedItem{{LocalID: "i1", Kind: domain.KindIssue, Title: "t"}},
+			},
+			g: domain.GranularityEpic,
+		},
+	}
+
+	known := make(map[domain.RuleID]bool, len(domain.Rules))
+	for _, r := range domain.Rules {
+		known[r.ID] = true
+	}
+
+	seen := make(map[domain.RuleID]bool, len(domain.Rules))
+
+	for rule, tt := range broken {
+		err := tt.in.Validate(tt.g)
+		if err == nil {
+			t.Errorf("%s: Validate() = nil, want error", rule)
+			continue
+		}
+		for _, got := range errorRules(t, err) {
+			if !known[got] {
+				t.Errorf("%s: 未登録の RuleID %q を名乗っている。Rules に足すこと", rule, got)
+			}
+			seen[got] = true
+		}
+		if !seen[rule] {
+			t.Errorf("%s: この制約を破ったのに、その RuleID が報告されていない", rule)
+		}
+	}
+
+	// previousRef は ParseInterpretation でだけ解決する（ADR 0026）ので、
+	// Validate を通らない。入口が違うだけで、同じ制約表に載る。
+	_, err := domain.ParseInterpretation(
+		[]byte(`{"summary":"s","items":[{"localId":"i1","kind":"issue","title":"t","body":"","parentLocalId":null,"previousRef":"p9"}]}`),
+		[]domain.PreviousItem{{Ref: "p1", ItemID: "PVTI_a", Kind: domain.KindIssue, Title: "t"}},
+	)
+	if err == nil {
+		t.Fatal("ParseInterpretation() = nil, want error")
+	}
+	for _, got := range errorRules(t, err) {
+		if !known[got] {
+			t.Errorf("未登録の RuleID %q を名乗っている", got)
+		}
+		seen[got] = true
+	}
+
+	// **登録した制約はすべて到達可能でなければならない。** 到達しないものは、
+	// 検査の無い指示を出しているか、破り方を書き忘れているかのどちらか。
+	for _, r := range domain.Rules {
+		if !seen[r.ID] {
+			t.Errorf("RuleID %q を報告する経路が無い。検査が無いか、破る例が足りない", r.ID)
+		}
+	}
+}
+
+// プロンプトに載る制約は Rules から組み立てる。手で書き写さない。
+func TestInterpretationConstraints_RendersEveryInstruction(t *testing.T) {
+	t.Parallel()
+
+	got := domain.InterpretationConstraints()
+
+	for _, r := range domain.Rules {
+		// 指示が空なのは「LLM の出力では起こりえない」もの。出しようのない
+		// フィールドの説明がプロンプトに混ざらないよう、載せない。
+		if r.Instruction == "" {
+			continue
+		}
+		if !strings.Contains(got, "- "+r.Instruction+"\n") {
+			t.Errorf("RuleID %q の指示が制約一覧に出ていない", r.ID)
+		}
+	}
+
+	if lines := strings.Count(got, "\n"); lines != countInstructed() {
+		t.Errorf("制約一覧の行数 = %d, want %d（指示のある制約の件数）", lines, countInstructed())
+	}
+}
+
+func countInstructed() int {
+	n := 0
+	for _, r := range domain.Rules {
+		if r.Instruction != "" {
+			n++
+		}
+	}
+	return n
+}

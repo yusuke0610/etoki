@@ -621,6 +621,16 @@ func TestCreate_RevalidatesInterpretation(t *testing.T) {
 				{LocalID: "e2", Kind: domain.KindEpic, Title: "t2", ParentLocalID: ptrTo("e1")},
 			},
 		},
+		// 同名の epic を作ると、その配下は GitHub 上で 1 つにまとまる。
+		// draft issue は削除できないので、書き込みの前に落ちる必要がある。
+		"epic のタイトルが重複している": {
+			Summary: "s",
+			Items: []domain.InterpretedItem{
+				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証"},
+				{LocalID: "i1", Kind: domain.KindIssue, Title: "ログイン", ParentLocalID: ptrTo("e2")},
+			},
+		},
 		"項目が無い": {Summary: "s"},
 	}
 
