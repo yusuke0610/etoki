@@ -126,6 +126,7 @@ const (
 	RuleItemsPresent     RuleID = "itemsPresent"
 	RuleKind             RuleID = "kind"
 	RuleTitle            RuleID = "title"
+	RuleTitleSingleLine  RuleID = "titleSingleLine"
 	RuleEpicTitleUnique  RuleID = "epicTitleUnique"
 	RuleLocalID          RuleID = "localId"
 	RuleLocalIDUnique    RuleID = "localIdUnique"
@@ -165,10 +166,13 @@ var Rules = []Rule{
 		"決まらないため、親子関係はこの一時 ID で表します。"},
 	{RuleLocalID, "localId は空にできません。"},
 	{RuleTitle, "title は空にできません。"},
+	{RuleTitleSingleLine, "title に改行を入れないでください。draft issue のタイトルは" +
+		"一覧や通知で 1 行として扱われ、どこで折り返るか（あるいは切られるか）は" +
+		"GitHub 側の都合です。複数行にしたい内容は body に書いてください。"},
 	{RuleEpicTitleUnique, "epic の title は出力の中で一意にしてください。子は親の epic を" +
 		"タイトルで指すため、同じタイトルの epic が 2 つあると、どちらの配下なのか区別が" +
-		"付かなくなります。**空白と改行の違いだけでは別のタイトルになりません。** " +
-		"前後と行末の空白、改行コード、Unicode の正規化形の違いは同じタイトルとして扱います。" +
+		"付かなくなります。**空白の違いだけでは別のタイトルになりません。** " +
+		"前後の空白と Unicode の正規化形の違いは同じタイトルとして扱います。" +
 		"issue の title は重複していても構いません。"},
 	{RuleItemsPresent, "items は少なくとも 1 件必要です。囲んだ範囲から作るものが 1 つも" +
 		"無い、という出力はしないでください。"},
@@ -407,11 +411,27 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 				fmt.Sprintf("kind は %q か %q のどちらかです（%q が指定されています）", KindEpic, KindIssue, it.Kind)))
 		}
 
+		// 改行コードだけを畳んだ形と、重複判定に使う正規形を分けて持つ。
+		// 前者で改行の有無を見る。normalizeTitle は前後の空白を落とすので、
+		// そちらで見ると "\n認証\n" のような前後だけの改行が消えて通る。
+		lines := normalizeText(it.Title)
 		title := normalizeTitle(it.Title)
 		switch owner, dup := epicTitles[title]; {
 		case title == "":
 			errs = append(errs, newValidationError(RuleTitle, field("title"),
 				"title を空にはできません"))
+
+		case strings.Contains(lines, "\n"):
+			// **畳まずに弾く。** 改行を空白に置き換えて通すと、開発者が確認した
+			// ものと違う文字列で作ることになる（中核思想 3）。作った draft issue は
+			// 消せない（ADR 0009）ので、直させるのは作る前しかない。
+			//
+			// 弾くのは改行だけに絞る。タブやゼロ幅スペースまで広げると
+			// 「タイトルに使ってよい文字」を etoki が決めることになり、
+			// 画面上に現れる違いは触らないという線（ADR 0028）を越える。
+			errs = append(errs, newValidationError(RuleTitleSingleLine, field("title"),
+				"title に改行を入れることはできません。1 行にまとめるか、"+
+					"入りきらない内容は body に移してください"))
 
 		case it.Kind != KindEpic:
 			// issue のタイトルは重複してよい。親として指されないので、
@@ -452,8 +472,6 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 //
 // 畳む:
 //
-//   - 改行コードの違い（"認証\r\n方式" と "認証\n方式"）
-//   - 行末の空白とタブ（"認証 \n方式" と "認証\n方式"）
 //   - Unicode の合成済みと結合文字（NFC と NFD の "ガード"）
 //   - 前後の空白（"認証" と " 認証 "）
 //
@@ -461,7 +479,11 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 //
 //   - 大文字小文字（"API" と "api"）
 //   - 全角半角（"API" と "ＡＰＩ"）
-//   - 行の途中の空白（"認証 方式" と "認証方式"）
+//   - 途中の空白（"認証 方式" と "認証方式"）
+//
+// **改行まわりは、ここへ来る前に RuleTitleSingleLine が弾いている。**
+// normalizeText は改行コードと行末の空白も畳むが、複数行の title は重複判定に
+// 届かないので、その分はここでは効かない。
 //
 // 境目は「画面上に現れる違いかどうか」。畳むほうは現れないので、別の文字列
 // として通しても「なぜか 2 つある」という同じ壊れ方をする。畳まないほうは
