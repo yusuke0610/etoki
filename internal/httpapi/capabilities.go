@@ -23,8 +23,10 @@ func (h *handlers) getCapabilities(c *gin.Context) {
 		// 作成先の候補（catalog）も同じ GitHub の設定で決まる。片方だけ nil に
 		// なる配線は cmd/etoki には無いので、1 つにまとめて返す。
 		Creation: h.creations != nil && h.catalog != nil,
-		// 招待は「誰であるか」が決まって初めて意味を持つ。片方だけあっても
-		// 共有の画面は成り立たないので、両方揃って初めて true にする。
-		Sharing: h.members != nil && h.access != nil,
+		// 見るのは h.members だけ。**共有の 4 つのエンドポイントが 503 に
+		// なる材料がそれだから。** h.access は別の口（/boards/{id}/access）の
+		// 材料で、ここに混ぜると「共有は使えない」と案内したのに /members は
+		// 成功する、という食い違いを作れる。
+		Sharing: h.members != nil,
 	})
 }

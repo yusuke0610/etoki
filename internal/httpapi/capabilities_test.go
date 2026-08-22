@@ -69,6 +69,14 @@ func TestGetCapabilities(t *testing.T) {
 			drop: func(d *httpapi.Deps) { d.Members = nil },
 			want: apitypes.Capabilities{Interpretation: true, Creation: true, Sharing: false},
 		},
+		{
+			// Access は別の口（/boards/{id}/access）の材料で、共有の
+			// エンドポイントは Members だけを見る。**ここを false にすると、
+			// 使えないと案内したのに /members が成功する。**
+			name: "access だけ組み立てられていない",
+			drop: func(d *httpapi.Deps) { d.Access = nil },
+			want: apitypes.Capabilities{Interpretation: true, Creation: true, Sharing: true},
+		},
 	}
 
 	for _, tt := range tests {
@@ -99,8 +107,13 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 	r, _ := newRouter(t)
 
 	rec := do(t, r, http.MethodGet, "/api/capabilities", nil)
+	// 先にステータスを見る。500 の本文もゼロ値に復号できてしまうので、
+	// これが無いと「全部 false」の検査が失敗を素通しする。
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
 	caps := decode[apitypes.Capabilities](t, rec)
-	if caps.Interpretation || caps.Creation {
+	if caps.Interpretation || caps.Creation || caps.Sharing {
 		t.Fatalf("素の構成なのに使えることになっている: %+v", caps)
 	}
 
@@ -114,6 +127,7 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 	}{
 		{http.MethodPost, interpretPath(id, "annot-1"), apitypes.ErrorCodeLlmNotConfigured},
 		{http.MethodGet, "/api/github/repositories", apitypes.ErrorCodeGithubNotConfigured},
+		{http.MethodGet, "/api/boards/" + id + "/members", apitypes.ErrorCodeSharingNotConfigured},
 	} {
 		t.Run(tt.path, func(t *testing.T) {
 			rec := do(t, r, tt.method, tt.path, nil)
