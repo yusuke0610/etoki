@@ -136,7 +136,7 @@ export const boardsApi = {
    * 作成先の表示用スナップショットだけを取り直す。
    *
    * 固定済みでも通る。固定するのは作成先そのものであって、表示用の値では
-   * ない（ADR 0036）。projectId が保存済みのものと違えば 409。
+   * ない（ADR 0037）。projectId が保存済みのものと違えば 409。
    */
   refreshTargetDisplay: (id: string, display: BoardTargetDisplay) =>
     request<BoardDetail>(`/api/boards/${id}/target/display`, {

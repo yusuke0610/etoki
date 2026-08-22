@@ -71,7 +71,7 @@ func (f *fakeBoards) UpdateTarget(
 }
 
 // UpdateTargetDisplay は表示用の 3 つだけを書く。作成先には触らない
-// （ADR 0036）。実装と同じ形にしておかないと、触ったことをフェイクが吸収する。
+// （ADR 0037）。実装と同じ形にしておかないと、触ったことをフェイクが吸収する。
 func (f *fakeBoards) UpdateTargetDisplay(
 	_ context.Context, _, _ string, d port.BoardTargetDisplay, updatedAt time.Time,
 ) error {

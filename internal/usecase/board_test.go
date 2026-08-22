@@ -70,7 +70,7 @@ func TestSetTarget_RejectsSameValueAfterRun(t *testing.T) {
 	}
 }
 
-// 固定するのは作成先そのもの。表示名は固定の対象ではない（ADR 0036）。
+// 固定するのは作成先そのもの。表示名は固定の対象ではない（ADR 0037）。
 // GitHub 側で Project を改名すると、直す手段が無いまま古い名前が残っていた。
 func TestRefreshTargetDisplay_SucceedsAfterFirstRun(t *testing.T) {
 	t.Parallel()

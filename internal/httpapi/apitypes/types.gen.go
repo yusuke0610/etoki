@@ -299,7 +299,7 @@ type BoardTarget struct {
 	RepositoryOwner string `json:"repositoryOwner"`
 }
 
-// BoardTargetDisplay 作成先の表示用スナップショット。取り直しのリクエストボディ（ADR 0036）。
+// BoardTargetDisplay 作成先の表示用スナップショット。取り直しのリクエストボディ（ADR 0037）。
 //
 // `projectId` は**変更先ではなく照合材料**。どの作成先の表示名なのかを
 // 示すために伴い、保存されているものと違えば 409 になる。リポジトリを

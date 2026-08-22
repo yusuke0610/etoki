@@ -156,7 +156,7 @@ func (r *BoardRepository) UpdateTarget(
 // UpdateTargetDisplay は作成先の表示用スナップショットと更新時刻だけを更新する。
 //
 // **作成先の 3 列は SET に書かない。** 固定後に通る唯一の経路なので、ここが
-// 書けるようになると固定が意味を失う（ADR 0036）。
+// 書けるようになると固定が意味を失う（ADR 0037）。
 func (r *BoardRepository) UpdateTargetDisplay(
 	ctx context.Context, actor, id string, d port.BoardTargetDisplay, updatedAt time.Time,
 ) error {

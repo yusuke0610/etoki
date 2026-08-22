@@ -54,7 +54,7 @@ var wantMappings = map[string]wantMapping{
 		usecase.ErrSceneConflict, http.StatusConflict, apitypes.ErrorCodeSceneConflict},
 	"usecase.ErrTargetLocked": {
 		usecase.ErrTargetLocked, http.StatusConflict, apitypes.ErrorCodeTargetLocked},
-	// 固定（変えられない）と食い違い（開き直せば解ける）は別物（ADR 0036）。
+	// 固定（変えられない）と食い違い（開き直せば解ける）は別物（ADR 0037）。
 	"usecase.ErrTargetMismatch": {
 		usecase.ErrTargetMismatch, http.StatusConflict, apitypes.ErrorCodeTargetMismatch},
 	"usecase.ErrContentHashMismatch": {

@@ -124,7 +124,7 @@ export function BoardPage({
    *
    * **押されたときだけ引く。** 開いただけで取りにいくと、ボードを開くたびに
    * GitHub を叩くうえ、名前が変わったことに気づく機会が消える（中核思想 3、
-   * ADR 0036）。作成先そのものは固定されたままで、送るのは表示用の 3 つだけ。
+   * ADR 0037）。作成先そのものは固定されたままで、送るのは表示用の 3 つだけ。
    */
   const refreshTargetDisplay = useCallback(async () => {
     setRefreshingTarget(true);
@@ -558,7 +558,7 @@ export function BoardPage({
             // 押せないことを見せるほうが状態として正しい。
             //
             // **名前の取り直しだけは出す。** 固定するのは作成先そのもので
-            // あって、表示用のスナップショットではない（ADR 0036）。ここが
+            // あって、表示用のスナップショットではない（ADR 0037）。ここが
             // 無いと、GitHub 側で改名されたボードは古い名前を出し続ける。
             <>
               <span className="hint">作成先は確定（draft issue を作成済み）</span>

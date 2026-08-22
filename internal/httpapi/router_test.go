@@ -253,7 +253,7 @@ func TestListBoards_IncludesTarget(t *testing.T) {
 	}
 }
 
-// 表示名だけを取り直す口（ADR 0036）。作成先そのものは動かないこと、
+// 表示名だけを取り直す口（ADR 0037）。作成先そのものは動かないこと、
 // 違う projectId は 409 になることを応答の形で固定する。
 func TestRefreshBoardTargetDisplay(t *testing.T) {
 	t.Parallel()

@@ -84,7 +84,7 @@ export type ApiMock = {
   boardsError?: Reply<never>;
   /** 作成先の設定を失敗させたいときに指定する。409 の見せ方を確かめる用。 */
   setTargetError?: Reply<never>;
-  /** 表示名の取り直しを失敗させたいときに指定する（ADR 0036）。 */
+  /** 表示名の取り直しを失敗させたいときに指定する（ADR 0037）。 */
   refreshTargetDisplayError?: Reply<never>;
   /**
    * そのボードで何ができるか。ボード ID をキーにする。
@@ -297,7 +297,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     },
   );
 
-  // 表示名だけを取り直す口（ADR 0036）。**作成先そのものは動かさない。**
+  // 表示名だけを取り直す口（ADR 0037）。**作成先そのものは動かさない。**
   // ここで動かせるようにすると、サーバーが固定している値をモックだけが
   // 書き換えられることになり、固定の意味が E2E から消える。
   await page.route(

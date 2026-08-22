@@ -466,7 +466,7 @@ func TestUpdateScene_RejectsOtherOwners(t *testing.T) {
 }
 
 // 表示名の取り直しも同じ絞りを通る。固定後に通る経路なので、ここが
-// 抜けていると他人のボードの見え方を書き換えられる（ADR 0036）。
+// 抜けていると他人のボードの見え方を書き換えられる（ADR 0037）。
 func TestUpdateTargetDisplay_RejectsOtherOwners(t *testing.T) {
 	t.Parallel()
 

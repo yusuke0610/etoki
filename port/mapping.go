@@ -49,7 +49,7 @@ type BoardTarget struct {
 // BoardTargetDisplay は作成先の表示用スナップショット（ADR 0019 / 0025）。
 //
 // **作成先そのもの（owner / name / projectId）を含まない。** 固定後に更新
-// できるのはここに挙がっているものだけ、を型で示すため（ADR 0036）。
+// できるのはここに挙がっているものだけ、を型で示すため（ADR 0037）。
 type BoardTargetDisplay struct {
 	// ProjectNumber は Project の番号。取得していなければ 0。
 	ProjectNumber int
@@ -283,7 +283,7 @@ type BoardRepository interface {
 	// UpdateTargetDisplay は作成先の表示用スナップショットと更新時刻だけを
 	// 更新する。**作成先そのものは変えない。**
 	//
-	// 固定済みのボードでも通る唯一の経路（ADR 0036）。作成先の 3 列を書ける
+	// 固定済みのボードでも通る唯一の経路（ADR 0037）。作成先の 3 列を書ける
 	// ようにしないこと。書けるようにすると、固定が意味を失う。
 	//
 	// 送られた ID が保存されている作成先と同じかどうかはここでは見ない。

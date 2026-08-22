@@ -212,7 +212,7 @@ test.describe("作成先の選択", () => {
   });
 
   // 固定するのは作成先そのものであって、表示用のスナップショットではない
-  // （ADR 0036）。GitHub 側で改名されたら、固定済みでも取り直せる。
+  // （ADR 0037）。GitHub 側で改名されたら、固定済みでも取り直せる。
   test("固定済みでも作成先の名前を取り直せる", async ({ page }) => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };

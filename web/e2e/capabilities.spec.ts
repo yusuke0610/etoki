@@ -78,7 +78,7 @@ test.describe("設定していない機能", () => {
     await expect(card.getByText("ブレストと解釈はこのまま続けられます。")).toBeVisible();
   });
 
-  // 表示名の取り直しは GitHub の Project 一覧を引く（ADR 0036）。設定して
+  // 表示名の取り直しは GitHub の Project 一覧を引く（ADR 0037）。設定して
   // いない構成では押しても引けないので、押させずに理由を出す。
   test("GitHub が未設定なら、作成先の名前も取り直させない", async ({ page }) => {
     const mock = baseMock();

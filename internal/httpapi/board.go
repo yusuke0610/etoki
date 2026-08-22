@@ -197,7 +197,7 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 // refreshBoardTargetDisplay は作成先の表示用スナップショットだけを取り直す。
 //
 // **固定済みでも通る。** 固定するのは作成先そのものであって、表示用の値では
-// ない（ADR 0036）。同じかどうかの判断はユースケース層が持つ。
+// ない（ADR 0037）。同じかどうかの判断はユースケース層が持つ。
 func (h *handlers) refreshBoardTargetDisplay(c *gin.Context) {
 	var req apitypes.BoardTargetDisplay
 	if err := c.ShouldBindJSON(&req); err != nil {

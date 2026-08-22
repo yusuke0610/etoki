@@ -120,7 +120,7 @@ export function sceneUnreadableFailure(): Failure {
 }
 
 /**
- * 作成先の Project が GitHub 側で見つからなかった（ADR 0036）。
+ * 作成先の Project が GitHub 側で見つからなかった（ADR 0037）。
  *
  * `ErrorCode` を持たない。GitHub も etoki も 200 を返していて、一覧に
  * 目当ての ID が無かっただけ。**それでも文言はここに置く**（`web/CLAUDE.md`）。

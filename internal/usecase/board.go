@@ -31,7 +31,7 @@ var ErrTargetLocked = errors.New("etoki: board target is locked")
 // ものと違うことを表す。
 //
 // **ErrTargetLocked と分ける。** 直し方が違う。固定は解けないが、食い違いは
-// 画面を開き直せば解ける（ADR 0036）。
+// 画面を開き直せば解ける（ADR 0037）。
 var ErrTargetMismatch = errors.New("etoki: board target does not match")
 
 // ErrSceneConflict は保存の基準にした版が古いことを表す。
@@ -231,7 +231,7 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 // RefreshTargetDisplay は作成先の表示用スナップショットだけを更新する。
 //
 // **固定済みでも通る。** 固定するのは作成先そのもの（owner / name / projectId）
-// であって、表示用の値ではない（ADR 0036）。GitHub 側で Project を改名すると
+// であって、表示用の値ではない（ADR 0037）。GitHub 側で Project を改名すると
 // 古い名前が残るが、選び直しは固定後に通らないので直す手段が無かった。
 //
 // projectID は変更先ではなく照合材料。保存されているものと違えば

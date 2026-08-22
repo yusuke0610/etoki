@@ -35,5 +35,5 @@
 | [0029](0029-declare-validation-rules-with-their-instructions.md) | 検査と LLM への指示を 1 つの表に結ぶ                                   | 採用                 |
 | [0030](0030-show-what-is-not-configured.md)                      | 使えない機能は押す前に見せる（プロセスの設定と利用者の権限を分ける）   | 採用                 |
 | [0034](0034-error-codes-in-the-contract.md)                      | エラーは契約の code で表し、文言は画面が持つ                           | 採用                 |
-| [0035](0035-mark-annotation-frames-on-canvas.md)                 | 注釈にした frame はキャンバスに重ねて見分けさせる（要素は変えない）    | 採用                 |
-| [0036](0036-refresh-target-display-after-lock.md)                | 作成先の表示名は固定後も取り直せる（固定するのは作成先そのもの）       | 採用                 |
+| [0036](0036-mark-annotation-frames-on-canvas.md)                 | 注釈にした frame はキャンバスに重ねて見分けさせる（要素は変えない）    | 採用                 |
+| [0037](0037-refresh-target-display-after-lock.md)                | 作成先の表示名は固定後も取り直せる（固定するのは作成先そのもの）       | 採用                 |
