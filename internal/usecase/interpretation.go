@@ -409,10 +409,12 @@ const imageInstruction = `この囲みを写した画像を添えています。
 // granularityInstruction は開発者の粒度指定を指示文にする。
 func granularityInstruction(g domain.Granularity) string {
 	switch g {
+	// **どう振る舞うかは制約一覧（domain.Rules）が言う。** ここで繰り返すと、
+	// 粒度の規則だけが 2 箇所になる。
 	case domain.GranularityEpic:
-		return "開発者はこの範囲を epic 相当と指定しています。epic を少なくとも 1 件含めてください。"
+		return "開発者はこの範囲を epic 相当と指定しています。"
 	case domain.GranularityIssue:
-		return "開発者はこの範囲を issue 相当と指定しています。epic は作らず issue だけを出力してください。"
+		return "開発者はこの範囲を issue 相当と指定しています。"
 	default:
 		return "粒度の指定はありません。内容に応じて epic と issue を使い分けてください。"
 	}
@@ -459,9 +461,14 @@ func correctionLines(err error) []string {
 
 // interpretationSystemPrompt は解釈の役割と出力形式を伝えるシステム指示。
 //
-// 制約は domain.Interpretation.Validate と対応している。片方だけ変えると、
-// 守れない指示を出したり、指示していない制約で弾いたりすることになる。
-const interpretationSystemPrompt = `あなたはホワイトボード上のブレスト内容を読み、開発タスクへ整理する担当です。
+// **制約一覧は domain.Rules から組み立てる。** 手で書くと、検査を足したときに
+// 片方だけ古くなり、指示していない制約で弾くことになる（ADR 0028）。ここが持つ
+// のは役割・出力形式・再送の枠組みだけ。
+var interpretationSystemPrompt = fmt.Sprintf(interpretationSystemPromptTemplate,
+	domain.InterpretationConstraints())
+
+// interpretationSystemPromptTemplate の %s に制約一覧が入る。
+const interpretationSystemPromptTemplate = `あなたはホワイトボード上のブレスト内容を読み、開発タスクへ整理する担当です。
 
 与えられるのは、ホワイトボード上で開発者が囲んだ 1 つの範囲に含まれるテキストです。
 ブレスト中に書かれたものなので、粒度も表現もばらばらです。これを GitHub の
@@ -479,18 +486,5 @@ draft issue に落とせる形へ整理してください。
 
 制約:
 
-- kind は "epic" か "issue" のどちらかです。ほかの値は使えません。
-- 階層は epic と issue の 2 段だけです。epic の下に epic は作れません。
-- epic の parentLocalId は必ず null です。
-- issue の parentLocalId には親となる epic の localId を書きます。どの epic にも
-  属さない issue は null にします。
-- localId は出力の中で一意にしてください。GitHub 上の ID は作成後にしか決まらない
-  ため、親子関係はこの一時 ID で表します。
-- title は空にできません。
-- summary は GitHub には作りません。解釈が意図どおりかを開発者が確かめるための
-  ものなので、何をどうまとめたのかが分かる文にしてください。
-- previousRef は、前回までに作ったものを書き換える場合にだけ、その ID
-  （p1 など）を入れます。**前回の一覧を渡していないときは必ず null です。**
-  新しく作るものも null です。1 つの ID を 2 つの項目に使わないでください。
-- 上に挙げたフィールド以外を出力しないでください。
+%s- 上に挙げたフィールド以外を出力しないでください。
 `

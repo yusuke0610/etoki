@@ -112,8 +112,110 @@ type interpretationWire struct {
 	Items   []interpretedItemWire `json:"items"`
 }
 
+// RuleID は解釈結果に課す制約 1 つを指す。
+//
+// **ValidationError は必ずどれかを名乗る。** 名乗らせているのは、検査と LLM への
+// 指示が食い違わないようにするため。指示していない制約で弾くと、LLM は直しようの
+// ない再送を繰り返す（ADR 0028）。
+type RuleID string
+
+// 制約の一覧。**検査を足すならここにも足す。** どちらか片方だけでは
+// TestRules_MatchValidation が落ちる。
+const (
+	RuleSummary          RuleID = "summary"
+	RuleItemsPresent     RuleID = "itemsPresent"
+	RuleKind             RuleID = "kind"
+	RuleTitle            RuleID = "title"
+	RuleEpicTitleUnique  RuleID = "epicTitleUnique"
+	RuleLocalID          RuleID = "localId"
+	RuleLocalIDUnique    RuleID = "localIdUnique"
+	RuleEpicHasNoParent  RuleID = "epicHasNoParent"
+	RuleParentExists     RuleID = "parentExists"
+	RuleParentIsEpic     RuleID = "parentIsEpic"
+	RulePreviousRef      RuleID = "previousRef"
+	RulePreviousItemID   RuleID = "previousItemId"
+	RuleGranularityIssue RuleID = "granularityIssue"
+	RuleGranularityEpic  RuleID = "granularityEpic"
+)
+
+// Rule は制約 1 つと、それを LLM に伝える文。
+type Rule struct {
+	ID RuleID
+
+	// Instruction は LLM に出す指示。**Validate が弾くものはここに書く。**
+	//
+	// 空文字は「LLM の出力では起こりえない」という意味。画面や API を直接叩く
+	// 経路でだけ起きる検査がこれにあたる。伝えようのないものを伝えると、
+	// 出しようのないフィールドの説明がプロンプトに混ざる。
+	Instruction string
+}
+
+// Rules は制約の全件。プロンプトの制約一覧はここから組み立てる。
+//
+// **並び順がそのままプロンプトの並び順になる。** 読み手が構造から順に辿れるよう、
+// 全体にかかるものから項目ごとのものへ降りる。
+var Rules = []Rule{
+	{RuleKind, `kind は "epic" か "issue" のどちらかです。ほかの値は使えません。`},
+	{RuleParentIsEpic, "階層は epic と issue の 2 段だけです。epic の下に epic は作れず、" +
+		"issue を親にはできません。"},
+	{RuleEpicHasNoParent, "epic の parentLocalId は必ず null です。"},
+	{RuleParentExists, "issue の parentLocalId には親となる epic の localId を書きます。" +
+		"どの epic にも属さない issue は null にします。存在しない localId や自分自身は指せません。"},
+	{RuleLocalIDUnique, "localId は出力の中で一意にしてください。GitHub 上の ID は作成後にしか" +
+		"決まらないため、親子関係はこの一時 ID で表します。"},
+	{RuleLocalID, "localId は空にできません。"},
+	{RuleTitle, "title は空にできません。"},
+	{RuleEpicTitleUnique, "epic の title は出力の中で一意にしてください。子は親の epic を" +
+		"タイトルで指すため、同じタイトルの epic が 2 つあると、どちらの配下なのか区別が" +
+		"付かなくなります。**空白と改行の違いだけでは別のタイトルになりません。** " +
+		"前後と行末の空白、改行コード、Unicode の正規化形の違いは同じタイトルとして扱います。" +
+		"issue の title は重複していても構いません。"},
+	{RuleItemsPresent, "items は少なくとも 1 件必要です。囲んだ範囲から作るものが 1 つも" +
+		"無い、という出力はしないでください。"},
+	{RuleSummary, "summary は GitHub には作りません。解釈が意図どおりかを開発者が確かめる" +
+		"ためのものなので、何をどうまとめたのかが分かる文にしてください。空にはできません。"},
+	{RulePreviousRef, "previousRef は、前回までに作ったものを書き換える場合にだけ、その ID" +
+		"（p1 など）を入れます。**前回の一覧を渡していないときは必ず null です。** " +
+		"新しく作るものも null です。1 つの ID を 2 つの項目に使わないでください。"},
+	{RuleGranularityIssue, "粒度に issue が指定されているときは、epic を作らず issue だけを" +
+		"出力してください。"},
+	{RuleGranularityEpic, "粒度に epic が指定されているときは、epic を少なくとも 1 件" +
+		"含めてください。"},
+	// previousItemId は LLM が出す値ではない。LLM には previousRef を出させ、
+	// ParseInterpretation が解決する（ADR 0026）。画面や API を直接叩く経路で
+	// だけ検査に掛かるので、指示は無い。
+	{RulePreviousItemID, ""},
+}
+
+// InterpretationConstraints は Rules を LLM に出す制約一覧の形にする。
+//
+// **プロンプト側で書き写さない。** 写すと、検査を足したときに片方だけ古くなる。
+func InterpretationConstraints() string {
+	var b strings.Builder
+	for _, r := range Rules {
+		if r.Instruction == "" {
+			continue
+		}
+		b.WriteString("- ")
+		b.WriteString(r.Instruction)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// newValidationError は指摘 1 件を組み立てる。
+//
+// **構造体リテラルではなくこれを通す。** リテラルだと Rule を書き忘れても
+// コンパイルが通り、どの制約に対応するのか分からない指摘が混ざる。
+func newValidationError(rule RuleID, field, message string) ValidationError {
+	return ValidationError{Rule: rule, Field: field, Message: message}
+}
+
 // ValidationError は解釈結果の検証で見つかった問題 1 件。
 type ValidationError struct {
+	// Rule はこの指摘が対応する制約。LLM への指示と検査を結ぶ。
+	Rule RuleID
+
 	// Field は問題のある場所。"items[2].title" のような形を取る。
 	Field string
 	// Message は何が問題かの説明。
@@ -205,22 +307,14 @@ func resolvePreviousRefs(wire interpretationWire, previous []PreviousItem) (Inte
 
 			switch {
 			case !known && len(previous) == 0:
-				errs = append(errs, ValidationError{
-					Field:   field,
-					Message: "この囲みから作ったものはまだありません。previousRef は null にしてください",
-				})
+				errs = append(errs, newValidationError(RulePreviousRef, field,
+					"この囲みから作ったものはまだありません。previousRef は null にしてください"))
 			case !known:
-				errs = append(errs, ValidationError{
-					Field: field,
-					Message: fmt.Sprintf(
-						"previousRef %q に対応するものがありません。前回作成したものの ID か null にしてください", ref),
-				})
+				errs = append(errs, newValidationError(RulePreviousRef, field, fmt.Sprintf(
+					"previousRef %q に対応するものがありません。前回作成したものの ID か null にしてください", ref)))
 			case claimed:
-				errs = append(errs, ValidationError{
-					Field: field,
-					Message: fmt.Sprintf(
-						"previousRef %q を %q と取り合っています。1 つにつき 1 件までです", ref, owner),
-				})
+				errs = append(errs, newValidationError(RulePreviousRef, field, fmt.Sprintf(
+					"previousRef %q を %q と取り合っています。1 つにつき 1 件までです", ref, owner)))
 			default:
 				claimedBy[ref] = w.LocalID
 				item.PreviousItemID = &itemID
@@ -245,16 +339,12 @@ func (in Interpretation) Validate(g Granularity) error {
 	var errs ValidationErrors
 
 	if strings.TrimSpace(in.Summary) == "" {
-		errs = append(errs, ValidationError{
-			Field:   "summary",
-			Message: "この囲みをどう解釈したかの説明を入れてください",
-		})
+		errs = append(errs, newValidationError(RuleSummary, "summary",
+			"この囲みをどう解釈したかの説明を入れてください"))
 	}
 	if len(in.Items) == 0 {
-		errs = append(errs, ValidationError{
-			Field:   "items",
-			Message: "少なくとも 1 件の項目が必要です",
-		})
+		errs = append(errs, newValidationError(RuleItemsPresent, "items",
+			"少なくとも 1 件の項目が必要です"))
 	}
 
 	errs = append(errs, validateItems(in.Items)...)
@@ -284,6 +374,12 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 
 	var errs ValidationErrors
 	seen := make(map[string]struct{}, len(items))
+	// epic のタイトルから localId を引く表。**先に出たほうを残す。**
+	//
+	// 親は epic のタイトル文字列で指す（ADR 0006）ので、同名の epic が並ぶと
+	// その配下は GitHub 上で 1 つにまとまり、どちらの子なのか区別が付かなく
+	// なる。draft issue は削除できないため、作ってからでは取り返せない。
+	epicTitles := make(map[string]string, len(items))
 	// 更新先の取り合いはここでも見る。解釈の出口では resolvePreviousRefs が
 	// 弾いているが、作成のリクエストは画面から送られてくるので、そこを通らない
 	// 経路でも 1 つの draft issue に 2 件が向かうのを防ぐ必要がある。
@@ -295,47 +391,49 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 		if it.PreviousItemID != nil {
 			switch owner, dup := claimed[*it.PreviousItemID]; {
 			case *it.PreviousItemID == "":
-				errs = append(errs, ValidationError{
-					Field:   field("previousItemId"),
-					Message: "previousItemId を空文字にはできません。新規なら null にしてください",
-				})
+				errs = append(errs, newValidationError(RulePreviousItemID, field("previousItemId"),
+					"previousItemId を空文字にはできません。新規なら null にしてください"))
 			case dup:
-				errs = append(errs, ValidationError{
-					Field: field("previousItemId"),
-					Message: fmt.Sprintf(
-						"previousItemId %q を %q と取り合っています。1 つにつき 1 件までです",
-						*it.PreviousItemID, owner),
-				})
+				errs = append(errs, newValidationError(RulePreviousItemID, field("previousItemId"),
+					fmt.Sprintf("previousItemId %q を %q と取り合っています。1 つにつき 1 件までです",
+						*it.PreviousItemID, owner)))
 			default:
 				claimed[*it.PreviousItemID] = it.LocalID
 			}
 		}
 
 		if !it.Kind.Valid() {
-			errs = append(errs, ValidationError{
-				Field:   field("kind"),
-				Message: fmt.Sprintf("kind は %q か %q のどちらかです（%q が指定されています）", KindEpic, KindIssue, it.Kind),
-			})
+			errs = append(errs, newValidationError(RuleKind, field("kind"),
+				fmt.Sprintf("kind は %q か %q のどちらかです（%q が指定されています）", KindEpic, KindIssue, it.Kind)))
 		}
 
-		if strings.TrimSpace(it.Title) == "" {
-			errs = append(errs, ValidationError{
-				Field:   field("title"),
-				Message: "title を空にはできません",
-			})
+		title := normalizeTitle(it.Title)
+		switch owner, dup := epicTitles[title]; {
+		case title == "":
+			errs = append(errs, newValidationError(RuleTitle, field("title"),
+				"title を空にはできません"))
+
+		case it.Kind != KindEpic:
+			// issue のタイトルは重複してよい。親として指されないので、
+			// 同名でも構造は壊れない。
+
+		case dup:
+			errs = append(errs, newValidationError(RuleEpicTitleUnique, field("title"), fmt.Sprintf(
+				"epic の title %q が localId %q のものと重複しています。子は親の"+
+					"epic をタイトルで指すため、どちらの配下なのか区別が付かなく"+
+					"なります。どちらかを別のタイトルにしてください", it.Title, owner)))
+
+		default:
+			epicTitles[title] = it.LocalID
 		}
 
 		if it.LocalID == "" {
-			errs = append(errs, ValidationError{
-				Field:   field("localId"),
-				Message: "localId を空にはできません",
-			})
+			errs = append(errs, newValidationError(RuleLocalID, field("localId"),
+				"localId を空にはできません"))
 		} else {
 			if _, dup := seen[it.LocalID]; dup {
-				errs = append(errs, ValidationError{
-					Field:   field("localId"),
-					Message: fmt.Sprintf("localId %q が重複しています。項目ごとに別の値にしてください", it.LocalID),
-				})
+				errs = append(errs, newValidationError(RuleLocalIDUnique, field("localId"),
+					fmt.Sprintf("localId %q が重複しています。項目ごとに別の値にしてください", it.LocalID)))
 			}
 			seen[it.LocalID] = struct{}{}
 		}
@@ -344,6 +442,39 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 	}
 
 	return errs
+}
+
+// normalizeTitle は epic のタイトルの重複判定に使う正規形を返す。
+//
+// **ここが規則の正本。** 判断の理由は ADR 0028 にあるが、あちらが持つのは基準
+// （人に見分けが付くかどうか）だけで、何が畳まれるかは書いていない。列挙を
+// 2 箇所に置くと、normalizeText が変わったときに片方が古いまま残る。
+//
+// 畳む:
+//
+//   - 改行コードの違い（"認証\r\n方式" と "認証\n方式"）
+//   - 行末の空白とタブ（"認証 \n方式" と "認証\n方式"）
+//   - Unicode の合成済みと結合文字（NFC と NFD の "ガード"）
+//   - 前後の空白（"認証" と " 認証 "）
+//
+// 畳まない:
+//
+//   - 大文字小文字（"API" と "api"）
+//   - 全角半角（"API" と "ＡＰＩ"）
+//   - 行の途中の空白（"認証 方式" と "認証方式"）
+//
+// 境目は「画面上に現れる違いかどうか」。畳むほうは現れないので、別の文字列
+// として通しても「なぜか 2 つある」という同じ壊れ方をする。畳まないほうは
+// 見分けが付くうえ GitHub 側でも別の文字列なので、畳むと壊れないものを弾く。
+//
+// 前の 3 つは normalizeText がやっている。**再利用しているのは、「見た目が同じ
+// ものは同じ」という判断が ComputeContentHash に既にあるため。** 別の正規化を
+// 2 つ持つと、どちらが正しい「同じ」なのかが決まらない。
+//
+// **同じことを interpretationSystemPrompt にも書いてある**（畳む側だけ）。
+// 片方だけ変えると、指示していない制約で弾くことになる。
+func normalizeTitle(s string) string {
+	return strings.TrimSpace(normalizeText(s))
 }
 
 // validateParent は 1 項目の親参照を検べる。
@@ -358,25 +489,19 @@ func validateParent(it InterpretedItem, kindByLocalID map[string]ItemKind, field
 
 	switch {
 	case it.Kind == KindEpic:
-		return ValidationErrors{{
-			Field:   field("parentLocalId"),
-			Message: "epic は親を持てません。parentLocalId を null にしてください",
-		}}
+		return ValidationErrors{newValidationError(RuleEpicHasNoParent, field("parentLocalId"),
+			"epic は親を持てません。parentLocalId を null にしてください")}
 
 	case parent == it.LocalID:
-		return ValidationErrors{{
-			Field:   field("parentLocalId"),
-			Message: "自分自身を親にはできません",
-		}}
+		return ValidationErrors{newValidationError(RuleParentExists, field("parentLocalId"),
+			"自分自身を親にはできません")}
 	}
 
 	parentKind, ok := kindByLocalID[parent]
 	switch {
 	case !ok:
-		return ValidationErrors{{
-			Field:   field("parentLocalId"),
-			Message: fmt.Sprintf("parentLocalId %q に対応する localId がありません", parent),
-		}}
+		return ValidationErrors{newValidationError(RuleParentExists, field("parentLocalId"),
+			fmt.Sprintf("parentLocalId %q に対応する localId がありません", parent))}
 
 	case !parentKind.Valid():
 		// 親の kind が不正なことは親自身の項目で報告済み。ここで重ねると、
@@ -385,10 +510,8 @@ func validateParent(it InterpretedItem, kindByLocalID map[string]ItemKind, field
 
 	case parentKind != KindEpic:
 		// 階層は epic ← issue の 1 本だけ（ADR 0006）。
-		return ValidationErrors{{
-			Field:   field("parentLocalId"),
-			Message: fmt.Sprintf("issue の親になれるのは epic だけです（%q は %s です）", parent, parentKind),
-		}}
+		return ValidationErrors{newValidationError(RuleParentIsEpic, field("parentLocalId"),
+			fmt.Sprintf("issue の親になれるのは epic だけです（%q は %s です）", parent, parentKind))}
 	}
 
 	return nil
@@ -405,10 +528,9 @@ func validateGranularity(items []InterpretedItem, g Granularity) ValidationError
 	case GranularityIssue:
 		for i, it := range items {
 			if it.Kind == KindEpic {
-				errs = append(errs, ValidationError{
-					Field:   fmt.Sprintf("items[%d].kind", i),
-					Message: "粒度に issue が指定されているので epic は作れません",
-				})
+				errs = append(errs, newValidationError(RuleGranularityIssue,
+					fmt.Sprintf("items[%d].kind", i),
+					"粒度に issue が指定されているので epic は作れません"))
 			}
 		}
 
@@ -417,10 +539,8 @@ func validateGranularity(items []InterpretedItem, g Granularity) ValidationError
 			return it.Kind == KindEpic
 		})
 		if !hasEpic {
-			errs = append(errs, ValidationError{
-				Field:   "items",
-				Message: "粒度に epic が指定されているので、epic が少なくとも 1 件必要です",
-			})
+			errs = append(errs, newValidationError(RuleGranularityEpic, "items",
+				"粒度に epic が指定されているので、epic が少なくとも 1 件必要です"))
 		}
 	}
 
