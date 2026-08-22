@@ -177,7 +177,7 @@ e2e が落ちたときは Playwright のレポートが artifact（`playwright-r
 ブランチで `make codegen` を回して同じコミットに含める。**赤いのは知らせであって、
 設定の不具合ではない。**
 
-**`flake.lock` は Dependabot の対象外。** Nix は非対応なので、nixpkgs 側
-（Go / Bun / `oapi-codegen` / `playwright-driver`）は手で `nix flake update` を
-回す。回したあとに `@playwright/test` を揃える手順は
-[`web/CLAUDE.md`](web/CLAUDE.md)。
+**`flake.lock` は Dependabot に出させない。** nix のエコシステムは選べるが
+有効にしていないので（理由は ADR 0032）、nixpkgs 側（Go / Bun / `oapi-codegen` /
+`playwright-driver`）は手で `nix flake update` を回す。回したあとに
+`@playwright/test` を揃える手順は [`web/CLAUDE.md`](web/CLAUDE.md)。

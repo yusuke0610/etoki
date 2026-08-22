@@ -67,8 +67,19 @@ Renovate のほうが表現力は上で、`postUpgradeTasks` を使えば更新 
 
 ### flake.lock は自動化しない
 
-Dependabot は Nix に対応していない。定期実行の workflow で `nix flake update` の
-PR を作る案は採らなかった。
+**Dependabot には nix のエコシステムがあり、`flake.lock` の入力を上げる PR は
+作れる**（version updates のみ。`flake.nix` に直接書いた ref は対象外）。
+対応していないから手でやる、ではなく、**このリポジトリでは有効にしない**という
+判断。
+
+`flake.lock` の更新は 1 本で toolchain 全体（Go / Bun / `oapi-codegen` /
+`playwright-driver`）を動かす。**そのうち `playwright-driver` は `bun.lock` 側の
+`@playwright/test` と対で決まる**ので、直すには別のエコシステムのロックファイルを
+同じ PR で動かすことになる。Dependabot はエコシステムをまたがないから、**この PR
+だけは必ず人が引き取って手で揃える。** 出しても「手で `nix flake update` を回す」
+までの距離が縮まらない。
+
+定期実行の workflow で `nix flake update` の PR を作る案も採らなかった。
 
 **`GITHUB_TOKEN` が作った PR では workflow が走らない**（再帰的な実行を防ぐための
 GitHub の仕様）。つまり自動で作った flake.lock の PR には CI が付かず、**いちばん
@@ -89,3 +100,6 @@ PAT を置けば回避できるが、それは長命の資格情報を 1 つ増�
   version updates の出し方とは別に効く。**ただし完全に独立ではない。**
   `ignore` に依存名だけを書いた依存は security updates も出なくなるので、
   外すときは `update-types` で version updates に限定する（上記）
+- **`flake.lock` は security updates の対象にならない。** nix のエコシステムを
+  有効にしても version updates しか出ないので、そこは有効にするかどうかに
+  関わらず手で見るしかない

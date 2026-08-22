@@ -5,9 +5,9 @@
 # その PR で `make codegen` なり `make test-e2e` なりを回して直す。
 # **落ちること自体が「連動しているものが動いた」という知らせ。**
 #
-# **flake.lock はここでは扱えない。** Dependabot は Nix に対応していないので、
-# nixpkgs 側（Go / Bun / oapi-codegen / playwright-driver）は手で
-# `nix flake update` を回すまま。理由は ADR 0032。
+# **flake.lock はここでは扱わない。** Dependabot には nix のエコシステムが
+# あるが、このリポジトリでは有効にせず、nixpkgs 側（Go / Bun / oapi-codegen /
+# playwright-driver）は手で `nix flake update` を回すまま。理由は ADR 0032。
 version: 2
 
 updates:
