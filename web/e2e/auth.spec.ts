@@ -86,7 +86,7 @@ test.describe("ログイン", () => {
   // 設定していない構成が API の一時的な失敗で使えなくなる。
   test("ログイン状態を取れなくても、画面は使える状態にする", async ({ page }) => {
     const mock = baseMock();
-    mock.session = { status: 500, body: { error: "internal error" } };
+    mock.session = { status: 500, body: { code: "internal", error: "internal error" } };
 
     await installApi(page, mock);
     await page.goto("/");
@@ -99,7 +99,10 @@ test.describe("ログイン", () => {
 
   test("ログインを開始できなければ、その旨をログイン画面に出す", async ({ page }) => {
     const mock = withAuth();
-    mock.login = { status: 503, body: { error: "authentication is not configured" } };
+    mock.login = {
+      status: 503,
+      body: { code: "auth_not_configured", error: "authentication is not configured" },
+    };
 
     await installApi(page, mock);
     await page.goto("/");
@@ -123,7 +126,10 @@ test.describe("ログイン", () => {
 
     // ここで失効させる。一覧の取得だけが 401 を返し、状態を読み直すと
     // 未ログインになる、という実際の並びを作る。
-    mock.boardsError = { status: 401, body: { error: "login required" } };
+    mock.boardsError = {
+      status: 401,
+      body: { code: "login_required", error: "login required" },
+    };
     mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
 
     // 状態はサーバーに訊き直す。画面だけログイン画面に切り替える実装でも

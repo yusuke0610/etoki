@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { githubApi } from "../api/boards";
+import { describeFailure, type Failure } from "../api/errorMessage";
 import type { BoardTarget, Project, Repository } from "../api/types";
+import { ErrorNotice } from "../ErrorNotice";
 
 type Props = {
   /** 見出しに出す名前。作成前のボードにはまだ ID が無いので名前だけ受ける。 */
@@ -31,7 +33,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
   const [repositories, setRepositories] = useState<Repository[] | null>(null);
   const [repository, setRepository] = useState<Repository | null>(null);
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
         const list = await githubApi.repositories();
         if (!cancelled) setRepositories(list);
       } catch (e) {
-        if (!cancelled) setError(`リポジトリを取得できませんでした: ${String(e)}`);
+        if (!cancelled) setError(describeFailure("リポジトリを取得できませんでした", e));
       }
     })();
 
@@ -69,7 +71,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
       setProjects(list);
     } catch (e) {
       if (request !== projectsRequest.current) return;
-      setError(`プロジェクトを取得できませんでした: ${String(e)}`);
+      setError(describeFailure("プロジェクトを取得できませんでした", e));
     }
   }, []);
 
@@ -96,7 +98,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           projectUrl: project.url,
         });
       } catch (e) {
-        setError(`作成先を設定できませんでした: ${String(e)}`);
+        setError(describeFailure("作成先を設定できませんでした", e));
       } finally {
         setSaving(false);
       }
@@ -112,11 +114,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
         {"最初の draft issue を作ると、以後は変更できなくなります。"}
       </p>
 
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <ErrorNotice failure={error} />}
 
       <section className="panel-section">
         <h2>リポジトリ</h2>

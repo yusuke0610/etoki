@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, membersApi } from "../api/boards";
+import { membersApi } from "../api/boards";
+import { describeFailure, type Failure } from "../api/errorMessage";
 import type { BoardMember, BoardRole } from "../api/types";
+import { ErrorNotice } from "../ErrorNotice";
 import { ROLE_LABELS } from "./roles";
 
 type Props = {
@@ -25,14 +27,14 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
   const [members, setMembers] = useState<BoardMember[] | null>(null);
   const [login, setLogin] = useState("");
   const [inviteRole, setInviteRole] = useState<BoardRole>("editor");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
     try {
       setMembers(await membersApi.list(boardId));
     } catch (e) {
-      setError(describe(e, "メンバーを取得できませんでした"));
+      setError(describeFailure("メンバーを取得できませんでした", e));
     }
   }, [boardId]);
 
@@ -50,7 +52,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
       setLogin("");
       await reload();
     } catch (e) {
-      setError(describe(e, "招待できませんでした"));
+      setError(describeFailure("招待できませんでした", e));
     } finally {
       setBusy(false);
     }
@@ -64,7 +66,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
         await membersApi.setRole(boardId, userId, next);
         await reload();
       } catch (e) {
-        setError(describe(e, "ロールを変更できませんでした"));
+        setError(describeFailure("ロールを変更できませんでした", e));
       } finally {
         setBusy(false);
       }
@@ -80,7 +82,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
         await membersApi.remove(boardId, userId);
         await reload();
       } catch (e) {
-        setError(describe(e, "メンバーを外せませんでした"));
+        setError(describeFailure("メンバーを外せませんでした", e));
       } finally {
         setBusy(false);
       }
@@ -99,11 +101,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
         </button>
       </header>
 
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <ErrorNotice failure={error} />}
 
       {isOwner && (
         <form
@@ -184,17 +182,4 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
       )}
     </section>
   );
-}
-
-/**
- * サーバーが返した理由をそのまま見せる。
- *
- * 「最後の owner は外せない」「まだログインしていない」といった、利用者が
- * 次に何をすればよいか決められる文言がここに載る。握りつぶさない。
- */
-function describe(e: unknown, fallback: string): string {
-  if (e instanceof ApiError) {
-    return `${fallback}: ${e.message}`;
-  }
-  return `${fallback}: ${String(e)}`;
 }

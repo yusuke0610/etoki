@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { partialCreationFailure, type Failure } from "../api/errorMessage";
 import type {
   AnnotationStatus,
   CreatedRun,
@@ -11,6 +12,7 @@ import type {
   SyncItem,
   SyncState,
 } from "../api/types";
+import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { annotationLabels, frameLabel } from "./annotationLabel";
 import { groupByEpic } from "./interpretation";
@@ -31,13 +33,20 @@ import type { ProjectLink } from "./projectLink";
 export type CreationState =
   | { status: "running" }
   | { status: "done"; run: CreatedRun }
-  | { status: "error"; message: string };
+  | { status: "error"; failure: Failure };
 
 /** 注釈 1 つぶんの解釈の進み具合。 */
 export type InterpretationState =
   | { status: "running" }
   | { status: "done"; result: Interpretation }
-  | { status: "error"; message: string };
+  | { status: "error"; failure: Failure };
+
+/**
+ * 「LLM が未設定」の説明文の id。
+ *
+ * パネルに 1 つしか出さないので固定でよい。各注釈の「解釈する」がここを指す。
+ */
+const INTERPRETATION_UNAVAILABLE_ID = "interpretation-unavailable";
 
 const STATE_LABEL: Record<SyncState, string> = {
   uncreated: "未作成",
@@ -101,6 +110,15 @@ type Props = {
    */
   projectAccess: ProjectAccess;
   /**
+   * LLM が未設定なら理由。使えるなら null（ADR 0030）。
+   *
+   * `projectAccess` とは別物。あちらはこのボードの Project に書けるか、
+   * こちらは etoki に LLM が設定されているか。**混ぜない。**
+   */
+  interpretationUnavailable: string | null;
+  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
+  creationUnavailable: string | null;
+  /**
    * 作成先へのリンク。組めなければ null（ADR 0025）。
    *
    * draft issue 個別の URL は組めないので、飛び先は注釈ごとではなく
@@ -128,6 +146,8 @@ export function AnnotationPanel({
   onCreate,
   canEdit,
   projectAccess,
+  interpretationUnavailable,
+  creationUnavailable,
   projectLink,
 }: Props) {
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
@@ -141,6 +161,20 @@ export function AnnotationPanel({
       {!canEdit && (
         <p className="hint" role="status">
           {"読むだけの権限で開いています。編集・解釈・作成はできません。"}
+        </p>
+      )}
+
+      {/*
+        設定の不足は注釈ごとではなくパネルに 1 度だけ出す。注釈の数だけ同じ文が
+        並ぶと、読むべき状態が埋もれる。各カードのボタンはこの文を
+        aria-describedby で指す（ADR 0030）。
+
+        viewer には出さない。どのみち解釈できないことは上の 1 行が言っており、
+        設定の話を重ねても打てる手は増えない（ADR 0017）。
+      */}
+      {canEdit && interpretationUnavailable !== null && (
+        <p className="hint" role="status" id={INTERPRETATION_UNAVAILABLE_ID}>
+          {interpretationUnavailable}
         </p>
       )}
 
@@ -272,6 +306,8 @@ export function AnnotationPanel({
                       stale={stale}
                       saving={saving}
                       projectAccess={projectAccess}
+                      interpretationUnavailable={interpretationUnavailable}
+                      creationUnavailable={creationUnavailable}
                       previous={a.items ?? []}
                       projectLink={projectLink}
                       onInterpret={() => onInterpret(a.id)}
@@ -299,6 +335,10 @@ type InterpretationSectionProps = {
   stale: boolean;
   saving: boolean;
   projectAccess: ProjectAccess;
+  /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
+  interpretationUnavailable: string | null;
+  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
+  creationUnavailable: string | null;
   /** この注釈が GitHub に在らしめているもの（ADR 0026）。 */
   previous: SyncItem[];
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
@@ -321,6 +361,8 @@ function InterpretationSection({
   stale,
   saving,
   projectAccess,
+  interpretationUnavailable,
+  creationUnavailable,
   previous,
   projectLink,
   onInterpret,
@@ -330,6 +372,17 @@ function InterpretationSection({
   // 押せない理由は title に隠さず本文として出す。disabled なボタンはフォーカスも
   // 当たらないので、title ではキーボードと読み上げの利用者に理由が届かない。
   const blockedId = `interpret-blocked-${annotationId}`;
+  // **設定の不足が先。** 保存しても状況は変わらないので、「保存してから」を
+  // 先に出すと、保存した人がもう一度同じところで止まる（ADR 0030）。
+  //
+  // 未設定の理由はパネルの上に 1 つだけ出ているので、ここでは指すだけにする。
+  // 注釈の数だけ同じ文を並べない。
+  const unavailable = interpretationUnavailable !== null;
+  const describedBy = unavailable
+    ? INTERPRETATION_UNAVAILABLE_ID
+    : stale
+      ? blockedId
+      : undefined;
 
   return (
     <div className="interpretation">
@@ -340,20 +393,20 @@ function InterpretationSection({
       <button
         type="button"
         onClick={onInterpret}
-        disabled={running || stale}
-        aria-describedby={stale ? blockedId : undefined}
+        disabled={running || unavailable || stale}
+        aria-describedby={describedBy}
       >
         {running ? "解釈中…" : "解釈する"}
       </button>
 
-      {stale && (
+      {!unavailable && stale && (
         <p className="hint" id={blockedId}>
           保存してから解釈できます。テキストは保存済みのシーンから、
           画像は画面から取るためです。
         </p>
       )}
 
-      {state?.status === "error" && <p className="error">{state.message}</p>}
+      {state?.status === "error" && <ErrorNotice failure={state.failure} />}
 
       {state?.status === "done" && (
         <InterpretationDraft
@@ -363,6 +416,7 @@ function InterpretationSection({
           creation={creation}
           saving={saving}
           projectAccess={projectAccess}
+          creationUnavailable={creationUnavailable}
           previous={previous}
           projectLink={projectLink}
           onCreate={onCreate}
@@ -384,6 +438,7 @@ function CreationSection({
   saving,
   reasons,
   projectAccess,
+  creationUnavailable,
   projectLink,
   onCreate,
 }: {
@@ -393,12 +448,28 @@ function CreationSection({
   /** このまま作らせない理由。空なら押させる。 */
   reasons: string[];
   projectAccess: ProjectAccess;
+  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
+  creationUnavailable: string | null;
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
   projectLink: ProjectLink | null;
   onCreate: () => void;
 }) {
   const running = state?.status === "running";
   const blockedId = `create-blocked-${annotationId}`;
+
+  // **GitHub が未設定なら、権限より先にこちら。** 未設定の構成では
+  // projectAccess は unknown にしかならないので、下の denied では拾えない。
+  // 解釈まではこのまま続けられることも書く（ADR 0008 / 0030）。
+  if (creationUnavailable !== null) {
+    return (
+      <div className="creation">
+        <p className="hint">
+          {creationUnavailable}
+          {"ブレストと解釈はこのまま続けられます。"}
+        </p>
+      </div>
+    );
+  }
 
   // 書けないと分かっているなら、押させずに理由を出す。押せば GitHub が 403 を
   // 返すので結果は同じだが、理由が読めるのは先に出したときだけ（ADR 0017）。
@@ -435,16 +506,22 @@ function CreationSection({
         </p>
       )}
 
-      {state?.status === "error" && <p className="error">{state.message}</p>}
+      {state?.status === "error" && <ErrorNotice failure={state.failure} />}
 
       {state?.status === "done" && (
         <div className="creation-result">
           {/* 途中で失敗しても作れたぶんは残る。何も作られていないと
               誤解して再実行すると、GitHub 側に重複が増える。 */}
           {state.run.incomplete ? (
-            <p className="error">
-              途中で失敗しました（{partialSummary(state.run.items)}）: {state.run.error}
-            </p>
+            // 部分失敗の本文には code を足さない。1 件ずつ理由が違いうるので
+            // 1 つの code に落ちない。畳んで見せる扱いだけ揃える。文言は
+            // errorMessage.ts、数えるのはこちら。
+            <ErrorNotice
+              failure={partialCreationFailure(
+                partialSummary(state.run.items),
+                state.run.error,
+              )}
+            />
           ) : (
             <p className="hint">{resultSummary(state.run.items)}。</p>
           )}
@@ -491,6 +568,7 @@ function InterpretationDraft({
   creation,
   saving,
   projectAccess,
+  creationUnavailable,
   previous,
   projectLink,
   onCreate,
@@ -501,6 +579,8 @@ function InterpretationDraft({
   creation?: CreationState;
   saving: boolean;
   projectAccess: ProjectAccess;
+  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
+  creationUnavailable: string | null;
   /** この注釈が GitHub に在らしめているもの。取り残しの算出に使う。 */
   previous: SyncItem[];
   projectLink: ProjectLink | null;
@@ -578,6 +658,7 @@ function InterpretationDraft({
         saving={saving}
         reasons={reasons}
         projectAccess={projectAccess}
+        creationUnavailable={creationUnavailable}
         projectLink={projectLink}
         onCreate={() => onCreate(buildInterpretation(draft))}
       />

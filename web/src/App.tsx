@@ -2,9 +2,17 @@ import "@excalidraw/excalidraw/index.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, authApi, boardsApi } from "./api/boards";
-import type { BoardDetail, BoardSummary, BoardTarget, SessionStatus } from "./api/types";
+import { ApiError, authApi, boardsApi, capabilitiesApi } from "./api/boards";
+import { describeFailure, type Failure } from "./api/errorMessage";
+import type {
+  BoardDetail,
+  BoardSummary,
+  BoardTarget,
+  Capabilities,
+  SessionStatus,
+} from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
+import { ErrorNotice } from "./ErrorNotice";
 import { BoardPage } from "./board/BoardPage";
 import { BoardTree } from "./board/BoardTree";
 import { RepositoryPicker } from "./board/RepositoryPicker";
@@ -12,7 +20,7 @@ import { RepositoryPicker } from "./board/RepositoryPicker";
 export function App() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [current, setCurrent] = useState<BoardDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
   const [name, setName] = useState("");
   // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
   const [picking, setPicking] = useState(false);
@@ -24,6 +32,11 @@ export function App() {
   const [creating, setCreating] = useState<string | null>(null);
   // ログイン状態。null は問い合わせ中。
   const [session, setSession] = useState<SessionStatus | null>(null);
+  // いま使える機能。**null は「まだ確かめていない」。**
+  //
+  // LLM や GitHub を設定しなくても etoki は起動する（ADR 0008）。設定していない
+  // 機能は押した後に 503 で返るだけなので、押す前に見せるために引く。
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   // 開いているボードに未保存の変更があるか。BoardPage から上がってくる。
   //
   // キャンバスから離れる導線はこちら側にあるので、判断の材料をここに置く。
@@ -38,7 +51,7 @@ export function App() {
       } catch (e) {
         // 状態が分からないなら、ログインを求めない側に倒す。求める側に倒すと、
         // 認証を設定していない構成が API の一時的な失敗で使えなくなる。
-        setError(`ログイン状態を取得できませんでした: ${String(e)}`);
+        setError(describeFailure("ログイン状態を取得できませんでした", e));
         setSession({ authRequired: false, authenticated: false });
       }
     })();
@@ -51,11 +64,19 @@ export function App() {
       // 使っている最中の失効はここで初めて分かる。エラーだけ出すと、画面は
       // ログイン済みのまま何も操作できず、リロードするまで戻れない。
       // 状態を読み直せばログイン画面に落ちる。
-      if (e instanceof ApiError && e.status === 401) {
-        setSession(await authApi.session());
+      if (e instanceof ApiError && e.code === "login_required") {
+        // 読み直しにも失敗したら、初回と同じ側に倒す。ここで投げると、
+        // 呼び出し側は void reload() なので誰も受けず、画面はログイン済みの
+        // ままボード一覧だけが空という、戻れない状態で止まる。
+        try {
+          setSession(await authApi.session());
+        } catch (sessionError) {
+          setError(describeFailure("ログイン状態を取得できませんでした", sessionError));
+          setSession({ authRequired: false, authenticated: false });
+        }
         return;
       }
-      setError(`ボード一覧を取得できませんでした: ${String(e)}`);
+      setError(describeFailure("ボード一覧を取得できませんでした", e));
     }
   }, []);
 
@@ -66,6 +87,16 @@ export function App() {
   useEffect(() => {
     if (!signedIn) return;
     void reload();
+
+    void (async () => {
+      try {
+        setCapabilities(await capabilitiesApi.get());
+      } catch {
+        // 引けなくても止めない。null のままなら押させる側に倒れ、これまで
+        // どおり押した後に 503 の理由が出る。**確かめられなかったことを
+        // 「使えない」として見せない**（中核思想 3）。
+      }
+    })();
   }, [reload, signedIn]);
 
   /**
@@ -109,7 +140,7 @@ export function App() {
       // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
       setSession(await authApi.session());
     } catch (e) {
-      setError(`ログアウトできませんでした: ${String(e)}`);
+      setError(describeFailure("ログアウトできませんでした", e));
       // 失敗したらログインしたまま。一覧を空のままにすると、何も操作できない
       // 画面が残る。
       await reload();
@@ -125,7 +156,7 @@ export function App() {
       try {
         next = await boardsApi.get(id);
       } catch (e) {
-        setError(`ボードを開けませんでした: ${String(e)}`);
+        setError(describeFailure("ボードを開けませんでした", e));
         return;
       }
 
@@ -238,14 +269,7 @@ export function App() {
       </nav>
 
       <main className="main">
-        {error && (
-          <div className="error" role="alert">
-            {error}
-            <button type="button" onClick={() => setError(null)}>
-              閉じる
-            </button>
-          </div>
-        )}
+        {error && <ErrorNotice failure={error} onClose={() => setError(null)} />}
 
         {/*
           「ボードに入る → 対象リポジトリ選択 → ブレスト開始」の分岐はここに置く。
@@ -275,6 +299,7 @@ export function App() {
           <BoardPage
             key={current.id}
             board={current}
+            capabilities={capabilities}
             onError={setError}
             onChangeTarget={() => setPicking(true)}
             onDirtyChange={handleDirtyChange}

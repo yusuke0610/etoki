@@ -27,6 +27,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * いま使える機能を返す
+         * @description LLM や GitHub を設定していなくても etoki は起動する（ADR 0008）。
+         *     設定していない機能のエンドポイントは 503 を返すが、**それは押した後に
+         *     しか分からない。** 押す前に「いまできないこと」を見せるための口。
+         *
+         *     返すのはプロセスの設定であって、利用者ごとの権限ではない。ボード単位の
+         *     可否は `GET /api/boards/{id}/access`（ADR 0017）。**混ぜないこと。**
+         *     片方が「できる」でもう片方が「できない」は普通に起きる。
+         */
+        get: operations["getCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/session": {
         parameters: {
             query?: never;
@@ -455,6 +481,27 @@ export interface components {
             login: string;
             displayName: string;
         };
+        /**
+         * @description いま使える機能。**プロセスの設定であって、利用者ごとの権限ではない。**
+         *
+         *     false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
+         *     `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
+         *     原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
+         */
+        Capabilities: {
+            /** @description 注釈を解釈できるか。false は LLM が未設定（ADR 0008） */
+            interpretation: boolean;
+            /**
+             * @description draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
+             *     引けない**ので、新しいボードも作れない（ADR 0017）
+             */
+            creation: boolean;
+            /**
+             * @description ボードを共有できるか。false は認証が未設定。招待は「誰であるか」が
+             *     決まって初めて意味を持つ（ADR 0016 / 0017）
+             */
+            sharing: boolean;
+        };
         /** @description ログイン状態。認証を設定していない構成でも 200 で返る。 */
         SessionStatus: {
             /** @description 認証を設定しているか。false なら画面はログインを求めない */
@@ -471,8 +518,27 @@ export interface components {
             /** @example ok */
             status: string;
         };
-        /** @description 失敗したときの本文。内部情報は載せない。原因の詳細はサーバー側のログに残す。 */
+        /**
+         * @description 失敗の原因を表す機械可読な符号。**画面はこれで打ち手を分ける。**
+         *
+         *     ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
+         *     「解釈からやり直す」「入力を変える」が同居していて、利用者がすべきことは
+         *     すべて違う。403 も etoki のロール不足（`forbidden_role`）と GitHub 側の
+         *     拒否（`forbidden_project`）で直す場所が違い、2 層に分けて持つと決めた
+         *     （ADR 0017）のに、文言に畳むと画面でその区別が消える。
+         *
+         *     **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
+         *     畳むと画面が「何を設定すればよいか」を言えなくなる。
+         * @enum {string}
+         */
+        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "target_locked" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
+            code: components["schemas"]["ErrorCode"];
+            /**
+             * @description 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
+             *     GitHub や LLM が返した本文が実際の手掛かりになる経路があるので残す
+             */
             error: string;
         };
         /**
@@ -932,6 +998,29 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description いま使える機能 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
         };
     };
     getSession: {
