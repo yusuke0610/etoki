@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "./boards";
 import { describeFailure, ERROR_MESSAGES } from "./errorMessage";
@@ -39,13 +39,27 @@ describe("describeFailure", () => {
     });
   });
 
-  it("通信そのものの失敗は、操作の名前だけを見せて中身は畳む", () => {
+  // 例外の中身は画面に出さない（`web/CLAUDE.md`）。畳んだ側にも置かない。
+  // 置くと、`<details>` を開いた利用者に例外の文字列が届く。
+  it("応答が返ってこなかったときは、例外の中身を画面に載せない", () => {
+    const e = new TypeError("Failed to fetch http://127.0.0.1:8080/api/boards");
+
+    const failure = describeFailure("保存できませんでした", e);
+
+    expect(failure.detail).toBe("");
+    expect(failure.message).not.toContain("Failed to fetch");
+    expect(failure.message).toContain("保存できませんでした");
+  });
+
+  // 消さずに console へ回す。行き先が無くなると、通信の失敗はどこにも残らない。
+  it("例外そのものは logger に渡す", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const e = new TypeError("Failed to fetch");
 
-    expect(describeFailure("保存できませんでした", e)).toEqual({
-      message: "保存できませんでした",
-      detail: "TypeError: Failed to fetch",
-    });
+    describeFailure("保存できませんでした", e);
+
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("保存できませんでした"), e);
+    spy.mockRestore();
   });
 });
 

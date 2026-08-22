@@ -8,7 +8,11 @@
  * **サーバーの `error` は手掛かりであって利用者向けの文言ではない。** `etoki:
  * insufficient role` のような内部文言をそのまま出すと、利用者は次に何をすれば
  * よいか決められない。既定では畳んでおき、開けば見える形にする。
+ *
+ * **畳んで見せるのはサーバーが返した本文だけ。** 応答が返ってこなかったときの
+ * 例外は console に固定する（`web/CLAUDE.md`）。
  */
+import { log } from "../logger";
 import { ApiError } from "./boards";
 import type { ErrorCode } from "./types";
 
@@ -57,6 +61,14 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   sharing_not_configured: "共有には認証の設定が必要です。GitHub App を設定してください。",
 };
 
+/**
+ * 応答が返ってこなかったときの文言。
+ *
+ * `ErrorCode` を持たない唯一の失敗なので `ERROR_MESSAGES` の外にあるが、
+ * **文言を持つのはこのモジュールだけ**という約束は同じ。
+ */
+const NETWORK_FAILURE = "etoki に接続できませんでした。起動しているか確かめてください。";
+
 /** 画面に出す失敗 1 件。 */
 export type Failure = {
   /** 見せる文。「何をしようとしたか」と「次にどうするか」。 */
@@ -72,8 +84,11 @@ export type Failure = {
  */
 export function describeFailure(action: string, e: unknown): Failure {
   if (!(e instanceof ApiError)) {
-    // 通信そのものが失敗した。code は無いので、原因は畳んだ側に置く。
-    return { message: action, detail: String(e) };
+    // 応答が返ってこなかった。**例外の中身は画面に出さず console に固定する**
+    // （`web/CLAUDE.md`、ADR 0027）。`TypeError: Failed to fetch` を畳んで
+    // 見せても打ち手は増えないうえ、ここに来る値は投げた側しだいで何でもありうる。
+    log.error(action, e);
+    return { message: `${action}: ${NETWORK_FAILURE}`, detail: "" };
   }
 
   // 対応表は ErrorCode で網羅しているが、受け取る値は契約より新しいことがある。
