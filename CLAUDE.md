@@ -33,6 +33,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `internal/CLAUDE.md`               | 3 状態判定のデータフロー、ハンドラ、メンバーと権限、Origin 検証        |
 | `web/CLAUDE.md`                    | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
+| `.claude/rules/`                   | レビュー由来の落とし穴集（テーマ別。対象ファイルを読むと読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
 
