@@ -58,6 +58,7 @@ nix develop      # 開発シェル（Go / Bun / SQLite / golangci-lint / air）
 make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
+make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
 make lint        # Go / フロントエンド / Markdown / Nix / Actions と整形を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest

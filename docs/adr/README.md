@@ -33,3 +33,4 @@
 | [0027](0027-error-boundaries-keep-the-canvas.md)                 | 描画に失敗しても真っ白にせず、境界はキャンバスの外側に置く             | 採用                 |
 | [0028](0028-unique-epic-titles-within-one-interpretation.md)     | 同じ解釈の中で epic のタイトルを一意にする（弾いて直させる）           | 採用                 |
 | [0029](0029-declare-validation-rules-with-their-instructions.md) | 検査と LLM への指示を 1 つの表に結ぶ                                   | 採用                 |
+| [0032](0032-serve-the-built-frontend.md)                         | ビルド済みフロントエンドは外から渡し、指定されたときだけ配る           | 採用                 |

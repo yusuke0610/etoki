@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -118,6 +119,51 @@ func TestHandlerServesBoardAPI(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+// 配ると決めたなら、組み立てたサーバーから画面が出ること。
+func TestHandlerServesWebUI(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	const index = "<!doctype html><html lang=\"ja\"><body></body></html>\n"
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(index), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	opts := options(t, "")
+	opts.WebDir = dir
+
+	srv, err := etoki.New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1:8080"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+	if rec.Body.String() != index {
+		t.Errorf("body = %q, want %q", rec.Body.String(), index)
+	}
+}
+
+// 指定したのに配れない構成では起動させない。bun run build を忘れた場合も、
+// パスを打ち間違えた場合もここで落ちる。実行時に 404 が並ぶ形にすると、
+// 原因が画面側にあるのかサーバー側にあるのかを切り分けられない。
+func TestNewRejectsWebDirWithoutIndex(t *testing.T) {
+	t.Parallel()
+
+	opts := options(t, "")
+	opts.WebDir = t.TempDir()
+
+	if _, err := etoki.New(opts); err == nil {
+		t.Fatal("New() = nil, want error")
 	}
 }
 

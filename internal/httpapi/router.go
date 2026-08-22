@@ -44,6 +44,11 @@ type Deps struct {
 	// nil のときは既存の挙動のまま。全エンドポイントが素通しになり、
 	// /api/auth/session は authRequired: false を返す（ADR 0015）。
 	Auth *usecase.AuthService
+	// WebDir はビルド済みフロントエンド（web/dist）の置き場所。空なら配らない。
+	//
+	// 空のときに配らないのは、make dev では Vite が同じものを持っているため。
+	// 両方が配ると、画面の出どころが構成によって変わる（ADR 0032）。
+	WebDir string
 	// PublicURL は認可から戻ってくる先の組み立てに使う。
 	//
 	// 空ならリクエストの Host から組む。make dev ではブラウザが :5173 にいて
@@ -131,6 +136,11 @@ func NewRouter(deps Deps) *gin.Engine {
 		api.GET("/github/repositories", h.listRepositories)
 		api.GET("/github/repositories/:owner/:repo/projects", h.listRepositoryProjects)
 	}
+
+	// 画面の配信は最後に置く。ルートに当たらなかったものだけを見るので、
+	// API のパスを静的ファイルが覆うことがない。requireAuth の外に置くのは、
+	// ログイン画面そのものがここから配られるため。
+	r.NoRoute(newWebUI(deps.WebDir))
 
 	return r
 }
