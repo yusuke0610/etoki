@@ -57,8 +57,9 @@ CodeRabbit は増分レビューなので、2 回目以降は**前回から変�
 
 全件の決着が付いたら、**一般化できる指摘を `.claude/rules/` の該当テーマに
 追記する**（e2e-mocks / test-effectiveness / validation-boundaries /
-async-ui / github-adapter / docs-consistency）。棚卸しをやり直さずに済む
-ように、対応したその場で書く。
+async-ui / github-adapter / docs-consistency）。**その PR を離れる前に
+書き切る。** 後回しにすると、ADR 0033 でやった棚卸しをもう一度やることに
+なる。
 
 入れる基準は 3 つ。全部満たすものだけ入れる。
 
