@@ -75,6 +75,20 @@ UI は未保存の変更があることを表示する。
   設計なので同一時刻の run がありうる。
 - **GitHub に作るのは epic と issue の 2 階層のみ。** LLM 出力の最上位
   `summary` は作成前の確認表示にだけ使い、GitHub には作らない（ADR 0006）。
+- **解釈結果の制約は `domain.Rules` に宣言する**（ADR 0029）。検査を足すなら表にも
+  足す。**プロンプトの制約一覧は `domain.InterpretationConstraints()` が組み立てる**
+  ので、書き写さない。写すと「指示していない制約で弾く」状態になり、LLM が
+  直しようのない再送を繰り返す。`ValidationError` は `newValidationError` で作り、
+  必ずどの制約かを名乗る。**両方向のずれは `TestRules_MatchValidation` が落とす**
+  ので、片側だけ足しても緑にはならない。`Rule.Instruction` が空なのは「LLM の
+  出力では起こりえない」もの（`previousItemId` だけ）。
+- **同じ解釈の中で epic のタイトルは一意**（ADR 0028）。親は epic のタイトル
+  文字列で指す（ADR 0006）ので、同名の epic が並ぶとその配下は GitHub 上で
+  1 つにまとまり、エラーにならないまま構造が壊れる。判定は
+  `domain.validateItems`。**何を「同じ」とみなすかは `domain.normalizeTitle` の
+  doc コメントが正本。** ここには写さない。写すと `normalizeText` が変わった
+  ときに片方が古いまま残る。**タイトルを etoki が付け替えて一意にしない。**
+  弾いて直させる。
 - **作成先の Projects v2 はボードごと。** プロセス全体の設定ではない
   （`ETOKI_GITHUB_PROJECT_ID` は廃止済み）。`boards` の
   `repository_owner` / `repository_name` / `project_id` に持つ。**作成時に必須**
@@ -110,7 +124,7 @@ UI は未保存の変更があることを表示する。
 - **エラー本文も `ErrorResponse` に揃える。** `gin.H{"error": ...}` を直に
   書かない。
 - **sentinel → (status, code) の写し替えは `internal/httpapi/errors.go` の表
-  1 つだけ**（ADR 0029）。`fail*` は表を引くだけにする。**ハンドラごとに分岐を
+  1 つだけ**（ADR 0034）。`fail*` は表を引くだけにする。**ハンドラごとに分岐を
   戻さないこと。** エンドポイントごとに違ってよいのは、表に無かったときの既定
   （GitHub を叩く経路は 502、それ以外は 500）とログの出し分けだけ。
 - **`code` は `errorJSON` の必須引数。** 任意にすると、足し忘れた経路だけが

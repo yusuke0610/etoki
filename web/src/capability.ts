@@ -6,7 +6,7 @@ import type { Capabilities, ErrorCode } from "./api/types";
  *
  * **文言をここに書かない。** 同じ原因でそのエンドポイントは 503 を返すので、
  * 先に見せる文言と後から返る理由が別々になると、片方だけ古くなる。文言は
- * `ERROR_MESSAGES` が 1 つ持つ（ADR 0029）。
+ * `ERROR_MESSAGES` が 1 つ持つ（ADR 0034）。
  */
 const REASON_CODE: Record<keyof Capabilities, ErrorCode> = {
   interpretation: "llm_not_configured",
