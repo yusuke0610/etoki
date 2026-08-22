@@ -170,7 +170,7 @@ e2e が落ちたときは Playwright のレポートが artifact（`playwright-r
 ## 依存の更新
 
 [`.github/dependabot.yml`](.github/dependabot.yml) が週次で更新の PR を出す
-（[ADR 0032](docs/adr/0032-know-about-dependency-updates.md)）。
+（[ADR 0035](docs/adr/0035-know-about-dependency-updates.md)）。
 
 **更新 PR は緑で出てくるとは限らない。落ちたら、落ちた理由がそのまま作業。**
 生成器（`openapi-typescript`）が上がった PR は codegen drift で落ちるので、その
@@ -178,6 +178,6 @@ e2e が落ちたときは Playwright のレポートが artifact（`playwright-r
 設定の不具合ではない。**
 
 **`flake.lock` は Dependabot に出させない。** nix のエコシステムは選べるが
-有効にしていないので（理由は ADR 0032）、nixpkgs 側（Go / Bun / `oapi-codegen` /
+有効にしていないので（理由は ADR 0035）、nixpkgs 側（Go / Bun / `oapi-codegen` /
 `playwright-driver`）は手で `nix flake update` を回す。回したあとに
 `@playwright/test` を揃える手順は [`web/CLAUDE.md`](web/CLAUDE.md)。

@@ -178,5 +178,5 @@ cd web && bunx playwright test --ui
   `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
 
 ここで固定しているもの（`@playwright/test` と React 18）は
-`.github/dependabot.yml` の `ignore` にも入っている（[ADR 0032](../docs/adr/0032-know-about-dependency-updates.md)）。
+`.github/dependabot.yml` の `ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
 **固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。

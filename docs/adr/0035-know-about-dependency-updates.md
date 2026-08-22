@@ -1,4 +1,4 @@
-# 0032: 依存の更新は Dependabot で知る（flake.lock は手のまま残す）
+# 0035: 依存の更新は Dependabot で知る（flake.lock は手のまま残す）
 
 ステータス: 採用
 

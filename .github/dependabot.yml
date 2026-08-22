@@ -1,4 +1,4 @@
-# 依存の更新を知るための設定（ADR 0032）。
+# 依存の更新を知るための設定（ADR 0035）。
 #
 # **更新 PR がそのまま緑になることは前提にしていない。** このリポジトリは
 # バージョンの連動が多く、生成器が動けば生成物も作り直す必要がある。落ちたら
@@ -7,7 +7,7 @@
 #
 # **flake.lock はここでは扱わない。** Dependabot には nix のエコシステムが
 # あるが、このリポジトリでは有効にせず、nixpkgs 側（Go / Bun / oapi-codegen /
-# playwright-driver）は手で `nix flake update` を回すまま。理由は ADR 0032。
+# playwright-driver）は手で `nix flake update` を回すまま。理由は ADR 0035。
 version: 2
 
 updates:
