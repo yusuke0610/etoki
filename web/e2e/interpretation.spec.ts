@@ -355,6 +355,9 @@ test.describe("解釈と作成", () => {
     // 何も作られていないと誤解させると、再実行で draft issue が重複する。
     const result = card.locator(".creation-result");
     await expect(result.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
+    // 理由は既定で畳む。捨てはしない（#86）。開けば読める。
+    await expect(result.getByText("github: rate limited")).toBeHidden();
+    await result.locator(".error-detail > summary").click();
     await expect(result.getByText("github: rate limited")).toBeVisible();
     // 解釈結果にも同じタイトルが並ぶので、作成結果の側だけを見る。
     await expect(result.getByText("ログイン基盤")).toBeVisible();
@@ -366,6 +369,7 @@ test.describe("解釈と作成", () => {
     mock.interpret = {
       status: 503,
       body: {
+        code: "llm_not_configured",
         error: "llm is not configured: set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL",
       },
     };
@@ -377,16 +381,19 @@ test.describe("解釈と作成", () => {
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
 
-    await expect(card.getByText("llm is not configured", { exact: false })).toBeVisible();
-    // 画面全体のエラー表示に流すと、どの注釈で起きたか分からなくなる。
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    // 出すのは code から引いた打ち手。サーバーの内部文言は前に出さない（#86）。
+    await expect(card.getByText("LLM が未設定です", { exact: false })).toBeVisible();
+    await expect(card.getByText("llm is not configured", { exact: false })).toBeHidden();
+    // 画面全体のエラー帯に流すと、どの注釈で起きたか分からなくなる。帯は
+    // main の直下にしか出ない。
+    await expect(page.locator("main > .error")).toHaveCount(0);
   });
 
   test("解釈時点とシーンが食い違うと、作成は 409 で止まる", async ({ page }) => {
     const mock = baseMock();
     mock.createItems = {
       status: 409,
-      body: { error: "etoki: content hash mismatch" },
+      body: { code: "content_hash_mismatch", error: "etoki: content hash mismatch" },
     };
     await installApi(page, mock);
 
@@ -398,7 +405,10 @@ test.describe("解釈と作成", () => {
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
 
     // 解釈のやり直しは開発者が決める。ここで勝手に解釈し直して作成を続けない。
-    await expect(card.getByText("etoki: content hash mismatch")).toBeVisible();
+    // 409 は 6 つの原因が同居するので、打ち手は code から引いて出す（#86）。
+    await expect(
+      card.getByText("解釈のあとにボードが変わりました", { exact: false }),
+    ).toBeVisible();
     await expect(card.getByText("未作成")).toBeVisible();
   });
 });

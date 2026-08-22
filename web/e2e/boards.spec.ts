@@ -112,7 +112,10 @@ test.describe("ボード", () => {
 
   test("一覧の取得に失敗したらエラーを出し、閉じられる", async ({ page }) => {
     const mock = baseMock();
-    mock.boardsError = { status: 500, body: { error: "internal error" } };
+    mock.boardsError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
     await installApi(page, mock);
 
     await page.goto("/");

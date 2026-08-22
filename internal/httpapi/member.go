@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,22 +11,24 @@ import (
 	"github.com/yusuke0610/etoki/port"
 )
 
-// membersNotConfigured は認証未設定のときの案内。
-//
-// 招待は「誰であるか」が決まって初めて意味を持つ。認証を設定していない構成は
-// 利用者 1 人なので、共有する相手がいない（ADR 0016 / 0017）。
-const membersNotConfigured = "sharing requires authentication: " +
-	"set ETOKI_GITHUB_APP_CLIENT_ID and ETOKI_GITHUB_APP_CLIENT_SECRET"
-
 // getBoardAccess はそのボードで何ができるかを返す。
 //
 // **これで作成を止めるのではなく、できない理由を先に見せるために使う**
 // （ADR 0017）。GitHub 側の可否は「いまの状態」であって判定ではない。
 func (h *handlers) getBoardAccess(c *gin.Context) {
 	if h.access == nil {
-		// 組み立て口（etoki.New）は必ず渡すので、production では起きない。
-		// Deps を手で組んだ場合に nil 参照で落ちないようにしておく。
-		errorJSON(c, http.StatusServiceUnavailable, "board access is not configured")
+		// 組み立て口（etoki.New）は Auth の有無によらず必ず渡すので、
+		// production では起きない。ここに来るのは Deps を手で組んで足りて
+		// いないときだけで、それは**設定の不足ではなく配線の不具合**。
+		//
+		// **sharing_not_configured は使わない。** 共有が使えるかは
+		// getCapabilities が h.members だけで答える（この口は材料に入って
+		// いない）ので、ここで共有未設定を名乗ると「共有は使える」と案内した
+		// 直後に「共有は未設定」と返る組み合わせが作れる。
+		h.logger.ErrorContext(c.Request.Context(), "board access service is not configured",
+			slog.String("path", c.Request.URL.Path),
+		)
+		errorJSON(c, http.StatusInternalServerError, apitypes.ErrorCodeInternal, "internal error")
 		return
 	}
 
@@ -44,13 +46,13 @@ func (h *handlers) getBoardAccess(c *gin.Context) {
 
 func (h *handlers) listBoardMembers(c *gin.Context) {
 	if h.members == nil {
-		errorJSON(c, http.StatusServiceUnavailable, membersNotConfigured)
+		sharingNotConfigured(c)
 		return
 	}
 
 	members, err := h.members.List(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		h.failMember(c, err)
+		h.fail(c, err)
 		return
 	}
 
@@ -65,7 +67,7 @@ func (h *handlers) listBoardMembers(c *gin.Context) {
 
 func (h *handlers) inviteBoardMember(c *gin.Context) {
 	if h.members == nil {
-		errorJSON(c, http.StatusServiceUnavailable, membersNotConfigured)
+		sharingNotConfigured(c)
 		return
 	}
 
@@ -78,7 +80,7 @@ func (h *handlers) inviteBoardMember(c *gin.Context) {
 	m, err := h.members.Invite(
 		c.Request.Context(), c.Param("id"), req.Login, port.BoardRole(req.Role))
 	if err != nil {
-		h.failMember(c, err)
+		h.fail(c, err)
 		return
 	}
 
@@ -87,7 +89,7 @@ func (h *handlers) inviteBoardMember(c *gin.Context) {
 
 func (h *handlers) setBoardMemberRole(c *gin.Context) {
 	if h.members == nil {
-		errorJSON(c, http.StatusServiceUnavailable, membersNotConfigured)
+		sharingNotConfigured(c)
 		return
 	}
 
@@ -100,7 +102,7 @@ func (h *handlers) setBoardMemberRole(c *gin.Context) {
 	m, err := h.members.SetRole(
 		c.Request.Context(), c.Param("id"), c.Param("userId"), port.BoardRole(req.Role))
 	if err != nil {
-		h.failMember(c, err)
+		h.fail(c, err)
 		return
 	}
 
@@ -109,30 +111,17 @@ func (h *handlers) setBoardMemberRole(c *gin.Context) {
 
 func (h *handlers) removeBoardMember(c *gin.Context) {
 	if h.members == nil {
-		errorJSON(c, http.StatusServiceUnavailable, membersNotConfigured)
+		sharingNotConfigured(c)
 		return
 	}
 
 	if err := h.members.Remove(
 		c.Request.Context(), c.Param("id"), c.Param("userId")); err != nil {
-		h.failMember(c, err)
+		h.fail(c, err)
 		return
 	}
 
 	c.Status(http.StatusNoContent)
-}
-
-// failMember はメンバー操作のエラーを HTTP ステータスに写す。
-func (h *handlers) failMember(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, usecase.ErrAlreadyMember), errors.Is(err, usecase.ErrLastOwner):
-		// どちらも「いまの状態では通せない」。入力の誤りではないので 400 に
-		// しない。やり直せば通る種類でもないので 409 に寄せる。
-		errorJSON(c, http.StatusConflict, err.Error())
-
-	default:
-		h.fail(c, err)
-	}
 }
 
 // toMember は表示用のメンバーを境界の DTO に詰め替える。

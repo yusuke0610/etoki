@@ -8,6 +8,7 @@ import type {
   BoardRole,
   BoardSummary,
   BoardTarget,
+  Capabilities,
   CreatedRun,
   ErrorResponse,
   Interpretation,
@@ -61,6 +62,14 @@ export type ApiMock = {
   repositories: Reply<Repository[]>;
   /** `owner/name` をキーにした Projects v2。 */
   projects: Record<string, Reply<Project[]>>;
+  /**
+   * いま使える機能。既定は全部そろった構成。
+   *
+   * 落とすと、押す前に理由が出る側の見せ方になる（ADR 0030）。**エンドポイント
+   * 側も 503 に揃えること。** 片方だけ落とすと、画面が案内しないのに 503 が
+   * 返る（またはその逆）という、実物では起きない組み合わせを緑にしてしまう。
+   */
+  capabilities: Reply<Capabilities>;
   /**
    * ログイン状態。既定は「認証を設定していない」。
    *
@@ -139,6 +148,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => url.pathname.startsWith("/api/") || url.pathname === "/healthz",
     (route) =>
       json(route, 500, {
+        code: "internal",
         error: `モックされていないリクエスト: ${route.request().method()} ${new URL(route.request().url()).pathname}`,
       } satisfies ErrorResponse),
   );
@@ -170,7 +180,10 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       const id = boardIdOf(route);
       const detail = mock.details[id];
       if (!detail) {
-        await json(route, 404, { error: "not found" } satisfies ErrorResponse);
+        await json(route, 404, {
+          code: "not_found",
+          error: "not found",
+        } satisfies ErrorResponse);
         return;
       }
       await json(route, 200, detail);
@@ -191,7 +204,10 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       const id = boardIdOf(route);
       const detail = mock.details[id];
       if (!detail) {
-        await json(route, 404, { error: "not found" } satisfies ErrorResponse);
+        await json(route, 404, {
+          code: "not_found",
+          error: "not found",
+        } satisfies ErrorResponse);
         return;
       }
 
@@ -201,17 +217,22 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       const req = route.request().postDataJSON() as Partial<SaveSceneRequest>;
       if (typeof req.baseUpdatedAt !== "string" || req.baseUpdatedAt === "") {
         await json(route, 400, {
+          code: "invalid_input",
           error: "baseUpdatedAt is required",
         } satisfies ErrorResponse);
         return;
       }
       if (typeof req.scene !== "string") {
-        await json(route, 400, { error: "scene is required" } satisfies ErrorResponse);
+        await json(route, 400, {
+          code: "invalid_input",
+          error: "scene is required",
+        } satisfies ErrorResponse);
         return;
       }
 
       if (req.baseUpdatedAt !== detail.updatedAt) {
         await json(route, 409, {
+          code: "scene_conflict",
           error: "他の人がこのボードを保存しています",
         } satisfies ErrorResponse);
         return;
@@ -248,7 +269,10 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       const id = boardIdOf(route);
       const detail = mock.details[id];
       if (!detail) {
-        await json(route, 404, { error: "not found" } satisfies ErrorResponse);
+        await json(route, 404, {
+          code: "not_found",
+          error: "not found",
+        } satisfies ErrorResponse);
         return;
       }
 
@@ -361,7 +385,10 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         return updated;
       });
       if (!updated) {
-        await json(route, 404, { error: "not found" } satisfies ErrorResponse);
+        await json(route, 404, {
+          code: "not_found",
+          error: "not found",
+        } satisfies ErrorResponse);
         return;
       }
       await json(route, 200, updated);
@@ -397,6 +424,17 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
 
       mock.createRequests.push((route.request().postDataJSON() ?? {}) as Interpretation);
       await json(route, mock.createItems.status, mock.createItems.body);
+    },
+  );
+
+  await page.route(
+    (url) => url.pathname === "/api/capabilities",
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await json(route, mock.capabilities.status, mock.capabilities.body);
     },
   );
 
