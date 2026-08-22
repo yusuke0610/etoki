@@ -798,6 +798,54 @@ func TestBoard_TargetDisplayNameRoundTrip(t *testing.T) {
 	}
 }
 
+// D-1a2: 表示名だけを取り直せる。作成先そのものは動かない（ADR 0036）。
+//
+// 固定後に通る唯一の経路なので、ここが作成先まで書けるようになると
+// ADR 0014 の固定が意味を失う。
+func TestBoard_UpdateTargetDisplayKeepsTarget(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+
+	target := port.BoardTarget{
+		RepositoryOwner: "acme",
+		RepositoryName:  "web",
+		ProjectID:       "PVT_1",
+		ProjectNumber:   3,
+		ProjectTitle:    "ロードマップ",
+		ProjectURL:      "https://github.com/orgs/acme/projects/3",
+	}
+	if err := repo.Create(t.Context(), port.Board{
+		ID: "board-1", Name: "b", Scene: "{}", Target: target,
+		CreatedAt: baseTime, UpdatedAt: baseTime,
+	}, ""); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	display := port.BoardTargetDisplay{
+		ProjectNumber: 4,
+		ProjectTitle:  "改名後のロードマップ",
+		ProjectURL:    "https://github.com/orgs/acme/projects/4",
+	}
+	if err := repo.UpdateTargetDisplay(t.Context(), "", "board-1", display, baseTime); err != nil {
+		t.Fatalf("UpdateTargetDisplay: %v", err)
+	}
+
+	got, err := repo.Find(t.Context(), "", "board-1")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+
+	want := target
+	want.ProjectNumber = display.ProjectNumber
+	want.ProjectTitle = display.ProjectTitle
+	want.ProjectURL = display.ProjectURL
+	if got.Board.Target != want {
+		t.Errorf("Target = %+v, want %+v", got.Board.Target, want)
+	}
+}
+
 // D-1b: 表示名を送らずに設定した作成先は「名前を知らない」として残る。
 //
 // 表示名は任意（ADR 0019）。0 と空文字で保存され、それでも作成先としては

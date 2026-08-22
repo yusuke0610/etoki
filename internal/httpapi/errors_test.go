@@ -49,11 +49,14 @@ var wantMappings = map[string]wantMapping{
 	"port.ErrNotAuthenticated": {
 		port.ErrNotAuthenticated, http.StatusUnauthorized, apitypes.ErrorCodeLoginRequired},
 
-	// 409 は 6 つある。ステータスだけでは打ち手が決まらない代表。
+	// 409 は 7 つある。ステータスだけでは打ち手が決まらない代表。
 	"usecase.ErrSceneConflict": {
 		usecase.ErrSceneConflict, http.StatusConflict, apitypes.ErrorCodeSceneConflict},
 	"usecase.ErrTargetLocked": {
 		usecase.ErrTargetLocked, http.StatusConflict, apitypes.ErrorCodeTargetLocked},
+	// 固定（変えられない）と食い違い（開き直せば解ける）は別物（ADR 0036）。
+	"usecase.ErrTargetMismatch": {
+		usecase.ErrTargetMismatch, http.StatusConflict, apitypes.ErrorCodeTargetMismatch},
 	"usecase.ErrContentHashMismatch": {
 		usecase.ErrContentHashMismatch, http.StatusConflict, apitypes.ErrorCodeContentHashMismatch},
 	"usecase.ErrPreviousItemUnknown": {

@@ -46,6 +46,32 @@ type BoardTarget struct {
 	ProjectURL string
 }
 
+// Display は表示用のスナップショットだけを取り出す。
+//
+// 取り直しの経路（BoardRepository.UpdateTargetDisplay）に渡すのはこちら。
+// BoardTarget をそのまま渡せる形にすると、作成先そのものを書ける口が
+// 2 つになる（ADR 0036）。
+func (t BoardTarget) Display() BoardTargetDisplay {
+	return BoardTargetDisplay{
+		ProjectNumber: t.ProjectNumber,
+		ProjectTitle:  t.ProjectTitle,
+		ProjectURL:    t.ProjectURL,
+	}
+}
+
+// BoardTargetDisplay は作成先の表示用スナップショット（ADR 0019 / 0025）。
+//
+// **作成先そのもの（owner / name / projectId）を含まない。** 固定後に更新
+// できるのはここに挙がっているものだけ、を型で示すため（ADR 0036）。
+type BoardTargetDisplay struct {
+	// ProjectNumber は Project の番号。取得していなければ 0。
+	ProjectNumber int
+	// ProjectTitle は Project の名前。取得していなければ空文字。
+	ProjectTitle string
+	// ProjectURL は Project の URL。組み立てず GitHub が返したものを控える。
+	ProjectURL string
+}
+
 // Selected は作成先が選ばれているかどうかを返す。
 //
 // **見るのは 3 つだけ。** ProjectNumber と ProjectTitle は表示用であり、
@@ -267,6 +293,17 @@ type BoardRepository interface {
 	// 固定済みかどうかはここでは見ない。判断に sync_runs が要るため、
 	// ユースケース層が担う（ADR 0014）。
 	UpdateTarget(ctx context.Context, actor, id string, t BoardTarget, updatedAt time.Time) error
+	// UpdateTargetDisplay は作成先の表示用スナップショットと更新時刻だけを
+	// 更新する。**作成先そのものは変えない。**
+	//
+	// 固定済みのボードでも通る唯一の経路（ADR 0036）。作成先の 3 列を書ける
+	// ようにしないこと。書けるようにすると、固定が意味を失う。
+	//
+	// 送られた ID が保存されている作成先と同じかどうかはここでは見ない。
+	// 引き当ててから比べる必要があるので、ユースケース層が担う。
+	UpdateTargetDisplay(
+		ctx context.Context, actor, id string, d BoardTargetDisplay, updatedAt time.Time,
+	) error
 	// Find は ID でボードを操作者のロールつきで引く。
 	//
 	// 存在しない、または操作者がメンバーでなければ (nil, nil)。

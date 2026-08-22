@@ -53,6 +53,9 @@ var errorMappings = []errorMapping{
 	// しない。何をすればよいかは code ごとに違う。
 	{usecase.ErrSceneConflict, http.StatusConflict, apitypes.ErrorCodeSceneConflict},
 	{usecase.ErrTargetLocked, http.StatusConflict, apitypes.ErrorCodeTargetLocked},
+	// 固定とは別。作成先は動かせないが、送られた projectId が古いだけなら
+	// 開き直せば解ける（ADR 0036）。
+	{usecase.ErrTargetMismatch, http.StatusConflict, apitypes.ErrorCodeTargetMismatch},
 	{usecase.ErrContentHashMismatch, http.StatusConflict, apitypes.ErrorCodeContentHashMismatch},
 	{usecase.ErrPreviousItemUnknown, http.StatusConflict, apitypes.ErrorCodePreviousItemUnknown},
 	{usecase.ErrAlreadyMember, http.StatusConflict, apitypes.ErrorCodeAlreadyMember},

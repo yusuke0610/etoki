@@ -211,6 +211,78 @@ test.describe("作成先の選択", () => {
     await expect(page.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
   });
 
+  // 固定するのは作成先そのものであって、表示用のスナップショットではない
+  // （ADR 0036）。GitHub 側で改名されたら、固定済みでも取り直せる。
+  test("固定済みでも作成先の名前を取り直せる", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.projects["acme/web"] = {
+      status: 200,
+      body: [
+        {
+          id: "PVT_1",
+          number: 1,
+          title: "改名後のロードマップ",
+          url: "https://github.com/orgs/acme/projects/1",
+        },
+      ],
+    };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+
+    // 一覧は作成先でまとめて見せる（ADR 0019）。取り直した名前が木に出る。
+    await expect(
+      page
+        .locator(".board-list")
+        .getByRole("button", { name: "#1 改名後のロードマップ" }),
+    ).toBeVisible();
+    // 作成先そのものは固定されたまま。変更の口は出ない。
+    await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
+  });
+
+  // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので選び直しでは
+  // 直せない。分かったことをそのまま出す（中核思想 3）。
+  test("作成先の Project が見つからなければ、その旨を出す", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.projects["acme/web"] = { status: 200, body: [] };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "作成先の Project が GitHub 側で見つかりませんでした",
+    );
+  });
+
+  // 固定（変えられない）と食い違い（開き直せば解ける）は別の打ち手なので、
+  // code で分けてある（ADR 0034 / 0036）。
+  test("作成先が食い違ったら、開き直すよう案内する", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.refreshTargetDisplayError = {
+      status: 409,
+      body: { code: "target_mismatch", error: "etoki: board target does not match" },
+    };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "作成先が変わっています。ボードを開き直してください。",
+    );
+  });
+
   test("新しいボードは作成先の選択から始まる", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");

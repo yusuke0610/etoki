@@ -2,7 +2,7 @@ import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, boardsApi } from "../api/boards";
+import { ApiError, boardsApi, githubApi } from "../api/boards";
 import {
   describeFailure,
   sceneUnreadableFailure,
@@ -58,6 +58,12 @@ type Props = {
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
   /**
+   * 作成先の表示名を取り直したので、手元のボードを差し替えてもらう。
+   *
+   * 版（`updatedAt`）も進むので、持ち主である App が持ち替える必要がある。
+   */
+  onTargetRefreshed: (board: BoardDetail) => void;
+  /**
    * 未保存かどうかを親に伝える。
    *
    * キャンバスから離れる導線（ボードの切り替え、作成先の選択）は親が持って
@@ -71,6 +77,7 @@ export function BoardPage({
   capabilities,
   onError,
   onChangeTarget,
+  onTargetRefreshed,
   onDirtyChange,
 }: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
@@ -108,6 +115,58 @@ export function BoardPage({
   // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
   // あるため（ADR 0017）。
   const [projectAccess, setProjectAccess] = useState<ProjectAccess>("unknown");
+  // 作成先の表示名を取り直している最中かどうか。
+  const [refreshingTarget, setRefreshingTarget] = useState(false);
+
+  /**
+   * 作成先の表示名を GitHub から取り直す。
+   *
+   * **押されたときだけ引く。** 開いただけで取りにいくと、ボードを開くたびに
+   * GitHub を叩くうえ、名前が変わったことに気づく機会が消える（中核思想 3、
+   * ADR 0036）。作成先そのものは固定されたままで、送るのは表示用の 3 つだけ。
+   */
+  const refreshTargetDisplay = useCallback(async () => {
+    setRefreshingTarget(true);
+    try {
+      const projects = await githubApi.projects(
+        board.repositoryOwner,
+        board.repositoryName,
+      );
+      const project = projects.find((p) => p.id === board.projectId);
+      if (!project) {
+        // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので
+        // 選び直しでは直せない。分かったことをそのまま出す。
+        onError({
+          message:
+            "作成先の Project が GitHub 側で見つかりませんでした。消されたか、権限が変わっています。",
+          detail: "",
+        });
+        return;
+      }
+
+      // 番号も名前も URL も、この画面が GitHub から受け取ったものをそのまま
+      // 送る。組み立てない（ADR 0025）。
+      onTargetRefreshed(
+        await boardsApi.refreshTargetDisplay(board.id, {
+          projectId: board.projectId,
+          projectNumber: project.number,
+          projectTitle: project.title,
+          projectUrl: project.url,
+        }),
+      );
+    } catch (e) {
+      onError(describeFailure("作成先の名前を取り直せませんでした", e));
+    } finally {
+      setRefreshingTarget(false);
+    }
+  }, [
+    board.id,
+    board.projectId,
+    board.repositoryName,
+    board.repositoryOwner,
+    onError,
+    onTargetRefreshed,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -500,7 +559,21 @@ export function BoardPage({
           ) : board.targetLocked ? (
             // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
             // 押せないことを見せるほうが状態として正しい。
-            <span className="hint">作成先は確定（draft issue を作成済み）</span>
+            //
+            // **名前の取り直しだけは出す。** 固定するのは作成先そのもので
+            // あって、表示用のスナップショットではない（ADR 0036）。ここが
+            // 無いと、GitHub 側で改名されたボードは古い名前を出し続ける。
+            <>
+              <span className="hint">作成先は確定（draft issue を作成済み）</span>
+              <button
+                type="button"
+                onClick={() => void refreshTargetDisplay()}
+                disabled={refreshingTarget}
+                title="GitHub から Project の名前を取り直します"
+              >
+                {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
+              </button>
+            </>
           ) : (
             <>
               <button

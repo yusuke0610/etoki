@@ -243,6 +243,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/boards/{id}/target/display": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 作成先の表示用スナップショットだけを取り直す
+         * @description `projectNumber` / `projectTitle` / `projectUrl` は作成先を選んだ時点の
+         *     スナップショットで、判定には使わない（ADR 0019 / 0025）。GitHub 側で
+         *     Project を改名すると古いままになるが、**作成先そのものは固定済みで
+         *     変えられない**（ADR 0014）ため、選び直しでは直せなかった。この口は
+         *     表示用の 3 つだけを更新する（ADR 0036）。
+         *
+         *     **作成先そのもの（リポジトリと projectId）は変えられない。**
+         *     `projectId` は「どの作成先の表示名か」を確かめるために伴う。保存されて
+         *     いるものと違えば 409（`target_mismatch`）を返す。作成先を変えるのは
+         *     `PUT /api/boards/{id}/target` のほうで、固定後は通らない。
+         *
+         *     **etoki からは自動で取りにいかない。** 画面が押されたときに GitHub の
+         *     Project 一覧を引き、その値をここへ送る（中核思想 3）。
+         */
+        put: operations["refreshBoardTargetDisplay"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards/{id}/access": {
         parameters: {
             query?: never;
@@ -531,7 +566,7 @@ export interface components {
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "target_locked" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -679,6 +714,24 @@ export interface components {
         BoardTarget: {
             repositoryOwner: string;
             repositoryName: string;
+            projectId: string;
+            projectNumber?: number;
+            projectTitle?: string;
+            projectUrl?: string;
+        };
+        /**
+         * @description 作成先の表示用スナップショット。取り直しのリクエストボディ（ADR 0036）。
+         *
+         *     `projectId` は**変更先ではなく照合材料**。どの作成先の表示名なのかを
+         *     示すために伴い、保存されているものと違えば 409 になる。リポジトリを
+         *     持たないのは、この口で作成先そのものを動かせないことを形で示すため。
+         *
+         *     表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存
+         *     する。BoardTarget と同じ扱いにしてあるので、GitHub が URL を返さない
+         *     Project でも取り直せる。
+         */
+        BoardTargetDisplay: {
+            /** @description いま保存されている作成先の Projects v2 node ID */
             projectId: string;
             projectNumber?: number;
             projectTitle?: string;
@@ -1291,6 +1344,56 @@ export interface operations {
             404: components["responses"]["NotFound"];
             /** @description すでに draft issue を作っているので作成先を変えられない */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    refreshBoardTargetDisplay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardTargetDisplay"];
+            };
+        };
+        responses: {
+            /** @description 更新後のボード */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description 送られた projectId が保存されている作成先と違う */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description そのボードには作成先が設定されていない */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

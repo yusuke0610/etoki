@@ -182,6 +182,39 @@ test.describe("スクリーンショット", () => {
     await shot(page, "07-target-selected");
   });
 
+  // 固定済みでも表示名は取り直せる（ADR 0036）。確定していることと、名前だけは
+  // 直せることが同じ場所で読める必要があるので撮る。
+  test("固定済みの作成先と、名前の取り直しを撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.projects["acme/web"] = {
+      status: 200,
+      body: [
+        {
+          id: "PVT_1",
+          number: 1,
+          title: "改名後のロードマップ",
+          url: "https://github.com/orgs/acme/projects/1",
+        },
+      ],
+    };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await shot(page, "21-target-locked");
+
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    // 木の名前が変わるまで待つ。待たずに撮ると、取り直す前の画面が写る。
+    await page
+      .locator(".board-list")
+      .getByRole("button", { name: "#1 改名後のロードマップ" })
+      .waitFor();
+    await shot(page, "22-target-display-refreshed");
+  });
+
   // 押せない理由は title ではなく本文で出す。ホバーできない利用者と読み上げにも
   // 届く必要がある。見た目の話でもあるので撮る。
   test("作成先を変更できない状態を撮る", async ({ page }) => {

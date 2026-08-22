@@ -153,6 +153,20 @@ func (r *BoardRepository) UpdateTarget(
 		t.ProjectNumber, t.ProjectTitle, t.ProjectURL, formatTime(updatedAt), id, actor)
 }
 
+// UpdateTargetDisplay は作成先の表示用スナップショットと更新時刻だけを更新する。
+//
+// **作成先の 3 列は SET に書かない。** 固定後に通る唯一の経路なので、ここが
+// 書けるようになると固定が意味を失う（ADR 0036）。
+func (r *BoardRepository) UpdateTargetDisplay(
+	ctx context.Context, actor, id string, d port.BoardTargetDisplay, updatedAt time.Time,
+) error {
+	return r.exec(ctx, "board "+id,
+		`UPDATE boards
+		 SET project_number = ?, project_title = ?, project_url = ?, updated_at = ?
+		 WHERE id = ? AND `+memberExists,
+		d.ProjectNumber, d.ProjectTitle, d.ProjectURL, formatTime(updatedAt), id, actor)
+}
+
 // memberExists は更新系で操作者がメンバーであることを確かめる述語。
 //
 // 参照系の結合と対になる。board_id は相関参照で書く。プレースホルダにすると

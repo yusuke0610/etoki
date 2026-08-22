@@ -302,6 +302,13 @@ export function App() {
             capabilities={capabilities}
             onError={setError}
             onChangeTarget={() => setPicking(true)}
+            // 表示名を取り直したら、開いているボードと一覧の両方を差し替える。
+            // **一覧も引き直す。** 木は作成先でまとめて見せる（ADR 0019）ので、
+            // 古い名前が残っていては取り直した意味が無い。
+            onTargetRefreshed={(board) => {
+              setCurrent(board);
+              void reload();
+            }}
             onDirtyChange={handleDirtyChange}
           />
         )}
