@@ -16,6 +16,7 @@ import (
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
 	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/internal/httpapi"
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
@@ -298,6 +299,11 @@ func TestSaveScene_RejectsStaleBase(t *testing.T) {
 		saveSceneBody(`{"type":"excalidraw","elements":[]}`, stale))
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusConflict, rec.Body)
+	}
+	// 409 には 6 つの原因が同居する。画面が「開き直す」を案内できるよう、
+	// どれなのかを code で返す。
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeSceneConflict {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeSceneConflict)
 	}
 
 	got := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))

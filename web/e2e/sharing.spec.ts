@@ -110,13 +110,16 @@ test.describe("共有", () => {
     await expect(page.getByLabel("招待する login")).toHaveCount(0);
   });
 
-  // 断られた理由はサーバーの文言をそのまま出す。次に何をすればよいかが
-  // 決められるのは、理由が読めたときだけ。
+  // 断られたら、まず打ち手を出す（#86）。サーバーの文言は捨てずに畳んでおく。
+  // 「まだログインしていない」のような具体は、開けば読める。
   test("招待が断られたら理由を出す", async ({ page }) => {
     const mock = baseMock();
     mock.inviteError = {
       status: 400,
-      body: { error: 'etoki: invalid input: "carol" has not signed in to etoki yet' },
+      body: {
+        code: "invalid_input",
+        error: 'etoki: invalid input: "carol" has not signed in to etoki yet',
+      },
     };
 
     await installApi(page, mock);
@@ -127,6 +130,11 @@ test.describe("共有", () => {
     await page.getByLabel("招待する login").fill("carol");
     await page.getByRole("button", { name: "招待" }).click();
 
-    await expect(page.getByRole("alert")).toContainText("has not signed in");
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("招待できませんでした");
+    await expect(alert.getByText("has not signed in")).toBeHidden();
+
+    await alert.locator("summary").click();
+    await expect(alert.getByText("has not signed in")).toBeVisible();
   });
 });

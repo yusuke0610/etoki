@@ -194,12 +194,24 @@ func (c *Client) Complete(ctx context.Context, req port.VisionRequest) (port.Vis
 		return port.VisionResponse{}, statusError(httpResp.StatusCode, raw)
 	}
 
-	text, err := extractText(raw)
+	var resp apiResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return port.VisionResponse{}, fmt.Errorf("decode response: %w", err)
+	}
+
+	text, err := extractText(resp)
 	if err != nil {
 		return port.VisionResponse{}, err
 	}
 
-	return port.VisionResponse{Text: text, Raw: raw}, nil
+	return port.VisionResponse{
+		Text: text,
+		Raw:  raw,
+		Usage: port.Usage{
+			InputTokens:  resp.Usage.InputTokens,
+			OutputTokens: resp.Usage.OutputTokens,
+		},
+	}, nil
 }
 
 // buildRequest は VisionRequest を Messages API のリクエストに詰め替える。
@@ -231,12 +243,7 @@ func (c *Client) buildRequest(req port.VisionRequest) apiRequest {
 //
 // content の先頭が本文とは限らない。thinking が有効なモデルでは thinking
 // ブロックが先に並ぶため、type が text のものだけを拾って連結する。
-func extractText(raw []byte) (string, error) {
-	var resp apiResponse
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
-	}
-
+func extractText(resp apiResponse) (string, error) {
 	// refusal は HTTP 200 で返る。content を読む前に判定する。
 	if resp.StopReason == "refusal" {
 		if resp.StopDetails.Category == "" {
@@ -319,6 +326,21 @@ type apiResponse struct {
 	StopDetails struct {
 		Category string `json:"category"`
 	} `json:"stop_details"`
+	// Usage は使ったトークン数（ADR 0031）。
+	//
+	// 打ち切りや refusal のぶんは呼び出し側に渡らない。Complete がそれらを
+	// エラーとして返し、返り値の VisionResponse を捨てるため。**そこまで
+	// 拾おうとすると「エラーでも中身を読め」という約束が port に増える。**
+	// 自前実装する側の負担を増やさない方を採ってある。
+	//
+	// キャッシュ関連（cache_creation_input_tokens / cache_read_input_tokens）は
+	// 読まない。cache_control を送っていないので常に 0 になる。送るように
+	// したときは、input_tokens がキャッシュぶんを含まないことを踏まえて
+	// 足し直す必要がある。
+	Usage struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
 }
 
 type responseBlock struct {

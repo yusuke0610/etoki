@@ -26,6 +26,24 @@ type VisionResponse struct {
 	Text string
 	// Raw は生のレスポンスボディ。デバッグ用であり、永続化はしない。
 	Raw []byte
+	// Usage はこの呼び出しで使ったトークン数。埋めなくてよい（Usage を参照）。
+	Usage Usage
+}
+
+// Usage は 1 回の呼び出しで使ったトークン数。
+//
+// **埋めるかどうかは実装の任意。** ゼロ値のまま返してよく、その場合でも
+// 呼び出し側は動く。必須にすると LLMClient を自前実装する負担が増える
+// （ADR 0001 / 0008）。トークン数の名前も数え方も基盤ごとに違い、そもそも
+// 返さない基盤もあるため。
+//
+// **読む側は 0 を「報告が無かった」として扱う**（ADR 0031）。0 トークンで
+// 返る呼び出しは無いので、実測として 0 と報告なしを区別する必要が無い。
+type Usage struct {
+	// InputTokens は入力に使ったトークン数。
+	InputTokens int
+	// OutputTokens は出力に使ったトークン数。
+	OutputTokens int
 }
 
 // LLMClient は Vision 対応 LLM を 1 回呼び出す。

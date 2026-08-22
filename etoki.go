@@ -169,8 +169,10 @@ func New(opts Options) (*Server, error) {
 	if opts.LLM != nil {
 		// Mappings も渡す。解釈の入力には「前回この囲みから何を作ったか」も
 		// 含まれる（ADR 0026）。
+		// ロガーも渡す。解釈は課金を伴う外部呼び出しなので、呼んだ実績は
+		// リクエストログと同じ行き先に残す（ADR 0031）。
 		deps.Interpretations = usecase.NewInterpretationService(
-			opts.Boards, opts.Mappings, opts.LLM)
+			opts.Boards, opts.Mappings, opts.LLM, usecase.WithLogger(opts.Logger))
 	}
 	// 作成先はボードごとに持つので、ここで要るのは GitHub クライアントだけ
 	// （ADR 0014）。未選択のボードは作成の手前で 422 として止まる。

@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki/internal/httpapi"
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
@@ -287,6 +288,11 @@ func TestCreateItems_WithoutGitHub(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (%s)", rec.Code, rec.Body)
 	}
+	// 未設定は 1 つの code に畳まない。設定するものが違うので、畳むと画面が
+	// 「何を設定すればよいか」を言えなくなる（#48 が使う）。
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeGithubNotConfigured {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeGithubNotConfigured)
+	}
 }
 
 // 設定不足であって、リクエストの誤りではない。
@@ -419,8 +425,14 @@ func TestCreateItems_RejectsMismatchedContentHash(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 (%s)", rec.Code, rec.Body)
 	}
-	if msg := decode[map[string]string](t, rec)["error"]; !strings.Contains(msg, "interpret again") {
-		t.Errorf("解釈し直すべきことが返っていない: %q", msg)
+	// 同じ 409 でも打ち手は「解釈からやり直す」。文言ではなく code で分かる形に
+	// しておく（画面は code から日本語を引く）。
+	body := decode[apitypes.ErrorResponse](t, rec)
+	if body.Code != apitypes.ErrorCodeContentHashMismatch {
+		t.Errorf("code = %q, want %q", body.Code, apitypes.ErrorCodeContentHashMismatch)
+	}
+	if !strings.Contains(body.Error, "interpret again") {
+		t.Errorf("解釈し直すべきことが返っていない: %q", body.Error)
 	}
 	if gh.seq != 0 {
 		t.Errorf("hash が食い違っているのに GitHub を呼んでいる: %d 回", gh.seq)
@@ -671,5 +683,8 @@ func TestListRepositories_UnavailableWithoutGitHub(t *testing.T) {
 	rec := do(t, r, http.MethodGet, "/api/github/repositories", nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (%s)", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeGithubNotConfigured {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeGithubNotConfigured)
 	}
 }

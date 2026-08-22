@@ -361,6 +361,11 @@ export function baseMock(): ApiMock {
     createItems: { status: 201, body: createdRun() },
     // 既定は認証を設定していない構成。ログインの導線を見る spec だけが
     // 書き換える。
+    // 既定は全部そろった構成。未設定の見せ方を確かめる spec だけが落とす。
+    capabilities: {
+      status: 200,
+      body: { interpretation: true, creation: true, sharing: true },
+    },
     session: { status: 200, body: { authRequired: false, authenticated: false } },
     login: { status: 200, body: { authorizeUrl: AUTHORIZE_URL } },
     repositories: { status: 200, body: repositories() },
