@@ -7,6 +7,7 @@ import {
   baseMock,
   board,
   matchedInterpretationMock,
+  mixedFramesMock,
   multiFrameMock,
   signedIn,
   unselectedBoard,
@@ -120,6 +121,18 @@ test.describe("スクリーンショット", () => {
     // 寄せる動きはアニメーションする。終わる前に撮ると、途中の位置が写る。
     await page.waitForTimeout(1000);
     await shot(page, "16-frame-focused");
+  });
+
+  // 注釈にした frame と、ユーザーが自分の用途で使った frame は混在するのが
+  // 前提（ルートの CLAUDE.md）。キャンバス上で見分けが付くかを撮る。
+  test("注釈にした frame の印を撮る", async ({ page }) => {
+    await installApi(page, mixedFramesMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByTestId("annotation-overlay-frame").first().waitFor();
+    await shot(page, "20-annotation-marks");
   });
 
   // 未保存のあいだは解釈できない。テキストは保存済みシーンから、画像は画面から

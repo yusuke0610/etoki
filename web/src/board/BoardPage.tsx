@@ -26,9 +26,15 @@ import {
   type SceneElement,
   type SelectableFrame,
 } from "../excalidraw/annotation";
+import {
+  annotationBoxes,
+  type AnnotationBox,
+  type Viewport,
+} from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { AnnotationOverlay } from "./AnnotationOverlay";
 import {
   AnnotationPanel,
   type CreationState,
@@ -79,6 +85,8 @@ export function BoardPage({
   // null は「Excalidraw からまだ聞いていない」。空配列と混ぜると、マウント直後の
   // 一瞬だけ全部のカードが「キャンバスにありません」になる。
   const [canvasFrameIds, setCanvasFrameIds] = useState<string[] | null>(null);
+  // 注釈にした frame に重ねる枠。キャンバスの見え方が変わるたびに引き直す。
+  const [overlayBoxes, setOverlayBoxes] = useState<AnnotationBox[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
@@ -200,16 +208,34 @@ export function BoardPage({
     setDirty(signature !== savedSignature.current);
   }, []);
 
+  // いまのキャンバスの見え方。**state ではなく ref に持つ。** 重ねる枠の
+  // 引き直しにしか使わないので、スクロールのたびに再描画を増やす理由が無い。
+  const viewport = useRef<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1 });
+
   /** 選択状態の変化を拾い、注釈にできる frame を割り出す。 */
   const handleChange = useCallback(
     (
       elements: readonly unknown[],
-      appState: { selectedElementIds: Record<string, boolean> },
+      appState: {
+        selectedElementIds: Record<string, boolean>;
+        scrollX: number;
+        scrollY: number;
+        zoom: { value: number };
+      },
     ) => {
       const els = elements as SceneElement[];
       applySignature(sceneSignature(els));
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
       setCanvasFrameIds(frameIds(els));
+
+      // スクロールとズームは onChange でしか届かない。要素が変わっていなくても
+      // 引き直す必要があるので、ここでまとめて拾う。
+      viewport.current = {
+        scrollX: appState.scrollX,
+        scrollY: appState.scrollY,
+        zoom: appState.zoom.value,
+      };
+      setOverlayBoxes(annotationBoxes(els, viewport.current));
     },
     [applySignature],
   );
@@ -221,6 +247,9 @@ export function BoardPage({
       // onChange の発火を待たずにここでも判定する。注釈の付け外しが未保存として
       // 出るかどうかを、updateScene が onChange を呼ぶかに依存させない。
       applySignature(sceneSignature(next));
+      // 重ねる枠も同じ理由でここで引き直す。注釈にした瞬間に枠が出ないと、
+      // 付いたかどうかをパネルでしか確かめられない。
+      setOverlayBoxes(annotationBoxes(next, viewport.current));
     },
     [api, applySignature],
   );
@@ -543,6 +572,11 @@ export function BoardPage({
             // 黙って捨てることになる（ADR 0017）。
             viewModeEnabled={!canEdit}
           />
+          {/*
+            注釈の frame を見分けられるようにする。Excalidraw の外に重ねる
+            だけで、要素には触らない（AnnotationOverlay の doc）。
+          */}
+          <AnnotationOverlay boxes={overlayBoxes} />
         </div>
 
         <ErrorBoundary name="注釈パネル" recovery="remount">

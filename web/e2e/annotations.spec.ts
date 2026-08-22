@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { annotationCard, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock, multiFrameMock } from "./helpers/fixtures";
+import { BOARD_ID, baseMock, mixedFramesMock, multiFrameMock } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 
@@ -111,6 +111,58 @@ test.describe("注釈の状態", () => {
     );
     // 選択とスクロールは appState の話で、保存すべき変更ではない。
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
+  // 注釈の frame とただの frame は混在するのが前提（ルートの CLAUDE.md）。
+  // 見分ける手段が無いと、状態を見せるという中核思想 3 に届かない。
+  test("注釈にした frame だけがキャンバス上で印を持つ", async ({ page }) => {
+    await installApi(page, mixedFramesMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const marks = page.getByTestId("annotation-overlay-frame");
+    await expect(marks).toHaveCount(2);
+    // 粒度も見分けられる。パネルを開かないと epic か issue か分からない状態に
+    // しない。
+    await expect(marks.getByText("注釈 epic")).toBeVisible();
+    await expect(marks.getByText("注釈", { exact: true })).toBeVisible();
+  });
+
+  // 印はキャンバスの外に重ねているので、スクロールやズームに自分では追従
+  // しない。Excalidraw の onChange で引き直している。ここが切れると、枠だけが
+  // 元の位置に取り残される。
+  test("キャンバスをスクロールすると印も一緒に動く", async ({ page }) => {
+    await installApi(page, mixedFramesMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const mark = page.getByTestId("annotation-overlay-frame").first();
+    const before = await mark.boundingBox();
+    if (!before) throw new Error("印が出ていない");
+
+    const canvas = page.locator(".excalidraw canvas").first();
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error("キャンバスが表示されていない");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 200);
+
+    await expect.poll(async () => (await mark.boundingBox())?.y).toBeLessThan(before.y);
+  });
+
+  // 印は重ねているだけで、frame そのものは変えていない。外した跡が残らない
+  // ことも同じ理由で確かめる。
+  test("注釈を外すと印も消える", async ({ page }) => {
+    await installApi(page, mixedFramesMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    // カードを押すとキャンバスでそのフレームが選ばれ、パネルに外す口が出る。
+    await annotationCard(page, "ログイン")
+      .getByRole("button", { name: "ログイン" })
+      .click();
+    await page.getByRole("button", { name: /の注釈を外す/ }).click();
+
+    await expect(page.getByTestId("annotation-overlay-frame")).toHaveCount(1);
   });
 
   test("注釈が無いボードでは案内を出す", async ({ page }) => {

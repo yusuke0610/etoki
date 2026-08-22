@@ -1,4 +1,16 @@
-import type { AnnotationStatus } from "../api/types";
+import type { AnnotationStatus, Granularity } from "../api/types";
+
+/**
+ * 粒度の見出し。
+ *
+ * パネルとキャンバスに重ねる枠で同じ語を出すためにここに置く。片方だけ
+ * 言い換えると、同じ注釈が画面の場所によって違う粒度に見える。
+ */
+export const GRANULARITY_LABEL: Record<Granularity, string> = {
+  "": "指定なし",
+  epic: "epic",
+  issue: "issue",
+};
 
 /**
  * 注釈の見出し。名前が無ければ一覧上の位置で採番する。
