@@ -19,6 +19,11 @@ export type SceneElement = {
   isDeleted?: boolean;
   name?: string | null;
   customData?: Record<string, unknown>;
+  /** シーン座標での位置と大きさ。注釈の枠を重ねる位置の計算に使う（annotationOverlay.ts）。 */
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
   /** Excalidraw が中身を変えるたびに上げる番号。未保存の判定に使う（dirty.ts）。 */
   version?: number;
 };

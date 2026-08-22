@@ -126,6 +126,18 @@ func TestInterpretation_Validate_Valid(t *testing.T) {
 	}
 }
 
+// body は複数行が正しい。title の検査を body まで広げない。
+func TestInterpretation_Validate_AllowsMultilineBody(t *testing.T) {
+	t.Parallel()
+
+	in := validInterpretation()
+	in.Items[0].Body = "## 背景\n\n決済の失敗が続いている。\r\n原因は 2 つある。"
+
+	if err := in.Validate(domain.GranularityAuto); err != nil {
+		t.Errorf("Validate() = %v, want nil", err)
+	}
+}
+
 func TestInterpretation_Validate_ItemRules(t *testing.T) {
 	t.Parallel()
 
@@ -159,6 +171,32 @@ func TestInterpretation_Validate_ItemRules(t *testing.T) {
 		{
 			name:       "title が空白だけ",
 			mutate:     func(in *domain.Interpretation) { in.Items[1].Title = "   " },
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// draft issue のタイトルは 1 行として扱われる場所が多く、どう
+			// 折り返るかは GitHub 側の都合。作ってからは取り返せない（ADR 0009）。
+			name:       "title に改行が入っている",
+			mutate:     func(in *domain.Interpretation) { in.Items[1].Title = "カード決済\nのエラー処理" },
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// normalizeTitle が \r\n と \r を \n に畳んでから見る。改行コードの
+			// 違いで通り抜ける穴を残さない。
+			name:       "title の改行が CRLF",
+			mutate:     func(in *domain.Interpretation) { in.Items[1].Title = "カード決済\r\nのエラー処理" },
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			name:       "title の改行が CR",
+			mutate:     func(in *domain.Interpretation) { in.Items[1].Title = "カード決済\rのエラー処理" },
+			wantFields: []string{"items[1].title"},
+		},
+		{
+			// 空と改行は別の指摘。前後の改行だけを削って通すと、LLM が
+			// 出したものと違うタイトルで作ることになる。
+			name:       "title が前後の改行だけを含む",
+			mutate:     func(in *domain.Interpretation) { in.Items[1].Title = "\nカード決済\n" },
 			wantFields: []string{"items[1].title"},
 		},
 		{
@@ -500,7 +538,7 @@ func TestInterpretation_Validate_RejectsDuplicateEpicTitle(t *testing.T) {
 			name: "前後の空白だけが違う epic",
 			items: []domain.InterpretedItem{
 				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証"},
-				{LocalID: "e2", Kind: domain.KindEpic, Title: "  認証\n"},
+				{LocalID: "e2", Kind: domain.KindEpic, Title: "  認証  "},
 			},
 			wantFields: []string{"items[1].title"},
 		},
@@ -515,23 +553,16 @@ func TestInterpretation_Validate_RejectsDuplicateEpicTitle(t *testing.T) {
 			wantFields: []string{"items[1].title"},
 		},
 		{
-			// 行末の空白は画面上に現れない。前後の空白と同じ扱いにする。
-			// normalizeText を再利用しているので、ここは自動的に畳まれる。
-			name: "行末の空白だけが違う epic",
-			items: []domain.InterpretedItem{
-				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証 \n方式"},
-				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証\n方式"},
-			},
-			wantFields: []string{"items[1].title"},
-		},
-		{
-			// 改行コードの違いも同じ。編集環境の差でしかない。
-			name: "改行コードだけが違う epic",
+			// 改行を含む title はそもそも通らない（RuleTitleSingleLine）ので、
+			// 重複判定まで届かない。**2 件とも自分の改行で弾かれる。**
+			// 重複として 1 件だけ報告する形にすると、先に直すべき改行が
+			// 修正指示から落ちる。
+			name: "改行だけが違う epic は重複より先に改行で弾かれる",
 			items: []domain.InterpretedItem{
 				{LocalID: "e1", Kind: domain.KindEpic, Title: "認証\r\n方式"},
 				{LocalID: "e2", Kind: domain.KindEpic, Title: "認証\n方式"},
 			},
-			wantFields: []string{"items[1].title"},
+			wantFields: []string{"items[0].title", "items[1].title"},
 		},
 		{
 			// 行の途中の空白は見分けが付く。畳むと壊れないものを弾くことになる。
@@ -691,6 +722,9 @@ func TestRules_MatchValidation(t *testing.T) {
 		}},
 		domain.RuleTitle: {in: domain.Interpretation{Summary: "s",
 			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "  "}},
+		}},
+		domain.RuleTitleSingleLine: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "認証\nの見直し"}},
 		}},
 		domain.RuleEpicTitleUnique: {in: domain.Interpretation{Summary: "s",
 			Items: []domain.InterpretedItem{

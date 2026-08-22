@@ -14,7 +14,7 @@ import type {
 } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
-import { annotationLabels, frameLabel } from "./annotationLabel";
+import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
 import { groupByEpic } from "./interpretation";
 import {
   blockingReasons,
@@ -52,12 +52,6 @@ const STATE_LABEL: Record<SyncState, string> = {
   uncreated: "未作成",
   created: "作成済み",
   changed: "変更あり",
-};
-
-const GRANULARITY_LABEL: Record<Granularity, string> = {
-  "": "指定なし",
-  epic: "epic",
-  issue: "issue",
 };
 
 type Props = {

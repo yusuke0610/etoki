@@ -465,6 +465,31 @@ func TestUpdateScene_RejectsOtherOwners(t *testing.T) {
 	}
 }
 
+// 表示名の取り直しも同じ絞りを通る。固定後に通る経路なので、ここが
+// 抜けていると他人のボードの見え方を書き換えられる（ADR 0037）。
+func TestUpdateTargetDisplay_RejectsOtherOwners(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedOwnedBoard(t, db, "board-a", "user-a")
+
+	display := port.BoardTargetDisplay{ProjectTitle: "書き換えた名前"}
+	if err := repo.UpdateTargetDisplay(
+		t.Context(), "user-b", "board-a", display, baseTime,
+	); !errors.Is(err, port.ErrNotFound) {
+		t.Fatalf("UpdateTargetDisplay = %v, want ErrNotFound", err)
+	}
+
+	got, err := repo.Find(t.Context(), "user-a", "board-a")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.Board.Target.ProjectTitle != "" {
+		t.Errorf("他人に表示名を書き換えられている: %+v", got.Board.Target)
+	}
+}
+
 func TestUpdateTarget_RejectsOtherOwners(t *testing.T) {
 	t.Parallel()
 

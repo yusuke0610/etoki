@@ -70,6 +70,105 @@ func TestSetTarget_RejectsSameValueAfterRun(t *testing.T) {
 	}
 }
 
+// 固定するのは作成先そのもの。表示名は固定の対象ではない（ADR 0037）。
+// GitHub 側で Project を改名すると、直す手段が無いまま古い名前が残っていた。
+func TestRefreshTargetDisplay_SucceedsAfterFirstRun(t *testing.T) {
+	t.Parallel()
+
+	board := newBoard(interpretScene)
+	boards := &fakeBoards{board: board}
+	mappings := &fakeMappings{runs: []port.SyncRun{{BoardID: "board-1"}}}
+	svc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks())
+
+	// 値で控える。同じボードを指しているので、後で比べるには複製が要る。
+	before := board.Target
+
+	display := port.BoardTargetDisplay{
+		ProjectNumber: 7,
+		ProjectTitle:  "改名後のロードマップ",
+		ProjectURL:    "https://github.com/orgs/acme/projects/7",
+	}
+	if err := svc.RefreshTargetDisplay(t.Context(), "board-1", board.Target.ProjectID, display); err != nil {
+		t.Fatalf("RefreshTargetDisplay() = %v", err)
+	}
+	if boards.display != display {
+		t.Errorf("書かれた表示名 = %+v, want %+v", boards.display, display)
+	}
+	// 作成先そのものは触らない。触れる経路にすると固定が意味を失う。
+	got := boards.board.Target
+	if got.RepositoryOwner != before.RepositoryOwner ||
+		got.RepositoryName != before.RepositoryName ||
+		got.ProjectID != before.ProjectID {
+		t.Errorf("作成先が変わっている: %+v, want %+v", got, before)
+	}
+}
+
+// この口から作成先は動かせない。ErrTargetLocked に相乗りさせないのは、
+// 直し方が違うため（固定は解けないが、食い違いは開き直せば解ける）。
+func TestRefreshTargetDisplay_RejectsOtherProject(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
+
+	err := svc.RefreshTargetDisplay(t.Context(), "board-1", "PVT_other",
+		port.BoardTargetDisplay{ProjectTitle: "別の Project"})
+	if !errors.Is(err, usecase.ErrTargetMismatch) {
+		t.Fatalf("RefreshTargetDisplay() = %v, want ErrTargetMismatch", err)
+	}
+	if boards.writes != 0 {
+		t.Errorf("食い違っているのに書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
+// どの作成先の表示名なのかを名乗らせる。空を通すと、この口が
+// 「いまの作成先が何であれ書く」ものになる。
+func TestRefreshTargetDisplay_RejectsEmptyProjectID(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
+
+	err := svc.RefreshTargetDisplay(t.Context(), "board-1", "", port.BoardTargetDisplay{})
+	if !errors.Is(err, usecase.ErrInvalidInput) {
+		t.Fatalf("RefreshTargetDisplay() = %v, want ErrInvalidInput", err)
+	}
+}
+
+// 作成先が未選択のボードには表示名も無い。
+func TestRefreshTargetDisplay_RejectsUnselectedTarget(t *testing.T) {
+	t.Parallel()
+
+	board := newBoard(interpretScene)
+	board.Target = port.BoardTarget{}
+	boards := &fakeBoards{board: board}
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
+
+	err := svc.RefreshTargetDisplay(t.Context(), "board-1", "PVT_1", port.BoardTargetDisplay{})
+	if !errors.Is(err, usecase.ErrTargetNotSelected) {
+		t.Fatalf("RefreshTargetDisplay() = %v, want ErrTargetNotSelected", err)
+	}
+}
+
+// URL の門番は作成先の設定と同じ（ADR 0025）。こちらだけ素通しにすると、
+// 固定済みのボードに javascript: を入れられる。
+func TestRefreshTargetDisplay_RejectsUnsafeProjectURL(t *testing.T) {
+	t.Parallel()
+
+	board := newBoard(interpretScene)
+	boards := &fakeBoards{board: board}
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
+
+	err := svc.RefreshTargetDisplay(t.Context(), "board-1", board.Target.ProjectID,
+		port.BoardTargetDisplay{ProjectURL: "javascript:alert(1)"})
+	if !errors.Is(err, usecase.ErrInvalidInput) {
+		t.Fatalf("RefreshTargetDisplay() = %v, want ErrInvalidInput", err)
+	}
+	if boards.writes != 0 {
+		t.Errorf("危険な URL を書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
 func TestSetTarget_RejectsIncompleteTarget(t *testing.T) {
 	t.Parallel()
 

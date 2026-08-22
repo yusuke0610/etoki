@@ -116,6 +116,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 作成先はボードごとに持つ。最初の draft issue を作ると固定される
 		// （ADR 0014）。
 		api.PUT("/boards/:id/target", h.setBoardTarget)
+		api.PUT("/boards/:id/target/display", h.refreshBoardTargetDisplay)
 		api.GET("/boards/:id/annotations", h.listAnnotations)
 
 		// そのボードで何ができるか。ボード取得とは別に置く。GitHub が

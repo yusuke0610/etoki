@@ -124,6 +124,18 @@ func (r *racingBoards) UpdateTarget(
 	return nil
 }
 
+func (r *racingBoards) UpdateTargetDisplay(
+	_ context.Context, _, _ string, d port.BoardTargetDisplay, _ time.Time,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.board.Target.ProjectNumber = d.ProjectNumber
+	r.board.Target.ProjectTitle = d.ProjectTitle
+	r.board.Target.ProjectURL = d.ProjectURL
+	return nil
+}
+
 func (r *racingBoards) Create(context.Context, port.Board, string) error { return nil }
 
 func (r *racingBoards) UpdateScene(
