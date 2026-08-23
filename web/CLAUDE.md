@@ -209,3 +209,7 @@ cd web && bunx playwright test --ui
   `playwright-driver.browsers`（nixpkgs 側）と揃っていないと、要求される
   リビジョンのブラウザが見つからず E2E が起動しない。`nix flake update` で
   `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
+
+ここで固定しているもの（`@playwright/test` と React 18）は
+`.github/dependabot.yml` の `ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
+**固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。
