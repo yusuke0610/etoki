@@ -22,6 +22,7 @@ draft issue に変換するツールです。
 nix develop      # 開発用シェルに入る（Go / Bun / SQLite / lint などが揃う）
 make setup       # 依存関係の取得と DB 初期化
 make dev         # バックエンドとフロントエンドを同時に起動
+make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
 make test        # Go とフロントエンドのテスト
 make test-e2e    # Playwright による E2E テスト
 make help        # ターゲット一覧
@@ -54,21 +55,22 @@ direnv allow
 エンドポイントだけが「設定されていない」と返し、ボードの編集と注釈の状態表示は
 そのまま使えます。ブレストだけ先にやる、という使い方を潰さないためです。
 
-| 変数                             | 既定値                      | 用途                                                       |
-| -------------------------------- | --------------------------- | ---------------------------------------------------------- |
-| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                           |
-| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す |
-| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                      |
-| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント                                       |
-| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                  |
-| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                  |
-| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない            |
-| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する      |
-| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                           |
-| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）          |
-| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む           |
-| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                 |
-| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                   |
+| 変数                             | 既定値                      | 用途                                                         |
+| -------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                             |
+| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す   |
+| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                        |
+| `ETOKI_WEB_DIR`                  | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない |
+| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント                                         |
+| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                    |
+| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                    |
+| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない              |
+| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する        |
+| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                             |
+| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）            |
+| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む             |
+| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                   |
+| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                     |
 
 認証は既定では持ちません。GitHub App を設定するとログインを要求します（後述）。
 どちらの構成でも、許可していない Host / Origin を持つブラウザからのリクエストは
@@ -77,6 +79,39 @@ direnv allow
 `ETOKI_ADDR` で公開インターフェースにバインドする場合は、
 `ETOKI_ALLOWED_ORIGINS` にそのオリジンを足さないと自分のブラウザからも
 届かなくなります。
+
+### dev サーバーを使わずに動かす
+
+`make dev` は Vite の開発サーバー（:5173）が画面を配ります。**人に使わせる
+インスタンスでは、ビルドした成果物を etoki 自身に配らせてください。**
+
+```sh
+make start   # make build のあと ETOKI_WEB_DIR=web/dist で起動する
+```
+
+`make build` で作った `web/dist` を `ETOKI_WEB_DIR` で渡しているだけなので、
+バイナリを直接動かしても同じです。
+
+```sh
+make build
+ETOKI_WEB_DIR=web/dist bin/etoki
+```
+
+**ブラウザがいるのは :8080 になります**（`ETOKI_ADDR` を変えたならそのポート）。
+GitHub App を設定しているなら、Callback URL と `ETOKI_PUBLIC_URL` もそちらに
+合わせてください。
+
+| 設定               | `make dev`                                | `make start`                              |
+| ------------------ | ----------------------------------------- | ----------------------------------------- |
+| Callback URL       | `http://127.0.0.1:5173/api/auth/callback` | `http://127.0.0.1:8080/api/auth/callback` |
+| `ETOKI_PUBLIC_URL` | `http://127.0.0.1:5173`                   | `http://127.0.0.1:8080`                   |
+
+`ETOKI_WEB_DIR` を渡さなければ画面は配りません。`make dev` では Vite が同じものを
+持っているので、両方が配ると画面の出どころが構成によって変わるためです
+（[ADR 0032](docs/adr/0032-serve-the-built-frontend.md)）。渡したのに `index.html`
+が無い場合は起動時に落ちます。**`ETOKI_ADDR` で公開インターフェースにバインド
+するなら、`ETOKI_ALLOWED_ORIGINS` にそのオリジンを足してください。** 足さないと
+API だけでなく画面も開けません。
 
 ### 鍵を `.env` に置く
 
@@ -175,7 +210,8 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
 
 1. [GitHub App を作る](https://github.com/settings/apps/new)
    - **Callback URL**: `http://127.0.0.1:5173/api/auth/callback`
-     （`make dev` の場合。ブラウザがいるポートに合わせる）
+     （`make dev` の場合。ブラウザがいるポートに合わせる。`make start` なら
+     `http://127.0.0.1:8080/api/auth/callback`）
    - **Repository permissions**: `Metadata: Read-only`
    - **Organization permissions**: `Projects: Read and write`
    - Webhook は要りません（Active のチェックを外す）

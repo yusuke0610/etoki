@@ -296,6 +296,10 @@ type BoardRepository interface {
 	// 存在しない、または操作者がメンバーでなければ (nil, nil)。
 	Find(ctx context.Context, actor, id string) (*BoardAccess, error)
 	// List は操作者がメンバーであるボードを UpdatedAt の降順で返す。
+	//
+	// **Board.Scene は空文字で返る。** 一覧はシーンを返さないので読まない。
+	// シーンには画像が base64 で入りうるため、捨てるために全ボードぶんを
+	// メモリへ載せることになる。中身が要るなら Find で 1 枚ずつ引く。
 	List(ctx context.Context, actor string) ([]BoardAccess, error)
 
 	// ListMembers はボードのメンバーを返す。

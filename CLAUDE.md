@@ -33,6 +33,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `internal/CLAUDE.md`               | 3 状態判定のデータフロー、ハンドラ、メンバーと権限、Origin 検証        |
 | `web/CLAUDE.md`                    | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
+| `.claude/rules/`                   | レビュー由来の落とし穴集（テーマ別。対象ファイルを読むと読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
 
@@ -58,6 +59,7 @@ nix develop      # 開発シェル（Go / Bun / SQLite / golangci-lint / air）
 make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
+make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
 make lint        # Go / フロントエンド / Markdown / Nix / Actions と整形を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest

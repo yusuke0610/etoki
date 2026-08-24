@@ -22,14 +22,24 @@ func NewBoardRepository(db *sql.DB) *BoardRepository {
 
 var _ port.BoardRepository = (*BoardRepository)(nil)
 
-// boardColumns は SELECT する列。Find と List で同じ並びを使う。
+// summaryColumns はシーン以外の列。Find と List で同じ並びを使う。
 //
-// scanBoard が並び順に依存するので、片方だけ足すと取り違える。
+// scanSummary が並び順に依存するので、片方だけ足すと取り違える。
 // 末尾の role はボードの列ではなく、操作者から見たロール（ADR 0017）。
-const boardColumns = `b.id, b.name, b.scene,
+const summaryColumns = `b.id, b.name,
 	b.repository_owner, b.repository_name, b.project_id,
 	b.project_number, b.project_title, b.project_url,
 	b.created_at, b.updated_at, m.role`
+
+// boardColumns は Find が SELECT する列。シーンを末尾に足す。
+//
+// **一覧はこれを使わない。** BoardSummary はシーンを含まないので、List が
+// 読んでも捨てるだけになる。シーンには画像が base64 で入りうるため、
+// 捨てるために全ボードぶんをメモリに載せることになる。
+//
+// 足す位置が末尾なのは、summaryColumns の並びを Find と List で崩さないため。
+// 途中に入れると、共有している側の受け皿とずれる。
+const boardColumns = summaryColumns + `, b.scene`
 
 // memberJoin は操作者がメンバーであるボードだけに絞る結合。
 //
@@ -332,7 +342,7 @@ func (r *BoardRepository) Find(
 // List は操作者がメンバーであるボードを更新時刻の降順で返す。
 func (r *BoardRepository) List(ctx context.Context, actor string) ([]port.BoardAccess, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT `+boardColumns+` `+memberJoin+` ORDER BY b.updated_at DESC, b.id`, actor)
+		`SELECT `+summaryColumns+` `+memberJoin+` ORDER BY b.updated_at DESC, b.id`, actor)
 	if err != nil {
 		return nil, fmt.Errorf("list boards: %w", err)
 	}
@@ -340,7 +350,7 @@ func (r *BoardRepository) List(ctx context.Context, actor string) ([]port.BoardA
 
 	var boards []port.BoardAccess
 	for rows.Next() {
-		a, err := scanBoard(rows)
+		a, err := scanSummary(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan board: %w", err)
 		}
@@ -358,18 +368,24 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanBoard(s rowScanner) (port.BoardAccess, error) {
+// scanSummary は summaryColumns の並びを読む。
+//
+// extra は summaryColumns の後ろに足した列の受け皿。呼び出し側が SELECT に
+// 足したぶんだけ渡す。列と受け皿の数が合わなければ Scan が落ちるので、
+// 片方だけ足したまま素通りすることはない。
+func scanSummary(s rowScanner, extra ...any) (port.BoardAccess, error) {
 	var (
 		a                    port.BoardAccess
 		role                 string
 		createdAt, updatedAt string
 	)
-	if err := s.Scan(&a.Board.ID, &a.Board.Name, &a.Board.Scene,
+	dest := append([]any{&a.Board.ID, &a.Board.Name,
 		&a.Board.Target.RepositoryOwner, &a.Board.Target.RepositoryName,
 		&a.Board.Target.ProjectID,
 		&a.Board.Target.ProjectNumber, &a.Board.Target.ProjectTitle,
 		&a.Board.Target.ProjectURL,
-		&createdAt, &updatedAt, &role); err != nil {
+		&createdAt, &updatedAt, &role}, extra...)
+	if err := s.Scan(dest...); err != nil {
 		return port.BoardAccess{}, err
 	}
 
@@ -382,6 +398,21 @@ func scanBoard(s rowScanner) (port.BoardAccess, error) {
 	if a.Board.UpdatedAt, err = parseTime(updatedAt); err != nil {
 		return port.BoardAccess{}, err
 	}
+
+	return a, nil
+}
+
+// scanBoard は boardColumns の並びを読む。シーンを含む。
+func scanBoard(s rowScanner) (port.BoardAccess, error) {
+	// port.BoardAccess は scanSummary が作って返すので、その中の Scene を
+	// 直接 Scan の受け皿にはできない。いったん受けてから詰める。
+	var scene string
+
+	a, err := scanSummary(s, &scene)
+	if err != nil {
+		return port.BoardAccess{}, err
+	}
+	a.Board.Scene = scene
 
 	return a, nil
 }
