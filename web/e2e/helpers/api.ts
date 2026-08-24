@@ -84,6 +84,12 @@ export type ApiMock = {
   /** 作成先の設定を失敗させたいときに指定する。409 の見せ方を確かめる用。 */
   setTargetError?: Reply<never>;
   /**
+   * 保存を失敗させたいときに指定する。413 の見せ方を確かめる用（ADR 0036）。
+   *
+   * 版の照合より先に返す。大きさで断られる場面は基準が合っていても起きる。
+   */
+  saveSceneError?: Reply<never>;
+  /**
    * そのボードで何ができるか。ボード ID をキーにする。
    *
    * 無いボードは role をボードの値から、projectAccess を unknown として返す。
@@ -198,6 +204,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     async (route) => {
       if (route.request().method() !== "PUT") {
         await route.fallback();
+        return;
+      }
+
+      if (mock.saveSceneError) {
+        await json(route, mock.saveSceneError.status, mock.saveSceneError.body);
         return;
       }
 
