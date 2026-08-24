@@ -252,6 +252,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/SceneTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -292,6 +294,9 @@ paths:
         保存はシーン全体を書く。ボードは共有できるので（ADR 0017）、後勝ちを
         許すと失われるのは「相手が触った要素」ではなく相手の作業すべてになる。
         `baseUpdatedAt` が現在の版と違えば 409 を返し、何も書かない（ADR 0020）。
+
+        シーンにはバイト数の上限がある。超えたら縮小も切り捨てもせず 413 を
+        返す（ADR 0018 と同じ扱い）。
       requestBody:
         required: true
         content:
@@ -319,6 +324,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          $ref: "#/components/responses/SceneTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -842,6 +849,19 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
 
+    SceneTooLarge:
+      description: |
+        シーンが保存できる大きさを超えている。**縮小も切り捨てもせずに弾く**
+        （ADR 0018 と同じ扱い）。効いてくるのはキャンバスに貼った画像で、
+        シーンには base64 で丸ごと乗る。
+
+        400 ではないのは、中身の誤りではなく大きさだから。打ち手が「送った
+        内容を直す」ではなく「貼った画像を減らす」になる。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     NotConfigured:
       description: |
         その機能に必要な設定がされていない。URL の誤りではないので 404 に
@@ -956,6 +976,7 @@ components:
         - cross_site_rejected
         - not_found
         - scene_conflict
+        - scene_too_large
         - target_locked
         - content_hash_mismatch
         - previous_item_unknown

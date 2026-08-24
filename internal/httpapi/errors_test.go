@@ -63,6 +63,9 @@ var wantMappings = map[string]wantMapping{
 	"usecase.ErrLastOwner": {
 		usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
 
+	"usecase.ErrSceneTooLarge": {
+		usecase.ErrSceneTooLarge, http.StatusRequestEntityTooLarge, apitypes.ErrorCodeSceneTooLarge},
+
 	"usecase.ErrTargetNotSelected": {
 		usecase.ErrTargetNotSelected, http.StatusUnprocessableEntity, apitypes.ErrorCodeTargetNotSelected},
 	"usecase.ErrProjectFieldMissing": {

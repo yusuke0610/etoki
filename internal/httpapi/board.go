@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -107,10 +109,45 @@ type handlers struct {
 	logger    *slog.Logger
 }
 
+// maxSceneBody はシーンを載せたリクエストボディを読む上限。
+//
+// シーンそのものの上限はユースケース層が持つ（usecase.MaxSceneBytes）。ここで
+// 重ねて持つのは、上限を超えたボディを全部メモリに載せてからでないと判定できない
+// のを避けるため（interpret.go の maxInterpretBody と同じ理由）。判定の正本は
+// あくまでユースケース層側で、ここは読み込みの歯止めである。
+//
+// シーンは JSON の文字列として運ばれるので、`"` と `\` がエスケープで倍になる。
+// 2 倍に包みのぶんを足して、**ユースケース層が弾くより先にここで切れないように
+// する。** 先に切れると、上限ちょうどのシーンが読めずに落ちる。
+const maxSceneBody = usecase.MaxSceneBytes*2 + 4<<10
+
+// bindSceneBody はシーンを載せたリクエストを読む。
+//
+// 歯止めに引っかかったボディは 400 ではなく 413 に写す。**同じ「大きすぎる」が
+// 経路によって違うステータスで返らないようにする。** 写し替えの表は errors.go に
+// あるので、ここは sentinel を選ぶだけ。
+func (h *handlers) bindSceneBody(c *gin.Context, req any) bool {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSceneBody)
+
+	err := c.ShouldBindJSON(req)
+	if err == nil {
+		return true
+	}
+
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
+			usecase.ErrSceneTooLarge, maxSceneBody))
+		return false
+	}
+
+	h.badRequest(c, err)
+	return false
+}
+
 func (h *handlers) createBoard(c *gin.Context) {
 	var req apitypes.CreateBoardRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindSceneBody(c, &req) {
 		return
 	}
 
@@ -207,8 +244,7 @@ func (h *handlers) respondBoard(c *gin.Context, status int, a port.BoardAccess) 
 
 func (h *handlers) saveScene(c *gin.Context) {
 	var req apitypes.SaveSceneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindSceneBody(c, &req) {
 		return
 	}
 

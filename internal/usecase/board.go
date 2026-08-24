@@ -35,6 +35,13 @@ var ErrTargetLocked = errors.New("etoki: board target is locked")
 // 呼び出し側に返す（ADR 0020）。
 var ErrSceneConflict = errors.New("etoki: board scene was updated by someone else")
 
+// ErrSceneTooLarge はシーンが保存できる大きさを超えていることを表す。
+//
+// **ErrInvalidInput に畳まない。** 中身の誤りではなく大きさなので、打ち手が
+// 「送った内容を直す」ではなく「貼った画像を減らす」になる。畳むと画面は
+// どちらとも言えない文言しか出せない（ADR 0034）。
+var ErrSceneTooLarge = errors.New("etoki: board scene is too large")
+
 // BoardService はボードの作成・取得・更新を担う。
 type BoardService struct {
 	boardGuard
@@ -281,11 +288,22 @@ func validateProjectURL(raw string) error {
 // emptyScene は Excalidraw が読み込める最小のシーン。
 const emptyScene = `{"type":"excalidraw","version":2,"source":"etoki","elements":[],"appState":{}}`
 
-// validateScene は保存前にシーンが読めることを確かめる。
+// validateScene は保存前にシーンが読めることと、大きさが上限に収まることを
+// 確かめる。
 //
 // 壊れた JSON を保存すると、次に読み込んだときにボードごと開けなくなる。
 // 入口で弾いておく。
+//
+// **大きさは読む前に見る。** 上限を超えたシーンは弾くと決めてあるので
+// （MaxSceneBytes）、通らないと分かっているものを解析する理由が無い。
+//
+// **超えたぶんを削って保存しない。** 保存はシーン全体を書くので、削れるのは
+// 開発者が描いたものそのものになる（ADR 0036）。
 func validateScene(scene string) error {
+	if len(scene) > MaxSceneBytes {
+		return fmt.Errorf("%w: scene is %d bytes, limit is %d",
+			ErrSceneTooLarge, len(scene), MaxSceneBytes)
+	}
 	if _, err := domain.ParseScene([]byte(scene)); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
