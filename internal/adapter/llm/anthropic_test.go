@@ -568,3 +568,48 @@ func TestConfigFromEnv(t *testing.T) {
 		}
 	})
 }
+
+// usage を捨てていると、使った量がどこにも残らない（ADR 0031）。#45 で決める
+// 上限の根拠になるので、実測が取れることをここで固定する。
+func TestComplete_ReadsUsage(t *testing.T) {
+	t.Parallel()
+
+	body := `{"content":[{"type":"text","text":"{}"}],"stop_reason":"end_turn",
+		"usage":{"input_tokens":1234,"output_tokens":56,
+		"cache_creation_input_tokens":7,"cache_read_input_tokens":8}}`
+
+	c := newClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	})
+
+	resp, err := c.Complete(t.Context(), port.VisionRequest{Text: "x"})
+	if err != nil {
+		t.Fatalf("Complete() = %v", err)
+	}
+
+	// キャッシュ関連は読まない。cache_control を送っていないので実際には
+	// 0 で返るが、載っていても入力に足さないことを固定しておく。足すと、
+	// キャッシュを使い始めたときに二重に数える。
+	want := port.Usage{InputTokens: 1234, OutputTokens: 56}
+	if resp.Usage != want {
+		t.Errorf("Usage = %+v, want %+v", resp.Usage, want)
+	}
+}
+
+// usage を返さない相手もいる（ADR 0005 の言う Anthropic 互換のゲートウェイ）。
+// 読めないことは失敗ではない。
+func TestComplete_ToleratesMissingUsage(t *testing.T) {
+	t.Parallel()
+
+	c := newClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, okResponse)
+	})
+
+	resp, err := c.Complete(t.Context(), port.VisionRequest{Text: "x"})
+	if err != nil {
+		t.Fatalf("Complete() = %v", err)
+	}
+	if (resp.Usage != port.Usage{}) {
+		t.Errorf("Usage = %+v, want zero", resp.Usage)
+	}
+}

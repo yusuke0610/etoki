@@ -109,6 +109,11 @@ func NewRouter(deps Deps) *gin.Engine {
 
 	api := r.Group("/api", requireAuth(deps.Auth))
 	{
+		// いま使える機能。設定していない機能を押す前に見せるために引く
+		// （ADR 0008 の帰結）。**認証の内側に置く。** プロセスの設定を
+		// 未ログインの相手に並べて見せる理由が無い。
+		api.GET("/capabilities", h.getCapabilities)
+
 		api.POST("/boards", h.createBoard)
 		api.GET("/boards", h.listBoards)
 		api.GET("/boards/:id", h.getBoard)

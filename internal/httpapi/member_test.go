@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -232,6 +233,10 @@ func TestMembers_WithoutAuthConfigured(t *testing.T) {
 	rec := withCookie(t, r, http.MethodGet, "/api/boards/board-1/members", nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("認証なしの members = %d %s, want 503", rec.Code, rec.Body)
+	}
+	// 設定するものが違うので、LLM / GitHub の未設定と同じ code に畳まない。
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeSharingNotConfigured {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeSharingNotConfigured)
 	}
 }
 

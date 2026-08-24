@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki/internal/httpapi"
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 )
 
@@ -226,6 +227,11 @@ func TestWebUI_NotConfiguredServesNothing(t *testing.T) {
 	// 構成によって変わる。
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
 		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	// code が抜けると、画面は打ち手をここだけ既定の文言から読むことになる
+	// （ADR 0034）。
+	if got := decode[apitypes.ErrorResponse](t, rec).Code; got != apitypes.ErrorCodeNotFound {
+		t.Errorf("code = %q, want %q", got, apitypes.ErrorCodeNotFound)
 	}
 }
 

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -263,57 +262,28 @@ func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {
 	return res
 }
 
-// fail はユースケース層のエラーを HTTP ステータスに写す。
+// fail はユースケース層のエラーを契約の code と HTTP ステータスに写す。
 //
-// 分岐をここ 1 箇所に閉じることで、ハンドラ側がステータスコードを
-// 気にしなくて済む。
+// 写し替えの表は errors.go に 1 つだけ置いてある。ここが決めるのは、表に無かった
+// ときにどこへ落とすかだけ。
 func (h *handlers) fail(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, usecase.ErrInvalidInput):
-		h.badRequest(c, err)
-	case errors.Is(err, port.ErrNotFound), errors.Is(err, usecase.ErrBoardNotFound):
-		// メンバーでないボードもここに来る。403 と区別すると、ID を総当たりして
-		// 他人のボードの存在を確かめられる（ADR 0016 / 0017）。
-		h.notFound(c)
-	case errors.Is(err, usecase.ErrForbidden):
-		// ボードの存在をすでに知っている相手にだけ返る。何が足りないのかを
-		// 隠す理由が無い（ADR 0017）。
-		errorJSON(c, http.StatusForbidden, err.Error())
-	case errors.Is(err, port.ErrForbidden):
-		// GitHub がその Project への書き込みを拒んだ。etoki は実行者の
-		// トークンで叩くので、リポジトリのアクセス権が無ければここに来る。
-		// 500 に丸めると、権限の問題だと分からない（ADR 0017）。
-		errorJSON(c, http.StatusForbidden, err.Error())
-	case errors.Is(err, port.ErrNotAuthenticated):
-		// セッションが失効した、あるいはトークンを更新できなかった。
-		// UI が「再ログインが要る」と判断できるよう 401 に寄せる。
-		errorJSON(c, http.StatusUnauthorized, err.Error())
-	case errors.Is(err, usecase.ErrTargetLocked), errors.Is(err, usecase.ErrSceneConflict):
-		// 状態が食い違っていて進めない、という点で contentHash の不一致と同類。
-		// シーンの衝突も同じ扱いにする。上書きして進めるより、食い違っている
-		// ことを見せて選ばせる（ADR 0020）。
-		errorJSON(c, http.StatusConflict, err.Error())
-	default:
-		// レスポンスには内部情報を載せないが、原因が分からないままだと
-		// 手元で調べようがない。サーバー側には必ず残す。
-		h.logger.ErrorContext(c.Request.Context(), "unhandled error",
-			slog.String("path", c.Request.URL.Path),
-			slog.Any("error", err),
-		)
-		errorJSON(c, http.StatusInternalServerError, "internal error")
+	if respondMapped(c, err) {
+		return
 	}
+
+	// レスポンスには内部情報を載せないが、原因が分からないままだと
+	// 手元で調べようがない。サーバー側には必ず残す。
+	h.logger.ErrorContext(c.Request.Context(), "unhandled error",
+		slog.String("path", c.Request.URL.Path),
+		slog.Any("error", err),
+	)
+	errorJSON(c, http.StatusInternalServerError, apitypes.ErrorCodeInternal, "internal error")
 }
 
+// badRequest はリクエストの読み取りに失敗したことを返す。
+//
+// ボディのバインドはユースケース層に届く前に落ちるので、sentinel を持たない。
+// 表を引かずにここで code を決めるのはこの経路だけ。
 func (h *handlers) badRequest(c *gin.Context, err error) {
-	errorJSON(c, http.StatusBadRequest, err.Error())
-}
-
-func (h *handlers) notFound(c *gin.Context) {
-	errorJSON(c, http.StatusNotFound, "not found")
-}
-
-// errorJSON はエラー本文を 1 つの型に揃える。gin.H を直に書くと、契約に
-// 無いキーが混ざっても気づけない。
-func errorJSON(c *gin.Context, status int, message string) {
-	c.JSON(status, apitypes.ErrorResponse{Error: message})
+	errorJSON(c, http.StatusBadRequest, apitypes.ErrorCodeInvalidInput, err.Error())
 }

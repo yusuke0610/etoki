@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 )
 
 // indexFile はブラウザが最初に受け取るページ。
@@ -96,9 +98,11 @@ func newWebUI(dir string) gin.HandlerFunc {
 	}
 }
 
-// notFound は配れなかったときの応答。API の 404 と同じ形に揃える。
+// notFound は配れなかったときの応答。API の 404 と同じ形（code と文言）に
+// 揃える。画面は code で打ち手を分けるので（ADR 0034）、配信だけ code の無い
+// 本文を返すと、そこだけ対応表から漏れる。
 func notFound(c *gin.Context) {
-	errorJSON(c, http.StatusNotFound, "not found")
+	errorJSON(c, http.StatusNotFound, apitypes.ErrorCodeNotFound, "not found")
 }
 
 // isReservedPath は etoki 自身が持つパスかを返す。

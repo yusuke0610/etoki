@@ -90,6 +90,39 @@
   押す前に見せる。ADR 0024 の「親を失うことは黙って起こさない」と同じ形で、
   判定は `interpretationDraft.ts` の純関数に置く。
 
+## 失敗の見せ方（ADR 0034）
+
+- **分岐は `code` で行う。ステータスや文言で分けない。** 409 には 6 つの原因が
+  同居し、403 は 2 層ある（ADR 0017）。文字列で照合すると、Go のエラー文言が
+  事実上の契約になる。
+- **文言を持つのは `web/src/api/errorMessage.ts` だけ。** コンポーネントが持つ
+  のは操作の名前（`保存できませんでした`）まで。`Record<ErrorCode, string>` に
+  してあるので、契約に code が増えて文言を書き忘れると `tsc` が落ちる。
+- **サーバーの `error` 本文は既定で畳む**（`ErrorNotice` の `<details>`）。
+  捨てはしない。GitHub のレート制限や LLM の設定不足は本文にしか手掛かりが無い。
+  **知らない code のときだけ本文を前に出す。**
+- **畳んで見せるのは応答の本文だけ。** 応答が返ってこなかったときの例外は
+  `<details>` にも入れず console に固定する（上の「例外の中身は画面に出さない」と
+  同じ扱い）。`describeFailure` の `ApiError` でない側がその経路。
+- `ApiError.code` は `ErrorCode` ではなく `string`。サーバーが画面より新しいと
+  知らない code が来るので、型で締めると漏れに気づけない。
+
+## 設定していない機能の見せ方（ADR 0030）
+
+- **押す前に見せる。** `GET /api/capabilities` を App が 1 度だけ引き、使えない
+  機能は押させずに理由を出す。**ボタンを黙って消さない**（中核思想 3）。
+- **文言を新しく書かない。** `web/src/capability.ts` が capability → `ErrorCode`
+  を引き、文言は `ERROR_MESSAGES` から取る。押した後に 503 で返る理由と同じ文に
+  なる。別々に持つと片方だけ古くなる。
+- **`capabilities` が null のうちは止めない。** 「まだ確かめていない」を「使え
+  ない」に倒さない。押せば 503 が同じ理由を返す。`projectAccess` の `unknown` と
+  同じ扱い。
+- **プロセスの設定とボードの権限を混ぜない。** `capabilities` は etoki の設定、
+  `projectAccess` はこのボードの Project に書けるか（ADR 0017）。設定されていても
+  書けない、は普通に起きる。
+- 理由はパネルに 1 つだけ出し、押せないボタンから `aria-describedby` で指す。
+  注釈ごとに並べると、読むべき状態が埋もれる。
+
 ## 契約の型
 
 - **`web/src/api/types.ts` の名前を import する。** `components["schemas"][...]`
@@ -176,3 +209,7 @@ cd web && bunx playwright test --ui
   `playwright-driver.browsers`（nixpkgs 側）と揃っていないと、要求される
   リビジョンのブラウザが見つからず E2E が起動しない。`nix flake update` で
   `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
+
+ここで固定しているもの（`@playwright/test` と React 18）は
+`.github/dependabot.yml` の `ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
+**固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。

@@ -33,4 +33,9 @@
 | [0027](0027-error-boundaries-keep-the-canvas.md)                 | 描画に失敗しても真っ白にせず、境界はキャンバスの外側に置く             | 採用                 |
 | [0028](0028-unique-epic-titles-within-one-interpretation.md)     | 同じ解釈の中で epic のタイトルを一意にする（弾いて直させる）           | 採用                 |
 | [0029](0029-declare-validation-rules-with-their-instructions.md) | 検査と LLM への指示を 1 つの表に結ぶ                                   | 採用                 |
+| [0030](0030-show-what-is-not-configured.md)                      | 使えない機能は押す前に見せる（プロセスの設定と利用者の権限を分ける）   | 採用                 |
+| [0031](0031-record-llm-usage-in-logs.md)                         | LLM の呼び出し実績はログに残す（port は任意の口で受ける）              | 採用                 |
 | [0032](0032-serve-the-built-frontend.md)                         | ビルド済みフロントエンドは外から渡し、指定されたときだけ配る           | 採用                 |
+| [0033](0033-review-derived-rules.md)                             | レビュー由来の落とし穴は `.claude/rules/` にテーマ別で集める           | 採用                 |
+| [0034](0034-error-codes-in-the-contract.md)                      | エラーは契約の code で表し、文言は画面が持つ                           | 採用                 |
+| [0035](0035-know-about-dependency-updates.md)                    | 依存の更新は Dependabot で知る（flake.lock は手のまま残す）            | 採用                 |

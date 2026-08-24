@@ -20,10 +20,6 @@ const sessionCookie = "etoki_session"
 // callbackPath はコールバックのパス。redirect_uri の組み立てにも使う。
 const callbackPath = "/api/auth/callback"
 
-// authNotConfigured は認証未設定のときの案内。
-const authNotConfigured = "authentication is not configured: " +
-	"set ETOKI_GITHUB_APP_CLIENT_ID and ETOKI_GITHUB_APP_CLIENT_SECRET"
-
 // getSession はログイン状態を返す。
 //
 // 常に 200。未ログインを 401 で伝えると、認証を設定していない構成の起動時にも
@@ -54,7 +50,7 @@ func (h *handlers) getSession(c *gin.Context) {
 // 叩けてしまう。POST なら Origin 検証が効く（ADR 0013 / 0015）。
 func (h *handlers) startLogin(c *gin.Context) {
 	if h.auth == nil {
-		errorJSON(c, http.StatusServiceUnavailable, authNotConfigured)
+		authNotConfigured(c)
 		return
 	}
 
@@ -74,7 +70,7 @@ func (h *handlers) startLogin(c *gin.Context) {
 // 使用・期限つきなので攻撃者は有効な値を用意できない（ADR 0015）。
 func (h *handlers) completeLogin(c *gin.Context) {
 	if h.auth == nil {
-		errorJSON(c, http.StatusServiceUnavailable, authNotConfigured)
+		authNotConfigured(c)
 		return
 	}
 
@@ -259,7 +255,8 @@ func requireAuth(auth *usecase.AuthService) gin.HandlerFunc {
 
 		if _, ok := currentUser(c); !ok {
 			c.Abort()
-			errorJSON(c, http.StatusUnauthorized, "login required")
+			errorJSON(c, http.StatusUnauthorized, apitypes.ErrorCodeLoginRequired,
+				"login required")
 			return
 		}
 
