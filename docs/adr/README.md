@@ -38,3 +38,4 @@
 | [0033](0033-review-derived-rules.md)                             | レビュー由来の落とし穴は `.claude/rules/` にテーマ別で集める           | 採用                 |
 | [0034](0034-error-codes-in-the-contract.md)                      | エラーは契約の code で表し、文言は画面が持つ                           | 採用                 |
 | [0035](0035-know-about-dependency-updates.md)                    | 依存の更新は Dependabot で知る（flake.lock は手のまま残す）            | 採用                 |
+| [0036](0036-scene-size-limit.md)                                 | シーンの保存に上限を置き、超えたら 413 で弾く                          | 採用                 |
