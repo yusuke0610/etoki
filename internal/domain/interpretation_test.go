@@ -257,6 +257,33 @@ func TestInterpretation_Validate_ItemRules(t *testing.T) {
 	}
 }
 
+// 中身が改行だけの title は「空」として弾く。**空の検査を改行の検査より先に
+// 置いている。** 改行を落とすと何も残らないので、「1 行にまとめてください」は
+// 直しようのない指示になる（ADR 0029）。直す道が残るのは「タイトルを書く」の
+// ほうなので、そちらの指摘文を出す。
+func TestInterpretation_Validate_TitleOfOnlyLineBreaksIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	for _, title := range []string{"\n", "\r", "\r\n", " \n\t"} {
+		in := validInterpretation()
+		in.Items[1].Title = title
+
+		err := in.Validate(domain.GranularityAuto)
+		if err == nil {
+			t.Fatalf("Validate() = nil, want error（title = %q）", title)
+		}
+
+		got := errorRules(t, err)
+		if !slices.Contains(got, domain.RuleTitle) {
+			t.Errorf("title = %q の Rule = %v, want %v を含む", title, got, domain.RuleTitle)
+		}
+		if slices.Contains(got, domain.RuleTitleSingleLine) {
+			t.Errorf("title = %q の Rule = %v, want %v を含まない",
+				title, got, domain.RuleTitleSingleLine)
+		}
+	}
+}
+
 // 粒度はプロンプトでも指示するが、LLM が従う保証はないので構造で守る。
 func TestInterpretation_Validate_Granularity(t *testing.T) {
 	t.Parallel()
