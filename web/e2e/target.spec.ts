@@ -1,11 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import type { BoardDetail } from "../src/api/types";
 import { installApi, summarize } from "./helpers/api";
 import { chooseTarget, drawRectangle, openBoard, picker } from "./helpers/board";
 import { BOARD_ID, baseMock, board, unselectedBoard } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 const UNSELECTED_NAME = "作成先未選択のブレスト";
+const OTHER_NAME = "決済まわりのブレスト";
 
 /** 作成先が未選択のボードを 1 枚足したモック。 */
 function withUnselected() {
@@ -242,6 +244,55 @@ test.describe("作成先の選択", () => {
     ).toBeVisible();
     // 作成先そのものは固定されたまま。変更の口は出ない。
     await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
+  });
+
+  // 取り直しは GitHub と etoki の 2 往復ある。そのあいだにボードを切り替えられる
+  // ので、遅れて届いた応答をそのまま入れると、今開いているボードが外れる。
+  // 切り替えは confirmDiscard を通ってきているのに、その先で確認なしに
+  // キャンバスが作り直される形になる。
+  test("取り直しの応答が遅れて届いても、切り替えた先のボードを外さない", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+
+    const other: BoardDetail = { ...board(), id: "board-2", name: OTHER_NAME };
+    mock.boards = [...mock.boards, summarize(other)];
+    mock.details[other.id] = other;
+    mock.annotations[other.id] = [];
+
+    await installApi(page, mock);
+
+    // 取り直しの応答を握っておく。installApi の後に登録したこちらが先に
+    // 当たり、fallback で本来の応答に落ちる。
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => /^\/api\/boards\/[^/]+\/target\/display$/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() === "PUT") await held;
+        await route.fallback();
+      },
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+
+    // 応答を握ったまま別のボードへ移る。
+    await openBoard(page, OTHER_NAME);
+    release();
+
+    // 応答は届いている（一覧は引き直される）が、開いているボードは動かない。
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: OTHER_NAME }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toHaveCount(
+      0,
+    );
   });
 
   // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので選び直しでは
