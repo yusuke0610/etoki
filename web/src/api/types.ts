@@ -27,6 +27,9 @@ export type BoardDetail = Schemas["BoardDetail"];
 /** draft issue の作成先。設定のリクエストボディ。 */
 export type BoardTarget = Schemas["BoardTarget"];
 
+/** 作成先の表示用スナップショット。取り直しのリクエストボディ。 */
+export type BoardTargetDisplay = Schemas["BoardTargetDisplay"];
+
 /** シーン保存のリクエストボディ。編集の基準にした版を伴う。 */
 export type SaveSceneRequest = Schemas["SaveSceneRequest"];
 

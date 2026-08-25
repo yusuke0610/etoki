@@ -58,7 +58,7 @@ DB_PATH ?= etoki.db
 ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
-.PHONY: help setup dev dev-api dev-web build build-api build-web \
+.PHONY: help setup dev dev-api dev-web build build-api build-web start \
         test test-go test-web test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions fmt \
         codegen codegen-go codegen-web migrate clean
@@ -84,14 +84,21 @@ dev: ## バックエンドとフロントエンドを同時に起動する
 	wait
 
 dev-api: ## バックエンドのみ起動する（ホットリロード有効）
-	@# 鍵が要るのはサーバーだけなので、$(ENV_FILE) を読むのもここだけにする。
-	@# migrate は ETOKI_DB_PATH しか要らず、それは DB_PATH で渡している。
+	@# 鍵が要るのはサーバーだけなので、$(ENV_FILE) を読むのもサーバーを起動する
+	@# ターゲット（dev-api と start）だけにする。migrate は ETOKI_DB_PATH しか
+	@# 要らず、それは DB_PATH で渡している。
 	$(LOAD_ENV) air
 
 dev-web: ## フロントエンドのみ起動する（ホットリロード有効）
 	cd $(WEB_DIR) && bun run dev
 
 build: build-api build-web ## バイナリとフロントエンドのビルド成果物を生成する
+
+start: build ## ビルド済みの成果物で起動する（dev サーバーを使わない）
+	@# 配布する構成と同じ形で動かす。ETOKI_WEB_DIR を渡さないと画面を配らない
+	@# ので（ADR 0032）、ここで渡す。ブラウザは :8080 側にいることになるため、
+	@# GitHub App の Callback URL と ETOKI_PUBLIC_URL もそちらに合わせる。
+	$(LOAD_ENV) ETOKI_WEB_DIR=$(WEB_DIR)/dist $(BINARY)
 
 build-api:
 	go build -o $(BINARY) ./cmd/etoki

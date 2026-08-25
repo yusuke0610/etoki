@@ -32,6 +32,9 @@ const envEncryptionKey = "ETOKI_TOKEN_ENCRYPTION_KEY"
 // envPublicURL は認可から戻ってくる先の組み立てに使う。
 const envPublicURL = "ETOKI_PUBLIC_URL"
 
+// envWebDir はビルド済みフロントエンドの置き場所。未設定なら画面を配らない。
+const envWebDir = "ETOKI_WEB_DIR"
+
 // defaultDBPath は ETOKI_DB_PATH が未設定のときに使う SQLite ファイル。
 const defaultDBPath = "etoki.db"
 
@@ -44,6 +47,8 @@ environment:
   ETOKI_ADDR            リッスンアドレス（既定: ` + etoki.DefaultAddr + `）
   ETOKI_ALLOWED_ORIGINS 追加で許すオリジン（カンマ区切り）。ループバックは常に許す
   ETOKI_DB_PATH         SQLite ファイルのパス（既定: ` + defaultDBPath + `）
+  ETOKI_WEB_DIR         ビルド済みフロントエンドの置き場所（例: web/dist）
+                        未設定なら画面を配らない（make dev では Vite が配る）
   ETOKI_LLM_BASE_URL    LLM のエンドポイント（既定: ` + llm.DefaultBaseURL + `）
   ETOKI_LLM_API_KEY     LLM の API キー（認証不要なら未設定でよい）
   ETOKI_LLM_MODEL       モデル ID（既定: ` + llm.DefaultModel + `）
@@ -139,6 +144,8 @@ func serve(ctx context.Context) error {
 		return err
 	}
 
+	webDir := os.Getenv(envWebDir)
+
 	srv, err := etoki.New(etoki.Options{
 		Addr:            os.Getenv("ETOKI_ADDR"),
 		Boards:          boards,
@@ -146,6 +153,7 @@ func serve(ctx context.Context) error {
 		LLM:             llmClient,
 		GitHub:          githubClient,
 		Auth:            auth,
+		WebDir:          webDir,
 		PublicURL:       os.Getenv(envPublicURL),
 		KindFieldName:   os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
 		ParentFieldName: os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
@@ -162,6 +170,9 @@ func serve(ctx context.Context) error {
 		slog.Bool("llm", llmClient != nil),
 		slog.Bool("github", githubClient != nil),
 		slog.Bool("auth", auth != nil),
+		// 画面を配っているか。配っていないのに :8080 をブラウザで開くと
+		// 404 しか返らないので、起動時に読めるようにしておく。
+		slog.Bool("web", webDir != ""),
 	)
 
 	// 認証を有効にすると、それ以前のボードは所有者が無いので画面から消える

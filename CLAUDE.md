@@ -59,6 +59,7 @@ nix develop      # 開発シェル（Go / Bun / SQLite / golangci-lint / air）
 make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
+make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
 make lint        # Go / フロントエンド / Markdown / Nix / Actions と整形を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest
@@ -132,6 +133,10 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 注釈の frame 自体は **Excalidraw のフレームツールで作らせる**。etoki は
 `customData` を付けるだけ。frame を自前で生成すると、境界にまたがる要素の
 帰属判定を自分で持つことになり、frame を選んだ理由が消える。
+
+**注釈にした frame を見分けさせるのも、キャンバスに重ねるだけで要素は変えない**
+（ADR 0036）。frame の `name` は `content_hash` の入力なので、印を付けると
+見分けたいだけの操作で状態が「変更あり」に落ちる。
 
 ## 認証について
 

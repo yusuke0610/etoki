@@ -35,9 +35,10 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "GitHub がこの Project への書き込みを拒みました。リポジトリの権限を確かめてください。",
   cross_site_rejected: "別のサイトからの操作として拒否されました。",
   not_found: "見つかりませんでした。消されたか、権限がありません。",
-  // 409 の 6 つ。打ち手が全部違うので、ここが畳まれると画面は何も案内できない。
+  // 409 の 7 つ。打ち手が全部違うので、ここが畳まれると画面は何も案内できない。
   scene_conflict: "他の人が先に保存しました。いまの内容を控えて、開き直してください。",
   target_locked: "作成先はもう変えられません。最初の draft issue を作ったためです。",
+  target_mismatch: "作成先が変わっています。ボードを開き直してください。",
   content_hash_mismatch: "解釈のあとにボードが変わりました。解釈からやり直してください。",
   previous_item_unknown:
     "更新先がこの注釈のものではありません。解釈からやり直してください。",
@@ -118,6 +119,21 @@ export function describeFailure(action: string, e: unknown): Failure {
 export function sceneUnreadableFailure(): Failure {
   return {
     message: "シーンを読み込めませんでした。空のボードとして開きます。",
+    detail: "",
+  };
+}
+
+/**
+ * 作成先の Project が GitHub 側で見つからなかった（ADR 0037）。
+ *
+ * `ErrorCode` を持たない。GitHub も etoki も 200 を返していて、一覧に
+ * 目当ての ID が無かっただけ。**それでも文言はここに置く**（`web/CLAUDE.md`）。
+ * コンポーネントに書くと、同じ「見つかりません」がまた散る。
+ */
+export function targetProjectMissingFailure(): Failure {
+  return {
+    message:
+      "作成先の Project が GitHub 側で見つかりませんでした。消されたか、権限が変わっています。",
     detail: "",
   };
 }

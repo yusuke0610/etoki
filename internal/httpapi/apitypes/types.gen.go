@@ -44,6 +44,7 @@ const (
 	ErrorCodeSceneTooLarge        ErrorCode = "scene_too_large"
 	ErrorCodeSharingNotConfigured ErrorCode = "sharing_not_configured"
 	ErrorCodeTargetLocked         ErrorCode = "target_locked"
+	ErrorCodeTargetMismatch       ErrorCode = "target_mismatch"
 	ErrorCodeTargetNotSelected    ErrorCode = "target_not_selected"
 )
 
@@ -297,6 +298,23 @@ type BoardTarget struct {
 	ProjectURL      string `json:"projectUrl,omitempty"`
 	RepositoryName  string `json:"repositoryName"`
 	RepositoryOwner string `json:"repositoryOwner"`
+}
+
+// BoardTargetDisplay 作成先の表示用スナップショット。取り直しのリクエストボディ（ADR 0037）。
+//
+// `projectId` は**変更先ではなく照合材料**。どの作成先の表示名なのかを
+// 示すために伴い、保存されているものと違えば 409 になる。リポジトリを
+// 持たないのは、この口で作成先そのものを動かせないことを形で示すため。
+//
+// 表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存
+// する。BoardTarget と同じ扱いにしてあるので、GitHub が URL を返さない
+// Project でも取り直せる。
+type BoardTargetDisplay struct {
+	// ProjectID いま保存されている作成先の Projects v2 node ID
+	ProjectID     string `json:"projectId"`
+	ProjectNumber int    `json:"projectNumber,omitempty"`
+	ProjectTitle  string `json:"projectTitle,omitempty"`
+	ProjectURL    string `json:"projectUrl,omitempty"`
 }
 
 // Capabilities いま使える機能。**プロセスの設定であって、利用者ごとの権限ではない。**
@@ -644,3 +662,6 @@ type SaveSceneJSONRequestBody = SaveSceneRequest
 
 // SetBoardTargetJSONRequestBody defines body for SetBoardTarget for application/json ContentType.
 type SetBoardTargetJSONRequestBody = BoardTarget
+
+// RefreshBoardTargetDisplayJSONRequestBody defines body for RefreshBoardTargetDisplay for application/json ContentType.
+type RefreshBoardTargetDisplayJSONRequestBody = BoardTargetDisplay

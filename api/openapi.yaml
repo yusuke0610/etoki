@@ -372,6 +372,63 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/boards/{id}/target/display:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    put:
+      tags: [boards]
+      operationId: refreshBoardTargetDisplay
+      summary: 作成先の表示用スナップショットだけを取り直す
+      description: |
+        `projectNumber` / `projectTitle` / `projectUrl` は作成先を選んだ時点の
+        スナップショットで、判定には使わない（ADR 0019 / 0025）。GitHub 側で
+        Project を改名すると古いままになるが、**作成先そのものは固定済みで
+        変えられない**（ADR 0014）ため、選び直しでは直せなかった。この口は
+        表示用の 3 つだけを更新する（ADR 0037）。
+
+        **作成先そのもの（リポジトリと projectId）は変えられない。**
+        `projectId` は「どの作成先の表示名か」を確かめるために伴う。保存されて
+        いるものと違えば 409（`target_mismatch`）を返す。作成先を変えるのは
+        `PUT /api/boards/{id}/target` のほうで、固定後は通らない。
+
+        **etoki からは自動で取りにいかない。** 画面が押されたときに GitHub の
+        Project 一覧を引き、その値をここへ送る（中核思想 3）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoardTargetDisplay"
+      responses:
+        "200":
+          description: 更新後のボード
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: 送られた projectId が保存されている作成先と違う
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: そのボードには作成先が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/boards/{id}/access:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -978,6 +1035,7 @@ components:
         - scene_conflict
         - scene_too_large
         - target_locked
+        - target_mismatch
         - content_hash_mismatch
         - previous_item_unknown
         - already_member
@@ -1215,6 +1273,33 @@ components:
           type: string
         projectId:
           type: string
+        projectNumber:
+          type: integer
+          x-go-type-skip-optional-pointer: true
+        projectTitle:
+          type: string
+          x-go-type-skip-optional-pointer: true
+        projectUrl:
+          type: string
+          x-go-type-skip-optional-pointer: true
+
+    BoardTargetDisplay:
+      type: object
+      description: |
+        作成先の表示用スナップショット。取り直しのリクエストボディ（ADR 0037）。
+
+        `projectId` は**変更先ではなく照合材料**。どの作成先の表示名なのかを
+        示すために伴い、保存されているものと違えば 409 になる。リポジトリを
+        持たないのは、この口で作成先そのものを動かせないことを形で示すため。
+
+        表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存
+        する。BoardTarget と同じ扱いにしてあるので、GitHub が URL を返さない
+        Project でも取り直せる。
+      required: [projectId]
+      properties:
+        projectId:
+          type: string
+          description: いま保存されている作成先の Projects v2 node ID
         projectNumber:
           type: integer
           x-go-type-skip-optional-pointer: true

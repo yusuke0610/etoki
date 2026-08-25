@@ -7,6 +7,7 @@ import {
   baseMock,
   board,
   matchedInterpretationMock,
+  mixedFramesMock,
   multiFrameMock,
   signedIn,
   unselectedBoard,
@@ -122,6 +123,18 @@ test.describe("スクリーンショット", () => {
     await shot(page, "16-frame-focused");
   });
 
+  // 注釈にした frame と、ユーザーが自分の用途で使った frame は混在するのが
+  // 前提（ルートの CLAUDE.md）。キャンバス上で見分けが付くかを撮る。
+  test("注釈にした frame の印を撮る", async ({ page }) => {
+    await installApi(page, mixedFramesMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.locator(".annotation-overlay-frame").first().waitFor();
+    await shot(page, "20-annotation-marks");
+  });
+
   // 未保存のあいだは解釈できない。テキストは保存済みシーンから、画像は画面から
   // 取るので、揃っていないと入力が食い違う（ADR 0018）。
   test("未保存で解釈できない状態を撮る", async ({ page }) => {
@@ -169,6 +182,39 @@ test.describe("スクリーンショット", () => {
     await shot(page, "07-target-selected");
   });
 
+  // 固定済みでも表示名は取り直せる（ADR 0037）。確定していることと、名前だけは
+  // 直せることが同じ場所で読める必要があるので撮る。
+  test("固定済みの作成先と、名前の取り直しを撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.projects["acme/web"] = {
+      status: 200,
+      body: [
+        {
+          id: "PVT_1",
+          number: 1,
+          title: "改名後のロードマップ",
+          url: "https://github.com/orgs/acme/projects/1",
+        },
+      ],
+    };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await shot(page, "21-target-locked");
+
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    // 木の名前が変わるまで待つ。待たずに撮ると、取り直す前の画面が写る。
+    await page
+      .locator(".board-list")
+      .getByRole("button", { name: "#1 改名後のロードマップ" })
+      .waitFor();
+    await shot(page, "22-target-display-refreshed");
+  });
+
   // 押せない理由は title ではなく本文で出す。ホバーできない利用者と読み上げにも
   // 届く必要がある。見た目の話でもあるので撮る。
   test("作成先を変更できない状態を撮る", async ({ page }) => {
@@ -198,7 +244,7 @@ test.describe("スクリーンショット", () => {
     await shot(page, "15-save-conflict");
   });
 
-  // 大きさで保存を断られた状態（ADR 0036）。**保存できない = 描いたものが
+  // 大きさで保存を断られた状態（ADR 0038）。**保存できない = 描いたものが
   // 失われる**ように読めてはならないので、未保存のまま残っていることと打ち手が
   // 同じ画面に出ているかを画像で見る。
   test("大きさで保存を断られた状態を撮る", async ({ page }) => {

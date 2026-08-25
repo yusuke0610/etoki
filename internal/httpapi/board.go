@@ -231,6 +231,39 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 	h.respondBoard(c, http.StatusOK, *b)
 }
 
+// refreshBoardTargetDisplay は作成先の表示用スナップショットだけを取り直す。
+//
+// **固定済みでも通る。** 固定するのは作成先そのものであって、表示用の値では
+// ない（ADR 0037）。同じかどうかの判断はユースケース層が持つ。
+func (h *handlers) refreshBoardTargetDisplay(c *gin.Context) {
+	var req apitypes.BoardTargetDisplay
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.badRequest(c, err)
+		return
+	}
+
+	id := c.Param("id")
+	display := port.BoardTargetDisplay{
+		ProjectNumber: req.ProjectNumber,
+		ProjectTitle:  req.ProjectTitle,
+		ProjectURL:    req.ProjectURL,
+	}
+
+	if err := h.boards.RefreshTargetDisplay(c.Request.Context(), id, req.ProjectID, display); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// 更新後の姿を返す。フロントが手元の値を組み立て直さずに済む。
+	b, err := h.boards.Find(c.Request.Context(), id)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	h.respondBoard(c, http.StatusOK, *b)
+}
+
 // respondBoard はボードを固定状態つきで返す。
 func (h *handlers) respondBoard(c *gin.Context, status int, a port.BoardAccess) {
 	locked, err := h.boards.TargetLocked(c.Request.Context(), a.Board.ID)

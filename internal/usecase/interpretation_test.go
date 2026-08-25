@@ -27,6 +27,8 @@ type fakeBoards struct {
 	role    port.BoardRole
 	members []port.BoardMember
 	writes  int
+	// display は最後に書かれた表示用スナップショット。
+	display port.BoardTargetDisplay
 }
 
 // Find は操作者も突き合わせる。実装と同じ形にしておかないと、絞り忘れを
@@ -67,6 +69,22 @@ func (f *fakeBoards) UpdateTarget(
 	context.Context, string, string, port.BoardTarget, time.Time,
 ) error {
 	f.writes++
+	return nil
+}
+
+// UpdateTargetDisplay は表示用の 3 つだけを書く。作成先には触らない
+// （ADR 0037）。実装と同じ形にしておかないと、触ったことをフェイクが吸収する。
+func (f *fakeBoards) UpdateTargetDisplay(
+	_ context.Context, _, _ string, d port.BoardTargetDisplay, updatedAt time.Time,
+) error {
+	f.writes++
+	f.display = d
+	if f.board != nil {
+		f.board.Target.ProjectNumber = d.ProjectNumber
+		f.board.Target.ProjectTitle = d.ProjectTitle
+		f.board.Target.ProjectURL = d.ProjectURL
+		f.board.UpdatedAt = updatedAt
+	}
 	return nil
 }
 
