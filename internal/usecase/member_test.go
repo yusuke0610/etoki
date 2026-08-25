@@ -324,6 +324,12 @@ func (b *blockingMembers) UpdateTarget(
 	return nil
 }
 
+func (b *blockingMembers) UpdateTargetDisplay(
+	context.Context, string, string, port.BoardTargetDisplay, time.Time,
+) error {
+	return nil
+}
+
 func (b *blockingMembers) List(context.Context, string) ([]port.BoardAccess, error) {
 	return nil, nil
 }

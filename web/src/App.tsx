@@ -302,6 +302,19 @@ export function App() {
             capabilities={capabilities}
             onError={setError}
             onChangeTarget={() => setPicking(true)}
+            // 表示名を取り直したら、開いているボードと一覧の両方を差し替える。
+            // **一覧も引き直す。** 木は作成先でまとめて見せる（ADR 0019）ので、
+            // 古い名前が残っていては取り直した意味が無い。
+            //
+            // **開いているのが応答のボードのときだけ差し替える。** 取り直しは
+            // GitHub と etoki の 2 往復あり、そのあいだにボードを切り替えられる。
+            // 照合せずに入れると、遅れて届いた応答が今のボードを外し、確認
+            // （confirmDiscard）を通さずに未保存の編集を捨てることになる。
+            // 一覧の引き直しはどちらでも要る。名前はもう変わっている。
+            onTargetRefreshed={(board) => {
+              setCurrent((shown) => (shown?.id === board.id ? board : shown));
+              void reload();
+            }}
             onDirtyChange={handleDirtyChange}
           />
         )}

@@ -27,6 +27,13 @@ var ErrInvalidInput = errors.New("etoki: invalid input")
 // 残っている item の追跡表であり、作成先が変わると記録が指す先を見失う（ADR 0014）。
 var ErrTargetLocked = errors.New("etoki: board target is locked")
 
+// ErrTargetMismatch は表示名の取り直しなのに、送られた作成先が保存されている
+// ものと違うことを表す。
+//
+// **ErrTargetLocked と分ける。** 直し方が違う。固定は解けないが、食い違いは
+// 画面を開き直せば解ける（ADR 0037）。
+var ErrTargetMismatch = errors.New("etoki: board target does not match")
+
 // ErrSceneConflict は保存の基準にした版が古いことを表す。
 //
 // ボードは共有できるので（ADR 0017）、2 人が同時に描くのは例外ではない。保存は
@@ -219,6 +226,49 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 	}
 
 	return s.boards.UpdateTarget(ctx, actorOf(ctx), id, t, s.now())
+}
+
+// RefreshTargetDisplay は作成先の表示用スナップショットだけを更新する。
+//
+// **固定済みでも通る。** 固定するのは作成先そのもの（owner / name / projectId）
+// であって、表示用の値ではない（ADR 0037）。GitHub 側で Project を改名すると
+// 古い名前が残るが、選び直しは固定後に通らないので直す手段が無かった。
+//
+// projectID は変更先ではなく照合材料。保存されているものと違えば
+// ErrTargetMismatch を返し、何も書かない。
+func (s *BoardService) RefreshTargetDisplay(
+	ctx context.Context, id, projectID string, d port.BoardTargetDisplay,
+) error {
+	if projectID == "" {
+		return fmt.Errorf("%w: projectId is required", ErrInvalidInput)
+	}
+	// URL の門番は SetTarget と同じ。こちらだけ素通しにすると、固定済みの
+	// ボードに javascript: を保存する道が開く（ADR 0025）。
+	if err := validateProjectURL(d.ProjectURL); err != nil {
+		return err
+	}
+
+	// 作成先の変更と同じ鍵で直列化する。引き当ててから書くまでの隙間に
+	// SetTarget が入ると、別の Project の表示名を書くことになる。
+	release, err := s.locks.Acquire(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	// 作成先にまつわる操作なので owner だけ。変更と揃える（ADR 0017）。
+	a, err := s.access(ctx, id, port.RoleOwner)
+	if err != nil {
+		return err
+	}
+	if !a.Board.Target.Selected() {
+		return fmt.Errorf("%w: %s", ErrTargetNotSelected, id)
+	}
+	if a.Board.Target.ProjectID != projectID {
+		return fmt.Errorf("%w: %s", ErrTargetMismatch, id)
+	}
+
+	return s.boards.UpdateTargetDisplay(ctx, actorOf(ctx), id, d, s.now())
 }
 
 // TargetLocked はそのボードの作成先が固定済みかどうかを返す。

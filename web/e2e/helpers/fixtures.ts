@@ -168,6 +168,45 @@ function multiFrameAnnotations(): AnnotationStatus[] {
   ];
 }
 
+/**
+ * ふつうの frame。注釈にしていないので `customData.etoki` を持たない。
+ *
+ * ブレスト中にユーザーが自分の用途で使った frame そのもの。注釈の frame と
+ * 混在するのが前提なので（ルートの CLAUDE.md）、見分けが付くかどうかは
+ * 混ぜた状態でしか確かめられない。
+ */
+function plainFrame(id: string, name: string, x: number) {
+  return { ...ELEMENT_BASE, id, type: "frame", name, x, y: 0, width: 400, height: 300 };
+}
+
+/**
+ * 注釈の frame（粒度つきを含む）と、ただの frame が混ざったシーン。
+ *
+ * 3 つが同時に画面へ収まる大きさにしてある。並べて写らないと、見分けが
+ * 付くかどうかをスクリーンショットで確かめられない。ツールバーに重ならない
+ * よう下げてある。
+ */
+function mixedFramesScene(): string {
+  const box = { y: 260, width: 260, height: 220 };
+  return sceneOf([
+    { ...annotationFrame(ANNOTATION_IDS.uncreated, "ログイン", 20), ...box },
+    {
+      ...annotationFrame(ANNOTATION_IDS.created, "パスワード再設定", 310),
+      ...box,
+      customData: { etoki: { granularity: "epic" } },
+    },
+    { ...plainFrame("frame-plain", "メモ", 600), ...box },
+  ]);
+}
+
+/** 注釈の frame とただの frame が混ざったボード。 */
+export function mixedFramesMock(): ApiMock {
+  const mock = baseMock();
+  mock.details[BOARD_ID] = { ...board(), scene: mixedFramesScene() };
+  mock.annotations[BOARD_ID] = annotations().slice(0, 2);
+  return mock;
+}
+
 /** シーンと注釈の両方を差し替えた、名前なしの注釈を含むボード。 */
 export function multiFrameMock(): ApiMock {
   const mock = baseMock();

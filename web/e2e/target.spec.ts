@@ -1,11 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import type { BoardDetail } from "../src/api/types";
 import { installApi, summarize } from "./helpers/api";
 import { chooseTarget, drawRectangle, openBoard, picker } from "./helpers/board";
 import { BOARD_ID, baseMock, board, unselectedBoard } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 const UNSELECTED_NAME = "作成先未選択のブレスト";
+const OTHER_NAME = "決済まわりのブレスト";
 
 /** 作成先が未選択のボードを 1 枚足したモック。 */
 function withUnselected() {
@@ -209,6 +211,143 @@ test.describe("作成先の選択", () => {
     await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
     // 確定していることだけでなく、なぜ確定なのかも本文で読める必要がある。
     await expect(page.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
+  });
+
+  // 固定するのは作成先そのものであって、表示用のスナップショットではない
+  // （ADR 0037）。GitHub 側で改名されたら、固定済みでも取り直せる。
+  test("固定済みでも作成先の名前を取り直せる", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.projects["acme/web"] = {
+      status: 200,
+      body: [
+        {
+          id: "PVT_1",
+          number: 1,
+          title: "改名後のロードマップ",
+          url: "https://github.com/orgs/acme/projects/1",
+        },
+      ],
+    };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+
+    // 一覧は作成先でまとめて見せる（ADR 0019）。取り直した名前が木に出る。
+    await expect(
+      page
+        .locator(".board-list")
+        .getByRole("button", { name: "#1 改名後のロードマップ" }),
+    ).toBeVisible();
+    // 作成先そのものは固定されたまま。変更の口は出ない。
+    await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
+  });
+
+  // 取り直しは GitHub と etoki の 2 往復ある。そのあいだにボードを切り替えられる
+  // ので、遅れて届いた応答をそのまま入れると、今開いているボードが外れる。
+  // 切り替えは confirmDiscard を通ってきているのに、その先で確認なしに
+  // キャンバスが作り直される形になる。
+  test("取り直しの応答が遅れて届いても、切り替えた先のボードを外さない", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    // 改名しておく。取り直しが届いたことを、一覧に出る名前で見分けるため。
+    // 初めから出ている名前で見ると、一覧を引き直さない実装でも通る。
+    mock.projects["acme/web"] = {
+      status: 200,
+      body: [
+        {
+          id: "PVT_1",
+          number: 1,
+          title: "改名後のロードマップ",
+          url: "https://github.com/orgs/acme/projects/1",
+        },
+      ],
+    };
+
+    const other: BoardDetail = { ...board(), id: "board-2", name: OTHER_NAME };
+    mock.boards = [...mock.boards, summarize(other)];
+    mock.details[other.id] = other;
+    mock.annotations[other.id] = [];
+
+    await installApi(page, mock);
+
+    // 取り直しの応答を握っておく。installApi の後に登録したこちらが先に
+    // 当たり、fallback で本来の応答に落ちる。
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => /^\/api\/boards\/[^/]+\/target\/display$/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() === "PUT") await held;
+        await route.fallback();
+      },
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+
+    // 応答を握ったまま別のボードへ移る。
+    await openBoard(page, OTHER_NAME);
+    release();
+
+    // 応答は届いている。一覧を引き直したことは、取り直した後の名前が木に
+    // 出ることで見る（ADR 0019）。開いているボードのほうは動かない。
+    await expect(
+      page
+        .locator(".board-list")
+        .getByRole("button", { name: "#1 改名後のロードマップ" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toHaveCount(
+      0,
+    );
+  });
+
+  // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので選び直しでは
+  // 直せない。分かったことをそのまま出す（中核思想 3）。
+  test("作成先の Project が見つからなければ、その旨を出す", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.projects["acme/web"] = { status: 200, body: [] };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "作成先の Project が GitHub 側で見つかりませんでした",
+    );
+  });
+
+  // 固定（変えられない）と食い違い（開き直せば解ける）は別の打ち手なので、
+  // code で分けてある（ADR 0034 / 0036）。
+  test("作成先が食い違ったら、開き直すよう案内する", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.refreshTargetDisplayError = {
+      status: 409,
+      body: { code: "target_mismatch", error: "etoki: board target does not match" },
+    };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "作成先が変わっています。ボードを開き直してください。",
+    );
   });
 
   test("新しいボードは作成先の選択から始まる", async ({ page }) => {

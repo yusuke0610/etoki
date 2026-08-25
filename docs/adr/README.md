@@ -39,3 +39,5 @@
 | [0033](0033-review-derived-rules.md)                             | レビュー由来の落とし穴は `.claude/rules/` にテーマ別で集める           | 採用                 |
 | [0034](0034-error-codes-in-the-contract.md)                      | エラーは契約の code で表し、文言は画面が持つ                           | 採用                 |
 | [0035](0035-know-about-dependency-updates.md)                    | 依存の更新は Dependabot で知る（flake.lock は手のまま残す）            | 採用                 |
+| [0036](0036-mark-annotation-frames-on-canvas.md)                 | 注釈にした frame はキャンバスに重ねて見分けさせる（要素は変えない）    | 採用                 |
+| [0037](0037-refresh-target-display-after-lock.md)                | 作成先の表示名は固定後も取り直せる（固定するのは作成先そのもの）       | 採用                 |

@@ -8,6 +8,7 @@ import type {
   BoardRole,
   BoardSummary,
   BoardTarget,
+  BoardTargetDisplay,
   Capabilities,
   CreatedRun,
   ErrorResponse,
@@ -83,6 +84,8 @@ export type ApiMock = {
   boardsError?: Reply<never>;
   /** 作成先の設定を失敗させたいときに指定する。409 の見せ方を確かめる用。 */
   setTargetError?: Reply<never>;
+  /** 表示名の取り直しを失敗させたいときに指定する（ADR 0037）。 */
+  refreshTargetDisplayError?: Reply<never>;
   /**
    * そのボードで何ができるか。ボード ID をキーにする。
    *
@@ -287,6 +290,54 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         projectNumber: target.projectNumber ?? 0,
         projectTitle: target.projectTitle ?? "",
         projectUrl: target.projectUrl ?? "",
+      };
+      mock.details[id] = next;
+      mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
+      await json(route, 200, next);
+    },
+  );
+
+  // 表示名だけを取り直す口（ADR 0037）。**作成先そのものは動かさない。**
+  // ここで動かせるようにすると、サーバーが固定している値をモックだけが
+  // 書き換えられることになり、固定の意味が E2E から消える。
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/target\/display$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "PUT") {
+        await route.fallback();
+        return;
+      }
+
+      if (mock.refreshTargetDisplayError) {
+        const reply = mock.refreshTargetDisplayError;
+        await json(route, reply.status, reply.body);
+        return;
+      }
+
+      const id = boardIdOf(route);
+      const detail = mock.details[id];
+      if (!detail) {
+        await json(route, 404, {
+          code: "not_found",
+          error: "not found",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      const display = route.request().postDataJSON() as BoardTargetDisplay;
+      if (display.projectId !== detail.projectId) {
+        await json(route, 409, {
+          code: "target_mismatch",
+          error: "etoki: board target does not match",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      const next: BoardDetail = {
+        ...detail,
+        projectNumber: display.projectNumber ?? 0,
+        projectTitle: display.projectTitle ?? "",
+        projectUrl: display.projectUrl ?? "",
       };
       mock.details[id] = next;
       mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
