@@ -48,8 +48,8 @@ git switch -c <prefix>/<短い説明>
 ## コミット前に通すもの
 
 `make lint` と `make test`。UI かハンドラを触ったなら `make test-e2e` も通す
-（`make test` には含まれない）。各ターゲットが何をするかは
-[README の「開発」](README.md#開発)。
+（`make test` には含まれない）。**各ターゲットが何をするかは `make help`。**
+一覧を書き写した場所を作ると、Makefile に足したものが漏れたまま残る。
 
 **`api/openapi.yaml` を変えたら `make codegen` を実行し、生成物を同じコミットに
 含める。** 生成物は手で編集しない。CI の codegen drift ジョブが、再生成していない
