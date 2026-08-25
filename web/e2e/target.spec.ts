@@ -255,6 +255,19 @@ test.describe("作成先の選択", () => {
   }) => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    // 改名しておく。取り直しが届いたことを、一覧に出る名前で見分けるため。
+    // 初めから出ている名前で見ると、一覧を引き直さない実装でも通る。
+    mock.projects["acme/web"] = {
+      status: 200,
+      body: [
+        {
+          id: "PVT_1",
+          number: 1,
+          title: "改名後のロードマップ",
+          url: "https://github.com/orgs/acme/projects/1",
+        },
+      ],
+    };
 
     const other: BoardDetail = { ...board(), id: "board-2", name: OTHER_NAME };
     mock.boards = [...mock.boards, summarize(other)];
@@ -285,9 +298,12 @@ test.describe("作成先の選択", () => {
     await openBoard(page, OTHER_NAME);
     release();
 
-    // 応答は届いている（一覧は引き直される）が、開いているボードは動かない。
+    // 応答は届いている。一覧を引き直したことは、取り直した後の名前が木に
+    // 出ることで見る（ADR 0019）。開いているボードのほうは動かない。
     await expect(
-      page.locator(".board-list").getByRole("button", { name: OTHER_NAME }),
+      page
+        .locator(".board-list")
+        .getByRole("button", { name: "#1 改名後のロードマップ" }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
     await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toHaveCount(
