@@ -130,6 +130,12 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 規則は「`type === "frame"` かつ `customData.etoki` を持つ」。frame 単体を条件に
 すると、ブレスト中にユーザーが使った frame まで注釈と誤認する。
 
+**判定対象は `testdata/annotation-rule.json` に置き、両方から読ませている。**
+`internal/domain/annotation_rule_test.go` と
+`web/src/excalidraw/annotationRule.test.ts` が同じファイルを読むので、片方の
+実装だけ規則を変えると落ちる。まとめられない代わりに、ずれたことに気づける
+形にしてある。**判定を変えるなら、まずこのファイルに case を足す。**
+
 注釈の frame 自体は **Excalidraw のフレームツールで作らせる**。etoki は
 `customData` を付けるだけ。frame を自前で生成すると、境界にまたがる要素の
 帰属判定を自分で持つことになり、frame を選んだ理由が消える。

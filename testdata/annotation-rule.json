@@ -1,0 +1,69 @@
+{
+  "rule": "type === \"frame\" かつ customData.etoki を持ち、削除済みでない",
+  "why": "この判定は Go（internal/domain/scene.go）と TypeScript（web/src/excalidraw/annotation.ts）の 2 箇所にある。構造上まとめられないので、判定対象をここに置いて両方から読ませる。片方だけ規則を変えると、この一覧を通したテストが落ちる。",
+  "cases": [
+    {
+      "name": "customData.etoki を持つ frame は注釈",
+      "isAnnotation": true,
+      "element": {
+        "id": "a1",
+        "type": "frame",
+        "name": "決済まわり",
+        "customData": { "etoki": { "granularity": "epic" } }
+      }
+    },
+    {
+      "name": "粒度が空でも注釈。指定なしは正当な状態",
+      "isAnnotation": true,
+      "element": {
+        "id": "a2",
+        "type": "frame",
+        "name": "",
+        "customData": { "etoki": { "granularity": "" } }
+      }
+    },
+    {
+      "name": "customData を持たない frame は注釈ではない。ブレスト中にユーザーが使った frame",
+      "isAnnotation": false,
+      "element": { "id": "b1", "type": "frame", "name": "ただの枠" }
+    },
+    {
+      "name": "customData はあるが etoki が無い frame は注釈ではない",
+      "isAnnotation": false,
+      "element": {
+        "id": "b2",
+        "type": "frame",
+        "customData": { "other": { "granularity": "epic" } }
+      }
+    },
+    {
+      "name": "customData.etoki が null の frame は注釈ではない。キーの有無だけを見ると食い違う",
+      "isAnnotation": false,
+      "element": { "id": "b3", "type": "frame", "customData": { "etoki": null } }
+    },
+    {
+      "name": "frame でなければ、etoki を持っていても注釈ではない",
+      "isAnnotation": false,
+      "element": {
+        "id": "b4",
+        "type": "rectangle",
+        "customData": { "etoki": { "granularity": "issue" } }
+      }
+    },
+    {
+      "name": "テキスト要素は注釈ではない",
+      "isAnnotation": false,
+      "element": { "id": "b5", "type": "text", "text": "決済" }
+    },
+    {
+      "name": "削除済みの frame は注釈として扱わない",
+      "isAnnotation": false,
+      "element": {
+        "id": "b6",
+        "type": "frame",
+        "isDeleted": true,
+        "customData": { "etoki": { "granularity": "epic" } }
+      }
+    }
+  ]
+}

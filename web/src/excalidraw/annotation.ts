@@ -31,9 +31,11 @@ export type SceneElement = {
  * この規則はバックエンド（internal/domain）と一致させる必要がある。
  */
 export function isAnnotation(el: SceneElement): boolean {
-  return (
-    el.type === "frame" && !el.isDeleted && el.customData?.[ETOKI_NAMESPACE] !== undefined
-  );
+  // **null も「持たない」に含める。** Go 側は customData.etoki を構造体として
+  // 読むので、null は「メタデータが無い」と同じになる。キーの有無だけを見ると
+  // ここだけが注釈と認め、画面に出る注釈がサーバーの解釈対象とずれる。
+  const meta = el.customData?.[ETOKI_NAMESPACE];
+  return el.type === "frame" && !el.isDeleted && meta !== undefined && meta !== null;
 }
 
 /** 要素から粒度を読む。注釈でなければ undefined。 */
