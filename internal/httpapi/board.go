@@ -32,25 +32,38 @@ func toSummary(a port.BoardAccess) apitypes.BoardSummary {
 	}
 }
 
-// toDetail は BoardSummary の詰め替えを繰り返している。allOf は生成後には
-// 平坦な struct になり、Go の埋め込みにはならないため共有できない。
+// toDetail は共通部分を toSummary から受け取り、詳細だけを足す。
+//
+// allOf は生成後に平坦な struct になり Go の埋め込みにはならないので、
+// **型としては共有できない。** それでも port.BoardAccess から DTO への
+// 詰め替えを 2 度書くのはやめる。契約にフィールドが 1 つ増えたとき、
+// 詰め替えが 2 箇所にあると片方だけ足し忘れることができ、しかも生成型なので
+// コンパイルは通る。落ちるのは実行時に BoardDetail だけがゼロ値を返す形。
+//
+// **フィールドの写し漏れは TestToDetail_CarriesEverySummaryField が落とす。**
+// 名前で突き合わせているので、契約に足したフィールドを toSummary にだけ
+// 足しても、toDetail にだけ足しても落ちる。
 //
 // targetLocked は board だけでは決まらない。run の有無で決まるので引数で受ける。
 func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
+	s := toSummary(a)
+
 	return apitypes.BoardDetail{
-		ID:              a.Board.ID,
-		Name:            a.Board.Name,
-		Role:            apitypes.BoardRole(a.Role),
-		CreatedAt:       a.Board.CreatedAt,
-		UpdatedAt:       a.Board.UpdatedAt,
-		Scene:           a.Board.Scene,
-		RepositoryOwner: a.Board.Target.RepositoryOwner,
-		RepositoryName:  a.Board.Target.RepositoryName,
-		ProjectID:       a.Board.Target.ProjectID,
-		ProjectNumber:   a.Board.Target.ProjectNumber,
-		ProjectTitle:    a.Board.Target.ProjectTitle,
-		ProjectURL:      a.Board.Target.ProjectURL,
-		TargetLocked:    targetLocked,
+		ID:              s.ID,
+		Name:            s.Name,
+		Role:            s.Role,
+		CreatedAt:       s.CreatedAt,
+		UpdatedAt:       s.UpdatedAt,
+		RepositoryOwner: s.RepositoryOwner,
+		RepositoryName:  s.RepositoryName,
+		ProjectID:       s.ProjectID,
+		ProjectNumber:   s.ProjectNumber,
+		ProjectTitle:    s.ProjectTitle,
+		ProjectURL:      s.ProjectURL,
+
+		// ここから下が BoardSummary に無いぶん。
+		Scene:        a.Board.Scene,
+		TargetLocked: targetLocked,
 	}
 }
 
