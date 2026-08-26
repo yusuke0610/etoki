@@ -522,12 +522,33 @@ function RunHistory({
     return <p className="hint">読み込み中…</p>;
   }
 
+  /*
+    **読み直す口は、引けたときだけでなく失敗と 0 件にも出す。** 一度引いた注釈は
+    キーが残るので、出さないと通信が 1 度失敗しただけでボードを開き直すまで
+    履歴を読めない。0 件も同じで、あのあと作った run はここからしか見えない。
+  */
+  const reload = (
+    <button type="button" onClick={onLoad}>
+      履歴を読み込み直す
+    </button>
+  );
+
   if (state.status === "error") {
-    return <ErrorNotice failure={state.failure} />;
+    return (
+      <>
+        <ErrorNotice failure={state.failure} />
+        {reload}
+      </>
+    );
   }
 
   if (state.runs.length === 0) {
-    return <p className="hint">実行の記録はありません。</p>;
+    return (
+      <>
+        <p className="hint">実行の記録はありません。</p>
+        {reload}
+      </>
+    );
   }
 
   return (
@@ -557,9 +578,7 @@ function RunHistory({
           </li>
         ))}
       </ul>
-      <button type="button" onClick={onLoad}>
-        履歴を読み込み直す
-      </button>
+      {reload}
     </>
   );
 }

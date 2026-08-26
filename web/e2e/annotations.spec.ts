@@ -259,6 +259,39 @@ test.describe("実行の履歴", () => {
     expect(requests).toBe(1);
   });
 
+  // 一度失敗しても、その場で読み直せる（#105 のレビュー指摘）。
+  //
+  // **失敗した状態はキーとして残る。** 読み直す口を出さないと、通信が 1 度
+  // 失敗しただけで、ボードを開き直すまでその注釈の履歴を読めない。
+  test("履歴の読み込みに失敗しても、その場で読み直せる", async ({ page }) => {
+    const mock = withRuns();
+    const succeeds = mock.runs?.[ANNOTATION_IDS.created];
+    if (!succeeds) throw new Error("前提が崩れている: 履歴のモックが無い");
+
+    mock.runs = {
+      [ANNOTATION_IDS.created]: {
+        status: 500,
+        body: { code: "internal", error: "boom" },
+      },
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await card.getByText("実行の履歴").click();
+    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+    await expect(card.getByText("履歴を読み込めませんでした")).toBeVisible();
+
+    // 直ったら、開き直さずに読める。
+    mock.runs = { [ANNOTATION_IDS.created]: succeeds };
+    await card.getByRole("button", { name: "履歴を読み込み直す" }).click();
+
+    await expect(
+      card.locator(".run-history").getByText("再設定メールを送る"),
+    ).toBeVisible();
+  });
+
   // 一度も実行していない注釈に履歴の枠を出さない。常に出すと、空の枠が
   // 注釈の数だけ並ぶ。
   test("未実行の注釈には履歴を出さない", async ({ page }) => {
