@@ -141,9 +141,7 @@ test.describe("ボード", () => {
   // 直すと未保存の絵がその場で消える）と、改名が版（updatedAt）を動かして
   // いないこと（動かすと、次の保存が誰もシーンを触っていないのに 409 になる、
   // ADR 0020）。どちらが切れてもここが落ちる。
-  test("描いている途中に改名しても、描いたものは残って保存できる", async ({
-    page,
-  }) => {
+  test("描いている途中に改名しても、描いたものは残って保存できる", async ({ page }) => {
     const mock = await installApi(page, baseMock());
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
