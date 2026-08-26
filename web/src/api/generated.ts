@@ -207,6 +207,9 @@ export interface paths {
          *     保存はシーン全体を書く。ボードは共有できるので（ADR 0017）、後勝ちを
          *     許すと失われるのは「相手が触った要素」ではなく相手の作業すべてになる。
          *     `baseUpdatedAt` が現在の版と違えば 409 を返し、何も書かない（ADR 0020）。
+         *
+         *     シーンにはバイト数の上限がある。超えたら縮小も切り捨てもせず 413 を
+         *     返す（ADR 0018 と同じ扱い）。
          */
         put: operations["saveScene"];
         post?: never;
@@ -566,7 +569,7 @@ export interface components {
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -981,6 +984,22 @@ export interface components {
             };
         };
         /**
+         * @description シーンが保存できる大きさを超えている。**縮小も切り捨てもせずに弾く**
+         *     （ADR 0018 と同じ扱い）。効いてくるのはキャンバスに貼った画像で、
+         *     シーンには base64 で丸ごと乗る。
+         *
+         *     400 ではないのは、中身の誤りではなく大きさだから。打ち手が「送った
+         *     内容を直す」ではなく「貼った画像を減らす」になる。
+         */
+        SceneTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
          * @description その機能に必要な設定がされていない。URL の誤りではないので 404 に
          *     しない。
          */
@@ -1242,6 +1261,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            413: components["responses"]["SceneTooLarge"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -1310,6 +1330,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            413: components["responses"]["SceneTooLarge"];
             500: components["responses"]["InternalError"];
         };
     };

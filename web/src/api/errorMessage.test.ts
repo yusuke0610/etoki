@@ -100,6 +100,13 @@ describe("ERROR_MESSAGES", () => {
     }
   });
 
+  // 大きさで弾かれたときの打ち手は「貼った画像を減らす」で、入力の誤りとは
+  // 違う。同じ文言に畳むと、413 に専用の code を持たせた意味が無くなる。
+  it("大きさの拒否は入力の誤りと別の文言を持つ", () => {
+    expect(ERROR_MESSAGES.scene_too_large).not.toBe(ERROR_MESSAGES.invalid_input);
+    expect(ERROR_MESSAGES.scene_too_large).toContain("画像");
+  });
+
   // 設定するものが違うので畳まない。畳むと「何を設定すればよいか」を言えない。
   it("未設定の 4 つは別々の文言を持つ", () => {
     const messages = [

@@ -244,6 +244,29 @@ test.describe("スクリーンショット", () => {
     await shot(page, "15-save-conflict");
   });
 
+  // 大きさで保存を断られた状態（ADR 0038）。**保存できない = 描いたものが
+  // 失われる**ように読めてはならないので、未保存のまま残っていることと打ち手が
+  // 同じ画面に出ているかを画像で見る。
+  test("大きさで保存を断られた状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.saveSceneError = {
+      status: 413,
+      body: {
+        code: "scene_too_large",
+        error: "etoki: board scene is 9437184 bytes, limit is 8388608",
+      },
+    };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+    await page.getByText("貼った画像が大きすぎて保存できません").waitFor();
+    await shot(page, "22-scene-too-large");
+  });
+
   // 設定していない機能の見せ方（ADR 0030）。LLM を設定しない構成は README が
   // 想定している使い方なので、その画面が行き止まりに見えないかを画像で見る。
   test("設定していない機能の見せ方を撮る", async ({ page }) => {

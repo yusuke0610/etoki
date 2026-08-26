@@ -44,6 +44,10 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "更新先がこの注釈のものではありません。解釈からやり直してください。",
   already_member: "すでにメンバーです。",
   last_owner: "最後のオーナーは外せません。先に別のオーナーを立ててください。",
+  // 大きさで弾かれた。**上限に届くのはほぼ貼った画像なので、そこまで言い切る。**
+  // 「ボードが大きすぎます」だけでは、描いたものを減らせと読めてしまう。
+  scene_too_large:
+    "貼った画像が大きすぎて保存できません。画像を減らすか、小さいものに貼り替えてください。",
   target_not_selected:
     "作成先が選ばれていません。リポジトリと Project を選んでください。",
   project_field_missing: "作成先の Project に必要なフィールドがありません。",

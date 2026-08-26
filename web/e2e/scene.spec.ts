@@ -233,6 +233,29 @@ test.describe("シーンの保存", () => {
     expect(mock.details[BOARD_ID]?.scene).toBe(board().scene);
   });
 
+  // 上限を超えたシーンは保存できない（ADR 0038）。**描いたものは失われない**
+  // ので、そのことと、何をすれば保存できるのかが画面から分かる必要がある。
+  test("大きすぎて保存できないときは、貼った画像を減らすよう案内する", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.saveSceneError = {
+      status: 413,
+      body: { code: "scene_too_large", error: "etoki: board scene is too large" },
+    };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+
+    // 打ち手まで言う。「大きすぎます」だけでは、描いた量を減らせと読める。
+    await expect(page.getByText("貼った画像が大きすぎて保存できません")).toBeVisible();
+    // 拒まれたのは保存だけ。描いたものはキャンバスに残り、続けて編集できる。
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  });
+
   test("未保存のまま解釈しようとすると、保存を促す", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");

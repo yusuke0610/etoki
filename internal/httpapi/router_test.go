@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -398,6 +399,107 @@ func TestSaveScene_RequiresBase(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d (%s)", rec.Code, http.StatusBadRequest, rec.Body)
 	}
+}
+
+// 大きすぎるシーンは 413。**400 に畳まない。** 打ち手が「送った内容を直す」では
+// なく「貼った画像を減らす」になるので、画面が言い分けられる必要がある。
+func TestSaveScene_RejectsSceneOverTheLimit(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+	before := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(sceneOfSize(t, usecase.MaxSceneBytes+1), fixedTime))
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d (%s)",
+			rec.Code, http.StatusRequestEntityTooLarge, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeSceneTooLarge {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeSceneTooLarge)
+	}
+
+	// 弾いたのだから書かれていない。エラーだけを見ていると、書いてから弾く
+	// 実装でも緑になる。
+	got := decode[map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	if got["scene"] != before["scene"] {
+		t.Error("413 を返したのに書き換わっている")
+	}
+}
+
+// ボディの読み込みにも歯止めがある。**歯止めに当たった側も 413 で返す。**
+// 同じ「大きすぎる」が、ボディの大きさしだいで 400 と 413 に割れないようにする。
+//
+// 歯止めが効いたことそのものはここからは見えない（歯止めが無くても
+// validateScene が同じ 413 を返す）。このテストが落ちるのは、歯止めに当たった
+// ボディを 400 に写す実装にしたとき。
+func TestSaveScene_RejectsOversizedBody(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+
+	// 歯止めは上限の 6 倍に取ってある（エスケープでシーンが膨らむため）。
+	// 7 倍を送れば、エスケープの要らない文字で埋めても必ず当たる。
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(sceneOfSize(t, usecase.MaxSceneBytes*7), fixedTime))
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d (%s)",
+			rec.Code, http.StatusRequestEntityTooLarge, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeSceneTooLarge {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeSceneTooLarge)
+	}
+}
+
+// 上限ちょうどのシーンは、JSON にすると何倍にも膨らむ文字で埋まっていても通る。
+//
+// **歯止めはユースケース層の判定より先に切ってはならない。** 先に切れると、
+// 上限に収まっているシーンに「貼った画像を減らせ」と返すことになる。`<` は
+// `\u003c` の 6 バイトになるので、歯止めを 2 倍に取るとこのテストが落ちる。
+func TestSaveScene_AcceptsSceneAtTheLimitThatEscapesLong(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(sceneOfSizeFilledWith(t, usecase.MaxSceneBytes, "<"), fixedTime))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+// sceneOfSize は指定したバイト数ちょうどの、読めるシーン JSON を作る。
+//
+// 実際に大きさを押し上げるのは貼った画像（base64 でシーンに乗る）だが、ここで
+// 要るのはバイト数だけなのでテキスト要素の本文で埋める。
+func sceneOfSize(t *testing.T, size int) string {
+	t.Helper()
+
+	return sceneOfSizeFilledWith(t, size, "a")
+}
+
+// sceneOfSizeFilledWith は本文を埋める文字を選べる sceneOfSize。
+//
+// **JSON にしたときの大きさは、同じバイト数のシーンでも埋めた文字で変わる。**
+// ボディの歯止めがそれを織り込めているかを見るために分けてある。
+func sceneOfSizeFilledWith(t *testing.T, size int, fill string) string {
+	t.Helper()
+
+	const shell = `{"type":"excalidraw","version":2,"source":"etoki",` +
+		`"elements":[{"id":"t1","type":"text","text":""}],"appState":{}}`
+	if size < len(shell) {
+		t.Fatalf("size = %d だが、包みだけで %d バイトある", size, len(shell))
+	}
+
+	scene := strings.Replace(shell, `"text":""`,
+		`"text":"`+strings.Repeat(fill, size-len(shell))+`"`, 1)
+	if len(scene) != size {
+		t.Fatalf("len(scene) = %d, want %d", len(scene), size)
+	}
+	return scene
 }
 
 func TestSaveScene_NotFound(t *testing.T) {

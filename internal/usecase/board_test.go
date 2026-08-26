@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -361,6 +362,85 @@ func TestSaveScene_RequiresBase(t *testing.T) {
 	if boards.writes != 0 {
 		t.Errorf("基準が無いのに書き込んでいる: writes = %d", boards.writes)
 	}
+}
+
+// シーンの大きさは上限ちょうどまで通す。境界を「未満」で書くと、上限ぴったりの
+// ボードが理由の分からないまま保存できなくなる。
+func TestSaveScene_AcceptsSceneAtTheLimit(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	scene := sceneOfSize(t, usecase.MaxSceneBytes)
+
+	if _, err := newBoardService(boards).SaveScene(
+		t.Context(), "board-1", scene, boards.board.UpdatedAt); err != nil {
+		t.Fatalf("SaveScene() = %v", err)
+	}
+	if boards.writes != 1 {
+		t.Errorf("writes = %d, want 1", boards.writes)
+	}
+}
+
+// 1 バイト超えたら弾く。**縮小も切り捨てもしない**（ADR 0038）ので、
+// 書かずに返ることまで見る。エラーだけを見ていると、弾く前に書いてしまう実装でも
+// 緑になる。
+func TestSaveScene_RejectsSceneOverTheLimit(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	scene := sceneOfSize(t, usecase.MaxSceneBytes+1)
+
+	_, err := newBoardService(boards).SaveScene(
+		t.Context(), "board-1", scene, boards.board.UpdatedAt)
+	if !errors.Is(err, usecase.ErrSceneTooLarge) {
+		t.Fatalf("SaveScene() = %v, want ErrSceneTooLarge", err)
+	}
+	// ErrInvalidInput に畳むと 400 になり、画面は「送った内容を直せ」としか
+	// 言えない。大きさの打ち手は「貼った画像を減らす」なので分けてある。
+	if errors.Is(err, usecase.ErrInvalidInput) {
+		t.Error("大きさの拒否を入力の誤りに畳んでいる")
+	}
+	if boards.writes != 0 {
+		t.Errorf("上限を超えたのに書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
+// 作成の入口も同じ上限で見る。片方だけだと、作成時に上限を超えたシーンを
+// 置いてしまい、そのボードは開いた瞬間から保存できない。
+func TestCreate_RejectsSceneOverTheLimit(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{}
+	scene := sceneOfSize(t, usecase.MaxSceneBytes+1)
+
+	_, err := newBoardService(boards).Create(t.Context(), "b", scene, newTarget())
+	if !errors.Is(err, usecase.ErrSceneTooLarge) {
+		t.Fatalf("Create() = %v, want ErrSceneTooLarge", err)
+	}
+	if boards.writes != 0 {
+		t.Errorf("上限を超えたのに作っている: writes = %d", boards.writes)
+	}
+}
+
+// sceneOfSize は指定したバイト数ちょうどの、読めるシーン JSON を作る。
+//
+// 実際に大きさを押し上げるのは貼った画像（base64 でシーンに乗る）だが、ここで
+// 要るのはバイト数だけなのでテキスト要素の本文で埋める。
+func sceneOfSize(t *testing.T, size int) string {
+	t.Helper()
+
+	const shell = `{"type":"excalidraw","version":2,"source":"etoki",` +
+		`"elements":[{"id":"t1","type":"text","text":""}],"appState":{}}`
+	if size < len(shell) {
+		t.Fatalf("size = %d だが、包みだけで %d バイトある", size, len(shell))
+	}
+
+	scene := strings.Replace(shell, `"text":""`,
+		`"text":"`+strings.Repeat("a", size-len(shell))+`"`, 1)
+	if len(scene) != size {
+		t.Fatalf("len(scene) = %d, want %d", len(scene), size)
+	}
+	return scene
 }
 
 func TestTargetLocked(t *testing.T) {
