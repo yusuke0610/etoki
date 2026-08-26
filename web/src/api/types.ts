@@ -30,6 +30,9 @@ export type BoardTarget = Schemas["BoardTarget"];
 /** 作成先の表示用スナップショット。取り直しのリクエストボディ。 */
 export type BoardTargetDisplay = Schemas["BoardTargetDisplay"];
 
+/** 改名のリクエストボディ。名前だけを持つ。 */
+export type RenameBoardRequest = Schemas["RenameBoardRequest"];
+
 /** シーン保存のリクエストボディ。編集の基準にした版を伴う。 */
 export type SaveSceneRequest = Schemas["SaveSceneRequest"];
 
@@ -44,6 +47,9 @@ export type Project = Schemas["Project"];
 
 /** 作成済みの draft issue 1 件。 */
 export type SyncItem = Schemas["SyncItem"];
+
+/** 1 回ぶんの実行の記録。畳み込み前の履歴（ADR 0007）。 */
+export type SyncRun = Schemas["SyncRun"];
 
 /** 注釈 1 つの状態。 */
 export type AnnotationStatus = Schemas["AnnotationStatus"];

@@ -10,12 +10,19 @@ import type {
   ItemKind,
   ProjectAccess,
   SyncItem,
+  SyncRun,
   SyncState,
 } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
 import { groupByEpic } from "./interpretation";
+import {
+  interpretationOrderLabel,
+  selectedInterpretation,
+  type InterpretationRun,
+  type InterpretationState,
+} from "./interpretationHistory";
 import {
   blockingReasons,
   buildInterpretation,
@@ -35,10 +42,15 @@ export type CreationState =
   | { status: "done"; run: CreatedRun }
   | { status: "error"; failure: Failure };
 
-/** 注釈 1 つぶんの解釈の進み具合。 */
-export type InterpretationState =
-  | { status: "running" }
-  | { status: "done"; result: Interpretation }
+/**
+ * 注釈 1 つぶんの実行履歴の読み込み具合。
+ *
+ * 未実行（キーが無い）と「引いたが 0 件」は別物。前者はまだ押していない、
+ * 後者は「一度も作っていない」ことが分かっている状態。
+ */
+export type RunHistoryState =
+  | { status: "loading" }
+  | { status: "done"; runs: SyncRun[] }
   | { status: "error"; failure: Failure };
 
 /**
@@ -83,6 +95,20 @@ type Props = {
   /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
   interpretations: Record<string, InterpretationState>;
   onInterpret: (annotationId: string) => void;
+  /**
+   * 見る解釈を選び直す。
+   *
+   * 解釈は引き直すたびに揺れるので、前のほうが良いことがある。選び直せないと、
+   * 引き直しは「戻せない操作」になる。
+   */
+  onSelectInterpretation: (annotationId: string, runId: number) => void;
+  /**
+   * 注釈 ID をキーにした実行履歴。**まだ押していない注釈は入っていない。**
+   *
+   * 開いただけで全注釈ぶん引かない（中核思想 3）。
+   */
+  runHistories: Record<string, RunHistoryState>;
+  onLoadRuns: (annotationId: string) => void;
   /** 注釈 ID をキーにした作成の状態。未実行の注釈は入っていない。 */
   creations: Record<string, CreationState>;
   /** 保存中は作成させない。保存が作成の結果を捨てるため。 */
@@ -135,6 +161,9 @@ export function AnnotationPanel({
   stale,
   interpretations,
   onInterpret,
+  onSelectInterpretation,
+  runHistories,
+  onLoadRuns,
   creations,
   saving,
   onCreate,
@@ -291,6 +320,21 @@ export function AnnotationPanel({
                     </details>
                   )}
 
+                  {/*
+                    履歴は一度でも実行した注釈にだけ出す。**未実行の注釈にも
+                    出すと、常に空の枠が並ぶ。** lastSyncedAt があることと
+                    run が 1 件以上あることは同じ（最新 run から来る）。
+                  */}
+                  {a.lastSyncedAt !== undefined && (
+                    <details className="run-history">
+                      <summary>実行の履歴</summary>
+                      <RunHistory
+                        state={runHistories[a.id]}
+                        onLoad={() => onLoadRuns(a.id)}
+                      />
+                    </details>
+                  )}
+
                   {canEdit && (
                     <InterpretationSection
                       annotationId={a.id}
@@ -305,6 +349,9 @@ export function AnnotationPanel({
                       previous={a.items ?? []}
                       projectLink={projectLink}
                       onInterpret={() => onInterpret(a.id)}
+                      onSelectInterpretation={(runId) =>
+                        onSelectInterpretation(a.id, runId)
+                      }
                       onCreate={(interpretation) => onCreate(a.id, interpretation)}
                     />
                   )}
@@ -338,6 +385,7 @@ type InterpretationSectionProps = {
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
   projectLink: ProjectLink | null;
   onInterpret: () => void;
+  onSelectInterpretation: (runId: number) => void;
   onCreate: (interpretation: Interpretation) => void;
 };
 
@@ -360,9 +408,13 @@ function InterpretationSection({
   previous,
   projectLink,
   onInterpret,
+  onSelectInterpretation,
   onCreate,
 }: InterpretationSectionProps) {
-  const running = state?.status === "running";
+  const running = state?.running ?? false;
+  const runs = state?.runs ?? [];
+  // いま見ている解釈。1 件も返っていなければ undefined。
+  const selected = selectedInterpretation(state);
   // 押せない理由は title に隠さず本文として出す。disabled なボタンはフォーカスも
   // 当たらないので、title ではキーボードと読み上げの利用者に理由が届かない。
   const blockedId = `interpret-blocked-${annotationId}`;
@@ -400,13 +452,33 @@ function InterpretationSection({
         </p>
       )}
 
-      {state?.status === "error" && <ErrorNotice failure={state.failure} />}
+      {/*
+        失敗しても過去の結果は消さない。引き直しに失敗しただけで前の結果まで
+        消えると、やり直せば済むはずの失敗が取り返しのつかないものになる。
+      */}
+      {state?.failure && <ErrorNotice failure={state.failure} />}
 
-      {state?.status === "done" && (
+      {/*
+        2 件以上あるときだけ出す。1 件しか無いのに選択肢を並べると、選ぶ
+        余地があるように見えて読むものが増える。
+      */}
+      {runs.length > 1 && (
+        <InterpretationHistory
+          annotationId={annotationId}
+          runs={runs}
+          selectedId={selected?.id ?? null}
+          onSelect={onSelectInterpretation}
+        />
+      )}
+
+      {selected && (
         <InterpretationDraft
+          // 選び直したら手直しは引き継がない。別の解釈に対する編集が
+          // 混ざると、何を作るのかが読めなくなる（解釈し直したときと同じ）。
+          key={selected.id}
           annotationId={annotationId}
           granularity={granularity}
-          result={state.result}
+          result={selected.result}
           creation={creation}
           saving={saving}
           projectAccess={projectAccess}
@@ -418,6 +490,138 @@ function InterpretationSection({
       )}
     </div>
   );
+}
+
+/**
+ * その注釈の実行履歴（ADR 0007）。
+ *
+ * **押されるまで引かない。** 開いただけで全注釈ぶん引くと、注釈の数だけ
+ * 問い合わせが増える（中核思想 3、作成先の名前の取り直しと同じ形）。
+ *
+ * **畳み込み（「GitHub にある N 件」）とは別物。** あちらは「いま在るもの」、
+ * こちらは「いつ何回に分けて作ったか」。同じものを 2 通りに見せているのでは
+ * なく、答えている問いが違う（ADR 0026）。
+ */
+function RunHistory({
+  state,
+  onLoad,
+}: {
+  /** まだ押していなければ undefined。 */
+  state?: RunHistoryState;
+  onLoad: () => void;
+}) {
+  if (state === undefined) {
+    return (
+      <button type="button" onClick={onLoad}>
+        履歴を読み込む
+      </button>
+    );
+  }
+
+  if (state.status === "loading") {
+    return <p className="hint">読み込み中…</p>;
+  }
+
+  if (state.status === "error") {
+    return <ErrorNotice failure={state.failure} />;
+  }
+
+  if (state.runs.length === 0) {
+    return <p className="hint">実行の記録はありません。</p>;
+  }
+
+  return (
+    <>
+      <ul className="plain-list">
+        {state.runs.map((run) => (
+          <li key={run.id}>
+            <span className="hint">{formatRunTimestamp(run.createdAt)}</span>
+            {/*
+              その 1 回で何をしたかを出す。**畳んだ結果ではない**ので、
+              触らなかった item はここには現れない（ADR 0026）。
+            */}
+            <ul className="plain-list">
+              {run.items.length === 0 ? (
+                <li className="hint">作られたものはありません。</li>
+              ) : (
+                run.items.map((it) => (
+                  <li key={it.itemId}>
+                    <span className="kind">{it.kind}</span> {it.title}
+                    {it.action === "updated" && (
+                      <span className="badge badge-updated">更新</span>
+                    )}
+                  </li>
+                ))
+              )}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      <button type="button" onClick={onLoad}>
+        履歴を読み込み直す
+      </button>
+    </>
+  );
+}
+
+/** run の実行時刻。日をまたぐので日付まで出す（解釈の履歴とは違う）。 */
+function formatRunTimestamp(at: string): string {
+  return new Date(at).toLocaleString("ja-JP");
+}
+
+/**
+ * 引いた解釈を並べて、どれを見るか選ばせる。
+ *
+ * **サーバーには何も置かない。** 解釈は GitHub にも DB にも何も作らないので、
+ * 残す意味があるのは画面を開いているあいだだけ。保存すると前提のシーンが
+ * 変わるので、そこで丸ごと捨てる（`BoardPage` の `save`）。
+ *
+ * 実行時刻と粒度を添えるのは、見比べる材料がその 2 つだから。同じ粒度で
+ * 引き直したのか、指定を変えて引いたのかが読めないと、選ぶ理由が無い。
+ */
+function InterpretationHistory({
+  annotationId,
+  runs,
+  selectedId,
+  onSelect,
+}: {
+  annotationId: string;
+  /** 新しい順。 */
+  runs: InterpretationRun[];
+  selectedId: number | null;
+  onSelect: (runId: number) => void;
+}) {
+  // 一覧に複数の注釈が並ぶので、id は注釈ごとに分ける。
+  const selectId = `interpretation-history-${annotationId}`;
+
+  return (
+    <div className="interpretation-history">
+      <label htmlFor={selectId}>解釈結果</label>
+      <select
+        id={selectId}
+        value={selectedId ?? ""}
+        onChange={(e) => onSelect(Number(e.target.value))}
+      >
+        {runs.map((run, i) => (
+          <option key={run.id} value={run.id}>
+            {`${interpretationOrderLabel(i)}・${formatRunTime(run.at)}・粒度 ${
+              GRANULARITY_LABEL[run.granularity]
+            }`}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/**
+ * 解釈を引いた時刻。
+ *
+ * 日付は出さない。解釈は保存で捨てるので、画面に並ぶのは同じセッションの
+ * ものだけになる。
+ */
+function formatRunTime(at: string): string {
+  return new Date(at).toLocaleTimeString("ja-JP");
 }
 
 /**

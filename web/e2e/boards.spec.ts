@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 import { installApi, summarize } from "./helpers/api";
-import { chooseTarget, openBoard } from "./helpers/board";
-import { baseMock, board, unselectedBoard } from "./helpers/fixtures";
+import { chooseTarget, drawRectangle, openBoard } from "./helpers/board";
+import { BOARD_ID, baseMock, board, unselectedBoard } from "./helpers/fixtures";
+
+const BOARD_NAME = "認証まわりのブレスト";
 
 test.describe("ボード", () => {
   test("一覧から選ぶとキャンバスと注釈パネルが開く", async ({ page }) => {
@@ -108,6 +110,80 @@ test.describe("ボード", () => {
 
     await branch.click();
     await expect(boardButton).toBeVisible();
+  });
+
+  // 打ち間違えたボードがそのまま残らないようにする。**改名でキャンバスは
+  // 外れない。** 外すと、名前を直すたびに未保存の確認を通ることになる。
+  test("ボードの名前を変えると、見出しと一覧の両方が変わる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "名前を変更" }).click();
+    await page.getByLabel("ボードの名前").fill("認証の設計会");
+    await page.getByRole("button", { name: "名前を保存" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "認証の設計会", level: 1 }),
+    ).toBeVisible();
+    // 木は作成先でまとめて見せる（ADR 0019）。一覧が古い名前のままだと、
+    // 開くまでどれがどれか分からない。
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: "認証の設計会" }),
+    ).toBeVisible();
+    // キャンバスは外れない。
+    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
+  });
+
+  // **描いている途中に改名しても、描いたものは残り、そのまま保存できる。**
+  //
+  // 2 つのことを同時に見ている。改名でキャンバスを作り直していないこと（作り
+  // 直すと未保存の絵がその場で消える）と、改名が版（updatedAt）を動かして
+  // いないこと（動かすと、次の保存が誰もシーンを触っていないのに 409 になる、
+  // ADR 0020）。どちらが切れてもここが落ちる。
+  test("描いている途中に改名しても、描いたものは残って保存できる", async ({
+    page,
+  }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "名前を変更" }).click();
+    await page.getByLabel("ボードの名前").fill("会議中に改名");
+    await page.getByRole("button", { name: "名前を保存" }).click();
+    await expect(
+      page.getByRole("heading", { name: "会議中に改名", level: 1 }),
+    ).toBeVisible();
+
+    // 描いたものは未保存のまま残っている。消えていれば「未保存」が下りる。
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+
+    // 409 なら「他の人がこのボードを保存しました」が出る。出ないことを見る。
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    // 描いた矩形が保存に載っている。「保存できた」だけでは、空のシーンを
+    // 送っていても緑になる。
+    const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
+      elements: { type: string }[];
+    };
+    expect(saved.elements.filter((el) => el.type === "rectangle")).toHaveLength(1);
+  });
+
+  test("名前を空にしたままでは保存できない", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "名前を変更" }).click();
+    await page.getByLabel("ボードの名前").fill("   ");
+
+    await expect(page.getByRole("button", { name: "名前を保存" })).toBeDisabled();
   });
 
   test("一覧の取得に失敗したらエラーを出し、閉じられる", async ({ page }) => {

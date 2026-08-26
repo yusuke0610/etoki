@@ -2,7 +2,13 @@ import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { annotationCard, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock, mixedFramesMock, multiFrameMock } from "./helpers/fixtures";
+import {
+  ANNOTATION_IDS,
+  BOARD_ID,
+  baseMock,
+  mixedFramesMock,
+  multiFrameMock,
+} from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 
@@ -174,5 +180,92 @@ test.describe("注釈の状態", () => {
     await openBoard(page, BOARD_NAME);
 
     await expect(page.getByText("保存済みの注釈はありません。")).toBeVisible();
+  });
+});
+
+/**
+ * 実行の履歴（ADR 0007）。
+ *
+ * **「GitHub にある N 件」とは別物。** あちらは run 履歴を畳んだ「いま在るもの」で、
+ * こちらは 1 回ずつの記録。答えている問いが違う（ADR 0026）。
+ */
+test.describe("実行の履歴", () => {
+  /** 2 回に分けて作った注釈の履歴。新しい順で返る。 */
+  function withRuns() {
+    const mock = baseMock();
+    mock.runs = {
+      [ANNOTATION_IDS.created]: {
+        status: 200,
+        body: [
+          {
+            id: 2,
+            createdAt: "2026-08-04T12:00:00Z",
+            items: [
+              {
+                itemId: "PVTI_issue",
+                kind: "issue",
+                title: "再設定メールを送る",
+                body: "有効期限つきのリンクを送る",
+                localId: "i1",
+                action: "created",
+              },
+            ],
+          },
+          {
+            id: 1,
+            createdAt: "2026-08-03T12:00:00Z",
+            items: [
+              {
+                itemId: "PVTI_epic",
+                kind: "epic",
+                title: "パスワード再設定",
+                body: "忘れたときの導線をまとめる",
+                localId: "e1",
+                action: "created",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    return mock;
+  }
+
+  // **押されるまで引かない**（中核思想 3）。開いただけで引くと、注釈の数だけ
+  // 問い合わせが増える。
+  test("履歴は押したときだけ引かれる", async ({ page }) => {
+    let requests = 0;
+    page.on("request", (req) => {
+      if (new URL(req.url()).pathname.endsWith("/runs")) requests += 1;
+    });
+
+    await installApi(page, withRuns());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await expect(card.getByText("実行の履歴")).toBeVisible();
+    expect(requests).toBe(0);
+
+    await card.getByText("実行の履歴").click();
+    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+
+    // 畳み込み（「GitHub にある N 件」）にも同じタイトルが並ぶので、履歴の中に
+    // 絞って見る。**同じ文字列を別の問いに対する答えとして出している**ことが
+    // ここで分かる（ADR 0026）。
+    const history = card.locator(".run-history");
+    await expect(history.getByText("再設定メールを送る")).toBeVisible();
+    await expect(history.getByText("パスワード再設定")).toBeVisible();
+    expect(requests).toBe(1);
+  });
+
+  // 一度も実行していない注釈に履歴の枠を出さない。常に出すと、空の枠が
+  // 注釈の数だけ並ぶ。
+  test("未実行の注釈には履歴を出さない", async ({ page }) => {
+    await installApi(page, withRuns());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(annotationCard(page, "ログイン").getByText("実行の履歴")).toHaveCount(0);
   });
 });
