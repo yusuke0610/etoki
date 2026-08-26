@@ -440,16 +440,34 @@ func TestSaveScene_RejectsOversizedBody(t *testing.T) {
 	r, _ := newRouter(t)
 	id := createBoard(t, r, "ボード")
 
-	// 歯止めは上限の 2 倍に取ってある（エスケープでシーンが膨らむため）。
-	// 3 倍を送れば必ず当たる。
+	// 歯止めは上限の 6 倍に取ってある（エスケープでシーンが膨らむため）。
+	// 7 倍を送れば、エスケープの要らない文字で埋めても必ず当たる。
 	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
-		saveSceneBody(sceneOfSize(t, usecase.MaxSceneBytes*3), fixedTime))
+		saveSceneBody(sceneOfSize(t, usecase.MaxSceneBytes*7), fixedTime))
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want %d (%s)",
 			rec.Code, http.StatusRequestEntityTooLarge, rec.Body)
 	}
 	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeSceneTooLarge {
 		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeSceneTooLarge)
+	}
+}
+
+// 上限ちょうどのシーンは、JSON にすると何倍にも膨らむ文字で埋まっていても通る。
+//
+// **歯止めはユースケース層の判定より先に切ってはならない。** 先に切れると、
+// 上限に収まっているシーンに「貼った画像を減らせ」と返すことになる。`<` は
+// `\u003c` の 6 バイトになるので、歯止めを 2 倍に取るとこのテストが落ちる。
+func TestSaveScene_AcceptsSceneAtTheLimitThatEscapesLong(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(sceneOfSizeFilledWith(t, usecase.MaxSceneBytes, "<"), fixedTime))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
 	}
 }
 
@@ -460,6 +478,16 @@ func TestSaveScene_RejectsOversizedBody(t *testing.T) {
 func sceneOfSize(t *testing.T, size int) string {
 	t.Helper()
 
+	return sceneOfSizeFilledWith(t, size, "a")
+}
+
+// sceneOfSizeFilledWith は本文を埋める文字を選べる sceneOfSize。
+//
+// **JSON にしたときの大きさは、同じバイト数のシーンでも埋めた文字で変わる。**
+// ボディの歯止めがそれを織り込めているかを見るために分けてある。
+func sceneOfSizeFilledWith(t *testing.T, size int, fill string) string {
+	t.Helper()
+
 	const shell = `{"type":"excalidraw","version":2,"source":"etoki",` +
 		`"elements":[{"id":"t1","type":"text","text":""}],"appState":{}}`
 	if size < len(shell) {
@@ -467,7 +495,7 @@ func sceneOfSize(t *testing.T, size int) string {
 	}
 
 	scene := strings.Replace(shell, `"text":""`,
-		`"text":"`+strings.Repeat("a", size-len(shell))+`"`, 1)
+		`"text":"`+strings.Repeat(fill, size-len(shell))+`"`, 1)
 	if len(scene) != size {
 		t.Fatalf("len(scene) = %d, want %d", len(scene), size)
 	}
