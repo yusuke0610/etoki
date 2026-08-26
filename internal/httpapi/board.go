@@ -156,7 +156,7 @@ func (h *handlers) getBoard(c *gin.Context) {
 		return
 	}
 
-	h.respondBoard(c, http.StatusOK, *b)
+	h.respondBoard(c, *b)
 }
 
 // renameBoard はボードの名前を変える。
@@ -184,7 +184,7 @@ func (h *handlers) renameBoard(c *gin.Context) {
 		return
 	}
 
-	h.respondBoard(c, http.StatusOK, *b)
+	h.respondBoard(c, *b)
 }
 
 // setBoardTarget は draft issue の作成先をボードに設定する。
@@ -219,7 +219,7 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 		return
 	}
 
-	h.respondBoard(c, http.StatusOK, *b)
+	h.respondBoard(c, *b)
 }
 
 // refreshBoardTargetDisplay は作成先の表示用スナップショットだけを取り直す。
@@ -252,18 +252,22 @@ func (h *handlers) refreshBoardTargetDisplay(c *gin.Context) {
 		return
 	}
 
-	h.respondBoard(c, http.StatusOK, *b)
+	h.respondBoard(c, *b)
 }
 
-// respondBoard はボードを固定状態つきで返す。
-func (h *handlers) respondBoard(c *gin.Context, status int, a port.BoardAccess) {
+// respondBoard はボードを固定状態つきで 200 で返す。
+//
+// ステータスを引数で受けない。**この形で返すのは既存のボードだけ**で、
+// 作成（201）は run を照会せずに返せるので通らない（createBoard）。受けられる
+// ようにすると、呼び分ける理由が無いのに呼び分けられる口が残る。
+func (h *handlers) respondBoard(c *gin.Context, a port.BoardAccess) {
 	locked, err := h.boards.TargetLocked(c.Request.Context(), a.Board.ID)
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
 
-	c.JSON(status, toDetail(a, locked))
+	c.JSON(http.StatusOK, toDetail(a, locked))
 }
 
 func (h *handlers) saveScene(c *gin.Context) {
