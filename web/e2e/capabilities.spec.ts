@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { annotationCard, openBoard } from "./helpers/board";
-import { baseMock } from "./helpers/fixtures";
+import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
  * 設定していない機能の見せ方（ADR 0030）。
@@ -76,6 +76,28 @@ test.describe("設定していない機能", () => {
     await expect(card.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(0);
     await expect(card.getByText("ETOKI_GITHUB_TOKEN")).toBeVisible();
     await expect(card.getByText("ブレストと解釈はこのまま続けられます。")).toBeVisible();
+  });
+
+  // 表示名の取り直しは GitHub の Project 一覧を引く（ADR 0037）。設定して
+  // いない構成では押しても引けないので、押させずに理由を出す。
+  test("GitHub が未設定なら、作成先の名前も取り直させない", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.capabilities = {
+      status: 200,
+      body: { interpretation: true, creation: false, sharing: true },
+    };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(
+      page.getByRole("button", { name: "作成先の名前を取り直す" }),
+    ).toHaveCount(0);
+    // 確定していることは変わらず読める。理由は押した後に返る 503 と同じ文言。
+    await expect(page.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
+    await expect(page.getByText("ETOKI_GITHUB_TOKEN").first()).toBeVisible();
   });
 
   test("共有が未設定なら、メンバーのボタンの代わりに理由を出す", async ({ page }) => {

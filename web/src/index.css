@@ -125,6 +125,43 @@ body {
 .canvas {
   flex: 1;
   min-width: 0;
+  /* 注釈の枠を重ねる基準。枠はこの矩形の左上からの座標で置く。 */
+  position: relative;
+}
+
+/*
+ * 注釈にした frame に重ねる枠。
+ *
+ * キャンバスの上に出すが、Excalidraw の UI（ツールバーやパネル）より下に置く。
+ * ライブラリ側の UI は z-index 4 以上を使うので、間の 3 に入れる。
+ * pointer-events を切ってあるので、枠の上でも普段どおり描ける。
+ */
+.annotation-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.annotation-overlay-frame {
+  position: absolute;
+  border: 2px dashed #6965db;
+  border-radius: 8px;
+  background: rgb(105 101 219 / 6%);
+}
+
+.annotation-overlay-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #6965db;
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
 }
 
 .panel {

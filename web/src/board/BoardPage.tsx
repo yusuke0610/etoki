@@ -2,10 +2,11 @@ import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, boardsApi } from "../api/boards";
+import { ApiError, boardsApi, githubApi } from "../api/boards";
 import {
   describeFailure,
   sceneUnreadableFailure,
+  targetProjectMissingFailure,
   type Failure,
 } from "../api/errorMessage";
 import type {
@@ -26,9 +27,15 @@ import {
   type SceneElement,
   type SelectableFrame,
 } from "../excalidraw/annotation";
+import {
+  annotationBoxes,
+  type AnnotationBox,
+  type Viewport,
+} from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { AnnotationOverlay } from "./AnnotationOverlay";
 import {
   AnnotationPanel,
   type CreationState,
@@ -52,6 +59,12 @@ type Props = {
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
   /**
+   * 作成先の表示名を取り直したので、手元のボードを差し替えてもらう。
+   *
+   * 版（`updatedAt`）も進むので、持ち主である App が持ち替える必要がある。
+   */
+  onTargetRefreshed: (board: BoardDetail) => void;
+  /**
    * 未保存かどうかを親に伝える。
    *
    * キャンバスから離れる導線（ボードの切り替え、作成先の選択）は親が持って
@@ -65,6 +78,7 @@ export function BoardPage({
   capabilities,
   onError,
   onChangeTarget,
+  onTargetRefreshed,
   onDirtyChange,
 }: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
@@ -79,6 +93,8 @@ export function BoardPage({
   // null は「Excalidraw からまだ聞いていない」。空配列と混ぜると、マウント直後の
   // 一瞬だけ全部のカードが「キャンバスにありません」になる。
   const [canvasFrameIds, setCanvasFrameIds] = useState<string[] | null>(null);
+  // 注釈にした frame に重ねる枠。キャンバスの見え方が変わるたびに引き直す。
+  const [overlayBoxes, setOverlayBoxes] = useState<AnnotationBox[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
@@ -100,6 +116,54 @@ export function BoardPage({
   // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
   // あるため（ADR 0017）。
   const [projectAccess, setProjectAccess] = useState<ProjectAccess>("unknown");
+  // 作成先の表示名を取り直している最中かどうか。
+  const [refreshingTarget, setRefreshingTarget] = useState(false);
+
+  /**
+   * 作成先の表示名を GitHub から取り直す。
+   *
+   * **押されたときだけ引く。** 開いただけで取りにいくと、ボードを開くたびに
+   * GitHub を叩くうえ、名前が変わったことに気づく機会が消える（中核思想 3、
+   * ADR 0037）。作成先そのものは固定されたままで、送るのは表示用の 3 つだけ。
+   */
+  const refreshTargetDisplay = useCallback(async () => {
+    setRefreshingTarget(true);
+    try {
+      const projects = await githubApi.projects(
+        board.repositoryOwner,
+        board.repositoryName,
+      );
+      const project = projects.find((p) => p.id === board.projectId);
+      if (!project) {
+        // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので
+        // 選び直しでは直せない。分かったことをそのまま出す。
+        onError(targetProjectMissingFailure());
+        return;
+      }
+
+      // 番号も名前も URL も、この画面が GitHub から受け取ったものをそのまま
+      // 送る。組み立てない（ADR 0025）。
+      onTargetRefreshed(
+        await boardsApi.refreshTargetDisplay(board.id, {
+          projectId: board.projectId,
+          projectNumber: project.number,
+          projectTitle: project.title,
+          projectUrl: project.url,
+        }),
+      );
+    } catch (e) {
+      onError(describeFailure("作成先の名前を取り直せませんでした", e));
+    } finally {
+      setRefreshingTarget(false);
+    }
+  }, [
+    board.id,
+    board.projectId,
+    board.repositoryName,
+    board.repositoryOwner,
+    onError,
+    onTargetRefreshed,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,16 +264,34 @@ export function BoardPage({
     setDirty(signature !== savedSignature.current);
   }, []);
 
+  // いまのキャンバスの見え方。**state ではなく ref に持つ。** 重ねる枠の
+  // 引き直しにしか使わないので、スクロールのたびに再描画を増やす理由が無い。
+  const viewport = useRef<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1 });
+
   /** 選択状態の変化を拾い、注釈にできる frame を割り出す。 */
   const handleChange = useCallback(
     (
       elements: readonly unknown[],
-      appState: { selectedElementIds: Record<string, boolean> },
+      appState: {
+        selectedElementIds: Record<string, boolean>;
+        scrollX: number;
+        scrollY: number;
+        zoom: { value: number };
+      },
     ) => {
       const els = elements as SceneElement[];
       applySignature(sceneSignature(els));
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
       setCanvasFrameIds(frameIds(els));
+
+      // スクロールとズームは onChange でしか届かない。要素が変わっていなくても
+      // 引き直す必要があるので、ここでまとめて拾う。
+      viewport.current = {
+        scrollX: appState.scrollX,
+        scrollY: appState.scrollY,
+        zoom: appState.zoom.value,
+      };
+      setOverlayBoxes(annotationBoxes(els, viewport.current));
     },
     [applySignature],
   );
@@ -221,6 +303,9 @@ export function BoardPage({
       // onChange の発火を待たずにここでも判定する。注釈の付け外しが未保存として
       // 出るかどうかを、updateScene が onChange を呼ぶかに依存させない。
       applySignature(sceneSignature(next));
+      // 重ねる枠も同じ理由でここで引き直す。注釈にした瞬間に枠が出ないと、
+      // 付いたかどうかをパネルでしか確かめられない。
+      setOverlayBoxes(annotationBoxes(next, viewport.current));
     },
     [api, applySignature],
   );
@@ -471,7 +556,29 @@ export function BoardPage({
           ) : board.targetLocked ? (
             // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
             // 押せないことを見せるほうが状態として正しい。
-            <span className="hint">作成先は確定（draft issue を作成済み）</span>
+            //
+            // **名前の取り直しだけは出す。** 固定するのは作成先そのもので
+            // あって、表示用のスナップショットではない（ADR 0037）。ここが
+            // 無いと、GitHub 側で改名されたボードは古い名前を出し続ける。
+            <>
+              <span className="hint">作成先は確定（draft issue を作成済み）</span>
+              {/*
+                GitHub が組み立てられていない構成では、押しても Project の
+                一覧を引けない。ボタンを黙って消さず、代わりに理由を出す
+                （ADR 0030）。メンバーの口と同じ形。
+              */}
+              {creationUnavailable !== null ? (
+                <span className="hint">{creationUnavailable}</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void refreshTargetDisplay()}
+                  disabled={refreshingTarget}
+                >
+                  {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
+                </button>
+              )}
+            </>
           ) : (
             <>
               <button
@@ -543,6 +650,16 @@ export function BoardPage({
             // 黙って捨てることになる（ADR 0017）。
             viewModeEnabled={!canEdit}
           />
+          {/*
+            注釈の frame を見分けられるようにする。Excalidraw の外に重ねる
+            だけで、要素には触らない（AnnotationOverlay の doc）。
+
+            **枠も境界で包む。** 包まずに落ちると外側の 1 枚が受けることになり、
+            キャンバスごと外れて未保存のブレストが消える（ADR 0027）。
+          */}
+          <ErrorBoundary name="注釈の枠" recovery="remount">
+            <AnnotationOverlay boxes={overlayBoxes} />
+          </ErrorBoundary>
         </div>
 
         <ErrorBoundary name="注釈パネル" recovery="remount">
