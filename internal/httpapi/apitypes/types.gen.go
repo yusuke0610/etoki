@@ -41,6 +41,7 @@ const (
 	ErrorCodePreviousItemUnknown  ErrorCode = "previous_item_unknown"
 	ErrorCodeProjectFieldMissing  ErrorCode = "project_field_missing"
 	ErrorCodeSceneConflict        ErrorCode = "scene_conflict"
+	ErrorCodeSceneTooLarge        ErrorCode = "scene_too_large"
 	ErrorCodeSharingNotConfigured ErrorCode = "sharing_not_configured"
 	ErrorCodeTargetLocked         ErrorCode = "target_locked"
 	ErrorCodeTargetMismatch       ErrorCode = "target_mismatch"
@@ -655,6 +656,9 @@ type NotConfigured = ErrorResponse
 
 // NotFound 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type NotFound = ErrorResponse
+
+// SceneTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type SceneTooLarge = ErrorResponse
 
 // Unauthorized 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type Unauthorized = ErrorResponse

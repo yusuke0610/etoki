@@ -55,6 +55,12 @@ UI は未保存の変更があることを表示する。
   食い違ったときの `port.ErrConflict` と、触れないボードの `port.ErrNotFound` を
   混ぜないこと。非メンバーに 409 を返すと、書けなかった理由からボードの存在を
   確かめられる。
+- **シーンにはバイト数の上限がある（ADR 0038）。** 超えたら縮小も切り捨ても
+  せずに 413 で弾く。効いてくるのはキャンバスに貼った画像で、`serializeAsJSON`
+  が `getFiles()` ごと直列化するのでシーンに base64 で乗る。**上限を持つのは
+  `usecase.MaxSceneBytes` だけ。** ハンドラの `maxSceneBody` は読み込みの
+  歯止めで、当たった側も同じ 413 に写す。ボディの大きさしだいで 400 と 413 に
+  割れると、画面が同じ原因を 2 通りに案内することになる。
 - **`sync_runs` は履歴。** 再実行しても過去の run を消さない。上書きすると
   GitHub 側に残っている draft issue を追跡できなくなるため（ADR 0007）。
   **読む口は `ListRunsByAnnotation`**（`GET .../annotations/{id}/runs`）。

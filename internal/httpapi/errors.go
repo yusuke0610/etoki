@@ -61,6 +61,10 @@ var errorMappings = []errorMapping{
 	{usecase.ErrAlreadyMember, http.StatusConflict, apitypes.ErrorCodeAlreadyMember},
 	{usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
 
+	// 大きすぎるシーン。400 に畳まない。中身の誤りではなく大きさなので、
+	// 打ち手が「送った内容を直す」ではなく「貼った画像を減らす」になる。
+	{usecase.ErrSceneTooLarge, http.StatusRequestEntityTooLarge, apitypes.ErrorCodeSceneTooLarge},
+
 	// 設定不足であって、リクエストの誤りではない。
 	{usecase.ErrTargetNotSelected, http.StatusUnprocessableEntity, apitypes.ErrorCodeTargetNotSelected},
 	{usecase.ErrProjectFieldMissing, http.StatusUnprocessableEntity, apitypes.ErrorCodeProjectFieldMissing},
