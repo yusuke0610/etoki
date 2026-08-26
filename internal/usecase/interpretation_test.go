@@ -65,6 +65,16 @@ func (f *fakeBoards) UpdateScene(
 	return nil
 }
 
+// UpdateName は名前だけを書く。**更新時刻は動かさない。** 実装と揃えて
+// おかないと、版を進める実装に変わってもテストが素通しする（ADR 0020）。
+func (f *fakeBoards) UpdateName(_ context.Context, _, _, name string) error {
+	f.writes++
+	if f.board != nil {
+		f.board.Name = name
+	}
+	return nil
+}
+
 func (f *fakeBoards) UpdateTarget(
 	context.Context, string, string, port.BoardTarget, time.Time,
 ) error {

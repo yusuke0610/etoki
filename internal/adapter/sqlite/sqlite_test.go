@@ -635,6 +635,128 @@ func TestListLatestRunsByBoard(t *testing.T) {
 	}
 }
 
+// 履歴は畳まずに 1 回ずつ、新しい順で返る（ADR 0007）。
+//
+// **並びは id の降順。** created_at で並べると、同じ時刻の run（時刻は呼び出し
+// 側が与える）で順序が定まらない。ここが切れると、履歴の「最新」が実行順と
+// ずれても気づけない。
+func TestListRunsByAnnotation_NewestFirst(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	save := func(annotationID, hash string, items ...port.SyncItem) {
+		t.Helper()
+		if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+			BoardID: "board-1", AnnotationID: annotationID,
+			// 同じ時刻で積む。並びが時刻に依存していれば、ここで崩れる。
+			ContentHash: hash, CreatedAt: baseTime, Items: items,
+		}); err != nil {
+			t.Fatalf("SaveRun(%s): %v", annotationID, err)
+		}
+	}
+
+	save("annot-a", "h1", item("e1", "PVTI_1", port.KindEpic, nil))
+	save("annot-a", "h2", item("e1", "PVTI_2", port.KindEpic, nil))
+	save("annot-b", "other", item("e1", "PVTI_3", port.KindEpic, nil))
+
+	got, err := repo.ListRunsByAnnotation(t.Context(), "board-1", "annot-a", 10)
+	if err != nil {
+		t.Fatalf("ListRunsByAnnotation: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("件数 = %d, want 2 (%+v)", len(got), got)
+	}
+	if got[0].ContentHash != "h2" || got[1].ContentHash != "h1" {
+		t.Errorf("並び = %q, %q, want h2, h1（新しい順）",
+			got[0].ContentHash, got[1].ContentHash)
+	}
+	// 畳まない。1 回ずつの記録なので、その run で触った item だけが載る。
+	if len(got[0].Items) != 1 || got[0].Items[0].ItemID != "PVTI_2" {
+		t.Errorf("got[0].Items = %+v, want PVTI_2 のみ", got[0].Items)
+	}
+	if got[0].ID <= got[1].ID {
+		t.Errorf("ID = %d, %d, want 降順", got[0].ID, got[1].ID)
+	}
+}
+
+// 別の注釈の run を混ぜない。絞りを外すと、ボード内の全 run が 1 つの注釈の
+// 履歴として並ぶ。
+func TestListRunsByAnnotation_ScopedToAnnotationAndBoard(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	seedBoard(t, db, "board-2")
+	repo := sqlite.NewMappingRepository(db)
+
+	for _, run := range []port.SyncRun{
+		{BoardID: "board-1", AnnotationID: "annot-a", ContentHash: "keep", CreatedAt: baseTime},
+		{BoardID: "board-1", AnnotationID: "annot-b", ContentHash: "other-annot", CreatedAt: baseTime},
+		{BoardID: "board-2", AnnotationID: "annot-a", ContentHash: "other-board", CreatedAt: baseTime},
+	} {
+		if _, err := repo.SaveRun(t.Context(), run); err != nil {
+			t.Fatalf("SaveRun: %v", err)
+		}
+	}
+
+	got, err := repo.ListRunsByAnnotation(t.Context(), "board-1", "annot-a", 10)
+	if err != nil {
+		t.Fatalf("ListRunsByAnnotation: %v", err)
+	}
+	if len(got) != 1 || got[0].ContentHash != "keep" {
+		t.Fatalf("got = %+v, want board-1/annot-a の 1 件だけ", got)
+	}
+}
+
+// 上限は「新しいほうから」効く。古いほうから切ると、直前に何をしたかを
+// 辿るという目的にいちばん要る run が落ちる。
+func TestListRunsByAnnotation_LimitKeepsNewest(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	for _, hash := range []string{"h1", "h2", "h3"} {
+		if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+			BoardID: "board-1", AnnotationID: "annot-a",
+			ContentHash: hash, CreatedAt: baseTime,
+		}); err != nil {
+			t.Fatalf("SaveRun: %v", err)
+		}
+	}
+
+	got, err := repo.ListRunsByAnnotation(t.Context(), "board-1", "annot-a", 2)
+	if err != nil {
+		t.Fatalf("ListRunsByAnnotation: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("件数 = %d, want 2", len(got))
+	}
+	if got[0].ContentHash != "h3" || got[1].ContentHash != "h2" {
+		t.Errorf("並び = %q, %q, want h3, h2", got[0].ContentHash, got[1].ContentHash)
+	}
+}
+
+func TestListRunsByAnnotation_Empty(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+
+	got, err := sqlite.NewMappingRepository(db).
+		ListRunsByAnnotation(t.Context(), "board-1", "annot-a", 10)
+	if err != nil {
+		t.Fatalf("ListRunsByAnnotation: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got = %+v, want 空", got)
+	}
+}
+
 func TestListLatestRunsByBoard_EmptyBoard(t *testing.T) {
 	t.Parallel()
 
@@ -910,6 +1032,73 @@ func TestBoard_UpdateScene(t *testing.T) {
 	}
 	if !got.Board.CreatedAt.Equal(baseTime) {
 		t.Errorf("CreatedAt = %v, want %v（更新で変わってはいけない）", got.Board.CreatedAt, baseTime)
+	}
+}
+
+func TestBoard_UpdateName(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedBoard(t, db, "board-1")
+
+	if err := repo.UpdateName(t.Context(), "", "board-1", "新しい名前"); err != nil {
+		t.Fatalf("UpdateName: %v", err)
+	}
+
+	got, err := repo.Find(t.Context(), "", "board-1")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got.Board.Name != "新しい名前" {
+		t.Errorf("Name = %q, want 新しい名前", got.Board.Name)
+	}
+	// **改名で版を進めてはいけない**（ADR 0020）。updated_at はシーンの版で、
+	// 保存の照合基準になっている。進めると、そのボードを開いている別の
+	// メンバーの次の保存が、誰もシーンを触っていないのに 409 で断られる。
+	// ここが切れると、SET に updated_at を足した実装が素通りする。
+	if !got.Board.UpdatedAt.Equal(baseTime) {
+		t.Errorf("UpdatedAt = %v, want %v（改名で進めてはいけない）",
+			got.Board.UpdatedAt, baseTime)
+	}
+	// 名前だけを書く。SET にシーンが混ざると、改名でブレストが消える。
+	if got.Board.Scene != `{"elements":[]}` {
+		t.Errorf("Scene = %q（改名で書き換えてはいけない）", got.Board.Scene)
+	}
+}
+
+// メンバーでないボードは改名できない。絞りを外すと、ID を知っているだけで
+// 他人のボードの名前を書き換えられる（ADR 0016）。
+func TestBoard_UpdateNameRequiresMembership(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedBoard(t, db, "board-1")
+
+	err := repo.UpdateName(t.Context(), "someone-else", "board-1", "乗っ取り")
+	if !errors.Is(err, port.ErrNotFound) {
+		t.Fatalf("UpdateName = %v, want port.ErrNotFound", err)
+	}
+
+	got, findErr := repo.Find(t.Context(), "", "board-1")
+	if findErr != nil {
+		t.Fatalf("Find: %v", findErr)
+	}
+	if got.Board.Name != "テストボード" {
+		t.Errorf("Name = %q, want テストボード（書き換わってはいけない）", got.Board.Name)
+	}
+}
+
+func TestBoard_UpdateNameNotFound(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+
+	err := repo.UpdateName(t.Context(), "", "no-such-board", "名前")
+	if !errors.Is(err, port.ErrNotFound) {
+		t.Errorf("UpdateName = %v, want port.ErrNotFound", err)
 	}
 }
 

@@ -159,6 +159,34 @@ func (h *handlers) getBoard(c *gin.Context) {
 	h.respondBoard(c, http.StatusOK, *b)
 }
 
+// renameBoard はボードの名前を変える。
+//
+// 名前だけを受け取る。作成先やシーンを一緒に受けると、この経路でも作成先を
+// 書けることになり、固定（ADR 0014）が意味を失う。
+func (h *handlers) renameBoard(c *gin.Context) {
+	var req apitypes.RenameBoardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.badRequest(c, err)
+		return
+	}
+
+	id := c.Param("id")
+	if err := h.boards.Rename(c.Request.Context(), id, req.Name); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// 改名後の姿を返す。フロントが手元の値を組み立て直さずに済む
+	// （作成先の設定と同じ形）。
+	b, err := h.boards.Find(c.Request.Context(), id)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	h.respondBoard(c, http.StatusOK, *b)
+}
+
 // setBoardTarget は draft issue の作成先をボードに設定する。
 //
 // 固定済みかどうかの判断はユースケース層が持つ。ここは 409 に写すだけ。
@@ -273,6 +301,37 @@ func (h *handlers) listAnnotations(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, out)
+}
+
+// listAnnotationRuns はその注釈の実行履歴を返す。
+//
+// **畳み込みではなく 1 回ずつの記録を返す**（ADR 0007 / 0026）。いま GitHub に
+// 在るものは listAnnotations の items が持つ。
+func (h *handlers) listAnnotationRuns(c *gin.Context) {
+	runs, err := h.annotations.ListRuns(
+		c.Request.Context(), c.Param("id"), c.Param("annotationId"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// nil を返すと JSON が null になる。一覧は常に配列にする。
+	out := make([]apitypes.SyncRun, 0, len(runs))
+	for _, r := range runs {
+		out = append(out, toSyncRun(r))
+	}
+
+	c.JSON(http.StatusOK, out)
+}
+
+func toSyncRun(r port.SyncRun) apitypes.SyncRun {
+	return apitypes.SyncRun{
+		ID:        r.ID,
+		CreatedAt: r.CreatedAt,
+		// items は空配列がありうる。1 件も作れずに終わった run も記録として
+		// 残る（ADR 0009）ので、省略せずに空の配列で返す。
+		Items: toSyncItems(r.Items),
+	}
 }
 
 func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {

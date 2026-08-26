@@ -146,6 +146,30 @@ func (s *BoardService) List(ctx context.Context) ([]port.BoardAccess, error) {
 	return s.boards.List(ctx, actorOf(ctx))
 }
 
+// Rename はボードの名前を変える。
+//
+// **変えられるのは editor 以上。** 作成先の変更（owner だけ、ADR 0017）と
+// 揃えないのは、名前が取り消せない作成の行き先を決めるものではないため。
+// シーンを書き換えられる相手に、表示名だけ直させない理由が無い。
+//
+// **更新時刻は進めない**（port.BoardRepository.UpdateName）。あれはシーンの版
+// なので、名前を直しただけで進めると、開いている別のメンバーの次の保存が
+// 理由なく 409 になる。
+func (s *BoardService) Rename(ctx context.Context, id, name string) error {
+	// 前後の空白は落とす。落としたうえで空なら弾く。空白だけの名前を通すと、
+	// 一覧に見出しの無い行が並び、開くまでどのボードか分からなくなる。
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
+
+	if _, err := s.access(ctx, id, port.RoleEditor); err != nil {
+		return err
+	}
+
+	return s.boards.UpdateName(ctx, actorOf(ctx), id, name)
+}
+
 // SaveScene はボードのシーンを更新し、保存後の版を返す。
 //
 // base は編集の基準にした更新時刻。いまの版と違えば何も書かずに
