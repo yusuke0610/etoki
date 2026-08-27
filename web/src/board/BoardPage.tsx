@@ -757,6 +757,15 @@ export function BoardPage({
               value={nameDraft}
               disabled={renaming}
               onChange={(e) => setNameDraft(e.target.value)}
+              /*
+                jsx-a11y が禁じているのは「開いた瞬間に勝手に焦点が移る」
+                autoFocus で、ここはそれに当たらない。押した「名前を変更」が
+                この入力に差し替わるので、移さないとキーボードの利用者の焦点は
+                body に落ちる。**外すほうが a11y は悪くなる。** 規則が見て
+                いるのは属性で、押した結果として現れたかどうかは見られない
+                （ADR 0039）。
+              */
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
             />
             {/*
