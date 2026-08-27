@@ -42,14 +42,24 @@ func TestToDetail_CarriesEverySummaryField(t *testing.T) {
 		t.Fatalf("作成の応答に id が無い: %s", rec.Body)
 	}
 
-	list := decode[[]map[string]any](t, do(t, r, http.MethodGet, "/api/boards", nil))
+	// **decode の前に応答コードを見る。** エラー本文（ErrorResponse）も
+	// map[string]any に decode できてしまうので、確かめずに進むと 403 や 500 が
+	// 「toDetail が写していない」という見当違いの失敗になる。
+	listRec := do(t, r, http.MethodGet, "/api/boards", nil)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d (%s)", listRec.Code, http.StatusOK, listRec.Body)
+	}
+	list := decode[[]map[string]any](t, listRec)
 	if len(list) != 1 {
 		t.Fatalf("len(list) = %d, want 1", len(list))
 	}
 	summary := list[0]
 
-	detail := decode[map[string]any](t,
-		do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	detailRec := do(t, r, http.MethodGet, "/api/boards/"+id, nil)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d (%s)", detailRec.Code, http.StatusOK, detailRec.Body)
+	}
+	detail := decode[map[string]any](t, detailRec)
 
 	for key, want := range summary {
 		if isZeroJSON(want) {
