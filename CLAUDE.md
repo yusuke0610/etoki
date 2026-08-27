@@ -137,8 +137,15 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 | Go         | `internal/domain/scene.go` の `Element.isAnnotation` |
 | TypeScript | `web/src/excalidraw/annotation.ts` の `isAnnotation` |
 
-規則は「`type === "frame"` かつ `customData.etoki` を持つ」。frame 単体を条件に
-すると、ブレスト中にユーザーが使った frame まで注釈と誤認する。
+規則は「`type === "frame"` かつ `customData.etoki` を**メタデータとして読める形で**
+持つ」。frame 単体を条件にすると、ブレスト中にユーザーが使った frame まで注釈と
+誤認する。**キーの有無だけを条件にしてもいけない。** `customData` は Excalidraw が
+要素ごとに持つ共有領域で他のツールも書けるので、`etoki` キーに `null` や
+オブジェクト以外が載りうる。どちらも「メタデータが無い」と同じ扱いにする。
+
+**Go 側は `customData.etoki` を `json.RawMessage` で受ける。** 構造体で直接受けると
+オブジェクト以外で `json.Unmarshal` が**シーン全体で失敗**し、要素 1 つでその
+ボードの 3 状態判定も解釈も動かなくなる。読めるかどうかは要素ごとに決める。
 
 **判定対象は `testdata/annotation-rule.json` に置き、両方から読ませている。**
 `internal/domain/annotation_rule_test.go` と

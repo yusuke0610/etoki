@@ -47,7 +47,15 @@ type Element struct {
 
 // CustomData は Excalidraw 要素の customData のうち etoki が使う部分。
 type CustomData struct {
-	Etoki *AnnotationMeta `json:"etoki"`
+	// Etoki は注釈のメタデータ。**生の JSON で受ける。**
+	//
+	// customData は Excalidraw が要素ごとに持つ共有領域で、他のツールも書ける
+	// （web/src/excalidraw/annotation.ts）。etoki 以外がこのキーにオブジェクト
+	// 以外を置きうる。ここを *AnnotationMeta で直接受けると json.Unmarshal が
+	// **シーン全体で失敗する**ので、要素 1 つで ParseScene が通らなくなり、その
+	// ボードの 3 状態判定も解釈も一切動かなくなる。読めるかどうかは要素ごとに
+	// 決めたいので、生のまま受けて annotationMeta で読む。
+	Etoki json.RawMessage `json:"etoki"`
 }
 
 // AnnotationMeta は注釈に付与するメタデータ。
@@ -79,23 +87,43 @@ func ParseScene(raw []byte) (Scene, error) {
 // frame 要素であることに加えて customData.etoki の存在を条件にしているのは、
 // ブレスト中にユーザーが自分の用途で frame を使っても注釈と誤認しないため。
 func (e Element) isAnnotation() bool {
-	return e.Type == elementTypeFrame &&
-		!e.IsDeleted &&
-		e.CustomData != nil &&
-		e.CustomData.Etoki != nil
+	return e.annotationMeta() != nil
+}
+
+// annotationMeta は要素から注釈のメタデータを読む。注釈でなければ nil。
+//
+// **「メタデータとして読めるか」までを見る。** キーの有無だけを見ると、
+// 他のツールが置いた値まで注釈として拾う。null もオブジェクト以外もここで nil に
+// 落ちる（*AnnotationMeta へ読むので、null は成功して nil、それ以外の非オブジェクトは
+// 失敗する）。**どちらも「メタデータが無い」と同じ扱いにする。** 落とす先を分けると、
+// null だけが黙って無視され、他は読めないという不揃いが残る。
+//
+// 規則は TypeScript 側（web/src/excalidraw/annotation.ts の isAnnotation）と
+// 一致させる。判定対象は testdata/annotation-rule.json に置いて両方から読ませている。
+func (e Element) annotationMeta() *AnnotationMeta {
+	if e.Type != elementTypeFrame || e.IsDeleted || e.CustomData == nil {
+		return nil
+	}
+
+	var meta *AnnotationMeta
+	if err := json.Unmarshal(e.CustomData.Etoki, &meta); err != nil {
+		return nil
+	}
+	return meta
 }
 
 // Annotations はシーンに含まれる注釈を要素の並び順で返す。
 func (s Scene) Annotations() []Annotation {
 	var annotations []Annotation
 	for _, e := range s.Elements {
-		if !e.isAnnotation() {
+		meta := e.annotationMeta()
+		if meta == nil {
 			continue
 		}
 		annotations = append(annotations, Annotation{
 			ID:          e.ID,
 			Name:        e.Name,
-			Granularity: e.CustomData.Etoki.Granularity,
+			Granularity: meta.Granularity,
 		})
 	}
 	return annotations
