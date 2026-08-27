@@ -34,17 +34,34 @@ import {
 } from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
+import { formatSceneSize, sceneBytes } from "../excalidraw/size";
+import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { AnnotationOverlay } from "./AnnotationOverlay";
 import {
   AnnotationPanel,
   type CreationState,
-  type InterpretationState,
+  type RunHistoryState,
 } from "./AnnotationPanel";
 import { createGenerations } from "./generation";
+import {
+  addInterpretation,
+  failInterpretation,
+  selectInterpretation,
+  startInterpretation,
+  type InterpretationState,
+} from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
 import { projectLink } from "./projectLink";
 import { ROLE_LABELS } from "./roles";
+
+/**
+ * シーンの大きさを数え直すまでの待ち時間（ミリ秒）。
+ *
+ * 描くたびに数えると、画像を貼った大きいボードほど重くなる。手が止まってから
+ * 数えれば、表示が少し遅れるだけで済む。
+ */
+const MEASURE_DELAY_MS = 500;
 
 type Props = {
   board: BoardDetail;
@@ -65,6 +82,12 @@ type Props = {
    */
   onTargetRefreshed: (board: BoardDetail) => void;
   /**
+   * 名前を変えたので、手元のボードを差し替えてもらう。
+   *
+   * 版（`updatedAt`）は動かないので、保存の基準は据え置きでよい（ADR 0020）。
+   */
+  onRenamed: (board: BoardDetail) => void;
+  /**
    * 未保存かどうかを親に伝える。
    *
    * キャンバスから離れる導線（ボードの切り替え、作成先の選択）は親が持って
@@ -79,6 +102,7 @@ export function BoardPage({
   onError,
   onChangeTarget,
   onTargetRefreshed,
+  onRenamed,
   onDirtyChange,
 }: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
@@ -97,6 +121,11 @@ export function BoardPage({
   const [overlayBoxes, setOverlayBoxes] = useState<AnnotationBox[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // 保存に送るシーンのバイト数。null は「まだ数えていない」。
+  //
+  // **上限は持たない。** 判定はサーバーだけが持つ（ADR 0018 / 0038）ので、
+  // ここが出すのは「いまどれくらいか」という状態にとどめる。
+  const [sceneSize, setSceneSize] = useState<number | null>(null);
   // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
   // 未保存のまま残すので、dirty とは別に持つ。
   const [conflicted, setConflicted] = useState(false);
@@ -109,6 +138,9 @@ export function BoardPage({
   // 作成は解釈とは別の世代で管理する。共有すると、片方の実行がもう片方の
   // 応答まで無効にしてしまう。
   const [creationGenerations] = useState(createGenerations);
+  // 履歴の読み込みも別の世代で持つ。作成すると履歴は 1 件増えるので、走って
+  // いる読み込みは古くなる。
+  const [runGenerations] = useState(createGenerations);
   // メンバーの一覧を開いているかどうか。
   const [showingMembers, setShowingMembers] = useState(false);
   // 作成先の Project に書けるかどうか。確かめるまでは unknown。
@@ -118,6 +150,88 @@ export function BoardPage({
   const [projectAccess, setProjectAccess] = useState<ProjectAccess>("unknown");
   // 作成先の表示名を取り直している最中かどうか。
   const [refreshingTarget, setRefreshingTarget] = useState(false);
+  // 名前を編集中なら、その下書き。null なら編集していない。
+  //
+  // **開いているあいだだけ入力を出す。** 常に入力欄にすると、見出しとして
+  // 読むところが編集欄になり、押し間違いで名前が変わる。
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  // 注釈 ID をキーにした実行履歴。開いていない注釈は入っていない。
+  const [runHistories, setRunHistories] = useState<Record<string, RunHistoryState>>({});
+
+  /**
+   * 名前を変える。
+   *
+   * 画面の見出しをその場で書き換えるだけの操作なので、キャンバスは外れない。
+   * 空白だけの名前はサーバーが弾くが、押させないほうが早いのでここでも止める
+   * （**判定を持つのではなく、押せない理由を見せる側**）。
+   */
+  const rename = useCallback(async () => {
+    if (nameDraft === null) return;
+
+    const next = nameDraft.trim();
+    if (next === "" || next === board.name) {
+      setNameDraft(null);
+      return;
+    }
+
+    setRenaming(true);
+    try {
+      onRenamed(await boardsApi.rename(board.id, next));
+      setNameDraft(null);
+    } catch (e) {
+      // 編集中の下書きは残す。閉じると、入力し直しからやり直しになる。
+      onError(describeFailure("名前を変更できませんでした", e));
+    } finally {
+      setRenaming(false);
+    }
+  }, [board.id, board.name, nameDraft, onError, onRenamed]);
+
+  /**
+   * その注釈の実行履歴を引く。
+   *
+   * **押されたときだけ引く。** 開いただけで全注釈ぶん引くと、注釈の数だけ
+   * 問い合わせが増える（中核思想 3、作成先の名前の取り直しと同じ形）。
+   *
+   * 走っているあいだの二重押しは弾く。state ではなく ref で覚えるのは、
+   * 判定が「押した時点の値」を見る必要があるため。
+   */
+  const loadingRuns = useRef(new Set<string>());
+
+  const loadRuns = useCallback(
+    async (annotationId: string) => {
+      if (loadingRuns.current.has(annotationId)) return;
+      loadingRuns.current.add(annotationId);
+
+      // 走っているあいだに作成が終わると、この応答は 1 件足りない履歴になる。
+      // 世代で照合して捨てる（`.claude/rules/async-ui.md`）。
+      const generation = runGenerations.start(annotationId);
+
+      setRunHistories((prev) => ({ ...prev, [annotationId]: { status: "loading" } }));
+      try {
+        const runs = await boardsApi.runs(board.id, annotationId);
+        if (!runGenerations.isCurrent(annotationId, generation)) return;
+        setRunHistories((prev) => ({
+          ...prev,
+          [annotationId]: { status: "done", runs },
+        }));
+      } catch (e) {
+        if (!runGenerations.isCurrent(annotationId, generation)) return;
+        // パネル内に残す。どの注釈の履歴で失敗したかが情報の一部なので、
+        // 画面全体のエラー表示には流さない（解釈の失敗と同じ扱い）。
+        setRunHistories((prev) => ({
+          ...prev,
+          [annotationId]: {
+            status: "error",
+            failure: describeFailure("履歴を読み込めませんでした", e),
+          },
+        }));
+      } finally {
+        loadingRuns.current.delete(annotationId);
+      }
+    },
+    [board.id, runGenerations],
+  );
 
   /**
    * 作成先の表示名を GitHub から取り直す。
@@ -255,6 +369,50 @@ export function BoardPage({
     return () => window.removeEventListener("beforeunload", confirmLeave);
   }, [dirty]);
 
+  /**
+   * シーンの大きさを数え直す。
+   *
+   * 数えるには保存と同じ直列化が要る（画像は `getFiles()` ごと乗る）ので、
+   * 描くたびに数えると、いちばん数えたい大きいボードでいちばん重くなる。
+   * 変化が止まってから 1 度だけ数える。
+   */
+  const measureScene = useCallback(() => {
+    if (!api) return;
+    setSceneSize(
+      sceneBytes(
+        serializeAsJSON(
+          api.getSceneElements(),
+          api.getAppState(),
+          api.getFiles(),
+          "local",
+        ),
+      ),
+    );
+  }, [api]);
+
+  const measureTimer = useRef<number | null>(null);
+
+  const scheduleMeasure = useCallback(() => {
+    if (measureTimer.current !== null) window.clearTimeout(measureTimer.current);
+    measureTimer.current = window.setTimeout(() => {
+      measureTimer.current = null;
+      measureScene();
+    }, MEASURE_DELAY_MS);
+  }, [measureScene]);
+
+  // 開いた直後にも 1 度数える。押す前に見せるための表示なので、何か描くまで
+  // 空欄というのでは遅い。
+  useEffect(() => {
+    measureScene();
+  }, [measureScene]);
+
+  useEffect(
+    () => () => {
+      if (measureTimer.current !== null) window.clearTimeout(measureTimer.current);
+    },
+    [],
+  );
+
   /** 署名を取り込み、保存済みと違えば未保存にする。 */
   const applySignature = useCallback((signature: string) => {
     latestSignature.current = signature;
@@ -281,6 +439,7 @@ export function BoardPage({
     ) => {
       const els = elements as SceneElement[];
       applySignature(sceneSignature(els));
+      scheduleMeasure();
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
       setCanvasFrameIds(frameIds(els));
 
@@ -293,7 +452,7 @@ export function BoardPage({
       };
       setOverlayBoxes(annotationBoxes(els, viewport.current));
     },
-    [applySignature],
+    [applySignature, scheduleMeasure],
   );
 
   /** 現在のシーンを elements ごと差し替える。 */
@@ -314,6 +473,34 @@ export function BoardPage({
     () => (api?.getSceneElements() ?? []) as unknown as SceneElement[],
     [api],
   );
+
+  /**
+   * 付箋を 1 枚置く。
+   *
+   * **ダイアログを挟まない。** 描いている最中の操作なので、手数の少なさが
+   * そのまま値打ちになる（矩形を描いて色を選んで文字を書く、を 1 手にする）。
+   * 置くだけで保存はしない。確定させるのは人間の保存操作だけ。
+   *
+   * 置いた付箋は選んでおく。Enter でそのまま書き始められる。
+   */
+  const addStickyNote = useCallback(() => {
+    if (!api) return;
+
+    const elements = currentElements();
+    const { scrollX, scrollY, zoom, width, height } = api.getAppState();
+    const { x, y } = stickyNotePosition(
+      { scrollX, scrollY, zoom: zoom.value, width, height },
+      elements,
+    );
+
+    const note = createStickyNote(x, y);
+    updateElements([...elements, ...note]);
+
+    const id = note[0]?.id;
+    if (id !== undefined) {
+      api.updateScene({ appState: { selectedElementIds: { [id]: true } } } as never);
+    }
+  }, [api, currentElements, updateElements]);
 
   const handleMark = useCallback(
     (frameId: string, granularity: Granularity) => {
@@ -400,11 +587,18 @@ export function BoardPage({
   const interpret = useCallback(
     async (annotationId: string) => {
       // 応答を受け取ったとき、これがまだ最新の要求かを判断できるようにする。
+      // 履歴に積むかどうかもこれで決める。**捨てるべき応答を捨てる責任は
+      // 世代側にあり、履歴は返ってきたものを積むだけ。**
       const generation = generations.start(annotationId);
+      // 実行したときの粒度を控える。並べて見比べるとき、同じ指定で引き直した
+      // のか指定を変えたのかが読めないと選ぶ理由が無い。判定に使う粒度は
+      // これまでどおり保存済みシーン側（AnnotationStatus）のもの。
+      const granularity =
+        annotations.find((a) => a.id === annotationId)?.granularity ?? "";
 
       setInterpretations((prev) => ({
         ...prev,
-        [annotationId]: { status: "running" },
+        [annotationId]: startInterpretation(prev[annotationId]),
       }));
 
       try {
@@ -418,21 +612,41 @@ export function BoardPage({
         if (!generations.isCurrent(annotationId, generation)) return;
         setInterpretations((prev) => ({
           ...prev,
-          [annotationId]: { status: "done", result },
+          [annotationId]: addInterpretation(prev[annotationId], {
+            id: generation,
+            at: new Date().toISOString(),
+            granularity,
+            result,
+          }),
         }));
       } catch (e) {
         if (!generations.isCurrent(annotationId, generation)) return;
         setInterpretations((prev) => ({
           ...prev,
-          [annotationId]: {
-            status: "error",
-            failure: describeFailure("解釈できませんでした", e),
-          },
+          [annotationId]: failInterpretation(
+            prev[annotationId],
+            describeFailure("解釈できませんでした", e),
+          ),
         }));
       }
     },
-    [api, board.id, generations],
+    [annotations, api, board.id, generations],
   );
+
+  /**
+   * 見る解釈を選び直す。
+   *
+   * 画面の中だけの操作なので、サーバーにも世代にも触らない。実行中の解釈が
+   * 返ってきたら、そちらが選ばれ直す（`addInterpretation`）。引き直した直後に
+   * 前の結果が出ていると、押した操作と画面が食い違うため。
+   */
+  const showInterpretation = useCallback((annotationId: string, runId: number) => {
+    setInterpretations((prev) => {
+      const state = prev[annotationId];
+      if (!state) return prev;
+      return { ...prev, [annotationId]: selectInterpretation(state, runId) };
+    });
+  }, []);
 
   /**
    * 解釈結果から draft issue を作る。
@@ -453,6 +667,17 @@ export function BoardPage({
           ...prev,
           [annotationId]: { status: "done", run },
         }));
+        // 履歴は 1 件増えたので、引いてあるものは捨てる。**黙って古いまま
+        // 出さない。** 読み直すかどうかは、これまでどおり押した人が決める。
+        // 走っている読み込みも無効にする。捨てた直後に古い応答が入ると、
+        // 作ったばかりの run が抜けた履歴が残る。
+        runGenerations.start(annotationId);
+        setRunHistories((prev) => {
+          if (!(annotationId in prev)) return prev;
+          const next = { ...prev };
+          delete next[annotationId];
+          return next;
+        });
         await refreshAnnotations();
       } catch (e) {
         if (!creationGenerations.isCurrent(annotationId, generation)) return;
@@ -465,7 +690,7 @@ export function BoardPage({
         }));
       }
     },
-    [board.id, creationGenerations, refreshAnnotations],
+    [board.id, creationGenerations, refreshAnnotations, runGenerations],
   );
 
   // 保存と作成は互いに排他にする。作成中に保存させないのは、GitHub への作成が
@@ -498,7 +723,54 @@ export function BoardPage({
   return (
     <div className="board">
       <header className="board-header">
-        <h1>{board.name}</h1>
+        {nameDraft === null ? (
+          <h1>
+            {board.name}
+            {/*
+              名前はブレストの中身に属する表示物なので、editor にも直させる
+              （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
+            */}
+            {canEdit && (
+              <button
+                type="button"
+                className="rename"
+                onClick={() => setNameDraft(board.name)}
+              >
+                名前を変更
+              </button>
+            )}
+          </h1>
+        ) : (
+          <form
+            className="rename-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void rename();
+            }}
+          >
+            {/*
+              ラベルはサイドバーの「ボード名」（新規作成の入力）と分ける。
+              同じ名前にすると、読み上げでも E2E でも 2 つが区別できない。
+            */}
+            <input
+              aria-label="ボードの名前"
+              value={nameDraft}
+              disabled={renaming}
+              onChange={(e) => setNameDraft(e.target.value)}
+              autoFocus
+            />
+            {/*
+              「保存」とは書かない。ヘッダーにはシーンの保存ボタンが並んで
+              いるので、同じ文言だと何を保存するのかが読めない。
+            */}
+            <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
+              {renaming ? "変更中…" : "名前を保存"}
+            </button>
+            <button type="button" disabled={renaming} onClick={() => setNameDraft(null)}>
+              取消
+            </button>
+          </form>
+        )}
         <div className="board-actions">
           {/*
             自分が何をできるのかは、操作して断られる前に見えている必要がある。
@@ -598,6 +870,26 @@ export function BoardPage({
               )}
             </>
           )}
+          {/*
+            付箋は描いている最中に使うものなので、パネルではなくヘッダーに
+            置いて常に 1 手で押せるようにする。
+          */}
+          {canEdit && (
+            <button type="button" onClick={addStickyNote} disabled={!api}>
+              付箋
+            </button>
+          )}
+          {/*
+            いまの大きさを出す。**上限との比は出さない。** 比を出すには上限を
+            フロントが知る必要があり、それは判定を 2 箇所に持つのと同じこと
+            になる（ADR 0018 / 0038）。「大きいときだけ」出さないのも同じ
+            理由で、上限を知らない以上どこからが大きいのかを決められない。
+          */}
+          {sceneSize !== null && (
+            <span className="badge badge-size" title="保存に送るシーンの大きさ">
+              {formatSceneSize(sceneSize)}
+            </span>
+          )}
           {dirty && <span className="dirty">未保存</span>}
           {canEdit && (
             <button
@@ -676,6 +968,9 @@ export function BoardPage({
             stale={dirty}
             interpretations={interpretations}
             onInterpret={(id) => void interpret(id)}
+            onSelectInterpretation={showInterpretation}
+            runHistories={runHistories}
+            onLoadRuns={(id) => void loadRuns(id)}
             creations={creations}
             saving={saving}
             onCreate={(id, interpretation) => void create(id, interpretation)}

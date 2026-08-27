@@ -333,6 +333,169 @@ func TestRefreshBoardTargetDisplay_RejectsOtherProject(t *testing.T) {
 // 基準の版は必須（ADR 0020）。省くと 400 になるので、保存を通すテストは
 // これを通す。base を any で受けるのは、取得したボードの updatedAt（文字列）を
 // クライアントと同じようにそのまま送り返すテストがあるため。
+// 改名は名前だけを変える。**版（updatedAt）は動かさない**（ADR 0020）。
+// 動かすと、そのボードを開いている別のメンバーの次の保存が、誰もシーンを
+// 触っていないのに 409 で断られる。
+func TestRenameBoard(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "古い名前")
+	before := decode[apitypes.BoardDetail](t,
+		do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+
+	rec := do(t, r, http.MethodPatch, "/api/boards/"+id,
+		map[string]string{"name": "新しい名前"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	got := decode[apitypes.BoardDetail](t, rec)
+	if got.Name != "新しい名前" {
+		t.Errorf("name = %q, want 新しい名前", got.Name)
+	}
+	if !got.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Errorf("updatedAt = %v, want %v（改名で進めてはいけない）",
+			got.UpdatedAt, before.UpdatedAt)
+	}
+	// 名前だけの口。作成先やシーンを一緒に書けると、固定（ADR 0014）が
+	// 意味を失う。
+	if got.ProjectID != before.ProjectID || got.Scene != before.Scene {
+		t.Errorf("名前以外が変わっている: projectId = %q, scene = %q",
+			got.ProjectID, got.Scene)
+	}
+}
+
+// 改名したあとも、同じ基準で保存できる。**これが版を進めない理由そのもの。**
+// 進める実装にすると、このテストが 409 で落ちる。
+func TestRenameBoard_DoesNotBreakPendingSave(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+
+	if rec := do(t, r, http.MethodPatch, "/api/boards/"+id,
+		map[string]string{"name": "会議中に改名"}); rec.Code != http.StatusOK {
+		t.Fatalf("rename: %d %s", rec.Code, rec.Body)
+	}
+
+	// 改名の前に開いていた人が持っている基準は、作成時の版のまま。
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(annotatedScene, fixedTime))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d（改名で版を進めている） %s",
+			rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+func TestRenameBoard_RejectsBlank(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "元の名前")
+
+	rec := do(t, r, http.MethodPatch, "/api/boards/"+id, map[string]string{"name": "   "})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusBadRequest, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeInvalidInput {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeInvalidInput)
+	}
+
+	// 弾いたのだから書かれていない。
+	got := decode[apitypes.BoardDetail](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	if got.Name != "元の名前" {
+		t.Errorf("name = %q, want 元の名前", got.Name)
+	}
+}
+
+func TestRenameBoard_NotFound(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+
+	rec := do(t, r, http.MethodPatch, "/api/boards/no-such-id",
+		map[string]string{"name": "名前"})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// 履歴は畳まずに 1 回ずつ、新しい順で返す（ADR 0007 / 0026）。
+func TestListAnnotationRuns(t *testing.T) {
+	t.Parallel()
+
+	r, mappings := newRouter(t)
+	id := createBoard(t, r, "ボード")
+	saveAnnotatedScene(t, r, id)
+
+	for _, title := range []string{"1 回目", "2 回目"} {
+		if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+			BoardID:      id,
+			AnnotationID: "annot-1",
+			ContentHash:  currentHash(t, r, id),
+			// 時刻は同じ。並びが時刻に依存していれば、ここで崩れる。
+			CreatedAt: fixedTime,
+			Items: []port.SyncItem{{
+				ItemID: "PVTI_" + title, Kind: port.KindEpic, Title: title,
+				LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			}},
+		}); err != nil {
+			t.Fatalf("SaveRun: %v", err)
+		}
+	}
+
+	rec := do(t, r, http.MethodGet,
+		"/api/boards/"+id+"/annotations/annot-1/runs", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	got := decode[[]apitypes.SyncRun](t, rec)
+	if len(got) != 2 {
+		t.Fatalf("件数 = %d, want 2 (%+v)", len(got), got)
+	}
+	if len(got[0].Items) != 1 || got[0].Items[0].Title != "2 回目" {
+		t.Errorf("先頭 = %+v, want 2 回目（新しい順）", got[0].Items)
+	}
+	if got[1].Items[0].Title != "1 回目" {
+		t.Errorf("2 番目 = %+v, want 1 回目", got[1].Items)
+	}
+	if got[0].ID <= got[1].ID {
+		t.Errorf("id = %d, %d, want 降順", got[0].ID, got[1].ID)
+	}
+}
+
+func TestListAnnotationRuns_Empty(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+	saveAnnotatedScene(t, r, id)
+
+	rec := do(t, r, http.MethodGet,
+		"/api/boards/"+id+"/annotations/annot-1/runs", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	// null ではなく空配列。一覧は常に配列で返す。
+	if body := rec.Body.String(); body != "[]" {
+		t.Errorf("body = %q, want %q", body, "[]")
+	}
+}
+
+func TestListAnnotationRuns_BoardNotFound(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+
+	rec := do(t, r, http.MethodGet,
+		"/api/boards/no-such-id/annotations/annot-1/runs", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
 func saveSceneBody(scene string, base any) map[string]any {
 	return map[string]any{"scene": scene, "baseUpdatedAt": base}
 }

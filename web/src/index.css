@@ -648,3 +648,68 @@ a.badge-target:hover {
   padding: 6px 8px;
   border-left: 2px solid #ddd;
 }
+
+/*
+ * ボード名の変更。**見出しは見出しのまま置き、押したときだけ入力に変える。**
+ * 常に入力欄にすると、読むところが編集欄になり、押し間違いで名前が変わる。
+ */
+.board-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.board-header h1 .rename {
+  font-size: 11px;
+  font-weight: normal;
+}
+
+.rename-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rename-form input {
+  font-size: 15px;
+  padding: 2px 6px;
+}
+
+/*
+ * 保存に送るシーンの大きさ。**上限との比は出さない**（ADR 0018 / 0038）ので、
+ * 減らせという催促には見えないよう、状態を並べる他のバッジと同じ扱いにする。
+ */
+.badge-size {
+  background: #eef1f4;
+  color: #555;
+}
+
+/*
+ * 引いた解釈の選択。2 件以上あるときだけ出る。
+ */
+.interpretation-history {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin: 6px 0;
+}
+
+.interpretation-history select {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * 実行の履歴（ADR 0007）。畳み込み（「GitHub にある N 件」）の下に並ぶので、
+ * 見た目を揃えて「別のもの」に見せない。
+ */
+.run-history {
+  font-size: 12px;
+}
+
+.run-history > summary {
+  cursor: pointer;
+}

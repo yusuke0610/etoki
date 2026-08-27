@@ -138,6 +138,8 @@ func (r *racingBoards) UpdateTargetDisplay(
 
 func (r *racingBoards) Create(context.Context, port.Board, string) error { return nil }
 
+func (r *racingBoards) UpdateName(context.Context, string, string, string) error { return nil }
+
 func (r *racingBoards) UpdateScene(
 	context.Context, string, string, string, time.Time, time.Time,
 ) error {
@@ -175,6 +177,12 @@ type racingMappings struct {
 func (r *racingMappings) ListItemsByBoard(
 	context.Context, string,
 ) (map[string][]port.SyncItem, error) {
+	return nil, nil
+}
+
+func (r *racingMappings) ListRunsByAnnotation(
+	context.Context, string, string, int,
+) ([]port.SyncRun, error) {
 	return nil, nil
 }
 

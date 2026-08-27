@@ -16,9 +16,11 @@ import type {
   ErrorResponse,
   Interpretation,
   Project,
+  RenameBoardRequest,
   Repository,
   SaveSceneRequest,
   SaveSceneResponse,
+  SyncRun,
 } from "./types";
 
 /**
@@ -106,6 +108,19 @@ export const boardsApi = {
   get: (id: string) => request<BoardDetail>(`/api/boards/${id}`),
 
   /**
+   * ボードの名前を変える。
+   *
+   * **版（`updatedAt`）は動かない。** あれはシーンの版で、保存の照合基準
+   * （ADR 0020）。名前を直しただけで進むと、開いている別のメンバーの次の
+   * 保存が理由なく 409 になる。応答のボードで手元を差し替えてよい。
+   */
+  rename: (id: string, name: string) =>
+    request<BoardDetail>(`/api/boards/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name } satisfies RenameBoardRequest),
+    }),
+
+  /**
    * シーンを保存する。
    *
    * `baseUpdatedAt` は編集の基準にした版。ボードは共有できるので、照合せずに
@@ -146,6 +161,18 @@ export const boardsApi = {
 
   annotations: (id: string) =>
     request<AnnotationStatus[]>(`/api/boards/${id}/annotations`),
+
+  /**
+   * その注釈の実行履歴を新しい順で引く。
+   *
+   * **`AnnotationStatus.items` とは別物。** あちらは run 履歴を畳んだ「いま
+   * GitHub に在るもの」で、こちらは 1 回ずつの記録（ADR 0007 / 0026）。
+   *
+   * **押されたときだけ引く。** 開いただけで全注釈ぶん引くと、注釈の数だけ
+   * 問い合わせが増える（中核思想 3）。
+   */
+  runs: (boardId: string, annotationId: string) =>
+    request<SyncRun[]>(`/api/boards/${boardId}/annotations/${annotationId}/runs`),
 
   /**
    * そのボードで何ができるかを返す。

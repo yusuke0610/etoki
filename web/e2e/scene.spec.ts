@@ -256,6 +256,41 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 
+  // 付箋は描いている最中に置くもの。**置くだけで保存はしない**（確定させる
+  // のは人間の保存操作だけ）。
+  test("付箋を置くと未保存になり、保存するとシーンに載る", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "付箋" }).click();
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
+      elements: { type: string }[];
+    };
+    const kinds = saved.elements.map((el) => el.type);
+    if (kinds.filter((t) => t === "rectangle").length !== 1) {
+      throw new Error(`付箋が保存に載っていない: ${kinds.join(",")}`);
+    }
+    // **frame は作らない。** 作ると、境界にまたがる要素の帰属判定を etoki が
+    // 抱えることになる（ルートの CLAUDE.md）。元からある 3 つのまま。
+    expect(kinds.filter((t) => t === "frame")).toHaveLength(3);
+  });
+
+  // 押す前に、いまどれくらいの大きさかが見えている（中核思想 3）。
+  // **上限との比は出さない**（ADR 0018 / 0038）ので、ここで見るのは大きさだけ。
+  test("保存する前にシーンの大きさが出る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(page.locator(".badge-size")).toHaveText(/^[\d.]+ (B|KiB|MiB)$/);
+  });
+
   test("未保存のまま解釈しようとすると、保存を促す", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");

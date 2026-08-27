@@ -275,6 +275,14 @@ type BoardRepository interface {
 	// 書かずに ErrConflict を返す（ADR 0020）。**照合と更新は 1 文で行う。**
 	// 読んでから書く形にすると、その隙間に入った保存を上書きする。
 	UpdateScene(ctx context.Context, actor, id, scene string, base, updatedAt time.Time) error
+	// UpdateName は名前だけを更新する。
+	//
+	// **更新時刻は進めない。** `UpdatedAt` はシーンの版であり、保存の照合基準
+	// として使われている（ADR 0020）。名前を直しただけで進めると、そのボードを
+	// 開いている別のメンバーの次の保存が「他の人が保存した」で断られる。誰も
+	// シーンを触っていないのに衝突として読まれることになるので、基準を取らない
+	// 書き込みで版を前に出さない（ClaimUnowned と同じ考え方）。
+	UpdateName(ctx context.Context, actor, id, name string) error
 	// UpdateTarget は作成先と更新時刻だけを更新する。Scene は変えない。
 	//
 	// 固定済みかどうかはここでは見ない。判断に sync_runs が要るため、
@@ -356,6 +364,20 @@ type MappingRepository interface {
 	//
 	// 一度も実行していなければ空を返す。並びは記録された順。
 	ListItemsByAnnotation(ctx context.Context, boardID, annotationID string) ([]SyncItem, error)
+
+	// ListRunsByAnnotation はその注釈の run を新しい順で Items 込みに返す。
+	//
+	// **畳み込まない。** ListItemsByAnnotation が返すのは「いま GitHub に在る
+	// もの」で、こちらは「1 回ずつ何をしたか」（ADR 0007 / 0026）。畳み込みは
+	// 更新を同じ item に吸収するので、何回に分けて作ったのかは残らない。
+	//
+	// **新しさは CreatedAt ではなく ID で決める。** 時刻は呼び出し側が与える
+	// ので、同じ時刻の run がありうる（FindLatestRun と同じ理由）。
+	//
+	// limit 件まで返す。0 以下なら 1 件も返さない。
+	ListRunsByAnnotation(
+		ctx context.Context, boardID, annotationID string, limit int,
+	) ([]SyncRun, error)
 
 	// ListItemsByBoard は同じ畳み込みをボード全体で行い、注釈ごとに束ねて返す。
 	//

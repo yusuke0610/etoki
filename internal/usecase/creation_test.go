@@ -121,8 +121,11 @@ func (f *fakeMappings) SaveRun(_ context.Context, run port.SyncRun) (int64, erro
 	if f.saveErr != nil {
 		return 0, f.saveErr
 	}
+	// 実装と同じく採番する。ID を振らないと、履歴の並び（新しい順は id で
+	// 決める）をフェイクの上で確かめられない。
+	run.ID = int64(len(f.runs) + 1)
 	f.runs = append(f.runs, run)
-	return int64(len(f.runs)), nil
+	return run.ID, nil
 }
 
 func (f *fakeMappings) FindLatestRun(context.Context, string, string) (*port.SyncRun, error) {
@@ -138,6 +141,31 @@ func (f *fakeMappings) ListLatestRunsByBoard(
 	for _, run := range f.runs {
 		if run.BoardID == boardID {
 			runs = append(runs, run)
+		}
+	}
+	return runs, nil
+}
+
+// ListRunsByAnnotation は畳まずに 1 回ずつを新しい順で返す。
+//
+// **実装と同じく board_id と注釈で絞り、id の降順にする。** 全部返すフェイクに
+// すると、別の注釈の run が履歴に混ざる不具合を素通しする。
+func (f *fakeMappings) ListRunsByAnnotation(
+	_ context.Context, boardID, annotationID string, limit int,
+) ([]port.SyncRun, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	var runs []port.SyncRun
+	for i := len(f.runs) - 1; i >= 0; i-- {
+		run := f.runs[i]
+		if run.BoardID != boardID || run.AnnotationID != annotationID {
+			continue
+		}
+		runs = append(runs, run)
+		if len(runs) == limit {
+			break
 		}
 	}
 	return runs, nil

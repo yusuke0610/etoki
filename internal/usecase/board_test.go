@@ -443,6 +443,62 @@ func sceneOfSize(t *testing.T, size int) string {
 	return scene
 }
 
+// 改名は名前だけを書く。**版は進めない**（ADR 0020）。進めると、そのボードを
+// 開いている別のメンバーの次の保存が、誰もシーンを触っていないのに 409 になる。
+func TestRename(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+
+	if err := newBoardService(boards).Rename(t.Context(), "board-1", "新しい名前"); err != nil {
+		t.Fatalf("Rename() = %v", err)
+	}
+	if boards.board.Name != "新しい名前" {
+		t.Errorf("Name = %q, want 新しい名前", boards.board.Name)
+	}
+	if !boards.board.UpdatedAt.Equal(baseTime) {
+		t.Errorf("UpdatedAt = %v, want %v（改名で進めてはいけない）",
+			boards.board.UpdatedAt, baseTime)
+	}
+}
+
+// 前後の空白は落とす。落としたうえで空なら弾く。空白だけの名前を通すと、
+// 一覧に見出しの無い行が並び、開くまでどのボードか分からなくなる。
+func TestRename_TrimsAndRejectsBlank(t *testing.T) {
+	t.Parallel()
+
+	t.Run("前後の空白を落として書く", func(t *testing.T) {
+		t.Parallel()
+
+		boards := &fakeBoards{board: newBoard(interpretScene)}
+		if err := newBoardService(boards).Rename(
+			t.Context(), "board-1", "  余白つき  "); err != nil {
+			t.Fatalf("Rename() = %v", err)
+		}
+		if boards.board.Name != "余白つき" {
+			t.Errorf("Name = %q, want 余白つき", boards.board.Name)
+		}
+	})
+
+	for _, name := range []string{"", "   ", "\t\n"} {
+		t.Run("空とみなして弾く/"+name, func(t *testing.T) {
+			t.Parallel()
+
+			boards := &fakeBoards{board: newBoard(interpretScene)}
+			err := newBoardService(boards).Rename(t.Context(), "board-1", name)
+
+			if !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("Rename(%q) = %v, want ErrInvalidInput", name, err)
+			}
+			// 弾いたのだから書かれていない。エラーだけを見ていると、
+			// 書いてから弾く実装でも緑になる。
+			if boards.writes != 0 {
+				t.Errorf("弾いたのに書き込んでいる: writes = %d", boards.writes)
+			}
+		})
+	}
+}
+
 func TestTargetLocked(t *testing.T) {
 	t.Parallel()
 

@@ -514,6 +514,15 @@ type Project struct {
 //     倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
 type ProjectAccess string
 
+// RenameBoardRequest 改名のリクエストボディ。
+//
+// 名前だけを持つ。作成先やシーンを一緒に送れる形にすると、この経路でも
+// 作成先を書けることになり、固定（ADR 0014）が意味を失う。
+type RenameBoardRequest struct {
+	// Name 新しい名前。空文字と空白だけは弾く
+	Name string `json:"name"`
+}
+
 // Repository 作成先を選ぶときに見せるリポジトリ
 type Repository struct {
 	Description string `json:"description,omitempty"`
@@ -596,6 +605,24 @@ type SyncItem struct {
 	Title         string `json:"title"`
 }
 
+// SyncRun 1 つの注釈に対する 1 回ぶんの実行の記録（ADR 0007）。
+//
+// **「そのときの全体像」ではなく「その 1 回で何をしたか」**（ADR 0026）。
+// 触らなかった item はここには現れない。いま GitHub に在るものが知りたい
+// なら `AnnotationStatus.items`（畳み込み）を見る。
+type SyncRun struct {
+	// CreatedAt 実行の時刻
+	CreatedAt time.Time `json:"createdAt"`
+
+	// ID run の識別子。**新しさの順はこれで決まる**（時刻は呼び出し側が
+	// 与えるので、同じ値の run がありうる）
+	ID int64 `json:"id"`
+
+	// Items その run で作成または更新した draft issue。**空配列がありうる。**
+	// 1 件も作れずに終わった run も記録として残る（ADR 0009）
+	Items []SyncItem `json:"items"`
+}
+
 // SyncState 注釈の 3 状態。保存済みシーンの content_hash と最新 run のそれを
 // 突き合わせて決まる。
 type SyncState string
@@ -644,6 +671,9 @@ type CompleteLoginParams struct {
 
 // CreateBoardJSONRequestBody defines body for CreateBoard for application/json ContentType.
 type CreateBoardJSONRequestBody = CreateBoardRequest
+
+// RenameBoardJSONRequestBody defines body for RenameBoard for application/json ContentType.
+type RenameBoardJSONRequestBody = RenameBoardRequest
 
 // InterpretAnnotationJSONRequestBody defines body for InterpretAnnotation for application/json ContentType.
 type InterpretAnnotationJSONRequestBody = InterpretRequest

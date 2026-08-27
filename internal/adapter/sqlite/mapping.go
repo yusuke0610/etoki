@@ -157,6 +157,59 @@ func (r *MappingRepository) ListLatestRunsByBoard(ctx context.Context, boardID s
 	return runs, nil
 }
 
+// ListRunsByAnnotation はその注釈の run を新しい順で Items 込みに返す。
+//
+// 並びは id の降順。**created_at で並べない。** 時刻は呼び出し側が与えるので、
+// 同じ時刻の run がありうる（FindLatestRun と同じ理由）。
+func (r *MappingRepository) ListRunsByAnnotation(
+	ctx context.Context, boardID, annotationID string, limit int,
+) ([]port.SyncRun, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, board_id, annotation_element_id, content_hash, created_at
+		   FROM sync_runs
+		  WHERE board_id = ? AND annotation_element_id = ?
+		  ORDER BY id DESC
+		  LIMIT ?`,
+		boardID, annotationID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list runs for %s/%s: %w", boardID, annotationID, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var (
+		runs []port.SyncRun
+		ids  []int64
+	)
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan sync_run: %w", err)
+		}
+		runs = append(runs, run)
+		ids = append(ids, run.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sync_runs: %w", err)
+	}
+
+	// items は run ごとに引かず 1 クエリでまとめて取る（ListLatestRunsByBoard と
+	// 同じ理由）。
+	items, err := r.itemsByRunIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range runs {
+		runs[i].Items = items[runs[i].ID]
+	}
+
+	return runs, nil
+}
+
 // itemsByRunIDs は複数の run の items をまとめて引き、run ID ごとに束ねて返す。
 func (r *MappingRepository) itemsByRunIDs(ctx context.Context, runIDs []int64) (map[int64][]port.SyncItem, error) {
 	result := make(map[int64][]port.SyncItem, len(runIDs))

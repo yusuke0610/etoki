@@ -27,6 +27,14 @@ type AnnotationState struct {
 	Items []port.SyncItem
 }
 
+// MaxRunHistory は 1 回の問い合わせで返す run の件数。
+//
+// **範囲指定は持たない。** この口は「この注釈に対して直前まで何をしたか」を
+// 辿るためのもので（ADR 0007）、数え上げのためではない。遡り続ける導線を
+// 作ると、GitHub 側に在るものを数える手段として読まれる。そちらは畳み込み
+// （ListItemsByAnnotation）の担当。
+const MaxRunHistory = 20
+
 // AnnotationService は注釈の状態を組み立てる。
 //
 // この層は状態を返すだけで、作成や更新は一切行わない。何をするかは
@@ -39,6 +47,24 @@ type AnnotationService struct {
 // NewAnnotationService は AnnotationService を作る。
 func NewAnnotationService(boards port.BoardRepository, mappings port.MappingRepository) *AnnotationService {
 	return &AnnotationService{boardGuard: boardGuard{boards: boards}, mappings: mappings}
+}
+
+// ListRuns はその注釈の実行履歴を新しい順で返す。
+//
+// **シーンに注釈が残っているかは見ない。** run は GitHub 側に在るものの追跡表
+// なので、キャンバスから frame を消しても記録は残る（ADR 0007）。消えたことを
+// 理由に読めなくすると、いちばん辿りたい場面で辿れない。
+//
+// 認可は状態の一覧と同じ viewer 以上。sync_runs をメンバーで絞らないのも同じ
+// （board を取れるのはメンバーだけなので、二重に絞らない）。
+func (s *AnnotationService) ListRuns(
+	ctx context.Context, boardID, annotationID string,
+) ([]port.SyncRun, error) {
+	if _, err := s.access(ctx, boardID, port.RoleViewer); err != nil {
+		return nil, err
+	}
+
+	return s.mappings.ListRunsByAnnotation(ctx, boardID, annotationID, MaxRunHistory)
 }
 
 // ListStates はボード上の全注釈の状態を返す。

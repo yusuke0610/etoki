@@ -304,6 +304,50 @@ test.describe("解釈と作成", () => {
     await expect(card.getByLabel("i2 を作成する")).toBeChecked();
   });
 
+  // LLM の出力は同じ入力でも揺れる。引き直した結果が前より悪かったときに
+  // 戻せないと、引き直しは「賭け」になる。
+  test("解釈し直すと 2 件が並び、前のものを選び直せる", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    const first = "ログインの入口まわりを 1 つの epic として読みました。";
+
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(card.getByText(first)).toBeVisible();
+
+    mock.interpret = {
+      status: 200,
+      body: { ...interpretation(), summary: "2 回目の読み解き" },
+    };
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(card.getByText("2 回目の読み解き")).toBeVisible();
+
+    // 並ぶのは 2 件。引き直した直後は新しいほうが出ている。
+    const history = card.getByLabel("解釈結果");
+    await expect(history.locator("option")).toHaveCount(2);
+
+    // 選び直すと前の結果に戻る。
+    await history.selectOption({ index: 1 });
+    await expect(card.getByText(first)).toBeVisible();
+    await expect(card.getByText("2 回目の読み解き")).toBeHidden();
+  });
+
+  // 1 件しか無いうちは選ばせない。選択肢が 1 つだけ並ぶと、選ぶ余地があるように
+  // 見えて読むものが増える。
+  test("解釈が 1 件のうちは選択欄を出さない", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(card.getByText("ログインの入口")).toBeVisible();
+
+    await expect(card.getByLabel("解釈結果")).toHaveCount(0);
+  });
+
   test("作成すると件数が出て、状態が作成済みに変わる", async ({ page }) => {
     const mock = await installApi(page, baseMock());
     await page.goto("/");

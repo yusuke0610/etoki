@@ -280,6 +280,44 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+    patch:
+      tags: [boards]
+      operationId: renameBoard
+      summary: ボードの名前を変える
+      description: |
+        名前だけを変える。シーンも作成先も触らない。
+
+        **`updatedAt` は進めない。** あれはシーンの版であり、保存の照合基準
+        （ADR 0020）として使われている。名前を直しただけで進めると、そのボードを
+        開いている別のメンバーの次の保存が「他の人が保存しました」で断られる。
+        誰もシーンを触っていないのに衝突として読まれることになる。
+
+        変えられるのは editor 以上。作成先の変更（owner だけ）と揃えないのは、
+        名前は取り消せない作成の行き先を決めるものではないため。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameBoardRequest"
+      responses:
+        "200":
+          description: 改名後のボード
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/boards/{id}/scene:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -698,6 +736,47 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AnnotationStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/boards/{id}/annotations/{annotationId}/runs:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/AnnotationId"
+    get:
+      tags: [annotations]
+      operationId: listAnnotationRuns
+      summary: その注釈の実行履歴を返す
+      description: |
+        再実行しても過去の run は消さない（ADR 0007）。**残す理由は追跡なので、
+        読む口が無いと残している意味が無い。** GitHub 側に何世代ぶんの draft
+        issue が在るのかは、ここでしか辿れない。
+
+        並びは新しい順。**新しさは `createdAt` ではなく `id` で決める。** 時刻は
+        呼び出し側が与えるので、同じ時刻の run がありうる。
+
+        返すのは直近のぶんだけで、件数の上限はサーバーが決める。範囲指定は
+        持たない（数え上げではなく「直前に何をしたか」を辿るための口なので、
+        遡り続ける導線を作る理由が無い）。
+
+        **`AnnotationStatus.items` とは別物。** あちらは run 履歴を itemId で
+        畳んだ「いま GitHub に在るもの」で、こちらは畳む前の 1 回ずつの記録
+        （ADR 0026）。
+      responses:
+        "200":
+          description: 実行の履歴。新しい順。一度も実行していなければ空配列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SyncRun"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1389,6 +1468,19 @@ components:
           description: 省略すると空のシーンで作る
           x-go-type-skip-optional-pointer: true
 
+    RenameBoardRequest:
+      type: object
+      description: |
+        改名のリクエストボディ。
+
+        名前だけを持つ。作成先やシーンを一緒に送れる形にすると、この経路でも
+        作成先を書けることになり、固定（ADR 0014）が意味を失う。
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: 新しい名前。空文字と空白だけは弾く
+
     SaveSceneRequest:
       type: object
       description: |
@@ -1455,6 +1547,34 @@ components:
           x-go-type-skip-optional-pointer: true
         action:
           $ref: "#/components/schemas/SyncAction"
+
+    SyncRun:
+      type: object
+      description: |
+        1 つの注釈に対する 1 回ぶんの実行の記録（ADR 0007）。
+
+        **「そのときの全体像」ではなく「その 1 回で何をしたか」**（ADR 0026）。
+        触らなかった item はここには現れない。いま GitHub に在るものが知りたい
+        なら `AnnotationStatus.items`（畳み込み）を見る。
+      required: [id, createdAt, items]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: |
+            run の識別子。**新しさの順はこれで決まる**（時刻は呼び出し側が
+            与えるので、同じ値の run がありうる）
+        createdAt:
+          type: string
+          format: date-time
+          description: 実行の時刻
+        items:
+          type: array
+          description: |
+            その run で作成または更新した draft issue。**空配列がありうる。**
+            1 件も作れずに終わった run も記録として残る（ADR 0009）
+          items:
+            $ref: "#/components/schemas/SyncItem"
 
     AnnotationStatus:
       type: object

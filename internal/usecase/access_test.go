@@ -33,6 +33,14 @@ func TestRolePermissions(t *testing.T) {
 				ListStates(ctx, "board-1")
 			return err
 		}},
+		{"実行履歴", func(ctx context.Context, boards *fakeBoards) error {
+			_, err := usecase.NewAnnotationService(boards, &fakeMappings{}).
+				ListRuns(ctx, "board-1", "annot-1")
+			return err
+		}},
+		{"改名", func(ctx context.Context, boards *fakeBoards) error {
+			return newBoardService(boards).Rename(ctx, "board-1", "新しい名前")
+		}},
 		{"シーン保存", func(ctx context.Context, boards *fakeBoards) error {
 			_, err := newBoardService(boards).SaveScene(ctx, "board-1", emptyScene, baseTime)
 			return err
@@ -57,8 +65,13 @@ func TestRolePermissions(t *testing.T) {
 
 	// allowed はその操作を通せる最小のロール。表の本体。
 	allowed := map[string]port.BoardRole{
-		"閲覧":     port.RoleViewer,
-		"注釈の状態":  port.RoleViewer,
+		"閲覧":    port.RoleViewer,
+		"注釈の状態": port.RoleViewer,
+		"実行履歴":  port.RoleViewer,
+		// 名前はブレストの中身に属する表示物で、取り消せない作成の行き先を
+		// 決めるものではない。シーンを書き換えられる editor に、表示名だけ
+		// 直させない理由が無い（作成先の変更は owner だけ）。
+		"改名":     port.RoleEditor,
 		"シーン保存":  port.RoleEditor,
 		"解釈":     port.RoleEditor,
 		"作成":     port.RoleEditor,

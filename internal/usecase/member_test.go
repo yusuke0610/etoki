@@ -312,6 +312,10 @@ func (b *blockingMembers) RemoveMember(_ context.Context, _, userID string) erro
 
 func (b *blockingMembers) Create(context.Context, port.Board, string) error { return nil }
 
+func (b *blockingMembers) UpdateName(context.Context, string, string, string) error {
+	return nil
+}
+
 func (b *blockingMembers) UpdateScene(
 	context.Context, string, string, string, time.Time, time.Time,
 ) error {

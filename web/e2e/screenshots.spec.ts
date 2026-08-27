@@ -3,9 +3,11 @@ import { test, type Page } from "@playwright/test";
 import { breakAnnotations, breakBoards, installApi, summarize } from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
 import {
+  ANNOTATION_IDS,
   BOARD_ID,
   baseMock,
   board,
+  interpretation,
   matchedInterpretationMock,
   mixedFramesMock,
   multiFrameMock,
@@ -479,5 +481,105 @@ test.describe("スクリーンショット", () => {
     await page.goto("/");
     await page.getByRole("alert").waitFor();
     await shot(page, "20-app-error");
+  });
+
+  // 付箋を 1 枚置いた状態と、保存に送る大きさの表示。**大きさは上限との比を
+  // 出さない**（ADR 0018 / 0038）ので、催促に見えていないかを画像で見る。
+  test("付箋を置いた状態と大きさの表示を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByRole("button", { name: "付箋" }).click();
+    await page.getByText("未保存", { exact: true }).waitFor();
+    await shot(page, "23-sticky-note");
+  });
+
+  // 引いた解釈が 2 件並んだ状態。どれを作成に送るのかが読めるかを見る。
+  test("解釈の履歴を撮る", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+
+    mock.interpret = {
+      status: 200,
+      body: { ...interpretation(), summary: "粒度を変えてもう一度読み解きました。" },
+    };
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByLabel("解釈結果").waitFor();
+    await shot(page, "24-interpretation-history");
+  });
+
+  // 実行の履歴（ADR 0007）。畳み込みの下に並ぶので、同じものを 2 回出して
+  // いるように見えていないかを画像で見る。
+  test("実行の履歴を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.runs = {
+      [ANNOTATION_IDS.created]: {
+        status: 200,
+        body: [
+          {
+            id: 2,
+            createdAt: "2026-08-04T12:00:00Z",
+            items: [
+              {
+                itemId: "PVTI_issue",
+                kind: "issue",
+                title: "再設定メールを送る",
+                body: "有効期限つきのリンクを送る",
+                localId: "i1",
+                action: "created",
+              },
+            ],
+          },
+          {
+            id: 1,
+            createdAt: "2026-08-03T12:00:00Z",
+            items: [
+              {
+                itemId: "PVTI_epic",
+                kind: "epic",
+                title: "パスワード再設定",
+                body: "忘れたときの導線をまとめる",
+                localId: "e1",
+                action: "created",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await card.getByText("実行の履歴").click();
+    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+    await card.locator(".run-history").getByText("再設定メールを送る").waitFor();
+    await shot(page, "25-run-history");
+  });
+
+  // 名前を変えている最中。見出しが入力に変わるので、押し間違いで名前が
+  // 変わるように見えていないかを画像で見る。
+  test("名前の変更中を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "名前を変更" }).click();
+    await page.getByLabel("ボードの名前").fill("認証の設計会");
+    await shot(page, "26-rename");
   });
 });

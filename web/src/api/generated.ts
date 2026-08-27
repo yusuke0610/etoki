@@ -185,7 +185,19 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * ボードの名前を変える
+         * @description 名前だけを変える。シーンも作成先も触らない。
+         *
+         *     **`updatedAt` は進めない。** あれはシーンの版であり、保存の照合基準
+         *     （ADR 0020）として使われている。名前を直しただけで進めると、そのボードを
+         *     開いている別のメンバーの次の保存が「他の人が保存しました」で断られる。
+         *     誰もシーンを触っていないのに衝突として読まれることになる。
+         *
+         *     変えられるのは editor 以上。作成先の変更（owner だけ）と揃えないのは、
+         *     名前は取り消せない作成の行き先を決めるものではないため。
+         */
+        patch: operations["renameBoard"];
         trace?: never;
     };
     "/api/boards/{id}/scene": {
@@ -441,6 +453,44 @@ export interface paths {
          *     突き合わせて uncreated / created / changed を決める。
          */
         get: operations["listAnnotations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/annotations/{annotationId}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 注釈にした frame の要素 ID */
+                annotationId: components["parameters"]["AnnotationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * その注釈の実行履歴を返す
+         * @description 再実行しても過去の run は消さない（ADR 0007）。**残す理由は追跡なので、
+         *     読む口が無いと残している意味が無い。** GitHub 側に何世代ぶんの draft
+         *     issue が在るのかは、ここでしか辿れない。
+         *
+         *     並びは新しい順。**新しさは `createdAt` ではなく `id` で決める。** 時刻は
+         *     呼び出し側が与えるので、同じ時刻の run がありうる。
+         *
+         *     返すのは直近のぶんだけで、件数の上限はサーバーが決める。範囲指定は
+         *     持たない（数え上げではなく「直前に何をしたか」を辿るための口なので、
+         *     遡り続ける導線を作る理由が無い）。
+         *
+         *     **`AnnotationStatus.items` とは別物。** あちらは run 履歴を itemId で
+         *     畳んだ「いま GitHub に在るもの」で、こちらは畳む前の 1 回ずつの記録
+         *     （ADR 0026）。
+         */
+        get: operations["listAnnotationRuns"];
         put?: never;
         post?: never;
         delete?: never;
@@ -796,6 +846,16 @@ export interface components {
             scene?: string;
         };
         /**
+         * @description 改名のリクエストボディ。
+         *
+         *     名前だけを持つ。作成先やシーンを一緒に送れる形にすると、この経路でも
+         *     作成先を書けることになり、固定（ADR 0014）が意味を失う。
+         */
+        RenameBoardRequest: {
+            /** @description 新しい名前。空文字と空白だけは弾く */
+            name: string;
+        };
+        /**
          * @description シーン保存のリクエストボディ。
          *
          *     `baseUpdatedAt` は任意にしない。任意にすると API を直接叩く経路で照合を
@@ -845,6 +905,31 @@ export interface components {
             /** @description epic に属する issue のとき、その epic の localId */
             parentLocalId?: string;
             action: components["schemas"]["SyncAction"];
+        };
+        /**
+         * @description 1 つの注釈に対する 1 回ぶんの実行の記録（ADR 0007）。
+         *
+         *     **「そのときの全体像」ではなく「その 1 回で何をしたか」**（ADR 0026）。
+         *     触らなかった item はここには現れない。いま GitHub に在るものが知りたい
+         *     なら `AnnotationStatus.items`（畳み込み）を見る。
+         */
+        SyncRun: {
+            /**
+             * Format: int64
+             * @description run の識別子。**新しさの順はこれで決まる**（時刻は呼び出し側が
+             *     与えるので、同じ値の run がありうる）
+             */
+            id: number;
+            /**
+             * Format: date-time
+             * @description 実行の時刻
+             */
+            createdAt: string;
+            /**
+             * @description その run で作成または更新した draft issue。**空配列がありうる。**
+             *     1 件も作れずに終わった run も記録として残る（ADR 0009）
+             */
+            items: components["schemas"]["SyncItem"][];
         };
         /** @description 注釈 1 つの状態 */
         AnnotationStatus: {
@@ -1292,6 +1377,38 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    renameBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameBoardRequest"];
+            };
+        };
+        responses: {
+            /** @description 改名後のボード */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     saveScene: {
         parameters: {
             query?: never;
@@ -1717,6 +1834,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnnotationStatus"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listAnnotationRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 注釈にした frame の要素 ID */
+                annotationId: components["parameters"]["AnnotationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 実行の履歴。新しい順。一度も実行していなければ空配列 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRun"][];
                 };
             };
             401: components["responses"]["Unauthorized"];

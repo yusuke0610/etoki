@@ -20,6 +20,7 @@ import type {
   SaveSceneRequest,
   SaveSceneResponse,
   SessionStatus,
+  SyncRun,
 } from "../../src/api/types";
 
 /**
@@ -103,6 +104,16 @@ export type ApiMock = {
   members?: Record<string, BoardMember[]>;
   /** 招待を失敗させたいときに指定する。 */
   inviteError?: Reply<never>;
+  /** 改名を失敗させたいときに指定する。 */
+  renameError?: Reply<never>;
+  /**
+   * 注釈 ID をキーにした実行履歴（ADR 0007）。
+   *
+   * **ボードではなく注釈で引く。** 履歴を出す画面は注釈のカードの中にあり、
+   * spec が見たいのも「その注釈で何回作ったか」なので、キーを揃えておく。
+   * 指定が無ければ空配列を返す。
+   */
+  runs?: Record<string, Reply<SyncRun[]>>;
 };
 
 async function json(route: Route, status: number, body: unknown): Promise<void> {
@@ -186,6 +197,14 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => /^\/api\/boards\/[^/]+$/.test(url.pathname),
     async (route) => {
+      const method = route.request().method();
+      // 取得と改名だけを受ける。何でも受けると、フロントが契約と違うメソッドで
+      // 叩いていても緑になる。
+      if (method !== "GET" && method !== "PATCH") {
+        await route.fallback();
+        return;
+      }
+
       const id = boardIdOf(route);
       const detail = mock.details[id];
       if (!detail) {
@@ -195,7 +214,33 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         } satisfies ErrorResponse);
         return;
       }
-      await json(route, 200, detail);
+
+      if (method === "GET") {
+        await json(route, 200, detail);
+        return;
+      }
+
+      if (mock.renameError) {
+        await json(route, mock.renameError.status, mock.renameError.body);
+        return;
+      }
+
+      const req = route.request().postDataJSON() as { name?: string };
+      const name = (req.name ?? "").trim();
+      if (name === "") {
+        await json(route, 400, {
+          code: "invalid_input",
+          error: "name is required",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      // **版は動かさない**（ADR 0020）。動かすモックにすると、改名のあとに
+      // 保存が 409 になる実装でも E2E が緑のままになる。
+      const next: BoardDetail = { ...detail, name };
+      mock.details[id] = next;
+      mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
+      await json(route, 200, next);
     },
   );
 
@@ -454,6 +499,21 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         return;
       }
       await json(route, 200, updated);
+    },
+  );
+
+  // 実行の履歴（ADR 0007）。畳み込み（注釈の items）とは別の口。
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/runs$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+
+      const annotationId = new URL(route.request().url()).pathname.split("/")[5] ?? "";
+      const reply = mock.runs?.[annotationId] ?? { status: 200, body: [] };
+      await json(route, reply.status, reply.body);
     },
   );
 

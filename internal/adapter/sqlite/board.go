@@ -149,6 +149,17 @@ func (r *BoardRepository) readable(ctx context.Context, actor, id string) (bool,
 	return true, nil
 }
 
+// UpdateName は名前だけを更新する。
+//
+// **updated_at は SET に書かない。** あれはシーンの版であり保存の照合基準
+// （ADR 0020）。名前を直しただけで進めると、開いている別のメンバーの次の保存が
+// 理由なく 409 になる。
+func (r *BoardRepository) UpdateName(ctx context.Context, actor, id, name string) error {
+	return r.exec(ctx, "board "+id,
+		`UPDATE boards SET name = ? WHERE id = ? AND `+memberExists,
+		name, id, actor)
+}
+
 // UpdateTarget は作成先と更新時刻だけを更新する。
 func (r *BoardRepository) UpdateTarget(
 	ctx context.Context, actor, id string, t port.BoardTarget, updatedAt time.Time,
