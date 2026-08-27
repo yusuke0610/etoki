@@ -116,10 +116,15 @@ func (e Element) annotationMeta() *AnnotationMeta {
 func (s Scene) Annotations() []Annotation {
 	var annotations []Annotation
 	for _, e := range s.Elements {
-		meta := e.annotationMeta()
-		if meta == nil {
+		if !e.isAnnotation() {
 			continue
 		}
+		// isAnnotation が非 nil を確かめた後なので、ここでは必ず読める。
+		// 判定と読み出しで 2 度読むが、読む対象はフィールド 1 つの構造体で、
+		// 通す回数もシーンの frame の数どまり。**名前を残すほうを採った。**
+		// Element.isAnnotation は TypeScript の isAnnotation と対になるものとして
+		// CLAUDE.md / web/CLAUDE.md / rv の観点表から名指しされている。
+		meta := e.annotationMeta()
 		annotations = append(annotations, Annotation{
 			ID:          e.ID,
 			Name:        e.Name,
