@@ -11,7 +11,7 @@ import (
 
 // annotationRulePath は Go と TypeScript が共有する判定対象の置き場所。
 //
-// **web/src/excalidraw/annotation.test.ts が同じファイルを読む。** 動かすなら
+// **web/src/excalidraw/annotationRule.test.ts が同じファイルを読む。** 動かすなら
 // 両方を直す。
 const annotationRulePath = "../../testdata/annotation-rule.json"
 
