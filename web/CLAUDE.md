@@ -230,6 +230,20 @@ cd web && bunx playwright test --ui
   3 つ必要。prod バンドルへの `alias`、`open-color`（実体が JSON）の `inline`、
   そして `src/test-setup.ts` の canvas スタブ（import 時に 2D コンテキストの
   機能検出が走る）。
+- **`src/test-setup.ts` の `FontFace` スタブ** — jsdom は CSS Font Loading API を
+  持たない。excalidraw はラベル付きの要素を作るときにフォントの登録簿を組み立て
+  るので、無いと `convertToExcalidrawElements` がその場で落ちる。canvas と同じで
+  **要るのは読み込めることだけ。測った文字幅は本物ではない。**
+- **`@excalidraw/mermaid-to-excalidraw` は exact 指定で、`@excalidraw/excalidraw`
+  が依存している版に揃える**（`node_modules/@excalidraw/excalidraw/package.json`
+  で見る）。揃えないと同じ変換器が 2 つ入り、excalidraw が内部で使うものと
+  etoki が呼ぶものが別になる。`@excalidraw/excalidraw` を上げたら**同じコミットで
+  こちらも合わせる。**
+- **mermaid の変換は vitest では図の種類ごとに確かめられない**（ADR 0040）。
+  mermaid は SVG を描いてその実寸を測るので、jsdom では本物と違う経路を通る。
+  `src/excalidraw/mermaid.test.ts` の `getBBox` スタブがそれを補っているが、
+  **返している寸法は本物ではない**ので、そのファイルの中だけに閉じてある。
+  種類ごとに要素になるかどうかはブラウザ（E2E）でしか分からない。
 - **`web/vite.config.ts` の `test.include`** — vitest の既定は `*.spec.ts` も
   拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の
@@ -244,6 +258,7 @@ cd web && bunx playwright test --ui
   リビジョンのブラウザが見つからず E2E が起動しない。`nix flake update` で
   `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
 
-ここで固定しているもの（`@playwright/test` と React 18）は
-`.github/dependabot.yml` の `ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
+ここで固定しているもの（`@playwright/test`、React 18、
+`@excalidraw/mermaid-to-excalidraw`）は `.github/dependabot.yml` の `ignore` にも
+入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
 **固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。
