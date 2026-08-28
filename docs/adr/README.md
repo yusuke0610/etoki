@@ -43,3 +43,4 @@
 | [0037](0037-refresh-target-display-after-lock.md)                | 作成先の表示名は固定後も取り直せる（固定するのは作成先そのもの）       | 採用                 |
 | [0038](0038-scene-size-limit.md)                                 | シーンの保存に上限を置き、超えたら 413 で弾く                          | 採用                 |
 | [0040](0040-place-mermaid-drafts-as-shapes-only.md)              | mermaid のドラフトは手で直せる図形のときだけ置く                       | 採用                 |
+| [0041](0041-diagram-chat-changes-no-server-state.md)             | 図のドラフト生成はサーバーの状態を変えない（会話も持たない）           | 採用                 |

@@ -87,6 +87,13 @@ type handlers struct {
 	annotations *usecase.AnnotationService
 	// interpretations は nil でもよい。その場合は 503 を返す。
 	interpretations *usecase.InterpretationService
+	// diagrams はプロンプトからの図のドラフト生成。nil でもよい。
+	//
+	// interpretations と同じ LLM の設定で決まるが、**別々に持つ。** 使えるかを
+	// 見せる口（capabilities）が答えているのは「解釈できるか」と「ドラフトを
+	// 作れるか」という別の問いで、1 つに畳むと画面がどちらのボタンを止めれば
+	// よいのかを決められなくなる。
+	diagrams *usecase.DiagramService
 	// creations は nil でもよい。その場合は 503 を返す。
 	creations *usecase.CreationService
 	// catalog は作成先の候補一覧。nil でもよい。その場合は 503 を返す。

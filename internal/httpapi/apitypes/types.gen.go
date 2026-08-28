@@ -19,6 +19,15 @@ const (
 	BoardRoleViewer BoardRole = "viewer"
 )
 
+// Defines values for DiagramKind.
+const (
+	DiagramKindArchitecture DiagramKind = "architecture"
+	DiagramKindEr           DiagramKind = "er"
+	DiagramKindMindmap      DiagramKind = "mindmap"
+	DiagramKindSequence     DiagramKind = "sequence"
+	DiagramKindTodo         DiagramKind = "todo"
+)
+
 // Defines values for ErrorCode.
 const (
 	ErrorCodeAlreadyMember        ErrorCode = "already_member"
@@ -26,6 +35,8 @@ const (
 	ErrorCodeContentHashMismatch  ErrorCode = "content_hash_mismatch"
 	ErrorCodeCreationIncomplete   ErrorCode = "creation_incomplete"
 	ErrorCodeCrossSiteRejected    ErrorCode = "cross_site_rejected"
+	ErrorCodeDiagramChatTooLong   ErrorCode = "diagram_chat_too_long"
+	ErrorCodeDiagramFailed        ErrorCode = "diagram_failed"
 	ErrorCodeForbiddenProject     ErrorCode = "forbidden_project"
 	ErrorCodeForbiddenRole        ErrorCode = "forbidden_role"
 	ErrorCodeGithubNotConfigured  ErrorCode = "github_not_configured"
@@ -327,6 +338,13 @@ type Capabilities struct {
 	// 引けない**ので、新しいボードも作れない（ADR 0017）
 	Creation bool `json:"creation"`
 
+	// DiagramDraft プロンプトから図のドラフトを生成できるか。false は LLM が未設定。
+	//
+	// **`interpretation` と畳まない。** 未設定の理由も設定するものも
+	// 同じだが、答えている問いが違う。1 つにすると、画面はどちらの
+	// ボタンを止めればよいのかをこの値から決められなくなる
+	DiagramDraft bool `json:"diagramDraft"`
+
 	// Interpretation 注釈を解釈できるか。false は LLM が未設定（ADR 0008）
 	Interpretation bool `json:"interpretation"`
 
@@ -381,6 +399,58 @@ type CreatedRun struct {
 	RunID      int64      `json:"runId"`
 }
 
+// DiagramDraft 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
+// 見てから開発者が決める（中核思想 3）。mermaid を Excalidraw の要素に
+// するのはフロントの仕事（ADR 0040）。
+type DiagramDraft struct {
+	// Kind 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
+	// プロンプトから生成するドラフトが同じ 5 種を指す。
+	//
+	// - `todo` … やることの洗い出し
+	// - `mindmap` … 発想の広げ方
+	// - `sequence` … 登場人物とやりとりの順序
+	// - `er` … 実体と関連
+	// - `architecture` … 構成要素と境界
+	//
+	// **どの mermaid 記法で書くかはサーバーが決める**（ADR 0041）。
+	// `mindmap` と `architecture` は mermaid にも同名の記法があるが、
+	// Excalidraw の要素に分解できず画像 1 枚になるため使わない（ADR 0040）。
+	Kind DiagramKind `json:"kind"`
+
+	// Mermaid 生成された mermaid。コードフェンスは外してある
+	Mermaid string `json:"mermaid"`
+
+	// TurnsRemaining このあと何往復できるか。**上限に当たってから知らせるのでは遅い**
+	// ので、押す前に見えるようにしている
+	TurnsRemaining int `json:"turnsRemaining"`
+}
+
+// DiagramKind 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
+// プロンプトから生成するドラフトが同じ 5 種を指す。
+//
+// - `todo` … やることの洗い出し
+// - `mindmap` … 発想の広げ方
+// - `sequence` … 登場人物とやりとりの順序
+// - `er` … 実体と関連
+// - `architecture` … 構成要素と境界
+//
+// **どの mermaid 記法で書くかはサーバーが決める**（ADR 0041）。
+// `mindmap` と `architecture` は mermaid にも同名の記法があるが、
+// Excalidraw の要素に分解できず画像 1 枚になるため使わない（ADR 0040）。
+type DiagramKind string
+
+// DiagramTurn 図のドラフトを直してきたやりとり 1 往復。
+//
+// **サーバーは会話を保存しない**（ADR 0041）ので、ここまでの往復は毎回
+// まるごと送る。会話は成果物ではなく、成果物はキャンバス。
+type DiagramTurn struct {
+	// Mermaid それに対して返った mermaid
+	Mermaid string `json:"mermaid"`
+
+	// Prompt そのとき書いた指示
+	Prompt string `json:"prompt"`
+}
+
 // ErrorCode 失敗の原因を表す機械可読な符号。**画面はこれで打ち手を分ける。**
 //
 // ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
@@ -410,6 +480,32 @@ type ErrorResponse struct {
 	// Error 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
 	// GitHub や LLM が返した本文が実際の手掛かりになる経路があるので残す
 	Error string `json:"error"`
+}
+
+// GenerateDiagramRequest 図のドラフトを 1 つ作るための入力。**保存済みシーンもキャンバスも
+// 読まない**（ADR 0041）ので、未保存でも使える。
+type GenerateDiagramRequest struct {
+	// History ここまでのやりとり。1 回目は空。**上限を超えたら黙って古いものを
+	// 捨てず、`diagram_chat_too_long` で返す**
+	History *[]DiagramTurn `json:"history,omitempty"`
+
+	// Kind 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
+	// プロンプトから生成するドラフトが同じ 5 種を指す。
+	//
+	// - `todo` … やることの洗い出し
+	// - `mindmap` … 発想の広げ方
+	// - `sequence` … 登場人物とやりとりの順序
+	// - `er` … 実体と関連
+	// - `architecture` … 構成要素と境界
+	//
+	// **どの mermaid 記法で書くかはサーバーが決める**（ADR 0041）。
+	// `mindmap` と `architecture` は mermaid にも同名の記法があるが、
+	// Excalidraw の要素に分解できず画像 1 枚になるため使わない（ADR 0040）。
+	Kind DiagramKind `json:"kind"`
+
+	// Prompt 今回の指示。空白だけのものは 400 で弾く。既定に倒さないのは、
+	// 何を描くかが入力そのものであるため
+	Prompt string `json:"prompt"`
 }
 
 // Granularity 注釈の粒度。空文字は「指定なし」で、粒度の判断を LLM に任せる。
@@ -680,6 +776,9 @@ type InterpretAnnotationJSONRequestBody = InterpretRequest
 
 // CreateItemsJSONRequestBody defines body for CreateItems for application/json ContentType.
 type CreateItemsJSONRequestBody = Interpretation
+
+// GenerateDiagramDraftJSONRequestBody defines body for GenerateDiagramDraft for application/json ContentType.
+type GenerateDiagramDraftJSONRequestBody = GenerateDiagramRequest
 
 // InviteBoardMemberJSONRequestBody defines body for InviteBoardMember for application/json ContentType.
 type InviteBoardMemberJSONRequestBody = InviteMemberRequest

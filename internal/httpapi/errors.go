@@ -64,6 +64,10 @@ var errorMappings = []errorMapping{
 	// 大きすぎるシーン。400 に畳まない。中身の誤りではなく大きさなので、
 	// 打ち手が「送った内容を直す」ではなく「貼った画像を減らす」になる。
 	{usecase.ErrSceneTooLarge, http.StatusRequestEntityTooLarge, apitypes.ErrorCodeSceneTooLarge},
+	// 積み上がりすぎた会話。**送られた内容は正しい。** 打ち手が「送った内容を
+	// 直す」ではなく「会話をやり直す」になるので、400 に畳まない（ADR 0041）。
+	{usecase.ErrDiagramChatTooLong, http.StatusRequestEntityTooLarge,
+		apitypes.ErrorCodeDiagramChatTooLong},
 
 	// 設定不足であって、リクエストの誤りではない。
 	{usecase.ErrTargetNotSelected, http.StatusUnprocessableEntity, apitypes.ErrorCodeTargetNotSelected},
@@ -72,6 +76,7 @@ var errorMappings = []errorMapping{
 	// 上流の失敗。500 に丸めると、開発者は自分の設定を疑えない。
 	{usecase.ErrLLMUnavailable, http.StatusBadGateway, apitypes.ErrorCodeLlmUnavailable},
 	{usecase.ErrInterpretationFailed, http.StatusBadGateway, apitypes.ErrorCodeInterpretationFailed},
+	{usecase.ErrDiagramFailed, http.StatusBadGateway, apitypes.ErrorCodeDiagramFailed},
 	{usecase.ErrCreationIncomplete, http.StatusBadGateway, apitypes.ErrorCodeCreationIncomplete},
 }
 
