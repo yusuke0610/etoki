@@ -211,6 +211,17 @@ func InterpretationConstraints() string {
 //
 // **構造体リテラルではなくこれを通す。** リテラルだと Rule を書き忘れても
 // コンパイルが通り、どの制約に対応するのか分からない指摘が混ざる。
+// contestedMessage は「1 つにつき 1 件」を破ったときの指摘文。
+//
+// **検査そのものは 2 箇所から消せない。** 解釈の出口（resolvePreviousRefs）と
+// 作成のリクエスト（validateItems）は別経路で、後者は画面から来るので前者を
+// 通らない。寄せられるのは同じ日本語を 2 度書いているほうで、片方だけ言い回しを
+// 変えると、同じ規則の違反が経路によって別の文言で返る。
+func contestedMessage(fieldName, value, owner string) string {
+	return fmt.Sprintf("%s %q を %q と取り合っています。1 つにつき 1 件までです",
+		fieldName, value, owner)
+}
+
 func newValidationError(rule RuleID, field, message string) ValidationError {
 	return ValidationError{Rule: rule, Field: field, Message: message}
 }
@@ -317,8 +328,8 @@ func resolvePreviousRefs(wire interpretationWire, previous []PreviousItem) (Inte
 				errs = append(errs, newValidationError(RulePreviousRef, field, fmt.Sprintf(
 					"previousRef %q に対応するものがありません。前回作成したものの ID か null にしてください", ref)))
 			case claimed:
-				errs = append(errs, newValidationError(RulePreviousRef, field, fmt.Sprintf(
-					"previousRef %q を %q と取り合っています。1 つにつき 1 件までです", ref, owner)))
+				errs = append(errs, newValidationError(RulePreviousRef, field,
+					contestedMessage("previousRef", ref, owner)))
 			default:
 				claimedBy[ref] = w.LocalID
 				item.PreviousItemID = &itemID
@@ -399,8 +410,7 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 					"previousItemId を空文字にはできません。新規なら null にしてください"))
 			case dup:
 				errs = append(errs, newValidationError(RulePreviousItemID, field("previousItemId"),
-					fmt.Sprintf("previousItemId %q を %q と取り合っています。1 つにつき 1 件までです",
-						*it.PreviousItemID, owner)))
+					contestedMessage("previousItemId", *it.PreviousItemID, owner)))
 			default:
 				claimed[*it.PreviousItemID] = it.LocalID
 			}

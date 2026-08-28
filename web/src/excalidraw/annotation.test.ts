@@ -36,6 +36,18 @@ describe("isAnnotation", () => {
     );
   });
 
+  // **オブジェクト以外は注釈にしない。** customData は他のツールも書ける共有
+  // 領域なので、etoki 以外が置いた値が来うる。キーの有無だけを見ると、Go が
+  // AnnotationMeta として読めない形をここだけが注釈と認めてしまう。
+  it.each([
+    ["文字列", "x"],
+    ["数値", 5],
+    ["真偽値", true],
+    ["配列", []],
+  ])("customData.etoki が%sの frame は注釈ではない", (_name, meta) => {
+    expect(isAnnotation({ ...plainFrame, customData: { etoki: meta } })).toBe(false);
+  });
+
   it("削除済みは注釈として扱わない", () => {
     expect(isAnnotation({ ...annotation, isDeleted: true })).toBe(false);
   });

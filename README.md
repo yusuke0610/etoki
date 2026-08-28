@@ -22,11 +22,11 @@ draft issue に変換するツールです。
 nix develop      # 開発用シェルに入る（Go / Bun / SQLite / lint などが揃う）
 make setup       # 依存関係の取得と DB 初期化
 make dev         # バックエンドとフロントエンドを同時に起動
-make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
-make test        # Go とフロントエンドのテスト
-make test-e2e    # Playwright による E2E テスト
 make help        # ターゲット一覧
 ```
+
+**ターゲットの一覧は `make help` が出します。** ここに書き写すと、Makefile に
+足したものが漏れたまま残ります。
 
 `nix develop` に入り忘れても構いません。`make` は開発用シェルの外から呼ばれた
 ことを見て、`nix develop --command` で自分をやり直します。入っていれば包み直しは

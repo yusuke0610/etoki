@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"maps"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -420,6 +422,83 @@ func TestListItemsByAnnotation_ScopedToAnnotation(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ItemID != "PVTI_mine" {
 		t.Errorf("items = %+v, want PVTI_mine だけ", items)
+	}
+}
+
+// ボード全体の畳み込みと注釈ごとの畳み込みは、同じ注釈について同じものを返す。
+//
+// **回帰止め。切れると何が起きるか。** 注釈パネルは ListItemsByAnnotation、
+// ボードを開いたときの一覧は ListItemsByBoard を通る。畳み込みの規則
+// （ADR 0026）が 2 通りになると「注釈を開くと出るがボード一覧には出ない」が
+// 起きる。**どちらの画面も同じものを見せているつもりなので、食い違いに
+// 気づくのは開発者ではなく利用者になる。**
+//
+// 更新と取り残しを両方含めるのは、畳み込みが効いていない状態でも件数だけは
+// 一致してしまうため。
+func TestListItemsByBoard_AgreesWithListItemsByAnnotation(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	seedBoard(t, db, "board-2")
+	repo := sqlite.NewMappingRepository(db)
+
+	updated := item("x1", "PVTI_a", port.KindEpic, nil)
+	updated.Title = "書き直したタイトル"
+	updated.Action = port.ActionUpdated
+
+	for _, run := range []port.SyncRun{
+		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h1", CreatedAt: baseTime,
+			Items: []port.SyncItem{
+				item("e1", "PVTI_a", port.KindEpic, nil),
+				item("i1", "PVTI_b", port.KindIssue, ptr("e1")),
+			}},
+		// PVTI_a を更新し、PVTI_c を足す。PVTI_b は触らない。
+		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h2", CreatedAt: baseTime,
+			Items: []port.SyncItem{
+				updated,
+				item("x2", "PVTI_c", port.KindIssue, ptr("x1")),
+			}},
+		{BoardID: "board-1", AnnotationID: "annot-2", ContentHash: "h", CreatedAt: baseTime,
+			Items: []port.SyncItem{item("e1", "PVTI_d", port.KindEpic, nil)}},
+		{BoardID: "board-2", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime,
+			Items: []port.SyncItem{item("e1", "PVTI_other_board", port.KindEpic, nil)}},
+	} {
+		if _, err := repo.SaveRun(t.Context(), run); err != nil {
+			t.Fatalf("SaveRun: %v", err)
+		}
+	}
+
+	byBoard, err := repo.ListItemsByBoard(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("ListItemsByBoard: %v", err)
+	}
+
+	// 別のボードの注釈を混ぜない。
+	annotations := slices.Sorted(maps.Keys(byBoard))
+	if want := []string{"annot-1", "annot-2"}; !slices.Equal(annotations, want) {
+		t.Fatalf("注釈 = %v, want %v", annotations, want)
+	}
+
+	for _, annotationID := range annotations {
+		items, err := repo.ListItemsByAnnotation(t.Context(), "board-1", annotationID)
+		if err != nil {
+			t.Fatalf("ListItemsByAnnotation(%s): %v", annotationID, err)
+		}
+		if !reflect.DeepEqual(byBoard[annotationID], items) {
+			t.Errorf("%s: ボード全体 = %+v, 注釈ごと = %+v",
+				annotationID, byBoard[annotationID], items)
+		}
+	}
+
+	// 畳み込みが効いていることを、片方の結果で確かめる。効いていなければ
+	// 上の一致だけは通ってしまう。
+	var ids []string
+	for _, it := range byBoard["annot-1"] {
+		ids = append(ids, it.ItemID)
+	}
+	if want := []string{"PVTI_a", "PVTI_b", "PVTI_c"}; !slices.Equal(ids, want) {
+		t.Errorf("annot-1 の item = %v, want %v", ids, want)
 	}
 }
 

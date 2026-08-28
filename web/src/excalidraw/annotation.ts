@@ -36,16 +36,29 @@ export type SceneElement = {
  * この規則はバックエンド（internal/domain）と一致させる必要がある。
  */
 export function isAnnotation(el: SceneElement): boolean {
-  return (
-    el.type === "frame" && !el.isDeleted && el.customData?.[ETOKI_NAMESPACE] !== undefined
-  );
+  return el.type === "frame" && !el.isDeleted && hasMeta(el);
+}
+
+/**
+ * customData.etoki が「メタデータとして読める形」で載っているか。
+ *
+ * **キーの有無ではなく中身の形を見る。** customData は他のツールも書ける共有
+ * 領域なので、etoki 以外が置いた値が来うる。Go 側は AnnotationMeta 構造体と
+ * して読むので、オブジェクト以外はメタデータにならない。キーの有無だけを見ると
+ * ここだけが注釈と認め、画面に出る注釈がサーバーの解釈対象とずれる。
+ *
+ * 配列を外すのは、JavaScript では配列も `typeof === "object"` になるため。
+ */
+function hasMeta(el: SceneElement): boolean {
+  const meta = el.customData?.[ETOKI_NAMESPACE];
+  return typeof meta === "object" && meta !== null && !Array.isArray(meta);
 }
 
 /** 要素から粒度を読む。注釈でなければ undefined。 */
 export function granularityOf(el: SceneElement): Granularity | undefined {
   if (!isAnnotation(el)) return undefined;
-  const meta = el.customData?.[ETOKI_NAMESPACE] as AnnotationMeta | undefined;
-  return meta?.granularity ?? "";
+  const meta = el.customData?.[ETOKI_NAMESPACE] as AnnotationMeta;
+  return meta.granularity ?? "";
 }
 
 /**

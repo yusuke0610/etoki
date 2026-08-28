@@ -10,7 +10,9 @@
 
 - **注釈の判定規則は Go 側と同じにする。** `web/src/excalidraw/annotation.ts` の
   `isAnnotation` と `internal/domain/scene.go` の `Element.isAnnotation`。規則は
-  「`type === "frame"` かつ `customData.etoki` を持つ」（ルートの `CLAUDE.md`）。
+  「`type === "frame"` かつ `customData.etoki` をメタデータとして読める形で持つ」
+  （ルートの `CLAUDE.md`）。**キーの有無だけを見ない。** 配列を除くのは、
+  JavaScript では配列も `typeof === "object"` になるため。
 - **「未保存」判定（`web/src/excalidraw/dirty.ts`）は `content_hash` とは別物。**
   保存はシーン全体を書くので、図形を動かしただけでも未保存にする。バックエンドの
   `content_hash` はテキストのみを見る。**揃えないこと。** 揃えると保存すべき
