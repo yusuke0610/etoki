@@ -18,6 +18,18 @@ export type Granularity = Schemas["Granularity"];
 /** GitHub に作る draft issue の種別。epic と issue の 2 階層のみ。 */
 export type ItemKind = Schemas["ItemKind"];
 
+/** 図の種類。テンプレートとドラフト生成が同じ語彙を指す。 */
+export type DiagramKind = Schemas["DiagramKind"];
+
+/** 図のドラフトを直してきたやりとり 1 往復。サーバーは保存しない。 */
+export type DiagramTurn = Schemas["DiagramTurn"];
+
+/** ドラフト生成のリクエストボディ。保存済みシーンは読まれない。 */
+export type GenerateDiagramRequest = Schemas["GenerateDiagramRequest"];
+
+/** 生成された図のドラフト。まだキャンバスには置かれていない。 */
+export type DiagramDraft = Schemas["DiagramDraft"];
+
 /** 一覧で返すボード。シーンは含まない。 */
 export type BoardSummary = Schemas["BoardSummary"];
 
