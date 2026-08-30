@@ -26,7 +26,7 @@ func TestDiagramKind_Valid(t *testing.T) {
 	// mermaid にはあるが etoki の語彙には無いもの。**mermaid で書けることと、
 	// etoki が選ばせることは別。**
 	for _, k := range []domain.DiagramKind{"gantt", "class", "state", "TODO"} {
-		if domain.DiagramKind(k).Valid() {
+		if k.Valid() {
 			t.Errorf("%q を知っている種類として扱っている", k)
 		}
 	}
