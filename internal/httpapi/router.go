@@ -120,6 +120,10 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 名前だけを変える。**PUT ではなく PATCH。** ボード全体を差し替える
 		// 口ではないので、送らなかったものが消える形に読ませない。
 		api.PATCH("/boards/:id", h.renameBoard)
+		// ボードごと畳む。owner だけ（ADR 0042）。**GitHub 側の draft issue は
+		// 消さない**ので、押す前に何が残るかを /deletion で見せる。
+		api.DELETE("/boards/:id", h.deleteBoard)
+		api.GET("/boards/:id/deletion", h.getBoardDeletion)
 		api.PUT("/boards/:id/scene", h.saveScene)
 		// 作成先はボードごとに持つ。最初の draft issue を作ると固定される
 		// （ADR 0014）。

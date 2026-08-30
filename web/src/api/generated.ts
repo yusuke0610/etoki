@@ -182,7 +182,25 @@ export interface paths {
         get: operations["getBoard"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * ボードを削除する
+         * @description **owner だけ**（ADR 0017）。ボードごと畳む操作なので、シーンを書き換え
+         *     られる editor ではなく、招待も作成先の変更もできる相手に限る。
+         *
+         *     **GitHub 側の draft issue は消さない**（消せない。逆方向の書き込みは
+         *     スコープ外）。消えるのは etoki 側の記録のほうで、`sync_runs` と
+         *     `sync_items` と `board_members` が一緒に消える。その結果、**GitHub に
+         *     残った draft issue がどのボードのどの注釈から作られたのかは辿れなく
+         *     なる**（ADR 0007 / 0042）。
+         *
+         *     何が残るのかは `GET /api/boards/{id}/deletion` で先に引ける。画面は
+         *     押される前にそれを見せて確認させる（中核思想 3）。
+         *
+         *     **run があっても拒まない。** 拒むと、いちばん畳みたいボード（作成先を
+         *     間違えたまま 1 回作ってしまったボード）が永久に残る。判断の材料を
+         *     見せたうえで、決めるのは開発者にする。
+         */
+        delete: operations["deleteBoard"];
         options?: never;
         head?: never;
         /**
@@ -198,6 +216,36 @@ export interface paths {
          *     名前は取り消せない作成の行き先を決めるものではないため。
          */
         patch: operations["renameBoard"];
+        trace?: never;
+    };
+    "/api/boards/{id}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 削除で何が失われるかを返す
+         * @description 削除は取り消せず、GitHub 側に作った draft issue も消せない。押す前に
+         *     何が残るのかを見せるための口（ADR 0042、中核思想 3）。
+         *
+         *     **押されたときだけ引く。** ボードを開くたびに数えると、削除するまで
+         *     要らない畳み込みを毎回引くことになる（ADR 0037 の取り直しと同じ形）。
+         *
+         *     **owner だけ。** 削除そのものと揃える。押せない相手に、押したときに
+         *     何が起きるかだけを見せる理由が無い。
+         */
+        get: operations["getBoardDeletion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/boards/{id}/scene": {
@@ -749,6 +797,24 @@ export interface components {
              *     数えられないので、状態としてサーバーが返す
              */
             targetLocked: boolean;
+        };
+        /**
+         * @description ボードを削除したときに etoki から失われるもの（ADR 0042）。
+         *
+         *     **GitHub 側で何が起きるかは含まれない。** etoki は draft issue を
+         *     消さないので、GitHub にはそのまま残る。ここが答えるのは「辿れなく
+         *     なるのはどれだけか」という問いのほう。
+         */
+        BoardDeletion: {
+            /**
+             * @description そのボードから作成したと etoki が記録している draft issue の件数。
+             *
+             *     数え方は注釈のカードに出している「いま GitHub に在る N 件」と同じ
+             *     畳み込み（ADR 0026）。**GitHub 上でまだ在るかどうかは etoki には
+             *     分からない**（ADR 0007）ので、これは記録の件数であって現況では
+             *     ない
+             */
+            recordedItemCount: number;
         };
         /**
          * @description draft issue の作成先。設定のリクエストボディ。
@@ -1377,6 +1443,31 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    deleteBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 削除した */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     renameBoard: {
         parameters: {
             query?: never;
@@ -1403,6 +1494,33 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getBoardDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 削除で失われるもの */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDeletion"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

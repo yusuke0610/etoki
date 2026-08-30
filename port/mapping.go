@@ -299,6 +299,16 @@ type BoardRepository interface {
 	UpdateTargetDisplay(
 		ctx context.Context, actor, id string, d BoardTargetDisplay, updatedAt time.Time,
 	) error
+	// Delete はボードを消す。存在しない、または操作者がメンバーでなければ
+	// ErrNotFound。
+	//
+	// **ロールは見ない。** owner だけかはユースケース層が決める（他と同じ）。
+	//
+	// board_members / sync_runs / sync_items は一緒に消える。GitHub に作った
+	// draft issue は消さない（消せない）ので、**残った draft issue の出どころは
+	// 辿れなくなる**（ADR 0007 / 0042）。押す前に何が残るかを見せるのは
+	// 呼び出し側の責務。
+	Delete(ctx context.Context, actor, id string) error
 	// Find は ID でボードを操作者のロールつきで引く。
 	//
 	// 存在しない、または操作者がメンバーでなければ (nil, nil)。

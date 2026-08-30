@@ -240,6 +240,34 @@ func (h *handlers) renameBoard(c *gin.Context) {
 	h.respondBoard(c, *b)
 }
 
+// getBoardDeletion は削除で何が失われるかを返す。
+//
+// **削除とは別の呼び出しに保つ。** 見せてから確認させるための口なので、
+// 削除の応答に混ぜると押す前に読めない（ADR 0042）。
+func (h *handlers) getBoardDeletion(c *gin.Context) {
+	d, err := h.boards.Deletion(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, apitypes.BoardDeletion{RecordedItemCount: d.RecordedItemCount})
+}
+
+// deleteBoard はボードを削除する。
+//
+// owner だけかの判断はユースケース層が持つ（ADR 0017）。ここは 204 を返すだけ。
+func (h *handlers) deleteBoard(c *gin.Context) {
+	if err := h.boards.Delete(c.Request.Context(), c.Param("id")); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// 消したものを本文に載せない。メンバーを外す口（removeBoardMember）と
+	// 揃える。
+	c.Status(http.StatusNoContent)
+}
+
 // setBoardTarget は draft issue の作成先をボードに設定する。
 //
 // 固定済みかどうかの判断はユースケース層が持つ。ここは 409 に写すだけ。

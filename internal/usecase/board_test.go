@@ -568,3 +568,109 @@ func TestCreate_UsesTargetProjectOfBoard(t *testing.T) {
 		}
 	}
 }
+
+// 削除の判断材料は「作成を記録している draft issue が何件か」（ADR 0042）。
+//
+// **数え方は注釈のカードに出している畳み込みと同じ**（ADR 0026）。更新の run は
+// 同じ item に吸収されるので、2 回触った item は 1 件として数える。ここが
+// run ごとの合計に変わると、画面が同じボードについて 2 つの数を出すことになる。
+func TestDeletion_CountsFoldedItems(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	mappings := &fakeMappings{runs: []port.SyncRun{
+		{
+			BoardID: "board-1", AnnotationID: "annot-1",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionCreated},
+				{ItemID: "PVTI_2", LocalID: "i1", Action: port.ActionCreated},
+			},
+		},
+		{
+			// 同じ item を書き換えた run。畳み込みで 1 件に吸収される。
+			BoardID: "board-1", AnnotationID: "annot-1",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionUpdated},
+			},
+		},
+		{
+			BoardID: "board-1", AnnotationID: "annot-2",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_3", LocalID: "e1", Action: port.ActionCreated},
+			},
+		},
+		// 別のボードの run は数えない。混ぜると、消してもいないボードの件数を
+		// 見せることになる。
+		{
+			BoardID: "board-2", AnnotationID: "annot-9",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_9", LocalID: "e1", Action: port.ActionCreated},
+			},
+		},
+	}}
+	svc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks())
+
+	d, err := svc.Deletion(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("Deletion() = %v", err)
+	}
+	if d.RecordedItemCount != 3 {
+		t.Errorf("RecordedItemCount = %d, want 3", d.RecordedItemCount)
+	}
+	if boards.writes != 0 {
+		t.Errorf("見せるだけの口が書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
+// 一度も作っていないボードは 0 件。件数が無いことと引けなかったことを混ぜない。
+func TestDeletion_ZeroWithoutRuns(t *testing.T) {
+	t.Parallel()
+
+	svc := usecase.NewBoardService(&fakeBoards{board: newBoard(interpretScene)},
+		&fakeMappings{}, usecase.NewBoardLocks())
+
+	d, err := svc.Deletion(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("Deletion() = %v", err)
+	}
+	if d.RecordedItemCount != 0 {
+		t.Errorf("RecordedItemCount = %d, want 0", d.RecordedItemCount)
+	}
+}
+
+// **run があっても削除は拒まない**（ADR 0042）。拒むと、いちばん畳みたいボード
+// ——作成先を間違えたまま 1 回作ってしまったボード——が永久に残る。失われるものは
+// Deletion で見せ、決めるのは開発者にする（中核思想 3）。
+//
+// 作成先の固定（ErrTargetLocked）と同じ考え方に倒すと、この判断ごと反転する。
+func TestDelete_SucceedsEvenWithRuns(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	mappings := &fakeMappings{runs: []port.SyncRun{{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		Items: []port.SyncItem{{ItemID: "PVTI_1", LocalID: "e1"}},
+	}}}
+	svc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks())
+
+	if err := svc.Delete(t.Context(), "board-1"); err != nil {
+		t.Fatalf("Delete() = %v", err)
+	}
+
+	// 消えたことを引き当てで確かめる。エラーが無いことだけを見ると、
+	// 何も書かない実装でも通る。
+	if _, err := svc.Find(t.Context(), "board-1"); !errors.Is(err, usecase.ErrBoardNotFound) {
+		t.Fatalf("削除後の Find() = %v, want ErrBoardNotFound", err)
+	}
+}
+
+// 存在しないボードは「無い」として返す。削除できたことにしない。
+func TestDelete_NotFound(t *testing.T) {
+	t.Parallel()
+
+	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{}, usecase.NewBoardLocks())
+
+	if err := svc.Delete(t.Context(), "board-1"); !errors.Is(err, usecase.ErrBoardNotFound) {
+		t.Fatalf("Delete() = %v, want ErrBoardNotFound", err)
+	}
+}
