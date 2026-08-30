@@ -216,6 +216,21 @@ export function App() {
     [reload],
   );
 
+  /**
+   * 削除されたので手元から外す。
+   *
+   * **未保存の確認は通さない。** 消えたのはボードそのもので、捨てるか
+   * どうかを訊いても戻せる先が無い。確認は削除の手前で済んでいる（ADR 0042）。
+   * `unsaved` は BoardPage が外れるときに自分で下ろす。
+   *
+   * **一覧も引き直す。** 木は作成先でまとめて見せる（ADR 0019）ので、消えた
+   * ボードが残っていると開けない行が並ぶ。
+   */
+  const handleDeleted = useCallback(() => {
+    setCurrent(null);
+    void reload();
+  }, [reload]);
+
   /** 既存ボードの作成先を選び直す。最初の作成より前だけ通る（ADR 0014）。 */
   const changeTarget = useCallback(
     async (target: BoardTarget) => {
@@ -325,6 +340,7 @@ export function App() {
             // 手元を差し替える」だけ。同じ扱いにする（replaceBoard を参照）。
             onTargetRefreshed={replaceBoard}
             onRenamed={replaceBoard}
+            onDeleted={handleDeleted}
             onDirtyChange={handleDirtyChange}
           />
         )}

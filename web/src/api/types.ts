@@ -24,6 +24,13 @@ export type BoardSummary = Schemas["BoardSummary"];
 /** シーンと作成先を含むボード。 */
 export type BoardDetail = Schemas["BoardDetail"];
 
+/**
+ * 削除で etoki から失われるもの。
+ *
+ * **GitHub 側で何が起きるかは含まれない。** draft issue は残る（ADR 0042）。
+ */
+export type BoardDeletion = Schemas["BoardDeletion"];
+
 /** draft issue の作成先。設定のリクエストボディ。 */
 export type BoardTarget = Schemas["BoardTarget"];
 

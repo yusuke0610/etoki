@@ -84,6 +84,22 @@ test.describe("共有", () => {
     await expect(page.getByText("作成先を変えられるのはオーナーだけです")).toBeVisible();
   });
 
+  // ボードごと畳めるのは owner だけ（ADR 0042）。押せるのに 403 で断るより、
+  // 押せないことを見せるほうが状態として正しい。
+  test("オーナー以外には削除の導線を出さない", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), role: "editor" };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(page.getByRole("button", { name: "ボードを削除" })).toHaveCount(0);
+    // 改名は editor にも許す。並べて見ることで、消えているのが削除だけだと
+    // 分かる。
+    await expect(page.getByRole("button", { name: "名前を変更" })).toBeVisible();
+  });
+
   // メンバー一覧は owner でなくても見られる。誰と共有しているかを owner だけが
   // 知っている状態にすると、招待された側は自分が何に呼ばれたのか分からない。
   test("オーナー以外はメンバーを見られるが、招待欄は出ない", async ({ page }) => {

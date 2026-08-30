@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 import type {
   AnnotationStatus,
   BoardAccess,
+  BoardDeletion,
   BoardDetail,
   BoardMember,
   BoardRole,
@@ -107,6 +108,15 @@ export type ApiMock = {
   /** 改名を失敗させたいときに指定する。 */
   renameError?: Reply<never>;
   /**
+   * 削除で失われるもの。ボード ID をキーにする（ADR 0042）。
+   *
+   * 指定が無ければ 0 件を返す。**件数は画面が出す文言そのものなので、
+   * 「作成済みのボードを消す」場面のテストはここを埋める。**
+   */
+  deletion?: Record<string, Reply<BoardDeletion>>;
+  /** 削除を失敗させたいときに指定する。 */
+  deleteError?: Reply<never>;
+  /**
    * 注釈 ID をキーにした実行履歴（ADR 0007）。
    *
    * **ボードではなく注釈で引く。** 履歴を出す画面は注釈のカードの中にあり、
@@ -115,6 +125,19 @@ export type ApiMock = {
    */
   runs?: Record<string, Reply<SyncRun[]>>;
 };
+
+/**
+ * owner 以外に閉じている操作の応答。
+ *
+ * **404 ではなく 403。** メンバーはボードの存在をすでに知っているので、何が
+ * 足りないのかを隠す理由が無い（ADR 0017）。非メンバーの 404 と混ぜない。
+ */
+async function ownerOnly(route: Route): Promise<void> {
+  await json(route, 403, {
+    code: "forbidden_role",
+    error: "owner only",
+  } satisfies ErrorResponse);
+}
 
 async function json(route: Route, status: number, body: unknown): Promise<void> {
   await route.fulfill({
@@ -198,9 +221,9 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => /^\/api\/boards\/[^/]+$/.test(url.pathname),
     async (route) => {
       const method = route.request().method();
-      // 取得と改名だけを受ける。何でも受けると、フロントが契約と違うメソッドで
-      // 叩いていても緑になる。
-      if (method !== "GET" && method !== "PATCH") {
+      // 取得と改名と削除だけを受ける。何でも受けると、フロントが契約と違う
+      // メソッドで叩いていても緑になる。
+      if (method !== "GET" && method !== "PATCH" && method !== "DELETE") {
         await route.fallback();
         return;
       }
@@ -217,6 +240,26 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
 
       if (method === "GET") {
         await json(route, 200, detail);
+        return;
+      }
+
+      if (method === "DELETE") {
+        if (mock.deleteError) {
+          await json(route, mock.deleteError.status, mock.deleteError.body);
+          return;
+        }
+        if (detail.role !== "owner") {
+          await ownerOnly(route);
+          return;
+        }
+
+        // **本当に消す。** 204 を返すだけのモックにすると、一覧を引き直して
+        // いないフロントでも緑になる（ADR 0042）。
+        delete mock.details[id];
+        delete mock.annotations[id];
+        delete mock.deletion?.[id];
+        mock.boards = mock.boards.filter((b) => b.id !== id);
+        await route.fulfill({ status: 204, body: "" });
         return;
       }
 
@@ -241,6 +284,42 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       mock.details[id] = next;
       mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
       await json(route, 200, next);
+    },
+  );
+
+  // 削除で失われるものは、削除とは別の口で引く。押す前に見せるためのもの
+  // なので、削除の応答に混ぜられない（ADR 0042）。
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/deletion$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+
+      const id = boardIdOf(route);
+      const detail = mock.details[id];
+      if (!detail) {
+        await json(route, 404, {
+          code: "not_found",
+          error: "not found",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      // 削除そのものと同じく owner だけ（ADR 0042）。モックだけ緩くすると、
+      // 導線が owner 以外に漏れても E2E が緑のまま通る。
+      if (detail.role !== "owner") {
+        await ownerOnly(route);
+        return;
+      }
+
+      const reply = mock.deletion?.[id];
+      if (reply) {
+        await json(route, reply.status, reply.body);
+        return;
+      }
+      await json(route, 200, { recordedItemCount: 0 } satisfies BoardDeletion);
     },
   );
 

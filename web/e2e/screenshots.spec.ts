@@ -582,4 +582,20 @@ test.describe("スクリーンショット", () => {
     await page.getByLabel("ボードの名前").fill("認証の設計会");
     await shot(page, "26-rename");
   });
+
+  // 削除の確認。**GitHub 側に何が残るのかが読める文言になっているか**を画像で
+  // 見る（ADR 0042）。件数と「残る」がどちらも出ていること。
+  test("削除の確認を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await page.getByRole("alertdialog").waitFor();
+    await shot(page, "27-delete-confirm");
+  });
 });

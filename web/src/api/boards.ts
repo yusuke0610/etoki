@@ -1,6 +1,7 @@
 import type {
   AnnotationImage,
   AnnotationStatus,
+  BoardDeletion,
   Capabilities,
   InterpretRequest,
   LoginResponse,
@@ -119,6 +120,22 @@ export const boardsApi = {
       method: "PATCH",
       body: JSON.stringify({ name } satisfies RenameBoardRequest),
     }),
+
+  /**
+   * 削除で何が失われるかを引く。
+   *
+   * **押されたときだけ引く。** ボードを開くたびに数えると、削除するまで
+   * 要らない畳み込みを毎回引くことになる（ADR 0037 の取り直しと同じ形）。
+   */
+  deletion: (id: string) => request<BoardDeletion>(`/api/boards/${id}/deletion`),
+
+  /**
+   * ボードを削除する。
+   *
+   * **owner だけ**（ADR 0017）。**GitHub 側の draft issue は消えない**ので、
+   * 押す前に `deletion` で何が残るかを見せて確認させる（ADR 0042）。
+   */
+  delete: (id: string) => request<void>(`/api/boards/${id}`, { method: "DELETE" }),
 
   /**
    * シーンを保存する。
