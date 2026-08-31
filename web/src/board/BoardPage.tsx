@@ -545,19 +545,28 @@ export function BoardPage({
   );
 
   /**
-   * 図の種類を変える。**走っている生成も無効にする。**
+   * 図の種類を変える。**捨てたときだけ、走っている生成も無効にする。**
    *
    * 種類を変えると会話ごと捨てる（`changeKind`）ので、あとから古い図が
    * 積まれると、いまの種類の会話に前の記法の図が土台として載る。パネルは
    * 生成中の選択を止めているが、**止めているのが UI だけだと、そこを外した
    * ときに黙って壊れる**（`.claude/rules/async-ui.md`）。
+   *
+   * **捨てていないのに世代を進めない。** 同じ種類なら `changeKind` は会話を
+   * そのまま返すので `pending` が残る。そこで世代だけ進めると、走っている
+   * 生成の応答が捨てられて `pending` を null にする経路が消え、パネルが
+   * 「生成中…」のまま戻らなくなる。**捨てたかどうかは `changeKind` の
+   * 返り値で決める。** 同じ条件をここにも書くと判定が 2 箇所になる。
    */
   const handleChangeKind = useCallback(
     (kind: DiagramKind) => {
+      const next = changeKind(chat, kind);
+      if (next === chat) return;
+
       diagramGenerations.start(DIAGRAM_KEY);
-      setChat((prev) => changeKind(prev, kind));
+      setChat(next);
     },
-    [diagramGenerations],
+    [chat, diagramGenerations],
   );
 
   /**
