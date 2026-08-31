@@ -35,6 +35,9 @@ export function BoardTree({ boards, currentId, onOpen }: Props) {
     if (!board) return;
 
     const repository = repositoryKeyOf(board);
+    // 同期的に書き換えるが、開ける枝が無ければ prev をそのまま返すので
+    // React が更新を打ち切る。描画の連鎖は起きない。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCollapsed((prev) => {
       const next = new Set(prev);
       next.delete(repository);

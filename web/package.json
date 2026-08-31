@@ -34,7 +34,7 @@
     "globals": "^17",
     "jsdom": "^30",
     "openapi-typescript": "^7",
-    "typescript": "^7",
+    "typescript": "^6",
     "typescript-eslint": "^8",
     "vite": "^8",
     "vitest": "^4"

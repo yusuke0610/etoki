@@ -274,11 +274,15 @@ cd web && bunx playwright test --ui
 - **`web/src/excalidraw/assumptions.test.ts`** — `customData` が serialize と
   restore を越えて残るという、注釈設計の前提そのものを固定するテスト。
   ライブラリ更新で落ちたら設計を見直す合図。
+- **`typescript` は 6 系のまま。** typescript-eslint が TS 7 の API をまだ
+  読めず、上げると eslint が規則を 1 つも見ないまま起動で落ちる。**これだけは
+  外部が追いつけば消える固定。** typescript-eslint が読めるようになったら、
+  ここと `ignore` の両方を外す。
 - **`@playwright/test` のバージョンは exact 指定。** devShell が渡す
   `playwright-driver.browsers`（nixpkgs 側）と揃っていないと、要求される
   リビジョンのブラウザが見つからず E2E が起動しない。`nix flake update` で
   `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
 
-ここで固定しているもの（`@playwright/test` と React 18）は
+ここで固定しているもの（`@playwright/test`、React 18、`typescript`）は
 `.github/dependabot.yml` の `ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
 **固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。
