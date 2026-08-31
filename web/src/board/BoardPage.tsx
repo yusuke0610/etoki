@@ -172,6 +172,11 @@ export function BoardPage({
   // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
   // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
   const [diagramGenerations] = useState(createGenerations);
+  // 置いている最中か。**走っているあいだの二重押しは弾く**（`loadingRuns` と
+  // 同じ形）。state ではなく ref で覚えるのは、判定が「押した時点の値」を見る
+  // 必要があるため。state に置くと、同じ tick に届いた 2 回目がまだ false を
+  // 読み、同じ図が同じ場所に重なって置かれる。
+  const placing = useRef(false);
   // 作成先の Project に書けるかどうか。確かめるまでは unknown。
   //
   // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
@@ -567,30 +572,37 @@ export function BoardPage({
    * なので、投げ直せるのはここしかない（ADR 0041）。
    */
   const placeDraft = useCallback(async () => {
-    if (!api || chat.draft === null) return;
+    // 変換は非同期。**押した時点で弾かないと、2 回目が同じ `draftOrigin` を
+    // 得て、同じ図が同じ場所に重なる。** 取り消しで戻すしかなくなる。
+    if (!api || chat.draft === null || placing.current) return;
+    placing.current = true;
 
-    const converted = await mermaidToElements(chat.draft.mermaid);
-    if (!converted.ok) {
-      if (converted.reason === "syntax") {
-        // 直せる失敗。会話の次の 1 往復にして投げ直す。
-        // **利用者が打った指示ではない**ので、そう印を付けて積む。画面には
-        // 固定文で出る（`turnLabel`）。
-        void generateDiagram(conversionRetryPrompt(converted.detail), true);
+    try {
+      const converted = await mermaidToElements(chat.draft.mermaid);
+      if (!converted.ok) {
+        if (converted.reason === "syntax") {
+          // 直せる失敗。会話の次の 1 往復にして投げ直す。
+          // **利用者が打った指示ではない**ので、そう印を付けて積む。画面には
+          // 固定文で出る（`turnLabel`）。
+          void generateDiagram(conversionRetryPrompt(converted.detail), true);
+          return;
+        }
+        // 置ける形にならない種類だった。投げ直しても同じものが返るので、
+        // 種類を変えてもらう（ADR 0040）。
+        setChat((prev) => failTurn(prev, diagramNotPlaceableFailure()));
         return;
       }
-      // 置ける形にならない種類だった。投げ直しても同じものが返るので、
-      // 種類を変えてもらう（ADR 0040）。
-      setChat((prev) => failTurn(prev, diagramNotPlaceableFailure()));
-      return;
+
+      const existing = currentElements();
+      const placed = moveDraft(converted.elements, draftOrigin(existing));
+      updateElements([...existing, ...placed]);
+
+      // 置いた先へ寄せる。既存の絵の外に置くので、寄せないと押したのに何も
+      // 起きていないように見える（ADR 0040）。
+      api.scrollToContent(placed as never, { fitToContent: true, animate: true });
+    } finally {
+      placing.current = false;
     }
-
-    const existing = currentElements();
-    const placed = moveDraft(converted.elements, draftOrigin(existing));
-    updateElements([...existing, ...placed]);
-
-    // 置いた先へ寄せる。既存の絵の外に置くので、寄せないと押したのに何も
-    // 起きていないように見える（ADR 0040）。
-    api.scrollToContent(placed as never, { fitToContent: true, animate: true });
   }, [api, chat.draft, currentElements, generateDiagram, updateElements]);
 
   /**
