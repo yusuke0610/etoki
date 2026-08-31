@@ -42,3 +42,4 @@
 | [0036](0036-mark-annotation-frames-on-canvas.md)                 | 注釈にした frame はキャンバスに重ねて見分けさせる（要素は変えない）    | 採用                 |
 | [0037](0037-refresh-target-display-after-lock.md)                | 作成先の表示名は固定後も取り直せる（固定するのは作成先そのもの）       | 採用                 |
 | [0038](0038-scene-size-limit.md)                                 | シーンの保存に上限を置き、超えたら 413 で弾く                          | 採用                 |
+| [0043](0043-record-run-outcome.md)                               | 途中で失敗した run は記録に残す（埋めずに「不明」を残す）              | 採用                 |

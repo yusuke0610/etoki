@@ -907,6 +907,14 @@ export interface components {
             action: components["schemas"]["SyncAction"];
         };
         /**
+         * @description run が最後まで進んだかどうか（ADR 0043）。
+         *
+         *     **省略は「成功」ではなく「記録していない」。** この項目を足す前の run に
+         *     は記録が無く、当時も途中失敗は起きていた。`complete` と同じに扱わない。
+         * @enum {string}
+         */
+        RunOutcome: "complete" | "incomplete";
+        /**
          * @description 1 つの注釈に対する 1 回ぶんの実行の記録（ADR 0007）。
          *
          *     **「そのときの全体像」ではなく「その 1 回で何をしたか」**（ADR 0026）。
@@ -926,8 +934,20 @@ export interface components {
              */
             createdAt: string;
             /**
-             * @description その run で作成または更新した draft issue。**空配列がありうる。**
-             *     1 件も作れずに終わった run も記録として残る（ADR 0009）
+             * @description 最後まで進んだかどうか。**記録していなかった頃の run では省略する**
+             *     （ADR 0043）
+             */
+            outcome?: components["schemas"]["RunOutcome"];
+            /**
+             * @description 途中で失敗した理由。`outcome` が `incomplete` のときだけ入る。
+             *
+             *     **利用者向けの文言ではなく手掛かり**なので、画面は既定で畳む
+             *     （ADR 0034）
+             */
+            error?: string;
+            /**
+             * @description その run で作成または更新した draft issue。1 件も作れずに終わった
+             *     実行は記録しないので、記録された run には 1 件以上入る（ADR 0009）
              */
             items: components["schemas"]["SyncItem"][];
         };
@@ -942,6 +962,18 @@ export interface components {
              * @description 前回実行の時刻。未実行なら省略する
              */
             lastSyncedAt?: string;
+            /**
+             * @description 前回実行が最後まで進んだかどうか（ADR 0043）。未実行と、記録して
+             *     いなかった頃の run では省略する。
+             *
+             *     **`state` は変わらない。** 途中で失敗しても作れたぶんは記録するので、
+             *     状態は `created` になる（ADR 0009）。件数だけでは、途中で止まった
+             *     のか、もともとその件数だったのかが読めないので別に出す。
+             *
+             *     **理由はここには載せない。** 一覧は「何が起きたか」まで見せる場所で、
+             *     手掛かりの本文は履歴（`GET .../runs`）が持つ
+             */
+            lastRunOutcome?: components["schemas"]["RunOutcome"];
             /**
              * @description この注釈が GitHub に在らしめている draft issue（ADR 0026）。
              *

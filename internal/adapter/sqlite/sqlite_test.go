@@ -183,6 +183,7 @@ func TestSaveRun_RoundTrip(t *testing.T) {
 		AnnotationID: "annot-1",
 		ContentHash:  "hash-1",
 		CreatedAt:    baseTime,
+		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{
 			item("e1", "PVTI_epic", port.KindEpic, nil),
 			item("i1", "PVTI_i1", port.KindIssue, ptr("e1")),
@@ -248,6 +249,7 @@ func TestSaveRun_NoItems(t *testing.T) {
 		AnnotationID: "annot-1",
 		ContentHash:  "hash-1",
 		CreatedAt:    baseTime,
+		Outcome:      port.OutcomeComplete,
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
 	}
@@ -261,6 +263,154 @@ func TestSaveRun_NoItems(t *testing.T) {
 	}
 	if len(got.Items) != 0 {
 		t.Errorf("Items の件数 = %d, want 0", len(got.Items))
+	}
+}
+
+// 途中で失敗した run は、結末と理由を持って読み直せる（ADR 0043）。ここが
+// 切れると、履歴からは「作れた件数が少ない run」と区別が付かなくなる（#110）。
+func TestSaveRun_KeepsOutcomeAndError(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID:      "board-1",
+		AnnotationID: "annot-1",
+		ContentHash:  "hash-1",
+		CreatedAt:    baseTime,
+		Outcome:      port.OutcomeIncomplete,
+		Error:        "github graphql: rate limited",
+		Items:        []port.SyncItem{item("e1", "PVTI_epic", port.KindEpic, nil)},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	got, err := repo.FindLatestRun(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("FindLatestRun: %v", err)
+	}
+	if got == nil {
+		t.Fatal("FindLatestRun returned nil")
+	}
+	if got.Outcome != port.OutcomeIncomplete {
+		t.Errorf("Outcome = %q, want %q", got.Outcome, port.OutcomeIncomplete)
+	}
+	if got.Error != "github graphql: rate limited" {
+		t.Errorf("Error = %q, want %q", got.Error, "github graphql: rate limited")
+	}
+
+	// 履歴の口でも同じものが読める。判定に使う最新 run と、1 回ずつの記録は
+	// 別の経路なので、両方で確かめる（ADR 0026）。
+	runs, err := repo.ListRunsByAnnotation(t.Context(), "board-1", "annot-1", 10)
+	if err != nil {
+		t.Fatalf("ListRunsByAnnotation: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("runs の件数 = %d, want 1", len(runs))
+	}
+	if runs[0].Outcome != port.OutcomeIncomplete || runs[0].Error == "" {
+		t.Errorf("runs[0] = %+v, want incomplete と理由", runs[0])
+	}
+}
+
+// 結末を書き忘れた run は保存させない。ゼロ値を通すと「記録していなかった頃の
+// run」に化けて、あとから見分けられなくなる（ADR 0043）。
+func TestSaveRun_RejectsMissingOutcome(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	run := port.SyncRun{
+		BoardID:      "board-1",
+		AnnotationID: "annot-1",
+		ContentHash:  "hash-1",
+		CreatedAt:    baseTime,
+		Items:        []port.SyncItem{item("e1", "PVTI_epic", port.KindEpic, nil)},
+	}
+
+	if _, err := repo.SaveRun(t.Context(), run); err == nil {
+		t.Fatal("Outcome 無しの SaveRun が通った")
+	}
+
+	// 完走した run に理由が付く、失敗した run の理由が空、のどちらも通さない。
+	// 通すと、読む側が「理由の無い失敗」の意味を決められない。
+	run.Outcome = port.OutcomeComplete
+	run.Error = "boom"
+	if _, err := repo.SaveRun(t.Context(), run); err == nil {
+		t.Error("complete なのに理由つきの SaveRun が通った")
+	}
+
+	run.Outcome = port.OutcomeIncomplete
+	run.Error = ""
+	if _, err := repo.SaveRun(t.Context(), run); err == nil {
+		t.Error("incomplete なのに理由の無い SaveRun が通った")
+	}
+}
+
+// DB 側も食い違いを受け付けない。**`IS` と `=` の違いがここに出る。**
+// `outcome = 'incomplete'` と書くと、outcome が NULL の行では比較が NULL に
+// 評価されて CHECK をすり抜け、「記録していないのに理由だけある run」が
+// 入ってしまう（ADR 0043）。
+func TestMigration_RejectsErrorWithoutIncomplete(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	at := baseTime.UTC().Format(time.RFC3339Nano)
+
+	for name, query := range map[string]string{
+		"未知の outcome": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'weird')`,
+		"完走したのに理由つき": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome, error)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'complete', 'boom')`,
+		"記録が無いのに理由つき": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, error)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'boom')`,
+	} {
+		if _, err := db.ExecContext(t.Context(), query, at); err == nil {
+			t.Errorf("%s: CHECK が効いていない", name)
+		}
+	}
+}
+
+// 結末を記録していなかった頃の run は「不明」のまま読む。**成功に倒さない。**
+// 当時も途中失敗は起きていたので、complete と同じに見せると、履歴が嘘をつく
+// （ADR 0043）。
+func TestFindLatestRun_RunWithoutOutcome(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	// 移行前の INSERT を再現する。outcome を書かずに入れられることそのものが、
+	// 既存の行が読めることの条件。
+	if _, err := db.ExecContext(t.Context(),
+		`INSERT INTO sync_runs (board_id, annotation_element_id, content_hash, created_at)
+		 VALUES ('board-1', 'annot-1', 'hash-1', ?)`,
+		baseTime.UTC().Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert legacy sync_run: %v", err)
+	}
+
+	got, err := repo.FindLatestRun(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("FindLatestRun: %v", err)
+	}
+	if got == nil {
+		t.Fatal("FindLatestRun returned nil")
+	}
+	if got.Outcome != port.OutcomeUnknown {
+		t.Errorf("Outcome = %q, want %q（記録が無いので不明）", got.Outcome, port.OutcomeUnknown)
+	}
+	if got.Error != "" {
+		t.Errorf("Error = %q, want 空", got.Error)
 	}
 }
 
@@ -278,6 +428,7 @@ func TestFindLatestRun_ItemWithoutBody(t *testing.T) {
 		AnnotationID: "annot-1",
 		ContentHash:  "hash-1",
 		CreatedAt:    baseTime,
+		Outcome:      port.OutcomeComplete,
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
 	}
@@ -319,7 +470,7 @@ func TestListItemsByAnnotation_FoldsHistory(t *testing.T) {
 	// run1: A と B を作る。
 	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
 		BoardID: "board-1", AnnotationID: "annot-1",
-		ContentHash: "hash-1", CreatedAt: baseTime,
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{
 			item("e1", "PVTI_a", port.KindEpic, nil),
 			item("i1", "PVTI_b", port.KindIssue, ptr("e1")),
@@ -336,7 +487,7 @@ func TestListItemsByAnnotation_FoldsHistory(t *testing.T) {
 
 	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
 		BoardID: "board-1", AnnotationID: "annot-1",
-		ContentHash: "hash-2", CreatedAt: baseTime,
+		ContentHash: "hash-2", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{
 			updated,
 			item("x2", "PVTI_c", port.KindIssue, ptr("x1")),
@@ -404,11 +555,11 @@ func TestListItemsByAnnotation_ScopedToAnnotation(t *testing.T) {
 	repo := sqlite.NewMappingRepository(db)
 
 	for _, run := range []port.SyncRun{
-		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime,
+		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 			Items: []port.SyncItem{item("e1", "PVTI_mine", port.KindEpic, nil)}},
-		{BoardID: "board-1", AnnotationID: "annot-2", ContentHash: "h", CreatedAt: baseTime,
+		{BoardID: "board-1", AnnotationID: "annot-2", ContentHash: "h", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 			Items: []port.SyncItem{item("e1", "PVTI_other_annot", port.KindEpic, nil)}},
-		{BoardID: "board-2", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime,
+		{BoardID: "board-2", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 			Items: []port.SyncItem{item("e1", "PVTI_other_board", port.KindEpic, nil)}},
 	} {
 		if _, err := repo.SaveRun(t.Context(), run); err != nil {
@@ -448,20 +599,20 @@ func TestListItemsByBoard_AgreesWithListItemsByAnnotation(t *testing.T) {
 	updated.Action = port.ActionUpdated
 
 	for _, run := range []port.SyncRun{
-		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h1", CreatedAt: baseTime,
+		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 			Items: []port.SyncItem{
 				item("e1", "PVTI_a", port.KindEpic, nil),
 				item("i1", "PVTI_b", port.KindIssue, ptr("e1")),
 			}},
 		// PVTI_a を更新し、PVTI_c を足す。PVTI_b は触らない。
-		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h2", CreatedAt: baseTime,
+		{BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "h2", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 			Items: []port.SyncItem{
 				updated,
 				item("x2", "PVTI_c", port.KindIssue, ptr("x1")),
 			}},
-		{BoardID: "board-1", AnnotationID: "annot-2", ContentHash: "h", CreatedAt: baseTime,
+		{BoardID: "board-1", AnnotationID: "annot-2", ContentHash: "h", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 			Items: []port.SyncItem{item("e1", "PVTI_d", port.KindEpic, nil)}},
-		{BoardID: "board-2", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime,
+		{BoardID: "board-2", AnnotationID: "annot-1", ContentHash: "h", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 			Items: []port.SyncItem{item("e1", "PVTI_other_board", port.KindEpic, nil)}},
 	} {
 		if _, err := repo.SaveRun(t.Context(), run); err != nil {
@@ -512,7 +663,7 @@ func TestSaveRun_KeepsHistory(t *testing.T) {
 
 	first, err := repo.SaveRun(t.Context(), port.SyncRun{
 		BoardID: "board-1", AnnotationID: "annot-1",
-		ContentHash: "hash-1", CreatedAt: baseTime,
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{
 			item("e1", "PVTI_old_e1", port.KindEpic, nil),
 			item("i1", "PVTI_old_i1", port.KindIssue, ptr("e1")),
@@ -527,7 +678,7 @@ func TestSaveRun_KeepsHistory(t *testing.T) {
 	// id で行われていることを確かめるため。
 	second, err := repo.SaveRun(t.Context(), port.SyncRun{
 		BoardID: "board-1", AnnotationID: "annot-1",
-		ContentHash: "hash-2", CreatedAt: baseTime,
+		ContentHash: "hash-2", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{
 			item("e1", "PVTI_new_e1", port.KindEpic, nil),
 			item("i3", "PVTI_new_i3", port.KindIssue, ptr("e1")),
@@ -576,7 +727,7 @@ func TestSaveRun_RejectsDuplicateLocalID(t *testing.T) {
 
 	_, err := repo.SaveRun(t.Context(), port.SyncRun{
 		BoardID: "board-1", AnnotationID: "annot-1",
-		ContentHash: "hash-1", CreatedAt: baseTime,
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{
 			item("e1", "PVTI_a", port.KindEpic, nil),
 			item("e1", "PVTI_b", port.KindIssue, nil), // local_id が重複
@@ -599,7 +750,7 @@ func TestSaveRun_RejectsInvalidKind(t *testing.T) {
 
 	_, err := repo.SaveRun(t.Context(), port.SyncRun{
 		BoardID: "board-1", AnnotationID: "annot-1",
-		ContentHash: "hash-1", CreatedAt: baseTime,
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{
 			item("e1", "PVTI_a", port.KindEpic, nil),
 			item("p1", "PVTI_b", port.ItemKind("project"), nil), // ADR 0006 で不採用
@@ -621,7 +772,7 @@ func TestSaveRun_RejectsUnknownBoard(t *testing.T) {
 
 	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
 		BoardID: "no-such-board", AnnotationID: "annot-1",
-		ContentHash: "hash-1", CreatedAt: baseTime,
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 	}); err == nil {
 		t.Fatal("SaveRun: want foreign key error, got nil")
 	}
@@ -683,7 +834,7 @@ func TestListLatestRunsByBoard(t *testing.T) {
 		t.Helper()
 		if _, err := repo.SaveRun(t.Context(), port.SyncRun{
 			BoardID: boardID, AnnotationID: annotationID,
-			ContentHash: hash, CreatedAt: baseTime, Items: items,
+			ContentHash: hash, CreatedAt: baseTime, Items: items, Outcome: port.OutcomeComplete,
 		}); err != nil {
 			t.Fatalf("SaveRun(%s/%s): %v", boardID, annotationID, err)
 		}
@@ -731,7 +882,7 @@ func TestListRunsByAnnotation_NewestFirst(t *testing.T) {
 		if _, err := repo.SaveRun(t.Context(), port.SyncRun{
 			BoardID: "board-1", AnnotationID: annotationID,
 			// 同じ時刻で積む。並びが時刻に依存していれば、ここで崩れる。
-			ContentHash: hash, CreatedAt: baseTime, Items: items,
+			ContentHash: hash, CreatedAt: baseTime, Items: items, Outcome: port.OutcomeComplete,
 		}); err != nil {
 			t.Fatalf("SaveRun(%s): %v", annotationID, err)
 		}
@@ -772,9 +923,9 @@ func TestListRunsByAnnotation_ScopedToAnnotationAndBoard(t *testing.T) {
 	repo := sqlite.NewMappingRepository(db)
 
 	for _, run := range []port.SyncRun{
-		{BoardID: "board-1", AnnotationID: "annot-a", ContentHash: "keep", CreatedAt: baseTime},
-		{BoardID: "board-1", AnnotationID: "annot-b", ContentHash: "other-annot", CreatedAt: baseTime},
-		{BoardID: "board-2", AnnotationID: "annot-a", ContentHash: "other-board", CreatedAt: baseTime},
+		{BoardID: "board-1", AnnotationID: "annot-a", ContentHash: "keep", CreatedAt: baseTime, Outcome: port.OutcomeComplete},
+		{BoardID: "board-1", AnnotationID: "annot-b", ContentHash: "other-annot", CreatedAt: baseTime, Outcome: port.OutcomeComplete},
+		{BoardID: "board-2", AnnotationID: "annot-a", ContentHash: "other-board", CreatedAt: baseTime, Outcome: port.OutcomeComplete},
 	} {
 		if _, err := repo.SaveRun(t.Context(), run); err != nil {
 			t.Fatalf("SaveRun: %v", err)
@@ -802,7 +953,7 @@ func TestListRunsByAnnotation_LimitKeepsNewest(t *testing.T) {
 	for _, hash := range []string{"h1", "h2", "h3"} {
 		if _, err := repo.SaveRun(t.Context(), port.SyncRun{
 			BoardID: "board-1", AnnotationID: "annot-a",
-			ContentHash: hash, CreatedAt: baseTime,
+			ContentHash: hash, CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 		}); err != nil {
 			t.Fatalf("SaveRun: %v", err)
 		}
@@ -863,7 +1014,7 @@ func TestDeleteBoard_CascadesToRunsItemsAndMembers(t *testing.T) {
 
 	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
 		BoardID: "board-1", AnnotationID: "annot-1",
-		ContentHash: "hash-1", CreatedAt: baseTime,
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{item("e1", "PVTI_1", port.KindEpic, nil)},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -898,7 +1049,7 @@ func TestSaveRun_AllowsSameItemIDAcrossRuns(t *testing.T) {
 	for i := range 2 {
 		if _, err := repo.SaveRun(t.Context(), port.SyncRun{
 			BoardID: "board-1", AnnotationID: "annot-1",
-			ContentHash: "hash", CreatedAt: baseTime,
+			ContentHash: "hash", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
 			Items: []port.SyncItem{item("e1", "PVTI_same", port.KindEpic, nil)},
 		}); err != nil {
 			t.Fatalf("SaveRun(%d 回目): %v", i+1, err)

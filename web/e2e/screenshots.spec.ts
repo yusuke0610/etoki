@@ -5,6 +5,7 @@ import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/boar
 import {
   ANNOTATION_IDS,
   BOARD_ID,
+  annotations,
   baseMock,
   board,
   interpretation,
@@ -567,6 +568,49 @@ test.describe("スクリーンショット", () => {
     await card.getByRole("button", { name: "履歴を読み込む" }).click();
     await card.locator(".run-history").getByText("再設定メールを送る").waitFor();
     await shot(page, "25-run-history");
+  });
+
+  // 途中で失敗した run（ADR 0043）。一覧の注意書きと履歴の中の帯が二重に
+  // 見えていないか、理由が畳まれたままかを画像で見る。
+  test("途中で失敗した run を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.annotations[BOARD_ID] = annotations().map((a) =>
+      a.id === ANNOTATION_IDS.created ? { ...a, lastRunOutcome: "incomplete" } : a,
+    );
+    mock.runs = {
+      [ANNOTATION_IDS.created]: {
+        status: 200,
+        body: [
+          {
+            id: 1,
+            createdAt: "2026-08-04T12:00:00Z",
+            outcome: "incomplete",
+            error: 'create "再設定メールを送る": github graphql: rate limited',
+            items: [
+              {
+                itemId: "PVTI_epic",
+                kind: "epic",
+                title: "パスワード再設定",
+                body: "忘れたときの導線をまとめる",
+                localId: "e1",
+                action: "created",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await card.getByText("実行の履歴").click();
+    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+    await card.locator(".run-history .error").waitFor();
+    await shot(page, "27-run-incomplete");
   });
 
   // 名前を変えている最中。見出しが入力に変わるので、押し間違いで名前が

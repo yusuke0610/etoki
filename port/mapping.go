@@ -229,6 +229,31 @@ type SyncItem struct {
 	CreatedAt time.Time
 }
 
+// RunOutcome はその run が最後まで進んだかどうか（ADR 0043）。
+type RunOutcome string
+
+// RunOutcome の取りうる値。
+const (
+	// OutcomeUnknown は記録していなかった頃の run。**「成功した」ではない。**
+	//
+	// ゼロ値。この項目を足す前にも途中失敗は起きていたので、読む側は
+	// OutcomeComplete と同じに扱ってはいけない。
+	OutcomeUnknown RunOutcome = ""
+	// OutcomeComplete は解釈にあったものを最後まで作りきった run。
+	OutcomeComplete RunOutcome = "complete"
+	// OutcomeIncomplete は途中で失敗した run。作れたぶんは Items に入る。
+	OutcomeIncomplete RunOutcome = "incomplete"
+)
+
+// Valid は o が記録として書ける値かどうかを返す。
+//
+// **OutcomeUnknown は false。** 読むときには現れるが、これから保存する run は
+// 必ずどちらかに決まっている。ゼロ値を通すと、書き忘れが「記録していない
+// 古い run」として静かに混ざる。
+func (o RunOutcome) Valid() bool {
+	return o == OutcomeComplete || o == OutcomeIncomplete
+}
+
 // SyncRun は 1 つの注釈に対する 1 回分の issue 化実行。
 //
 // 再実行しても過去の run は残す。GitHub 側に残っている draft issue を
@@ -247,6 +272,16 @@ type SyncRun struct {
 	ContentHash string
 	// CreatedAt は実行時刻。
 	CreatedAt time.Time
+	// Outcome は最後まで進んだかどうか（ADR 0043）。
+	//
+	// 記録していなかった頃の run では OutcomeUnknown。**成功として扱わない。**
+	Outcome RunOutcome
+	// Error は途中で失敗した理由。完走した run と、記録していなかった頃の
+	// run では空。
+	//
+	// GitHub が返した文字列をそのまま持つ。**利用者向けの文言ではなく手掛かり**
+	// なので、画面に出すときは畳む（ADR 0034）。
+	Error string
 	// Items はこの実行で作成した draft issue。
 	Items []SyncItem
 }
@@ -345,6 +380,11 @@ type BoardRepository interface {
 type MappingRepository interface {
 	// SaveRun は run とその Items を 1 トランザクションで保存し、発番された
 	// run の ID を返す。途中で失敗した場合は run ごと保存されない。
+	//
+	// **Outcome は必須**（`Valid()` が真であること）。Error は
+	// OutcomeIncomplete のときだけ入れる。どちらも満たさなければ誤りとして
+	// 弾く。ゼロ値を通すと、書き忘れが「記録していなかった頃の run」に
+	// 化ける（ADR 0043）。
 	SaveRun(ctx context.Context, run SyncRun) (int64, error)
 	// FindLatestRun は注釈の最新の run を Items 込みで返す。
 	// 一度も実行されていなければ (nil, nil) を返す。

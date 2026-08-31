@@ -321,6 +321,21 @@ export function AnnotationPanel({
                   )}
 
                   {/*
+                    前回実行が途中で失敗したことは、履歴を開かなくても見える
+                    ところに出す（ADR 0043）。**状態（3 状態）は変えない。**
+                    作れたぶんは記録するので created のままであり、そこに件数
+                    以外の手掛かりが無いのが問題だった。
+
+                    **理由はここには出さない。** 手掛かりの本文は履歴が持つ。
+                  */}
+                  {a.lastRunOutcome === "incomplete" && (
+                    <p className="hint">
+                      前回の実行は途中で失敗しました。作れたところまでは GitHub
+                      側に残っています。
+                    </p>
+                  )}
+
+                  {/*
                     履歴は一度でも実行した注釈にだけ出す。**未実行の注釈にも
                     出すと、常に空の枠が並ぶ。** lastSyncedAt があることと
                     run が 1 件以上あることは同じ（最新 run から来る）。
@@ -557,6 +572,20 @@ function RunHistory({
         {state.runs.map((run) => (
           <li key={run.id}>
             <span className="hint">{formatRunTimestamp(run.createdAt)}</span>
+            {/*
+              途中で失敗した run はそれと分かる形にする（ADR 0043）。件数だけを
+              並べると、途中で止まった run と「もともとその件数だった run」が
+              同じに見え、再実行すべきかどうかを決める材料が無い。
+
+              **outcome が無い run には何も出さない。** 記録していなかった頃の
+              run であり、成功したとは言えない。
+            */}
+            {run.outcome === "incomplete" && (
+              <ErrorNotice
+                failure={partialCreationFailure(partialSummary(run.items), run.error)}
+                live={false}
+              />
+            )}
             {/*
               その 1 回で何をしたかを出す。**畳んだ結果ではない**ので、
               触らなかった item はここには現れない（ADR 0026）。
