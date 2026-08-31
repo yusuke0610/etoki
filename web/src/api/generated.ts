@@ -1199,7 +1199,9 @@ export interface components {
             headers: {
                 [name: string]: unknown;
             };
-            content?: never;
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
         };
         /**
          * @description その機能に必要な設定がされていない。URL の誤りではないので 404 に

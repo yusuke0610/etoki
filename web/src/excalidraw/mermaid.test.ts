@@ -123,6 +123,22 @@ describe("mermaidToElements", () => {
     expect(got.detail).toContain("image");
   });
 
+  // **詰め替えも投げる。** 骨格が変換器の求める形になっていないと
+  // `convertToExcalidrawElements` が落ちる。ここが値で返らないと、この関数
+  // だけが「例外ではなく値で返す」約束を破り、`placeDraft` は失敗を見せない
+  // まま終わる（#108 の指摘）。
+  it("詰め替えが投げても値で返す", async () => {
+    // ラベルだけの text は変換器が読めない骨格。mermaid は読めているので
+    // 構文の問題ではない。
+    const got = await mermaidToElements("なんでもよい", returning([{ type: "text" }]));
+
+    expect(got.ok).toBe(false);
+    if (got.ok) return;
+    // 投げ直さない。直すべき構文が無く、同じ骨格が返るとしか言えない。
+    expect(got.reason).toBe("unsupported");
+    expect(got.detail).not.toBe("");
+  });
+
   // etoki は frame を自前生成しない。変換器が返すようになったら、注釈にできる
   // frame を etoki が配ったことになるので、そこで止める。
   it("frame が混ざっていたら置かない", async () => {

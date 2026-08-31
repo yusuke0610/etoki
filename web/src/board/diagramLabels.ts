@@ -19,15 +19,13 @@ export const DIAGRAM_KIND_LABELS: Record<DiagramKind, string> = {
 };
 
 /**
- * 選択肢に並べる順。
+ * 選択肢に並べる順。**表そのものの並び。**
  *
- * `Object.keys` に任せない。並びが型の定義順に依存すると、契約の順序を
- * 変えたときに画面の並びが黙って変わる。
+ * 別の配列で持たない。`Record` は網羅を `tsc` が見るが、配列は見ないので、
+ * 契約に種類を足したときに選択肢から黙って抜ける。読む側が
+ * `DIAGRAM_KIND_LABELS` を引く形にしておけば、抜けようがない
+ * （`AnnotationPanel` が `GRANULARITY_LABEL` を引くのと同じ形）。
  */
-export const DIAGRAM_KINDS: DiagramKind[] = [
-  "todo",
-  "mindmap",
-  "sequence",
-  "er",
-  "architecture",
-];
+export function diagramKinds(): DiagramKind[] {
+  return Object.keys(DIAGRAM_KIND_LABELS) as DiagramKind[];
+}

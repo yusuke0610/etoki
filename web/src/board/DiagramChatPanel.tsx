@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { DiagramKind } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
 import { canSend, turnsRemaining, type DiagramChat } from "./diagramChat";
-import { DIAGRAM_KIND_LABELS, DIAGRAM_KINDS } from "./diagramLabels";
+import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 
 /**
  * 「LLM が未設定」の説明文の id。
@@ -100,7 +100,7 @@ export function DiagramChatPanel({
           disabled={generating}
           onChange={(e) => onChangeKind(e.target.value as DiagramKind)}
         >
-          {DIAGRAM_KINDS.map((kind) => (
+          {diagramKinds().map((kind) => (
             <option key={kind} value={kind}>
               {DIAGRAM_KIND_LABELS[kind]}
             </option>

@@ -104,14 +104,25 @@ export async function mermaidToElements(
     };
   }
 
-  return {
-    ok: true,
-    // 骨格から要素への詰め替えはライブラリに任せる。ラベルの入れ子や矢印の
-    // 結びつきを自前で組み立てると、壊れたシーンを作る側に回る。
-    elements: convertToExcalidrawElements(
-      skeletons as never[],
-    ) as unknown as SceneElement[],
-  };
+  try {
+    return {
+      ok: true,
+      // 骨格から要素への詰め替えはライブラリに任せる。ラベルの入れ子や矢印の
+      // 結びつきを自前で組み立てると、壊れたシーンを作る側に回る。
+      elements: convertToExcalidrawElements(
+        skeletons as never[],
+      ) as unknown as SceneElement[],
+    };
+  } catch (err) {
+    // **詰め替えも投げる。** 骨格が変換器の求める形になっていないと
+    // `convertToExcalidrawElements` が落ちる。ここを囲まないと、この関数だけが
+    // 「例外ではなく値で返す」という約束を破り、呼び出し側（`placeDraft`）は
+    // 失敗を見せないまま終わる。
+    //
+    // **投げ直さない。** mermaid は読めているので、直すべき構文が無い。同じ
+    // 種類で頼み直しても同じ骨格が返るとしか言えず、課金だけが増える。
+    return { ok: false, reason: "unsupported", detail: messageOf(err) };
+  }
 }
 
 /** 例外から投げ直しに渡せる文字列を取り出す。 */

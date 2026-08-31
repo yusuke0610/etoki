@@ -741,6 +741,9 @@ type UserID = string
 // BadRequest 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type BadRequest = ErrorResponse
 
+// DiagramChatTooLong 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type DiagramChatTooLong = ErrorResponse
+
 // Forbidden 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type Forbidden = ErrorResponse
 

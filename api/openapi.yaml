@@ -1065,6 +1065,10 @@ components:
 
         400 ではないのは大きさだから。送られた内容は正しく、打ち手が「送った
         内容を直す」ではなく「会話をやり直す」になる（SceneTooLarge と同じ）。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
 
     NotConfigured:
       description: |
