@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -54,11 +55,23 @@ const maxDiagramBody = usecase.MaxDiagramChatBytes*6 + 4<<10
 //
 // **値の検証はしない。** 種類も長さもユースケース層が見る。ハンドラにも置くと、
 // API を通らない経路で抜ける（判定は 1 箇所）。
+//
+// 歯止めに引っかかったボディだけは別で、400 ではなく 413 に写す。**同じ
+// 「積み上がりすぎた会話」が、ボディの大きさしだいで 400 と 413 に割れない
+// ようにする**（bindSceneBody と同じ形）。写し替えの表は errors.go にあるので、
+// ここは sentinel を選ぶだけ。
 func (h *handlers) bindDiagramRequest(c *gin.Context) (usecase.DiagramRequest, bool) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDiagramBody)
 
 	var body apitypes.GenerateDiagramRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
+				usecase.ErrDiagramChatTooLong, maxDiagramBody))
+			return usecase.DiagramRequest{}, false
+		}
+
 		h.badRequest(c, err)
 		return usecase.DiagramRequest{}, false
 	}

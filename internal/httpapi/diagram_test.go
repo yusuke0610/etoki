@@ -217,6 +217,33 @@ func TestGenerateDiagramDraft_ChatTooLong(t *testing.T) {
 	}
 }
 
+// ボディの読み込みにも歯止めがある。**歯止めに当たった側も 413 で返す。**
+// 同じ「積み上がりすぎた会話」が、ボディの大きさしだいで 400 と 413 に割れると、
+// 画面が同じ原因を 2 通りに案内することになる（ADR 0038 と同じ切り方）。
+//
+// このテストが落ちるのは、歯止めに当たったボディを 400 に写す実装にしたとき。
+func TestGenerateDiagramDraft_RejectsOversizedBody(t *testing.T) {
+	t.Parallel()
+
+	llm := &stubLLM{text: validDiagram}
+	r := newDiagramRouter(t, llm)
+	id := createBoard(t, r, "設計会")
+
+	// 歯止めは上限の 6 倍に取ってある（エスケープで膨らむため）。7 倍を送れば、
+	// エスケープの要らない文字で埋めても必ず当たる。
+	rec := do(t, r, http.MethodPost, diagramPath(id),
+		diagramBody(strings.Repeat("a", usecase.MaxDiagramChatBytes*7)))
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (%s)", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeDiagramChatTooLong {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeDiagramChatTooLong)
+	}
+	if llm.calls != 0 {
+		t.Error("歯止めに当たったボディで LLM を呼んでいる")
+	}
+}
+
 // 読み込みの歯止めは、正本の上限をエスケープの最悪値で割り増して置く。
 // **上限ちょうどの会話が歯止め側で落ちてはならない**（ADR 0038 と同じ形）。
 // 落ちると、減らす必要のないものを減らせと言うことになる。
