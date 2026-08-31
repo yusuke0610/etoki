@@ -188,7 +188,7 @@ body {
 }
 
 .hint {
-  color: #777;
+  color: #6b6b6b;
   font-size: 12px;
   line-height: 1.6;
 }
@@ -233,7 +233,7 @@ body {
 }
 
 .annotation-name:disabled {
-  color: #777;
+  color: #6b6b6b;
   cursor: default;
 }
 
@@ -269,7 +269,7 @@ body {
 
 .kind {
   font-size: 11px;
-  color: #777;
+  color: #6b6b6b;
 }
 
 /*
@@ -279,7 +279,7 @@ body {
  */
 .item-body > summary {
   font-size: 11px;
-  color: #777;
+  color: #6b6b6b;
   cursor: pointer;
 }
 
