@@ -1,0 +1,147 @@
+{
+  "rule": "type === \"frame\" かつ customData.etoki をメタデータとして読める形で持ち、削除済みでない",
+  "why": "この判定は Go（internal/domain/scene.go）と TypeScript（web/src/excalidraw/annotation.ts）の 2 箇所にある。構造上まとめられないので、判定対象をここに置いて両方から読ませる。片方だけ規則を変えると、この一覧を通したテストが落ちる。",
+  "cases": [
+    {
+      "name": "customData.etoki を持つ frame は注釈",
+      "isAnnotation": true,
+      "element": {
+        "id": "a1",
+        "type": "frame",
+        "name": "決済まわり",
+        "customData": {
+          "etoki": {
+            "granularity": "epic"
+          }
+        }
+      }
+    },
+    {
+      "name": "粒度が空でも注釈。指定なしは正当な状態",
+      "isAnnotation": true,
+      "element": {
+        "id": "a2",
+        "type": "frame",
+        "name": "",
+        "customData": {
+          "etoki": {
+            "granularity": ""
+          }
+        }
+      }
+    },
+    {
+      "name": "customData を持たない frame は注釈ではない。ブレスト中にユーザーが使った frame",
+      "isAnnotation": false,
+      "element": {
+        "id": "b1",
+        "type": "frame",
+        "name": "ただの枠"
+      }
+    },
+    {
+      "name": "customData はあるが etoki が無い frame は注釈ではない",
+      "isAnnotation": false,
+      "element": {
+        "id": "b2",
+        "type": "frame",
+        "customData": {
+          "other": {
+            "granularity": "epic"
+          }
+        }
+      }
+    },
+    {
+      "name": "customData.etoki が null の frame は注釈ではない。キーの有無だけを見ると食い違う",
+      "isAnnotation": false,
+      "element": {
+        "id": "b3",
+        "type": "frame",
+        "customData": {
+          "etoki": null
+        }
+      }
+    },
+    {
+      "name": "customData.etoki が文字列の frame は注釈ではない。共有領域なので他のツールの値が来うる",
+      "isAnnotation": false,
+      "element": {
+        "id": "b7",
+        "type": "frame",
+        "customData": {
+          "etoki": "x"
+        }
+      }
+    },
+    {
+      "name": "customData.etoki が数値の frame は注釈ではない。共有領域なので他のツールの値が来うる",
+      "isAnnotation": false,
+      "element": {
+        "id": "b8",
+        "type": "frame",
+        "customData": {
+          "etoki": 5
+        }
+      }
+    },
+    {
+      "name": "customData.etoki が真偽値の frame は注釈ではない。共有領域なので他のツールの値が来うる",
+      "isAnnotation": false,
+      "element": {
+        "id": "b9",
+        "type": "frame",
+        "customData": {
+          "etoki": true
+        }
+      }
+    },
+    {
+      "name": "customData.etoki が配列の frame は注釈ではない。共有領域なので他のツールの値が来うる",
+      "isAnnotation": false,
+      "element": {
+        "id": "b10",
+        "type": "frame",
+        "customData": {
+          "etoki": []
+        }
+      }
+    },
+    {
+      "name": "frame でなければ、etoki を持っていても注釈ではない",
+      "isAnnotation": false,
+      "element": {
+        "id": "b4",
+        "type": "rectangle",
+        "customData": {
+          "etoki": {
+            "granularity": "issue"
+          }
+        }
+      }
+    },
+    {
+      "name": "テキスト要素は注釈ではない",
+      "isAnnotation": false,
+      "element": {
+        "id": "b5",
+        "type": "text",
+        "text": "決済"
+      }
+    },
+    {
+      "name": "削除済みの frame は注釈として扱わない",
+      "isAnnotation": false,
+      "element": {
+        "id": "b6",
+        "type": "frame",
+        "isDeleted": true,
+        "customData": {
+          "etoki": {
+            "granularity": "epic"
+          }
+        }
+      }
+    }
+  ]
+}
