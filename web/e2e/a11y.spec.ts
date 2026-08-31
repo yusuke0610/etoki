@@ -180,6 +180,24 @@ test.describe("axe（etoki が書いた DOM）", () => {
     await expectNoAxeViolations(page);
   });
 
+  // 図のドラフトのチャットは、キャンバスの左に開く独立した領域（ADR 0041）。
+  // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
+  // 生成結果を出したところまで開けて、`.diagram-mermaid` と
+  // 「ここまでのやりとり」まで含めて見る。
+  test("図のドラフトを生成した状態", async ({ page }) => {
+    await installApi(page, baseMock());
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+    await page.locator(".diagram-mermaid").waitFor();
+
+    await expectNoAxeViolations(page);
+  });
+
   // 解釈結果は画面の中でいちばん要素が多い。作る前に読ませる場所なので
   // （ADR 0024）、読めないものが混じっていないかをここで見る。
   test("解釈結果を出した状態", async ({ page }) => {
