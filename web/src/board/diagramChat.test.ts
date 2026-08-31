@@ -8,7 +8,9 @@ import {
   completeTurn,
   conversionRetryPrompt,
   failTurn,
+  historyOf,
   startChat,
+  turnLabel,
   turnsRemaining,
 } from "./diagramChat";
 
@@ -27,7 +29,7 @@ describe("会話を積む", () => {
     chat = completeTurn(chat, draft("flowchart TD\n  A --> B"));
 
     expect(chat.turns).toEqual([
-      { prompt: "注文の流れ", mermaid: "flowchart TD\n  A --> B" },
+      { prompt: "注文の流れ", mermaid: "flowchart TD\n  A --> B", internal: false },
     ]);
     expect(chat.pending).toBeNull();
   });
@@ -61,7 +63,7 @@ describe("会話を積む", () => {
     chat = beginTurn(chat, "2 回目");
 
     expect(chat.failure).toBeNull();
-    expect(chat.pending).toBe("2 回目");
+    expect(chat.pending?.prompt).toBe("2 回目");
   });
 
   // 送っていない指示が会話に混ざらないこと。世代の照合をすり抜けた応答が
@@ -129,6 +131,62 @@ describe("turnsRemaining", () => {
 
   it("まだ生成していなければ分からない", () => {
     expect(turnsRemaining(startChat("todo"))).toBeNull();
+  });
+});
+
+// 投げ直しの文言は etoki が組み立てたもので、変換器の英語のメッセージを含む。
+// **利用者の指示と同じ列で扱うと、書いた覚えのない英文が自分の指示として出る。**
+describe("内部の投げ直しを見分ける", () => {
+  const retry = (chat = startChat("todo")) =>
+    completeTurn(
+      beginTurn(chat, conversionRetryPrompt("Parse error on line 2"), true),
+      draft("flowchart TD\n  A --> B"),
+    );
+
+  it("積んだ往復に印が残る", () => {
+    const chat = retry();
+
+    expect(chat.turns[0]?.internal).toBe(true);
+  });
+
+  it("利用者が打った指示には印を付けない", () => {
+    const chat = completeTurn(
+      beginTurn(startChat("todo"), "注文の流れ"),
+      draft("flowchart TD\n  A --> B"),
+    );
+
+    expect(chat.turns[0]?.internal).toBe(false);
+  });
+
+  // 変換器のメッセージは画面に出さない（`web/CLAUDE.md`）。
+  it("画面には固定文を出す", () => {
+    const chat = retry();
+    const label = turnLabel(chat.turns[0]!);
+
+    expect(label).not.toContain("Parse error on line 2");
+    expect(label).not.toBe(chat.turns[0]!.prompt);
+  });
+
+  it("利用者の指示はそのまま出す", () => {
+    const chat = completeTurn(
+      beginTurn(startChat("todo"), "注文の流れ"),
+      draft("flowchart TD\n  A --> B"),
+    );
+
+    expect(turnLabel(chat.turns[0]!)).toBe("注文の流れ");
+  });
+
+  // 印は画面のためだけにある。契約にあるのは prompt と mermaid の 2 つだけ
+  // （ADR 0011）。載せたまま送ると、契約に無いキーが混ざる。
+  it("サーバーには印を送らない。文言は投げ直しのものを送る", () => {
+    const chat = retry();
+
+    expect(historyOf(chat)).toEqual([
+      {
+        prompt: conversionRetryPrompt("Parse error on line 2"),
+        mermaid: "flowchart TD\n  A --> B",
+      },
+    ]);
   });
 });
 

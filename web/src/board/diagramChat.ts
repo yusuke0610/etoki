@@ -2,6 +2,23 @@ import type { Failure } from "../api/errorMessage";
 import type { DiagramDraft, DiagramKind, DiagramTurn } from "../api/types";
 
 /**
+ * 会話に積まれた 1 往復。
+ *
+ * `prompt` は**モデルに送った文言そのもの**。変換の投げ直し
+ * （`conversionRetryPrompt`）だけは利用者が書いたものではないので、`internal` で
+ * 印を付ける。**印は画面のためだけにある。** 投げ直しの文言には変換器の英語の
+ * メッセージが混ざるので、そのまま「ここまでのやりとり」に並べると、書いた
+ * 覚えのない英文が自分の指示として出る。
+ *
+ * **サーバーには印を送らない**（`historyOf` が落とす）。契約にあるのは
+ * `prompt` と `mermaid` の 2 つだけ（ADR 0011）。
+ */
+export type ChatTurn = DiagramTurn & { internal: boolean };
+
+/** 送信中の指示。内部の投げ直しかどうかは、積むときまで持ち越す。 */
+type PendingTurn = { prompt: string; internal: boolean };
+
+/**
  * 図のドラフトを作るチャットの状態。
  *
  * **フロントのメモリだけで持つ**（ADR 0041）。保存すると「誰の会話か」
@@ -18,9 +35,9 @@ export type DiagramChat = {
    * 失敗した往復は入れない。入れると、返ってこなかった指示を「返した図」
    * つきで送ることになる。
    */
-  turns: DiagramTurn[];
+  turns: ChatTurn[];
   /** 送信中の指示。null なら待っていない。 */
-  pending: string | null;
+  pending: PendingTurn | null;
   /** いちばん新しいドラフト。null ならまだ 1 つも生成していない。 */
   draft: DiagramDraft | null;
   /** 直前の失敗。次の送信で消える。 */
@@ -43,9 +60,18 @@ export function changeKind(chat: DiagramChat, kind: DiagramKind): DiagramChat {
   return startChat(kind);
 }
 
-/** 送信を始める。**失敗はここで消す。** 前の失敗が結果の隣に残らないように。 */
-export function beginTurn(chat: DiagramChat, prompt: string): DiagramChat {
-  return { ...chat, pending: prompt, failure: null };
+/**
+ * 送信を始める。**失敗はここで消す。** 前の失敗が結果の隣に残らないように。
+ *
+ * `internal` は変換の投げ直し（`conversionRetryPrompt`）だけが true。利用者が
+ * 打った指示と見分けるために、積むときまで持ち越す。
+ */
+export function beginTurn(
+  chat: DiagramChat,
+  prompt: string,
+  internal = false,
+): DiagramChat {
+  return { ...chat, pending: { prompt, internal }, failure: null };
 }
 
 /**
@@ -58,7 +84,14 @@ export function completeTurn(chat: DiagramChat, draft: DiagramDraft): DiagramCha
   const turns =
     chat.pending === null
       ? chat.turns
-      : [...chat.turns, { prompt: chat.pending, mermaid: draft.mermaid }];
+      : [
+          ...chat.turns,
+          {
+            prompt: chat.pending.prompt,
+            mermaid: draft.mermaid,
+            internal: chat.pending.internal,
+          },
+        ];
 
   return { ...chat, turns, pending: null, draft, failure: null };
 }
@@ -76,6 +109,28 @@ export function failTurn(chat: DiagramChat, failure: Failure): DiagramChat {
 /** 送信できるか。空白だけの指示は送らない（サーバーも 400 で弾く）。 */
 export function canSend(chat: DiagramChat, prompt: string): boolean {
   return chat.pending === null && prompt.trim() !== "";
+}
+
+/**
+ * サーバーに送るやりとり。**画面のための印は落とす。**
+ *
+ * 契約にあるのは `prompt` と `mermaid` の 2 つだけ（ADR 0011）。`internal` を
+ * 載せたまま送ると、契約に無いキーが混ざる。
+ */
+export function historyOf(chat: DiagramChat): DiagramTurn[] {
+  return chat.turns.map(({ prompt, mermaid }) => ({ prompt, mermaid }));
+}
+
+/**
+ * やりとりの一覧に出す文言。
+ *
+ * **内部の投げ直しは固定文に置き換える。** 中身は変換器が返した英語の
+ * メッセージを含んでおり、画面には出さない（`web/CLAUDE.md` の「例外の中身は
+ * 画面に出さない」）。行ごと消さないのは、往復を 1 つ使ったことが履歴から
+ * 消えると、残りの回数が勝手に減ったように見えるため。
+ */
+export function turnLabel(turn: ChatTurn): string {
+  return turn.internal ? "（図を置けなかったので、自動で直しを頼みました）" : turn.prompt;
 }
 
 /**

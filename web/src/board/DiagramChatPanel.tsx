@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import type { DiagramKind } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
-import { canSend, turnsRemaining, type DiagramChat } from "./diagramChat";
+import { canSend, turnLabel, turnsRemaining, type DiagramChat } from "./diagramChat";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 
 /**
@@ -184,7 +184,10 @@ export function DiagramChatPanel({
           <ol className="diagram-turns">
             {chat.turns.map((turn, i) => (
               // 並びは追記のみで、入れ替えも削除もしない。添字で足りる。
-              <li key={i}>{turn.prompt}</li>
+              //
+              // **送った文言をそのまま出さない。** 変換の投げ直しは etoki が
+              // 組み立てたもので、変換器の英語のメッセージを含む（`turnLabel`）。
+              <li key={i}>{turnLabel(turn)}</li>
             ))}
           </ol>
         </div>

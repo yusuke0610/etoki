@@ -53,6 +53,7 @@ import {
   completeTurn,
   conversionRetryPrompt,
   failTurn,
+  historyOf,
   startChat,
   type DiagramChat,
 } from "./diagramChat";
@@ -512,15 +513,16 @@ export function BoardPage({
    * 「保存してから」の制約が要らない（ADR 0041）。
    */
   const generateDiagram = useCallback(
-    async (prompt: string): Promise<boolean> => {
+    async (prompt: string, internal = false): Promise<boolean> => {
       const generation = diagramGenerations.start(DIAGRAM_KEY);
       // 送るのはいまの会話。**成立した往復だけがここに積まれている**ので、
       // 失敗した指示を「返した図」つきで送ることにはならない。
-      const { kind, turns } = chat;
-      setChat((prev) => beginTurn(prev, prompt));
+      const { kind } = chat;
+      const history = historyOf(chat);
+      setChat((prev) => beginTurn(prev, prompt, internal));
 
       try {
-        const draft = await boardsApi.generateDiagram(board.id, kind, prompt, turns);
+        const draft = await boardsApi.generateDiagram(board.id, kind, prompt, history);
         // 遅れて届いた応答を今の会話に混ぜない。種類を変えると会話ごと
         // 捨てるので、そのあとに古い図が積まれると土台が食い違う。
         if (!diagramGenerations.isCurrent(DIAGRAM_KEY, generation)) return false;
@@ -571,7 +573,9 @@ export function BoardPage({
     if (!converted.ok) {
       if (converted.reason === "syntax") {
         // 直せる失敗。会話の次の 1 往復にして投げ直す。
-        void generateDiagram(conversionRetryPrompt(converted.detail));
+        // **利用者が打った指示ではない**ので、そう印を付けて積む。画面には
+        // 固定文で出る（`turnLabel`）。
+        void generateDiagram(conversionRetryPrompt(converted.detail), true);
         return;
       }
       // 置ける形にならない種類だった。投げ直しても同じものが返るので、
