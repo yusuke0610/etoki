@@ -316,6 +316,8 @@ func (b *blockingMembers) UpdateName(context.Context, string, string, string) er
 	return nil
 }
 
+func (b *blockingMembers) Delete(context.Context, string, string) error { return nil }
+
 func (b *blockingMembers) UpdateScene(
 	context.Context, string, string, string, time.Time, time.Time,
 ) error {

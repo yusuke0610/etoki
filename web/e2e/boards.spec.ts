@@ -184,6 +184,75 @@ test.describe("ボード", () => {
     await expect(page.getByRole("button", { name: "名前を保存" })).toBeDisabled();
   });
 
+  // **押しただけでは消えない。** 削除は取り消せず、GitHub に作った draft issue も
+  // 消せないので、何が失われるのかを見せてから確認させる（ADR 0042、中核思想 3）。
+  test("削除は、GitHub 側に残るものを見せてから確認させる", async ({ page }) => {
+    const mock = baseMock();
+    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "ボードを削除" }).click();
+
+    // 件数と、GitHub 側が残ることの両方を出す。片方だけだと「消えるのか
+    // 残るのか」が読めない。
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText("draft issue が 3 件記録されています");
+    await expect(confirm).toContainText("GitHub 側の draft issue は削除されません");
+
+    // やめれば何も起きない。ボードは開いたまま。
+    await confirm.getByRole("button", { name: "やめる" }).click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
+    expect(mock.details[BOARD_ID]).toBeDefined();
+  });
+
+  test("削除すると一覧から消え、キャンバスが閉じる", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "削除する" }).click();
+
+    // 木は作成先でまとめて見せる（ADR 0019）。消したボードが残っていると、
+    // 開けない行が並ぶ。
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("左からボードを選ぶか、新しく作成してください。"),
+    ).toBeVisible();
+    expect(mock.details[BOARD_ID]).toBeUndefined();
+  });
+
+  // 引き直しに任せきりにしない。失敗すると一覧は削除前の値のまま残り、開くと
+  // 404 になる行が並ぶ。消えたことは 204 で確かめてあるので、外すのは推測では
+  // ない。
+  test("引き直しに失敗しても、消したボードは一覧に残らない", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    // 削除そのものは通し、そのあとの引き直しだけを落とす。
+    mock.boardsError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+
+    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "削除する" }).click();
+
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
+    ).toHaveCount(0);
+    // 引き直しに失敗したことは黙らない。一覧が古いままかもしれないと伝える。
+    await expect(page.getByRole("alert")).toContainText(
+      "ボード一覧を取得できませんでした",
+    );
+  });
+
   test("一覧の取得に失敗したらエラーを出し、閉じられる", async ({ page }) => {
     const mock = baseMock();
     mock.boardsError = {

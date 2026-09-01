@@ -163,6 +163,21 @@ type BoardAccess struct {
 	Role BoardRole `json:"role"`
 }
 
+// BoardDeletion ボードを削除したときに etoki から失われるもの（ADR 0042）。
+//
+// **GitHub 側で何が起きるかは含まれない。** etoki は draft issue を
+// 消さないので、GitHub にはそのまま残る。ここが答えるのは「辿れなく
+// なるのはどれだけか」という問いのほう。
+type BoardDeletion struct {
+	// RecordedItemCount そのボードから作成したと etoki が記録している draft issue の件数。
+	//
+	// 数え方は注釈のカードに出している「いま GitHub に在る N 件」と同じ
+	// 畳み込み（ADR 0026）。**GitHub 上でまだ在るかどうかは etoki には
+	// 分からない**（ADR 0007）ので、これは記録の件数であって現況では
+	// ない
+	RecordedItemCount int `json:"recordedItemCount"`
+}
+
 // BoardDetail defines model for BoardDetail.
 type BoardDetail struct {
 	CreatedAt time.Time `json:"createdAt"`

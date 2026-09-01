@@ -610,4 +610,20 @@ test.describe("スクリーンショット", () => {
     await page.getByText("未保存", { exact: true }).waitFor();
     await shot(page, "28-diagram-placed");
   });
+
+  // 削除の確認。**GitHub 側に何が残るのかが読める文言になっているか**を画像で
+  // 見る（ADR 0042）。件数と「残る」がどちらも出ていること。
+  test("削除の確認を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await page.getByRole("alertdialog").waitFor();
+    await shot(page, "29-delete-confirm");
+  });
 });

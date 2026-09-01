@@ -119,8 +119,9 @@ func (r *BoardRepository) UpdateScene(
 	}
 
 	// 0 行の理由は 2 つある。触れないボードなのか、版が古いのか。UPDATE は
-	// どちらかを返さないので、触れるかどうかだけを引き直して分ける。ボードを
-	// 消す経路が無いので、この 2 文の間に「触れたものが触れなくなる」は起きない。
+	// どちらかを返さないので、触れるかどうかだけを引き直して分ける。この 2 文の
+	// 間にボードが消される（Delete、ADR 0042）ことはありうるが、そのときは
+	// 「触れなくなった」が正しい答えなので、引き直しの結果をそのまま採ってよい。
 	ok, err := r.readable(ctx, actor, id)
 	if err != nil {
 		return err
@@ -147,6 +148,21 @@ func (r *BoardRepository) readable(ctx context.Context, actor, id string) (bool,
 		return false, fmt.Errorf("check access to board %s: %w", id, err)
 	}
 	return true, nil
+}
+
+// Delete はボードを消す。
+//
+// **メンバーであることを WHERE に入れる。** Find を通らずに直接 DELETE する
+// 経路なので、絞り忘れると他人のボードを消せる（ADR 0016）。**ロールは見ない。**
+// owner だけかはユースケース層が判断する（ADR 0017）。
+//
+// board_members / sync_runs / sync_items は外部キーの ON DELETE CASCADE で
+// 一緒に消える。**ここで消す順を書かない。** 書くと消える範囲の定義がスキーマと
+// Go の 2 箇所になり、テーブルを足したときに片方だけ古くなる。
+func (r *BoardRepository) Delete(ctx context.Context, actor, id string) error {
+	return r.exec(ctx, "board "+id,
+		`DELETE FROM boards WHERE id = ? AND `+memberExists,
+		id, actor)
 }
 
 // UpdateName は名前だけを更新する。
