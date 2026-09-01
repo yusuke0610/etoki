@@ -85,7 +85,8 @@ test.describe("共有", () => {
   });
 
   // ボードごと畳めるのは owner だけ（ADR 0042）。押せるのに 403 で断るより、
-  // 押せないことを見せるほうが状態として正しい。
+  // 押せないことを見せるほうが状態として正しい。**消したボタンの代わりに理由を
+  // 出す**（ADR 0017 / 0030）ので、無いことと理由が出ていることを両方見る。
   test("オーナー以外には削除の導線を出さない", async ({ page }) => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), role: "editor" };
@@ -95,6 +96,7 @@ test.describe("共有", () => {
     await openBoard(page, BOARD_NAME);
 
     await expect(page.getByRole("button", { name: "ボードを削除" })).toHaveCount(0);
+    await expect(page.getByText("ボードを削除できるのはオーナーだけです")).toBeVisible();
     // 改名は editor にも許す。並べて見ることで、消えているのが削除だけだと
     // 分かる。
     await expect(page.getByRole("button", { name: "名前を変更" })).toBeVisible();

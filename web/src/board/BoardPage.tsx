@@ -1151,8 +1151,13 @@ export function BoardPage({
             ボードごと畳むのは owner だけ（ADR 0042）。押せる人にだけ出すのは
             「作成先を変更」と同じ形。**押した時点では消さない。** 何が残るのかを
             引いてから確認を出す。
+
+            **消すなら理由を出す**（ADR 0017 / 0030）。権限で押せない操作は、
+            ボタンを黙って消さずに押せない理由のほうを見せる。disabled にせず
+            文だけにするのも「作成先を変更」と揃えている。ロールは開いている
+            あいだ変わらないので、押せる見込みの無いボタンを置く相手がいない。
           */}
-          {board.role === "owner" && (
+          {board.role === "owner" ? (
             <button
               type="button"
               className="danger"
@@ -1161,6 +1166,8 @@ export function BoardPage({
             >
               {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
             </button>
+          ) : (
+            <span className="hint">ボードを削除できるのはオーナーだけです</span>
           )}
         </div>
       </header>
