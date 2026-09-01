@@ -25,6 +25,7 @@ func TestGetCapabilities(t *testing.T) {
 			Annotations: usecase.NewAnnotationService(boards, mappings),
 			Interpretations: usecase.NewInterpretationService(
 				boards, mappings, &stubLLM{text: validInterpretation}),
+			Diagrams: usecase.NewDiagramService(boards, &stubLLM{text: validInterpretation}),
 			Creations: usecase.NewCreationService(
 				boards, mappings, gh, usecase.NewBoardLocks()),
 			Catalog: usecase.NewGitHubCatalogService(gh),
@@ -42,32 +43,52 @@ func TestGetCapabilities(t *testing.T) {
 		{
 			name: "全部そろっている",
 			drop: func(*httpapi.Deps) {},
-			want: apitypes.Capabilities{Interpretation: true, Creation: true, Sharing: true},
+			want: apitypes.Capabilities{
+				Interpretation: true, DiagramDraft: true, Creation: true, Sharing: true},
 		},
 		{
 			// README が言う「LLM を設定しなくても起動する」構成。ブレストと
 			// 保存は使えて、解釈だけができない（ADR 0008）。
 			name: "LLM が未設定",
+			drop: func(d *httpapi.Deps) { d.Interpretations, d.Diagrams = nil, nil },
+			want: apitypes.Capabilities{
+				Interpretation: false, DiagramDraft: false, Creation: true, Sharing: true},
+		},
+		{
+			// **解釈と生成は畳まない。** cmd/etoki は同じ LLM から両方を
+			// 組み立てるが、Deps は別々に受ける。片方を他方から推し量ると、
+			// 使えると案内したほうが 503 を返す組み合わせを作れる。
+			name: "解釈だけ組み立てられていない",
 			drop: func(d *httpapi.Deps) { d.Interpretations = nil },
-			want: apitypes.Capabilities{Interpretation: false, Creation: true, Sharing: true},
+			want: apitypes.Capabilities{
+				Interpretation: false, DiagramDraft: true, Creation: true, Sharing: true},
+		},
+		{
+			name: "生成だけ組み立てられていない",
+			drop: func(d *httpapi.Deps) { d.Diagrams = nil },
+			want: apitypes.Capabilities{
+				Interpretation: true, DiagramDraft: false, Creation: true, Sharing: true},
 		},
 		{
 			name: "GitHub が未設定",
 			drop: func(d *httpapi.Deps) { d.Creations, d.Catalog = nil, nil },
-			want: apitypes.Capabilities{Interpretation: true, Creation: false, Sharing: true},
+			want: apitypes.Capabilities{
+				Interpretation: true, DiagramDraft: true, Creation: false, Sharing: true},
 		},
 		{
 			// 作成先の候補だけ引けない配線は cmd/etoki には無いが、Deps は
 			// 別々に受ける。**片方でも欠けたら作れない**として返す。
 			name: "作成先の候補だけ引けない",
 			drop: func(d *httpapi.Deps) { d.Catalog = nil },
-			want: apitypes.Capabilities{Interpretation: true, Creation: false, Sharing: true},
+			want: apitypes.Capabilities{
+				Interpretation: true, DiagramDraft: true, Creation: false, Sharing: true},
 		},
 		{
 			// 認証を設定していない構成。共有する相手がいない（ADR 0016 / 0017）。
 			name: "共有が組み立てられていない",
 			drop: func(d *httpapi.Deps) { d.Members = nil },
-			want: apitypes.Capabilities{Interpretation: true, Creation: true, Sharing: false},
+			want: apitypes.Capabilities{
+				Interpretation: true, DiagramDraft: true, Creation: true, Sharing: false},
 		},
 		{
 			// Access は別の口（/boards/{id}/access）の材料で、共有の
@@ -75,7 +96,8 @@ func TestGetCapabilities(t *testing.T) {
 			// 使えないと案内したのに /members が成功する。**
 			name: "access だけ組み立てられていない",
 			drop: func(d *httpapi.Deps) { d.Access = nil },
-			want: apitypes.Capabilities{Interpretation: true, Creation: true, Sharing: true},
+			want: apitypes.Capabilities{
+				Interpretation: true, DiagramDraft: true, Creation: true, Sharing: true},
 		},
 	}
 
@@ -140,7 +162,7 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
 	}
 	caps := decode[apitypes.Capabilities](t, rec)
-	if caps.Interpretation || caps.Creation || caps.Sharing {
+	if caps.Interpretation || caps.DiagramDraft || caps.Creation || caps.Sharing {
 		t.Fatalf("素の構成なのに使えることになっている: %+v", caps)
 	}
 
@@ -153,6 +175,7 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 		code   apitypes.ErrorCode
 	}{
 		{http.MethodPost, interpretPath(id, "annot-1"), apitypes.ErrorCodeLlmNotConfigured},
+		{http.MethodPost, "/api/boards/" + id + "/diagram-draft", apitypes.ErrorCodeLlmNotConfigured},
 		{http.MethodGet, "/api/github/repositories", apitypes.ErrorCodeGithubNotConfigured},
 		{http.MethodGet, "/api/boards/" + id + "/members", apitypes.ErrorCodeSharingNotConfigured},
 	} {

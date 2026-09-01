@@ -2,6 +2,7 @@ import type {
   AnnotationStatus,
   BoardDetail,
   CreatedRun,
+  DiagramDraft,
   Interpretation,
   Project,
   Repository,
@@ -387,6 +388,20 @@ export function createdRun(): CreatedRun {
   };
 }
 
+/**
+ * 生成された図のドラフト（ADR 0041）。
+ *
+ * **変換できる mermaid にしてある。** 置ける形かどうかを決めるのは変換器なので、
+ * ここに置けないものを書くと、置く流れの spec が別の理由で落ちる。
+ */
+export function diagramDraft(): DiagramDraft {
+  return {
+    kind: "todo",
+    mermaid: "flowchart TD\n  A[受注] --> B[出荷]",
+    turnsRemaining: 9,
+  };
+}
+
 /** 素直に全部成功する状態。個別のテストが必要なところだけ書き換える。 */
 export function baseMock(): ApiMock {
   const detail = board();
@@ -397,13 +412,15 @@ export function baseMock(): ApiMock {
     interpret: { status: 200, body: interpretation() },
     interpretRequests: [],
     createRequests: [],
+    diagramDraft: { status: 200, body: diagramDraft() },
+    diagramRequests: [],
     createItems: { status: 201, body: createdRun() },
     // 既定は認証を設定していない構成。ログインの導線を見る spec だけが
     // 書き換える。
     // 既定は全部そろった構成。未設定の見せ方を確かめる spec だけが落とす。
     capabilities: {
       status: 200,
-      body: { interpretation: true, creation: true, sharing: true },
+      body: { interpretation: true, diagramDraft: true, creation: true, sharing: true },
     },
     session: { status: 200, body: { authRequired: false, authenticated: false } },
     login: { status: 200, body: { authorizeUrl: AUTHORIZE_URL } },

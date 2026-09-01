@@ -713,3 +713,62 @@ a.badge-target:hover {
 .run-history > summary {
   cursor: pointer;
 }
+
+/*
+ * 図のドラフトのチャット（ADR 0041）。
+ *
+ * **キャンバスの左に置き、覆わない。** 置いた図がどこに出るかを見ながら直す
+ * 道具なので、上に敷くと「置く」を押した結果が確かめられない。.panel を
+ * 共有しているので幅と余白は注釈パネルと揃い、境界線だけ左右を入れ替える。
+ */
+.diagram-chat {
+  border-left: none;
+  border-right: 1px solid #ddd;
+}
+
+.diagram-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.diagram-chat-header h2 {
+  margin: 0;
+}
+
+.diagram-chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diagram-chat-form textarea {
+  resize: vertical;
+  font: inherit;
+}
+
+/*
+ * 生成された mermaid。**そのまま見せる**（変換後の図を先に見せるには、置か
+ * ないままキャンバスに描く道具が要る）。長い行は折らずに横スクロールさせる。
+ * 折ると、mermaid の 1 行と折り返しの区別が付かなくなる。
+ */
+.diagram-mermaid {
+  margin: 0 0 8px;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.diagram-turns {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #555;
+}

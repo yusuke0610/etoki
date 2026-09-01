@@ -10,6 +10,8 @@ import type { Capabilities, ErrorCode } from "./api/types";
  */
 const REASON_CODE: Record<keyof Capabilities, ErrorCode> = {
   interpretation: "llm_not_configured",
+  // 解釈と同じ設定（LLM）だが、答えている問いが違うので別に持つ（ADR 0041）。
+  diagramDraft: "llm_not_configured",
   creation: "github_not_configured",
   sharing: "sharing_not_configured",
 };

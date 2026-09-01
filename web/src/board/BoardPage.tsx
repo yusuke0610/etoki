@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, boardsApi, githubApi } from "../api/boards";
 import {
   describeFailure,
+  diagramNotPlaceableFailure,
   sceneUnreadableFailure,
   targetProjectMissingFailure,
   type Failure,
@@ -13,6 +14,7 @@ import type {
   AnnotationStatus,
   BoardDetail,
   Capabilities,
+  DiagramKind,
   Granularity,
   Interpretation,
   ProjectAccess,
@@ -35,6 +37,7 @@ import {
 import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize, sceneBytes } from "../excalidraw/size";
+import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
 import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { AnnotationOverlay } from "./AnnotationOverlay";
@@ -43,6 +46,17 @@ import {
   type CreationState,
   type RunHistoryState,
 } from "./AnnotationPanel";
+import { DiagramChatPanel } from "./DiagramChatPanel";
+import {
+  beginTurn,
+  changeKind,
+  completeTurn,
+  conversionRetryPrompt,
+  failTurn,
+  historyOf,
+  startChat,
+  type DiagramChat,
+} from "./diagramChat";
 import { createGenerations } from "./generation";
 import {
   addInterpretation,
@@ -62,6 +76,14 @@ import { ROLE_LABELS } from "./roles";
  * 数えれば、表示が少し遅れるだけで済む。
  */
 const MEASURE_DELAY_MS = 500;
+
+/**
+ * 図のドラフト生成の世代キー。
+ *
+ * 会話は 1 つしか持たないので 1 本でよい。解釈が注釈ごとに採番するのとは
+ * 違って、区別する相手がいない。
+ */
+const DIAGRAM_KEY = "diagram";
 
 type Props = {
   board: BoardDetail;
@@ -143,6 +165,18 @@ export function BoardPage({
   const [runGenerations] = useState(createGenerations);
   // メンバーの一覧を開いているかどうか。
   const [showingMembers, setShowingMembers] = useState(false);
+  // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
+  // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
+  const [showingChat, setShowingChat] = useState(false);
+  const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
+  // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
+  // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
+  const [diagramGenerations] = useState(createGenerations);
+  // 置いている最中か。**走っているあいだの二重押しは弾く**（`loadingRuns` と
+  // 同じ形）。state ではなく ref で覚えるのは、判定が「押した時点の値」を見る
+  // 必要があるため。state に置くと、同じ tick に届いた 2 回目がまだ false を
+  // 読み、同じ図が同じ場所に重なって置かれる。
+  const placing = useRef(false);
   // 作成先の Project に書けるかどうか。確かめるまでは unknown。
   //
   // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
@@ -475,6 +509,112 @@ export function BoardPage({
   );
 
   /**
+   * プロンプトから図のドラフトを生成する。
+   *
+   * **キャンバスには何も置かない。** 置くのは `placeDraft` で、そこを人が
+   * 押すまでキャンバスは変わらない（#58 の原則、中核思想 3）。
+   *
+   * **未保存でも呼ぶ。** 保存済みシーンを読まないので、解釈のような
+   * 「保存してから」の制約が要らない（ADR 0041）。
+   */
+  const generateDiagram = useCallback(
+    async (prompt: string, internal = false): Promise<boolean> => {
+      const generation = diagramGenerations.start(DIAGRAM_KEY);
+      // 送るのはいまの会話。**成立した往復だけがここに積まれている**ので、
+      // 失敗した指示を「返した図」つきで送ることにはならない。
+      const { kind } = chat;
+      const history = historyOf(chat);
+      setChat((prev) => beginTurn(prev, prompt, internal));
+
+      try {
+        const draft = await boardsApi.generateDiagram(board.id, kind, prompt, history);
+        // 遅れて届いた応答を今の会話に混ぜない。種類を変えると会話ごと
+        // 捨てるので、そのあとに古い図が積まれると土台が食い違う。
+        if (!diagramGenerations.isCurrent(DIAGRAM_KEY, generation)) return false;
+        setChat((prev) => completeTurn(prev, draft));
+        return true;
+      } catch (e) {
+        if (!diagramGenerations.isCurrent(DIAGRAM_KEY, generation)) return false;
+        // **パネルの中に出す。** 会話の続きで直せる失敗なので、画面上部の
+        // 通知に出すと、直す場所と理由が離れる。
+        setChat((prev) => failTurn(prev, describeFailure("生成できませんでした", e)));
+        return false;
+      }
+    },
+    [board.id, chat, diagramGenerations],
+  );
+
+  /**
+   * 図の種類を変える。**捨てたときだけ、走っている生成も無効にする。**
+   *
+   * 種類を変えると会話ごと捨てる（`changeKind`）ので、あとから古い図が
+   * 積まれると、いまの種類の会話に前の記法の図が土台として載る。パネルは
+   * 生成中の選択を止めているが、**止めているのが UI だけだと、そこを外した
+   * ときに黙って壊れる**（`.claude/rules/async-ui.md`）。
+   *
+   * **捨てていないのに世代を進めない。** 同じ種類なら `changeKind` は会話を
+   * そのまま返すので `pending` が残る。そこで世代だけ進めると、走っている
+   * 生成の応答が捨てられて `pending` を null にする経路が消え、パネルが
+   * 「生成中…」のまま戻らなくなる。**捨てたかどうかは `changeKind` の
+   * 返り値で決める。** 同じ条件をここにも書くと判定が 2 箇所になる。
+   */
+  const handleChangeKind = useCallback(
+    (kind: DiagramKind) => {
+      const next = changeKind(chat, kind);
+      if (next === chat) return;
+
+      diagramGenerations.start(DIAGRAM_KEY);
+      setChat(next);
+    },
+    [chat, diagramGenerations],
+  );
+
+  /**
+   * いまのドラフトをキャンバスに置く。
+   *
+   * **既存の要素には一切触らない。追加するだけ**（#58 の原則）。置き場所は
+   * 既存の絵の右外で、重ねない（ADR 0040）。**保存はしない。** 確定させるのは
+   * 人間の保存操作だけ。
+   *
+   * 変換に失敗したら、会話の次の 1 往復として投げ直す。mermaid として読める
+   * かではなく Excalidraw の要素として置けるかを知っているのは変換器だけ
+   * なので、投げ直せるのはここしかない（ADR 0041）。
+   */
+  const placeDraft = useCallback(async () => {
+    // 変換は非同期。**押した時点で弾かないと、2 回目が同じ `draftOrigin` を
+    // 得て、同じ図が同じ場所に重なる。** 取り消しで戻すしかなくなる。
+    if (!api || chat.draft === null || placing.current) return;
+    placing.current = true;
+
+    try {
+      const converted = await mermaidToElements(chat.draft.mermaid);
+      if (!converted.ok) {
+        if (converted.reason === "syntax") {
+          // 直せる失敗。会話の次の 1 往復にして投げ直す。
+          // **利用者が打った指示ではない**ので、そう印を付けて積む。画面には
+          // 固定文で出る（`turnLabel`）。
+          void generateDiagram(conversionRetryPrompt(converted.detail), true);
+          return;
+        }
+        // 置ける形にならない種類だった。投げ直しても同じものが返るので、
+        // 種類を変えてもらう（ADR 0040）。
+        setChat((prev) => failTurn(prev, diagramNotPlaceableFailure()));
+        return;
+      }
+
+      const existing = currentElements();
+      const placed = moveDraft(converted.elements, draftOrigin(existing));
+      updateElements([...existing, ...placed]);
+
+      // 置いた先へ寄せる。既存の絵の外に置くので、寄せないと押したのに何も
+      // 起きていないように見える（ADR 0040）。
+      api.scrollToContent(placed as never, { fitToContent: true, animate: true });
+    } finally {
+      placing.current = false;
+    }
+  }, [api, chat.draft, currentElements, generateDiagram, updateElements]);
+
+  /**
    * 付箋を 1 枚置く。
    *
    * **ダイアログを挟まない。** 描いている最中の操作なので、手数の少なさが
@@ -706,6 +846,9 @@ export function BoardPage({
   // **引くのはここ 1 箇所で、下へは文言として渡す。** 各コンポーネントで
   // 引き直すと、同じ判定が枝の数だけ増える。
   const interpretationUnavailable = unavailableReason(capabilities, "interpretation");
+  // **解釈とは別に引く。** 同じ LLM の設定で決まるが、答えている問いが違う
+  // （ADR 0041）。片方から推し量ると、使えると案内したほうが 503 を返す。
+  const diagramUnavailable = unavailableReason(capabilities, "diagramDraft");
   const creationUnavailable = unavailableReason(capabilities, "creation");
   const sharingUnavailable = unavailableReason(capabilities, "sharing");
 
@@ -796,6 +939,18 @@ export function BoardPage({
           ) : (
             <button type="button" onClick={() => setShowingMembers((v) => !v)}>
               {showingMembers ? "メンバーを閉じる" : "メンバー"}
+            </button>
+          )}
+          {/*
+            図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
+            叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。
+
+            LLM が未設定でもボタンは出す。**黙って消さず、開いた先で理由を
+            見せる**（ADR 0030、中核思想 3）。
+          */}
+          {canEdit && (
+            <button type="button" onClick={() => setShowingChat((v) => !v)}>
+              {showingChat ? "図のドラフトを閉じる" : "図のドラフト"}
             </button>
           )}
           {/*
@@ -941,6 +1096,27 @@ export function BoardPage({
       )}
 
       <div className="board-body">
+        {/*
+          チャットはキャンバスの左に置く。**キャンバスを覆わない。** 置いた図が
+          どこに出るかを見ながら直す道具なので、隠すと「置く」を押した結果が
+          確かめられない。メンバーのように上に敷かないのもそのため。
+
+          **パネルは境界で包む**（ADR 0027）。落ちたのがここでも外側の 1 枚で
+          受けると、キャンバスごと外れて未保存のブレストが消える。
+        */}
+        {showingChat && canEdit && (
+          <ErrorBoundary name="図のドラフト" recovery="remount">
+            <DiagramChatPanel
+              chat={chat}
+              onChangeKind={handleChangeKind}
+              onSend={generateDiagram}
+              onPlace={() => void placeDraft()}
+              onClose={() => setShowingChat(false)}
+              unavailable={diagramUnavailable}
+            />
+          </ErrorBoundary>
+        )}
+
         <div className="canvas">
           <Excalidraw
             excalidrawAPI={setApi}

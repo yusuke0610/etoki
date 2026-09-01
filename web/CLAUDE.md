@@ -56,16 +56,43 @@
 
 ## 描画に失敗したとき（ADR 0027）
 
-- **境界はキャンバスの外側に置く。** `BoardPage` のパネル（注釈・メンバー）を
-  1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を包む。**外側の 1 枚に
-  まとめないこと。** まとめると落ちた瞬間にキャンバスごと外れ、保存していない
-  ブレストがその場で消える。`web/e2e/errors.spec.ts` がここを固定している。
+- **境界はキャンバスの外側に置く。** `BoardPage` のパネル（注釈・メンバー・
+  図のドラフト）を 1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を包む。
+  **外側の 1 枚にまとめないこと。** まとめると落ちた瞬間にキャンバスごと外れ、
+  保存していないブレストがその場で消える。`web/e2e/errors.spec.ts` がここを
+  固定している。**パネルを足したらここにも包みを足す。**
 - **出口は巻き込んだ範囲で変える。** パネルは「再表示」、外側は「読み込み直す」。
   読み込み直す側では**失われていることを先に言う**。
 - **例外の中身は画面に出さない。** 行き先は console に固定する（`logger.ts`）。
 - 境界が拾うのはレンダリング中の例外だけ。イベントハンドラの中と Promise の
   reject は `logUncaught`（`main.tsx` で登録）が console に残す。**画面には
   出さない。** この経路には差し出せる出口が無い。
+
+## 図のドラフトのチャット（ADR 0041）
+
+**AI が作るのはドラフト。保存も構造分解もさせない。既存の絵にも触らない。**
+この 3 つを外すと機能の性質が変わる。
+
+- **未保存でも使える。** 保存済みシーンを読まないので、解釈の「保存してから
+  解釈できます」と同じ制約をかける理由が無い。**揃えないこと。** 揃えると、
+  副作用の有無から説明のつく非対称が「なんとなく揃えた制約」に変わる。
+- **「置く」を挟む。** 生成した瞬間にキャンバスへ流し込まない（中核思想 3）。
+  置いても保存はしない。確定させるのは人間の保存操作だけ。
+- **置き場所は既存の絵の右外**（`web/src/excalidraw/mermaid.ts`）。重ねると
+  生成物と手描きの区別が付かず、選び分けて消せない。置いたら
+  `scrollToContent` で寄せる。寄せないと視界の外に出る。
+- **会話はメモリだけ。** ボードを切り替えたら捨てる（`App` の
+  `key={board.id}` で `BoardPage` ごと作り直される）。サーバーへは毎回
+  まるごと送る。**残り往復はサーバーが返した値をそのまま出す。** ここで
+  数え直すと上限が 2 箇所になる。
+- **種類を変えたら会話ごと捨て、走っている生成も無効にする。** 積み上げた
+  指示は前の記法の図に対するもの。パネルは生成中の選択を止めているが、
+  **止めているのが UI だけだと、そこを外したときに黙って壊れる。**
+- **変換できなかったら会話の次の 1 往復として投げ直す。** 構文エラーを直せる
+  のは変換を試したフロントだけ（ADR 0040 / 0041）。置けない形（画像）で
+  返ったときは投げ直さない。同じ結果にしかならない。
+- **viewer には出さない。** LLM を叩く外部呼び出しで課金も伴う（ADR 0017、
+  解釈と同じ理由）。
 
 ## ボードの一覧
 
@@ -265,6 +292,20 @@ cd web && bunx playwright test --ui
   3 つ必要。prod バンドルへの `alias`、`open-color`（実体が JSON）の `inline`、
   そして `src/test-setup.ts` の canvas スタブ（import 時に 2D コンテキストの
   機能検出が走る）。
+- **`src/test-setup.ts` の `FontFace` スタブ** — jsdom は CSS Font Loading API を
+  持たない。excalidraw はラベル付きの要素を作るときにフォントの登録簿を組み立て
+  るので、無いと `convertToExcalidrawElements` がその場で落ちる。canvas と同じで
+  **要るのは読み込めることだけ。測った文字幅は本物ではない。**
+- **`@excalidraw/mermaid-to-excalidraw` は exact 指定で、`@excalidraw/excalidraw`
+  が依存している版に揃える**（`node_modules/@excalidraw/excalidraw/package.json`
+  で見る）。揃えないと同じ変換器が 2 つ入り、excalidraw が内部で使うものと
+  etoki が呼ぶものが別になる。`@excalidraw/excalidraw` を上げたら**同じコミットで
+  こちらも合わせる。**
+- **mermaid の変換は vitest では図の種類ごとに確かめられない**（ADR 0040）。
+  mermaid は SVG を描いてその実寸を測るので、jsdom では本物と違う経路を通る。
+  `src/excalidraw/mermaid.test.ts` の `getBBox` スタブがそれを補っているが、
+  **返している寸法は本物ではない**ので、そのファイルの中だけに閉じてある。
+  種類ごとに要素になるかどうかはブラウザ（E2E）でしか分からない。
 - **`web/vite.config.ts` の `test.include`** — vitest の既定は `*.spec.ts` も
   拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の
@@ -279,6 +320,7 @@ cd web && bunx playwright test --ui
   リビジョンのブラウザが見つからず E2E が起動しない。`nix flake update` で
   `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
 
-ここで固定しているもの（`@playwright/test` と React 18）は
-`.github/dependabot.yml` の `ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
+ここで固定しているもの（`@playwright/test`、React 18、
+`@excalidraw/mermaid-to-excalidraw`）は `.github/dependabot.yml` の `ignore` にも
+入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
 **固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。

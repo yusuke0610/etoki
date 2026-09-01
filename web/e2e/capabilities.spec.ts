@@ -21,7 +21,7 @@ test.describe("設定していない機能", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, creation: true, sharing: true },
+      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
     };
     // 画面が案内するだけでなく、叩けば 503 が返る構成そのものを再現する。
     mock.interpret = {
@@ -59,7 +59,7 @@ test.describe("設定していない機能", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, creation: false, sharing: true },
+      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
     };
     await installApi(page, mock);
 
@@ -85,7 +85,7 @@ test.describe("設定していない機能", () => {
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, creation: false, sharing: true },
+      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
     };
     await installApi(page, mock);
 
@@ -104,7 +104,7 @@ test.describe("設定していない機能", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, creation: true, sharing: false },
+      body: { interpretation: true, diagramDraft: true, creation: true, sharing: false },
     };
     await installApi(page, mock);
 

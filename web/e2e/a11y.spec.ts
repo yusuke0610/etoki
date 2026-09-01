@@ -42,7 +42,7 @@ test.describe("押せない理由が本文として読める", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, creation: true, sharing: true },
+      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
     };
     await installApi(page, mock);
 
@@ -51,6 +51,27 @@ test.describe("押せない理由が本文として読める", () => {
 
     await expectBlockedReason(
       annotationCard(page, "ログイン").getByRole("button", { name: "解釈する" }),
+      "ETOKI_LLM_API_KEY",
+    );
+  });
+
+  // 図のドラフトも同じ LLM の設定で決まるが、答えている問いは解釈と別
+  // （ADR 0041）。**diagramChat.spec.ts は id の値を見ている。** こちらが見るのは、
+  // その先が実在して読めること。
+  test("生成する：LLM が未設定のとき", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = {
+      status: 200,
+      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
+    };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "生成", exact: true }),
       "ETOKI_LLM_API_KEY",
     );
   });
@@ -113,7 +134,7 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   // 理由を出す側が壊れたら落ちること自体を確かめる。**ここが落ちなければ、
-  // 上の 5 つは何も守っていない。**
+  // 上のどれも何も守っていない。**
   test("理由の要素が消えたら落ちる", async ({ page }) => {
     await installApi(page, baseMock());
 
@@ -155,6 +176,24 @@ test.describe("axe（etoki が書いた DOM）", () => {
 
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
+
+    await expectNoAxeViolations(page);
+  });
+
+  // 図のドラフトのチャットは、キャンバスの左に開く独立した領域（ADR 0041）。
+  // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
+  // 生成結果を出したところまで開けて、`.diagram-mermaid` と
+  // 「ここまでのやりとり」まで含めて見る。
+  test("図のドラフトを生成した状態", async ({ page }) => {
+    await installApi(page, baseMock());
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+    await page.locator(".diagram-mermaid").waitFor();
 
     await expectNoAxeViolations(page);
   });
