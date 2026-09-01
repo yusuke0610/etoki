@@ -68,11 +68,18 @@ var wantMappings = map[string]wantMapping{
 
 	"usecase.ErrSceneTooLarge": {
 		usecase.ErrSceneTooLarge, http.StatusRequestEntityTooLarge, apitypes.ErrorCodeSceneTooLarge},
+	// 積み上がりすぎた会話。送られた内容は正しいので 400 に畳まない（ADR 0041）。
+	"usecase.ErrDiagramChatTooLong": {
+		usecase.ErrDiagramChatTooLong, http.StatusRequestEntityTooLarge,
+		apitypes.ErrorCodeDiagramChatTooLong},
 
 	"usecase.ErrTargetNotSelected": {
 		usecase.ErrTargetNotSelected, http.StatusUnprocessableEntity, apitypes.ErrorCodeTargetNotSelected},
 	"usecase.ErrProjectFieldMissing": {
 		usecase.ErrProjectFieldMissing, http.StatusUnprocessableEntity, apitypes.ErrorCodeProjectFieldMissing},
+
+	"usecase.ErrDiagramFailed": {
+		usecase.ErrDiagramFailed, http.StatusBadGateway, apitypes.ErrorCodeDiagramFailed},
 
 	"usecase.ErrLLMUnavailable": {
 		usecase.ErrLLMUnavailable, http.StatusBadGateway, apitypes.ErrorCodeLlmUnavailable},

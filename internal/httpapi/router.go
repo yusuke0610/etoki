@@ -20,6 +20,12 @@ type Deps struct {
 	// nil のときは解釈のエンドポイントが 503 を返す。ルート自体は生やす。
 	// 404 だと「機能が無い」のか「URL が違う」のか区別できない。
 	Interpretations *usecase.InterpretationService
+	// Diagrams はプロンプトからの図のドラフト生成。nil でもよい。
+	//
+	// nil のときは生成のエンドポイントが 503 を返す。Interpretations と同じ
+	// LLM の設定で決まるが、**受けるのは別々。** 使えるかを見せる口が答えて
+	// いる問いが違うので、片方から他方を推し量らせない。
+	Diagrams *usecase.DiagramService
 	// Creations は draft issue の作成。nil でもよい。
 	//
 	// nil のときは作成のエンドポイントが 503 を返す。理由は Interpretations と
@@ -83,6 +89,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		boards:          deps.Boards,
 		annotations:     deps.Annotations,
 		interpretations: deps.Interpretations,
+		diagrams:        deps.Diagrams,
 		creations:       deps.Creations,
 		catalog:         deps.Catalog,
 		members:         deps.Members,
@@ -120,11 +127,19 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 名前だけを変える。**PUT ではなく PATCH。** ボード全体を差し替える
 		// 口ではないので、送らなかったものが消える形に読ませない。
 		api.PATCH("/boards/:id", h.renameBoard)
+		// ボードごと畳む。owner だけ（ADR 0042）。**GitHub 側の draft issue は
+		// 消さない**ので、押す前に何が残るかを /deletion で見せる。
+		api.DELETE("/boards/:id", h.deleteBoard)
+		api.GET("/boards/:id/deletion", h.getBoardDeletion)
 		api.PUT("/boards/:id/scene", h.saveScene)
 		// 作成先はボードごとに持つ。最初の draft issue を作ると固定される
 		// （ADR 0014）。
 		api.PUT("/boards/:id/target", h.setBoardTarget)
 		api.PUT("/boards/:id/target/display", h.refreshBoardTargetDisplay)
+		// 図のドラフト。**注釈でも解釈でもないのでボードの直下に置く。**
+		// 囲みとは無関係で、キャンバスに何も無くても呼べる（ADR 0041）。
+		api.POST("/boards/:id/diagram-draft", h.generateDiagramDraft)
+
 		api.GET("/boards/:id/annotations", h.listAnnotations)
 		// 過去の run。残しているだけで読めないと、履歴を残す理由（GitHub 側の
 		// 追跡、ADR 0007）が満たせない。

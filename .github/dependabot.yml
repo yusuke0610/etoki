@@ -70,6 +70,14 @@ updates:
           - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
+      # mermaid の変換器は @excalidraw/excalidraw が依存している版と対で決まる。
+      # ここだけ上がると同じ変換器が 2 つ入るので、excalidraw を上げるときに
+      # 手で揃える。**外すのは version updates だけ**（上の理由と同じ）。
+      - dependency-name: "@excalidraw/mermaid-to-excalidraw"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
       # React は 18 系に固定。マイナーとパッチは受ける。
       - dependency-name: "react"
         update-types: ["version-update:semver-major"]

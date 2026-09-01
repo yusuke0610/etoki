@@ -14,10 +14,12 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",
+    "@excalidraw/mermaid-to-excalidraw": "2.2.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10",
     "@playwright/test": "1.61.1",
     "@testing-library/dom": "^10",
@@ -28,6 +30,7 @@
     "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^6",
     "eslint": "^10",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^5",
     "globals": "^17",
     "jsdom": "^30",

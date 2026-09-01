@@ -182,7 +182,25 @@ export interface paths {
         get: operations["getBoard"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * ボードを削除する
+         * @description **owner だけ**（ADR 0017）。ボードごと畳む操作なので、シーンを書き換え
+         *     られる editor ではなく、招待も作成先の変更もできる相手に限る。
+         *
+         *     **GitHub 側の draft issue は消さない**（消せない。逆方向の書き込みは
+         *     スコープ外）。消えるのは etoki 側の記録のほうで、`sync_runs` と
+         *     `sync_items` と `board_members` が一緒に消える。その結果、**GitHub に
+         *     残った draft issue がどのボードのどの注釈から作られたのかは辿れなく
+         *     なる**（ADR 0007 / 0042）。
+         *
+         *     何が残るのかは `GET /api/boards/{id}/deletion` で先に引ける。画面は
+         *     押される前にそれを見せて確認させる（中核思想 3）。
+         *
+         *     **run があっても拒まない。** 拒むと、いちばん畳みたいボード（作成先を
+         *     間違えたまま 1 回作ってしまったボード）が永久に残る。判断の材料を
+         *     見せたうえで、決めるのは開発者にする。
+         */
+        delete: operations["deleteBoard"];
         options?: never;
         head?: never;
         /**
@@ -198,6 +216,36 @@ export interface paths {
          *     名前は取り消せない作成の行き先を決めるものではないため。
          */
         patch: operations["renameBoard"];
+        trace?: never;
+    };
+    "/api/boards/{id}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 削除で何が失われるかを返す
+         * @description 削除は取り消せず、GitHub 側に作った draft issue も消せない。押す前に
+         *     何が残るのかを見せるための口（ADR 0042、中核思想 3）。
+         *
+         *     **押されたときだけ引く。** ボードを開くたびに数えると、削除するまで
+         *     要らない畳み込みを毎回引くことになる（ADR 0037 の取り直しと同じ形）。
+         *
+         *     **owner だけ。** 削除そのものと揃える。押せない相手に、押したときに
+         *     何が起きるかだけを見せる理由が無い。
+         */
+        get: operations["getBoardDeletion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/boards/{id}/scene": {
@@ -499,6 +547,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/boards/{id}/diagram-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * プロンプトから図のドラフトを生成する
+         * @description **サーバーの状態を一切変えない**（ADR 0041）。DB にも GitHub にも触れず、
+         *     会話も保存しない。返した mermaid をキャンバスに置くかどうかは、見てから
+         *     開発者が決める（中核思想 3）。
+         *
+         *     **保存済みシーンを読まないので、未保存でも使える。** 解釈が保存を
+         *     要求する（ADR 0018）のとは非対称だが、手抜きではなく副作用の有無から
+         *     出る違い。
+         *
+         *     注釈でも解釈でもないので、パスはボードの直下に置く。囲みとは無関係で、
+         *     キャンバスに何も無くても呼べる。
+         */
+        post: operations["generateDiagramDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards/{id}/annotations/{annotationId}/interpret": {
         parameters: {
             query?: never;
@@ -580,6 +660,14 @@ export interface components {
             /** @description 注釈を解釈できるか。false は LLM が未設定（ADR 0008） */
             interpretation: boolean;
             /**
+             * @description プロンプトから図のドラフトを生成できるか。false は LLM が未設定。
+             *
+             *     **`interpretation` と畳まない。** 未設定の理由も設定するものも
+             *     同じだが、答えている問いが違う。1 つにすると、画面はどちらの
+             *     ボタンを止めればよいのかをこの値から決められなくなる
+             */
+            diagramDraft: boolean;
+            /**
              * @description draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
              *     引けない**ので、新しいボードも作れない（ADR 0017）
              */
@@ -619,7 +707,7 @@ export interface components {
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -640,6 +728,22 @@ export interface components {
          * @enum {string}
          */
         Granularity: "" | "epic" | "issue";
+        /**
+         * @description 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
+         *     プロンプトから生成するドラフトが同じ 5 種を指す。
+         *
+         *     - `todo` … やることの洗い出し
+         *     - `mindmap` … 発想の広げ方
+         *     - `sequence` … 登場人物とやりとりの順序
+         *     - `er` … 実体と関連
+         *     - `architecture` … 構成要素と境界
+         *
+         *     **どの mermaid 記法で書くかはサーバーが決める**（ADR 0041）。
+         *     `mindmap` と `architecture` は mermaid にも同名の記法があるが、
+         *     Excalidraw の要素に分解できず画像 1 枚になるため使わない（ADR 0040）。
+         * @enum {string}
+         */
+        DiagramKind: "todo" | "mindmap" | "sequence" | "er" | "architecture";
         /**
          * @description GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ
          *     （ADR 0006）。
@@ -749,6 +853,24 @@ export interface components {
              *     数えられないので、状態としてサーバーが返す
              */
             targetLocked: boolean;
+        };
+        /**
+         * @description ボードを削除したときに etoki から失われるもの（ADR 0042）。
+         *
+         *     **GitHub 側で何が起きるかは含まれない。** etoki は draft issue を
+         *     消さないので、GitHub にはそのまま残る。ここが答えるのは「辿れなく
+         *     なるのはどれだけか」という問いのほう。
+         */
+        BoardDeletion: {
+            /**
+             * @description そのボードから作成したと etoki が記録している draft issue の件数。
+             *
+             *     数え方は注釈のカードに出している「いま GitHub に在る N 件」と同じ
+             *     畳み込み（ADR 0026）。**GitHub 上でまだ在るかどうかは etoki には
+             *     分からない**（ADR 0007）ので、これは記録の件数であって現況では
+             *     ない
+             */
+            recordedItemCount: number;
         };
         /**
          * @description draft issue の作成先。設定のリクエストボディ。
@@ -1029,6 +1151,50 @@ export interface components {
             image?: components["schemas"]["AnnotationImage"];
         };
         /**
+         * @description 図のドラフトを直してきたやりとり 1 往復。
+         *
+         *     **サーバーは会話を保存しない**（ADR 0041）ので、ここまでの往復は毎回
+         *     まるごと送る。会話は成果物ではなく、成果物はキャンバス。
+         */
+        DiagramTurn: {
+            /** @description そのとき書いた指示 */
+            prompt: string;
+            /** @description それに対して返った mermaid */
+            mermaid: string;
+        };
+        /**
+         * @description 図のドラフトを 1 つ作るための入力。**保存済みシーンもキャンバスも
+         *     読まない**（ADR 0041）ので、未保存でも使える。
+         */
+        GenerateDiagramRequest: {
+            kind: components["schemas"]["DiagramKind"];
+            /**
+             * @description 今回の指示。空白だけのものは 400 で弾く。既定に倒さないのは、
+             *     何を描くかが入力そのものであるため
+             */
+            prompt: string;
+            /**
+             * @description ここまでのやりとり。1 回目は空。**上限を超えたら黙って古いものを
+             *     捨てず、`diagram_chat_too_long` で返す**
+             */
+            history?: components["schemas"]["DiagramTurn"][];
+        };
+        /**
+         * @description 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
+         *     見てから開発者が決める（中核思想 3）。mermaid を Excalidraw の要素に
+         *     するのはフロントの仕事（ADR 0040）。
+         */
+        DiagramDraft: {
+            kind: components["schemas"]["DiagramKind"];
+            /** @description 生成された mermaid。コードフェンスは外してある */
+            mermaid: string;
+            /**
+             * @description このあと何往復できるか。**上限に当たってから知らせるのでは遅い**
+             *     ので、押す前に見えるようにしている
+             */
+            turnsRemaining: number;
+        };
+        /**
          * @description LLM が注釈をどう解釈したか。
          *
          *     `summary` は GitHub には作らない。作成前に「こう読んだ」を見せるためだけに
@@ -1109,6 +1275,25 @@ export interface components {
          *     内容を直す」ではなく「貼った画像を減らす」になる。
          */
         SceneTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description 図のドラフトの会話が上限を超えている。往復の回数か、会話全体の長さの
+         *     どちらか。
+         *
+         *     **黙って古いやりとりを捨てない。** 捨てると、積み上げた指示のどれが
+         *     効いているのかが分からなくなる。やり直すかどうかは開発者が決める
+         *     （中核思想 3）。
+         *
+         *     400 ではないのは大きさだから。送られた内容は正しく、打ち手が「送った
+         *     内容を直す」ではなく「会話をやり直す」になる（SceneTooLarge と同じ）。
+         */
+        DiagramChatTooLong: {
             headers: {
                 [name: string]: unknown;
             };
@@ -1409,6 +1594,31 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    deleteBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 削除した */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     renameBoard: {
         parameters: {
             query?: never;
@@ -1435,6 +1645,33 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getBoardDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 削除で失われるもの */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDeletion"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1901,6 +2138,57 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    generateDiagramDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateDiagramRequest"];
+            };
+        };
+        responses: {
+            /** @description 生成された図のドラフト */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["DiagramChatTooLong"];
+            500: components["responses"]["InternalError"];
+            /** @description LLM の呼び出しに失敗した、または図が返らなかった */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description LLM が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     interpretAnnotation: {

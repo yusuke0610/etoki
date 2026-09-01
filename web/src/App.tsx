@@ -216,6 +216,30 @@ export function App() {
     [reload],
   );
 
+  /**
+   * 削除されたので手元から外す。
+   *
+   * **未保存の確認は通さない。** 消えたのはボードそのもので、捨てるか
+   * どうかを訊いても戻せる先が無い。確認は削除の手前で済んでいる（ADR 0042）。
+   * `unsaved` は BoardPage が外れるときに自分で下ろす。
+   *
+   * **一覧も引き直す。** 木は作成先でまとめて見せる（ADR 0019）ので、消えた
+   * ボードが残っていると開けない行が並ぶ。
+   *
+   * **引き直しを待たずに手元からも外す。** `reload()` が失敗しても一覧は
+   * 前の値のまま残るので、引き直しだけに任せると開くと 404 になる行が
+   * 並び続ける。消えたことはサーバーの応答で確かめてあるので、ここは
+   * 推測ではない。引き直しは他の変化を拾うために続けて行う。
+   */
+  const handleDeleted = useCallback(
+    (id: string) => {
+      setBoards((shown) => shown.filter((b) => b.id !== id));
+      setCurrent(null);
+      void reload();
+    },
+    [reload],
+  );
+
   /** 既存ボードの作成先を選び直す。最初の作成より前だけ通る（ADR 0014）。 */
   const changeTarget = useCallback(
     async (target: BoardTarget) => {
@@ -325,6 +349,7 @@ export function App() {
             // 手元を差し替える」だけ。同じ扱いにする（replaceBoard を参照）。
             onTargetRefreshed={replaceBoard}
             onRenamed={replaceBoard}
+            onDeleted={handleDeleted}
             onDirtyChange={handleDirtyChange}
           />
         )}

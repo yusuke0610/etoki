@@ -1020,9 +1020,10 @@ func TestDeleteBoard_CascadesToRunsItemsAndMembers(t *testing.T) {
 		t.Fatalf("SaveRun: %v", err)
 	}
 
-	if _, err := db.ExecContext(t.Context(),
-		`DELETE FROM boards WHERE id = ?`, "board-1"); err != nil {
-		t.Fatalf("delete board: %v", err)
+	// **リポジトリの口を通す。** 生の DELETE で確かめると、CASCADE が効くことは
+	// 分かっても、実際の削除経路が同じ範囲を消すのかは分からない（ADR 0042）。
+	if err := sqlite.NewBoardRepository(db).Delete(t.Context(), "", "board-1"); err != nil {
+		t.Fatalf("Delete: %v", err)
 	}
 
 	for _, table := range []string{"sync_runs", "sync_items", "board_members"} {
@@ -1317,6 +1318,72 @@ func TestBoard_UpdateNameRequiresMembership(t *testing.T) {
 	}
 	if got.Board.Name != "テストボード" {
 		t.Errorf("Name = %q, want テストボード（書き換わってはいけない）", got.Board.Name)
+	}
+}
+
+// 非メンバーは消せない。Find を通らずに直接 DELETE する経路なので、絞り忘れると
+// 他人のボードを消せる（ADR 0016）。
+func TestBoard_DeleteRequiresMembership(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedBoard(t, db, "board-1")
+
+	err := repo.Delete(t.Context(), "someone-else", "board-1")
+	if !errors.Is(err, port.ErrNotFound) {
+		t.Fatalf("Delete = %v, want port.ErrNotFound", err)
+	}
+
+	got, findErr := repo.Find(t.Context(), "", "board-1")
+	if findErr != nil {
+		t.Fatalf("Find: %v", findErr)
+	}
+	if got == nil {
+		t.Error("非メンバーの削除でボードが消えている")
+	}
+}
+
+// 消えたら一覧からも引き当てからも外れる。「消した」と言えるのはここまで。
+func TestBoard_DeleteRemovesFromFindAndList(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+	seedBoard(t, db, "board-1")
+	seedBoard(t, db, "board-2")
+
+	if err := repo.Delete(t.Context(), "", "board-1"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	got, err := repo.Find(t.Context(), "", "board-1")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got != nil {
+		t.Error("削除したボードが Find で引ける")
+	}
+
+	boards, err := repo.List(t.Context(), "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	// 残したほうまで消えていないことも見る。WHERE を書き損なうと全部消える。
+	if len(boards) != 1 || boards[0].Board.ID != "board-2" {
+		t.Errorf("List = %+v, want board-2 だけ", boards)
+	}
+}
+
+func TestBoard_DeleteNotFound(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	repo := sqlite.NewBoardRepository(db)
+
+	err := repo.Delete(t.Context(), "", "no-such-board")
+	if !errors.Is(err, port.ErrNotFound) {
+		t.Errorf("Delete = %v, want port.ErrNotFound", err)
 	}
 }
 

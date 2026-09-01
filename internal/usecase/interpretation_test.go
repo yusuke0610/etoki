@@ -98,6 +98,17 @@ func (f *fakeBoards) UpdateTargetDisplay(
 	return nil
 }
 
+// Delete は実装と同じく操作者も突き合わせる。素通しにすると、絞り忘れを
+// フェイクが吸収する（ADR 0016）。消えたことは board を nil にして表す。
+func (f *fakeBoards) Delete(_ context.Context, actor, id string) error {
+	if f.board == nil || f.board.ID != id || f.owner != actor {
+		return port.ErrNotFound
+	}
+	f.writes++
+	f.board = nil
+	return nil
+}
+
 func (f *fakeBoards) List(context.Context, string) ([]port.BoardAccess, error) { return nil, nil }
 
 func (f *fakeBoards) ListMembers(_ context.Context, boardID string) ([]port.BoardMember, error) {

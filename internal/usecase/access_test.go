@@ -51,6 +51,12 @@ func TestRolePermissions(t *testing.T) {
 				Interpret(ctx, "board-1", "annot-1", nil)
 			return err
 		}},
+		{"図のドラフト", func(ctx context.Context, boards *fakeBoards) error {
+			llm := &fakeLLM{responses: []string{validMermaid}}
+			_, err := usecase.NewDiagramService(boards, llm).
+				Generate(ctx, "board-1", req("段取り"))
+			return err
+		}},
 		{"作成", func(ctx context.Context, boards *fakeBoards) error {
 			gh := &fakeGitHub{fields: projectFields()}
 			_, err := usecase.NewCreationService(boards, &fakeMappings{}, gh,
@@ -60,6 +66,13 @@ func TestRolePermissions(t *testing.T) {
 		}},
 		{"作成先の変更", func(ctx context.Context, boards *fakeBoards) error {
 			return newBoardService(boards).SetTarget(ctx, "board-1", newTarget())
+		}},
+		{"削除", func(ctx context.Context, boards *fakeBoards) error {
+			return newBoardService(boards).Delete(ctx, "board-1")
+		}},
+		{"削除で失われるもの", func(ctx context.Context, boards *fakeBoards) error {
+			_, err := newBoardService(boards).Deletion(ctx, "board-1")
+			return err
 		}},
 	}
 
@@ -71,11 +84,20 @@ func TestRolePermissions(t *testing.T) {
 		// 名前はブレストの中身に属する表示物で、取り消せない作成の行き先を
 		// 決めるものではない。シーンを書き換えられる editor に、表示名だけ
 		// 直させない理由が無い（作成先の変更は owner だけ）。
-		"改名":     port.RoleEditor,
-		"シーン保存":  port.RoleEditor,
-		"解釈":     port.RoleEditor,
+		"改名":    port.RoleEditor,
+		"シーン保存": port.RoleEditor,
+		"解釈":    port.RoleEditor,
+		// 生成も LLM を叩く外部呼び出しで課金を伴う。閲覧者に外部呼び出しを
+		// 許すのは「閲覧」ではない（解釈と同じ理由）。
+		"図のドラフト": port.RoleEditor,
 		"作成":     port.RoleEditor,
 		"作成先の変更": port.RoleOwner,
+		// ボードごと畳む操作なので、シーンを書き換えられる editor ではなく、
+		// 招待も作成先の変更もできる相手に限る（ADR 0042）。
+		"削除": port.RoleOwner,
+		// 押せない相手に、押したときに何が起きるかだけを見せる理由が無い。
+		// 削除そのものと揃える。
+		"削除で失われるもの": port.RoleOwner,
 	}
 
 	roles := []port.BoardRole{port.RoleOwner, port.RoleEditor, port.RoleViewer}
