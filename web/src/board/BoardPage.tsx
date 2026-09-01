@@ -127,8 +127,11 @@ type Props = {
    * **確認はこの中で済ませてある**（ADR 0042）。親は未保存の確認を重ねない。
    * 消えたのはボードそのもので、未保存の編集を捨てるかどうかを訊いても
    * 戻せる先が無い。
+   *
+   * **消えた ID を渡す。** 親は一覧からその 1 件を外すのに使う。開いている
+   * ボードから読み直させると、遅れて呼ばれたときに別のボードを外しうる。
    */
-  onDeleted: () => void;
+  onDeleted: (id: string) => void;
   /**
    * 未保存かどうかを親に伝える。
    *
@@ -283,7 +286,7 @@ export function BoardPage({
     setDeletion({ status: "deleting", losing });
     try {
       await boardsApi.delete(board.id);
-      onDeleted();
+      onDeleted(board.id);
     } catch (e) {
       // 確認は開いたまま戻す。閉じると、押し直すのに引き直しからになる
       // （改名が下書きを残すのと同じ）。

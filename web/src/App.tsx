@@ -225,11 +225,20 @@ export function App() {
    *
    * **一覧も引き直す。** 木は作成先でまとめて見せる（ADR 0019）ので、消えた
    * ボードが残っていると開けない行が並ぶ。
+   *
+   * **引き直しを待たずに手元からも外す。** `reload()` が失敗しても一覧は
+   * 前の値のまま残るので、引き直しだけに任せると開くと 404 になる行が
+   * 並び続ける。消えたことはサーバーの応答で確かめてあるので、ここは
+   * 推測ではない。引き直しは他の変化を拾うために続けて行う。
    */
-  const handleDeleted = useCallback(() => {
-    setCurrent(null);
-    void reload();
-  }, [reload]);
+  const handleDeleted = useCallback(
+    (id: string) => {
+      setBoards((shown) => shown.filter((b) => b.id !== id));
+      setCurrent(null);
+      void reload();
+    },
+    [reload],
+  );
 
   /** 既存ボードの作成先を選び直す。最初の作成より前だけ通る（ADR 0014）。 */
   const changeTarget = useCallback(

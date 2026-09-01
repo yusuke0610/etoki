@@ -227,6 +227,32 @@ test.describe("ボード", () => {
     expect(mock.details[BOARD_ID]).toBeUndefined();
   });
 
+  // 引き直しに任せきりにしない。失敗すると一覧は削除前の値のまま残り、開くと
+  // 404 になる行が並ぶ。消えたことは 204 で確かめてあるので、外すのは推測では
+  // ない。
+  test("引き直しに失敗しても、消したボードは一覧に残らない", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    // 削除そのものは通し、そのあとの引き直しだけを落とす。
+    mock.boardsError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+
+    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "削除する" }).click();
+
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
+    ).toHaveCount(0);
+    // 引き直しに失敗したことは黙らない。一覧が古いままかもしれないと伝える。
+    await expect(page.getByRole("alert")).toContainText(
+      "ボード一覧を取得できませんでした",
+    );
+  });
+
   test("一覧の取得に失敗したらエラーを出し、閉じられる", async ({ page }) => {
     const mock = baseMock();
     mock.boardsError = {
