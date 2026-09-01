@@ -132,6 +132,25 @@ export function sceneUnreadableFailure(): Failure {
 }
 
 /**
+ * 取り込もうとしたファイルが Excalidraw のシーンとして読めなかった（ADR 0042）。
+ *
+ * `ErrorCode` を持たない。サーバーには何も送っていない失敗で、読めるかどうかを
+ * 判断したのは手元のライブラリ。**それでも文言はここに置く**（`web/CLAUDE.md`）。
+ * コンポーネントに書くと、同じ「読み込めませんでした」がまた散る。
+ *
+ * `detail` は空にする。ライブラリのメッセージは英語の内部文言で、利用者の
+ * 打ち手は「別のファイルを選ぶ」だけ（`web/CLAUDE.md` の「例外の中身は画面に
+ * 出さない」）。
+ */
+export function sceneFileUnreadableFailure(): Failure {
+  return {
+    message:
+      "このファイルは Excalidraw のシーンとして読めませんでした。キャンバスはそのままです。",
+    detail: "",
+  };
+}
+
+/**
  * 作成先の Project が GitHub 側で見つからなかった（ADR 0037）。
  *
  * `ErrorCode` を持たない。GitHub も etoki も 200 を返していて、一覧に

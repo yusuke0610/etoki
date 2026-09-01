@@ -1,4 +1,4 @@
-import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
+import { Excalidraw } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -6,6 +6,7 @@ import { ApiError, boardsApi, githubApi } from "../api/boards";
 import {
   describeFailure,
   diagramNotPlaceableFailure,
+  sceneFileUnreadableFailure,
   sceneUnreadableFailure,
   targetProjectMissingFailure,
   type Failure,
@@ -38,8 +39,15 @@ import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize, sceneBytes } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
+import {
+  exportFileName,
+  readSceneFile,
+  sceneJSON,
+  type ImportedScene,
+} from "../excalidraw/transfer";
 import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { log } from "../logger";
 import { AnnotationOverlay } from "./AnnotationOverlay";
 import {
   AnnotationPanel,
@@ -84,6 +92,26 @@ const MEASURE_DELAY_MS = 500;
  * 違って、区別する相手がいない。
  */
 const DIAGRAM_KEY = "diagram";
+
+/**
+ * ライブラリのメニューから閉じるもの（ADR 0042）。
+ *
+ * **持ち出しと取り込みの口は etoki のヘッダー 1 つに寄せる。** ライブラリ側を
+ * 残すと、同じ画面に意味の違う「保存」が 2 つ並び、片方だけが etoki のボード名と
+ * 未保存の確認を知っている形になる。
+ *
+ * **`.excalidraw` を書き出しているのは `saveAsImage` ではなく `export`。** 表示は
+ * 「名前を付けて保存...」で、隣の「画像のエクスポート...」と紛らわしい。
+ * `saveToActiveFile` はそこで開いたファイルへの上書きなので、一緒に閉じる。
+ * **画像のエクスポートは閉じない。** 答えている問いが違う（持ち出しではなく、
+ * 絵を他所に貼ること）。
+ *
+ * **モジュールの定数として持つ。** 描画のたびに作り直すと、Excalidraw には
+ * 毎回違うオブジェクトが渡る。
+ */
+const UI_OPTIONS = {
+  canvasActions: { loadScene: false, export: false, saveToActiveFile: false },
+} as const;
 
 type Props = {
   board: BoardDetail;
@@ -141,7 +169,17 @@ export function BoardPage({
   const [canvasFrameIds, setCanvasFrameIds] = useState<string[] | null>(null);
   // 注釈にした frame に重ねる枠。キャンバスの見え方が変わるたびに引き直す。
   const [overlayBoxes, setOverlayBoxes] = useState<AnnotationBox[]>([]);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirtyState] = useState(false);
+  // 未保存かどうかを ref でも持つ。**待ちを挟んだ判定が古い値を見ないため**
+  // （`App` の `unsaved` と同じ理由、ADR 0021）。取り込みはファイルを読む
+  // await を挟んでから確認を出すので、その時点の値が要る。
+  const dirtyRef = useRef(false);
+  // **書くのは必ずこちらを通す。** state だけを書くと ref が置いていかれ、
+  // 「未保存かどうか」の答えが 2 つになる。
+  const setDirty = useCallback((next: boolean) => {
+    dirtyRef.current = next;
+    setDirtyState(next);
+  }, []);
   const [saving, setSaving] = useState(false);
   // 保存に送るシーンのバイト数。null は「まだ数えていない」。
   //
@@ -412,16 +450,7 @@ export function BoardPage({
    */
   const measureScene = useCallback(() => {
     if (!api) return;
-    setSceneSize(
-      sceneBytes(
-        serializeAsJSON(
-          api.getSceneElements(),
-          api.getAppState(),
-          api.getFiles(),
-          "local",
-        ),
-      ),
-    );
+    setSceneSize(sceneBytes(sceneJSON(api)));
   }, [api]);
 
   const measureTimer = useRef<number | null>(null);
@@ -448,13 +477,16 @@ export function BoardPage({
   );
 
   /** 署名を取り込み、保存済みと違えば未保存にする。 */
-  const applySignature = useCallback((signature: string) => {
-    latestSignature.current = signature;
-    // Excalidraw はマウント時にも onChange を発火する。その 1 回目は保存済み
-    // シーンそのものなので、未保存ではなく基準として覚える。
-    savedSignature.current ??= signature;
-    setDirty(signature !== savedSignature.current);
-  }, []);
+  const applySignature = useCallback(
+    (signature: string) => {
+      latestSignature.current = signature;
+      // Excalidraw はマウント時にも onChange を発火する。その 1 回目は保存済み
+      // シーンそのものなので、未保存ではなく基準として覚える。
+      savedSignature.current ??= signature;
+      setDirty(signature !== savedSignature.current);
+    },
+    [setDirty],
+  );
 
   // いまのキャンバスの見え方。**state ではなく ref に持つ。** 重ねる枠の
   // 引き直しにしか使わないので、スクロールのたびに再描画を増やす理由が無い。
@@ -489,10 +521,15 @@ export function BoardPage({
     [applySignature, scheduleMeasure],
   );
 
-  /** 現在のシーンを elements ごと差し替える。 */
+  /**
+   * 現在のシーンを elements ごと差し替える。
+   *
+   * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0042）。
+   * 表示状態そのものはここで触らない。
+   */
   const updateElements = useCallback(
-    (next: SceneElement[]) => {
-      api?.updateScene({ elements: next as never });
+    (next: SceneElement[], appState?: Record<string, unknown>) => {
+      api?.updateScene({ elements: next as never, appState: appState as never });
       // onChange の発火を待たずにここでも判定する。注釈の付け外しが未保存として
       // 出るかどうかを、updateScene が onChange を呼ぶかに依存させない。
       applySignature(sceneSignature(next));
@@ -675,13 +712,111 @@ export function BoardPage({
     [api, currentElements],
   );
 
+  /**
+   * いまのキャンバスを `.excalidraw` として書き出す（ADR 0042）。
+   *
+   * **保存済みシーンではなくキャンバスから出す。** 保存済みから出すと、未保存の
+   * 描き足しが黙って落ちる（中核思想 3）。**未保存でも押させる。** 入力は 1 つ
+   * しかないので、解釈のように揃うまで待たせる理由が無い（ADR 0018 との違い）。
+   *
+   * viewer にも出す。見えているものを出すだけで、共有した相手にはすでに全部
+   * 見えている（ADR 0017）。
+   */
+  const exportScene = useCallback(() => {
+    if (!api) return;
+
+    // 保存が送るのと同じバイト列。ヘッダーに出ている大きさが、そのまま
+    // 書き出したファイルの大きさになる。
+    const url = URL.createObjectURL(
+      new Blob([sceneJSON(api)], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = exportFileName(board.name);
+    // DOM に入っていない a のクリックを無視するブラウザがあるので、一度入れる。
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // 押した直後に外すと、ダウンロードが始まる前に URL が消えることがある。
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [api, board.name]);
+
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  // 取り込んでいる最中か。**押した時点で弾く**（`placing` と同じ形）。ファイルの
+  // 読み込みは非同期なので、state で覚えると 2 回目がまだ false を読む。
+  const importingFile = useRef(false);
+
+  /**
+   * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0042）。
+   *
+   * **サーバーには何も送らない。** 載せるだけで、確定させるのは人間の保存操作
+   * だけ（中核思想 3）。取り込んだシーンの検証・版の照合・大きさの上限は、
+   * その保存の経路のまま効く。
+   *
+   * **引いた解釈は捨てない。** これはキャンバスの編集であって保存ではない。
+   * 捨てるのは保存したときだけで、それまでは未保存なので解釈は押せない
+   * （ADR 0018）。
+   */
+  const importScene = useCallback(
+    async (file: File) => {
+      if (!api || importingFile.current) return;
+      importingFile.current = true;
+
+      try {
+        let imported: ImportedScene;
+        try {
+          // **読んでから訊く**（`App.open` と同じ形、ADR 0021）。訊いてから
+          // 読むと、読んでいるあいだの描き足しを確認なしで捨てる。読めなかった
+          // ときに捨ててよいかを訊いてしまうことも無くなる。
+          imported = await readSceneFile(file, api);
+        } catch (e) {
+          // 読めなかった。**キャンバスには触らない。** 例外の中身は画面に
+          // 出さず console に残す（`web/CLAUDE.md`）。
+          log.error("シーンファイルを読み込めませんでした", e);
+          onError(sceneFileUnreadableFailure());
+          return;
+        }
+
+        // **ここから先に待ちは無い。** 挟むと、待っているあいだの描き足しを
+        // 確認なしで捨てる。
+        if (
+          dirtyRef.current &&
+          !window.confirm(
+            "取り込むと、いまキャンバスにある内容は置き換わります。未保存の変更は失われます。",
+          )
+        ) {
+          return;
+        }
+
+        updateElements(
+          imported.elements,
+          imported.viewBackgroundColor === undefined
+            ? undefined
+            : { viewBackgroundColor: imported.viewBackgroundColor },
+        );
+        // 貼ってあった画像。**入れ忘れると画像の要素だけが空白で置かれる。**
+        api.addFiles(imported.files as never);
+
+        // 取り込んだ絵が画面の外にあると、押しても何も起きていないように見える
+        // （ADR 0040 で図のドラフトに対して決めたのと同じ形）。空のシーンには
+        // 寄せる先が無い。
+        if (imported.elements.length > 0) {
+          api.scrollToContent(imported.elements as never, { fitToContent: true });
+        }
+      } finally {
+        importingFile.current = false;
+      }
+    },
+    [api, onError, updateElements],
+  );
+
   const save = useCallback(async () => {
     if (!api) return;
 
     setSaving(true);
     try {
       const elements = api.getSceneElements();
-      const scene = serializeAsJSON(elements, api.getAppState(), api.getFiles(), "local");
+      const scene = sceneJSON(api);
       // 送った内容そのものを新しい基準にする。保存の待ち時間に編集されていたら
       // 未保存のまま残す必要があるので、setDirty(false) とは書かない。
       const sent = sceneSignature(elements as unknown as SceneElement[]);
@@ -716,7 +851,15 @@ export function BoardPage({
     } finally {
       setSaving(false);
     }
-  }, [api, board.id, creationGenerations, generations, onError, refreshAnnotations]);
+  }, [
+    api,
+    board.id,
+    creationGenerations,
+    generations,
+    onError,
+    refreshAnnotations,
+    setDirty,
+  ]);
 
   /**
    * 注釈を解釈させる。
@@ -1044,6 +1187,54 @@ export function BoardPage({
             </button>
           )}
           {/*
+            持ち出しと取り込みの口はここ 1 つ（ADR 0042）。ライブラリのメニュー
+            からは外してある（`UI_OPTIONS`）。
+
+            書き出しは viewer にも出す。見えているものを出すだけなので、
+            共有した相手に新しく見せるものが無い（ADR 0017）。
+          */}
+          <button type="button" onClick={exportScene} disabled={!api}>
+            書き出し
+          </button>
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                // **作成中は取り込ませない。** キャンバスを置き換えるので、
+                // 保存を止めているのと同じ理由で止める（作られた内容と記録
+                // されるハッシュが食い違いうる）。
+                disabled={!api || saving || creating}
+                aria-describedby={creating ? "import-blocked" : undefined}
+              >
+                取り込み
+              </button>
+              {creating && (
+                <span className="hint" id="import-blocked">
+                  作成が終わるまで取り込めません
+                </span>
+              )}
+              {/*
+                入力そのものは出さない。**押す口はボタン 1 つ**で、ここは
+                ファイルを選ばせるためだけに置いてある。
+              */}
+              <input
+                ref={fileInput}
+                type="file"
+                aria-label="取り込む .excalidraw ファイル"
+                accept=".excalidraw,application/json"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  // 選び直しで同じファイルをもう一度選べるようにする。値を
+                  // 残すと、2 回目の選択で change が発火しない。
+                  e.target.value = "";
+                  if (file) void importScene(file);
+                }}
+              />
+            </>
+          )}
+          {/*
             いまの大きさを出す。**上限との比は出さない。** 比を出すには上限を
             フロントが知る必要があり、それは判定を 2 箇所に持つのと同じこと
             になる（ADR 0018 / 0038）。「大きいときだけ」出さないのも同じ
@@ -1123,6 +1314,8 @@ export function BoardPage({
             initialData={initialData as never}
             onChange={handleChange as never}
             langCode="ja-JP"
+            // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0042）。
+            UIOptions={UI_OPTIONS}
             // viewer には描かせない。描けるのに保存できないと、描いた内容を
             // 黙って捨てることになる（ADR 0017）。
             viewModeEnabled={!canEdit}

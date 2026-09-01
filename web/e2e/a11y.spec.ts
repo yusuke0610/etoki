@@ -111,6 +111,37 @@ test.describe("押せない理由が本文として読める", () => {
     );
   });
 
+  // 取り込みはキャンバスを置き換える（ADR 0042）。作成中に置き換えると、作られた
+  // 内容と記録されるハッシュが食い違いうるので、保存と同じ理由で止める。
+  test("取り込み：作成中のとき", async ({ page }) => {
+    await installApi(page, baseMock());
+    // **応答を返さない。** 作成中の画面はこうしないと作れない。`installApi` の
+    // あとに登録して、こちらを先に当てる。
+    await page.route(
+      (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/items$/.test(url.pathname),
+      (route) => {
+        // 契約のメソッド以外は捕まえない。何でも受けると、フロントが違う
+        // メソッドで叩いていても作成中の画面になる（`.claude/rules/e2e-mocks.md`）。
+        if (route.request().method() !== "POST") {
+          void route.fallback();
+        }
+        // POST は応答しないまま握る。それがこのテストの入力。
+      },
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "取り込み" }),
+      "作成が終わるまで取り込めません",
+    );
+  });
+
   // 状態は保存済みシーンが基準なので、未保存で消したフレームの注釈が一覧に
   // 残る（ADR 0022）。押しても飛び先が無い。
   test("注釈の見出し：フレームがキャンバスに無いとき", async ({ page }) => {
