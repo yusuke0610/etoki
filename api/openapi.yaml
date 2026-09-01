@@ -850,6 +850,62 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/boards/{id}/diagram-draft:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    post:
+      tags: [boards]
+      operationId: generateDiagramDraft
+      summary: プロンプトから図のドラフトを生成する
+      description: |
+        **サーバーの状態を一切変えない**（ADR 0041）。DB にも GitHub にも触れず、
+        会話も保存しない。返した mermaid をキャンバスに置くかどうかは、見てから
+        開発者が決める（中核思想 3）。
+
+        **保存済みシーンを読まないので、未保存でも使える。** 解釈が保存を
+        要求する（ADR 0018）のとは非対称だが、手抜きではなく副作用の有無から
+        出る違い。
+
+        注釈でも解釈でもないので、パスはボードの直下に置く。囲みとは無関係で、
+        キャンバスに何も無くても呼べる。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateDiagramRequest"
+      responses:
+        "200":
+          description: 生成された図のドラフト
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagramDraft"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/DiagramChatTooLong"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          description: LLM の呼び出しに失敗した、または図が返らなかった
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: LLM が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/boards/{id}/annotations/{annotationId}/interpret:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -1062,6 +1118,22 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
 
+    DiagramChatTooLong:
+      description: |
+        図のドラフトの会話が上限を超えている。往復の回数か、会話全体の長さの
+        どちらか。
+
+        **黙って古いやりとりを捨てない。** 捨てると、積み上げた指示のどれが
+        効いているのかが分からなくなる。やり直すかどうかは開発者が決める
+        （中核思想 3）。
+
+        400 ではないのは大きさだから。送られた内容は正しく、打ち手が「送った
+        内容を直す」ではなく「会話をやり直す」になる（SceneTooLarge と同じ）。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
     NotConfigured:
       description: |
         その機能に必要な設定がされていない。URL の誤りではないので 404 に
@@ -1107,11 +1179,19 @@ components:
         false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
         `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
         原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
-      required: [interpretation, creation, sharing]
+      required: [interpretation, diagramDraft, creation, sharing]
       properties:
         interpretation:
           type: boolean
           description: 注釈を解釈できるか。false は LLM が未設定（ADR 0008）
+        diagramDraft:
+          type: boolean
+          description: |
+            プロンプトから図のドラフトを生成できるか。false は LLM が未設定。
+
+            **`interpretation` と畳まない。** 未設定の理由も設定するものも
+            同じだが、答えている問いが違う。1 つにすると、画面はどちらの
+            ボタンを止めればよいのかをこの値から決められなくなる
         creation:
           type: boolean
           description: |
@@ -1187,6 +1267,8 @@ components:
         - project_field_missing
         - llm_unavailable
         - interpretation_failed
+        - diagram_failed
+        - diagram_chat_too_long
         - creation_incomplete
         - github_unavailable
         - internal
@@ -1227,6 +1309,28 @@ components:
         - ""
         - epic
         - issue
+
+    DiagramKind:
+      type: string
+      description: |
+        図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
+        プロンプトから生成するドラフトが同じ 5 種を指す。
+
+        - `todo` … やることの洗い出し
+        - `mindmap` … 発想の広げ方
+        - `sequence` … 登場人物とやりとりの順序
+        - `er` … 実体と関連
+        - `architecture` … 構成要素と境界
+
+        **どの mermaid 記法で書くかはサーバーが決める**（ADR 0041）。
+        `mindmap` と `architecture` は mermaid にも同名の記法があるが、
+        Excalidraw の要素に分解できず画像 1 枚になるため使わない（ADR 0040）。
+      enum:
+        - todo
+        - mindmap
+        - sequence
+        - er
+        - architecture
 
     ItemKind:
       type: string
@@ -1746,6 +1850,63 @@ components:
       properties:
         image:
           $ref: "#/components/schemas/AnnotationImage"
+
+    DiagramTurn:
+      type: object
+      description: |
+        図のドラフトを直してきたやりとり 1 往復。
+
+        **サーバーは会話を保存しない**（ADR 0041）ので、ここまでの往復は毎回
+        まるごと送る。会話は成果物ではなく、成果物はキャンバス。
+      required: [prompt, mermaid]
+      properties:
+        prompt:
+          type: string
+          description: そのとき書いた指示
+        mermaid:
+          type: string
+          description: それに対して返った mermaid
+
+    GenerateDiagramRequest:
+      type: object
+      description: |
+        図のドラフトを 1 つ作るための入力。**保存済みシーンもキャンバスも
+        読まない**（ADR 0041）ので、未保存でも使える。
+      required: [kind, prompt]
+      properties:
+        kind:
+          $ref: "#/components/schemas/DiagramKind"
+        prompt:
+          type: string
+          description: |
+            今回の指示。空白だけのものは 400 で弾く。既定に倒さないのは、
+            何を描くかが入力そのものであるため
+        history:
+          type: array
+          description: |
+            ここまでのやりとり。1 回目は空。**上限を超えたら黙って古いものを
+            捨てず、`diagram_chat_too_long` で返す**
+          items:
+            $ref: "#/components/schemas/DiagramTurn"
+
+    DiagramDraft:
+      type: object
+      description: |
+        生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
+        見てから開発者が決める（中核思想 3）。mermaid を Excalidraw の要素に
+        するのはフロントの仕事（ADR 0040）。
+      required: [kind, mermaid, turnsRemaining]
+      properties:
+        kind:
+          $ref: "#/components/schemas/DiagramKind"
+        mermaid:
+          type: string
+          description: 生成された mermaid。コードフェンスは外してある
+        turnsRemaining:
+          type: integer
+          description: |
+            このあと何往復できるか。**上限に当たってから知らせるのでは遅い**
+            ので、押す前に見えるようにしている
 
     Interpretation:
       type: object

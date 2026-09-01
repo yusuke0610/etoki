@@ -275,7 +275,12 @@ test.describe("スクリーンショット", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, creation: false, sharing: false },
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: false,
+        sharing: false,
+      },
     };
 
     await installApi(page, mock);
@@ -583,6 +588,29 @@ test.describe("スクリーンショット", () => {
     await shot(page, "26-rename");
   });
 
+  // プロンプトから図のドラフトを作るチャット（ADR 0041）。**置くまでキャンバスは
+  // 変わらない**ので、生成した直後と置いた後の 2 枚を撮る。1 枚だけだと、
+  // 「置く」を挟んでいることが画像から読めない。
+  test("図のドラフトのチャットを撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+    // mermaid が出るまで待つ。待たずに撮ると、生成中の画面が写る。
+    await page.locator(".diagram-mermaid").waitFor();
+    await shot(page, "27-diagram-draft");
+
+    await page.getByRole("button", { name: "キャンバスに置く" }).click();
+    // 置いた先へ寄せるアニメーションが終わるのを、未保存の表示で待つ。
+    await page.getByText("未保存", { exact: true }).waitFor();
+    await shot(page, "28-diagram-placed");
+  });
+
   // 削除の確認。**GitHub 側に何が残るのかが読める文言になっているか**を画像で
   // 見る（ADR 0042）。件数と「残る」がどちらも出ていること。
   test("削除の確認を撮る", async ({ page }) => {
@@ -596,6 +624,6 @@ test.describe("スクリーンショット", () => {
 
     await page.getByRole("button", { name: "ボードを削除" }).click();
     await page.getByRole("alertdialog").waitFor();
-    await shot(page, "27-delete-confirm");
+    await shot(page, "29-delete-confirm");
   });
 });

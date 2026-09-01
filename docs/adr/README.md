@@ -42,4 +42,7 @@
 | [0036](0036-mark-annotation-frames-on-canvas.md)                 | 注釈にした frame はキャンバスに重ねて見分けさせる（要素は変えない）    | 採用                 |
 | [0037](0037-refresh-target-display-after-lock.md)                | 作成先の表示名は固定後も取り直せる（固定するのは作成先そのもの）       | 採用                 |
 | [0038](0038-scene-size-limit.md)                                 | シーンの保存に上限を置き、超えたら 413 で弾く                          | 採用                 |
+| [0039](0039-guard-accessibility-decisions.md)                    | アクセシビリティは形と判断に分けて守る（判断は E2E、形は lint と axe） | 採用                 |
+| [0040](0040-place-mermaid-drafts-as-shapes-only.md)              | mermaid のドラフトは手で直せる図形のときだけ置く                       | 採用                 |
+| [0041](0041-diagram-chat-changes-no-server-state.md)             | 図のドラフト生成はサーバーの状態を変えない（会話も持たない）           | 採用                 |
 | [0042](0042-delete-boards-after-showing-what-remains.md)         | ボードの削除は GitHub 側に残るものを見せてから通す                     | 採用                 |

@@ -32,6 +32,27 @@ HTMLCanvasElement.prototype.getContext = function getContext(contextID: string):
   return contextID === "2d" ? stub2DContext : null;
 } as typeof HTMLCanvasElement.prototype.getContext;
 
+// jsdom は CSS Font Loading API を実装していない。@excalidraw/excalidraw は
+// 文字を測るときにフォントの登録簿を組み立てるので、FontFace が無いと
+// ラベル付きの要素を作った時点で落ちる（convertToExcalidrawElements）。
+//
+// canvas と同じで、ここで要るのは「読み込めること」だけ。**測った幅は本物では
+// ない。** 文字の寸法に依存する検証はブラウザ側（E2E）に置く。
+if (typeof globalThis.FontFace === "undefined") {
+  class StubFontFace {
+    readonly family: string;
+    readonly status = "loaded";
+    constructor(family: string) {
+      this.family = family;
+    }
+    load(): Promise<StubFontFace> {
+      return Promise.resolve(this);
+    }
+  }
+
+  globalThis.FontFace = StubFontFace as unknown as typeof FontFace;
+}
+
 // jsdom の Blob は arrayBuffer を実装していない。ブラウザにはあるので、無い側に
 // 合わせて FileReader で書き直すのではなく、ここで補う。
 if (typeof Blob.prototype.arrayBuffer !== "function") {

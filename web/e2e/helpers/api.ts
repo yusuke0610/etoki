@@ -12,7 +12,9 @@ import type {
   BoardTargetDisplay,
   Capabilities,
   CreatedRun,
+  DiagramDraft,
   ErrorResponse,
+  GenerateDiagramRequest,
   Interpretation,
   InterpretRequest,
   LoginResponse,
@@ -61,6 +63,19 @@ export type ApiMock = {
    * （ADR 0024）。
    */
   createRequests: Interpretation[];
+  /**
+   * 図のドラフト生成の応答（ADR 0041）。
+   *
+   * **注釈で引かない。** この口はボードの直下にあり、囲みとは無関係。
+   */
+  diagramDraft: Reply<DiagramDraft>;
+  /**
+   * 生成で受け取ったリクエストボディ。届いた順に積む。
+   *
+   * **サーバーは会話を持たない。** 続きを頼むときに会話をまるごと送れて
+   * いるかは、送ったボディを見ないと確かめられない。
+   */
+  diagramRequests: GenerateDiagramRequest[];
   /** 作成先の候補。リポジトリ選択の画面が読む。 */
   repositories: Reply<Repository[]>;
   /** `owner/name` をキーにした Projects v2。 */
@@ -625,6 +640,21 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
 
       mock.createRequests.push((route.request().postDataJSON() ?? {}) as Interpretation);
       await json(route, mock.createItems.status, mock.createItems.body);
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/diagram-draft$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+
+      mock.diagramRequests.push(
+        (route.request().postDataJSON() ?? {}) as GenerateDiagramRequest,
+      );
+      await json(route, mock.diagramDraft.status, mock.diagramDraft.body);
     },
   );
 
