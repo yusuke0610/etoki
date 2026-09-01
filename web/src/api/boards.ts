@@ -13,7 +13,11 @@ import type {
   BoardTarget,
   BoardTargetDisplay,
   CreatedRun,
+  DiagramDraft,
+  DiagramKind,
+  DiagramTurn,
   ErrorResponse,
+  GenerateDiagramRequest,
   Interpretation,
   Project,
   RenameBoardRequest,
@@ -197,6 +201,27 @@ export const boardsApi = {
       `/api/boards/${boardId}/annotations/${annotationId}/interpret`,
       { method: "POST", body: JSON.stringify({ image } satisfies InterpretRequest) },
     ),
+
+  /**
+   * プロンプトから図のドラフトを生成する。
+   *
+   * **サーバーの状態を一切変えない**（ADR 0041）。保存済みシーンも読まないので、
+   * 解釈と違って**未保存でも呼べる**。返るのは mermaid だけで、キャンバスには
+   * 何も置かれていない。置くかどうかは見てから決める（中核思想 3）。
+   *
+   * `history` はここまでのやりとり。**サーバーは会話を持たない**ので、続きを
+   * 頼むときは毎回まるごと送る。
+   */
+  generateDiagram: (
+    boardId: string,
+    kind: DiagramKind,
+    prompt: string,
+    history: DiagramTurn[],
+  ) =>
+    request<DiagramDraft>(`/api/boards/${boardId}/diagram-draft`, {
+      method: "POST",
+      body: JSON.stringify({ kind, prompt, history } satisfies GenerateDiagramRequest),
+    }),
 
   /**
    * 解釈結果から draft issue を作る。

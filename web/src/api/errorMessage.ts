@@ -54,6 +54,14 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   llm_unavailable: "LLM を呼び出せませんでした。API キーと接続を確かめてください。",
   interpretation_failed:
     "LLM の出力が期待した形になりませんでした。もう一度試してください。",
+  // 接続はできたが図が返らなかった。llm_unavailable と打ち手が違う。あちらは
+  // 設定を見る話で、こちらは頼み方を変える話。
+  diagram_failed:
+    "図を生成できませんでした。指示を具体的にして、もう一度試してください。",
+  // 送った内容は正しく、積み上がりすぎただけ（ADR 0041）。**古いやりとりは
+  // こちらでは捨てない**ので、やり直すかどうかを選べるように言い切る。
+  diagram_chat_too_long:
+    "会話が長くなりすぎました。新しい会話として最初から指示し直してください。",
   creation_incomplete:
     "draft issue を 1 件も作れませんでした。GitHub 側の状態を確かめてください。",
   github_unavailable:
@@ -134,6 +142,24 @@ export function targetProjectMissingFailure(): Failure {
   return {
     message:
       "作成先の Project が GitHub 側で見つかりませんでした。消されたか、権限が変わっています。",
+    detail: "",
+  };
+}
+
+/**
+ * 生成した図がキャンバスに置ける形にならなかった（ADR 0040 / 0041）。
+ *
+ * `ErrorCode` を持たない。サーバーは 200 を返していて、手元の変換器が
+ * 「置けない形」と判断しただけ。**それでも文言はここに置く**（`web/CLAUDE.md`）。
+ * コンポーネントに書くと、同じ「置けません」がまた散る。
+ *
+ * `detail` は空にする。変換器のメッセージは英語の内部文言で、利用者の打ち手は
+ * 「図の種類を変える」だけ（`web/CLAUDE.md` の「例外の中身は画面に出さない」）。
+ */
+export function diagramNotPlaceableFailure(): Failure {
+  return {
+    message:
+      "この図はキャンバスに置ける形になりませんでした。図の種類を変えて試してください。",
     detail: "",
   };
 }

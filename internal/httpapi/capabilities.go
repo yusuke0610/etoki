@@ -20,6 +20,10 @@ import (
 func (h *handlers) getCapabilities(c *gin.Context) {
 	c.JSON(http.StatusOK, apitypes.Capabilities{
 		Interpretation: h.interpretations != nil,
+		// **解釈と畳まない。** 未設定の理由は同じ LLM でも、答えている問いが
+		// 違う。畳むと、画面はどちらのボタンを止めればよいのかをこの値から
+		// 決められなくなる。材料は生成のエンドポイントが 503 になるものそのもの。
+		DiagramDraft: h.diagrams != nil,
 		// 作成先の候補（catalog）も同じ GitHub の設定で決まる。片方だけ nil に
 		// なる配線は cmd/etoki には無いので、1 つにまとめて返す。
 		Creation: h.creations != nil && h.catalog != nil,

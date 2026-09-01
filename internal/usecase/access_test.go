@@ -51,6 +51,12 @@ func TestRolePermissions(t *testing.T) {
 				Interpret(ctx, "board-1", "annot-1", nil)
 			return err
 		}},
+		{"図のドラフト", func(ctx context.Context, boards *fakeBoards) error {
+			llm := &fakeLLM{responses: []string{validMermaid}}
+			_, err := usecase.NewDiagramService(boards, llm).
+				Generate(ctx, "board-1", req("段取り"))
+			return err
+		}},
 		{"作成", func(ctx context.Context, boards *fakeBoards) error {
 			gh := &fakeGitHub{fields: projectFields()}
 			_, err := usecase.NewCreationService(boards, &fakeMappings{}, gh,
@@ -71,9 +77,12 @@ func TestRolePermissions(t *testing.T) {
 		// 名前はブレストの中身に属する表示物で、取り消せない作成の行き先を
 		// 決めるものではない。シーンを書き換えられる editor に、表示名だけ
 		// 直させない理由が無い（作成先の変更は owner だけ）。
-		"改名":     port.RoleEditor,
-		"シーン保存":  port.RoleEditor,
-		"解釈":     port.RoleEditor,
+		"改名":    port.RoleEditor,
+		"シーン保存": port.RoleEditor,
+		"解釈":    port.RoleEditor,
+		// 生成も LLM を叩く外部呼び出しで課金を伴う。閲覧者に外部呼び出しを
+		// 許すのは「閲覧」ではない（解釈と同じ理由）。
+		"図のドラフト": port.RoleEditor,
 		"作成":     port.RoleEditor,
 		"作成先の変更": port.RoleOwner,
 	}
