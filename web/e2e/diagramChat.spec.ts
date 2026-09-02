@@ -155,6 +155,31 @@ test.describe("図のドラフト", () => {
     await expect(page.getByLabel("図への指示")).toHaveValue("注文から出荷までの流れ");
   });
 
+  // 実行の上限は解釈と 1 つの枠を共有する（ADR 0043）。**文言が「解釈」だけを
+  // 指していると、こちら側で見たときに食い違う。**
+  test("実行の上限に当たったら、解釈と共通の枠だと分かる文言を出す", async ({ page }) => {
+    const mock = baseMock();
+    mock.diagramDraft = {
+      status: 429,
+      body: {
+        code: "concurrency_limited",
+        error: "etoki: too many concurrent llm calls: 1 running, limit is 1",
+      },
+    };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await openChat(page);
+
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+
+    await expect(page.getByText("実行中です", { exact: false })).toBeVisible();
+    // 書いた指示は消さない。413 と同じ扱いで、待って押し直せる。
+    await expect(page.getByLabel("図への指示")).toHaveValue("注文から出荷までの流れ");
+  });
+
   // 図が返らなかったのと、LLM を呼べなかったのは打ち手が違う。畳むと画面は
   // どちらも「失敗しました」としか言えない（ADR 0034）。
   test("図が返らなかったときは、頼み方を変えるよう案内する", async ({ page }) => {

@@ -255,3 +255,40 @@ func waitForListener(t *testing.T, addr string) {
 	}
 	t.Fatalf("server did not start listening on %s", addr)
 }
+
+// 実行の上限は 0 を「無制限」と読ませない（ADR 0043）。未設定（既定 1）と
+// 0（無制限）で意味が逆向きになるため、設定するなら 1 以上を要求する。
+// 窓だけを設定した場合も落とす。効かない設定を黙って受けると、設定した
+// つもりの上限が外れる。
+func TestNewRejectsBrokenLLMLimits(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]etoki.LLMLimits{
+		"同時実行が負":       {MaxConcurrent: -1},
+		"回数が負":         {RateLimit: -1},
+		"窓が負":          {RateLimit: 1, RateWindow: -time.Second},
+		"窓だけで回数の上限が無い": {RateWindow: time.Hour},
+	}
+
+	for name, limits := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := options(t, "")
+			opts.LLMLimits = limits
+
+			if _, err := etoki.New(opts); err == nil {
+				t.Fatalf("New(%+v) = nil, want error", limits)
+			}
+		})
+	}
+}
+
+// 未設定はそのまま通る。既定の構成では回数の上限が無く、同時実行だけが効く。
+func TestNewAcceptsUnsetLLMLimits(t *testing.T) {
+	t.Parallel()
+
+	if _, err := etoki.New(options(t, "")); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+}

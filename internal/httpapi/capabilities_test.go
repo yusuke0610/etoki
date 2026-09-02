@@ -24,8 +24,9 @@ func TestGetCapabilities(t *testing.T) {
 			Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 			Annotations: usecase.NewAnnotationService(boards, mappings),
 			Interpretations: usecase.NewInterpretationService(
-				boards, mappings, &stubLLM{text: validInterpretation}),
-			Diagrams: usecase.NewDiagramService(boards, &stubLLM{text: validInterpretation}),
+				boards, mappings, &stubLLM{text: validInterpretation}, newLimiter()),
+			Diagrams: usecase.NewDiagramService(
+				boards, &stubLLM{text: validInterpretation}, newLimiter()),
 			Creations: usecase.NewCreationService(
 				boards, mappings, gh, usecase.NewBoardLocks()),
 			Catalog: usecase.NewGitHubCatalogService(gh),

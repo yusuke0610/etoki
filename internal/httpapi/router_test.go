@@ -899,3 +899,11 @@ func openTempDB(t *testing.T) *sql.DB {
 
 	return db
 }
+
+// newLimiter は既定の上限（同時実行 1・回数は無制限）の limiter を返す。
+//
+// ハンドラのテストはリクエストを逐次に投げるので、同時実行 1 には当たらない。
+// 上限そのものの挙動はユースケース層のテストが見る。
+func newLimiter() *usecase.LLMLimiter {
+	return usecase.NewLLMLimiter(usecase.LLMLimits{})
+}

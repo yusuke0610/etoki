@@ -83,7 +83,10 @@ type DiagramDraft struct {
 // 対象が無い。
 type DiagramService struct {
 	boardGuard
-	llm         port.LLMClient
+	llm port.LLMClient
+	// limits は LLM を叩く実行の上限（ADR 0043）。InterpretationService と
+	// **同じものを共有する。** 解釈だけを絞ると、こちらが抜け道として残る。
+	limits      *LLMLimiter
 	maxAttempts int
 	maxTurns    int
 	logger      *slog.Logger
@@ -125,12 +128,16 @@ func WithDiagramLogger(l *slog.Logger) DiagramServiceOption {
 }
 
 // NewDiagramService は DiagramService を作る。
+//
+// limits は InterpretationService と同じものを渡す（LLMLimiter を参照）。
 func NewDiagramService(
-	boards port.BoardRepository, llm port.LLMClient, opts ...DiagramServiceOption,
+	boards port.BoardRepository, llm port.LLMClient, limits *LLMLimiter,
+	opts ...DiagramServiceOption,
 ) *DiagramService {
 	s := &DiagramService{
 		boardGuard:  boardGuard{boards: boards},
 		llm:         llm,
+		limits:      limits,
 		maxAttempts: defaultDiagramMaxAttempts,
 		maxTurns:    MaxDiagramTurns,
 		logger:      slog.Default(),
@@ -160,6 +167,14 @@ func (s *DiagramService) Generate(
 	if err := s.validate(req); err != nil {
 		return DiagramDraft{}, err
 	}
+
+	// **枠を取るのは LLM を叩く直前**（ADR 0043）。解釈と同じ枠を見るので、
+	// 片方で使い切ればもう片方も断られる。
+	release, err := s.limits.Acquire(ctx)
+	if err != nil {
+		return DiagramDraft{}, err
+	}
+	defer release()
 
 	mermaid, usage, err := s.complete(ctx, req)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されている（ADR 0031）。
