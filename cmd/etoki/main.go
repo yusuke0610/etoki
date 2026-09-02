@@ -59,9 +59,10 @@ environment:
   ETOKI_LLM_MAX_CONCURRENT     1 人が同時に走らせられる解釈・図の生成の数
                                （既定: ` + strconv.Itoa(etoki.DefaultLLMMaxConcurrent) + `）
   ETOKI_LLM_RATE_LIMIT         ETOKI_LLM_RATE_WINDOW のあいだに始められる回数
-                               未設定なら無制限
+                               未設定なら無制限。単独で設定してよく、
+                               そのとき窓は既定になる
   ETOKI_LLM_RATE_WINDOW        回数を数える窓（既定: ` + etoki.DefaultLLMRateWindow.String() + `）
-                               ETOKI_LLM_RATE_LIMIT と一緒に設定する
+                               単独では設定できない（回数の上限が要る）
   ETOKI_GITHUB_TOKEN    GitHub のトークン（repo の read と Projects の read/write）
                         認証を設定した場合は使わない
   ETOKI_GITHUB_APP_CLIENT_ID      GitHub App の client ID（設定するとログインを要求する）
