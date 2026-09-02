@@ -16,8 +16,8 @@ func newLimiter() *usecase.LLMLimiter {
 	return usecase.NewLLMLimiter(usecase.LLMLimits{})
 }
 
-// clock は差し替えた時計。進めるのはテストだけなので排他は要らない
-// （Acquire は now() を自分のロックの外で呼ぶが、並行に進める使い方はしない）。
+// clock は差し替えた時計。Acquire は now() を自分のロックの中で呼ぶので、
+// 進めるのがテストだけならここに排他は要らない。
 type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time { return c.t }
