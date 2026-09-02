@@ -132,7 +132,7 @@ export function sceneUnreadableFailure(): Failure {
 }
 
 /**
- * 取り込もうとしたファイルが Excalidraw のシーンとして読めなかった（ADR 0042）。
+ * 取り込もうとしたファイルが Excalidraw のシーンとして読めなかった（ADR 0044）。
  *
  * `ErrorCode` を持たない。サーバーには何も送っていない失敗で、読めるかどうかを
  * 判断したのは手元のライブラリ。**それでも文言はここに置く**（`web/CLAUDE.md`）。

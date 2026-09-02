@@ -5,6 +5,7 @@ import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/boar
 import {
   ANNOTATION_IDS,
   BOARD_ID,
+  annotations,
   baseMock,
   board,
   interpretation,
@@ -574,6 +575,49 @@ test.describe("スクリーンショット", () => {
     await shot(page, "25-run-history");
   });
 
+  // 途中で失敗した run（ADR 0043）。一覧の注意書きと履歴の中の帯が二重に
+  // 見えていないか、理由が畳まれたままかを画像で見る。
+  test("途中で失敗した run を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.annotations[BOARD_ID] = annotations().map((a) =>
+      a.id === ANNOTATION_IDS.created ? { ...a, lastRunOutcome: "incomplete" } : a,
+    );
+    mock.runs = {
+      [ANNOTATION_IDS.created]: {
+        status: 200,
+        body: [
+          {
+            id: 1,
+            createdAt: "2026-08-04T12:00:00Z",
+            outcome: "incomplete",
+            error: 'create "再設定メールを送る": github graphql: rate limited',
+            items: [
+              {
+                itemId: "PVTI_epic",
+                kind: "epic",
+                title: "パスワード再設定",
+                body: "忘れたときの導線をまとめる",
+                localId: "e1",
+                action: "created",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await card.getByText("実行の履歴").click();
+    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+    await card.locator(".run-history .error").waitFor();
+    await shot(page, "27-run-incomplete");
+  });
+
   // 名前を変えている最中。見出しが入力に変わるので、押し間違いで名前が
   // 変わるように見えていないかを画像で見る。
   test("名前の変更中を撮る", async ({ page }) => {
@@ -609,5 +653,21 @@ test.describe("スクリーンショット", () => {
     // 置いた先へ寄せるアニメーションが終わるのを、未保存の表示で待つ。
     await page.getByText("未保存", { exact: true }).waitFor();
     await shot(page, "28-diagram-placed");
+  });
+
+  // 削除の確認。**GitHub 側に何が残るのかが読める文言になっているか**を画像で
+  // 見る（ADR 0042）。件数と「残る」がどちらも出ていること。
+  test("削除の確認を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await page.getByRole("alertdialog").waitFor();
+    await shot(page, "29-delete-confirm");
   });
 });

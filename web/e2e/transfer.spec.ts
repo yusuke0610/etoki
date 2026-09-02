@@ -7,7 +7,7 @@ import { drawRectangle, openBoard } from "./helpers/board";
 import { BOARD_ID, baseMock } from "./helpers/fixtures";
 
 /**
- * ボードの持ち出しと取り込み（#42、ADR 0042）。
+ * ボードの持ち出しと取り込み（#42、ADR 0044）。
  *
  * **ここでしか確かめられない。** 書き出しはブラウザのダウンロードを、取り込みは
  * `loadFromBlob` の実物と Excalidraw への差し込みを通る。どちらも jsdom では
@@ -90,7 +90,7 @@ test.describe("書き出し", () => {
     ]);
   });
 
-  // **保存済みシーンではなくキャンバスから出す**（ADR 0042）。保存済みから
+  // **保存済みシーンではなくキャンバスから出す**（ADR 0044）。保存済みから
   // 出すと、未保存の描き足しが黙って落ちる。
   test("未保存の描き足しも出る", async ({ page }) => {
     const mock = await installApi(page, baseMock());
@@ -120,7 +120,7 @@ test.describe("書き出し", () => {
 });
 
 test.describe("取り込み", () => {
-  // **載せるだけで、確定させるのは人間の保存操作だけ**（ADR 0042、中核思想 3）。
+  // **載せるだけで、確定させるのは人間の保存操作だけ**（ADR 0044、中核思想 3）。
   test("キャンバスが置き換わり、未保存になる（サーバーには送らない）", async ({
     page,
   }) => {
@@ -244,7 +244,7 @@ test.describe("取り込み", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
   });
 
-  // 読み込みの入口を 1 つに保つ（ADR 0042）。**ライブラリのメニューに残っている
+  // 読み込みの入口を 1 つに保つ（ADR 0044）。**ライブラリのメニューに残っている
   // と、同じ画面に意味の違う「保存」が 2 つ並ぶ。**
   test("ライブラリのメニューに開く・名前を付けて保存が無い", async ({ page }) => {
     await installApi(page, baseMock());

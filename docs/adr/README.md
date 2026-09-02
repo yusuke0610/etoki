@@ -45,4 +45,6 @@
 | [0039](0039-guard-accessibility-decisions.md)                    | アクセシビリティは形と判断に分けて守る（判断は E2E、形は lint と axe） | 採用                 |
 | [0040](0040-place-mermaid-drafts-as-shapes-only.md)              | mermaid のドラフトは手で直せる図形のときだけ置く                       | 採用                 |
 | [0041](0041-diagram-chat-changes-no-server-state.md)             | 図のドラフト生成はサーバーの状態を変えない（会話も持たない）           | 採用                 |
-| [0042](0042-export-and-import-boards.md)                         | ボードの持ち出しと取り込みは etoki の口 1 つに寄せる                   | 採用                 |
+| [0042](0042-delete-boards-after-showing-what-remains.md)         | ボードの削除は GitHub 側に残るものを見せてから通す                     | 採用                 |
+| [0043](0043-record-run-outcome.md)                               | 途中で失敗した run は記録に残す（埋めずに「不明」を残す）              | 採用                 |
+| [0044](0044-export-and-import-boards.md)                         | ボードの持ち出しと取り込みは etoki の口 1 つに寄せる                   | 採用                 |

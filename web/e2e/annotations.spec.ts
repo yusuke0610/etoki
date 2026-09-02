@@ -1,10 +1,12 @@
 import { expect, test } from "@playwright/test";
 
+import type { SyncRun } from "../src/api/types";
 import { installApi } from "./helpers/api";
 import { annotationCard, openBoard } from "./helpers/board";
 import {
   ANNOTATION_IDS,
   BOARD_ID,
+  annotations,
   baseMock,
   mixedFramesMock,
   multiFrameMock,
@@ -191,43 +193,43 @@ test.describe("注釈の状態", () => {
  */
 test.describe("実行の履歴", () => {
   /** 2 回に分けて作った注釈の履歴。新しい順で返る。 */
-  function withRuns() {
-    const mock = baseMock();
-    mock.runs = {
-      [ANNOTATION_IDS.created]: {
-        status: 200,
-        body: [
+  function historyRuns(): SyncRun[] {
+    return [
+      {
+        id: 2,
+        createdAt: "2026-08-04T12:00:00Z",
+        items: [
           {
-            id: 2,
-            createdAt: "2026-08-04T12:00:00Z",
-            items: [
-              {
-                itemId: "PVTI_issue",
-                kind: "issue",
-                title: "再設定メールを送る",
-                body: "有効期限つきのリンクを送る",
-                localId: "i1",
-                action: "created",
-              },
-            ],
-          },
-          {
-            id: 1,
-            createdAt: "2026-08-03T12:00:00Z",
-            items: [
-              {
-                itemId: "PVTI_epic",
-                kind: "epic",
-                title: "パスワード再設定",
-                body: "忘れたときの導線をまとめる",
-                localId: "e1",
-                action: "created",
-              },
-            ],
+            itemId: "PVTI_issue",
+            kind: "issue",
+            title: "再設定メールを送る",
+            body: "有効期限つきのリンクを送る",
+            localId: "i1",
+            action: "created",
           },
         ],
       },
-    };
+      {
+        id: 1,
+        createdAt: "2026-08-03T12:00:00Z",
+        items: [
+          {
+            itemId: "PVTI_epic",
+            kind: "epic",
+            title: "パスワード再設定",
+            body: "忘れたときの導線をまとめる",
+            localId: "e1",
+            action: "created",
+          },
+        ],
+      },
+    ];
+  }
+
+  /** `historyRuns` を返すボード。runs の中身を差し替えたいときは引数で渡す。 */
+  function withRuns(runs: SyncRun[] = historyRuns()) {
+    const mock = baseMock();
+    mock.runs = { [ANNOTATION_IDS.created]: { status: 200, body: runs } };
     return mock;
   }
 
@@ -290,6 +292,53 @@ test.describe("実行の履歴", () => {
     await expect(
       card.locator(".run-history").getByText("再設定メールを送る"),
     ).toBeVisible();
+  });
+
+  // 途中失敗の手掛かりが応答 1 回ぶんしか生きていないと、翌日戻ってきた開発者
+  // には「作れた件数が少ない run」にしか見えない（ADR 0043）。開き直したあとに
+  // 何が見えるかを固定する。ここが切れると #110 に戻る。
+  test("途中で失敗した run は、開き直したあとも履歴からそれと分かる", async ({
+    page,
+  }) => {
+    // 途中で失敗したのは新しいほうの run。古いほうは完走している。
+    const mock = withRuns(
+      historyRuns().map((run, i) =>
+        i === 0
+          ? {
+              ...run,
+              outcome: "incomplete" as const,
+              error: "github graphql: rate limited",
+            }
+          : { ...run, outcome: "complete" as const },
+      ),
+    );
+    // 一覧にも出る。履歴を開かないと気づけないのでは、見せたことにならない。
+    mock.annotations[BOARD_ID] = annotations().map((a) =>
+      a.id === ANNOTATION_IDS.created ? { ...a, lastRunOutcome: "incomplete" } : a,
+    );
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await expect(
+      card.getByText("前回の実行は途中で失敗しました", { exact: false }),
+    ).toBeVisible();
+    // 状態そのものは変えない。作れたぶんは記録されている（ADR 0009）。
+    await expect(card.getByText("作成済み")).toBeVisible();
+
+    await card.getByText("実行の履歴").click();
+    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+
+    const history = card.locator(".run-history");
+    await expect(history.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
+    // 理由は畳んで残す。利用者向けの文言ではない（ADR 0034）。
+    await expect(history.getByText("github graphql: rate limited")).toBeHidden();
+    await history.locator(".error-detail > summary").click();
+    await expect(history.getByText("github graphql: rate limited")).toBeVisible();
+
+    // 完走した run には何も出さない。全部に印が付くと、印が意味を失う。
+    await expect(history.locator(".error")).toHaveCount(1);
   });
 
   // 一度も実行していない注釈に履歴の枠を出さない。常に出すと、空の枠が

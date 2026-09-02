@@ -247,6 +247,34 @@ func (h *handlers) renameBoard(c *gin.Context) {
 	h.respondBoard(c, *b)
 }
 
+// getBoardDeletion は削除で何が失われるかを返す。
+//
+// **削除とは別の呼び出しに保つ。** 見せてから確認させるための口なので、
+// 削除の応答に混ぜると押す前に読めない（ADR 0042）。
+func (h *handlers) getBoardDeletion(c *gin.Context) {
+	d, err := h.boards.Deletion(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, apitypes.BoardDeletion{RecordedItemCount: d.RecordedItemCount})
+}
+
+// deleteBoard はボードを削除する。
+//
+// owner だけかの判断はユースケース層が持つ（ADR 0017）。ここは 204 を返すだけ。
+func (h *handlers) deleteBoard(c *gin.Context) {
+	if err := h.boards.Delete(c.Request.Context(), c.Param("id")); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// 消したものを本文に載せない。メンバーを外す口（removeBoardMember）と
+	// 揃える。
+	c.Status(http.StatusNoContent)
+}
+
 // setBoardTarget は draft issue の作成先をボードに設定する。
 //
 // 固定済みかどうかの判断はユースケース層が持つ。ここは 409 に写すだけ。
@@ -388,13 +416,30 @@ func (h *handlers) listAnnotationRuns(c *gin.Context) {
 }
 
 func toSyncRun(r port.SyncRun) apitypes.SyncRun {
-	return apitypes.SyncRun{
+	out := apitypes.SyncRun{
 		ID:        r.ID,
 		CreatedAt: r.CreatedAt,
-		// items は空配列がありうる。1 件も作れずに終わった run も記録として
-		// 残る（ADR 0009）ので、省略せずに空の配列で返す。
+		// 一覧は常に配列にする。nil を返すと JSON が null になる。
 		Items: toSyncItems(r.Items),
+		Error: r.Error,
 	}
+
+	// **記録していなかった頃の run では省く。** complete を埋めると、当時も
+	// 起きていた途中失敗を成功として言い切ることになる（ADR 0043）。
+	if outcome, ok := toRunOutcome(r.Outcome); ok {
+		out.Outcome = &outcome
+	}
+
+	return out
+}
+
+// toRunOutcome は run の結末を契約の値に写す。記録が無ければ ok が false。
+func toRunOutcome(o port.RunOutcome) (apitypes.RunOutcome, bool) {
+	if !o.Valid() {
+		return "", false
+	}
+
+	return apitypes.RunOutcome(o), true
 }
 
 func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {
@@ -408,6 +453,13 @@ func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {
 	if s.LatestRun != nil {
 		syncedAt := s.LatestRun.CreatedAt
 		res.LastSyncedAt = &syncedAt
+
+		// 途中で失敗したかどうかは一覧にも出す。履歴を開かないと気づけないと、
+		// 翌日戻ってきた開発者には「件数が少ない run」にしか見えない
+		// （ADR 0043）。**理由は載せない。** 手掛かりの本文は履歴が持つ。
+		if outcome, ok := toRunOutcome(s.LatestRun.Outcome); ok {
+			res.LastRunOutcome = &outcome
+		}
 	}
 	// 中身は最新 run ではなく畳み込みから出す（ADR 0026）。0 件なら省く。
 	if len(s.Items) > 0 {

@@ -420,6 +420,56 @@ body {
 }
 
 /*
+  取り消せない操作のボタン。いまはボードの削除だけが使う（ADR 0042）。
+
+  **消さず、押しにくくもしない。** 押す前に何が失われるかを見せる形で守って
+  いるので（中核思想 3）、ここは「他と違う」と分かれば足りる。
+*/
+button.danger {
+  border-color: #d9a7a1;
+  color: #8a1c12;
+}
+
+/*
+  削除の確認（ADR 0042）。ヘッダーの直下に出す。
+
+  **ブラウザの confirm を使わない。** GitHub 側に何件残るのかを見せる場所が
+  無いため。衝突の知らせ（.conflict）と同じ位置に出るが、こちらは押すまで
+  何も起きていない状態なので、色は失敗ではなく注意として扱う。
+*/
+.delete-confirm {
+  background: #fdecea;
+  color: #8a1c12;
+  border-bottom: 1px solid #f3c5c0;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/*
+  確認が出たときにフォーカスを受ける枠（`tabIndex={-1}`）。既定の focus ring は
+  枠いっぱいに出て「押せる」ように見えるので、輪郭ではなく差し色で示す。
+*/
+.delete-confirm:focus-visible {
+  outline: none;
+  box-shadow: inset 3px 0 0 #8a1c12;
+}
+
+.delete-confirm h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.delete-confirm p {
+  margin: 0 0 8px;
+}
+
+.delete-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/*
   描画に失敗した範囲に出る（ADR 0027）。パネルの中にも、アプリ全体の代わりにも
   出るので、幅は置かれた場所に合わせる。
 */

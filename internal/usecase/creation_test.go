@@ -526,6 +526,45 @@ func TestCreate_RecordsPartialRunOnFailure(t *testing.T) {
 	if len(mappings.runs[0].Items) != 2 {
 		t.Errorf("保存された Items = %d 件, want 2", len(mappings.runs[0].Items))
 	}
+
+	// **記録にも失敗を残す。** 応答にしか出さないと、手掛かりが生きているのは
+	// その 1 回ぶんだけで、あとから履歴を見ると「作れた件数が少ない run」に
+	// しか見えない（ADR 0043、#110）。
+	saved := mappings.runs[0]
+	if saved.Outcome != port.OutcomeIncomplete {
+		t.Errorf("保存された Outcome = %q, want %q", saved.Outcome, port.OutcomeIncomplete)
+	}
+	// 理由は応答に載せるものと同じ文字列。片方だけ包みを剥くと、同じ失敗が
+	// 2 通りの見え方になる。
+	if saved.Error != err.Error() {
+		t.Errorf("保存された Error = %q, want %q", saved.Error, err.Error())
+	}
+}
+
+// 完走した run にも結末を書く。**書き忘れを「記録していなかった頃の run」に
+// 化けさせない**ため、port 側は不明を保存させない（ADR 0043）。
+func TestCreate_RecordsCompleteOutcome(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	if _, err := svc.Create(
+		t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation(),
+	); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if len(mappings.runs) != 1 {
+		t.Fatalf("保存された run = %d 件, want 1", len(mappings.runs))
+	}
+	if mappings.runs[0].Outcome != port.OutcomeComplete {
+		t.Errorf("Outcome = %q, want %q", mappings.runs[0].Outcome, port.OutcomeComplete)
+	}
+	if mappings.runs[0].Error != "" {
+		t.Errorf("Error = %q, want 空", mappings.runs[0].Error)
+	}
 }
 
 // 空の run を残すと、状態が created に変わって「作成済み」に見えてしまう。

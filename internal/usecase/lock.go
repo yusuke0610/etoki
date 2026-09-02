@@ -13,6 +13,9 @@ import (
 // ボードの run として残る。sync_runs が指す item を見失うのは、固定がまさに
 // 防ごうとしていた事故そのものなので、判断と記録をまたいで直列化する。
 //
+// **ボードの削除も同じ鍵を取る**（ADR 0042）。作成の途中で消すと、GitHub には
+// draft issue ができたのに run を書けず、取り消せない作成が記録の無いまま残る。
+//
 // プロセス内の排他で足りる。SQLite のファイルを複数プロセスで共有する構成は
 // 想定していない（ADR 0004）。
 type BoardLocks struct {
@@ -39,8 +42,9 @@ func (l *BoardLocks) Acquire(ctx context.Context, boardID string) (func(), error
 	sem, ok := l.sem[boardID]
 	if !ok {
 		sem = make(chan struct{}, 1)
-		// 使い終わっても消さない。増えるのはボードの数までで、参照カウントを
-		// 持つほうが取りこぼしたときの壊れ方が分かりにくい。
+		// 使い終わっても消さない。増えるのはこのプロセスが触ったボードの数まで
+		// （消したボードのぶんも残る）で、参照カウントを持つほうが取りこぼした
+		// ときの壊れ方が分かりにくい。
 		l.sem[boardID] = sem
 	}
 	l.mu.Unlock()

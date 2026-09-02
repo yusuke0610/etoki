@@ -13,6 +13,7 @@ import {
 } from "../api/errorMessage";
 import type {
   AnnotationStatus,
+  BoardDeletion,
   BoardDetail,
   Capabilities,
   DiagramKind,
@@ -94,7 +95,7 @@ const MEASURE_DELAY_MS = 500;
 const DIAGRAM_KEY = "diagram";
 
 /**
- * ライブラリのメニューから閉じるもの（ADR 0042）。
+ * ライブラリのメニューから閉じるもの（ADR 0044）。
  *
  * **持ち出しと取り込みの口は etoki のヘッダー 1 つに寄せる。** ライブラリ側を
  * 残すと、同じ画面に意味の違う「保存」が 2 つ並び、片方だけが etoki のボード名と
@@ -112,6 +113,17 @@ const DIAGRAM_KEY = "diagram";
 const UI_OPTIONS = {
   canvasActions: { loadScene: false, export: false, saveToActiveFile: false },
 } as const;
+
+/**
+ * 削除の確認がいまどこにいるか（ADR 0042）。
+ *
+ * **`losing` を持たない状態と持つ状態を型で分ける。** 件数が無いまま確認を
+ * 出せる形にすると、何を失うのかを見せずに押させる画面が書ける。
+ */
+type DeletionState =
+  | { status: "loading" }
+  | { status: "confirming"; losing: BoardDeletion }
+  | { status: "deleting"; losing: BoardDeletion };
 
 type Props = {
   board: BoardDetail;
@@ -138,6 +150,17 @@ type Props = {
    */
   onRenamed: (board: BoardDetail) => void;
   /**
+   * ボードを削除したので、手元から外してもらう。
+   *
+   * **確認はこの中で済ませてある**（ADR 0042）。親は未保存の確認を重ねない。
+   * 消えたのはボードそのもので、未保存の編集を捨てるかどうかを訊いても
+   * 戻せる先が無い。
+   *
+   * **消えた ID を渡す。** 親は一覧からその 1 件を外すのに使う。開いている
+   * ボードから読み直させると、遅れて呼ばれたときに別のボードを外しうる。
+   */
+  onDeleted: (id: string) => void;
+  /**
    * 未保存かどうかを親に伝える。
    *
    * キャンバスから離れる導線（ボードの切り替え、作成先の選択）は親が持って
@@ -153,6 +176,7 @@ export function BoardPage({
   onChangeTarget,
   onTargetRefreshed,
   onRenamed,
+  onDeleted,
   onDirtyChange,
 }: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
@@ -228,6 +252,11 @@ export function BoardPage({
   // 読むところが編集欄になり、押し間違いで名前が変わる。
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
+  // 削除の確認。null なら押されていない（ADR 0042）。
+  //
+  // **失われるものを引き終わるまで確認を出さない。** 件数を伏せたまま
+  // 「削除しますか」と訊くと、何を失うのかを知らないまま押させることになる。
+  const [deletion, setDeletion] = useState<DeletionState | null>(null);
   // 注釈 ID をキーにした実行履歴。開いていない注釈は入っていない。
   const [runHistories, setRunHistories] = useState<Record<string, RunHistoryState>>({});
 
@@ -258,6 +287,62 @@ export function BoardPage({
       setRenaming(false);
     }
   }, [board.id, board.name, nameDraft, onError, onRenamed]);
+
+  /**
+   * 削除で失われるものを引き、確認を出す。
+   *
+   * **押されたときだけ引く。** 開いたときに数えると、削除するまで要らない
+   * 畳み込みをボードを開くたびに引くことになる（中核思想 3、ADR 0037 の
+   * 取り直しと同じ形）。
+   *
+   * 世代は持たない。ボードを切り替えると BoardPage ごと作り直される
+   * （App が `key={current.id}` を渡している）ので、遅れて届いた応答が別の
+   * ボードの確認として出ることはない。
+   */
+  const askDelete = useCallback(async () => {
+    setDeletion({ status: "loading" });
+    try {
+      setDeletion({ status: "confirming", losing: await boardsApi.deletion(board.id) });
+    } catch (e) {
+      // 確認を出さずに閉じる。件数を知らないまま「削除しますか」と訊くと、
+      // 見せてから選ばせるという約束（ADR 0042）が守れない。
+      setDeletion(null);
+      onError(describeFailure("削除で失われるものを確かめられませんでした", e));
+    }
+  }, [board.id, onError]);
+
+  /**
+   * ボードを消す。**取り消せない。**
+   *
+   * GitHub に作った draft issue は消えない。消えるのは etoki 側の記録の
+   * ほうで、残った draft issue の出どころが辿れなくなる（ADR 0042）。
+   */
+  const deleteBoard = useCallback(async () => {
+    if (deletion?.status !== "confirming") return;
+    const losing = deletion.losing;
+
+    setDeletion({ status: "deleting", losing });
+    try {
+      await boardsApi.delete(board.id);
+      onDeleted(board.id);
+    } catch (e) {
+      // 確認は開いたまま戻す。閉じると、押し直すのに引き直しからになる
+      // （改名が下書きを残すのと同じ）。
+      setDeletion({ status: "confirming", losing });
+      onError(describeFailure("ボードを削除できませんでした", e));
+    }
+  }, [board.id, deletion, onDeleted, onError]);
+
+  /**
+   * 確認が出たら、そこへフォーカスを移す。
+   *
+   * **移さないとキーボードの居場所が消える。** 押した「ボードを削除」は確認が
+   * 開くと disabled になり、focus を body へ落とす。取り消せない操作の直前で
+   * 行き先を失わせない。
+   */
+  const focusDeleteConfirm = useCallback((node: HTMLElement | null) => {
+    node?.focus();
+  }, []);
 
   /**
    * その注釈の実行履歴を引く。
@@ -524,7 +609,7 @@ export function BoardPage({
   /**
    * 現在のシーンを elements ごと差し替える。
    *
-   * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0042）。
+   * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0044）。
    * 表示状態そのものはここで触らない。
    */
   const updateElements = useCallback(
@@ -713,7 +798,7 @@ export function BoardPage({
   );
 
   /**
-   * いまのキャンバスを `.excalidraw` として書き出す（ADR 0042）。
+   * いまのキャンバスを `.excalidraw` として書き出す（ADR 0044）。
    *
    * **保存済みシーンではなくキャンバスから出す。** 保存済みから出すと、未保存の
    * 描き足しが黙って落ちる（中核思想 3）。**未保存でも押させる。** 入力は 1 つ
@@ -747,7 +832,7 @@ export function BoardPage({
   const importingFile = useRef(false);
 
   /**
-   * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0042）。
+   * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0044）。
    *
    * **サーバーには何も送らない。** 載せるだけで、確定させるのは人間の保存操作
    * だけ（中核思想 3）。取り込んだシーンの検証・版の照合・大きさの上限は、
@@ -1187,7 +1272,7 @@ export function BoardPage({
             </button>
           )}
           {/*
-            持ち出しと取り込みの口はここ 1 つ（ADR 0042）。ライブラリのメニュー
+            持ち出しと取り込みの口はここ 1 つ（ADR 0044）。ライブラリのメニュー
             からは外してある（`UI_OPTIONS`）。
 
             書き出しは viewer にも出す。見えているものを出すだけなので、
@@ -1256,8 +1341,80 @@ export function BoardPage({
               {saving ? "保存中…" : "保存"}
             </button>
           )}
+          {/*
+            ボードごと畳むのは owner だけ（ADR 0042）。押せる人にだけ出すのは
+            「作成先を変更」と同じ形。**押した時点では消さない。** 何が残るのかを
+            引いてから確認を出す。
+
+            **消すなら理由を出す**（ADR 0017 / 0030）。権限で押せない操作は、
+            ボタンを黙って消さずに押せない理由のほうを見せる。disabled にせず
+            文だけにするのも「作成先を変更」と揃えている。ロールは開いている
+            あいだ変わらないので、押せる見込みの無いボタンを置く相手がいない。
+          */}
+          {board.role === "owner" ? (
+            <button
+              type="button"
+              className="danger"
+              onClick={() => void askDelete()}
+              disabled={deletion !== null}
+            >
+              {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
+            </button>
+          ) : (
+            <span className="hint">ボードを削除できるのはオーナーだけです</span>
+          )}
         </div>
       </header>
+
+      {/*
+        **何が残るのかを見せてから確認させる**（ADR 0042、中核思想 3）。
+        etoki は GitHub 側の draft issue を消さない（消せない）ので、消えるのは
+        出どころの記録のほうだと分けて言う。ブラウザの confirm を使わないのは、
+        件数を出す場所が無いため。
+      */}
+      {deletion !== null && deletion.status !== "loading" && (
+        <section
+          className="delete-confirm"
+          role="alertdialog"
+          aria-labelledby="delete-confirm-title"
+          // 見出しではなく枠を受け皿にする。読み上げは aria-labelledby で
+          // 見出しを読み、次のタブ移動が中のボタンに入る。
+          tabIndex={-1}
+          ref={focusDeleteConfirm}
+        >
+          <h2 id="delete-confirm-title">「{board.name}」を削除しますか</h2>
+          <p>
+            {"シーンもメンバーも実行の記録も消えます。"}
+            <strong>取り消せません。</strong>
+          </p>
+          {deletion.losing.recordedItemCount > 0 ? (
+            <p>
+              {`このボードから作成した draft issue が ${deletion.losing.recordedItemCount} 件記録されています。`}
+              {"GitHub 側の draft issue は削除されません（etoki からは消せません）。"}
+              {"削除すると、その draft issue がどこから作られたのかを辿れなくなります。"}
+            </p>
+          ) : (
+            <p>このボードから作成した draft issue の記録はありません。</p>
+          )}
+          <div className="delete-confirm-actions">
+            <button
+              type="button"
+              className="danger"
+              onClick={() => void deleteBoard()}
+              disabled={deletion.status === "deleting"}
+            >
+              {deletion.status === "deleting" ? "削除中…" : "削除する"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeletion(null)}
+              disabled={deletion.status === "deleting"}
+            >
+              やめる
+            </button>
+          </div>
+        </section>
+      )}
 
       {/*
         上書きしなかったことと、いま何ができるのかを本文で出す。バッジに畳むと
@@ -1314,7 +1471,7 @@ export function BoardPage({
             initialData={initialData as never}
             onChange={handleChange as never}
             langCode="ja-JP"
-            // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0042）。
+            // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0044）。
             UIOptions={UI_OPTIONS}
             // viewer には描かせない。描けるのに保存できないと、描いた内容を
             // 黙って捨てることになる（ADR 0017）。
