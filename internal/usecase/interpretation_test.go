@@ -751,6 +751,26 @@ func TestInterpret_OmitsPreviousSectionWhenEmpty(t *testing.T) {
 	}
 }
 
+// 制約を運ぶのは system 指示だけ。user 側のメッセージは、その場の材料（前回ぶんの
+// 一覧や粒度）に添える判断しか持たない（ADR 0029）。この経路が切れると、LLM は
+// 制約を知らないまま出力して検査にだけ弾かれ、直しようのない再送を上限まで繰り返す。
+func TestInterpret_CarriesConstraintsInSystemPrompt(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("Interpret() = %v", err)
+	}
+
+	// 文言そのものは domain.Rules が持つ。ここに書き写すと 3 箇所目になる。
+	want := domain.InterpretationConstraints()
+	if sys := llm.requests[0].System; !strings.Contains(sys, want) {
+		t.Errorf("システム指示に制約一覧が入っていない:\n%s", sys)
+	}
+}
+
 // captureLogs は実績ログを受け取るバッファとロガーを返す。
 func captureLogs() (*bytes.Buffer, *slog.Logger) {
 	var buf bytes.Buffer
