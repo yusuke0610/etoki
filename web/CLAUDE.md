@@ -294,6 +294,14 @@ cd web && bunx playwright test --ui
   ルートの `.prettierrc.json` で、道具は devShell にある。対象は
   リポジトリ全体で、`web/` の中から prettier を呼ぶと `docs/adr` とルートの
   Markdown が外れる。`bun run lint` が見るのは eslint と `tsc` だけ。
+- **`web/vite.config.ts` の `excalidrawFontAssets`** — キャンバスのフォントを
+  etoki 自身の配信元から配る。**外すと実行時に `esm.sh` へ取りに行く**（#114）。
+  向け先（`window.EXCALIDRAW_ASSET_PATH`）と配り先を**同じ定数から出している**
+  ので、アプリ側のモジュールに書き写さない。**Excalidraw は指定した先が 404 に
+  なると必ず CDN へ落ちる**ので、配り漏れは画面のどこにも出ない。気づけるのは
+  `web/e2e/assets.spec.ts` だけで、そこは**文字のあるシーンで開いている**。
+  手書きフォントを取りに行くのは描く文字があるときだけなので、既定のシーン
+  （frame だけ）では 1 つも要求が出ない。
 - **`web/vite.config.ts` の test セクション** — excalidraw を vitest で読むのに
   3 つ必要。prod バンドルへの `alias`、`open-color`（実体が JSON）の `inline`、
   そして `src/test-setup.ts` の canvas スタブ（import 時に 2D コンテキストの
