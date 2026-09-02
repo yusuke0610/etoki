@@ -44,7 +44,7 @@ func TestLLMLimiter_RejectsBeyondMaxConcurrent(t *testing.T) {
 	second := acquire(t, l, "u1")
 
 	// **待たずに断る。** 待たせると、画面からは止まったのか並んでいるのかが
-	// 見えない（ADR 0043）。
+	// 見えない（ADR 0044）。
 	if _, err := l.Acquire(port.ContextWithUserID(t.Context(), "u1")); !errors.Is(
 		err, usecase.ErrConcurrencyLimited) {
 		t.Fatalf("3 つめの Acquire() = %v, want ErrConcurrencyLimited", err)
@@ -103,7 +103,7 @@ func TestLLMLimiter_RejectsBeyondRateLimitWithinWindow(t *testing.T) {
 }
 
 // 同時実行で断ったリクエストが回数を消費すると、待って押し直した人が理由も
-// なく上限に近づく。見る順を同時実行 → 回数にしてあるのはこのため（ADR 0043）。
+// なく上限に近づく。見る順を同時実行 → 回数にしてあるのはこのため（ADR 0044）。
 func TestLLMLimiter_RejectedCallDoesNotConsumeRate(t *testing.T) {
 	t.Parallel()
 
@@ -130,7 +130,7 @@ func TestLLMLimiter_RejectedCallDoesNotConsumeRate(t *testing.T) {
 	}
 }
 
-// 回数の上限には既定値を置かない（ADR 0043）。同時実行だけが既定で効く。
+// 回数の上限には既定値を置かない（ADR 0044）。同時実行だけが既定で効く。
 func TestNewLLMLimiter_Defaults(t *testing.T) {
 	t.Parallel()
 
@@ -150,7 +150,7 @@ func TestNewLLMLimiter_Defaults(t *testing.T) {
 }
 
 // 上限に当たったら **LLM を 1 回も呼ばない。** 呼んでから結果を捨てると、
-// 課金だけが発生する（ADR 0043、validateImages を手前に置いてあるのと同じ理由）。
+// 課金だけが発生する（ADR 0044、validateImages を手前に置いてあるのと同じ理由）。
 func TestInterpret_RateLimitedDoesNotCallLLM(t *testing.T) {
 	t.Parallel()
 
@@ -194,7 +194,7 @@ func TestInterpret_ConcurrencyLimitedDoesNotCallLLM(t *testing.T) {
 	}
 }
 
-// **解釈と図のドラフト生成は同じ枠**（ADR 0043）。片方だけ絞ると、絞っていない
+// **解釈と図のドラフト生成は同じ枠**（ADR 0044）。片方だけ絞ると、絞っていない
 // ほうが抜け道として残る。ここが切れると、合計では上限の倍まで叩ける。
 func TestInterpretAndDiagram_ShareOneLimit(t *testing.T) {
 	t.Parallel()

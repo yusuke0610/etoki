@@ -49,7 +49,7 @@ func newInterpretRouter(t *testing.T, llm port.LLMClient) *gin.Engine {
 
 // newInterpretRouterWithLimits は実行の上限を指定してルーターを返す。
 //
-// 上限に当たったときの応答を見るテストだけが使う（ADR 0043）。
+// 上限に当たったときの応答を見るテストだけが使う（ADR 0044）。
 func newInterpretRouterWithLimits(
 	t *testing.T, llm port.LLMClient, limits *usecase.LLMLimiter,
 ) *gin.Engine {
@@ -430,7 +430,7 @@ func TestInterpretAnnotation_InvalidGranularity(t *testing.T) {
 	}
 }
 
-// 上限に当たったら 429 と、打ち手の分かる code を返す（ADR 0043）。
+// 上限に当たったら 429 と、打ち手の分かる code を返す（ADR 0044）。
 //
 // **LLM は呼ばない。** 呼んでから捨てると課金だけが発生する。
 func TestInterpretAnnotation_RateLimited(t *testing.T) {

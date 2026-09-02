@@ -30,14 +30,14 @@ const (
 	DefaultParentFieldName = usecase.DefaultParentFieldName
 )
 
-// LLMLimits は LLM を叩く実行の上限（ADR 0043）。
+// LLMLimits は LLM を叩く実行の上限（ADR 0044）。
 //
 // 実体はユースケース層の型。別名で公開しているのは、cmd/etoki を写して独自の
 // main を書く利用者が internal/ を import できないため（ADR 0001）。
 type LLMLimits = usecase.LLMLimits
 
 // 実行の上限の既定値。**回数の上限には既定値が無い。** 未設定なら無制限で、
-// 妥当な値は料金プランと使い方という外の世界の値で決まる（ADR 0043）。
+// 妥当な値は料金プランと使い方という外の世界の値で決まる（ADR 0044）。
 const (
 	DefaultLLMMaxConcurrent = usecase.DefaultLLMMaxConcurrent
 	DefaultLLMRateWindow    = usecase.DefaultLLMRateWindow
@@ -113,7 +113,7 @@ type Options struct {
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
 
-	// LLMLimits は LLM を叩く実行の上限（ADR 0043）。任意。
+	// LLMLimits は LLM を叩く実行の上限（ADR 0044）。任意。
 	//
 	// 解釈と図のドラフト生成で 1 つの枠を共有し、利用者ごとに数える。
 	// MaxConcurrent の 0 は既定（DefaultLLMMaxConcurrent）、RateLimit の 0 は
@@ -188,7 +188,7 @@ func New(opts Options) (*Server, error) {
 	locks := usecase.NewBoardLocks()
 
 	// 解釈と図のドラフト生成は同じ枠で数える。どちらも同じ鍵で同じモデルを
-	// 叩くので、片方だけ絞ると抜け道が残る（ADR 0043）。
+	// 叩くので、片方だけ絞ると抜け道が残る（ADR 0044）。
 	llmLimiter := usecase.NewLLMLimiter(opts.LLMLimits)
 
 	deps := httpapi.Deps{
@@ -239,7 +239,7 @@ func New(opts Options) (*Server, error) {
 
 // validateLLMLimits は実行の上限の設定を見る。
 //
-// **0 を「無制限」と読ませない**（ADR 0043）。未設定（既定 1）と 0（無制限）で
+// **0 を「無制限」と読ませない**（ADR 0044）。未設定（既定 1）と 0（無制限）で
 // 意味が逆向きになるため、設定するなら 1 以上を要求する。無制限にしたい人は
 // 指定しないか、大きい数を書く。
 //

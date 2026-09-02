@@ -84,7 +84,7 @@ type DiagramDraft struct {
 type DiagramService struct {
 	boardGuard
 	llm port.LLMClient
-	// limits は LLM を叩く実行の上限（ADR 0043）。InterpretationService と
+	// limits は LLM を叩く実行の上限（ADR 0044）。InterpretationService と
 	// **同じものを共有する。** 解釈だけを絞ると、こちらが抜け道として残る。
 	limits      *LLMLimiter
 	maxAttempts int
@@ -168,7 +168,7 @@ func (s *DiagramService) Generate(
 		return DiagramDraft{}, err
 	}
 
-	// **枠を取るのは LLM を叩く直前**（ADR 0043）。解釈と同じ枠を見るので、
+	// **枠を取るのは LLM を叩く直前**（ADR 0044）。解釈と同じ枠を見るので、
 	// 片方で使い切ればもう片方も断られる。
 	release, err := s.limits.Acquire(ctx)
 	if err != nil {

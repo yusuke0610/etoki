@@ -256,7 +256,7 @@ func waitForListener(t *testing.T, addr string) {
 	t.Fatalf("server did not start listening on %s", addr)
 }
 
-// 実行の上限は 0 を「無制限」と読ませない（ADR 0043）。未設定（既定 1）と
+// 実行の上限は 0 を「無制限」と読ませない（ADR 0044）。未設定（既定 1）と
 // 0（無制限）で意味が逆向きになるため、設定するなら 1 以上を要求する。
 // 窓だけを設定した場合も落とす。効かない設定を黙って受けると、設定した
 // つもりの上限が外れる。

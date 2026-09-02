@@ -69,7 +69,7 @@ var errorMappings = []errorMapping{
 	{usecase.ErrDiagramChatTooLong, http.StatusRequestEntityTooLarge,
 		apitypes.ErrorCodeDiagramChatTooLong},
 
-	// LLM を叩く実行の上限（ADR 0043）。**1 つに畳まない。** ステータスは
+	// LLM を叩く実行の上限（ADR 0044）。**1 つに畳まない。** ステータスは
 	// 同じでも、時間をおく話と、いま走っているぶんの終わりを待つ話で、次に
 	// することが違う。**上流の LLM が混んでいる場合とも別**で、そちらは
 	// llm_unavailable として 502 に出る。

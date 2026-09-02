@@ -1124,7 +1124,7 @@ components:
 
     TooManyRequests:
       description: |
-        LLM を叩く実行の上限に当たった（ADR 0043）。**上限は利用者ごと**で、
+        LLM を叩く実行の上限に当たった（ADR 0044）。**上限は利用者ごと**で、
         解釈と図のドラフト生成が 1 つの枠を共有する。どちらも課金を伴う外部
         呼び出しなので、片方だけ絞ると抜け道が残る。
 
@@ -1763,6 +1763,15 @@ components:
         action:
           $ref: "#/components/schemas/SyncAction"
 
+    RunOutcome:
+      type: string
+      description: |
+        run が最後まで進んだかどうか（ADR 0043）。
+
+        **省略は「成功」ではなく「記録していない」。** この項目を足す前の run に
+        は記録が無く、当時も途中失敗は起きていた。`complete` と同じに扱わない。
+      enum: [complete, incomplete]
+
     SyncRun:
       type: object
       description: |
@@ -1783,11 +1792,25 @@ components:
           type: string
           format: date-time
           description: 実行の時刻
+        outcome:
+          allOf:
+            - $ref: "#/components/schemas/RunOutcome"
+          description: |
+            最後まで進んだかどうか。**記録していなかった頃の run では省略する**
+            （ADR 0043）
+        error:
+          type: string
+          description: |
+            途中で失敗した理由。`outcome` が `incomplete` のときだけ入る。
+
+            **利用者向けの文言ではなく手掛かり**なので、画面は既定で畳む
+            （ADR 0034）
+          x-go-type-skip-optional-pointer: true
         items:
           type: array
           description: |
-            その run で作成または更新した draft issue。**空配列がありうる。**
-            1 件も作れずに終わった run も記録として残る（ADR 0009）
+            その run で作成または更新した draft issue。1 件も作れずに終わった
+            実行は記録しないので、記録された run には 1 件以上入る（ADR 0009）
           items:
             $ref: "#/components/schemas/SyncItem"
 
@@ -1808,6 +1831,19 @@ components:
           type: string
           format: date-time
           description: 前回実行の時刻。未実行なら省略する
+        lastRunOutcome:
+          allOf:
+            - $ref: "#/components/schemas/RunOutcome"
+          description: |
+            前回実行が最後まで進んだかどうか（ADR 0043）。未実行と、記録して
+            いなかった頃の run では省略する。
+
+            **`state` は変わらない。** 途中で失敗しても作れたぶんは記録するので、
+            状態は `created` になる（ADR 0009）。件数だけでは、途中で止まった
+            のか、もともとその件数だったのかが読めないので別に出す。
+
+            **理由はここには載せない。** 一覧は「何が起きたか」まで見せる場所で、
+            手掛かりの本文は履歴（`GET .../runs`）が持つ
         items:
           type: array
           description: |

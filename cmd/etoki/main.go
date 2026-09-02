@@ -40,7 +40,7 @@ const envWebDir = "ETOKI_WEB_DIR"
 // defaultDBPath は ETOKI_DB_PATH が未設定のときに使う SQLite ファイル。
 const defaultDBPath = "etoki.db"
 
-// usage は const ではなく var。実行の上限の既定値（ADR 0043）は数値と
+// usage は const ではなく var。実行の上限の既定値（ADR 0044）は数値と
 // time.Duration なので、文字列にするのが定数式にならない。
 var usage = `usage:
   etoki                 サーバーを起動する
@@ -374,7 +374,7 @@ func dbPath() string {
 	return defaultDBPath
 }
 
-// llmLimits は環境変数から実行の上限を組み立てる（ADR 0043）。
+// llmLimits は環境変数から実行の上限を組み立てる（ADR 0044）。
 //
 // **未設定と 0 を区別する。** 未設定は「既定のまま」、0 は設定の誤りとして
 // 落とす。0 を無制限と読ませると、未設定（既定 1）と 0（無制限）で意味が

@@ -53,7 +53,7 @@ type InterpretationService struct {
 	// テキストと画像だけではなく、「前回何を作ったか」も含まれる（ADR 0026）。
 	mappings port.MappingRepository
 	llm      port.LLMClient
-	// limits は LLM を叩く実行の上限（ADR 0043）。DiagramService と**同じものを
+	// limits は LLM を叩く実行の上限（ADR 0044）。DiagramService と**同じものを
 	// 共有する。** 別々に持たせると、合計では上限の倍だけ叩ける。
 	limits      *LLMLimiter
 	maxAttempts int
@@ -166,7 +166,7 @@ func (s *InterpretationService) Interpret(
 	}
 	previous := toPreviousItems(saved)
 
-	// **枠を取るのは LLM を叩く直前**（ADR 0043）。認可も入力の検証もすべて
+	// **枠を取るのは LLM を叩く直前**（ADR 0044）。認可も入力の検証もすべて
 	// 通ってから取るので、404 や 400 で返るリクエストは枠を消費しない。
 	// 当たったときは 1 回も呼ばない。呼んでから捨てると課金だけが発生する。
 	release, err := s.limits.Acquire(ctx)
