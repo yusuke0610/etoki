@@ -956,7 +956,7 @@ export function BoardPage({
   const targetChangeBlocked = dirty
     ? "保存してから作成先を変更できます"
     : saving
-      ? "保存が終わるまで作成先を変更できます"
+      ? "保存が終わるまで作成先を変更できません"
       : null;
 
   return (

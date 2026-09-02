@@ -188,7 +188,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     await expectBlockedReason(
       page.getByRole("button", { name: "作成先を変更" }),
-      "保存が終わるまで作成先を変更できます",
+      "保存が終わるまで作成先を変更できません",
     );
 
     release();
