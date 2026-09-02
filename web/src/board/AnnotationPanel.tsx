@@ -32,6 +32,7 @@ import {
   setBody,
   setKind,
   setTitle,
+  setUpdatesPrevious,
   toggleItem,
 } from "./interpretationDraft";
 import type { ProjectLink } from "./projectLink";
@@ -810,6 +811,10 @@ function InterpretationDraft({
   // groupByEpic は下書きの項目そのものを並べ替えて返すので、引けない localId は
   // 無い。それでも既定を持つのは、無いものを「選ばれている」と倒さないため。
   const selected = new Map(draft.items.map((d) => [d.item.localId, d.selected]));
+  // LLM の答えに従うかどうか。既定は従う（ADR 0026）。
+  const updatesPrevious = new Map(
+    draft.items.map((d) => [d.item.localId, d.updatesPrevious]),
+  );
   const orphans = orphanedLocalIds(draft);
   const reasons = blockingReasons(draft, granularity);
   // 今回の作成で GitHub 側に置き去りになるもの（ADR 0026）。
@@ -827,6 +832,7 @@ function InterpretationDraft({
     <DraftItemFields
       item={item}
       selected={selected.get(item.localId) ?? false}
+      updatesPrevious={updatesPrevious.get(item.localId) ?? false}
       orphan={orphans.has(item.localId)}
       frozen={frozen}
       editableKind={editableKind}
@@ -834,6 +840,9 @@ function InterpretationDraft({
       onKind={(kind) => setDraft((d) => setKind(d, item.localId, kind))}
       onTitle={(title) => setDraft((d) => setTitle(d, item.localId, title))}
       onBody={(body) => setDraft((d) => setBody(d, item.localId, body))}
+      onUpdatesPrevious={(updates) =>
+        setDraft((d) => setUpdatesPrevious(d, item.localId, updates))
+      }
     />
   );
 
@@ -892,6 +901,7 @@ function InterpretationDraft({
 function DraftItemFields({
   item,
   selected,
+  updatesPrevious,
   orphan,
   frozen,
   editableKind,
@@ -899,9 +909,17 @@ function DraftItemFields({
   onKind,
   onTitle,
   onBody,
+  onUpdatesPrevious,
 }: {
   item: InterpretedItem;
   selected: boolean;
+  /**
+   * LLM が対応づけた更新先に、実際に書き込むかどうか。
+   *
+   * `item.previousItemId` を持たない項目では常に false。切り替えも出さない。
+   * 指す先が無いので、選ばせるものが無い。
+   */
+  updatesPrevious: boolean;
   /**
    * 親を失ったまま作られる issue かどうか。
    *
@@ -915,6 +933,7 @@ function DraftItemFields({
   onKind: (kind: ItemKind) => void;
   onTitle: (title: string) => void;
   onBody: (body: string) => void;
+  onUpdatesPrevious: (updatesPrevious: boolean) => void;
 }) {
   return (
     <div className={`draft-item${selected ? "" : " unselected"}`}>
@@ -954,9 +973,41 @@ function DraftItemFields({
           作るのか書き換えるのかは、押す前に見えている必要がある（ADR 0026）。
           どちらも取り消せないが、取り返しのつかなさが違う。書き換えは前の内容を
           消す。
+
+          **印だけでなく、覆せる形で出す。** 対応づけを解釈させるのは LLM でも、
+          決めるのは開発者（ADR 0026）。指す先が GitHub から消えていると、
+          更新のままでは作成が必ず失敗する。
         */}
-        {item.previousItemId && <span className="badge badge-updated">更新</span>}
+        {item.previousItemId && updatesPrevious && (
+          <span className="badge badge-updated">更新</span>
+        )}
       </div>
+
+      {/*
+        **切り替えは見出しの行に置かない。** パネルは狭く、種別とタイトルが
+        すでに並んでいる。同じ行に足すとタイトルが読めなくなり、押す前に中身が
+        見えているという前提（ADR 0024）が崩れる。
+
+        LLM が言ったこととの差も添える。既定のままなら出さない。「残ります」は
+        ここでは言わない。取り残しは作成ボタンの手前にまとめて出しており
+        （ADR 0026）、同じことを 2 箇所で数えることになる。
+      */}
+      {item.previousItemId && (
+        <div className="draft-previous">
+          <select
+            value={updatesPrevious ? "update" : "create"}
+            disabled={frozen}
+            onChange={(e) => onUpdatesPrevious(e.target.value === "update")}
+            aria-label={`${item.localId} を更新するか新しく作るか`}
+          >
+            <option value="update">更新する</option>
+            <option value="create">新しく作る</option>
+          </select>
+          {!updatesPrevious && (
+            <span className="hint">解釈では既存の draft issue の更新でした。</span>
+          )}
+        </div>
+      )}
 
       {/*
         親が消えたことを黙って起こさない（ADR 0024）。作られるものが変わって

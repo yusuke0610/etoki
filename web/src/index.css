@@ -346,9 +346,22 @@ body {
 }
 
 .draft-kind,
+.draft-previous select,
 .draft-title {
   font-size: 12px;
   padding: 2px 4px;
+}
+
+/*
+ * 更新するか新しく作るかの切り替え（ADR 0026、#112）。**見出しの行には
+ * 置かない。** パネルが狭く、同じ行に足すとタイトルが読めなくなる。
+ */
+.draft-previous {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
 }
 
 .draft-title {

@@ -626,4 +626,22 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("alertdialog").waitFor();
     await shot(page, "29-delete-confirm");
   });
+
+  // 更新をやめて新しく作るに倒したところ（#112）。**LLM が言ったこととの差と、
+  // 取り残しが増えたことが同じ画面で読めているか**を画像で見る。
+  test("更新をやめた確認画面を撮る", async ({ page }) => {
+    await installApi(page, matchedInterpretationMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card
+      .getByLabel("i1 を更新するか新しく作るか")
+      .selectOption({ label: "新しく作る" });
+    await card.getByText("解釈では既存の draft issue の更新でした").waitFor();
+    await shot(page, "30-update-to-create");
+  });
 });

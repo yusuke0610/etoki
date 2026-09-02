@@ -18,15 +18,18 @@ test.describe("changed の注釈を更新する", () => {
     await card.getByRole("button", { name: "解釈する" }).click();
 
     // 更新は前の内容を消す。作成と同じ見た目にしない。
+    //
+    // **印だけに絞って引く。** 同じ行には切り替えの選択肢（「更新する」）も
+    // 並ぶので、前方一致で引くと 2 つ見つかる。
     const updating = card.locator(".draft-item").filter({
       has: page.getByLabel("i1 のタイトル"),
     });
-    await expect(updating.getByText("更新")).toBeVisible();
+    await expect(updating.getByText("更新", { exact: true })).toBeVisible();
 
     const creating = card.locator(".draft-item").filter({
       has: page.getByLabel("i2 のタイトル"),
     });
-    await expect(creating.getByText("更新")).toBeHidden();
+    await expect(creating.getByText("更新", { exact: true })).toBeHidden();
   });
 
   // draft issue は削除できない。etoki にできるのは「残ります」と見せるところまで。
@@ -59,6 +62,62 @@ test.describe("changed の注釈を更新する", () => {
     const leftBehind = card.locator(".left-behind");
     await expect(leftBehind).toContainText("2 件");
     await expect(leftBehind).toContainText("セッションの有効期限");
+  });
+
+  // 対応づけを解釈させるのは LLM でも、決めるのは開発者（ADR 0026）。指す先が
+  // GitHub から消えていると、更新のままでは作成が必ず 502 になり、解釈を
+  // やり直しても同じところで止まりうる。ここが無いと出口が項目ごと外すことしか
+  // 無くなる。
+  test("更新をやめて新しく作るに切り替えられる", async ({ page }) => {
+    const mock = await installApi(page, matchedInterpretationMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    const updating = card.locator(".draft-item").filter({
+      has: page.getByLabel("i1 のタイトル"),
+    });
+    await expect(updating.getByText("更新", { exact: true })).toBeVisible();
+
+    await card
+      .getByLabel("i1 を更新するか新しく作るか")
+      .selectOption({ label: "新しく作る" });
+
+    // 印は消える。LLM が言ったこととの差は残す。
+    await expect(updating.getByText("更新", { exact: true })).toBeHidden();
+    await expect(
+      updating.getByText("解釈では既存の draft issue の更新でした"),
+    ).toBeVisible();
+
+    // そこへは書かないので、更新先は取り残しに戻る（押す前に見せる）。
+    const leftBehind = card.locator(".left-behind");
+    await expect(leftBehind).toContainText("2 件");
+    await expect(leftBehind).toContainText("セッションの有効期限");
+
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(card.getByText("件を作成しました。")).toBeVisible();
+
+    expect(mock.createRequests).toHaveLength(1);
+    const sent = mock.createRequests[0]?.items ?? [];
+    expect(sent.map((it) => [it.localId, it.previousItemId])).toEqual([
+      ["i1", undefined],
+      ["i2", undefined],
+    ]);
+  });
+
+  // LLM が「新しく作る」と答えた項目には指す先が無い。選ばせるものが無い。
+  test("新規の項目には切り替えを出さない", async ({ page }) => {
+    await installApi(page, matchedInterpretationMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await expect(card.getByLabel("i1 を更新するか新しく作るか")).toBeVisible();
+    await expect(card.getByLabel("i2 を更新するか新しく作るか")).toBeHidden();
   });
 
   // 件数だけでは GitHub 側に何が増えたのか分からない。更新は増えない。
