@@ -46,3 +46,4 @@
 | [0040](0040-place-mermaid-drafts-as-shapes-only.md)              | mermaid のドラフトは手で直せる図形のときだけ置く                       | 採用                 |
 | [0041](0041-diagram-chat-changes-no-server-state.md)             | 図のドラフト生成はサーバーの状態を変えない（会話も持たない）           | 採用                 |
 | [0042](0042-delete-boards-after-showing-what-remains.md)         | ボードの削除は GitHub 側に残るものを見せてから通す                     | 採用                 |
+| [0044](0044-show-annotations-that-left-the-scene.md)             | シーンから消えた注釈は別のリストとして見せるだけにする                 | 採用                 |

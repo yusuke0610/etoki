@@ -29,7 +29,7 @@ func TestRolePermissions(t *testing.T) {
 			return err
 		}},
 		{"注釈の状態", func(ctx context.Context, boards *fakeBoards) error {
-			_, err := usecase.NewAnnotationService(boards, &fakeMappings{}).
+			_, _, err := usecase.NewAnnotationService(boards, &fakeMappings{}).
 				ListStates(ctx, "board-1")
 			return err
 		}},
