@@ -673,6 +673,25 @@ function CreationSection({
 }) {
   const running = state?.status === "running";
   const blockedId = `create-blocked-${annotationId}`;
+  // 作成できない理由。押せるなら null（ADR 0039）。
+  //
+  // **不備が先。** 保存が終わっても、1 件も選ばれていなければ押せないままなので、
+  // 一時的なほうを先に出すと待った人が同じところで止まる（解釈のボタンと同じ順）。
+  //
+  // **`blockingReasons` には混ぜない。** あちらは下書きだけを見て「作るものが
+  // 揃っているか」に答える純関数で、進行中かどうかを知らない。混ぜると UI の
+  // 一時的な状態を引数に取ることになる。
+  //
+  // **未設定の説明と違って、注釈ごとにボタンの下へ置く**（ADR 0030 の「パネルに
+  // 1 つ」と揃えない）。あちらは全注釈で同じことを恒常的に言うが、こちらは
+  // 出ている時間が保存の 1 往復ぶんしかない。パネルに上げると、作成ボタンが
+  // 1 つも無い注釈しか無いときにも出る。
+  const blocked =
+    reasons.length > 0
+      ? reasons.join(" ")
+      : saving
+        ? "保存が終わるまで作成できません。"
+        : null;
 
   // **GitHub が未設定なら、権限より先にこちら。** 未設定の構成では
   // projectAccess は unknown にしかならないので、下の denied では拾えない。
@@ -706,9 +725,8 @@ function CreationSection({
       <button
         type="button"
         onClick={onCreate}
-        disabled={running || saving || reasons.length > 0}
-        title={saving ? "保存が終わるまで作成できません" : undefined}
-        aria-describedby={reasons.length > 0 ? blockedId : undefined}
+        disabled={running || blocked !== null}
+        aria-describedby={blocked !== null ? blockedId : undefined}
       >
         {running ? "作成中…" : "GitHub に作成する"}
       </button>
@@ -717,9 +735,9 @@ function CreationSection({
         押せない理由は本文として出す。disabled なボタンはフォーカスも当たらない
         ので、title ではキーボードと読み上げの利用者に理由が届かない。
       */}
-      {reasons.length > 0 && (
+      {blocked !== null && (
         <p className="hint" id={blockedId}>
-          {reasons.join(" ")}
+          {blocked}
         </p>
       )}
 

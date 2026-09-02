@@ -948,6 +948,17 @@ export function BoardPage({
   // 作った draft issue を確かめにいく先。未選択のボードでは null（ADR 0025）。
   const link = projectLink(board);
 
+  // 作成先を変更できない理由。押せるなら null（ADR 0039）。
+  //
+  // **未保存が先。** `dirty` を下ろすのは応答が返ってから（`save`）なので、
+  // 保存中もこちらが出続ける。保存中の文が出るのは、変更が無いまま保存を
+  // 押したとき。そこも押せないことに変わりはないので、理由を空けない。
+  const targetChangeBlocked = dirty
+    ? "保存してから作成先を変更できます"
+    : saving
+      ? "保存が終わるまで作成先を変更できます"
+      : null;
+
   return (
     <div className="board">
       <header className="board-header">
@@ -1108,13 +1119,15 @@ export function BoardPage({
                 // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
                 // 黙って捨てずに、保存してからにしてもらう。
                 disabled={dirty || saving}
-                aria-describedby={dirty ? "target-change-blocked" : undefined}
+                aria-describedby={
+                  targetChangeBlocked !== null ? "target-change-blocked" : undefined
+                }
               >
                 作成先を変更
               </button>
-              {dirty && (
+              {targetChangeBlocked !== null && (
                 <span className="hint" id="target-change-blocked">
-                  保存してから作成先を変更できます
+                  {targetChangeBlocked}
                 </span>
               )}
             </>
@@ -1141,14 +1154,27 @@ export function BoardPage({
           )}
           {dirty && <span className="dirty">未保存</span>}
           {canEdit && (
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={saving || creating || !api}
-              title={creating ? "作成が終わるまで保存できません" : undefined}
-            >
-              {saving ? "保存中…" : "保存"}
-            </button>
+            <>
+              {/*
+                取り消せない操作と保存は相互に排他する。**押せない理由を title に
+                隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
+                フォーカスも当たらないので、キーボードと読み上げには届かない。
+                「作成先を変更」と同じ形で本文に出して aria-describedby で結ぶ。
+              */}
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving || creating || !api}
+                aria-describedby={creating ? "save-blocked" : undefined}
+              >
+                {saving ? "保存中…" : "保存"}
+              </button>
+              {creating && (
+                <span className="hint" id="save-blocked">
+                  作成が終わるまで保存できません
+                </span>
+              )}
+            </>
           )}
           {/*
             ボードごと畳むのは owner だけ（ADR 0042）。押せる人にだけ出すのは

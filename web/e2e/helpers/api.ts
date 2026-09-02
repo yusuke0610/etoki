@@ -786,6 +786,55 @@ export function breakBoards(page: Page): Promise<void> {
   return breakList(page, (url) => url.pathname === "/api/boards");
 }
 
+/**
+ * 応答を、渡した Promise が解決するまで返さない。
+ *
+ * 「保存中」「作成中」は普通は一瞬で終わるので、その隙に画面を確かめられない。
+ * **遅らせるのは応答だけで、返す中身は `installApi` のものをそのまま使う**
+ * （`route.fallback()`）。ここで本文まで書くと、版の照合を通らない保存の
+ * モックが 1 つ増える（ADR 0012）。
+ *
+ * `installApi` の**後**に呼ぶ。Playwright のルートは後勝ち。
+ */
+async function holdRoute(
+  page: Page,
+  match: (url: URL) => boolean,
+  method: string,
+  hold: Promise<void>,
+): Promise<void> {
+  await page.route(match, async (route) => {
+    // 止めるのは 1 つのメソッドだけ。同じパスの他のメソッドまで抱えると、
+    // installApi が組み立てた振る舞いが静かに消える。
+    if (route.request().method() !== method) {
+      await route.fallback();
+      return;
+    }
+
+    await hold;
+    await route.fallback();
+  });
+}
+
+/** 保存を「保存中」のまま止める。解決するまで応答を返さない。 */
+export function holdSave(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/scene$/.test(url.pathname),
+    "PUT",
+    hold,
+  );
+}
+
+/** 作成を「作成中」のまま止める。解決するまで応答を返さない。 */
+export function holdCreate(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/items$/.test(url.pathname),
+    "POST",
+    hold,
+  );
+}
+
 function boardIdOf(route: Route): string {
   const segments = new URL(route.request().url()).pathname.split("/");
   // /api/boards/<id>/... の 4 番目が ID。

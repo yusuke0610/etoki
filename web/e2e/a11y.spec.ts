@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { expectBlockedReason, expectNoAxeViolations } from "./helpers/a11y";
-import { installApi } from "./helpers/api";
+import { holdCreate, holdSave, installApi } from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
 import { BOARD_ID, annotations, baseMock } from "./helpers/fixtures";
 
@@ -133,6 +133,97 @@ test.describe("押せない理由が本文として読める", () => {
     );
   });
 
+  // 取り消せない操作と保存は相互に排他する（`.claude/rules/async-ui.md`）。
+  // **一時的でも押せない理由。** 待てば押せるようになることは、待てると分かって
+  // いる人にしか分からない。
+  test("GitHub に作成する：保存中のとき", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdSave(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    // 解釈してからでないと作成ボタンが出ない。保存は解釈結果を捨てるが、
+    // 捨てるのは応答が返ってからなので、止めているあいだは並んでいる。
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+
+    await expectBlockedReason(
+      card.getByRole("button", { name: "GitHub に作成する" }),
+      "保存が終わるまで作成できません",
+    );
+
+    // **理由が消えることまで見る。** 出しっぱなしの文でも上の検査は通る。
+    release();
+    await expect(page.getByText("保存が終わるまで作成できません")).toBeHidden();
+  });
+
+  // 「作成先を変更」は未保存でも保存中でも押せない。**未保存のほうだけ
+  // 見ていると、変更なしで保存を押したあいだが空く。** ボタンは押せないのに
+  // 理由が消える、という状態が残る。
+  test("作成先を変更：保存中のとき", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdSave(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    // **描かない。** 描くと未保存の理由のほうが出て、保存中の経路を通らない。
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "作成先を変更" }),
+      "保存が終わるまで作成先を変更できます",
+    );
+
+    release();
+    await expect(page.getByRole("button", { name: "作成先を変更" })).toBeEnabled();
+  });
+
+  // 逆向き。作成中は保存させない。**押せない理由を `title` に置くと、この
+  // テストが落ちる。** `disabled` なボタンはフォーカスも当たらないので、
+  // ホバーできない利用者には届かない。
+  test("保存：作成中のとき", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdCreate(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "保存", exact: true }),
+      "作成が終わるまで保存できません",
+    );
+
+    release();
+    await expect(page.getByText("作成が終わるまで保存できません")).toBeHidden();
+  });
+
   // 理由を出す側が壊れたら落ちること自体を確かめる。**ここが落ちなければ、
   // 上のどれも何も守っていない。**
   test("理由の要素が消えたら落ちる", async ({ page }) => {
@@ -194,6 +285,57 @@ test.describe("axe（etoki が書いた DOM）", () => {
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     await page.locator(".diagram-mermaid").waitFor();
+
+    await expectNoAxeViolations(page);
+  });
+
+  // 削除の確認は etoki が自前で `role` を書いている唯一の場所（ADR 0042）。
+  // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
+  test("削除の確認を開いた状態", async ({ page }) => {
+    const mock = baseMock();
+    // 件数は文言そのもの。0 件だと分岐の片方しか描かれない。
+    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await page.getByRole("alertdialog").waitFor();
+
+    await expectNoAxeViolations(page);
+  });
+
+  // メンバーのパネルも独立した領域で、開くまで DOM に出ない。行ごとのボタンが
+  // 並ぶ唯一の画面でもある（`.claude/rules/async-ui.md` の「行固有の
+  // accessible name」）。
+  test("メンバーを開いた状態", async ({ page }) => {
+    const mock = baseMock();
+    mock.members = {
+      [BOARD_ID]: [
+        {
+          userId: "user-alice",
+          login: "alice",
+          displayName: "Alice",
+          role: "owner",
+          createdAt: "2026-08-01T09:00:00Z",
+        },
+        {
+          userId: "user-bob",
+          login: "bob",
+          displayName: "Bob",
+          role: "editor",
+          createdAt: "2026-08-03T09:00:00Z",
+        },
+      ],
+    };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+    await page.getByText("Bob").waitFor();
 
     await expectNoAxeViolations(page);
   });

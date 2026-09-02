@@ -1,6 +1,12 @@
 import { test, type Page } from "@playwright/test";
 
-import { breakAnnotations, breakBoards, installApi, summarize } from "./helpers/api";
+import {
+  breakAnnotations,
+  breakBoards,
+  holdSave,
+  installApi,
+  summarize,
+} from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -625,5 +631,33 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "ボードを削除" }).click();
     await page.getByRole("alertdialog").waitFor();
     await shot(page, "29-delete-confirm");
+  });
+
+  // 保存と作成の相互排他（`.claude/rules/async-ui.md`）。**押せない理由が本文
+  // として出ているか**を画像で見る。title に隠すと、この画像には何も写らない。
+  test("保存中で作成できない状態を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdSave(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByText("保存が終わるまで作成できません").waitFor();
+    await shot(page, "30-create-blocked-while-saving");
+
+    // 止めたまま終わらない。次のテストへ持ち越すものを残さない。
+    release();
   });
 });
