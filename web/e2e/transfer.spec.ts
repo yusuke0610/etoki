@@ -17,6 +17,13 @@ import { BOARD_ID, baseMock } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 
+/** 貼ってある画像の ID。要素と `files` の対応が保たれることを見るのに使う。 */
+const IMAGE_FILE_ID = "file-imported";
+
+/** 1x1 の透明な PNG。中身は問わないので、往復で同じものが戻ることだけを見る。 */
+const IMAGE_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 /** 取り込ませる `.excalidraw` の中身。背景色は往復で戻ることを見るために変える。 */
 function importedFile(viewBackgroundColor = "#ffffff"): string {
   return JSON.stringify({
@@ -37,9 +44,29 @@ function importedFile(viewBackgroundColor = "#ffffff"): string {
         name: "取り込んだ範囲",
         customData: { etoki: { granularity: "epic" } },
       },
+      // **貼った画像も入れておく。** 画像は要素と `files` に分かれて載るので、
+      // `addFiles` を呼ばない実装でも要素だけの検査は素通りする。
+      {
+        id: "image-imported",
+        type: "image",
+        x: 20,
+        y: 20,
+        width: 40,
+        height: 40,
+        fileId: IMAGE_FILE_ID,
+        status: "saved",
+      },
     ],
     appState: { viewBackgroundColor },
-    files: {},
+    files: {
+      [IMAGE_FILE_ID]: {
+        id: IMAGE_FILE_ID,
+        mimeType: "image/png",
+        dataURL: IMAGE_DATA_URL,
+        created: 1700000000000,
+        lastRetrieved: 1700000000000,
+      },
+    },
   });
 }
 
@@ -168,14 +195,27 @@ test.describe("取り込み", () => {
     ]);
 
     const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
-      elements: { id: string; customData?: { etoki?: { granularity?: string } } }[];
+      elements: {
+        id: string;
+        fileId?: string;
+        customData?: { etoki?: { granularity?: string } };
+      }[];
       appState: { viewBackgroundColor?: string };
+      files?: Record<string, { dataURL?: string }>;
     };
 
     expect(scene.appState.viewBackgroundColor).toBe("#ffeb3b");
-    expect(scene.elements.map((el) => el.id)).toEqual(["frame-imported"]);
+    expect(scene.elements.map((el) => el.id)).toEqual([
+      "frame-imported",
+      "image-imported",
+    ]);
     // 注釈の指定も同じまま。ここが落ちると、往復するたびに注釈が外れる。
     expect(scene.elements[0]?.customData?.etoki?.granularity).toBe("epic");
+
+    // **画像は要素と `files` の両方が揃って初めて戻る。** `addFiles` を落とすと
+    // 要素だけが残り、開いたときに空白の四角になる。
+    expect(scene.elements[1]?.fileId).toBe(IMAGE_FILE_ID);
+    expect(scene.files?.[IMAGE_FILE_ID]?.dataURL).toBe(IMAGE_DATA_URL);
   });
 
   // 未保存の内容を黙って捨てない（ADR 0021 と同じ形）。
