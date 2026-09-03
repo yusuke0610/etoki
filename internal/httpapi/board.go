@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
@@ -448,6 +449,13 @@ func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {
 		Name:        s.Annotation.Name,
 		Granularity: apitypes.Granularity(s.Annotation.Granularity),
 		State:       apitypes.SyncState(s.State),
+	}
+
+	// **選んでいなければ省略する。** 空文字を載せると DiagramKind の enum に
+	// 無い値が契約の外から出ることになる。
+	if s.Annotation.Kind != domain.DiagramKindUnspecified {
+		kind := apitypes.DiagramKind(s.Annotation.Kind)
+		res.Kind = &kind
 	}
 
 	if s.LatestRun != nil {

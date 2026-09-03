@@ -60,15 +60,15 @@ func TestDecideState_WithComputedHashes(t *testing.T) {
 	original := []domain.TextElement{{ID: "a", Text: "決済フローを見直す"}}
 	edited := []domain.TextElement{{ID: "a", Text: "決済フローを見直す（優先）"}}
 
-	saved := domain.ComputeContentHash(original, domain.GranularityAuto)
+	saved := domain.ComputeContentHash(original, domain.GranularityAuto, domain.DiagramKindUnspecified)
 
-	if got := domain.DecideState(&saved, domain.ComputeContentHash(original, domain.GranularityAuto)); got != domain.StateCreated {
+	if got := domain.DecideState(&saved, domain.ComputeContentHash(original, domain.GranularityAuto, domain.DiagramKindUnspecified)); got != domain.StateCreated {
 		t.Errorf("編集前: %q, want %q", got, domain.StateCreated)
 	}
-	if got := domain.DecideState(&saved, domain.ComputeContentHash(edited, domain.GranularityAuto)); got != domain.StateChanged {
+	if got := domain.DecideState(&saved, domain.ComputeContentHash(edited, domain.GranularityAuto, domain.DiagramKindUnspecified)); got != domain.StateChanged {
 		t.Errorf("編集後: %q, want %q", got, domain.StateChanged)
 	}
-	if got := domain.DecideState(&saved, domain.ComputeContentHash(original, domain.GranularityAuto)); got != domain.StateCreated {
+	if got := domain.DecideState(&saved, domain.ComputeContentHash(original, domain.GranularityAuto, domain.DiagramKindUnspecified)); got != domain.StateCreated {
 		t.Errorf("編集を戻した後: %q, want %q", got, domain.StateCreated)
 	}
 }

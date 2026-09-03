@@ -150,6 +150,13 @@ func (s *InterpretationService) Interpret(
 			ErrInvalidInput, annotation.Granularity, annotationID)
 	}
 
+	// 種別も同じ扱い。**知らない値を「指定なし」に丸めない。** 丸めると、
+	// テンプレートから始めたつもりの囲みが、何の図とも言われないまま解釈される。
+	if !annotation.Kind.Valid() {
+		return InterpretationResult{}, fmt.Errorf("%w: unknown diagram kind %q on annotation %s",
+			ErrInvalidInput, annotation.Kind, annotationID)
+	}
+
 	// 前回までに作ったものを見せて、「これは前回のどれの更新か」を答えさせる。
 	// 対応づけを座標や文字列一致でルールベースに推測せず、LLM に解釈させる
 	// （中核思想 2、ADR 0026）。決めるのは開発者で、これは候補にすぎない。
@@ -399,6 +406,12 @@ func buildUserMessage(
 	b.WriteString(previousInstruction(previous))
 
 	b.WriteString("\n")
+	// **種別を先に言う。** 何の図として読むかが決まってから粒度の話になる。
+	// 逆にすると、粒度の指定が「何の図か」を上書きする指示に見える。
+	if instruction := kindInstruction(a.Kind); instruction != "" {
+		b.WriteString(instruction)
+		b.WriteString("\n")
+	}
 	b.WriteString(granularityInstruction(a.Granularity))
 	b.WriteString("\n")
 
@@ -475,6 +488,50 @@ func granularityInstruction(g domain.Granularity) string {
 	default:
 		return "粒度の指定はありません。内容に応じて epic と issue を使い分けてください。"
 	}
+}
+
+// diagramReadings は図の種別 1 つを、解釈のときに何の図として読ませるかに結ぶ。
+//
+// **書くのは「何の図として読むか」までで、読み方の規則は書かない**（中核思想 2）。
+// 「矢印の向きは呼び出し方向」「線は 1 対多」といった規則をここに書くと、
+// 座標や図形から構造を決める仕事を etoki が引き受けたことになる。それを
+// プロンプトに書いてもコードに書いても、決めているのは etoki である点は
+// 変わらない。読むのは LLM。
+//
+// **粒度の指定と衝突する書き方をしない。** 「todo だから全部 issue にする」
+// と書くと、開発者が選んだ粒度（epic / issue / 指定なし）とどちらが効くのか
+// 分からなくなる。ここが言うのは図の性質までで、何を作るかは
+// granularityInstruction と domain.Rules が言う。
+//
+// **生成の指示（diagramNotations）とは別に持つ。** あちらは「どう描かせるか」、
+// こちらは「どう読ませるか」で、答えている問いが違う。まとめると、mermaid の
+// 記法の話が解釈のプロンプトに混ざる。語彙（domain.DiagramKind）だけを共有する。
+var diagramReadings = map[domain.DiagramKind]string{
+	domain.DiagramKindTodo: "この囲みはやることの洗い出しとして描かれています。" +
+		"並んでいるものは対等な項目として読んでください。",
+
+	domain.DiagramKindMindmap: "この囲みはマインドマップとして描かれています。" +
+		"中心の主題から枝が伸びる形として読んでください。" +
+		"枝の親子が読み取れないときは、読み取れた範囲だけで構いません。" +
+		"見えていない階層を補わないでください。",
+
+	domain.DiagramKindSequence: "この囲みはシーケンス図として描かれています。" +
+		"登場人物のあいだのやりとりと、その順序として読んでください。",
+
+	domain.DiagramKindER: "この囲みは ER 図として描かれています。" +
+		"実体と、実体どうしの関連として読んでください。",
+
+	domain.DiagramKindArchitecture: "この囲みはシステム構成図として描かれています。" +
+		"構成要素と、その境界として読んでください。",
+}
+
+// kindInstruction は開発者が選んだ種別を指示文にする。
+//
+// 指定が無ければ何も足さない。**「種別は指定されていません」と書かない。**
+// 書くと、モデルが図の種類を当てにいく余地を作る。テキストと画像だけを見て
+// 読ませるのが指定なしの状態で、それはこの機能が入る前と同じ入力である。
+func kindInstruction(k domain.DiagramKind) string {
+	return diagramReadings[k]
 }
 
 // buildRetryMessage は直前の出力と指摘を添えた再送メッセージを組み立てる。

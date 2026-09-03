@@ -129,6 +129,18 @@ type AnnotationStatus struct {
 	// 1 件も無ければ省略する
 	Items []SyncItem `json:"items,omitempty"`
 
+	// Kind 開発者が選んだ図の種別。**選んでいなければ省略する**（テンプレート
+	// から始めていない注釈がそれ）。
+	//
+	// `Granularity` のように空文字を値に持たせず省略で表すのは、種別の
+	// 語彙を 1 つに保つため。プロンプトからのドラフト生成は「何の図か」が
+	// 入力そのものなので指定なしを受け付けず、enum に空文字を足すと
+	// そちらの契約まで緩む。
+	//
+	// **解釈のプロンプトに載り、`content_hash` の入力にも入る。**
+	// 差し替えれば `changed` になる（粒度と同じ）。
+	Kind *DiagramKind `json:"kind,omitempty"`
+
 	// LastRunOutcome 前回実行が最後まで進んだかどうか（ADR 0043）。未実行と、記録して
 	// いなかった頃の run では省略する。
 	//
