@@ -39,6 +39,9 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
   }, [boardId]);
 
   useEffect(() => {
+    // 一覧は開いた時点で要る。読みにいくのは await の後で state を置く非同期
+    // 関数なので描画の連鎖は起きない（App のボード一覧と同じ形）。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void reload();
   }, [reload]);
 

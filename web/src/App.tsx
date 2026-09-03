@@ -86,6 +86,10 @@ export function App() {
 
   useEffect(() => {
     if (!signedIn) return;
+    // 一覧は開いた時点で要る。読みにいくのは await の後で state を置く非同期
+    // 関数なので描画の連鎖は起きないが、規則が見ているのは effect から
+    // setState を含む関数を呼ぶこと自体なので、ここは外す。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void reload();
 
     void (async () => {
