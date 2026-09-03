@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -247,6 +248,52 @@ func TestAnnotationTexts_UnnamedFrame(t *testing.T) {
 }
 
 // シーンから直接ハッシュを出せる。ラベルを書き換えるとハッシュが変わる。
+// ER 図のように 1 つの囲みへテキストが多く並んでも取りこぼさない。
+//
+// ひな形（`web/src/excalidraw/template.ts`）の ER 図は、実体名を図形のラベル
+// （containerId 経由）に、属性行を frame の直接の子に置く。**2 つの経路が同じ
+// 囲みで混ざる**のはこの形だけなので、片方だけ辿る実装になっていないことを
+// 実体 3 つ × 属性 2 行の形で確かめる。
+//
+// **どれが実体名でどれが属性かは区別しない。** 平坦な一覧から構造を復元する
+// のは中核思想 2 に反する。ここで見るのは、全部が入力に並ぶことだけ。
+func TestAnnotationTexts_CollectsManyTextsThroughBothPaths(t *testing.T) {
+	t.Parallel()
+
+	elements := []string{annotFrame}
+	var want []string
+	for i := range 3 {
+		shape := fmt.Sprintf("er-shape-%d", i)
+		name := fmt.Sprintf("er-name-%d", i)
+		elements = append(elements,
+			fmt.Sprintf(`{"id":%q,"type":"rectangle","frameId":"annot-1"}`, shape),
+			// 実体名は図形のラベル。containerId 経由でしか辿れない。
+			fmt.Sprintf(`{"id":%q,"type":"text","text":"実体","containerId":%q}`, name, shape),
+		)
+		want = append(want, name)
+
+		for j := range 2 {
+			attr := fmt.Sprintf("er-attr-%d-%d", i, j)
+			// 属性行は frame の直接の子。
+			elements = append(elements,
+				fmt.Sprintf(`{"id":%q,"type":"text","text":"属性","frameId":"annot-1"}`, attr))
+			want = append(want, attr)
+		}
+	}
+
+	got := scene(t, elements...).AnnotationTexts("annot-1")
+
+	for _, id := range want {
+		if _, ok := textByID(got, id); !ok {
+			t.Errorf("%s を拾えていない", id)
+		}
+	}
+	// 囲みの名前ぶんだけ多い。数まで見ないと、余分なものを拾っていても気づけない。
+	if len(got) != len(want)+1 {
+		t.Errorf("抽出した件数 = %d, want %d: %v", len(got), len(want)+1, textIDs(got))
+	}
+}
+
 // 入れ子の frame は辿らない（ADR 0044）。
 //
 // **これは仕様であって取りこぼしではない。** 内側の frame に入れた要素は

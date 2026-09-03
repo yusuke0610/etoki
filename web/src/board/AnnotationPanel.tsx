@@ -4,6 +4,7 @@ import { partialCreationFailure, type Failure } from "../api/errorMessage";
 import type {
   AnnotationStatus,
   CreatedRun,
+  DiagramKind,
   Granularity,
   Interpretation,
   InterpretedItem,
@@ -16,6 +17,7 @@ import type {
 import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { groupByEpic } from "./interpretation";
 import {
   interpretationOrderLabel,
@@ -90,6 +92,8 @@ type Props = {
   onMark: (frameId: string, granularity: Granularity) => void;
   onUnmark: (frameId: string) => void;
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
+  /** 図の種別を差し替える。`undefined` は「指定なし」に戻す。 */
+  onChangeKind: (frameId: string, kind: DiagramKind | undefined) => void;
   /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
   stale: boolean;
   /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
@@ -158,6 +162,7 @@ export function AnnotationPanel({
   onMark,
   onUnmark,
   onChangeGranularity,
+  onChangeKind,
   stale,
   interpretations,
   onInterpret,
@@ -300,6 +305,37 @@ export function AnnotationPanel({
                       {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
                         <option key={g} value={g}>
                           {GRANULARITY_LABEL[g]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {/*
+                    何の図として読ませるかを選ばせる。**ひな形は絵を置くだけ**
+                    （ADR 0044）で、どこを囲むかも何の図かも人が決めるので、
+                    種別が載る先はここしかない。
+
+                    粒度と同じ形（`<select>` + 表を引く）にしてあるのは、
+                    同じメタデータに載る 2 つが画面で別物に見えないため。
+                  */}
+                  <label className="granularity">
+                    種別
+                    <select
+                      value={a.kind ?? ""}
+                      disabled={!canEdit}
+                      onChange={(e) =>
+                        onChangeKind(a.id, (e.target.value || undefined) as DiagramKind)
+                      }
+                    >
+                      {/*
+                        「指定なし」は種別の語彙（DiagramKind）に無い値なので、
+                        ここだけ空文字で表す。選ばれたら customData からキーごと
+                        落ちる（setAnnotationKind）。
+                      */}
+                      <option value="">指定なし</option>
+                      {diagramKinds().map((k) => (
+                        <option key={k} value={k}>
+                          {DIAGRAM_KIND_LABELS[k]}
                         </option>
                       ))}
                     </select>

@@ -16,6 +16,12 @@ import { ErrorNotice } from "./ErrorNotice";
 import { BoardPage } from "./board/BoardPage";
 import { BoardTree } from "./board/BoardTree";
 import { RepositoryPicker } from "./board/RepositoryPicker";
+import { TemplatePicker } from "./board/TemplatePicker";
+import {
+  BLANK_TEMPLATE,
+  templateScene,
+  type TemplateChoice,
+} from "./excalidraw/template";
 
 export function App() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
@@ -30,6 +36,9 @@ export function App() {
   // 人はここで先へ進めず、それが「作成にはリポジトリへのアクセス権が要る」
   // ことの表れになる。
   const [creating, setCreating] = useState<string | null>(null);
+  // 何から始めるか。**既定は空白**（中核思想 3）。テンプレートは選ばせるもので、
+  // 勝手に適用しない。
+  const [template, setTemplate] = useState<TemplateChoice>(BLANK_TEMPLATE);
   // ログイン状態。null は問い合わせ中。
   const [session, setSession] = useState<SessionStatus | null>(null);
   // いま使える機能。**null は「まだ確かめていない」。**
@@ -192,13 +201,16 @@ export function App() {
     async (target: BoardTarget) => {
       if (creating === null) return;
 
-      const board = await boardsApi.create(creating, target);
+      // シーンを組み立てるのは押されたこの時点。選んだ時点で作ると、作成先を
+      // 選ばずに引き返した回数だけ使わないシーンを持つことになる。
+      const board = await boardsApi.create(creating, target, templateScene(template));
       setName("");
+      setTemplate(BLANK_TEMPLATE);
       setCreating(null);
       await reload();
       setCurrent(board);
     },
-    [creating, reload],
+    [creating, reload, template],
   );
 
   /**
@@ -299,6 +311,11 @@ export function App() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+          {/*
+            何から始めるかをここで選ばせる（#52）。**画面を 1 枚増やさない。**
+            増やすと、空白で始めたい人にも通り抜けるだけの手順が要る。
+          */}
+          <TemplatePicker value={template} onChange={setTemplate} />
           <button type="submit" disabled={!name.trim()}>
             次へ
           </button>

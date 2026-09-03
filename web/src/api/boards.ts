@@ -103,11 +103,15 @@ export const boardsApi = {
    *
    * **作成先は必須。** 候補は書ける Project だけに絞ってあるので、書ける先を
    * 1 つも持たない人はここまで来られない（ADR 0017）。
+   *
+   * `scene` はテンプレートから始めるときだけ渡す。**空白のときは送らない。**
+   * 省略すると空のシーンで作るのはサーバーの既定で、手元で組み立てると同じ
+   * ものが 2 箇所になる（`excalidraw/template.ts`）。
    */
-  create: (name: string, target: BoardTarget) =>
+  create: (name: string, target: BoardTarget, scene?: string) =>
     request<BoardDetail>("/api/boards", {
       method: "POST",
-      body: JSON.stringify({ name, ...target }),
+      body: JSON.stringify({ name, ...target, ...(scene === undefined ? {} : { scene }) }),
     }),
 
   get: (id: string) => request<BoardDetail>(`/api/boards/${id}`),
