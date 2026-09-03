@@ -49,6 +49,30 @@ describe("exportFileName", () => {
     const name = exportFileName("あ".repeat(200));
     expect(name).toBe(`${"あ".repeat(80)}.excalidraw`);
   });
+
+  // UTF-16 のコードユニットで切ると、境界がサロゲート対の途中に落ちる。
+  // 半分だけの絵文字が残ったファイル名は、環境によっては保存できない。
+  it("切り詰めで絵文字を割らない", () => {
+    const name = exportFileName(`${"a".repeat(79)}😀`);
+
+    expect(name).toBe(`${"a".repeat(79)}😀.excalidraw`);
+    // 対になっていないサロゲートが残っていないこと。コードポイントで回すと、
+    // 対になっているものは 0xffff より大きい 1 つの値になる。
+    const lone = Array.from(name).filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code >= 0xd800 && code <= 0xdfff;
+    });
+    expect(lone).toEqual([]);
+  });
+
+  // 文字数だけで切ると、絵文字 80 個（1 文字 4 バイト）で 255 バイトを超える。
+  it("バイト数でも切り詰める", () => {
+    const name = exportFileName("😀".repeat(80));
+
+    expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(255);
+    // 割れていないので、文字数はそのままバイト数の 4 分の 1 で数えられる。
+    expect(name).toBe(`${"😀".repeat(61)}.excalidraw`);
+  });
 });
 
 /** Excalidraw の代わり。取り込みが今の画面から読むものだけを持つ。 */

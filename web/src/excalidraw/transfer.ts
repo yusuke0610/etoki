@@ -27,11 +27,50 @@ const FALLBACK_NAME = "board";
 /**
  * ファイル名の長さの上限（拡張子を除く文字数）。
  *
- * ボード名は自由入力なので、そのままでは 255 バイトを超えて保存に失敗する
- * 環境がある。**バイトではなく文字で数える。** 日本語のボード名で「まだ余裕が
- * あるのに切られた」と読める境界を作らないため、余裕を見て短く取ってある。
+ * ボード名は自由入力なので、そのままでは長すぎる名前が作れてしまう。日本語の
+ * ボード名で「まだ余裕があるのに切られた」と読める境界を作らないため、余裕を
+ * 見て短く取ってある。
  */
 const MAX_NAME_LENGTH = 80;
+
+/**
+ * ファイル名の大きさの上限（拡張子を除く UTF-8 のバイト数）。
+ *
+ * **文字数だけでは足りない。** 主要なファイルシステムが 1 要素あたり 255 バイト
+ * で、そこには拡張子も入る。絵文字は 1 文字 4 バイトなので、80 文字に収めても
+ * バイトでは 255 を超えて保存に失敗する環境がある。拡張子のぶんを引いた残りが
+ * 名前に使える。
+ *
+ * 拡張子は ASCII だけなので、文字数がそのままバイト数になる。
+ */
+const MAX_NAME_BYTES = 255 - EXTENSION.length;
+
+/**
+ * 文字数とバイト数の両方に収まるところで切る。
+ *
+ * **`slice` を使わない。** あれは UTF-16 のコードユニットで切るので、境界が
+ * サロゲート対の途中に落ちると、半分だけの絵文字がファイル名に残る。
+ * `for...of` はコードポイントで回すので、1 文字が割れない。
+ *
+ * 絵文字の連なり（ZWJ で繋いだ家族など）はコードポイントの境界で切れうるが、
+ * 残るのはどれも 1 文字として読める形なので、そこまでは見ない。
+ */
+function truncate(name: string): string {
+  const encoder = new TextEncoder();
+  let truncated = "";
+  let characters = 0;
+  let bytes = 0;
+
+  for (const character of name) {
+    const size = encoder.encode(character).length;
+    if (characters + 1 > MAX_NAME_LENGTH || bytes + size > MAX_NAME_BYTES) break;
+    truncated += character;
+    characters += 1;
+    bytes += size;
+  }
+
+  return truncated;
+}
 
 /**
  * ボード名から書き出すファイル名を作る。
@@ -44,11 +83,12 @@ const MAX_NAME_LENGTH = 80;
  * 文字（`/` と `\`）もここに含まれる。
  */
 export function exportFileName(boardName: string): string {
-  const replaced = boardName
+  const cleaned = boardName
     // eslint-disable-next-line no-control-regex -- 制御文字そのものを落とす
     .replace(/[\u0000-\u001f\u007f<>:"/\\|?*]/g, REPLACEMENT)
-    .trim()
-    .slice(0, MAX_NAME_LENGTH)
+    .trim();
+
+  const replaced = truncate(cleaned)
     // 切り詰めで末尾に空白が出ることがある。ドットで終わる名前を嫌う環境も
     // あるので一緒に落とす。
     .replace(/[.\s]+$/, "");
