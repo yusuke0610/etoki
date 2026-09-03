@@ -25,10 +25,13 @@ PR を作ったら CodeRabbit のレビューが付く。**作りっぱなしに
 
 **返信・`<details>`・walkthrough は落としてある。** 全文を取ると 1 PR で 6 万
 文字に達し、その大半は確認応答と Analysis chain で、決着の判断には使わない
-（#125）。落ちたものが要るときだけ、絞り込む前の全文を直に見る。
+（#125）。落ちたものが要るときだけ、絞り込む前の全文を直に見る。行単位の
+コメントとレビュー本体（walkthrough を含む）は別のエンドポイントなので、
+両方取る（#127）。
 
 ```sh
 gh api repos/yusuke0610/etoki/pulls/<番号>/comments -q '.[] | "\(.path):\(.line)\n\(.body)"'
+gh api repos/yusuke0610/etoki/pulls/<番号>/reviews -q '.[] | "\(.user.login):\n\(.body)"'
 ```
 
 CodeRabbit は増分レビューなので、2 回目以降は**前回から変わった範囲しか
