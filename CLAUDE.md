@@ -70,7 +70,7 @@ make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
 make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
-make lint        # Go / フロントエンド / Markdown / Nix / Actions と整形を検査する
+make lint        # Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest
 make test-e2e    # Playwright（test には含まれない）
@@ -232,6 +232,11 @@ GitHub の形しか差せなくなる。
   増えるのは `document-start` のような様式の指摘だけで、`line-length` は
   prettier の `printWidth` と食い違う。ワークフロー固有の検証（式、
   コンテキスト、`run:` の中のシェル）は actionlint の担当。
+- **`.claude/settings.json` の `Bash(gh api:*)` は読み取りに限定できない。**
+  許可のパターンはコマンドの前方一致なので、`gh api -X POST` も同じ許可に入る。
+  `pr-review` の指摘取得とスレッド解決に要るので入れているが、**書き込みも
+  通す判断**であって、うっかり広いわけではない。JSON にコメントを書けないので
+  ここに置いてある。
 
 ## 貢献の手順
 

@@ -17,7 +17,17 @@ PR を作ったら CodeRabbit のレビューが付く。**作りっぱなしに
 指摘が無いことは、待たないと区別できない。
 
 ```sh
-gh pr view <番号> --json reviews -q '.reviews[].body'
+.claude/skills/pr-review/findings.sh <番号>
+```
+
+まだ決着していないスレッドの先頭コメントだけが出る。1 行目に review の件数と
+時刻が出るので、**「まだ来ていない」と「指摘が無い」はそこで区別する。**
+
+**返信・`<details>`・walkthrough は落としてある。** 全文を取ると 1 PR で 6 万
+文字に達し、その大半は確認応答と Analysis chain で、決着の判断には使わない
+（#125）。落ちたものが要るときだけ、絞り込む前の全文を直に見る。
+
+```sh
 gh api repos/yusuke0610/etoki/pulls/<番号>/comments -q '.[] | "\(.path):\(.line)\n\(.body)"'
 ```
 
@@ -46,7 +56,16 @@ CodeRabbit は増分レビューなので、2 回目以降は**前回から変�
 
 どれも直さず、理由を返す。
 
-スレッドは自分で解決する。返信しただけでは open のまま残る。
+スレッドは自分で解決する。返信しただけでは open のまま残る。`findings.sh` が
+出す `thread=` の id をそのまま渡す。
+
+```sh
+gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=<thread の id>
+```
+
+**解決したスレッドは次から `findings.sh` に出ない。** 決着したものを毎回
+読み直さずに済むのはこのため。裏返すと、**解決し忘れたスレッドは決着済みでも
+出続ける。**
 
 ## push したらもう一度見る
 

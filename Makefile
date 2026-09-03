@@ -60,7 +60,7 @@ LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web start \
         test test-go test-web test-e2e lint lint-go lint-web lint-docs lint-fmt \
-        lint-nix lint-actions fmt \
+        lint-nix lint-actions lint-sh fmt \
         codegen codegen-go codegen-web migrate clean
 
 help: ## ターゲット一覧を表示する
@@ -119,7 +119,7 @@ test-e2e: ## Playwright で E2E テストを実行する（test には含めな�
 	@# ここの画像を報告に添える（CLAUDE.md の「報告にスクリーンショットを添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
 
-lint: lint-go lint-web lint-docs lint-fmt lint-nix lint-actions ## Go / フロントエンド / Markdown / Nix / Actions と整形を検査する
+lint: lint-go lint-web lint-docs lint-fmt lint-nix lint-actions lint-sh ## Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 
 lint-go:
 	golangci-lint run
@@ -151,6 +151,13 @@ lint-actions:
 	@# ので、ここが見るのは式やコンテキストの誤りと、run: の中のシェル。
 	@# シェルを見るのは devShell の shellcheck で、actionlint が自動で拾う。
 	actionlint
+
+lint-sh:
+	@# actionlint が拾うのはワークフローの run: だけ。スキルが持つスクリプトは
+	@# make のどのターゲットからも呼ばれないので、ここで見ないと実行するまで
+	@# 壊れたことに気づけない。shellcheck は actionlint のために devShell へ
+	@# 既に入っている。
+	shellcheck .claude/skills/*/*.sh
 
 fmt: ## Go / フロントエンド / Markdown / Nix を整形する
 	golangci-lint fmt
