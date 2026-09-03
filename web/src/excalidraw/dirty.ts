@@ -29,18 +29,19 @@ export function sceneSignature(
   elements: readonly SceneElement[],
   viewBackgroundColor: string | undefined,
 ): string {
-  // 要素の署名と混ざらない形で先頭に置く。要素側は `id:version:meta` なので、
-  // 接頭辞ごと違う形にしておけば、色の文字列が要素の 1 つに読めることはない。
-  const parts: string[] = [`bg=${viewBackgroundColor ?? ""}`];
+  // 要素ごとの署名。**区切り文字で連結せず、JSON の構造で分ける。** 背景色も
+  // 要素の id もファイルから来るので（取り込み、ADR 0044）、`|` や `:` を含む
+  // 値を渡されうる。連結すると、違うシーンが同じ署名に化けて未保存が消える。
+  const parts: [string, number, string][] = [];
 
   for (const el of elements) {
     if (el.isDeleted) continue;
 
     const meta = el.customData?.[ETOKI_NAMESPACE];
-    parts.push(
-      `${el.id}:${el.version ?? 0}:${meta === undefined ? "" : JSON.stringify(meta)}`,
-    );
+    // メタデータは文字列にしてから入れる。「無い」（undefined）と「null が
+    // 載っている」を別物として残すため。JSON.stringify(undefined) は値を落とす。
+    parts.push([el.id, el.version ?? 0, meta === undefined ? "" : JSON.stringify(meta)]);
   }
 
-  return parts.join("|");
+  return JSON.stringify([viewBackgroundColor ?? "", parts]);
 }

@@ -102,4 +102,23 @@ describe("sceneSignature", () => {
 
     expect(after).not.toBe(before);
   });
+
+  // 背景色も要素の id もファイルから来る（取り込み、ADR 0044）。区切り文字で
+  // 連結していると、違うシーンが同じ署名に化けて未保存が消える。
+  it("背景色に区切り文字が入っていても要素と混ざらない", () => {
+    const inBackground = sceneSignature([], "#fff|a:1:");
+    const inElements = sceneSignature([el({ id: "a", version: 1 })], "#fff");
+
+    expect(inBackground).not.toBe(inElements);
+  });
+
+  it("id に区切り文字が入っていても要素の境目が混ざらない", () => {
+    const one = sceneSignature([el({ id: "a:1:|b", version: 2 })], WHITE);
+    const two = sceneSignature(
+      [el({ id: "a", version: 1 }), el({ id: "b", version: 2 })],
+      WHITE,
+    );
+
+    expect(one).not.toBe(two);
+  });
 });
