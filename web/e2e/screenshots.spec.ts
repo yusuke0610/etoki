@@ -696,9 +696,7 @@ test.describe("スクリーンショット", () => {
 
     await page.getByRole("button", { name: "次へ" }).click();
     await chooseTarget(page, "acme/web", "#1 ロードマップ");
-    await page
-      .getByRole("heading", { name: "注文フローのブレスト", level: 1 })
-      .waitFor();
+    await page.getByRole("heading", { name: "注文フローのブレスト", level: 1 }).waitFor();
     await page.locator(".excalidraw canvas").first().waitFor();
     await shot(page, "32-template-sequence");
   });

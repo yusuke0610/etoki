@@ -111,7 +111,11 @@ export const boardsApi = {
   create: (name: string, target: BoardTarget, scene?: string) =>
     request<BoardDetail>("/api/boards", {
       method: "POST",
-      body: JSON.stringify({ name, ...target, ...(scene === undefined ? {} : { scene }) }),
+      body: JSON.stringify({
+        name,
+        ...target,
+        ...(scene === undefined ? {} : { scene }),
+      }),
     }),
 
   get: (id: string) => request<BoardDetail>(`/api/boards/${id}`),

@@ -108,11 +108,25 @@ export function templateScene(choice: TemplateChoice): string | undefined {
  * 直に書くと、書いた場所ごとに片方を忘れる。
  */
 function horizontal(length: number): Record<string, unknown> {
-  return { width: length, height: 0, points: [[0, 0], [length, 0]] };
+  return {
+    width: length,
+    height: 0,
+    points: [
+      [0, 0],
+      [length, 0],
+    ],
+  };
 }
 
 function vertical(length: number): Record<string, unknown> {
-  return { width: 0, height: length, points: [[0, 0], [0, length]] };
+  return {
+    width: 0,
+    height: length,
+    points: [
+      [0, 0],
+      [0, length],
+    ],
+  };
 }
 
 /** 図の間隔と大きさ（シーン座標）。 */

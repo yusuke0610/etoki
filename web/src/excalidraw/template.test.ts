@@ -40,7 +40,10 @@ describe("templateElements", () => {
         elements.filter((el) => el.type === "frame").map((el) => el.id),
         kind,
       ).toEqual([]);
-      expect(elements.filter(isAnnotation).map((el) => el.id), kind).toEqual([]);
+      expect(
+        elements.filter(isAnnotation).map((el) => el.id),
+        kind,
+      ).toEqual([]);
     }
   });
 
@@ -66,7 +69,10 @@ describe("templateElements", () => {
         const container = containerIdOf(el);
         return !top.has(el.id) && !(container !== null && top.has(container));
       });
-      expect(lost.map((el) => el.id), kind).toEqual([]);
+      expect(
+        lost.map((el) => el.id),
+        kind,
+      ).toEqual([]);
     }
   });
 

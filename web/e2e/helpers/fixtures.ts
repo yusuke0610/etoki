@@ -71,12 +71,7 @@ const ELEMENT_BASE = {
  * `name` に null を渡せるのは、Excalidraw が作る frame の既定がそれだから
  * （ADR 0022）。名前なしの見え方は既定の再現でしか確かめられない。
  */
-function annotationFrame(
-  id: string,
-  name: string | null,
-  x: number,
-  kind?: DiagramKind,
-) {
+function annotationFrame(id: string, name: string | null, x: number, kind?: DiagramKind) {
   return {
     ...ELEMENT_BASE,
     id,
