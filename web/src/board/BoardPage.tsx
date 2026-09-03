@@ -577,6 +577,20 @@ export function BoardPage({
   // 引き直しにしか使わないので、スクロールのたびに再描画を増やす理由が無い。
   const viewport = useRef<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1 });
 
+  /**
+   * いまキャンバスに出ている背景色。
+   *
+   * 未保存かどうかの判定に要る（`sceneSignature`）。`appState` を丸ごと持ち回ら
+   * ないのは、署名に入れてよいのは保存が書くものだけで、スクロールや選択まで
+   * 混ぜると開いただけで未保存になるため。
+   */
+  const currentBackground = useCallback(
+    () =>
+      (api?.getAppState() as { viewBackgroundColor?: string } | undefined)
+        ?.viewBackgroundColor,
+    [api],
+  );
+
   /** 選択状態の変化を拾い、注釈にできる frame を割り出す。 */
   const handleChange = useCallback(
     (
@@ -586,10 +600,11 @@ export function BoardPage({
         scrollX: number;
         scrollY: number;
         zoom: { value: number };
+        viewBackgroundColor: string;
       },
     ) => {
       const els = elements as SceneElement[];
-      applySignature(sceneSignature(els));
+      applySignature(sceneSignature(els, appState.viewBackgroundColor));
       scheduleMeasure();
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
       setCanvasFrameIds(frameIds(els));
@@ -614,15 +629,21 @@ export function BoardPage({
    */
   const updateElements = useCallback(
     (next: SceneElement[], appState?: Record<string, unknown>) => {
+      // 渡された背景色があればそれが新しい色。無ければ変えていないので今の色。
+      // **`updateScene` の後に `getAppState()` から読み直さない。** 反映は React
+      // の更新を挟むので、直後に読むとまだ前の色が返りうる。
+      const background =
+        (appState?.viewBackgroundColor as string | undefined) ?? currentBackground();
+
       api?.updateScene({ elements: next as never, appState: appState as never });
       // onChange の発火を待たずにここでも判定する。注釈の付け外しが未保存として
       // 出るかどうかを、updateScene が onChange を呼ぶかに依存させない。
-      applySignature(sceneSignature(next));
+      applySignature(sceneSignature(next, background));
       // 重ねる枠も同じ理由でここで引き直す。注釈にした瞬間に枠が出ないと、
       // 付いたかどうかをパネルでしか確かめられない。
       setOverlayBoxes(annotationBoxes(next, viewport.current));
     },
-    [api, applySignature],
+    [api, applySignature, currentBackground],
   );
 
   const currentElements = useCallback(
@@ -782,7 +803,7 @@ export function BoardPage({
    * キャンバスをそのフレームへ寄せて選択する。
    *
    * パネルの項目とキャンバスのフレームを結ぶ唯一の手段（ADR 0022）。
-   * 選択とスクロールは appState 側の話で、`sceneSignature` は elements しか
+   * `sceneSignature` が appState から見るのは背景色だけで、選択とスクロールは
    * 見ないので、これで未保存にはならない。
    */
   const focusFrame = useCallback(
@@ -904,7 +925,11 @@ export function BoardPage({
       const scene = sceneJSON(api);
       // 送った内容そのものを新しい基準にする。保存の待ち時間に編集されていたら
       // 未保存のまま残す必要があるので、setDirty(false) とは書かない。
-      const sent = sceneSignature(elements as unknown as SceneElement[]);
+      // **背景色も `scene` に載っている**ので、基準にも同じものを含める。
+      const sent = sceneSignature(
+        elements as unknown as SceneElement[],
+        currentBackground(),
+      );
 
       const { updatedAt } = await boardsApi.saveScene(
         board.id,
@@ -940,6 +965,7 @@ export function BoardPage({
     api,
     board.id,
     creationGenerations,
+    currentBackground,
     generations,
     onError,
     refreshAnnotations,
