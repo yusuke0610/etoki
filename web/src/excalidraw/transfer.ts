@@ -132,12 +132,20 @@ export type ImportedScene = {
   viewBackgroundColor: string | undefined;
 };
 
-/** loadFromBlob のうち、ここで使う部分だけの形。 */
-export type LoadFromBlob = (
-  blob: Blob,
-  localAppState: never,
-  localElements: never,
-) => Promise<{
+/**
+ * loadFromBlob のうち、ここで使う部分だけの形。
+ *
+ * **引数はライブラリの公開型から導出する。** 手で並べると、ライブラリが引数を足した
+ * 日にこちらだけが古くなり、しかもキャストで実物を押し込んでいるので気づけない。
+ * 導出してあれば実物がそのまま入る（`as unknown as` が要らない）。
+ *
+ * **戻り値は絞ったまま。** こちらも導出すると、テストのフェイクが
+ * `RestoredAppState` の 85 個のフィールドを埋めることになり、**production から
+ * 消したキャストをテスト 5 箇所に増やす**ことになる。絞っても実物は代入できる
+ * ので、ライブラリとの食い違いは `tsc` が見つける（戻り値を絞るのは `image.ts` の
+ * `ExportToBlob` と同じ。あちらは引数がまだ手書きで、直すなら同じ形にする）。
+ */
+export type LoadFromBlob = (...args: Parameters<typeof loadFromBlob>) => Promise<{
   elements: readonly unknown[];
   appState: { viewBackgroundColor?: string | null };
   files?: Record<string, unknown>;
@@ -161,7 +169,7 @@ export type LoadFromBlob = (
 export async function readSceneFile(
   file: Blob,
   api: SceneSource,
-  load: LoadFromBlob = loadFromBlob as unknown as LoadFromBlob,
+  load: LoadFromBlob = loadFromBlob,
 ): Promise<ImportedScene> {
   const restored = await load(
     file,
