@@ -95,7 +95,7 @@ const MEASURE_DELAY_MS = 500;
 const DIAGRAM_KEY = "diagram";
 
 /**
- * ライブラリのメニューから閉じるもの（ADR 0044）。
+ * ライブラリのメニューから閉じるもの（ADR 0045）。
  *
  * **持ち出しと取り込みの口は etoki のヘッダー 1 つに寄せる。** ライブラリ側を
  * 残すと、同じ画面に意味の違う「保存」が 2 つ並び、片方だけが etoki のボード名と
@@ -624,7 +624,7 @@ export function BoardPage({
   /**
    * 現在のシーンを elements ごと差し替える。
    *
-   * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0044）。
+   * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0045）。
    * 表示状態そのものはここで触らない。
    */
   const updateElements = useCallback(
@@ -819,7 +819,7 @@ export function BoardPage({
   );
 
   /**
-   * いまのキャンバスを `.excalidraw` として書き出す（ADR 0044）。
+   * いまのキャンバスを `.excalidraw` として書き出す（ADR 0045）。
    *
    * **保存済みシーンではなくキャンバスから出す。** 保存済みから出すと、未保存の
    * 描き足しが黙って落ちる（中核思想 3）。**未保存でも押させる。** 入力は 1 つ
@@ -853,7 +853,7 @@ export function BoardPage({
   const importingFile = useRef(false);
 
   /**
-   * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0044）。
+   * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0045）。
    *
    * **サーバーには何も送らない。** 載せるだけで、確定させるのは人間の保存操作
    * だけ（中核思想 3）。取り込んだシーンの検証・版の照合・大きさの上限は、
@@ -1117,6 +1117,17 @@ export function BoardPage({
   // 作った draft issue を確かめにいく先。未選択のボードでは null（ADR 0025）。
   const link = projectLink(board);
 
+  // 作成先を変更できない理由。押せるなら null（ADR 0039）。
+  //
+  // **未保存が先。** `dirty` を下ろすのは応答が返ってから（`save`）なので、
+  // 保存中もこちらが出続ける。保存中の文が出るのは、変更が無いまま保存を
+  // 押したとき。そこも押せないことに変わりはないので、理由を空けない。
+  const targetChangeBlocked = dirty
+    ? "保存してから作成先を変更できます"
+    : saving
+      ? "保存が終わるまで作成先を変更できません"
+      : null;
+
   return (
     <div className="board">
       <header className="board-header">
@@ -1277,13 +1288,15 @@ export function BoardPage({
                 // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
                 // 黙って捨てずに、保存してからにしてもらう。
                 disabled={dirty || saving}
-                aria-describedby={dirty ? "target-change-blocked" : undefined}
+                aria-describedby={
+                  targetChangeBlocked !== null ? "target-change-blocked" : undefined
+                }
               >
                 作成先を変更
               </button>
-              {dirty && (
+              {targetChangeBlocked !== null && (
                 <span className="hint" id="target-change-blocked">
-                  保存してから作成先を変更できます
+                  {targetChangeBlocked}
                 </span>
               )}
             </>
@@ -1298,7 +1311,7 @@ export function BoardPage({
             </button>
           )}
           {/*
-            持ち出しと取り込みの口はここ 1 つ（ADR 0044）。ライブラリのメニュー
+            持ち出しと取り込みの口はここ 1 つ（ADR 0045）。ライブラリのメニュー
             からは外してある（`UI_OPTIONS`）。
 
             書き出しは viewer にも出す。見えているものを出すだけなので、
@@ -1358,14 +1371,27 @@ export function BoardPage({
           )}
           {dirty && <span className="dirty">未保存</span>}
           {canEdit && (
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={saving || creating || !api}
-              title={creating ? "作成が終わるまで保存できません" : undefined}
-            >
-              {saving ? "保存中…" : "保存"}
-            </button>
+            <>
+              {/*
+                取り消せない操作と保存は相互に排他する。**押せない理由を title に
+                隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
+                フォーカスも当たらないので、キーボードと読み上げには届かない。
+                「作成先を変更」と同じ形で本文に出して aria-describedby で結ぶ。
+              */}
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving || creating || !api}
+                aria-describedby={creating ? "save-blocked" : undefined}
+              >
+                {saving ? "保存中…" : "保存"}
+              </button>
+              {creating && (
+                <span className="hint" id="save-blocked">
+                  作成が終わるまで保存できません
+                </span>
+              )}
+            </>
           )}
           {/*
             ボードごと畳むのは owner だけ（ADR 0042）。押せる人にだけ出すのは
@@ -1497,7 +1523,7 @@ export function BoardPage({
             initialData={initialData as never}
             onChange={handleChange as never}
             langCode="ja-JP"
-            // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0044）。
+            // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0045）。
             UIOptions={UI_OPTIONS}
             // viewer には描かせない。描けるのに保存できないと、描いた内容を
             // 黙って捨てることになる（ADR 0017）。

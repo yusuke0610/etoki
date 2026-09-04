@@ -30,7 +30,7 @@ export function sceneSignature(
   viewBackgroundColor: string | undefined,
 ): string {
   // 要素ごとの署名。**区切り文字で連結せず、JSON の構造で分ける。** 背景色も
-  // 要素の id もファイルから来るので（取り込み、ADR 0044）、`|` や `:` を含む
+  // 要素の id もファイルから来るので（取り込み、ADR 0045）、`|` や `:` を含む
   // 値を渡されうる。連結すると、違うシーンが同じ署名に化けて未保存が消える。
   const parts: [string, number, string][] = [];
 

@@ -4,7 +4,7 @@ import { exportFileName, readSceneFile, type LoadFromBlob } from "./transfer";
 import type { SceneSource } from "./image";
 
 /**
- * 書き出しのファイル名と、取り込んだものの詰め替え（ADR 0044）。
+ * 書き出しのファイル名と、取り込んだものの詰め替え（ADR 0045）。
  *
  * **ライブラリの実物は掛けられない。** `loadFromBlob` は Blob の読み取りと
  * Excalidraw の復元が要り jsdom では動かない。ここで確かめるのは、返ってきた
