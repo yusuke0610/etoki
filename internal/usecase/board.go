@@ -452,8 +452,14 @@ func validateScene(scene string) error {
 		return fmt.Errorf("%w: scene is %d bytes, limit is %d",
 			ErrSceneTooLarge, len(scene), MaxSceneBytes)
 	}
-	if _, err := domain.ParseScene([]byte(scene)); err != nil {
+	parsed, err := domain.ParseScene([]byte(scene))
+	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	for _, a := range parsed.Annotations() {
+		if !a.Kind.Valid() {
+			return fmt.Errorf("%w: unknown diagram kind %q", ErrInvalidInput, a.Kind)
+		}
 	}
 	return nil
 }

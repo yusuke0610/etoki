@@ -452,8 +452,9 @@ func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {
 	}
 
 	// **選んでいなければ省略する。** 空文字を載せると DiagramKind の enum に
-	// 無い値が契約の外から出ることになる。
-	if s.Annotation.Kind != domain.DiagramKindUnspecified {
+	// 無い値が契約の外から出ることになる。**Valid() も見る。** 検証前に
+	// 保存された既存データに不明な値が残っていた場合の備え。
+	if s.Annotation.Kind != domain.DiagramKindUnspecified && s.Annotation.Kind.Valid() {
 		kind := apitypes.DiagramKind(s.Annotation.Kind)
 		res.Kind = &kind
 	}
