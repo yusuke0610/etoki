@@ -507,22 +507,15 @@ func granularityInstruction(g domain.Granularity) string {
 // こちらは「どう読ませるか」で、答えている問いが違う。まとめると、mermaid の
 // 記法の話が解釈のプロンプトに混ざる。語彙（domain.DiagramKind）だけを共有する。
 var diagramReadings = map[domain.DiagramKind]string{
-	domain.DiagramKindTodo: "この囲みはやることの洗い出しとして描かれています。" +
-		"並んでいるものは対等な項目として読んでください。",
+	domain.DiagramKindTodo: "この囲みはやることの洗い出しとして描かれています。",
 
-	domain.DiagramKindMindmap: "この囲みはマインドマップとして描かれています。" +
-		"中心の主題から枝が伸びる形として読んでください。" +
-		"枝の親子が読み取れないときは、読み取れた範囲だけで構いません。" +
-		"見えていない階層を補わないでください。",
+	domain.DiagramKindMindmap: "この囲みはマインドマップとして描かれています。",
 
-	domain.DiagramKindSequence: "この囲みはシーケンス図として描かれています。" +
-		"登場人物のあいだのやりとりと、その順序として読んでください。",
+	domain.DiagramKindSequence: "この囲みはシーケンス図として描かれています。",
 
-	domain.DiagramKindER: "この囲みは ER 図として描かれています。" +
-		"実体と、実体どうしの関連として読んでください。",
+	domain.DiagramKindER: "この囲みは ER 図として描かれています。",
 
-	domain.DiagramKindArchitecture: "この囲みはシステム構成図として描かれています。" +
-		"構成要素と、その境界として読んでください。",
+	domain.DiagramKindArchitecture: "この囲みはシステム構成図として描かれています。",
 }
 
 // kindInstruction は開発者が選んだ種別を指示文にする。
