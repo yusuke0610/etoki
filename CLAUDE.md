@@ -37,7 +37,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | ---------------------------------- | ---------------------------------------------------------------------- |
 | `CONTRIBUTING.md`                  | ブランチ・コミット・PR 本文・レビュー対応・CI                          |
 | `.github/pull_request_template.md` | PR 本文の雛形                                                          |
-| `internal/CLAUDE.md`               | 3 状態判定のデータフロー、ハンドラ、メンバーと権限、Origin 検証        |
+| `internal/CLAUDE.md`               | 3 状態判定のデータフロー、メンバーと権限                               |
 | `web/CLAUDE.md`                    | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
 | `.claude/rules/`                   | レビュー由来の落とし穴集（テーマ別。対象ファイルを読むと読み込まれる） |
@@ -192,7 +192,8 @@ GitHub の形しか差せなくなる。
 - **OAuth を設定したら PAT は無視する。** フォールバックにすると作成の主体が
   リクエストごとに変わり、誰が作ったのか追えなくなる。
 
-ボードのメンバーと権限、Origin 検証は `internal/CLAUDE.md`。
+ボードのメンバーと権限は `internal/CLAUDE.md`。Gin ハンドラの約束と Origin 検証は
+`.claude/rules/http-handlers.md`。
 
 ## ツールチェーン上の非自明な設定
 
