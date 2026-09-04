@@ -32,6 +32,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#109](https://github.com/yusuke0610/etoki/pull/109) |        5 |      3 |        2 |      0 | async-ui / validation-boundaries                                                             |
 | [#117](https://github.com/yusuke0610/etoki/pull/117) |        4 |      0 |        3 |      1 | validation-boundaries。未決着は DB の CHECK（#126 で還した）                                 |
 | [#121](https://github.com/yusuke0610/etoki/pull/121) |        1 |      1 |        0 |      0 | 還していなかった。#126 で async-ui へ                                                        |
+| [#129](https://github.com/yusuke0610/etoki/pull/129) |        2 |      2 |        0 |      0 | この PR が触っている async-ui / pr-review スキル自身を直接修正                               |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
