@@ -40,7 +40,8 @@ query($owner:String!,$name:String!,$pr:Int!,$after:String){
   }
 }'
 
-nodes="[]"
+nodes_file="$(mktemp)"
+trap 'rm -f "$nodes_file"' EXIT
 cursor=""
 while :; do
 	args=(-f query="$query" -F owner="${nwo%%/*}" -F name="${nwo##*/}" -F pr="$pr")
@@ -48,12 +49,13 @@ while :; do
 		args+=(-F after="$cursor")
 	fi
 	page="$(gh api graphql "${args[@]}" --jq '.data.repository.pullRequest.reviewThreads')"
-	nodes="$(jq -c -n --argjson a "$nodes" --argjson b "$(jq -c '.nodes' <<<"$page")" '$a + $b')"
+	jq -c '.nodes[]' <<<"$page" >>"$nodes_file"
 	if [ "$(jq -r '.pageInfo.hasNextPage' <<<"$page")" != "true" ]; then
 		break
 	fi
 	cursor="$(jq -r '.pageInfo.endCursor' <<<"$page")"
 done
+nodes="$(jq -sc '.' "$nodes_file")"
 
 # author.login の null 正規化は上と同じ理由（#127）。
 threads="$(jq -r '.[]
