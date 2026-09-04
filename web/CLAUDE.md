@@ -202,6 +202,18 @@
 - **判断の規約は `web/e2e/a11y.spec.ts` が見る。** etoki 固有なので既製の
   ルールでは検知できず、押せないボタン 1 つずつに手で書いてある。**押せない
   ボタンを足したら、そこにも足す。** 並んでいないボタンは守られていない。
+- **一時的に押せないだけでも理由は本文で出す。** 保存中は作成させず、作成中は
+  保存させない（`.claude/rules/async-ui.md` の相互排他）。**待てば押せることは、
+  待てると知っている人にしか分からない。** ここは `title` に残りやすい。
+  相手が読めない形でも画面上は「説明が付いている」ように見えるため。
+  **`blockingReasons` には混ぜない。** あちらは
+  下書きだけを見て「作るものが揃っているか」に答える純関数で、進行中かどうかを
+  知らない。混ぜると UI の一時的な状態を引数に取ることになる。
+- **一時的な理由は、消えることまで spec で見る。** 出しっぱなしの文でも「理由が
+  読める」検査は通る。応答を止める道具は `web/e2e/helpers/api.ts` の `holdSave` /
+  `holdCreate`。**遅らせるのは応答だけで、本文は `installApi` のものを使う**
+  （`route.fallback()`）。ここで本文まで書くと、版の照合を通らない保存の
+  モックが 1 つ増える。
 - **理由の要素の `id` は、一覧に並ぶものなら注釈ごとに分ける。** パネルに
   1 つしか出さない理由（未設定の説明）だけが固定の `id` でよい。同じ `id` が
   2 つあると、読み上げはどちらを読むか決められない。spec が 1 つに定まる
@@ -213,6 +225,8 @@
 - **描かないと分からないものは axe が見る**（同じ spec）。実際の色の
   コントラストと、`aria-describedby` の指す先が実在するか。**`.excalidraw` は
   除いて掛ける。** ライブラリ自身の DOM に etoki は手を入れられない。
+  **開かないと DOM に出ない領域は、開いた状態を 1 つずつ足す。** 図のドラフト・
+  削除の確認・メンバー。ボードを開いただけの検査には一度も含まれていない。
 - **文字色を薄くするときは AA の 4.5:1 を切らせない。** 押せない理由を
   出しているのが `.hint` なので、読めない色にすると「理由を本文で出す」判断が
   半分しか果たされない。切ると axe が落ちる。**いまの色と、その比の値を
@@ -321,12 +335,16 @@ cd web && bunx playwright test --ui
 - **`web/src/excalidraw/assumptions.test.ts`** — `customData` が serialize と
   restore を越えて残るという、注釈設計の前提そのものを固定するテスト。
   ライブラリ更新で落ちたら設計を見直す合図。
+- **`typescript` は 6 系のまま。** typescript-eslint が TS 7 の API をまだ
+  読めず、上げると eslint が規則を 1 つも見ないまま起動で落ちる。**これだけは
+  外部が追いつけば消える固定。** typescript-eslint が読めるようになったら、
+  ここと `ignore` の両方を外す。
 - **`@playwright/test` のバージョンは exact 指定。** devShell が渡す
   `playwright-driver.browsers`（nixpkgs 側）と揃っていないと、要求される
   リビジョンのブラウザが見つからず E2E が起動しない。`nix flake update` で
   `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
 
 ここで固定しているもの（`@playwright/test`、React 18、
-`@excalidraw/mermaid-to-excalidraw`）は `.github/dependabot.yml` の `ignore` にも
-入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
+`@excalidraw/mermaid-to-excalidraw`、`typescript`）は `.github/dependabot.yml` の
+`ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
 **固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。

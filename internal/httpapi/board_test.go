@@ -172,7 +172,7 @@ func TestGetBoardDeletion(t *testing.T) {
 		}
 		if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
 			BoardID: id, AnnotationID: "annot-1", ContentHash: "hash-1",
-			CreatedAt: fixedTime, Items: items,
+			CreatedAt: fixedTime, Outcome: port.OutcomeComplete, Items: items,
 		}); err != nil {
 			t.Fatalf("SaveRun: %v", err)
 		}

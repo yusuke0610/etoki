@@ -68,6 +68,13 @@ CodeRabbit に最も多く指摘されたのは「テストはあるが、守り
   行番号で返す。ハンドラのテストの `Host` がこれで、**入れる場所の正本は
   `internal/CLAUDE.md`**（#104）。
 
+- **docstring の網羅率を満たすために、テストの無名関数へ docstring を
+  足さない。** CodeRabbit の pre-merge check は `test(...)` のコールバックや
+  `let release = () => {}` の踏み台まで対象に数える。テストが何を守るかは
+  既に `//` で上に書いてあり、移し替えても内容は増えない。閾値は
+  CodeRabbit の既定で、`.coderabbit.yaml` はその系統を入れないと決めている
+  （#121）。
+
 - **プロンプトに「制約が書かれていないこと」を `strings.Contains` で
   断言しない。** 写しは言い換えで入るので素通りする。#122 で消した
   「新しく作るものは null」の写しを戻しても、`InterpretationConstraints()`

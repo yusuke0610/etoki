@@ -1,10 +1,17 @@
 import { test, type Page } from "@playwright/test";
 
-import { breakAnnotations, breakBoards, installApi, summarize } from "./helpers/api";
+import {
+  breakAnnotations,
+  breakBoards,
+  holdSave,
+  installApi,
+  summarize,
+} from "./helpers/api";
 import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
 import {
   ANNOTATION_IDS,
   BOARD_ID,
+  annotations,
   baseMock,
   board,
   interpretation,
@@ -574,6 +581,49 @@ test.describe("スクリーンショット", () => {
     await shot(page, "25-run-history");
   });
 
+  // 途中で失敗した run（ADR 0043）。一覧の注意書きと履歴の中の帯が二重に
+  // 見えていないか、理由が畳まれたままかを画像で見る。
+  test("途中で失敗した run を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.annotations[BOARD_ID] = annotations().map((a) =>
+      a.id === ANNOTATION_IDS.created ? { ...a, lastRunOutcome: "incomplete" } : a,
+    );
+    mock.runs = {
+      [ANNOTATION_IDS.created]: {
+        status: 200,
+        body: [
+          {
+            id: 1,
+            createdAt: "2026-08-04T12:00:00Z",
+            outcome: "incomplete",
+            error: 'create "再設定メールを送る": github graphql: rate limited',
+            items: [
+              {
+                itemId: "PVTI_epic",
+                kind: "epic",
+                title: "パスワード再設定",
+                body: "忘れたときの導線をまとめる",
+                localId: "e1",
+                action: "created",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await card.getByText("実行の履歴").click();
+    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+    await card.locator(".run-history .error").waitFor();
+    await shot(page, "27-run-incomplete");
+  });
+
   // 名前を変えている最中。見出しが入力に変わるので、押し間違いで名前が
   // 変わるように見えていないかを画像で見る。
   test("名前の変更中を撮る", async ({ page }) => {
@@ -625,5 +675,33 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "ボードを削除" }).click();
     await page.getByRole("alertdialog").waitFor();
     await shot(page, "29-delete-confirm");
+  });
+
+  // 保存と作成の相互排他（`.claude/rules/async-ui.md`）。**押せない理由が本文
+  // として出ているか**を画像で見る。title に隠すと、この画像には何も写らない。
+  test("保存中で作成できない状態を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdSave(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByText("保存が終わるまで作成できません").waitFor();
+    await shot(page, "30-create-blocked-while-saving");
+
+    // 止めたまま終わらない。次のテストへ持ち越すものを残さない。
+    release();
   });
 });
