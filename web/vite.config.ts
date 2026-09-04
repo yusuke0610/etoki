@@ -66,9 +66,6 @@ function excalidrawFontAssets(): Plugin {
     configureServer(server) {
       // connect は一致した接頭辞を req.url から外して渡す。
       server.middlewares.use(`${EXCALIDRAW_ASSET_PATH}fonts`, (req, res) => {
-        const rel = decodeURIComponent((req.url ?? "").split("?")[0] ?? "");
-        const file = path.join(excalidrawFonts, rel);
-
         // 読めなかったら next() ではなく 404 を返す。**dev サーバーは当たら
         // なかったパスに index.html を 200 で返す。** 素通しにすると、写し
         // 漏れたフォントが「取れた」ことになり、Excalidraw は HTML を woff2
@@ -78,6 +75,17 @@ function excalidrawFontAssets(): Plugin {
           res.statusCode = 404;
           res.end();
         };
+
+        // 不正な percent-encoding は decodeURIComponent が例外を投げる。
+        // 例外のまま抜けると notFound() を経ずに落ちるので、ここで拾う。
+        let rel: string;
+        try {
+          rel = decodeURIComponent((req.url ?? "").split("?")[0] ?? "");
+        } catch {
+          notFound();
+          return;
+        }
+        const file = path.join(excalidrawFonts, rel);
 
         // フォントの外に出るパスは配らない。dev サーバーは開発者の手元の
         // ファイルを読める位置にいるので、辿らせない。
