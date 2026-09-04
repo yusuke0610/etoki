@@ -707,7 +707,7 @@ export interface components {
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -1288,6 +1288,30 @@ export interface components {
          *     内容を直す」ではなく「貼った画像を減らす」になる。
          */
         SceneTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description LLM を叩く実行の上限に当たった（ADR 0044）。**上限は利用者ごと**で、
+         *     解釈と図のドラフト生成が 1 つの枠を共有する。どちらも課金を伴う外部
+         *     呼び出しなので、片方だけ絞ると抜け道が残る。
+         *
+         *     **code を 2 つに分ける。** ステータスは同じでも打ち手が違う。
+         *
+         *     - `rate_limited`: 窓の中の回数を使い切った。時間をおく
+         *     - `concurrency_limited`: いま走っている実行がある。終わるのを待つ
+         *
+         *     **上限に当たった実行は LLM を 1 回も呼んでいない。** 呼んでから結果を
+         *     捨てると、課金だけが発生する。
+         *
+         *     回数の上限は設定した構成にしか存在しない（既定は同時実行のみ）。
+         *     **残り枠は返さない。** 無い上限の残りを常時載せることになるため。
+         */
+        TooManyRequests: {
             headers: {
                 [name: string]: unknown;
             };
@@ -2183,6 +2207,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["DiagramChatTooLong"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
             /** @description LLM の呼び出しに失敗した、または図が返らなかった */
             502: {
@@ -2236,6 +2261,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
             /** @description LLM の呼び出しに失敗した、または出力がスキーマを満たさなかった */
             502: {

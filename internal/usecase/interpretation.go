@@ -51,8 +51,11 @@ type InterpretationService struct {
 	boardGuard
 	// mappings は前回までに作ったものを引くために持つ。解釈の入力にするのは
 	// テキストと画像だけではなく、「前回何を作ったか」も含まれる（ADR 0026）。
-	mappings    port.MappingRepository
-	llm         port.LLMClient
+	mappings port.MappingRepository
+	llm      port.LLMClient
+	// limits は LLM を叩く実行の上限（ADR 0044）。DiagramService と**同じものを
+	// 共有する。** 別々に持たせると、合計では上限の倍だけ叩ける。
+	limits      *LLMLimiter
 	maxAttempts int
 	logger      *slog.Logger
 }
@@ -92,14 +95,18 @@ func WithLogger(l *slog.Logger) InterpretationServiceOption {
 }
 
 // NewInterpretationService は InterpretationService を作る。
+//
+// limits は DiagramService と同じものを渡す（LLMLimiter を参照）。任意の設定
+// ではなく引数にしてあるのは、渡し忘れを緑のまま通さないため。
 func NewInterpretationService(
 	boards port.BoardRepository, mappings port.MappingRepository, llm port.LLMClient,
-	opts ...InterpretationServiceOption,
+	limits *LLMLimiter, opts ...InterpretationServiceOption,
 ) *InterpretationService {
 	s := &InterpretationService{
 		boardGuard:  boardGuard{boards: boards},
 		mappings:    mappings,
 		llm:         llm,
+		limits:      limits,
 		maxAttempts: defaultMaxAttempts,
 		logger:      slog.Default(),
 	}
@@ -165,6 +172,15 @@ func (s *InterpretationService) Interpret(
 		return InterpretationResult{}, err
 	}
 	previous := toPreviousItems(saved)
+
+	// **枠を取るのは LLM を叩く直前**（ADR 0044）。認可も入力の検証もすべて
+	// 通ってから取るので、404 や 400 で返るリクエストは枠を消費しない。
+	// 当たったときは 1 回も呼ばない。呼んでから捨てると課金だけが発生する。
+	release, err := s.limits.Acquire(ctx)
+	if err != nil {
+		return InterpretationResult{}, err
+	}
+	defer release()
 
 	in, usage, err := s.complete(ctx, annotation, scene.AnnotationTexts(annotationID), images, previous)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されているので、

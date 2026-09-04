@@ -60,7 +60,7 @@ type Skeleton = Record<string, unknown> & { type: string; id?: string };
  * （ルートの `CLAUDE.md`、ADR 0040 で mermaid の変換結果から frame を拒むのと
  * 同じ理由）を、ひな形のためにも曲げない。**ひな形が配るのは絵だけ**で、
  * どこを issue 化の対象にするかは、これまでどおり人がフレームツールで囲んで
- * 決める（ADR 0044）。
+ * 決める（ADR 0045）。
  *
  * その帰結として、**選んだ種別はここには載らない。** 種別は注釈のメタデータ
  * なので、載る先は人が引いた frame。選ぶのは注釈パネル（`AnnotationPanel` の
@@ -329,7 +329,7 @@ function erSkeletons(): Skeleton[] {
 /**
  * 構成要素と境界。
  *
- * **境界は frame ではなく矩形で描く**（ADR 0044）。人がこの絵を frame で囲んで
+ * **境界は frame ではなく矩形で描く**（ADR 0045）。人がこの絵を frame で囲んで
  * 注釈にすると、frame で描いた境界はその中の frame になり、内側に入れた要素の
  * `frameId` が内側を指す。
  * `Scene.AnnotationTexts` は入れ子を辿らないので、境界の中に書いた文字が

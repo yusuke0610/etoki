@@ -44,6 +44,17 @@ const validInterpretation = `{"summary":"決済まわりの課題出し","items"
 func newInterpretRouter(t *testing.T, llm port.LLMClient) *gin.Engine {
 	t.Helper()
 
+	return newInterpretRouterWithLimits(t, llm, newLimiter())
+}
+
+// newInterpretRouterWithLimits は実行の上限を指定してルーターを返す。
+//
+// 上限に当たったときの応答を見るテストだけが使う（ADR 0044）。
+func newInterpretRouterWithLimits(
+	t *testing.T, llm port.LLMClient, limits *usecase.LLMLimiter,
+) *gin.Engine {
+	t.Helper()
+
 	boards, mappings := newRepos(t)
 
 	seq := 0
@@ -60,7 +71,7 @@ func newInterpretRouter(t *testing.T, llm port.LLMClient) *gin.Engine {
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 	}
 	if llm != nil {
-		deps.Interpretations = usecase.NewInterpretationService(boards, mappings, llm,
+		deps.Interpretations = usecase.NewInterpretationService(boards, mappings, llm, limits,
 			usecase.WithMaxAttempts(2))
 	}
 
@@ -261,9 +272,10 @@ func TestInterpretAnnotation_DoesNotRecordRun(t *testing.T) {
 		}),
 	)
 	r := httpapi.NewRouter(httpapi.Deps{
-		Boards:          boardSvc,
-		Annotations:     usecase.NewAnnotationService(boards, mappings),
-		Interpretations: usecase.NewInterpretationService(boards, mappings, &stubLLM{text: validInterpretation}),
+		Boards:      boardSvc,
+		Annotations: usecase.NewAnnotationService(boards, mappings),
+		Interpretations: usecase.NewInterpretationService(
+			boards, mappings, &stubLLM{text: validInterpretation}, newLimiter()),
 	})
 
 	id := createBoard(t, r, "設計会")
@@ -415,5 +427,34 @@ func TestInterpretAnnotation_InvalidGranularity(t *testing.T) {
 	}
 	if llm.calls != 0 {
 		t.Error("粒度が不正なのに LLM を呼んでいる")
+	}
+}
+
+// 上限に当たったら 429 と、打ち手の分かる code を返す（ADR 0044）。
+//
+// **LLM は呼ばない。** 呼んでから捨てると課金だけが発生する。
+func TestInterpretAnnotation_RateLimited(t *testing.T) {
+	t.Parallel()
+
+	llm := &stubLLM{text: validInterpretation}
+	r := newInterpretRouterWithLimits(t, llm,
+		usecase.NewLLMLimiter(usecase.LLMLimits{RateLimit: 1}))
+
+	id := createBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	if rec := do(t, r, http.MethodPost, interpretPath(id, "annot-1"), nil); rec.Code != http.StatusOK {
+		t.Fatalf("1 回目の status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+
+	rec := do(t, r, http.MethodPost, interpretPath(id, "annot-1"), nil)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("2 回目の status = %d, want 429 (%s)", rec.Code, rec.Body)
+	}
+	if got := decode[apitypes.ErrorResponse](t, rec); got.Code != apitypes.ErrorCodeRateLimited {
+		t.Errorf("code = %q, want %q", got.Code, apitypes.ErrorCodeRateLimited)
+	}
+	if llm.calls != 1 {
+		t.Errorf("LLM 呼び出し回数 = %d, want 1", llm.calls)
 	}
 }

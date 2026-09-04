@@ -294,7 +294,7 @@ func TestAnnotationTexts_CollectsManyTextsThroughBothPaths(t *testing.T) {
 	}
 }
 
-// 入れ子の frame は辿らない（ADR 0044）。
+// 入れ子の frame は辿らない（ADR 0045）。
 //
 // **これは仕様であって取りこぼしではない。** 内側の frame に入れた要素は
 // frameId が内側を指すので、外側の注釈の子には出てこない。境界を frame で

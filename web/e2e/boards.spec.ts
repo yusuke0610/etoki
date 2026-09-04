@@ -82,7 +82,7 @@ test.describe("ボード", () => {
     const body = request.postDataJSON() as { scene?: string };
     expect(body.scene, "ひな形のシーンが送られていない").toBeTruthy();
     expect(body.scene).toContain("利用者");
-    // **ひな形は絵だけを置く**（ADR 0044）。frame を配ると、注釈にできる枠を
+    // **ひな形は絵だけを置く**（ADR 0045）。frame を配ると、注釈にできる枠を
     // etoki が作ったことになり、「frame は人が引く」線が黙って崩れる。
     expect(body.scene).not.toContain('"type":"frame"');
     // 注釈のメタデータも載らない。**種別が載る先は人が引いた frame** で、

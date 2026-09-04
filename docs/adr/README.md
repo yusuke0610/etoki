@@ -47,4 +47,5 @@
 | [0041](0041-diagram-chat-changes-no-server-state.md)             | 図のドラフト生成はサーバーの状態を変えない（会話も持たない）           | 採用                 |
 | [0042](0042-delete-boards-after-showing-what-remains.md)         | ボードの削除は GitHub 側に残るものを見せてから通す                     | 採用                 |
 | [0043](0043-record-run-outcome.md)                               | 途中で失敗した run は記録に残す（埋めずに「不明」を残す）              | 採用                 |
-| [0044](0044-diagram-kind-as-annotation-metadata.md)              | 図の種別は注釈のメタデータに持ち、読み方の規則は実装に書かない         | 採用                 |
+| [0044](0044-limit-llm-calls.md)                                  | LLM を叩く実行に上限を置く（利用者単位・プロセス内）                   | 採用                 |
+| [0045](0045-diagram-kind-as-annotation-metadata.md)              | 図の種別は注釈のメタデータに持ち、読み方の規則は実装に書かない         | 採用                 |

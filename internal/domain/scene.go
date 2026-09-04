@@ -164,7 +164,7 @@ func (s Scene) Annotations() []Annotation {
 // frame の名前も含める。LLM への入力になる以上、変えたら「変更あり」に
 // なるべきであるため。
 //
-// **入れ子の frame は辿らない**（ADR 0044）。内側の frame に入れた要素は
+// **入れ子の frame は辿らない**（ADR 0045）。内側の frame に入れた要素は
 // frameId が内側を指すので、ここには出てこない。1 段だけを見る形は
 // TestAnnotationTexts_DoesNotFollowNestedFrames が固定している。境界を描く
 // テンプレートが frame ではなく矩形を使うのは、この線を越えないため。

@@ -221,7 +221,8 @@ func newInterpretService(t *testing.T, board *port.Board, llm *fakeLLM) (*usecas
 	t.Helper()
 
 	boards := &fakeBoards{board: board}
-	svc := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, usecase.WithMaxAttempts(3))
+	svc := usecase.NewInterpretationService(
+		boards, &fakeMappings{}, llm, newLimiter(), usecase.WithMaxAttempts(3))
 	return svc, boards
 }
 
@@ -463,7 +464,8 @@ func TestInterpret_GivesUpAfterMaxAttempts(t *testing.T) {
 
 	llm := &fakeLLM{responses: []string{invalidLLMOutput}}
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	svc := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, usecase.WithMaxAttempts(2))
+	svc := usecase.NewInterpretationService(
+		boards, &fakeMappings{}, llm, newLimiter(), usecase.WithMaxAttempts(2))
 
 	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrInterpretationFailed) {
@@ -628,7 +630,8 @@ func TestInterpret_IgnoresNonPositiveMaxAttempts(t *testing.T) {
 
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	svc := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, usecase.WithMaxAttempts(0))
+	svc := usecase.NewInterpretationService(
+		boards, &fakeMappings{}, llm, newLimiter(), usecase.WithMaxAttempts(0))
 
 	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
 		t.Fatalf("Interpret() = %v", err)
@@ -793,7 +796,8 @@ func TestInterpret_ShowsPreviousItemsAsRefs(t *testing.T) {
 
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc := usecase.NewInterpretationService(
-		&fakeBoards{board: newBoard(interpretScene)}, mappings, llm, usecase.WithMaxAttempts(1))
+		&fakeBoards{board: newBoard(interpretScene)}, mappings, llm, newLimiter(),
+		usecase.WithMaxAttempts(1))
 
 	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
 		t.Fatalf("Interpret() = %v", err)
@@ -850,7 +854,7 @@ func newLoggingInterpretService(
 
 	buf, logger := captureLogs()
 	svc := usecase.NewInterpretationService(
-		&fakeBoards{board: newBoard(interpretScene)}, &fakeMappings{}, llm,
+		&fakeBoards{board: newBoard(interpretScene)}, &fakeMappings{}, llm, newLimiter(),
 		usecase.WithMaxAttempts(maxAttempts), usecase.WithLogger(logger),
 	)
 	return svc, buf

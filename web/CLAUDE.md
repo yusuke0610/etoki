@@ -15,7 +15,7 @@
   JavaScript では配列も `typeof === "object"` になるため。
 - **注釈のメタデータの形も Go 側と同じにする。** `web/src/excalidraw/annotation.ts` の
   `AnnotationMeta` と `internal/domain/scene.go` の `AnnotationMeta`。粒度に加えて
-  図の種別（`kind`）が載る（ADR 0044）。**フロントだけが読める形で持たない。**
+  図の種別（`kind`）が載る（ADR 0045）。**フロントだけが読める形で持たない。**
   持つと、種別がサーバーから見えず、解釈のプロンプトにも `content_hash` にも
   載らない。
   - **粒度と種別は別の口で差し替える**（`markAsAnnotation` と
@@ -114,7 +114,7 @@
 - **viewer には出さない。** LLM を叩く外部呼び出しで課金も伴う（ADR 0017、
   解釈と同じ理由）。
 
-## ブレストの出発点になるひな形（ADR 0044）
+## ブレストの出発点になるひな形（ADR 0045）
 
 **ひな形が配るのは絵だけ。** 組み立ては `web/src/excalidraw/template.ts` の
 純関数にある。

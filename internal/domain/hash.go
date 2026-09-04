@@ -93,7 +93,7 @@ func ComputeContentHash(elements []TextElement, g Granularity, k DiagramKind) Co
 	// **指定なしでも書く。** 書かない形にすれば種別を持つ前の値と一致させられる
 	// が、算出の入力が種別の有無で分岐することになる。分岐は「なぜここだけ
 	// 特別なのか」を知らないと消せない形で残るので、一度きりの移行のために
-	// 恒久的な分岐を抱えない（ADR 0044）。移行の代償は、既存の created な注釈が
+	// 恒久的な分岐を抱えない（ADR 0045）。移行の代償は、既存の created な注釈が
 	// 一度だけ changed に見えることで、再実行すれば揃う。
 	h.Write([]byte{groupSep})
 	h.Write([]byte(k))
