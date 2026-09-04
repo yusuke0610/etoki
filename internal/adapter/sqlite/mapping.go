@@ -29,6 +29,20 @@ var _ port.MappingRepository = (*MappingRepository)(nil)
 func (r *MappingRepository) SaveRun(ctx context.Context, run port.SyncRun) (int64, error) {
 	// DB に触る前に弾けるものは弾く。CHECK 制約でも防げるが、エラーメッセージが
 	// 「どの item が不正か」を示せる分こちらが役に立つ。
+	//
+	// **Outcome のゼロ値も弾く。** NULL は「記録していなかった頃の run」を
+	// 表すので、書き忘れを通すとそこに紛れて後から見分けられない（ADR 0043）。
+	if !run.Outcome.Valid() {
+		return 0, fmt.Errorf("invalid outcome %q for run on %s/%s",
+			run.Outcome, run.BoardID, run.AnnotationID)
+	}
+	// 理由が入るのは途中で失敗したときだけ。完走した run に理由が付いたり、
+	// 失敗した run の理由が空だったりすると、どちらも読む側が意味を決められない。
+	if (run.Error != "") != (run.Outcome == port.OutcomeIncomplete) {
+		return 0, fmt.Errorf("outcome %q and error %q disagree for run on %s/%s",
+			run.Outcome, run.Error, run.BoardID, run.AnnotationID)
+	}
+
 	for _, it := range run.Items {
 		if !it.Kind.Valid() {
 			return 0, fmt.Errorf("invalid kind %q for local_id %q", it.Kind, it.LocalID)
@@ -44,10 +58,19 @@ func (r *MappingRepository) SaveRun(ctx context.Context, run port.SyncRun) (int6
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// 理由は NULL か中身のどちらかにする。空文字で入れると「理由が無い失敗」と
+	// 「記録していない」が同じ形で並ぶ。
+	var failure *string
+	if run.Error != "" {
+		failure = &run.Error
+	}
+
 	res, err := tx.ExecContext(ctx,
-		`INSERT INTO sync_runs (board_id, annotation_element_id, content_hash, created_at)
-		 VALUES (?, ?, ?, ?)`,
+		`INSERT INTO sync_runs
+		   (board_id, annotation_element_id, content_hash, created_at, outcome, error)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
 		run.BoardID, run.AnnotationID, run.ContentHash, formatTime(run.CreatedAt),
+		string(run.Outcome), failure,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert sync_run: %w", err)
@@ -83,10 +106,10 @@ func (r *MappingRepository) FindLatestRun(ctx context.Context, boardID, annotati
 	// 最新は created_at ではなく id で決める。時刻は呼び出し側が与えるため
 	// 同一時刻の run がありえて、created_at だけでは順序が定まらない。
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, board_id, annotation_element_id, content_hash, created_at
-		   FROM sync_runs
-		  WHERE board_id = ? AND annotation_element_id = ?
-		  ORDER BY id DESC
+		`SELECT `+runColumns+`
+		   FROM sync_runs AS r
+		  WHERE r.board_id = ? AND r.annotation_element_id = ?
+		  ORDER BY r.id DESC
 		  LIMIT 1`,
 		boardID, annotationID,
 	)
@@ -111,7 +134,7 @@ func (r *MappingRepository) FindLatestRun(ctx context.Context, boardID, annotati
 // ListLatestRunsByBoard はボード内の注釈ごとに最新の run を返す。
 func (r *MappingRepository) ListLatestRunsByBoard(ctx context.Context, boardID string) ([]port.SyncRun, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT r.id, r.board_id, r.annotation_element_id, r.content_hash, r.created_at
+		`SELECT `+runColumns+`
 		   FROM sync_runs AS r
 		   JOIN (
 		          SELECT annotation_element_id, MAX(id) AS max_id
@@ -169,10 +192,10 @@ func (r *MappingRepository) ListRunsByAnnotation(
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, board_id, annotation_element_id, content_hash, created_at
-		   FROM sync_runs
-		  WHERE board_id = ? AND annotation_element_id = ?
-		  ORDER BY id DESC
+		`SELECT `+runColumns+`
+		   FROM sync_runs AS r
+		  WHERE r.board_id = ? AND r.annotation_element_id = ?
+		  ORDER BY r.id DESC
 		  LIMIT ?`,
 		boardID, annotationID, limit,
 	)
@@ -272,16 +295,29 @@ func (r *MappingRepository) ListItemsByAnnotation(
 	return []port.SyncItem{}, nil
 }
 
+// runColumns は scanRun が読む列。itemColumns と同じく並び順に依存するので、
+// 片方だけ足すと取り違える。sync_runs は r の別名で引く。
+const runColumns = `r.id, r.board_id, r.annotation_element_id, r.content_hash,
+	   r.created_at, r.outcome, r.error`
+
 func scanRun(s rowScanner) (port.SyncRun, error) {
 	var (
 		run       port.SyncRun
 		createdAt string
+		// outcome と error は列を足す前の run では NULL。**ゼロ値に落とすのは
+		// 「記録していない」の意味**であって、成功ではない（ADR 0043）。
+		outcome sql.NullString
+		failure sql.NullString
 	)
 	if err := s.Scan(
 		&run.ID, &run.BoardID, &run.AnnotationID, &run.ContentHash, &createdAt,
+		&outcome, &failure,
 	); err != nil {
 		return port.SyncRun{}, err
 	}
+
+	run.Outcome = port.RunOutcome(outcome.String)
+	run.Error = failure.String
 
 	var err error
 	if run.CreatedAt, err = parseTime(createdAt); err != nil {

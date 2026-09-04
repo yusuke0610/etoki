@@ -36,7 +36,21 @@ var fixedTime = time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
 func newRouter(t *testing.T) (*gin.Engine, port.MappingRepository) {
 	t.Helper()
 
-	boards, mappings := newRepos(t)
+	r, mappings, _ := newRouterWithDB(t)
+
+	return r, mappings
+}
+
+// newRouterWithDB は DB のハンドルも返す。**移行前の行を再現するときだけ使う。**
+// port を通しては書けない値（結末を記録していない run など）を入れるため。
+func newRouterWithDB(t *testing.T) (*gin.Engine, port.MappingRepository, *sql.DB) {
+	t.Helper()
+
+	db := openTempDB(t)
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	boards, mappings := sqlite.NewBoardRepository(db), sqlite.NewMappingRepository(db)
 
 	seq := 0
 	boardSvc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks(),
@@ -50,7 +64,7 @@ func newRouter(t *testing.T) (*gin.Engine, port.MappingRepository) {
 	return httpapi.NewRouter(httpapi.Deps{
 		Boards:      boardSvc,
 		Annotations: usecase.NewAnnotationService(boards, mappings),
-	}), mappings
+	}), mappings, db
 }
 
 // newBoardBody は作成先つきのボード作成ボディを返す。
@@ -93,6 +107,19 @@ func do(t *testing.T, r *gin.Engine, method, path string, body any) *httptest.Re
 	r.ServeHTTP(rec, req)
 
 	return rec
+}
+
+// decodeOK は 200 を確かめてから読む。**status を見ずに decode しない。**
+// ErrorResponse も多くの型に decode できるので、確かめずに進むと 403 や 500 が
+// 「フィールドが写っていない」という見当違いの失敗になる（#104）。
+func decodeOK[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
+	t.Helper()
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	return decode[T](t, rec)
 }
 
 func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
@@ -436,6 +463,7 @@ func TestListAnnotationRuns(t *testing.T) {
 			ContentHash:  currentHash(t, r, id),
 			// 時刻は同じ。並びが時刻に依存していれば、ここで崩れる。
 			CreatedAt: fixedTime,
+			Outcome:   port.OutcomeComplete,
 			Items: []port.SyncItem{{
 				ItemID: "PVTI_" + title, Kind: port.KindEpic, Title: title,
 				LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
@@ -463,6 +491,99 @@ func TestListAnnotationRuns(t *testing.T) {
 	}
 	if got[0].ID <= got[1].ID {
 		t.Errorf("id = %d, %d, want 降順", got[0].ID, got[1].ID)
+	}
+}
+
+// 途中で失敗した run は、契約にもそれと分かる形で出る（ADR 0043）。ここが
+// 切れると、画面は「作れた件数が少ない run」しか受け取れない（#110）。
+func TestListAnnotationRuns_ShowsIncomplete(t *testing.T) {
+	t.Parallel()
+
+	r, mappings := newRouter(t)
+	id := createBoard(t, r, "ボード")
+	saveAnnotatedScene(t, r, id)
+
+	hash := currentHash(t, r, id)
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID: id, AnnotationID: "annot-1", ContentHash: hash, CreatedAt: fixedTime,
+		Outcome: port.OutcomeIncomplete, Error: "github graphql: rate limited",
+		Items: []port.SyncItem{{
+			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "作れたほう",
+			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+		}},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	runs := decodeOK[[]apitypes.SyncRun](t, do(t, r, http.MethodGet,
+		"/api/boards/"+id+"/annotations/annot-1/runs", nil))
+	if len(runs) != 1 {
+		t.Fatalf("件数 = %d, want 1", len(runs))
+	}
+	if runs[0].Outcome == nil || *runs[0].Outcome != apitypes.RunOutcomeIncomplete {
+		t.Errorf("outcome = %v, want incomplete", runs[0].Outcome)
+	}
+	if runs[0].Error != "github graphql: rate limited" {
+		t.Errorf("error = %q, want GitHub の本文", runs[0].Error)
+	}
+
+	// 一覧にも出す。履歴を開かないと気づけないのでは、見せたことにならない。
+	// **状態は created のまま**（作れたぶんは記録されている、ADR 0009）。
+	states := decodeOK[apitypes.BoardAnnotations](t, do(t, r, http.MethodGet,
+		"/api/boards/"+id+"/annotations", nil)).Annotations
+	if len(states) != 1 {
+		t.Fatalf("注釈 = %d 件, want 1", len(states))
+	}
+	if states[0].State != apitypes.SyncStateCreated {
+		t.Errorf("state = %v, want created", states[0].State)
+	}
+	if states[0].LastRunOutcome == nil ||
+		*states[0].LastRunOutcome != apitypes.RunOutcomeIncomplete {
+		t.Errorf("lastRunOutcome = %v, want incomplete", states[0].LastRunOutcome)
+	}
+}
+
+// 記録していなかった頃の run は「不明」として出す。**complete に倒さない。**
+// 埋めると、列を足す前の途中失敗が成功として残る（ADR 0043）。
+func TestListAnnotationRuns_OmitsOutcomeWhenNotRecorded(t *testing.T) {
+	t.Parallel()
+
+	r, mappings, db := newRouterWithDB(t)
+	id := createBoard(t, r, "ボード")
+	saveAnnotatedScene(t, r, id)
+
+	// 移行前の run を再現する。port 経由では書けないので DB に直接入れる。
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID: id, AnnotationID: "annot-1", ContentHash: currentHash(t, r, id),
+		CreatedAt: fixedTime, Outcome: port.OutcomeComplete,
+		Items: []port.SyncItem{{
+			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "古い run",
+			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+		}},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+	if _, err := db.ExecContext(t.Context(),
+		`UPDATE sync_runs SET outcome = NULL`); err != nil {
+		t.Fatalf("clear outcome: %v", err)
+	}
+
+	runs := decodeOK[[]apitypes.SyncRun](t, do(t, r, http.MethodGet,
+		"/api/boards/"+id+"/annotations/annot-1/runs", nil))
+	if len(runs) != 1 {
+		t.Fatalf("件数 = %d, want 1", len(runs))
+	}
+	if runs[0].Outcome != nil {
+		t.Errorf("outcome = %v, want 省略（記録していない）", *runs[0].Outcome)
+	}
+
+	states := decodeOK[apitypes.BoardAnnotations](t, do(t, r, http.MethodGet,
+		"/api/boards/"+id+"/annotations", nil)).Annotations
+	if len(states) != 1 {
+		t.Fatalf("注釈 = %d 件, want 1", len(states))
+	}
+	if states[0].LastRunOutcome != nil {
+		t.Errorf("lastRunOutcome = %v, want 省略", *states[0].LastRunOutcome)
 	}
 }
 
@@ -712,6 +833,7 @@ func TestListAnnotations_Detached(t *testing.T) {
 		AnnotationID: "annot-1",
 		ContentHash:  currentHash(t, r, id),
 		CreatedAt:    fixedTime,
+		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API",
 			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
@@ -818,6 +940,7 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		AnnotationID: "annot-1",
 		ContentHash:  hash,
 		CreatedAt:    fixedTime,
+		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{
 			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime},
 			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, Action: port.ActionCreated, CreatedAt: fixedTime},
@@ -979,4 +1102,12 @@ func openTempDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 
 	return db
+}
+
+// newLimiter は既定の上限（同時実行 1・回数は無制限）の limiter を返す。
+//
+// ハンドラのテストはリクエストを逐次に投げるので、同時実行 1 には当たらない。
+// 上限そのものの挙動はユースケース層のテストが見る。
+func newLimiter() *usecase.LLMLimiter {
+	return usecase.NewLLMLimiter(usecase.LLMLimits{})
 }

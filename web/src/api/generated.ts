@@ -711,7 +711,7 @@ export interface components {
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -1033,6 +1033,14 @@ export interface components {
             action: components["schemas"]["SyncAction"];
         };
         /**
+         * @description run が最後まで進んだかどうか（ADR 0043）。
+         *
+         *     **省略は「成功」ではなく「記録していない」。** この項目を足す前の run に
+         *     は記録が無く、当時も途中失敗は起きていた。`complete` と同じに扱わない。
+         * @enum {string}
+         */
+        RunOutcome: "complete" | "incomplete";
+        /**
          * @description 1 つの注釈に対する 1 回ぶんの実行の記録（ADR 0007）。
          *
          *     **「そのときの全体像」ではなく「その 1 回で何をしたか」**（ADR 0026）。
@@ -1052,8 +1060,20 @@ export interface components {
              */
             createdAt: string;
             /**
-             * @description その run で作成または更新した draft issue。**空配列がありうる。**
-             *     1 件も作れずに終わった run も記録として残る（ADR 0009）
+             * @description 最後まで進んだかどうか。**記録していなかった頃の run では省略する**
+             *     （ADR 0043）
+             */
+            outcome?: components["schemas"]["RunOutcome"];
+            /**
+             * @description 途中で失敗した理由。`outcome` が `incomplete` のときだけ入る。
+             *
+             *     **利用者向けの文言ではなく手掛かり**なので、画面は既定で畳む
+             *     （ADR 0034）
+             */
+            error?: string;
+            /**
+             * @description その run で作成または更新した draft issue。1 件も作れずに終わった
+             *     実行は記録しないので、記録された run には 1 件以上入る（ADR 0009）
              */
             items: components["schemas"]["SyncItem"][];
         };
@@ -1108,6 +1128,18 @@ export interface components {
              * @description 前回実行の時刻。未実行なら省略する
              */
             lastSyncedAt?: string;
+            /**
+             * @description 前回実行が最後まで進んだかどうか（ADR 0043）。未実行と、記録して
+             *     いなかった頃の run では省略する。
+             *
+             *     **`state` は変わらない。** 途中で失敗しても作れたぶんは記録するので、
+             *     状態は `created` になる（ADR 0009）。件数だけでは、途中で止まった
+             *     のか、もともとその件数だったのかが読めないので別に出す。
+             *
+             *     **理由はここには載せない。** 一覧は「何が起きたか」まで見せる場所で、
+             *     手掛かりの本文は履歴（`GET .../runs`）が持つ
+             */
+            lastRunOutcome?: components["schemas"]["RunOutcome"];
             /**
              * @description この注釈が GitHub に在らしめている draft issue（ADR 0026）。
              *
@@ -1287,6 +1319,30 @@ export interface components {
          *     内容を直す」ではなく「貼った画像を減らす」になる。
          */
         SceneTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description LLM を叩く実行の上限に当たった（ADR 0044）。**上限は利用者ごと**で、
+         *     解釈と図のドラフト生成が 1 つの枠を共有する。どちらも課金を伴う外部
+         *     呼び出しなので、片方だけ絞ると抜け道が残る。
+         *
+         *     **code を 2 つに分ける。** ステータスは同じでも打ち手が違う。
+         *
+         *     - `rate_limited`: 窓の中の回数を使い切った。時間をおく
+         *     - `concurrency_limited`: いま走っている実行がある。終わるのを待つ
+         *
+         *     **上限に当たった実行は LLM を 1 回も呼んでいない。** 呼んでから結果を
+         *     捨てると、課金だけが発生する。
+         *
+         *     回数の上限は設定した構成にしか存在しない（既定は同時実行のみ）。
+         *     **残り枠は返さない。** 無い上限の残りを常時載せることになるため。
+         */
+        TooManyRequests: {
             headers: {
                 [name: string]: unknown;
             };
@@ -2182,6 +2238,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["DiagramChatTooLong"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
             /** @description LLM の呼び出しに失敗した、または図が返らなかった */
             502: {
@@ -2235,6 +2292,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
             /** @description LLM の呼び出しに失敗した、または出力がスキーマを満たさなかった */
             502: {

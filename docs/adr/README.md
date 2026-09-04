@@ -46,4 +46,6 @@
 | [0040](0040-place-mermaid-drafts-as-shapes-only.md)              | mermaid のドラフトは手で直せる図形のときだけ置く                       | 採用                 |
 | [0041](0041-diagram-chat-changes-no-server-state.md)             | 図のドラフト生成はサーバーの状態を変えない（会話も持たない）           | 採用                 |
 | [0042](0042-delete-boards-after-showing-what-remains.md)         | ボードの削除は GitHub 側に残るものを見せてから通す                     | 採用                 |
-| [0044](0044-show-annotations-that-left-the-scene.md)             | シーンから消えた注釈は別のリストとして見せるだけにする                 | 採用                 |
+| [0043](0043-record-run-outcome.md)                               | 途中で失敗した run は記録に残す（埋めずに「不明」を残す）              | 採用                 |
+| [0044](0044-limit-llm-calls.md)                                  | LLM を叩く実行に上限を置く（利用者単位・プロセス内）                   | 採用                 |
+| [0045](0045-show-annotations-that-left-the-scene.md)             | シーンから消えた注釈は別のリストとして見せるだけにする                 | 採用                 |

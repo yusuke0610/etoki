@@ -331,6 +331,21 @@ export function AnnotationPanel({
                   )}
 
                   {/*
+                    前回実行が途中で失敗したことは、履歴を開かなくても見える
+                    ところに出す（ADR 0043）。**状態（3 状態）は変えない。**
+                    作れたぶんは記録するので created のままであり、そこに件数
+                    以外の手掛かりが無いのが問題だった。
+
+                    **理由はここには出さない。** 手掛かりの本文は履歴が持つ。
+                  */}
+                  {a.lastRunOutcome === "incomplete" && (
+                    <p className="hint">
+                      前回の実行は途中で失敗しました。作れたところまでは GitHub
+                      側に残っています。
+                    </p>
+                  )}
+
+                  {/*
                     履歴は一度でも実行した注釈にだけ出す。**未実行の注釈にも
                     出すと、常に空の枠が並ぶ。** lastSyncedAt があることと
                     run が 1 件以上あることは同じ（最新 run から来る）。
@@ -647,6 +662,20 @@ function RunHistory({
           <li key={run.id}>
             <span className="hint">{formatRunTimestamp(run.createdAt)}</span>
             {/*
+              途中で失敗した run はそれと分かる形にする（ADR 0043）。件数だけを
+              並べると、途中で止まった run と「もともとその件数だった run」が
+              同じに見え、再実行すべきかどうかを決める材料が無い。
+
+              **outcome が無い run には何も出さない。** 記録していなかった頃の
+              run であり、成功したとは言えない。
+            */}
+            {run.outcome === "incomplete" && (
+              <ErrorNotice
+                failure={partialCreationFailure(partialSummary(run.items), run.error)}
+                live={false}
+              />
+            )}
+            {/*
               その 1 回で何をしたかを出す。**畳んだ結果ではない**ので、
               触らなかった item はここには現れない（ADR 0026）。
             */}
@@ -762,6 +791,25 @@ function CreationSection({
 }) {
   const running = state?.status === "running";
   const blockedId = `create-blocked-${annotationId}`;
+  // 作成できない理由。押せるなら null（ADR 0039）。
+  //
+  // **不備が先。** 保存が終わっても、1 件も選ばれていなければ押せないままなので、
+  // 一時的なほうを先に出すと待った人が同じところで止まる（解釈のボタンと同じ順）。
+  //
+  // **`blockingReasons` には混ぜない。** あちらは下書きだけを見て「作るものが
+  // 揃っているか」に答える純関数で、進行中かどうかを知らない。混ぜると UI の
+  // 一時的な状態を引数に取ることになる。
+  //
+  // **未設定の説明と違って、注釈ごとにボタンの下へ置く**（ADR 0030 の「パネルに
+  // 1 つ」と揃えない）。あちらは全注釈で同じことを恒常的に言うが、こちらは
+  // 出ている時間が保存の 1 往復ぶんしかない。パネルに上げると、作成ボタンが
+  // 1 つも無い注釈しか無いときにも出る。
+  const blocked =
+    reasons.length > 0
+      ? reasons.join(" ")
+      : saving
+        ? "保存が終わるまで作成できません。"
+        : null;
 
   // **GitHub が未設定なら、権限より先にこちら。** 未設定の構成では
   // projectAccess は unknown にしかならないので、下の denied では拾えない。
@@ -795,9 +843,8 @@ function CreationSection({
       <button
         type="button"
         onClick={onCreate}
-        disabled={running || saving || reasons.length > 0}
-        title={saving ? "保存が終わるまで作成できません" : undefined}
-        aria-describedby={reasons.length > 0 ? blockedId : undefined}
+        disabled={running || blocked !== null}
+        aria-describedby={blocked !== null ? blockedId : undefined}
       >
         {running ? "作成中…" : "GitHub に作成する"}
       </button>
@@ -806,9 +853,9 @@ function CreationSection({
         押せない理由は本文として出す。disabled なボタンはフォーカスも当たらない
         ので、title ではキーボードと読み上げの利用者に理由が届かない。
       */}
-      {reasons.length > 0 && (
+      {blocked !== null && (
         <p className="hint" id={blockedId}>
-          {reasons.join(" ")}
+          {blocked}
         </p>
       )}
 

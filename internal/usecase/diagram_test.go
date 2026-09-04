@@ -19,7 +19,7 @@ func newDiagramService(
 	t.Helper()
 
 	boards := &fakeBoards{board: newBoard(interpretScene)}
-	return usecase.NewDiagramService(boards, llm, opts...), boards
+	return usecase.NewDiagramService(boards, llm, newLimiter(), opts...), boards
 }
 
 // req は最小の入力。種類とプロンプトだけで、保存済みシーンは読まない。

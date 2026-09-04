@@ -214,6 +214,19 @@ func (s *CreationService) Create(
 		return nil, fmt.Errorf("%w: nothing to create", ErrInvalidInput)
 	}
 
+	// 途中で失敗したことを run に載せてから保存する。応答にしか出さないと、
+	// 手掛かりが生きているのはその 1 回ぶんだけになり、あとから履歴を見た
+	// 開発者には「作れた件数が少ない run」としか見えない（ADR 0043）。
+	//
+	// 文字列は応答に載せるものと同じにする。片方だけ包みを剥くと、同じ失敗が
+	// 2 通りの見え方になる。
+	if createErr != nil {
+		run.Outcome = port.OutcomeIncomplete
+		run.Error = createErr.Error()
+	} else {
+		run.Outcome = port.OutcomeComplete
+	}
+
 	id, saveErr := s.mappings.SaveRun(ctx, run)
 	if saveErr != nil {
 		// 作成には成功したが記録できなかった。ここが一番まずい状態なので、

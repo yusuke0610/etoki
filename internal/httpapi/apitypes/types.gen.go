@@ -32,6 +32,7 @@ const (
 const (
 	ErrorCodeAlreadyMember        ErrorCode = "already_member"
 	ErrorCodeAuthNotConfigured    ErrorCode = "auth_not_configured"
+	ErrorCodeConcurrencyLimited   ErrorCode = "concurrency_limited"
 	ErrorCodeContentHashMismatch  ErrorCode = "content_hash_mismatch"
 	ErrorCodeCreationIncomplete   ErrorCode = "creation_incomplete"
 	ErrorCodeCrossSiteRejected    ErrorCode = "cross_site_rejected"
@@ -51,6 +52,7 @@ const (
 	ErrorCodeNotFound             ErrorCode = "not_found"
 	ErrorCodePreviousItemUnknown  ErrorCode = "previous_item_unknown"
 	ErrorCodeProjectFieldMissing  ErrorCode = "project_field_missing"
+	ErrorCodeRateLimited          ErrorCode = "rate_limited"
 	ErrorCodeSceneConflict        ErrorCode = "scene_conflict"
 	ErrorCodeSceneTooLarge        ErrorCode = "scene_too_large"
 	ErrorCodeSharingNotConfigured ErrorCode = "sharing_not_configured"
@@ -77,6 +79,12 @@ const (
 	ProjectAccessAllowed ProjectAccess = "allowed"
 	ProjectAccessDenied  ProjectAccess = "denied"
 	ProjectAccessUnknown ProjectAccess = "unknown"
+)
+
+// Defines values for RunOutcome.
+const (
+	RunOutcomeComplete   RunOutcome = "complete"
+	RunOutcomeIncomplete RunOutcome = "incomplete"
 )
 
 // Defines values for SyncAction.
@@ -122,6 +130,17 @@ type AnnotationStatus struct {
 	// 最新 run だけを返すと、更新のあとに取り残しが画面から消える。
 	// 1 件も無ければ省略する
 	Items []SyncItem `json:"items,omitempty"`
+
+	// LastRunOutcome 前回実行が最後まで進んだかどうか（ADR 0043）。未実行と、記録して
+	// いなかった頃の run では省略する。
+	//
+	// **`state` は変わらない。** 途中で失敗しても作れたぶんは記録するので、
+	// 状態は `created` になる（ADR 0009）。件数だけでは、途中で止まった
+	// のか、もともとその件数だったのかが読めないので別に出す。
+	//
+	// **理由はここには載せない。** 一覧は「何が起きたか」まで見せる場所で、
+	// 手掛かりの本文は履歴（`GET .../runs`）が持つ
+	LastRunOutcome *RunOutcome `json:"lastRunOutcome,omitempty"`
 
 	// LastSyncedAt 前回実行の時刻。未実行なら省略する
 	LastSyncedAt *time.Time `json:"lastSyncedAt,omitempty"`
@@ -673,6 +692,12 @@ type Repository struct {
 	Owner       string `json:"owner"`
 }
 
+// RunOutcome run が最後まで進んだかどうか（ADR 0043）。
+//
+// **省略は「成功」ではなく「記録していない」。** この項目を足す前の run に
+// は記録が無く、当時も途中失敗は起きていた。`complete` と同じに扱わない。
+type RunOutcome string
+
 // SaveSceneRequest シーン保存のリクエストボディ。
 //
 // `baseUpdatedAt` は任意にしない。任意にすると API を直接叩く経路で照合を
@@ -757,13 +782,23 @@ type SyncRun struct {
 	// CreatedAt 実行の時刻
 	CreatedAt time.Time `json:"createdAt"`
 
+	// Error 途中で失敗した理由。`outcome` が `incomplete` のときだけ入る。
+	//
+	// **利用者向けの文言ではなく手掛かり**なので、画面は既定で畳む
+	// （ADR 0034）
+	Error string `json:"error,omitempty"`
+
 	// ID run の識別子。**新しさの順はこれで決まる**（時刻は呼び出し側が
 	// 与えるので、同じ値の run がありうる）
 	ID int64 `json:"id"`
 
-	// Items その run で作成または更新した draft issue。**空配列がありうる。**
-	// 1 件も作れずに終わった run も記録として残る（ADR 0009）
+	// Items その run で作成または更新した draft issue。1 件も作れずに終わった
+	// 実行は記録しないので、記録された run には 1 件以上入る（ADR 0009）
 	Items []SyncItem `json:"items"`
+
+	// Outcome 最後まで進んだかどうか。**記録していなかった頃の run では省略する**
+	// （ADR 0043）
+	Outcome *RunOutcome `json:"outcome,omitempty"`
 }
 
 // SyncState 注釈の 3 状態。保存済みシーンの content_hash と最新 run のそれを
@@ -805,6 +840,9 @@ type NotFound = ErrorResponse
 
 // SceneTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type SceneTooLarge = ErrorResponse
+
+// TooManyRequests 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type TooManyRequests = ErrorResponse
 
 // Unauthorized 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type Unauthorized = ErrorResponse
