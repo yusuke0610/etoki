@@ -73,6 +73,14 @@ var wantMappings = map[string]wantMapping{
 		usecase.ErrDiagramChatTooLong, http.StatusRequestEntityTooLarge,
 		apitypes.ErrorCodeDiagramChatTooLong},
 
+	// 429 の 2 つ。**畳まない。** 時間をおく話と、いま走っているぶんの終わりを
+	// 待つ話で、次にすることが違う（ADR 0044）。
+	"usecase.ErrRateLimited": {
+		usecase.ErrRateLimited, http.StatusTooManyRequests, apitypes.ErrorCodeRateLimited},
+	"usecase.ErrConcurrencyLimited": {
+		usecase.ErrConcurrencyLimited, http.StatusTooManyRequests,
+		apitypes.ErrorCodeConcurrencyLimited},
+
 	"usecase.ErrTargetNotSelected": {
 		usecase.ErrTargetNotSelected, http.StatusUnprocessableEntity, apitypes.ErrorCodeTargetNotSelected},
 	"usecase.ErrProjectFieldMissing": {
