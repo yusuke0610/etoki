@@ -529,8 +529,8 @@ func TestListAnnotationRuns_ShowsIncomplete(t *testing.T) {
 
 	// 一覧にも出す。履歴を開かないと気づけないのでは、見せたことにならない。
 	// **状態は created のまま**（作れたぶんは記録されている、ADR 0009）。
-	states := decodeOK[[]apitypes.AnnotationStatus](t, do(t, r, http.MethodGet,
-		"/api/boards/"+id+"/annotations", nil))
+	states := decodeOK[apitypes.BoardAnnotations](t, do(t, r, http.MethodGet,
+		"/api/boards/"+id+"/annotations", nil)).Annotations
 	if len(states) != 1 {
 		t.Fatalf("注釈 = %d 件, want 1", len(states))
 	}
@@ -577,8 +577,8 @@ func TestListAnnotationRuns_OmitsOutcomeWhenNotRecorded(t *testing.T) {
 		t.Errorf("outcome = %v, want 省略（記録していない）", *runs[0].Outcome)
 	}
 
-	states := decodeOK[[]apitypes.AnnotationStatus](t, do(t, r, http.MethodGet,
-		"/api/boards/"+id+"/annotations", nil))
+	states := decodeOK[apitypes.BoardAnnotations](t, do(t, r, http.MethodGet,
+		"/api/boards/"+id+"/annotations", nil)).Annotations
 	if len(states) != 1 {
 		t.Fatalf("注釈 = %d 件, want 1", len(states))
 	}
@@ -799,6 +799,9 @@ func TestSaveScene_NotFound(t *testing.T) {
 }
 
 // 注釈のないボードでは空配列を返す。
+//
+// **どちらも null にしない。** 文字列で見るのは、片方を作り忘れても件数の
+// 検査は 0 で通ってしまうため。
 func TestListAnnotations_Empty(t *testing.T) {
 	t.Parallel()
 
@@ -809,8 +812,71 @@ func TestListAnnotations_Empty(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if body := rec.Body.String(); body != "[]" {
-		t.Errorf("body = %q, want %q", body, "[]")
+	if body := rec.Body.String(); body != `{"annotations":[],"detached":[]}` {
+		t.Errorf("body = %q", body)
+	}
+}
+
+// frame を消して保存しても、GitHub に作ったものへは辿れる（#111）。
+//
+// **名前も 3 状態も返さない。** シーンに frame が無いので取りようが無く、
+// 既定で埋めると「名前の無い注釈」（ADR 0022）と見分けが付かなくなる。
+func TestListAnnotations_Detached(t *testing.T) {
+	t.Parallel()
+
+	r, mappings := newRouter(t)
+	id := createBoard(t, r, "ボード")
+	base := saveAnnotatedScene(t, r, id)
+
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID:      id,
+		AnnotationID: "annot-1",
+		ContentHash:  currentHash(t, r, id),
+		CreatedAt:    fixedTime,
+		Outcome:      port.OutcomeComplete,
+		Items: []port.SyncItem{{
+			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API",
+			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+		}},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	// 注釈の frame ごと消して保存する。GitHub 側の draft issue は残っている。
+	if rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(`{"type":"excalidraw","elements":[]}`, base)); rec.Code != http.StatusOK {
+		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
+	}
+
+	got := listAnnotations(t, r, id)
+	if len(got.Annotations) != 0 {
+		t.Errorf("annotations = %v, want 空（frame は消えている）", got.Annotations)
+	}
+	if len(got.Detached) != 1 {
+		t.Fatalf("detached = %d 件, want 1", len(got.Detached))
+	}
+
+	d := got.Detached[0]
+	if d["id"] != "annot-1" {
+		t.Errorf("id = %v, want annot-1", d["id"])
+	}
+	if _, ok := d["name"]; ok {
+		t.Error("name を返している。シーンから消えているので取りようが無い")
+	}
+	if _, ok := d["state"]; ok {
+		t.Error("state を返している。比べる相手のテキストがシーンに無い")
+	}
+	if _, ok := d["lastSyncedAt"]; !ok {
+		t.Error("lastSyncedAt が無い。いつ実行したのかも見分ける材料になる")
+	}
+	items, _ := d["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %d 件, want 1", len(items))
+	}
+	// 辿る先はここにしか無い。名前が取れない以上、何の囲みだったかは
+	// 作ったものから読むしかない。
+	if it, _ := items[0].(map[string]any); it["title"] != "決済API" {
+		t.Errorf("items[0].title = %v", it["title"])
 	}
 }
 
@@ -833,8 +899,7 @@ func TestListAnnotations_Uncreated(t *testing.T) {
 	id := createBoard(t, r, "ボード")
 	saveAnnotatedScene(t, r, id)
 
-	got := decode[[]map[string]any](t,
-		do(t, r, http.MethodGet, "/api/boards/"+id+"/annotations", nil))
+	got := listAnnotations(t, r, id).Annotations
 
 	if len(got) != 1 {
 		t.Fatalf("注釈の件数 = %d, want 1 (%+v)", len(got), got)
@@ -863,8 +928,7 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 
 	// 現在のハッシュを API 経由では取れないので、いったん状態を引いてから
 	// 同じ内容で run を記録する。ハッシュ自体は domain 側のテストで担保済み。
-	states := decode[[]map[string]any](t,
-		do(t, r, http.MethodGet, "/api/boards/"+id+"/annotations", nil))
+	states := listAnnotations(t, r, id).Annotations
 	if states[0]["state"] != "uncreated" {
 		t.Fatalf("前提が崩れている: %v", states[0])
 	}
@@ -885,8 +949,7 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		t.Fatalf("SaveRun: %v", err)
 	}
 
-	got := decode[[]map[string]any](t,
-		do(t, r, http.MethodGet, "/api/boards/"+id+"/annotations", nil))
+	got := listAnnotations(t, r, id).Annotations
 	if got[0]["state"] != "created" {
 		t.Fatalf("state = %v, want created", got[0]["state"])
 	}
@@ -917,8 +980,7 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
 	}
 
-	got = decode[[]map[string]any](t,
-		do(t, r, http.MethodGet, "/api/boards/"+id+"/annotations", nil))
+	got = listAnnotations(t, r, id).Annotations
 	if got[0]["state"] != "changed" {
 		t.Errorf("state = %v, want changed", got[0]["state"])
 	}
@@ -926,6 +988,26 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 	if items, _ := got[0]["items"].([]any); len(items) != 2 {
 		t.Errorf("changed でも前回の items を返すべき: %d 件", len(items))
 	}
+}
+
+// annotationsBody は注釈の一覧の応答。
+//
+// **シーンに在るものと、消えたのに GitHub 側には残っているものは別のリスト**
+// （#111）。混ぜて数えると、frame を消したボードで件数が合わなくなる。
+type annotationsBody struct {
+	Annotations []map[string]any `json:"annotations"`
+	Detached    []map[string]any `json:"detached"`
+}
+
+// listAnnotations は注釈の一覧を引く。200 でなければその場で止める。
+func listAnnotations(t *testing.T, r *gin.Engine, boardID string) annotationsBody {
+	t.Helper()
+
+	rec := do(t, r, http.MethodGet, "/api/boards/"+boardID+"/annotations", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+	return decode[annotationsBody](t, rec)
 }
 
 // --- ヘルパー ---

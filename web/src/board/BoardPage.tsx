@@ -15,6 +15,7 @@ import type {
   BoardDeletion,
   BoardDetail,
   Capabilities,
+  DetachedAnnotation,
   DiagramKind,
   Granularity,
   Interpretation,
@@ -156,6 +157,11 @@ export function BoardPage({
 
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationStatus[]>([]);
+  // シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
+  //
+  // **`annotations` と混ぜない。** 3 状態も名前も無いので、注釈のカードと
+  // 同じ形では出せない。同じ問い合わせで返るので、引く回数は増えない。
+  const [detached, setDetached] = useState<DetachedAnnotation[]>([]);
   const [selectedFrames, setSelectedFrames] = useState<SelectableFrame[]>([]);
   // キャンバスにいま在る frame。状態欄のカードが飛べるかどうかの判定に使う。
   // 状態は保存済みシーンが基準なので、未保存で消したフレームは一覧に残る。
@@ -436,7 +442,8 @@ export function BoardPage({
     try {
       const next = await boardsApi.annotations(board.id);
       if (request !== annotationsRequest.current) return;
-      setAnnotations(next);
+      setAnnotations(next.annotations);
+      setDetached(next.detached);
     } catch (e) {
       if (request !== annotationsRequest.current) return;
       onError(describeFailure("注釈の状態を取得できませんでした", e));
@@ -1325,6 +1332,7 @@ export function BoardPage({
         <ErrorBoundary name="注釈パネル" recovery="remount">
           <AnnotationPanel
             annotations={annotations}
+            detached={detached}
             markableFrames={markable}
             unmarkableFrames={unmarkable}
             canvasFrameIds={canvasFrameIds}

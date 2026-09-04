@@ -1,6 +1,6 @@
 import type {
   AnnotationImage,
-  AnnotationStatus,
+  BoardAnnotations,
   BoardDeletion,
   Capabilities,
   InterpretRequest,
@@ -180,8 +180,14 @@ export const boardsApi = {
       body: JSON.stringify(display),
     }),
 
-  annotations: (id: string) =>
-    request<AnnotationStatus[]>(`/api/boards/${id}/annotations`),
+  /**
+   * 注釈の 3 状態と、シーンから消えた注釈をまとめて引く。
+   *
+   * **`detached` のために問い合わせを増やさない。** サーバーは畳み込みを
+   * ボード全体で引いており、シーンに残っていないぶんは今まで捨てていただけ
+   * （#111）。別の口にすると、同じ問いを 2 回投げることになる。
+   */
+  annotations: (id: string) => request<BoardAnnotations>(`/api/boards/${id}/annotations`),
 
   /**
    * その注釈の実行履歴を新しい順で引く。

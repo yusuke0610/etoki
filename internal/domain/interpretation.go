@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // ItemKind は draft issue の種別。
@@ -127,6 +128,8 @@ const (
 	RuleKind             RuleID = "kind"
 	RuleTitle            RuleID = "title"
 	RuleTitleSingleLine  RuleID = "titleSingleLine"
+	RuleTitleLength      RuleID = "titleLength"
+	RuleBodyLength       RuleID = "bodyLength"
 	RuleEpicTitleUnique  RuleID = "epicTitleUnique"
 	RuleLocalID          RuleID = "localId"
 	RuleLocalIDUnique    RuleID = "localIdUnique"
@@ -137,6 +140,26 @@ const (
 	RulePreviousItemID   RuleID = "previousItemId"
 	RuleGranularityIssue RuleID = "granularityIssue"
 	RuleGranularityEpic  RuleID = "granularityEpic"
+)
+
+// GitHub が draft issue に課している長さの上限。単位は Unicode のコードポイント。
+//
+// **これは GitHub が課す制約であって、etoki の好みではない。** 超えたものを
+// 送ると作成の途中で弾かれ、そこで止まる。**作れたぶんは消せない**（ADR 0009）
+// ので、構造が半分だけ GitHub に残る。宣言してあれば LLM に伝わり（ADR 0029）、
+// 再送で直せる。
+//
+// **etoki が切り詰めない。弾く。** 切り詰める対象はブレストの中身そのもので、
+// シーンの上限で縮小も切り捨てもしないと決めたのと同じ（ADR 0038）。
+//
+// 値の出どころは issue の上限（title 256 文字 / body 65536 コードポイント）で、
+// 実測にもとづく公開の一覧から採った。**draft issue そのもので確かめた値では
+// ない。** 公式ドキュメントには記載が無い。draft issue は issue に変換できる
+// ので title が issue の上限を超えられるとは考えにくい、という推論を根拠に
+// している。**確かめられたら、ここを直す。**
+const (
+	MaxTitleRunes = 256
+	MaxBodyRunes  = 65536
 )
 
 // Rule は制約 1 つと、それを LLM に伝える文。
@@ -169,6 +192,11 @@ var Rules = []Rule{
 	{RuleTitleSingleLine, "title に改行を入れないでください。draft issue のタイトルは" +
 		"一覧や通知で 1 行として扱われ、どこで折り返るか（あるいは切られるか）は" +
 		"GitHub 側の都合です。複数行にしたい内容は body に書いてください。"},
+	{RuleTitleLength, fmt.Sprintf("title は %d 文字までです。超えると GitHub が受け付けず、"+
+		"そこまでに作ったものだけが残ります。入りきらない内容は body に移してください。",
+		MaxTitleRunes)},
+	{RuleBodyLength, fmt.Sprintf("body は %d 文字までです。超えると GitHub が受け付けず、"+
+		"そこまでに作ったものだけが残ります。", MaxBodyRunes)},
 	{RuleEpicTitleUnique, "epic の title は出力の中で一意にしてください。子は親の epic を" +
 		"タイトルで指すため、同じタイトルの epic が 2 つあると、どちらの配下なのか区別が" +
 		"付かなくなります。**空白の違いだけでは別のタイトルになりません。** " +
@@ -455,6 +483,22 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 
 		default:
 			epicTitles[title] = it.LocalID
+		}
+
+		// 長さは上の switch とは別に見る。**あちらは 1 件だけを報告する形**
+		// なので、混ぜると「改行があって、かつ長すぎる」title の片方しか
+		// 返らず、再送で 1 往復あたり 1 箇所しか直せない（ADR 0005）。
+		//
+		// 数えるのは送る文字列そのもの。前後の空白を落として数えると、
+		// GitHub に届くのより短い値で判定することになる。
+		if n := utf8.RuneCountInString(it.Title); n > MaxTitleRunes {
+			errs = append(errs, newValidationError(RuleTitleLength, field("title"), fmt.Sprintf(
+				"title が %d 文字あります。GitHub 側の上限は %d 文字です。"+
+					"入りきらない内容は body に移してください", n, MaxTitleRunes)))
+		}
+		if n := utf8.RuneCountInString(it.Body); n > MaxBodyRunes {
+			errs = append(errs, newValidationError(RuleBodyLength, field("body"), fmt.Sprintf(
+				"body が %d 文字あります。GitHub 側の上限は %d 文字です", n, MaxBodyRunes)))
 		}
 
 		if it.LocalID == "" {

@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 import type {
   AnnotationStatus,
   BoardAccess,
+  BoardAnnotations,
   BoardDeletion,
   BoardDetail,
   BoardMember,
@@ -12,6 +13,7 @@ import type {
   BoardTargetDisplay,
   Capabilities,
   CreatedRun,
+  DetachedAnnotation,
   DiagramDraft,
   ErrorResponse,
   GenerateDiagramRequest,
@@ -46,6 +48,13 @@ export type ApiMock = {
   details: Record<string, BoardDetail>;
   /** ボード ID をキーにした注釈の状態。 */
   annotations: Record<string, AnnotationStatus[]>;
+  /**
+   * ボード ID をキーにした「シーンから消えた注釈」（#111）。
+   *
+   * **`annotations` と分けて持つ。** 契約でも別のリストなので（3 状態も名前も
+   * 無い）、混ぜて持つとモックだけが混ざった形を返せてしまう。
+   */
+  detached: Record<string, DetachedAnnotation[]>;
   interpret: Reply<Interpretation>;
   /**
    * 解釈で受け取ったリクエストボディ。届いた順に積む。
@@ -220,6 +229,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         mock.boards = [summarize(board), ...mock.boards];
         mock.details[board.id] = board;
         mock.annotations[board.id] ??= [];
+        mock.detached[board.id] ??= [];
         await json(route, 201, board);
         return;
       }
@@ -272,6 +282,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         // いないフロントでも緑になる（ADR 0042）。
         delete mock.details[id];
         delete mock.annotations[id];
+        delete mock.detached[id];
         delete mock.deletion?.[id];
         mock.boards = mock.boards.filter((b) => b.id !== id);
         await route.fulfill({ status: 204, body: "" });
@@ -498,7 +509,14 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
     async (route) => {
-      await json(route, 200, mock.annotations[boardIdOf(route)] ?? []);
+      const id = boardIdOf(route);
+      // **応答は 1 つ。** サーバーは畳み込みをボード全体で引いており、シーンに
+      // 残っていないぶんも同じ問い合わせで返る（#111）。
+      const body: BoardAnnotations = {
+        annotations: mock.annotations[id] ?? [],
+        detached: mock.detached[id] ?? [],
+      };
+      await json(route, 200, body);
     },
   );
 

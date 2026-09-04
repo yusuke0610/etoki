@@ -187,7 +187,7 @@ test.describe("スクリーンショット", () => {
     // バッジはキャンバスより先に出る。ここで待たないと Excalidraw の
     // 「Loading scene...」を撮ってしまい、報告に使えない画像になる。
     await page.locator(".excalidraw canvas").first().waitFor();
-    await page.getByRole("heading", { name: "注釈" }).waitFor();
+    await page.getByRole("heading", { name: "注釈", level: 2 }).waitFor();
     await shot(page, "07-target-selected");
   });
 
@@ -703,5 +703,56 @@ test.describe("スクリーンショット", () => {
 
     // 止めたまま終わらない。次のテストへ持ち越すものを残さない。
     release();
+  });
+
+  // 更新をやめて新しく作るに倒したところ（#112）。**LLM が言ったこととの差と、
+  // 取り残しが増えたことが同じ画面で読めているか**を画像で見る。
+  test("更新をやめた確認画面を撮る", async ({ page }) => {
+    await installApi(page, matchedInterpretationMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card
+      .getByLabel("i1 を更新するか新しく作るか")
+      .selectOption({ label: "新しく作る" });
+    await card.getByText("解釈では既存の draft issue の更新でした").waitFor();
+    await shot(page, "31-update-to-create");
+  });
+
+  // キャンバスに無い注釈（#111）。**注釈のカードと同じ形に見えていないか**を
+  // 画像で見る。あちらは解釈も作成もできるが、こちらは辿れるだけ。
+  test("キャンバスに無い注釈を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.detached[BOARD_ID] = [
+      {
+        id: "frame-gone",
+        lastSyncedAt: "2026-08-04T12:00:00Z",
+        items: [
+          {
+            itemId: "PVTI_gone",
+            kind: "epic",
+            title: "二要素認証",
+            body: "囲みは消えているが GitHub には残っている",
+            localId: "e1",
+            action: "created",
+          },
+        ],
+      },
+    ];
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const section = page.locator(".panel-section").filter({
+      has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
+    });
+    await section.getByText("二要素認証").waitFor();
+    await shot(page, "32-detached-annotations");
   });
 });
