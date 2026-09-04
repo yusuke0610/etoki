@@ -382,6 +382,9 @@ function architectureSkeletons(): Skeleton[] {
     id: "architecture-link-0",
     x: BOX_WIDTH,
     y: BOX_HEIGHT / 2,
+    // start/end の binding だけでは既定の長さ 100 に潰れ、内側の最初の
+    // ノード（x = boundaryX + boundaryPadding）まで届かない。大きさも渡す。
+    ...horizontal(boundaryX + boundaryPadding - BOX_WIDTH),
     start: { id: outside.id },
     end: { id: inside[0]?.id },
   };
