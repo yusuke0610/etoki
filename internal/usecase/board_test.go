@@ -422,6 +422,22 @@ func TestCreate_RejectsSceneOverTheLimit(t *testing.T) {
 	}
 }
 
+// SceneExceedsLimit は validateScene と同じ境界を持つ（issue #103）。
+// BoardDetail.sceneOverLimit がこの関数を直接呼ぶので、ここでも境界を固定する。
+func TestSceneExceedsLimit(t *testing.T) {
+	t.Parallel()
+
+	atLimit := sceneOfSize(t, usecase.MaxSceneBytes)
+	if usecase.SceneExceedsLimit(atLimit) {
+		t.Error("SceneExceedsLimit(ちょうど上限) = true, want false")
+	}
+
+	overLimit := sceneOfSize(t, usecase.MaxSceneBytes+1)
+	if !usecase.SceneExceedsLimit(overLimit) {
+		t.Error("SceneExceedsLimit(上限+1) = false, want true")
+	}
+}
+
 // sceneOfSize は指定したバイト数ちょうどの、読めるシーン JSON を作る。
 //
 // 実際に大きさを押し上げるのは貼った画像（base64 でシーンに乗る）だが、ここで

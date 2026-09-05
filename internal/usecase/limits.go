@@ -58,3 +58,14 @@ const (
 	// 送られてきたものそのもの。
 	MaxDiagramChatBytes = 32 << 10
 )
+
+// SceneExceedsLimit はシーンが MaxSceneBytes を超えていて、このままでは
+// 保存できないことを返す（issue #103）。
+//
+// **比較はここ 1 箇所に閉じる。** validateScene の 413 判定と、
+// BoardDetail.sceneOverLimit（保存済みシーンが上限を超えたまま残っていないか
+// を開いた時点で示す）が同じ関数を呼ぶ。2 箇所で `len(scene) > MaxSceneBytes`
+// を書くと、上限を動かしたときに片方だけ直し忘れる。
+func SceneExceedsLimit(scene string) bool {
+	return len(scene) > MaxSceneBytes
+}

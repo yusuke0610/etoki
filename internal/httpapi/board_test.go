@@ -3,9 +3,11 @@ package httpapi_test
 import (
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
+	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -196,5 +198,39 @@ func TestGetBoardDeletion_NotFound(t *testing.T) {
 	rec := do(t, r, http.MethodGet, "/api/boards/no-such-board/deletion", nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusNotFound, rec.Body)
+	}
+}
+
+// 上限以内のボードは sceneOverLimit: false を返す。
+func TestGetBoard_SceneWithinLimitIsNotOverLimit(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+
+	got := decodeOK[apitypes.BoardDetail](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	if got.SceneOverLimit {
+		t.Error("SceneOverLimit = true, want false")
+	}
+}
+
+// 上限を導入する前に保存された(と想定する)大きいシーンは、開いた時点で
+// sceneOverLimit: true を返す（issue #103）。API 経由では上限を超えるシーンを
+// 保存できない（ADR 0038）ので、既存行を再現するのと同じ形で DB に直接書く。
+func TestGetBoard_ReportsSceneOverLimit(t *testing.T) {
+	t.Parallel()
+
+	r, _, db := newRouterWithDB(t)
+	id := createBoard(t, r, "ボード")
+
+	overLimitScene := strings.Repeat("x", usecase.MaxSceneBytes+1)
+	if _, err := db.ExecContext(t.Context(),
+		`UPDATE boards SET scene = ? WHERE id = ?`, overLimitScene, id); err != nil {
+		t.Fatalf("update scene: %v", err)
+	}
+
+	got := decodeOK[apitypes.BoardDetail](t, do(t, r, http.MethodGet, "/api/boards/"+id, nil))
+	if !got.SceneOverLimit {
+		t.Error("SceneOverLimit = false, want true")
 	}
 }

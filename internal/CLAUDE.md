@@ -109,6 +109,13 @@ UI は未保存の変更があることを表示する。
   `usecase.MaxSceneBytes` だけ。** ハンドラの `maxSceneBody` は読み込みの
   歯止めで、当たった側も同じ 413 に写す。ボディの大きさしだいで 400 と 413 に
   割れると、画面が同じ原因を 2 通りに案内することになる。
+  - **上限を導入する前に保存されたボードは、開いた時点で分かる（ADR 0045、
+    issue #103）。** `BoardDetail.sceneOverLimit` が
+    `usecase.SceneExceedsLimit(scene)` の結果をそのまま返す。**返すのは
+    真偽値だけで、`MaxSceneBytes` の数値は境界に出さない。** フロントが
+    上限を複製しないため（ADR 0038 と同じ理由）。413 判定
+    （`validateScene`）とこの真偽値は同じ `SceneExceedsLimit` を呼ぶので、
+    2 箇所で `len(scene) > MaxSceneBytes` を書かない。
 - **`sync_runs` は履歴。** 再実行しても過去の run を消さない。上書きすると
   GitHub 側に残っている draft issue を追跡できなくなるため（ADR 0007）。
   **読む口は `ListRunsByAnnotation`**（`GET .../annotations/{id}/runs`）。

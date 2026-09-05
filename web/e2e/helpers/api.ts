@@ -193,6 +193,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       projectTitle: target.projectTitle ?? "",
       projectUrl: target.projectUrl ?? "",
       targetLocked: false,
+      sceneOverLimit: false,
     };
   };
 
