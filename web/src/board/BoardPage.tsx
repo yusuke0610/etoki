@@ -43,6 +43,7 @@ import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid
 import {
   exportFileName,
   readSceneFile,
+  remapImportedFileIds,
   sceneJSON,
   type ImportedScene,
 } from "../excalidraw/transfer";
@@ -205,6 +206,7 @@ export function BoardPage({
     setDirtyState(next);
   }, []);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   // 保存に送るシーンのバイト数。null は「まだ数えていない」。
   //
   // **上限は持たない。** 判定はサーバーだけが持つ（ADR 0018 / 0038）ので、
@@ -865,8 +867,9 @@ export function BoardPage({
    */
   const importScene = useCallback(
     async (file: File) => {
-      if (!api || importingFile.current) return;
+      if (!api || saving || importingFile.current) return;
       importingFile.current = true;
+      setImporting(true);
 
       try {
         let imported: ImportedScene;
@@ -894,6 +897,9 @@ export function BoardPage({
           return;
         }
 
+        // addFiles は同じ ID のデータを上書きしない。別の画像がすでに同じ ID を
+        // 使っていたら、取り込む画像とそれを指す要素を一緒に新しい ID へ移す。
+        imported = remapImportedFileIds(imported, api.getFiles());
         updateElements(
           imported.elements,
           imported.viewBackgroundColor === undefined
@@ -901,7 +907,7 @@ export function BoardPage({
             : { viewBackgroundColor: imported.viewBackgroundColor },
         );
         // 貼ってあった画像。**入れ忘れると画像の要素だけが空白で置かれる。**
-        api.addFiles(imported.files as never);
+        api.addFiles(Object.values(imported.files) as never);
 
         // 取り込んだ絵が画面の外にあると、押しても何も起きていないように見える
         // （ADR 0040 で図のドラフトに対して決めたのと同じ形）。空のシーンには
@@ -911,13 +917,16 @@ export function BoardPage({
         }
       } finally {
         importingFile.current = false;
+        setImporting(false);
       }
     },
-    [api, onError, updateElements],
+    [api, onError, saving, updateElements],
   );
 
   const save = useCallback(async () => {
-    if (!api) return;
+    // disabled は表示の約束。ファイルの読み込み中に直接呼ばれても保存しないよう、
+    // 永続化の入口でも同じ排他を確かめる。
+    if (!api || importingFile.current) return;
 
     setSaving(true);
     try {
@@ -1093,6 +1102,17 @@ export function BoardPage({
   // GitHub には残ったまま結果だけ消え、作られていないと思って再実行した開発者が
   // draft issue を重複させる。保存側は creating で、作成側は saving を渡して止める。
   const creating = Object.values(creations).some((c) => c.status === "running");
+
+  const importBlocked = saving
+    ? "保存が終わるまで取り込めません"
+    : creating
+      ? "作成が終わるまで取り込めません"
+      : null;
+  const saveBlocked = importing
+    ? "取り込みが終わるまで保存できません"
+    : creating
+      ? "作成が終わるまで保存できません"
+      : null;
 
   // 設定していない機能は、押す前に理由を出す（ADR 0030）。null は使える、
   // または「まだ確かめていない」。
@@ -1328,14 +1348,14 @@ export function BoardPage({
                 // **作成中は取り込ませない。** キャンバスを置き換えるので、
                 // 保存を止めているのと同じ理由で止める（作られた内容と記録
                 // されるハッシュが食い違いうる）。
-                disabled={!api || saving || creating}
-                aria-describedby={creating ? "import-blocked" : undefined}
+                disabled={!api || saving || creating || importing}
+                aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
               >
-                取り込み
+                {importing ? "取り込み中…" : "取り込み"}
               </button>
-              {creating && (
+              {importBlocked !== null && (
                 <span className="hint" id="import-blocked">
-                  作成が終わるまで取り込めません
+                  {importBlocked}
                 </span>
               )}
               {/*
@@ -1381,14 +1401,14 @@ export function BoardPage({
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={saving || creating || !api}
-                aria-describedby={creating ? "save-blocked" : undefined}
+                disabled={saving || creating || importing || !api}
+                aria-describedby={saveBlocked !== null ? "save-blocked" : undefined}
               >
                 {saving ? "保存中…" : "保存"}
               </button>
-              {creating && (
+              {saveBlocked !== null && (
                 <span className="hint" id="save-blocked">
-                  作成が終わるまで保存できません
+                  {saveBlocked}
                 </span>
               )}
             </>

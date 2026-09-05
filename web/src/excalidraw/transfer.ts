@@ -118,11 +118,21 @@ export function sceneJSON(api: SceneSource): string {
   );
 }
 
+/** 取り込んだ画像。衝突した ID を差し替えるため、使うフィールドだけ型に出す。 */
+export type ImportedFile = {
+  id: string;
+  dataURL?: string;
+  [key: string]: unknown;
+};
+
+/** 取り込んだ要素。画像だけが持つ fileId を衝突時に差し替える。 */
+export type ImportedElement = SceneElement & { fileId?: string | null };
+
 /** 取り込んだシーンのうち、キャンバスに載せるもの。 */
 export type ImportedScene = {
-  elements: SceneElement[];
-  /** 貼ってあった画像。`addFiles` に渡す形。 */
-  files: unknown[];
+  elements: ImportedElement[];
+  /** 貼ってあった画像。要素の fileId と同じ ID をキーにする。 */
+  files: Record<string, ImportedFile>;
   /**
    * キャンバスの背景色。保存はこれを含めて書くので、取り込みでも運ぶ。
    *
@@ -151,6 +161,48 @@ export type LoadFromBlob = (...args: Parameters<typeof loadFromBlob>) => Promise
   files?: Record<string, unknown>;
 }>;
 
+/** いまのキャンバスが持つ画像のうち、衝突判定に使う部分。 */
+type ExistingFiles = Record<string, { dataURL?: string }>;
+
+/** 新しい画像 ID を作る。引数に分けて、衝突時の対応を固定値でテストできるようにする。 */
+const newFileId = () => crypto.randomUUID();
+
+/**
+ * 取り込む画像 ID が別の画像に使われていたら、取り込む側を新しい ID に移す。
+ *
+ * Excalidraw の `addFiles` は既存の ID を別データで上書きしない。要素を取り込んだ
+ * ものへ差し替えても、files 側に同じ ID の古い画像が残っていると、画面には古い
+ * 画像が出る。同じ dataURL なら同じ画像なので ID は保つ。
+ */
+export function remapImportedFileIds(
+  imported: ImportedScene,
+  existingFiles: ExistingFiles,
+  createId: () => string = newFileId,
+): ImportedScene {
+  let elements = imported.elements;
+  const files = { ...imported.files };
+  const usedIds = new Set([...Object.keys(existingFiles), ...Object.keys(files)]);
+
+  for (const [fileId, file] of Object.entries(imported.files)) {
+    const existing = existingFiles[fileId];
+    if (existing === undefined || existing.dataURL === file.dataURL) continue;
+
+    let nextId = createId();
+    while (usedIds.has(nextId)) nextId = createId();
+    usedIds.add(nextId);
+
+    delete files[fileId];
+    files[nextId] = { ...file, id: nextId };
+    elements = elements.map((element) =>
+      element.type === "image" && element.fileId === fileId
+        ? { ...element, fileId: nextId }
+        : element,
+    );
+  }
+
+  return { ...imported, elements, files };
+}
+
 /**
  * `.excalidraw` ファイルを読む。読めなければ投げる。
  *
@@ -178,9 +230,10 @@ export async function readSceneFile(
   );
 
   return {
-    elements: restored.elements as SceneElement[],
-    // `addFiles` は配列で受け取る。ライブラリが返すのは ID をキーにした表。
-    files: Object.values(restored.files ?? {}),
+    elements: restored.elements as ImportedElement[],
+    // キーを保っておく。現在のキャンバスと ID が衝突したとき、要素の fileId と
+    // 同じ写像で差し替えてから `addFiles` に渡すために要る。
+    files: (restored.files ?? {}) as Record<string, ImportedFile>,
     // ファイルに無ければ今の色を保つ。`restore` は渡した appState から埋める
     // ので普段は前者で決まるが、**無かったときに既定色を持ち出さない。**
     viewBackgroundColor:

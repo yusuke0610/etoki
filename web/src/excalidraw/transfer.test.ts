@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { exportFileName, readSceneFile, type LoadFromBlob } from "./transfer";
+import {
+  exportFileName,
+  readSceneFile,
+  remapImportedFileIds,
+  type ImportedScene,
+  type LoadFromBlob,
+} from "./transfer";
 import type { SceneSource } from "./image";
 
 /**
@@ -97,19 +103,20 @@ describe("readSceneFile", () => {
     const imported = await readSceneFile(blob, sceneSource(), load);
 
     expect(imported.elements).toEqual([{ id: "imported", type: "frame" }]);
-    // 表ではなく配列。`addFiles` が配列でしか受け取らない。
-    expect(imported.files).toEqual([{ id: "file-1" }, { id: "file-2" }]);
+    expect(imported.files).toEqual({
+      "file-1": { id: "file-1" },
+      "file-2": { id: "file-2" },
+    });
     expect(imported.viewBackgroundColor).toBe("#f5faff");
   });
 
-  // 画像を貼っていないファイルでも `addFiles` に渡せる形で返す。
-  it("画像が無ければ空の配列にする", async () => {
+  it("画像が無ければ空の表にする", async () => {
     const load: LoadFromBlob = async () => ({
       elements: [],
       appState: { viewBackgroundColor: "#ffffff" },
     });
 
-    expect((await readSceneFile(blob, sceneSource(), load)).files).toEqual([]);
+    expect((await readSceneFile(blob, sceneSource(), load)).files).toEqual({});
   });
 
   // 既定色をここで決めると、Excalidraw が既定を変えた日に取り込みだけ色が変わる。
@@ -148,5 +155,45 @@ describe("readSceneFile", () => {
     await expect(readSceneFile(blob, sceneSource(), load)).rejects.toThrow(
       "Invalid file",
     );
+  });
+});
+
+describe("remapImportedFileIds", () => {
+  // Excalidraw の addFiles は同じ ID の既存画像を上書きしない。同じ ID で中身が
+  // 違う画像だけを別 ID に移し、要素と files の対応を保たないと、取り込んだ
+  // キャンバスに以前の画像が出る。
+  it("同じ fileId に違う dataURL があれば取り込む画像を新しい ID に移す", () => {
+    const imported: ImportedScene = {
+      elements: [
+        { id: "conflicting-image", type: "image", fileId: "shared" },
+        { id: "same-image", type: "image", fileId: "same" },
+      ],
+      files: {
+        shared: { id: "shared", dataURL: "data:image/png;base64,imported" },
+        same: { id: "same", dataURL: "data:image/png;base64,same" },
+      },
+      viewBackgroundColor: "#ffffff",
+    };
+
+    const remapped = remapImportedFileIds(
+      imported,
+      {
+        shared: { dataURL: "data:image/png;base64,existing" },
+        same: { dataURL: "data:image/png;base64,same" },
+      },
+      () => "imported-file",
+    );
+
+    expect(remapped.elements.map((element) => element.fileId)).toEqual([
+      "imported-file",
+      "same",
+    ]);
+    expect(remapped.files).toEqual({
+      "imported-file": {
+        id: "imported-file",
+        dataURL: "data:image/png;base64,imported",
+      },
+      same: { id: "same", dataURL: "data:image/png;base64,same" },
+    });
   });
 });

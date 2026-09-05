@@ -24,8 +24,14 @@ const IMAGE_FILE_ID = "file-imported";
 const IMAGE_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
+/** 同じ PNG の別表現。画像としては読めるが、dataURL の衝突判定では別データ。 */
+const EXISTING_IMAGE_DATA_URL = IMAGE_DATA_URL.replace(/=+$/, "");
+
 /** 取り込ませる `.excalidraw` の中身。背景色は往復で戻ることを見るために変える。 */
-function importedFile(viewBackgroundColor = "#ffffff"): string {
+function importedFile(
+  viewBackgroundColor = "#ffffff",
+  imageDataURL = IMAGE_DATA_URL,
+): string {
   return JSON.stringify({
     type: "excalidraw",
     version: 2,
@@ -62,7 +68,7 @@ function importedFile(viewBackgroundColor = "#ffffff"): string {
       [IMAGE_FILE_ID]: {
         id: IMAGE_FILE_ID,
         mimeType: "image/png",
-        dataURL: IMAGE_DATA_URL,
+        dataURL: imageDataURL,
         created: 1700000000000,
         lastRetrieved: 1700000000000,
       },
@@ -216,6 +222,35 @@ test.describe("取り込み", () => {
     // 要素だけが残り、開いたときに空白の四角になる。
     expect(scene.elements[1]?.fileId).toBe(IMAGE_FILE_ID);
     expect(scene.files?.[IMAGE_FILE_ID]?.dataURL).toBe(IMAGE_DATA_URL);
+  });
+
+  test("同じ fileId に別の画像があっても、取り込んだ画像を優先する", async ({ page }) => {
+    const mock = baseMock();
+    const detail = mock.details[BOARD_ID];
+    if (detail === undefined) throw new Error("テスト用のボードが無い");
+    mock.details[BOARD_ID] = {
+      ...detail,
+      scene: importedFile("#ffffff", EXISTING_IMAGE_DATA_URL),
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await chooseFile(page, importedFile());
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "書き出し" }).click(),
+    ]);
+    const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
+      elements: { type: string; fileId?: string }[];
+      files?: Record<string, { dataURL?: string }>;
+    };
+    const fileId = scene.elements.find((element) => element.type === "image")?.fileId;
+
+    expect(fileId).not.toBe(IMAGE_FILE_ID);
+    expect(scene.files?.[fileId ?? ""]?.dataURL).toBe(IMAGE_DATA_URL);
   });
 
   // 未保存の内容を黙って捨てない（ADR 0021 と同じ形）。

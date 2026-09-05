@@ -226,6 +226,68 @@ test.describe("押せない理由が本文として読める", () => {
     await expect(page.getByRole("button", { name: "作成先を変更" })).toBeEnabled();
   });
 
+  test("取り込み：保存中のとき", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdSave(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "取り込み", exact: true }),
+      "保存が終わるまで取り込めません",
+    );
+
+    release();
+    await expect(page.getByText("保存が終わるまで取り込めません")).toBeHidden();
+  });
+
+  test("保存：取り込み中のとき", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    // loadFromBlob が使う FileReader を止め、ファイルを読んでいる状態を作る。
+    await page.evaluate(() => {
+      const readAsText = FileReader.prototype.readAsText;
+      FileReader.prototype.readAsText = function (blob, encoding) {
+        Reflect.set(window, "releaseImport", () => readAsText.call(this, blob, encoding));
+      };
+    });
+    await page.getByLabel("取り込む .excalidraw ファイル").setInputFiles({
+      name: "board.excalidraw",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          type: "excalidraw",
+          version: 2,
+          source: "e2e",
+          elements: [],
+          appState: {},
+          files: {},
+        }),
+      ),
+    });
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "保存", exact: true }),
+      "取り込みが終わるまで保存できません",
+    );
+
+    await page.evaluate(() => {
+      const release = Reflect.get(window, "releaseImport") as unknown;
+      if (typeof release === "function") release();
+    });
+    await expect(page.getByText("取り込みが終わるまで保存できません")).toBeHidden();
+  });
+
   // 逆向き。作成中は保存させない。**押せない理由を `title` に置くと、この
   // テストが落ちる。** `disabled` なボタンはフォーカスも当たらないので、
   // ホバーできない利用者には届かない。
