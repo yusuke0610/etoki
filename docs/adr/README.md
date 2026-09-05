@@ -48,3 +48,4 @@
 | [0042](0042-delete-boards-after-showing-what-remains.md)         | ボードの削除は GitHub 側に残るものを見せてから通す                     | 採用                 |
 | [0043](0043-record-run-outcome.md)                               | 途中で失敗した run は記録に残す（埋めずに「不明」を残す）              | 採用                 |
 | [0044](0044-limit-llm-calls.md)                                  | LLM を叩く実行に上限を置く（利用者単位・プロセス内）                   | 採用                 |
+| [0045](0045-show-scene-over-limit-on-open.md)                    | 保存できる上限を超えたボードは、開いた時点で真偽値だけを返して知らせる | 採用                 |
