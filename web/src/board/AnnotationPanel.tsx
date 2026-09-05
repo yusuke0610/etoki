@@ -152,6 +152,13 @@ type Props = {
   projectLink: ProjectLink | null;
 };
 
+type PendingKind = {
+  /** 種別を選んだ時点の保存済みの値。 */
+  saved: DiagramKind | undefined;
+  /** 保存を待つあいだに表示する選択値。 */
+  value: DiagramKind | undefined;
+};
+
 export function AnnotationPanel({
   annotations,
   markableFrames,
@@ -178,6 +185,12 @@ export function AnnotationPanel({
   creationUnavailable,
   projectLink,
 }: Props) {
+  // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
+  // 新しく、次の保存まで a.kind は古いので、そのあいだはここで選択値を持つ。
+  // 保存済みの値が選択時のものから変われば、保存が追いついた（または外部で
+  // 更新された）ので新しい a.kind を使う。
+  const [pendingKinds, setPendingKinds] = useState<Record<string, PendingKind>>({});
+
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
   // 出ると、同じものが 2 つあるように見える。
   const labels = annotationLabels(annotations);
@@ -254,6 +267,9 @@ export function AnnotationPanel({
               const onCanvas = canvasFrameIds === null || canvasFrameIds.includes(a.id);
               const selected = selectedFrameIds.includes(a.id);
               const missingId = `annotation-missing-${a.id}`;
+              const pendingKind = pendingKinds[a.id];
+              const kind =
+                pendingKind && pendingKind.saved === a.kind ? pendingKind.value : a.kind;
 
               return (
                 <li
@@ -321,11 +337,17 @@ export function AnnotationPanel({
                   <label className="granularity">
                     種別
                     <select
-                      value={a.kind ?? ""}
+                      value={kind ?? ""}
                       disabled={!canEdit}
-                      onChange={(e) =>
-                        onChangeKind(a.id, (e.target.value || undefined) as DiagramKind)
-                      }
+                      onChange={(e) => {
+                        const nextKind = (e.target.value || undefined) as
+                          DiagramKind | undefined;
+                        setPendingKinds((current) => ({
+                          ...current,
+                          [a.id]: { saved: a.kind, value: nextKind },
+                        }));
+                        onChangeKind(a.id, nextKind);
+                      }}
                     >
                       {/*
                         「指定なし」は種別の語彙（DiagramKind）に無い値なので、
