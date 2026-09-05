@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { ETOKI_NAMESPACE, type SceneElement } from "./annotation";
 import { sceneSignature } from "./dirty";
 
+/** 背景色を変えていない場合の値。要素だけを見たいテストはこれで揃える。 */
+const WHITE = "#ffffff";
+
 function el(over: Partial<SceneElement> = {}): SceneElement {
   return { id: "a", type: "rectangle", version: 1, ...over };
 }
@@ -12,7 +15,7 @@ describe("sceneSignature", () => {
     const before = [el({ id: "a" }), el({ id: "b", version: 3 })];
     const after = [el({ id: "a" }), el({ id: "b", version: 3 })];
 
-    expect(sceneSignature(after)).toBe(sceneSignature(before));
+    expect(sceneSignature(after, WHITE)).toBe(sceneSignature(before, WHITE));
   });
 
   // Excalidraw は選択やスクロールでも onChange を発火するが、そのとき要素の
@@ -22,18 +25,20 @@ describe("sceneSignature", () => {
   it("version が変わらない限り署名は変わらない", () => {
     const selected = [el({ id: "a" })];
     // 選択状態は appState にあり要素には現れないので、同じ配列で表せる。
-    expect(sceneSignature(selected)).toBe(sceneSignature([el({ id: "a" })]));
+    expect(sceneSignature(selected, WHITE)).toBe(
+      sceneSignature([el({ id: "a" })], WHITE),
+    );
   });
 
   it("version が上がると署名が変わる", () => {
-    expect(sceneSignature([el({ version: 2 })])).not.toBe(
-      sceneSignature([el({ version: 1 })]),
+    expect(sceneSignature([el({ version: 2 })], WHITE)).not.toBe(
+      sceneSignature([el({ version: 1 })], WHITE),
     );
   });
 
   it("要素が増えると署名が変わる", () => {
-    expect(sceneSignature([el({ id: "a" }), el({ id: "b" })])).not.toBe(
-      sceneSignature([el({ id: "a" })]),
+    expect(sceneSignature([el({ id: "a" }), el({ id: "b" })], WHITE)).not.toBe(
+      sceneSignature([el({ id: "a" })], WHITE),
     );
   });
 
@@ -45,7 +50,7 @@ describe("sceneSignature", () => {
       el({ type: "frame", customData: { [ETOKI_NAMESPACE]: { granularity: "" } } }),
     ];
 
-    expect(sceneSignature(annotated)).not.toBe(sceneSignature(plain));
+    expect(sceneSignature(annotated, WHITE)).not.toBe(sceneSignature(plain, WHITE));
   });
 
   it("粒度を変えると署名が変わる", () => {
@@ -56,7 +61,7 @@ describe("sceneSignature", () => {
       el({ type: "frame", customData: { [ETOKI_NAMESPACE]: { granularity: "epic" } } }),
     ];
 
-    expect(sceneSignature(epic)).not.toBe(sceneSignature(auto));
+    expect(sceneSignature(epic, WHITE)).not.toBe(sceneSignature(auto, WHITE));
   });
 
   // onChange は削除済みを含む配列を渡すが、getSceneElements() は含まない。
@@ -68,16 +73,52 @@ describe("sceneSignature", () => {
     ];
     const fromGetSceneElements = [el({ id: "a" })];
 
-    expect(sceneSignature(fromOnChange)).toBe(sceneSignature(fromGetSceneElements));
+    expect(sceneSignature(fromOnChange, WHITE)).toBe(
+      sceneSignature(fromGetSceneElements, WHITE),
+    );
+  });
+
+  // 背景色は `appState` にあって要素には現れないが、保存はシーン全体を書くので
+  // 保存すべき変更（ADR 0045）。要素だけを見ると、色だけを変えたキャンバスが
+  // 「未保存ではない」と出て確認なしで離れられる。
+  it("要素が同じでも背景色が違えば署名が変わる", () => {
+    const elements = [el({ id: "a" })];
+
+    expect(sceneSignature(elements, "#ffeb3b")).not.toBe(sceneSignature(elements, WHITE));
+  });
+
+  it("背景色が同じなら署名も同じ", () => {
+    const elements = [el({ id: "a" })];
+
+    expect(sceneSignature(elements, WHITE)).toBe(sceneSignature(elements, WHITE));
   });
 
   it("要素を消すと署名が変わる", () => {
-    const before = sceneSignature([el({ id: "a" }), el({ id: "b" })]);
-    const after = sceneSignature([
-      el({ id: "a" }),
-      el({ id: "b", isDeleted: true, version: 2 }),
-    ]);
+    const before = sceneSignature([el({ id: "a" }), el({ id: "b" })], WHITE);
+    const after = sceneSignature(
+      [el({ id: "a" }), el({ id: "b", isDeleted: true, version: 2 })],
+      WHITE,
+    );
 
     expect(after).not.toBe(before);
+  });
+
+  // 背景色も要素の id もファイルから来る（取り込み、ADR 0045）。区切り文字で
+  // 連結していると、違うシーンが同じ署名に化けて未保存が消える。
+  it("背景色に区切り文字が入っていても要素と混ざらない", () => {
+    const inBackground = sceneSignature([], "#fff|a:1:");
+    const inElements = sceneSignature([el({ id: "a", version: 1 })], "#fff");
+
+    expect(inBackground).not.toBe(inElements);
+  });
+
+  it("id に区切り文字が入っていても要素の境目が混ざらない", () => {
+    const one = sceneSignature([el({ id: "a:1:|b", version: 2 })], WHITE);
+    const two = sceneSignature(
+      [el({ id: "a", version: 1 }), el({ id: "b", version: 2 })],
+      WHITE,
+    );
+
+    expect(one).not.toBe(two);
   });
 });

@@ -12,7 +12,11 @@ import { isAnnotation, type SceneElement } from "./annotation";
  */
 export const MAX_IMAGE_DIMENSION = 2048;
 
-/** Excalidraw から書き出しに要るものだけを取り出した形。 */
+/**
+ * Excalidraw からシーンを読むのに要るものだけを取り出した形。
+ *
+ * 画像の書き出しと、持ち出し・取り込み（`transfer.ts`）が共有する。
+ */
 export type SceneSource = {
   getSceneElements: () => readonly unknown[];
   getAppState: () => unknown;
