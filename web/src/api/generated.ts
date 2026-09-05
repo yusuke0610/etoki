@@ -853,6 +853,18 @@ export interface components {
              *     数えられないので、状態としてサーバーが返す
              */
             targetLocked: boolean;
+            /**
+             * @description いま保存されているシーンが保存できる上限（ADR 0038）を超えて
+             *     いて、このままでは保存し直せないことを表す（issue #103）。
+             *     上限を導入する前に保存されたボードや、上限を引き下げた後にだけ
+             *     真になりうる。
+             *
+             *     **上限の数値そのものは返さない。** フロントは判定結果だけを
+             *     受け取り、上限を複製しない。`projectAccess` の
+             *     `unknown` / `allowed` / `denied` と同じで、判定はサーバーの
+             *     持ち場のまま
+             */
+            sceneOverLimit: boolean;
         };
         /**
          * @description ボードを削除したときに etoki から失われるもの（ADR 0042）。

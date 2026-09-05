@@ -172,6 +172,14 @@ export function BoardPage({
   // **上限は持たない。** 判定はサーバーだけが持つ（ADR 0018 / 0038）ので、
   // ここが出すのは「いまどれくらいか」という状態にとどめる。
   const [sceneSize, setSceneSize] = useState<number | null>(null);
+  // 保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
+  // 状態（issue #103）。`board.sceneOverLimit` を初期値にする。
+  //
+  // **保存が成功したら手元で false に倒す。** 保存が成功した = サーバーの
+  // 上限を満たした、という事実からそう言える。上限の数値をフロントが持って
+  // いなくても、判定結果だけを追随させられる（ADR 0038 は数値の複製を禁じて
+  // いるのであって、この推論を禁じてはいない）。
+  const [overLimit, setOverLimit] = useState(board.sceneOverLimit);
   // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
   // 未保存のまま残すので、dirty とは別に持つ。
   const [conflicted, setConflicted] = useState(false);
@@ -779,6 +787,8 @@ export function BoardPage({
       // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
       baseUpdatedAt.current = updatedAt;
       setConflicted(false);
+      // 保存が成功した = いまのシーンはサーバーの上限を満たしている。
+      setOverLimit(false);
       savedSignature.current = sent;
       setDirty(latestSignature.current !== sent);
       // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
@@ -1260,6 +1270,21 @@ export function BoardPage({
         <p className="conflict" role="alert">
           {"他の人がこのボードを保存しました。上書きしないよう未保存のまま残しています。"}
           {"いまの内容を控えてから開き直してください。"}
+        </p>
+      )}
+
+      {/*
+        保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
+        状態（issue #103、ADR 0038）。**上限の数値は出さない。** サーバーの
+        判定結果を見せるだけで、フロントは上限を複製しない。開いた時点で
+        分かるよう、キャンバスを描く前から出す（中核思想 3）。
+      */}
+      {overLimit && (
+        <p className="scene-limit-warning" role="alert">
+          {
+            "このボードは保存できる上限を超えています。保存し直すには貼った画像を減らしてください。"
+          }
+          {sceneSize !== null && `（いまの大きさ: ${formatSceneSize(sceneSize)}）`}
         </p>
       )}
 

@@ -256,6 +256,41 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 
+  // 上限を導入する前に保存された(と想定する)大きいボードは、開いた時点で
+  // 保存できないと分かる（issue #103）。押してから 413 で気づくのでは遅い。
+  test("上限を超えたまま保存されているボードは、開いた時点で分かる", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), sceneOverLimit: true };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(
+      page.getByText("このボードは保存できる上限を超えています"),
+    ).toBeVisible();
+  });
+
+  // 保存が成功した = サーバーの上限を満たした、という事実で警告を下ろす。
+  // フロントは上限の数値を知らないので、この推論でしか消せない（ADR 0038）。
+  test("保存に成功すると、上限超過の警告が消える", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), sceneOverLimit: true };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await expect(
+      page.getByText("このボードは保存できる上限を超えています"),
+    ).toBeVisible();
+
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    await expect(page.getByText("このボードは保存できる上限を超えています")).toBeHidden();
+  });
+
   // 付箋は描いている最中に置くもの。**置くだけで保存はしない**（確定させる
   // のは人間の保存操作だけ）。
   test("付箋を置くと未保存になり、保存するとシーンに載る", async ({ page }) => {
