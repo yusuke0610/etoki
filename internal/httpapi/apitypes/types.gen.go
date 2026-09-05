@@ -240,6 +240,17 @@ type BoardDetail struct {
 	// Scene Excalidraw のシーン JSON をそのまま入れた文字列
 	Scene string `json:"scene"`
 
+	// SceneOverLimit いま保存されているシーンが保存できる上限（ADR 0038）を超えて
+	// いて、このままでは保存し直せないことを表す（issue #103）。
+	// 上限を導入する前に保存されたボードや、上限を引き下げた後にだけ
+	// 真になりうる。
+	//
+	// **上限の数値そのものは返さない。** フロントは判定結果だけを
+	// 受け取り、上限を複製しない。`projectAccess` の
+	// `unknown` / `allowed` / `denied` と同じで、判定はサーバーの
+	// 持ち場のまま
+	SceneOverLimit bool `json:"sceneOverLimit"`
+
 	// TargetLocked 作成先を変更できないことを表す。そのボードで draft issue を
 	// 1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
 	// 数えられないので、状態としてサーバーが返す
