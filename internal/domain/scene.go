@@ -59,8 +59,24 @@ type CustomData struct {
 }
 
 // AnnotationMeta は注釈に付与するメタデータ。
+//
+// 規則は TypeScript 側（web/src/excalidraw/annotation.ts の AnnotationMeta）と
+// 揃える。**片方だけ足すと壊れる。** フロントだけが読める形で持つと、種別が
+// サーバーから見えず、解釈のプロンプトに載らない。
 type AnnotationMeta struct {
 	Granularity Granularity `json:"granularity"`
+
+	// Kind は開発者が選んだ図の種別。
+	//
+	// **省略可能。** 自分でフレームツールから作った注釈には種別が無い。
+	// ゼロ値の DiagramKindUnspecified が「指定なし」で、Granularity と同じ
+	// 扱いにしてある。
+	//
+	// **etoki のコードがここから図の読み方を導かない**（中核思想 2）。
+	// 種別は開発者が明示的に選んだメタデータなので LLM に渡してよいが、
+	// 「シーケンス図だからこの矢印は呼び出しだ」と読み始めた時点で、座標から
+	// 構造を推測しているのと変わらなくなる。
+	Kind DiagramKind `json:"kind"`
 }
 
 // Annotation は issue 化の対象として囲まれた範囲。
@@ -71,6 +87,8 @@ type Annotation struct {
 	Name string
 	// Granularity は開発者が指定した粒度。
 	Granularity Granularity
+	// Kind は開発者が選んだ図の種別。選んでいなければ DiagramKindUnspecified。
+	Kind DiagramKind
 }
 
 // ParseScene はシーン JSON を読む。
@@ -129,6 +147,7 @@ func (s Scene) Annotations() []Annotation {
 			ID:          e.ID,
 			Name:        e.Name,
 			Granularity: meta.Granularity,
+			Kind:        meta.Kind,
 		})
 	}
 	return annotations
@@ -144,6 +163,11 @@ func (s Scene) Annotations() []Annotation {
 // 後者を辿らないと、図形の中に書かれた文字がまるごとハッシュから抜ける。
 // frame の名前も含める。LLM への入力になる以上、変えたら「変更あり」に
 // なるべきであるため。
+//
+// **入れ子の frame は辿らない**（ADR 0045）。内側の frame に入れた要素は
+// frameId が内側を指すので、ここには出てこない。1 段だけを見る形は
+// TestAnnotationTexts_DoesNotFollowNestedFrames が固定している。境界を描く
+// テンプレートが frame ではなく矩形を使うのは、この線を越えないため。
 func (s Scene) AnnotationTexts(annotationID string) []TextElement {
 	childIDs := make(map[string]struct{})
 	var frameName string
@@ -195,5 +219,5 @@ func (s Scene) AnnotationTexts(annotationID string) []TextElement {
 
 // AnnotationHash は注釈のハッシュを算出する。
 func (s Scene) AnnotationHash(a Annotation) ContentHash {
-	return ComputeContentHash(s.AnnotationTexts(a.ID), a.Granularity)
+	return ComputeContentHash(s.AnnotationTexts(a.ID), a.Granularity, a.Kind)
 }

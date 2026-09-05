@@ -1,4 +1,4 @@
-import type { Granularity } from "../api/types";
+import type { DiagramKind, Granularity } from "../api/types";
 
 /**
  * 注釈のメタデータを載せる customData のキー。
@@ -8,8 +8,23 @@ import type { Granularity } from "../api/types";
  */
 export const ETOKI_NAMESPACE = "etoki";
 
+/**
+ * 注釈のメタデータ。
+ *
+ * **Go 側（`internal/domain/scene.go` の `AnnotationMeta`）と揃える。片方だけ
+ * 足すと壊れる。** フロントだけが読める形で持つと、サーバーからは見えず、
+ * 解釈のプロンプトにも `content_hash` にも載らない。
+ */
 export type AnnotationMeta = {
   granularity: Granularity;
+  /**
+   * 開発者が選んだ図の種別。
+   *
+   * **省略可能。** 自分でフレームツールから作った注釈には種別が無い。
+   * `Granularity` のように空文字を値に持たないのは、種別の語彙
+   * （`DiagramKind`）を 1 つに保つため（`api/openapi.yaml` の `AnnotationStatus`）。
+   */
+  kind?: DiagramKind;
 };
 
 /** 最低限の要素形。ライブラリの型に依存せず純粋にテストするために持つ。 */
@@ -56,13 +71,39 @@ function hasMeta(el: SceneElement): boolean {
 
 /** 要素から粒度を読む。注釈でなければ undefined。 */
 export function granularityOf(el: SceneElement): Granularity | undefined {
-  if (!isAnnotation(el)) return undefined;
-  const meta = el.customData?.[ETOKI_NAMESPACE] as AnnotationMeta;
+  const meta = metaOf(el);
+  if (!meta) return undefined;
   return meta.granularity ?? "";
 }
 
 /**
+ * 要素から図の種別を読む。注釈でないか、種別を選んでいなければ undefined。
+ *
+ * **「注釈ではない」と「種別を選んでいない」を分けない。** どちらも
+ * 「この囲みが何の図かは分からない」で、呼び出し側の打ち手は同じ。分けると、
+ * 使う側が 2 つの undefined を区別する理由を探し始める。
+ */
+export function kindOf(el: SceneElement): DiagramKind | undefined {
+  return metaOf(el)?.kind;
+}
+
+/** 要素からメタデータを読む。注釈でなければ undefined。 */
+function metaOf(el: SceneElement): AnnotationMeta | undefined {
+  if (!isAnnotation(el)) return undefined;
+  return el.customData?.[ETOKI_NAMESPACE] as AnnotationMeta;
+}
+
+/**
  * frame を注釈にする。すでに注釈なら粒度だけを差し替える。
+ *
+ * **粒度以外のメタデータは残す。** テンプレートから始めた注釈は種別を
+ * 持っているので、丸ごと置き換えると粒度を選び直しただけで種別が消える。
+ * 消えたことは画面に出ず、次の解釈で「何の図か」が伝わらなくなるところまで
+ * 誰も気づかない。
+ *
+ * 残すのは**メタデータとして読める形で載っているときだけ**。他のツールが
+ * 置いた値の上に粒度を足すと、etoki のメタデータでないものを etoki のものに
+ * してしまう（`isAnnotation` の判定と同じ線）。
  *
  * 要素は書き換えずに新しい配列を返す。Excalidraw は要素の同一性で再描画を
  * 判断するため、その場で書き換えると更新が反映されないことがある。
@@ -74,10 +115,41 @@ export function markAsAnnotation(
 ): SceneElement[] {
   return elements.map((el) => {
     if (el.id !== frameId || el.type !== "frame") return el;
+    const meta = metaOf(el);
     return {
       ...el,
-      customData: { ...el.customData, [ETOKI_NAMESPACE]: { granularity } },
+      customData: { ...el.customData, [ETOKI_NAMESPACE]: { ...meta, granularity } },
     };
+  });
+}
+
+/**
+ * 注釈の図の種別を差し替える。注釈でなければ何もしない。
+ *
+ * **粒度と別の口にする。** どちらも同じメタデータに載るが、選ぶ場面が違う
+ * （粒度は「どう分解させるか」、種別は「何の図として読ませるか」）。1 つの
+ * 関数に 2 つの引数を並べると、片方だけ変えたい呼び出しがもう片方の現在値を
+ * 読み直して渡すことになり、読み違えたときに黙って上書きする。
+ *
+ * **注釈でない frame を注釈にはしない。** 種別だけを持つ注釈という状態を
+ * 作らないため。注釈にするのは `markAsAnnotation` の仕事。
+ */
+export function setAnnotationKind(
+  elements: readonly SceneElement[],
+  frameId: string,
+  kind: DiagramKind | undefined,
+): SceneElement[] {
+  return elements.map((el) => {
+    if (el.id !== frameId) return el;
+    const meta = metaOf(el);
+    if (!meta) return el;
+
+    // **「指定なし」はキーごと落とす。** 空文字を置くと DiagramKind に無い値が
+    // シーンに載り、契約（`AnnotationStatus.kind` は省略可能）と形が食い違う。
+    const next: AnnotationMeta = { ...meta, kind };
+    if (kind === undefined) delete next.kind;
+
+    return { ...el, customData: { ...el.customData, [ETOKI_NAMESPACE]: next } };
   });
 }
 

@@ -29,11 +29,26 @@ body {
 
 .create-board {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 12px;
 }
 
 .create-board input {
+  min-width: 0;
+  flex: 1;
+}
+
+/* ひな形は名前の下の行に置く。同じ行に並べるとサイドバーの幅で潰れる。 */
+.template-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+.template-picker select {
   min-width: 0;
   flex: 1;
 }

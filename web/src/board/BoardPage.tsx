@@ -25,6 +25,7 @@ import {
   frameIds,
   isAnnotation,
   markAsAnnotation,
+  setAnnotationKind,
   selectableFrames,
   unmarkAnnotation,
   type SceneElement,
@@ -418,7 +419,15 @@ export function BoardPage({
 
   const initialData = useMemo(() => {
     try {
-      return JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
+      const scene = JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
+      // **開いたら中身が見えている位置から始める。** シーンの原点はキャンバスの
+      // 左上に来るので、原点あたりに描かれたものはツールバーの下に隠れる。
+      // ひな形から作ったボードは必ずそこから始まる（`excalidraw/template.ts`）
+      // ので、見出しが隠れた状態が最初の 1 画面になる。
+      //
+      // **要素は動かさない。** 動かすと座標の変更として未保存になり、開いた
+      // だけで保存を促すことになる。動かすのは見ている位置のほう。
+      return { ...scene, scrollToContent: true };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
       onError(sceneUnreadableFailure());
@@ -730,6 +739,20 @@ export function BoardPage({
   const handleMark = useCallback(
     (frameId: string, granularity: Granularity) => {
       updateElements(markAsAnnotation(currentElements(), frameId, granularity));
+    },
+    [currentElements, updateElements],
+  );
+
+  /**
+   * 注釈の図の種別を差し替える。
+   *
+   * **注釈にする操作とは分ける。** 種別は「何の図として読ませるか」で、
+   * 粒度（どう分解させるか）とは選ぶ場面が違う。`handleMark` に相乗りさせると、
+   * 片方だけ変えたい呼び出しがもう片方の現在値を読み直して渡すことになる。
+   */
+  const handleChangeAnnotationKind = useCallback(
+    (frameId: string, kind: DiagramKind | undefined) => {
+      updateElements(setAnnotationKind(currentElements(), frameId, kind));
     },
     [currentElements, updateElements],
   );
@@ -1333,6 +1356,7 @@ export function BoardPage({
             onMark={handleMark}
             onUnmark={handleUnmark}
             onChangeGranularity={(id, g) => handleMark(id, g)}
+            onChangeKind={handleChangeAnnotationKind}
             stale={dirty}
             interpretations={interpretations}
             onInterpret={(id) => void interpret(id)}

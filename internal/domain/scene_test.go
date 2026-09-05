@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -112,6 +113,35 @@ func TestAnnotations_MissingGranularityIsAuto(t *testing.T) {
 	}
 }
 
+// 種別は customData.etoki から読む。
+func TestAnnotations_ReadsKind(t *testing.T) {
+	t.Parallel()
+
+	withKind := `{"id":"annot-1","type":"frame",
+	              "customData":{"etoki":{"granularity":"","kind":"sequence"}}}`
+
+	got := scene(t, withKind).Annotations()
+	if len(got) != 1 {
+		t.Fatalf("注釈の件数 = %d, want 1", len(got))
+	}
+	if got[0].Kind != domain.DiagramKindSequence {
+		t.Errorf("Kind = %q, want sequence", got[0].Kind)
+	}
+}
+
+// 種別未指定（キーが無い）は「指定なし」として扱う。粒度と同じ。
+func TestAnnotations_MissingKindIsUnspecified(t *testing.T) {
+	t.Parallel()
+
+	got := scene(t, annotFrame).Annotations()
+	if len(got) != 1 {
+		t.Fatalf("注釈の件数 = %d, want 1", len(got))
+	}
+	if got[0].Kind != domain.DiagramKindUnspecified {
+		t.Errorf("Kind = %q, want unspecified", got[0].Kind)
+	}
+}
+
 // 抽出の中核：frameId の直接の子と、containerId で図形に紐づくラベルの両方を集める。
 //
 // 後者を辿らないと、図形の中に書かれた文字がまるごとハッシュから抜ける。
@@ -218,6 +248,95 @@ func TestAnnotationTexts_UnnamedFrame(t *testing.T) {
 }
 
 // シーンから直接ハッシュを出せる。ラベルを書き換えるとハッシュが変わる。
+// ER 図のように 1 つの囲みへテキストが多く並んでも取りこぼさない。
+//
+// ひな形（`web/src/excalidraw/template.ts`）の ER 図は、実体名を図形のラベル
+// （containerId 経由）に、属性行を frame の直接の子に置く。**2 つの経路が同じ
+// 囲みで混ざる**のはこの形だけなので、片方だけ辿る実装になっていないことを
+// 実体 3 つ × 属性 2 行の形で確かめる。
+//
+// **どれが実体名でどれが属性かは区別しない。** 平坦な一覧から構造を復元する
+// のは中核思想 2 に反する。ここで見るのは、全部が入力に並ぶことだけ。
+func TestAnnotationTexts_CollectsManyTextsThroughBothPaths(t *testing.T) {
+	t.Parallel()
+
+	elements := []string{annotFrame}
+	var want []string
+	for i := range 3 {
+		shape := fmt.Sprintf("er-shape-%d", i)
+		name := fmt.Sprintf("er-name-%d", i)
+		elements = append(elements,
+			fmt.Sprintf(`{"id":%q,"type":"rectangle","frameId":"annot-1"}`, shape),
+			// 実体名は図形のラベル。containerId 経由でしか辿れない。
+			fmt.Sprintf(`{"id":%q,"type":"text","text":"実体","containerId":%q}`, name, shape),
+		)
+		want = append(want, name)
+
+		for j := range 2 {
+			attr := fmt.Sprintf("er-attr-%d-%d", i, j)
+			// 属性行は frame の直接の子。
+			elements = append(elements,
+				fmt.Sprintf(`{"id":%q,"type":"text","text":"属性","frameId":"annot-1"}`, attr))
+			want = append(want, attr)
+		}
+	}
+
+	got := scene(t, elements...).AnnotationTexts("annot-1")
+
+	for _, id := range want {
+		if _, ok := textByID(got, id); !ok {
+			t.Errorf("%s を拾えていない", id)
+		}
+	}
+	// 囲みの名前ぶんだけ多い。数まで見ないと、余分なものを拾っていても気づけない。
+	if len(got) != len(want)+1 {
+		t.Errorf("抽出した件数 = %d, want %d: %v", len(got), len(want)+1, textIDs(got))
+	}
+}
+
+// 入れ子の frame は辿らない（ADR 0045）。
+//
+// **これは仕様であって取りこぼしではない。** 内側の frame に入れた要素は
+// frameId が内側を指すので、外側の注釈の子には出てこない。境界を frame で
+// 描くテンプレートを作ると、境界の中に書いた文字がまるごとハッシュと解釈から
+// 抜ける。だから境界は矩形で描かせる（containerId 経由なら拾える）。
+//
+// **辿るように変えるならここが落ちる。** 仕様変更なので ADR に記録してから
+// 直す。黙って辿ると、ユーザーが自分の用途で注釈の中に置いた frame の中身まで
+// 入力に混ざる。
+func TestAnnotationTexts_DoesNotFollowNestedFrames(t *testing.T) {
+	t.Parallel()
+
+	innerFrame := `{"id":"inner","type":"frame","name":"外部サービス","frameId":"annot-1"}`
+	insideInner := `{"id":"t9","type":"text","text":"Stripe","frameId":"inner"}`
+
+	got := scene(t, annotFrame, childText, innerFrame, insideInner).AnnotationTexts("annot-1")
+
+	if _, ok := textByID(got, "t9"); ok {
+		t.Error("入れ子の frame の中身を拾っている（仕様と異なる）")
+	}
+	// 1 段目まではこれまでどおり拾う。入れ子があるだけで抽出が止まらないこと。
+	if _, ok := textByID(got, "t1"); !ok {
+		t.Error("直接の子まで拾えなくなっている")
+	}
+}
+
+// 種別を変えるとハッシュが変わる（シーン経由でも同じ）。
+func TestAnnotationHash_KindMatters(t *testing.T) {
+	t.Parallel()
+
+	unspecified := scene(t, annotFrame, childText)
+	sequence := scene(t,
+		`{"id":"annot-1","type":"frame","name":"決済まわり",
+		  "customData":{"etoki":{"granularity":"epic","kind":"sequence"}}}`,
+		childText)
+
+	if unspecified.AnnotationHash(unspecified.Annotations()[0]) ==
+		sequence.AnnotationHash(sequence.Annotations()[0]) {
+		t.Error("種別を変えてもハッシュが変わらない")
+	}
+}
+
 func TestAnnotationHash(t *testing.T) {
 	t.Parallel()
 

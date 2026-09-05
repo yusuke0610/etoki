@@ -11,7 +11,7 @@ boards.scene （SQLite に保存された Excalidraw シーン JSON）
    ↓ domain.ParseScene
 Scene.Annotations()           … customData.etoki を持つ frame 要素
    ↓ Scene.AnnotationTexts(id)  … frameId と containerId の両方を辿る
-   ↓ domain.ComputeContentHash  … 正規化して SHA-256
+   ↓ domain.ComputeContentHash  … 正規化して SHA-256（粒度と図の種別も入力）
 現在のハッシュ
    ↕ 比較（domain.DecideState）
 sync_runs の最新 run の content_hash
@@ -24,9 +24,21 @@ UI は未保存の変更があることを表示する。
 
 押さえるべき点:
 
-- **`content_hash` の入力はテキストのみ。** 図形・矢印・座標だけの変更は検知
-  しない。これは仕様であり、`TestComputeContentHash_IgnoresNonTextChanges` で
-  固定してある。善意で「直さない」こと。
+- **`content_hash` の入力はテキストと注釈のメタデータ。** 図形・矢印・座標だけの
+  変更は検知しない。これは仕様であり、`TestComputeContentHash_IgnoresNonTextChanges`
+  で固定してある。善意で「直さない」こと。メタデータは粒度と図の種別
+  （ADR 0045）の 2 つで、どちらも解釈のプロンプトに載るので、変えたら
+  「変更あり」になる必要がある。
+  - **指定なしでも入力に書く**（ADR 0045）。書かない形にすれば種別を持つ前の
+    値と一致させられるが、算出の入力が種別の有無で分岐する。一度きりの移行の
+    ために恒久的な分岐を抱えない、という判断。**代償は移行時に一度だけ払う**
+    （既存の `created` な注釈が一斉に `changed` に見える）。中身は変わって
+    いないので、更新するかどうかは開発者が選ぶ。
+- **`Scene.AnnotationTexts` は入れ子の frame を辿らない**（ADR 0045）。内側の
+  frame に入れた要素は `frameId` が内側を指すので、外側の注釈の子には出て
+  こない。仕様として `TestAnnotationTexts_DoesNotFollowNestedFrames` が固定して
+  ある。辿るように変えるなら ADR に記録してから直す。黙って辿ると、ユーザーが
+  自分の用途で注釈の中に置いた frame の中身まで入力に混ざる。
 - **フロントの「未保存」判定（`web/src/excalidraw/dirty.ts`）は別物。** 保存は
   シーン全体を書くので、図形を動かしただけでも未保存にする。`content_hash` に
   揃えると、保存すべき変更を取りこぼす。
@@ -57,11 +69,16 @@ UI は未保存の変更があることを表示する。
     （ADR 0018）のとは非対称だが、副作用の有無から出る違いであって手抜きでは
     ない。
   - **どの mermaid 記法で書かせるかはサーバーが決める。** 語彙（`domain.DiagramKind`
-    の 5 種）は #52 と共有し、記法は `diagramNotations` が持つ。**選ぶ基準は
-    「mermaid で書けるか」ではなく「Excalidraw の要素として置けるか」**で、
-    `mindmap` と `architecture-beta` は変換器が画像 1 枚にしてしまうので使わない
-    （ADR 0040）。**指示と検査（先頭に来る語）は同じ表から出す。** 片方だけ直すと、
-    頼んだとおりに書いた出力を弾く。
+    の 5 種）はブレストの出発点になるひな形（ADR 0045）と共有し、記法は
+    `diagramNotations` が持つ。**選ぶ基準は「mermaid で書けるか」ではなく
+    「Excalidraw の要素として置けるか」**で、`mindmap` と `architecture-beta` は
+    変換器が画像 1 枚にしてしまうので使わない（ADR 0040）。**指示と検査
+    （先頭に来る語）は同じ表から出す。** 片方だけ直すと、頼んだとおりに書いた
+    出力を弾く。
+  - **解釈のときの指示（`usecase.diagramReadings`）とは別の表。** あちらは
+    「どう読ませるか」、こちらは「どう描かせるか」で、答えている問いが違う。
+    まとめると、mermaid の記法の話が解釈のプロンプトに混ざる。共有するのは
+    語彙だけ。
   - **mermaid の構文は検証しない。** 本当に要るのは「置けるか」で、それを知って
     いるのは変換器だけ。サーバーが見るのは、何も返さなかったことと、頼んだのと
     違う記法で書いたことの 2 つだけ。構文エラーでの投げ直しはフロントが会話の

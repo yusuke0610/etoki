@@ -851,6 +851,41 @@ func TestListAnnotations_Uncreated(t *testing.T) {
 	if _, ok := got[0]["lastSyncedAt"]; ok {
 		t.Error("未実行なのに lastSyncedAt が入っている")
 	}
+	// テンプレートから始めていない注釈には種別が無い。**空文字を載せない。**
+	// 載せると DiagramKind の enum に無い値が契約の外から出る。
+	if _, ok := got[0]["kind"]; ok {
+		t.Errorf("種別を選んでいないのに kind が入っている: %v", got[0]["kind"])
+	}
+}
+
+// テンプレートから始めた注釈は、選んだ種別が一覧にも出る。
+//
+// **出ないと画面が種別を見せられない。** 種別はハッシュの入力でもあるので、
+// 何の図として解釈されるかを開発者が確かめられる必要がある（中核思想 3）。
+func TestListAnnotations_ReturnsKind(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "ボード")
+
+	scene := `{"type":"excalidraw","elements":[
+		{"id":"annot-1","type":"frame","name":"決済まわり",
+		 "customData":{"etoki":{"granularity":"","kind":"sequence"}}},
+		{"id":"t1","type":"text","text":"注文する","frameId":"annot-1"}]}`
+	if rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		saveSceneBody(scene, fixedTime)); rec.Code != http.StatusOK {
+		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
+	}
+
+	got := decode[[]map[string]any](t,
+		do(t, r, http.MethodGet, "/api/boards/"+id+"/annotations", nil))
+
+	if len(got) != 1 {
+		t.Fatalf("注釈の件数 = %d, want 1 (%+v)", len(got), got)
+	}
+	if got[0]["kind"] != "sequence" {
+		t.Errorf("kind = %v, want sequence", got[0]["kind"])
+	}
 }
 
 // 実行記録があってハッシュが一致すれば created、ボードを変えれば changed。

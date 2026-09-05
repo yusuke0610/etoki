@@ -2,6 +2,7 @@ import type {
   AnnotationStatus,
   BoardDetail,
   CreatedRun,
+  DiagramKind,
   DiagramDraft,
   Interpretation,
   Project,
@@ -70,7 +71,7 @@ const ELEMENT_BASE = {
  * `name` に null を渡せるのは、Excalidraw が作る frame の既定がそれだから
  * （ADR 0022）。名前なしの見え方は既定の再現でしか確かめられない。
  */
-function annotationFrame(id: string, name: string | null, x: number) {
+function annotationFrame(id: string, name: string | null, x: number, kind?: DiagramKind) {
   return {
     ...ELEMENT_BASE,
     id,
@@ -83,7 +84,10 @@ function annotationFrame(id: string, name: string | null, x: number) {
     frameId: null,
     // これがあって初めて注釈になる。frame 単体を条件にすると、ブレスト中に
     // 使った frame まで注釈と誤認する。
-    customData: { etoki: { granularity: "" } },
+    //
+    // `kind` はひな形から始めた囲みだけが持つ。**キーごと省く。** 空文字を
+    // 置くと `DiagramKind` に無い値がシーンに載り、実物と違う形になる。
+    customData: { etoki: { granularity: "", ...(kind ? { kind } : {}) } },
   };
 }
 
@@ -139,7 +143,9 @@ function statesScene(): string {
   return sceneOf([
     annotationFrame(ANNOTATION_IDS.uncreated, "ログイン", 0),
     annotationFrame(ANNOTATION_IDS.created, "パスワード再設定", 600),
-    annotationFrame(ANNOTATION_IDS.changed, "セッション管理", 1200),
+    // 1 つだけひな形から始めた囲みにしてある。種別を出す約束は、種別のある
+    // 囲みと無い囲みが並んだ状態でしか確かめられない。
+    annotationFrame(ANNOTATION_IDS.changed, "セッション管理", 1200, "sequence"),
   ]);
 }
 
@@ -311,6 +317,9 @@ export function annotations(): AnnotationStatus[] {
       id: ANNOTATION_IDS.changed,
       name: "セッション管理",
       granularity: "issue",
+      // シーン側の customData と揃える。片方だけ持たせると、画面が読む値と
+      // 保存されている値が食い違ったモックになる。
+      kind: "sequence",
       state: "changed",
       lastSyncedAt: "2026-08-03T12:00:00Z",
       items: [

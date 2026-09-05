@@ -55,15 +55,22 @@ type TextElement struct {
 const (
 	unitSep   = 0x1F // 要素 ID とテキストの区切り
 	recordSep = 0x1E // 要素と要素の区切り
-	groupSep  = 0x1D // 要素列と粒度指定の区切り
+	groupSep  = 0x1D // 要素列と粒度指定、粒度指定と図の種別の区切り
 )
 
-// ComputeContentHash は注釈範囲のテキスト要素と粒度指定からハッシュを算出する。
+// ComputeContentHash は注釈範囲のテキスト要素と、粒度指定・図の種別から
+// ハッシュを算出する。
 //
 // 算出対象はテキストのみである。図形・矢印・座標の変更は検知しない。これは
 // 既知の限界であり、仕様として受け入れている。開発者はいつでも手動で再実行
 // できるため、検知漏れが取り返しのつかない状態にはならない。
-func ComputeContentHash(elements []TextElement, g Granularity) ContentHash {
+//
+// **粒度と種別は図形ではなくメタデータなので、テキストと同じ入力に含める。**
+// どちらも解釈のプロンプトに載る（granularityInstruction / kindInstruction）
+// ので、変えれば LLM が読む前提が変わる。含めないと、種別を差し替えても
+// created のままになり、前の種別で作った draft issue が最新であるかのように
+// 見える。
+func ComputeContentHash(elements []TextElement, g Granularity, k DiagramKind) ContentHash {
 	// 呼び出し側のスライスを並べ替えないよう複製する。
 	sorted := slices.Clone(elements)
 	slices.SortStableFunc(sorted, func(a, b TextElement) int {
@@ -79,6 +86,17 @@ func ComputeContentHash(elements []TextElement, g Granularity) ContentHash {
 	}
 	h.Write([]byte{groupSep})
 	h.Write([]byte(g))
+
+	// **区切りを挟む。** 詰めて書くと、粒度と種別の境目が動いただけの別の
+	// 組み合わせ（"e" + "pic" と "epic" + 指定なし）が同じ入力になる。
+	//
+	// **指定なしでも書く。** 書かない形にすれば種別を持つ前の値と一致させられる
+	// が、算出の入力が種別の有無で分岐することになる。分岐は「なぜここだけ
+	// 特別なのか」を知らないと消せない形で残るので、一度きりの移行のために
+	// 恒久的な分岐を抱えない（ADR 0045）。移行の代償は、既存の created な注釈が
+	// 一度だけ changed に見えることで、再実行すれば揃う。
+	h.Write([]byte{groupSep})
+	h.Write([]byte(k))
 
 	return ContentHash(hex.EncodeToString(h.Sum(nil)))
 }
