@@ -55,22 +55,31 @@ direnv allow
 エンドポイントだけが「設定されていない」と返し、ボードの編集と注釈の状態表示は
 そのまま使えます。ブレストだけ先にやる、という使い方を潰さないためです。
 
-| 変数                             | 既定値                      | 用途                                                         |
-| -------------------------------- | --------------------------- | ------------------------------------------------------------ |
-| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                             |
-| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す   |
-| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                        |
-| `ETOKI_WEB_DIR`                  | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない |
-| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント                                         |
-| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                    |
-| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                    |
-| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない              |
-| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する        |
-| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                             |
-| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）            |
-| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む             |
-| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                   |
-| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                     |
+| 変数                             | 既定値                      | 用途                                                             |
+| -------------------------------- | --------------------------- | ---------------------------------------------------------------- |
+| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                                 |
+| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す       |
+| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                            |
+| `ETOKI_WEB_DIR`                  | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない     |
+| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント                                             |
+| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                        |
+| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                        |
+| `ETOKI_LLM_MAX_CONCURRENT`       | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                       |
+| `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい |
+| `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）         |
+| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                  |
+| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する            |
+| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                 |
+| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                |
+| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                 |
+| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                       |
+| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                         |
+
+解釈と図のドラフト生成は LLM を叩くので課金を伴います。**上限は利用者ごとに
+効き、2 つで 1 つの枠を共有します**（ADR 0044）。既定で効くのは同時実行だけで、
+回数の上限は `ETOKI_LLM_RATE_LIMIT` を設定したときだけ効きます。妥当な回数は
+料金プランと使い方で決まる値なので、etoki は既定を決めません。上限に当たると
+429 が返り、そのとき LLM は 1 回も呼ばれていません。
 
 認証は既定では持ちません。GitHub App を設定するとログインを要求します（後述）。
 どちらの構成でも、許可していない Host / Origin を持つブラウザからのリクエストは
