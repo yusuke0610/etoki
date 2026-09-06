@@ -24,6 +24,8 @@ export type SceneElement = {
   y?: number;
   width?: number;
   height?: number;
+  /** テキスト要素の内容。保存すべき変更の判定に使う（dirty.ts）。 */
+  text?: string;
   /** Excalidraw が中身を変えるたびに上げる番号。未保存の判定に使う（dirty.ts）。 */
   version?: number;
   /** 画像の実体を files から引く ID。未保存の判定にも使う（dirty.ts）。 */

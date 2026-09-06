@@ -5,6 +5,7 @@ import {
   describeFailure,
   ERROR_MESSAGES,
   partialCreationFailure,
+  sceneFileUnreadableFailure,
   sceneUnreadableFailure,
 } from "./errorMessage";
 
@@ -75,6 +76,14 @@ describe("code を持たない失敗", () => {
     const failure = sceneUnreadableFailure();
 
     expect(failure.message).toContain("空のボードとして開きます");
+    expect(failure.detail).toBe("");
+  });
+
+  it("取り込むファイルが読めないときは、キャンバスの状態と次の打ち手を言う", () => {
+    const failure = sceneFileUnreadableFailure();
+
+    expect(failure.message).toContain("キャンバスはそのままです");
+    expect(failure.message).toContain("別の .excalidraw ファイルを選んでください");
     expect(failure.detail).toBe("");
   });
 

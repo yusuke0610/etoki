@@ -153,7 +153,7 @@ export function sceneUnreadableFailure(): Failure {
 export function sceneFileUnreadableFailure(): Failure {
   return {
     message:
-      "このファイルは Excalidraw のシーンとして読めませんでした。キャンバスはそのままです。",
+      "このファイルは Excalidraw のシーンとして読めませんでした。キャンバスはそのままです。別の .excalidraw ファイルを選んでください。",
     detail: "",
   };
 }

@@ -78,6 +78,47 @@ function importedFile(
   });
 }
 
+/** 同じ id / version のまま位置だけが違う取り込みを作る。 */
+function rectangleFile(x: number): string {
+  return JSON.stringify({
+    type: "excalidraw",
+    version: 2,
+    source: "e2e",
+    elements: [
+      {
+        id: "rectangle-imported",
+        type: "rectangle",
+        x,
+        y: 20,
+        width: 100,
+        height: 80,
+        angle: 0,
+        strokeColor: "#1e1e1e",
+        backgroundColor: "transparent",
+        fillStyle: "solid",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        roughness: 1,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: null,
+        seed: 1,
+        version: 1,
+        versionNonce: 1,
+        isDeleted: false,
+        boundElements: null,
+        updated: 1,
+        link: null,
+        locked: false,
+        index: null,
+      },
+    ],
+    appState: { viewBackgroundColor: "#ffffff" },
+    files: {},
+  });
+}
+
 /** ファイルを選ぶ。入力は隠してあるので、ボタンではなく入力に直接渡す。 */
 async function chooseFile(page: Page, content: string): Promise<void> {
   await page.getByLabel("取り込む .excalidraw ファイル").setInputFiles({
@@ -212,6 +253,21 @@ test.describe("取り込み", () => {
     // 保存に送る大きさも数え直す。**据え置くと、上限に当たるファイルを
     // 取り込んでも押す前には分からない**（ADR 0038 の見せ方が効かなくなる）。
     await expect(page.locator(".badge-size")).not.toHaveText(size);
+  });
+
+  test("同じ id と version の要素でも位置が違えば未保存になる", async ({ page }) => {
+    const mock = baseMock();
+    const detail = mock.details[BOARD_ID];
+    if (detail === undefined) throw new Error("テスト用のボードが無い");
+    mock.details[BOARD_ID] = { ...detail, scene: rectangleFile(20) };
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    await chooseFile(page, rectangleFile(120));
+
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 
   // **持ち出して戻せることが #42 の要点。** 片道ずつ通っていても、往復で
@@ -378,6 +434,9 @@ test.describe("取り込み", () => {
 
     await expect(page.locator(".error-message")).toContainText(
       "Excalidraw のシーンとして読めませんでした",
+    );
+    await expect(page.locator(".error-message")).toContainText(
+      "別の .excalidraw ファイルを選んでください",
     );
     await expect(annotationFrames(page)).toHaveCount(3);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();

@@ -36,6 +36,18 @@ describe("sceneSignature", () => {
     );
   });
 
+  it("id と version が同じでも位置が変わると署名が変わる", () => {
+    expect(sceneSignature([el({ x: 120 })], WHITE)).not.toBe(
+      sceneSignature([el({ x: 0 })], WHITE),
+    );
+  });
+
+  it("id と version が同じでもテキストが変わると署名が変わる", () => {
+    expect(sceneSignature([el({ text: "取り込み後" })], WHITE)).not.toBe(
+      sceneSignature([el({ text: "取り込み前" })], WHITE),
+    );
+  });
+
   // 画像の実体は files に分かれている。取り込み時に別データとの衝突を避けて
   // fileId だけを振り直した場合も、保存すべき変更として残らなければならない。
   it("画像の fileId が変わると署名が変わる", () => {
@@ -48,6 +60,12 @@ describe("sceneSignature", () => {
   it("要素が増えると署名が変わる", () => {
     expect(sceneSignature([el({ id: "a" }), el({ id: "b" })], WHITE)).not.toBe(
       sceneSignature([el({ id: "a" })], WHITE),
+    );
+  });
+
+  it("要素の順序が変わると署名が変わる", () => {
+    expect(sceneSignature([el({ id: "b" }), el({ id: "a" })], WHITE)).not.toBe(
+      sceneSignature([el({ id: "a" }), el({ id: "b" })], WHITE),
     );
   });
 
