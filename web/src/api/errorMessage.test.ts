@@ -107,6 +107,12 @@ describe("ERROR_MESSAGES", () => {
     expect(ERROR_MESSAGES.scene_too_large).toContain("画像");
   });
 
+  // 429 の 2 つ。片方は待つ長さの話、もう片方は「もう 1 つ走っている」話で、
+  // 次にすることが違う（ADR 0044）。畳むと画面はどちらとも言えない。
+  it("実行の上限の 2 つは別々の文言を持つ", () => {
+    expect(ERROR_MESSAGES.rate_limited).not.toBe(ERROR_MESSAGES.concurrency_limited);
+  });
+
   // 設定するものが違うので畳まない。畳むと「何を設定すればよいか」を言えない。
   it("未設定の 4 つは別々の文言を持つ", () => {
     const messages = [

@@ -30,6 +30,19 @@ const (
 	DefaultParentFieldName = usecase.DefaultParentFieldName
 )
 
+// LLMLimits は LLM を叩く実行の上限（ADR 0044）。
+//
+// 実体はユースケース層の型。別名で公開しているのは、cmd/etoki を写して独自の
+// main を書く利用者が internal/ を import できないため（ADR 0001）。
+type LLMLimits = usecase.LLMLimits
+
+// 実行の上限の既定値。**回数の上限には既定値が無い。** 未設定なら無制限で、
+// 妥当な値は料金プランと使い方という外の世界の値で決まる（ADR 0044）。
+const (
+	DefaultLLMMaxConcurrent = usecase.DefaultLLMMaxConcurrent
+	DefaultLLMRateWindow    = usecase.DefaultLLMRateWindow
+)
+
 // DefaultAddr は Options.Addr が空のときに使うリッスンアドレス。
 //
 // etoki は単一ユーザーがローカルで動かすツールであり認証機構を持たない。
@@ -100,6 +113,14 @@ type Options struct {
 	// Logger はリクエストとエラーの記録先。nil なら slog の既定を使う。
 	Logger *slog.Logger
 
+	// LLMLimits は LLM を叩く実行の上限（ADR 0044）。任意。
+	//
+	// 解釈と図のドラフト生成で 1 つの枠を共有し、利用者ごとに数える。
+	// MaxConcurrent の 0 は既定（DefaultLLMMaxConcurrent）、RateLimit の 0 は
+	// 無制限。**矛盾した設定はここで落とす。** 負の値と、上限を伴わない窓が
+	// 該当する。黙って受けると、設定したつもりの上限が外れる。
+	LLMLimits LLMLimits
+
 	// AllowedOrigins はループバック以外に追加で許すオリジン。任意。
 	//
 	// ブラウザ由来の cross-site リクエストは既定で弾く。ループバックは常に
@@ -158,9 +179,17 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 
+	if err := validateLLMLimits(opts.LLMLimits); err != nil {
+		return nil, err
+	}
+
 	// 作成先の固定を守るには、固定を判定する側と、判定の前提を崩す側とが
 	// 同じ排他を見ている必要がある（usecase.BoardLocks）。
 	locks := usecase.NewBoardLocks()
+
+	// 解釈と図のドラフト生成は同じ枠で数える。どちらも同じ鍵で同じモデルを
+	// 叩くので、片方だけ絞ると抜け道が残る（ADR 0044）。
+	llmLimiter := usecase.NewLLMLimiter(opts.LLMLimits)
 
 	deps := httpapi.Deps{
 		Boards:      usecase.NewBoardService(opts.Boards, opts.Mappings, locks),
@@ -187,11 +216,11 @@ func New(opts Options) (*Server, error) {
 		// ロガーも渡す。解釈は課金を伴う外部呼び出しなので、呼んだ実績は
 		// リクエストログと同じ行き先に残す（ADR 0031）。
 		deps.Interpretations = usecase.NewInterpretationService(
-			opts.Boards, opts.Mappings, opts.LLM, usecase.WithLogger(opts.Logger))
+			opts.Boards, opts.Mappings, opts.LLM, llmLimiter, usecase.WithLogger(opts.Logger))
 		// 図のドラフト生成。**Mappings は渡さない。** 入力はプロンプトだけで、
 		// 保存済みシーンも前回作ったものも読まない（ADR 0041）。
 		deps.Diagrams = usecase.NewDiagramService(
-			opts.Boards, opts.LLM, usecase.WithDiagramLogger(opts.Logger))
+			opts.Boards, opts.LLM, llmLimiter, usecase.WithDiagramLogger(opts.Logger))
 	}
 	// 作成先はボードごとに持つので、ここで要るのは GitHub クライアントだけ
 	// （ADR 0014）。未選択のボードは作成の手前で 422 として止まる。
@@ -206,6 +235,32 @@ func New(opts Options) (*Server, error) {
 	handler := httpapi.NewRouter(deps)
 
 	return &Server{addr: addr, handler: handler}, nil
+}
+
+// validateLLMLimits は実行の上限の設定を見る。
+//
+// **0 を「無制限」と読ませない**（ADR 0044）。未設定（既定 1）と 0（無制限）で
+// 意味が逆向きになるため、設定するなら 1 以上を要求する。無制限にしたい人は
+// 指定しないか、大きい数を書く。
+//
+// **窓だけの設定も落とす。** 回数の上限が無ければ窓は効かないので、受けると
+// 設定したつもりの上限が黙って外れる（中核思想 3）。
+func validateLLMLimits(l LLMLimits) error {
+	if l.MaxConcurrent < 0 {
+		return fmt.Errorf("etoki: LLMLimits.MaxConcurrent must be at least 1, got %d",
+			l.MaxConcurrent)
+	}
+	if l.RateLimit < 0 {
+		return fmt.Errorf("etoki: LLMLimits.RateLimit must be at least 1, got %d", l.RateLimit)
+	}
+	if l.RateWindow < 0 {
+		return fmt.Errorf("etoki: LLMLimits.RateWindow must be positive, got %s", l.RateWindow)
+	}
+	if l.RateWindow > 0 && l.RateLimit == 0 {
+		return errors.New("etoki: LLMLimits.RateWindow needs RateLimit; " +
+			"a window without a limit has no effect")
+	}
+	return nil
 }
 
 // Addr はリッスンアドレスを返す。

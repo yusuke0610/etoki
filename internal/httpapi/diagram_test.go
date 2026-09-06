@@ -39,7 +39,7 @@ func newDiagramRouter(t *testing.T, llm port.LLMClient) *gin.Engine {
 		Annotations: usecase.NewAnnotationService(boards, mappings),
 	}
 	if llm != nil {
-		deps.Diagrams = usecase.NewDiagramService(boards, llm,
+		deps.Diagrams = usecase.NewDiagramService(boards, llm, newLimiter(),
 			usecase.WithDiagramMaxAttempts(2))
 	}
 

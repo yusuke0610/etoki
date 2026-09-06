@@ -32,6 +32,7 @@ const (
 const (
 	ErrorCodeAlreadyMember        ErrorCode = "already_member"
 	ErrorCodeAuthNotConfigured    ErrorCode = "auth_not_configured"
+	ErrorCodeConcurrencyLimited   ErrorCode = "concurrency_limited"
 	ErrorCodeContentHashMismatch  ErrorCode = "content_hash_mismatch"
 	ErrorCodeCreationIncomplete   ErrorCode = "creation_incomplete"
 	ErrorCodeCrossSiteRejected    ErrorCode = "cross_site_rejected"
@@ -51,6 +52,7 @@ const (
 	ErrorCodeNotFound             ErrorCode = "not_found"
 	ErrorCodePreviousItemUnknown  ErrorCode = "previous_item_unknown"
 	ErrorCodeProjectFieldMissing  ErrorCode = "project_field_missing"
+	ErrorCodeRateLimited          ErrorCode = "rate_limited"
 	ErrorCodeSceneConflict        ErrorCode = "scene_conflict"
 	ErrorCodeSceneTooLarge        ErrorCode = "scene_too_large"
 	ErrorCodeSharingNotConfigured ErrorCode = "sharing_not_configured"
@@ -806,6 +808,9 @@ type NotFound = ErrorResponse
 
 // SceneTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type SceneTooLarge = ErrorResponse
+
+// TooManyRequests 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type TooManyRequests = ErrorResponse
 
 // Unauthorized 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type Unauthorized = ErrorResponse

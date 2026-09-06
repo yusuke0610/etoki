@@ -37,7 +37,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | ---------------------------------- | ---------------------------------------------------------------------- |
 | `CONTRIBUTING.md`                  | ブランチ・コミット・PR 本文・レビュー対応・CI                          |
 | `.github/pull_request_template.md` | PR 本文の雛形                                                          |
-| `internal/CLAUDE.md`               | 3 状態判定のデータフロー、ハンドラ、メンバーと権限、Origin 検証        |
+| `internal/CLAUDE.md`               | 3 状態判定のデータフロー、メンバーと権限                               |
 | `web/CLAUDE.md`                    | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
 | `.claude/rules/`                   | レビュー由来の落とし穴集（テーマ別。対象ファイルを読むと読み込まれる） |
@@ -70,7 +70,7 @@ make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
 make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
-make lint        # Go / フロントエンド / Markdown / Nix / Actions と整形を検査する
+make lint        # Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest
 make test-e2e    # Playwright（test には含まれない）
@@ -192,7 +192,8 @@ GitHub の形しか差せなくなる。
 - **OAuth を設定したら PAT は無視する。** フォールバックにすると作成の主体が
   リクエストごとに変わり、誰が作ったのか追えなくなる。
 
-ボードのメンバーと権限、Origin 検証は `internal/CLAUDE.md`。
+ボードのメンバーと権限は `internal/CLAUDE.md`。Gin ハンドラの約束と Origin 検証は
+`.claude/rules/http-handlers.md`。
 
 ## ツールチェーン上の非自明な設定
 
@@ -232,6 +233,11 @@ GitHub の形しか差せなくなる。
   増えるのは `document-start` のような様式の指摘だけで、`line-length` は
   prettier の `printWidth` と食い違う。ワークフロー固有の検証（式、
   コンテキスト、`run:` の中のシェル）は actionlint の担当。
+- **`.claude/settings.json` の `Bash(gh api:*)` は読み取りに限定できない。**
+  許可のパターンはコマンドの前方一致なので、`gh api -X POST` も同じ許可に入る。
+  `pr-review` の指摘取得とスレッド解決に要るので入れているが、**書き込みも
+  通す判断**であって、うっかり広いわけではない。JSON にコメントを書けないので
+  ここに置いてある。
 
 ## 貢献の手順
 

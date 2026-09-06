@@ -433,6 +433,34 @@ test.describe("解釈と作成", () => {
     await expect(page.locator("main > .error")).toHaveCount(0);
   });
 
+  // 実行の上限は利用者ごとで、解釈と図の生成が 1 つの枠を共有する（ADR 0044）。
+  // **429 は「設定が足りない」でも「送った内容が悪い」でもない。** 打ち手が
+  // 「時間をおく」なので、そう読める文言を出す。
+  test("実行の上限に当たったら、時間をおけばよいと読める文言を出す", async ({ page }) => {
+    const mock = baseMock();
+    mock.interpret = {
+      status: 429,
+      body: {
+        code: "rate_limited",
+        error: "etoki: llm call rate limit reached: 5 calls within 1h0m0s, limit is 5",
+      },
+    };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+
+    await expect(card.getByText("上限に達しました", { exact: false })).toBeVisible();
+    // 内部文言は前に出さない（#86）。畳んだ側にだけ置く。
+    await expect(
+      card.getByText("llm call rate limit reached", { exact: false }),
+    ).toBeHidden();
+    await expect(page.locator("main > .error")).toHaveCount(0);
+  });
+
   test("解釈時点とシーンが食い違うと、作成は 409 で止まる", async ({ page }) => {
     const mock = baseMock();
     mock.createItems = {

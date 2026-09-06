@@ -47,13 +47,13 @@ func TestRolePermissions(t *testing.T) {
 		}},
 		{"解釈", func(ctx context.Context, boards *fakeBoards) error {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
-			_, err := usecase.NewInterpretationService(boards, &fakeMappings{}, llm).
+			_, err := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, newLimiter()).
 				Interpret(ctx, "board-1", "annot-1", nil)
 			return err
 		}},
 		{"図のドラフト", func(ctx context.Context, boards *fakeBoards) error {
 			llm := &fakeLLM{responses: []string{validMermaid}}
-			_, err := usecase.NewDiagramService(boards, llm).
+			_, err := usecase.NewDiagramService(boards, llm, newLimiter()).
 				Generate(ctx, "board-1", req("段取り"))
 			return err
 		}},

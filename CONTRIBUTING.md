@@ -150,6 +150,11 @@ PR を作ると CodeRabbit のレビューが付く。**作りっぱなしにせ
 規約や仕様と衝突する指摘は直さず、理由をコメントで返す。** レビュアーは事情を
 知らない。どちらにせよ**黙って閉じない。**
 
+**PR を離れる前に 2 つ書く。** 決着した指摘のうち一般化できるものを
+[`.claude/rules/`](.claude/rules/) へ、その PR の件数を
+[`docs/review-findings.md`](docs/review-findings.md) へ。**どちらも同じ場面で書く**
+ので、片方だけ忘れたことに気づける（[ADR 0033](docs/adr/0033-review-derived-rules.md)）。
+
 ## CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が PR ごとに走る。

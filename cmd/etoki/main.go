@@ -12,8 +12,10 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -38,7 +40,9 @@ const envWebDir = "ETOKI_WEB_DIR"
 // defaultDBPath は ETOKI_DB_PATH が未設定のときに使う SQLite ファイル。
 const defaultDBPath = "etoki.db"
 
-const usage = `usage:
+// usage は const ではなく var。実行の上限の既定値（ADR 0044）は数値と
+// time.Duration なので、文字列にするのが定数式にならない。
+var usage = `usage:
   etoki                 サーバーを起動する
   etoki migrate         マイグレーションを適用する
   etoki claim <login>   所有者の無いボードを引き受ける
@@ -52,6 +56,13 @@ environment:
   ETOKI_LLM_BASE_URL    LLM のエンドポイント（既定: ` + llm.DefaultBaseURL + `）
   ETOKI_LLM_API_KEY     LLM の API キー（認証不要なら未設定でよい）
   ETOKI_LLM_MODEL       モデル ID（既定: ` + llm.DefaultModel + `）
+  ETOKI_LLM_MAX_CONCURRENT     1 人が同時に走らせられる解釈・図の生成の数
+                               （既定: ` + strconv.Itoa(etoki.DefaultLLMMaxConcurrent) + `）
+  ETOKI_LLM_RATE_LIMIT         ETOKI_LLM_RATE_WINDOW のあいだに始められる回数
+                               未設定なら無制限。単独で設定してよく、
+                               そのとき窓は既定になる
+  ETOKI_LLM_RATE_WINDOW        回数を数える窓（既定: ` + etoki.DefaultLLMRateWindow.String() + `）
+                               単独では設定できない（回数の上限が要る）
   ETOKI_GITHUB_TOKEN    GitHub のトークン（repo の read と Projects の read/write）
                         認証を設定した場合は使わない
   ETOKI_GITHUB_APP_CLIENT_ID      GitHub App の client ID（設定するとログインを要求する）
@@ -146,6 +157,11 @@ func serve(ctx context.Context) error {
 
 	webDir := os.Getenv(envWebDir)
 
+	limits, err := llmLimits()
+	if err != nil {
+		return err
+	}
+
 	srv, err := etoki.New(etoki.Options{
 		Addr:            os.Getenv("ETOKI_ADDR"),
 		Boards:          boards,
@@ -158,6 +174,7 @@ func serve(ctx context.Context) error {
 		KindFieldName:   os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
 		ParentFieldName: os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
 		Logger:          logger,
+		LLMLimits:       limits,
 		AllowedOrigins:  splitList(os.Getenv("ETOKI_ALLOWED_ORIGINS")),
 	})
 	if err != nil {
@@ -356,6 +373,60 @@ func dbPath() string {
 		return p
 	}
 	return defaultDBPath
+}
+
+// llmLimits は環境変数から実行の上限を組み立てる（ADR 0044）。
+//
+// **未設定と 0 を区別する。** 未設定は「既定のまま」、0 は設定の誤りとして
+// 落とす。0 を無制限と読ませると、未設定（既定 1）と 0（無制限）で意味が
+// 逆向きになる。矛盾の判定そのものは etoki.New が持つので、ここは読み取りだけ。
+func llmLimits() (etoki.LLMLimits, error) {
+	maxConcurrent, err := positiveInt("ETOKI_LLM_MAX_CONCURRENT")
+	if err != nil {
+		return etoki.LLMLimits{}, err
+	}
+	rateLimit, err := positiveInt("ETOKI_LLM_RATE_LIMIT")
+	if err != nil {
+		return etoki.LLMLimits{}, err
+	}
+
+	var window time.Duration
+	if raw := os.Getenv("ETOKI_LLM_RATE_WINDOW"); raw != "" {
+		window, err = time.ParseDuration(raw)
+		if err != nil {
+			return etoki.LLMLimits{}, fmt.Errorf("ETOKI_LLM_RATE_WINDOW: %w", err)
+		}
+		if window <= 0 {
+			return etoki.LLMLimits{}, fmt.Errorf(
+				"ETOKI_LLM_RATE_WINDOW must be positive, got %q", raw)
+		}
+	}
+
+	return etoki.LLMLimits{
+		MaxConcurrent: maxConcurrent,
+		RateLimit:     rateLimit,
+		RateWindow:    window,
+	}, nil
+}
+
+// positiveInt は 1 以上の整数として環境変数を読む。未設定なら 0。
+//
+// **読めない値を既定に倒さない。** 倒すと、設定したつもりの上限が黙って外れる
+// （中核思想 3）。
+func positiveInt(name string) (int, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return 0, nil
+	}
+
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	if n < 1 {
+		return 0, fmt.Errorf("%s must be at least 1, got %q", name, raw)
+	}
+	return n, nil
 }
 
 // splitList はカンマ区切りの環境変数を要素に分ける。空要素は捨てる。
