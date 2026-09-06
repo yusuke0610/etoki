@@ -851,9 +851,10 @@ export function BoardPage({
   }, [api, board.name]);
 
   const fileInput = useRef<HTMLInputElement | null>(null);
-  // 取り込んでいる最中か。**押した時点で弾く**（`placing` と同じ形）。ファイルの
-  // 読み込みは非同期なので、state で覚えると 2 回目がまだ false を読む。
-  const importingFile = useRef(false);
+  // 取り込みと作成のどちらを実行しているか。**押した時点で弾く**（`placing` と
+  // 同じ形）。どちらも非同期なので、state で覚えると同じ tick の次の操作がまだ
+  // false を読み、キャンバスの置き換えと GitHub への作成が並走する。
+  const exclusiveOperation = useRef<"importing" | "creating" | null>(null);
 
   /**
    * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0045）。
@@ -868,8 +869,8 @@ export function BoardPage({
    */
   const importScene = useCallback(
     async (file: File) => {
-      if (!api || saving || importingFile.current) return;
-      importingFile.current = true;
+      if (!api || saving || exclusiveOperation.current !== null) return;
+      exclusiveOperation.current = "importing";
       setImporting(true);
 
       try {
@@ -920,7 +921,7 @@ export function BoardPage({
           api.scrollToContent(imported.elements as never, { fitToContent: true });
         }
       } finally {
-        importingFile.current = false;
+        exclusiveOperation.current = null;
         setImporting(false);
       }
     },
@@ -930,7 +931,7 @@ export function BoardPage({
   const save = useCallback(async () => {
     // disabled は表示の約束。ファイルの読み込み中に直接呼ばれても保存しないよう、
     // 永続化の入口でも同じ排他を確かめる。
-    if (!api || importingFile.current) return;
+    if (!api || exclusiveOperation.current === "importing") return;
 
     setSaving(true);
     try {
@@ -1062,6 +1063,11 @@ export function BoardPage({
    */
   const create = useCallback(
     async (annotationId: string, interpretation: Interpretation) => {
+      // disabled は表示の約束。取り込み中、または別の注釈を作成中に直接呼ばれても
+      // 取り消せない GitHub への作成を並走させない。
+      if (exclusiveOperation.current !== null) return;
+      exclusiveOperation.current = "creating";
+
       const generation = creationGenerations.start(annotationId);
       setCreations((prev) => ({ ...prev, [annotationId]: { status: "running" } }));
 
@@ -1095,6 +1101,8 @@ export function BoardPage({
             failure: describeFailure("作成できませんでした", e),
           },
         }));
+      } finally {
+        exclusiveOperation.current = null;
       }
     },
     [board.id, creationGenerations, refreshAnnotations, runGenerations],
@@ -1584,6 +1592,7 @@ export function BoardPage({
             onLoadRuns={(id) => void loadRuns(id)}
             creations={creations}
             saving={saving}
+            importing={importing}
             onCreate={(id, interpretation) => void create(id, interpretation)}
             canEdit={canEdit}
             projectAccess={projectAccess}

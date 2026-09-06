@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { drawRectangle, openBoard } from "./helpers/board";
+import { holdCreate, installApi } from "./helpers/api";
+import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
 import { ANNOTATION_IDS, BOARD_ID, baseMock } from "./helpers/fixtures";
 
 /**
@@ -155,6 +155,34 @@ test.describe("書き出し", () => {
 });
 
 test.describe("取り込み", () => {
+  test("作成中は、隠した入力へ直接ファイルを渡しても取り込まない", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdCreate(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(card.getByRole("button", { name: "作成中…" })).toBeVisible();
+
+    // 表のボタンだけでなく処理の入口でも排他する。隠した input はテストや
+    // ブラウザの API から直接変更できるので、ボタンの disabled だけでは足りない。
+    await chooseFile(page, importedFile());
+    await expect(annotationFrames(page)).toHaveCount(3);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    release();
+    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+  });
+
   // **載せるだけで、確定させるのは人間の保存操作だけ**（ADR 0045、中核思想 3）。
   test("キャンバスが置き換わり、未保存になる（サーバーには送らない）", async ({
     page,

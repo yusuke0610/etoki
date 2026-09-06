@@ -288,6 +288,54 @@ test.describe("押せない理由が本文として読める", () => {
     await expect(page.getByText("取り込みが終わるまで保存できません")).toBeHidden();
   });
 
+  test("GitHub に作成する：取り込み中のとき", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    const createButton = card.getByRole("button", { name: "GitHub に作成する" });
+    await createButton.waitFor();
+
+    // loadFromBlob が使う FileReader を止め、ファイルを読んでいる状態を作る。
+    await page.evaluate(() => {
+      const readAsText = FileReader.prototype.readAsText;
+      FileReader.prototype.readAsText = function (blob, encoding) {
+        Reflect.set(window, "releaseImport", () => readAsText.call(this, blob, encoding));
+      };
+    });
+    await page.getByLabel("取り込む .excalidraw ファイル").setInputFiles({
+      name: "board.excalidraw",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          type: "excalidraw",
+          version: 2,
+          source: "e2e",
+          elements: [],
+          appState: {},
+          files: {},
+        }),
+      ),
+    });
+
+    await expectBlockedReason(createButton, "取り込みが終わるまで作成できません");
+
+    // disabled は表示の約束。DOM を直接操作されても処理の入口で拒否する。
+    await createButton.evaluate((button: HTMLButtonElement) => {
+      button.disabled = false;
+      button.click();
+    });
+
+    await page.evaluate(() => {
+      const release = Reflect.get(window, "releaseImport") as unknown;
+      if (typeof release === "function") release();
+    });
+    await expect(page.getByText("取り込みが終わるまで作成できません")).toBeHidden();
+    expect(mock.createRequests).toHaveLength(0);
+  });
+
   // 逆向き。作成中は保存させない。**押せない理由を `title` に置くと、この
   // テストが落ちる。** `disabled` なボタンはフォーカスも当たらないので、
   // ホバーできない利用者には届かない。

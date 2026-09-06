@@ -704,4 +704,46 @@ test.describe("スクリーンショット", () => {
     // 止めたまま終わらない。次のテストへ持ち越すものを残さない。
     release();
   });
+
+  test("取り込み中で作成できない状態を撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+
+    // loadFromBlob が使う FileReader を止め、取り込み中の表示を撮れるようにする。
+    await page.evaluate(() => {
+      const readAsText = FileReader.prototype.readAsText;
+      FileReader.prototype.readAsText = function (blob, encoding) {
+        Reflect.set(window, "releaseImport", () => readAsText.call(this, blob, encoding));
+      };
+    });
+    await page.getByLabel("取り込む .excalidraw ファイル").setInputFiles({
+      name: "board.excalidraw",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          type: "excalidraw",
+          version: 2,
+          source: "e2e",
+          elements: [],
+          appState: {},
+          files: {},
+        }),
+      ),
+    });
+
+    await page.getByText("取り込みが終わるまで作成できません").waitFor();
+    await shot(page, "31-create-blocked-while-importing");
+
+    await page.evaluate(() => {
+      const release = Reflect.get(window, "releaseImport") as unknown;
+      if (typeof release === "function") release();
+    });
+  });
 });
