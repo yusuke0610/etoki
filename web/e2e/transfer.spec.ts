@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { drawRectangle, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock } from "./helpers/fixtures";
+import { ANNOTATION_IDS, BOARD_ID, baseMock } from "./helpers/fixtures";
 
 /**
  * ボードの持ち出しと取り込み（#42、ADR 0045）。
@@ -31,6 +31,7 @@ const EXISTING_IMAGE_DATA_URL = IMAGE_DATA_URL.replace(/=+$/, "");
 function importedFile(
   viewBackgroundColor = "#ffffff",
   imageDataURL = IMAGE_DATA_URL,
+  annotationId = "frame-imported",
 ): string {
   return JSON.stringify({
     type: "excalidraw",
@@ -41,7 +42,7 @@ function importedFile(
     // 足りないフィールドはライブラリの復元が埋める。
     elements: [
       {
-        id: "frame-imported",
+        id: annotationId,
         type: "frame",
         x: 0,
         y: 0,
@@ -60,6 +61,7 @@ function importedFile(
         width: 40,
         height: 40,
         fileId: IMAGE_FILE_ID,
+        frameId: annotationId,
         status: "saved",
       },
     ],
@@ -204,6 +206,7 @@ test.describe("取り込み", () => {
       elements: {
         id: string;
         fileId?: string;
+        frameId?: string | null;
         customData?: { etoki?: { granularity?: string } };
       }[];
       appState: { viewBackgroundColor?: string };
@@ -211,10 +214,11 @@ test.describe("取り込み", () => {
     };
 
     expect(scene.appState.viewBackgroundColor).toBe("#ffeb3b");
-    expect(scene.elements.map((el) => el.id)).toEqual([
-      "frame-imported",
-      "image-imported",
-    ]);
+    const annotation = scene.elements.find((el) => el.customData?.etoki !== undefined);
+    const image = scene.elements.find((el) => el.fileId !== undefined);
+    expect(annotation?.id).not.toBe("frame-imported");
+    expect(image?.id).toBe("image-imported");
+    expect(image?.frameId).toBe(annotation?.id);
     // 注釈の指定も同じまま。ここが落ちると、往復するたびに注釈が外れる。
     expect(scene.elements[0]?.customData?.etoki?.granularity).toBe("epic");
 
@@ -251,6 +255,38 @@ test.describe("取り込み", () => {
 
     expect(fileId).not.toBe(IMAGE_FILE_ID);
     expect(scene.files?.[fileId ?? ""]?.dataURL).toBe(IMAGE_DATA_URL);
+  });
+
+  test("同じボードで作成済みの注釈 ID を取り込んでも新しい注釈として保存する", async ({
+    page,
+  }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await chooseFile(
+      page,
+      importedFile("#ffffff", IMAGE_DATA_URL, ANNOTATION_IDS.created),
+    );
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
+      elements: {
+        id: string;
+        type: string;
+        frameId?: string | null;
+        customData?: { etoki?: unknown };
+      }[];
+    };
+    const annotation = saved.elements.find((element) => element.customData?.etoki);
+    const image = saved.elements.find((element) => element.type === "image");
+
+    // board_id は同じなので、ID まで保つと ListStates が既存の sync_runs と
+    // sync_items をこの注釈へ誤結合する。参照も一緒に移して範囲は壊さない。
+    expect(annotation?.id).not.toBe(ANNOTATION_IDS.created);
+    expect(image?.frameId).toBe(annotation?.id);
   });
 
   // 未保存の内容を黙って捨てない（ADR 0021 と同じ形）。

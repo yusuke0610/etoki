@@ -1,6 +1,6 @@
 import { loadFromBlob, serializeAsJSON } from "@excalidraw/excalidraw";
 
-import type { SceneElement } from "./annotation";
+import { isAnnotation, type SceneElement } from "./annotation";
 import type { SceneSource } from "./image";
 
 /**
@@ -125,8 +125,13 @@ export type ImportedFile = {
   [key: string]: unknown;
 };
 
-/** 取り込んだ要素。画像だけが持つ fileId を衝突時に差し替える。 */
-export type ImportedElement = SceneElement & { fileId?: string | null };
+/** 取り込んだ要素。注釈 ID の差し替えで追従させる参照だけ型に出す。 */
+export type ImportedElement = SceneElement & {
+  frameId?: string | null;
+  containerId?: string | null;
+  startBinding?: { elementId: string; [key: string]: unknown } | null;
+  endBinding?: { elementId: string; [key: string]: unknown } | null;
+};
 
 /** 取り込んだシーンのうち、キャンバスに載せるもの。 */
 export type ImportedScene = {
@@ -166,6 +171,70 @@ type ExistingFiles = Record<string, { dataURL?: string }>;
 
 /** 新しい画像 ID を作る。引数に分けて、衝突時の対応を固定値でテストできるようにする。 */
 const newFileId = () => crypto.randomUUID();
+
+/** 新しい要素 ID を作る。注釈の履歴を取り込み先で引き継がないために使う。 */
+const newElementId = () => crypto.randomUUID();
+
+/**
+ * 取り込む注釈を、取り込み先では新しい注釈として扱える ID に移す。
+ *
+ * `.excalidraw` は同じボードへ戻されることもある。そのままの ID で保存すると、
+ * `ListStates` が同じ board_id に残る以前の sync_runs / sync_items を引き当て、
+ * ファイルから来た注釈へ作成済みの状態を誤結合する。注釈を指す要素も同じ写像で
+ * 移し、範囲に含まれる要素との関係は保つ。
+ */
+export function remapImportedAnnotationIds(
+  imported: ImportedScene,
+  createId: () => string = newElementId,
+): ImportedScene {
+  const usedIds = new Set(imported.elements.map((element) => element.id));
+  const annotationIds = new Map<string, string>();
+
+  for (const element of imported.elements) {
+    if (!isAnnotation(element)) continue;
+
+    let nextId = createId();
+    while (usedIds.has(nextId)) nextId = createId();
+    usedIds.add(nextId);
+    annotationIds.set(element.id, nextId);
+  }
+
+  if (annotationIds.size === 0) return imported;
+
+  const elements = imported.elements.map((element) => {
+    const id = annotationIds.get(element.id) ?? element.id;
+    const frameId =
+      element.frameId === null || element.frameId === undefined
+        ? element.frameId
+        : (annotationIds.get(element.frameId) ?? element.frameId);
+    const containerId =
+      element.containerId === null || element.containerId === undefined
+        ? element.containerId
+        : (annotationIds.get(element.containerId) ?? element.containerId);
+    const startBinding = remapBinding(element.startBinding, annotationIds);
+    const endBinding = remapBinding(element.endBinding, annotationIds);
+
+    return {
+      ...element,
+      ...(id === element.id ? {} : { id }),
+      ...(frameId === element.frameId ? {} : { frameId }),
+      ...(containerId === element.containerId ? {} : { containerId }),
+      ...(startBinding === element.startBinding ? {} : { startBinding }),
+      ...(endBinding === element.endBinding ? {} : { endBinding }),
+    };
+  });
+
+  return { ...imported, elements };
+}
+
+function remapBinding(
+  binding: ImportedElement["startBinding"],
+  annotationIds: ReadonlyMap<string, string>,
+): ImportedElement["startBinding"] {
+  if (binding === null || binding === undefined) return binding;
+  const elementId = annotationIds.get(binding.elementId);
+  return elementId === undefined ? binding : { ...binding, elementId };
+}
 
 /**
  * 取り込む画像 ID が別の画像に使われていたら、取り込む側を新しい ID に移す。

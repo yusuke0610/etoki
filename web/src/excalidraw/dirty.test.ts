@@ -36,6 +36,15 @@ describe("sceneSignature", () => {
     );
   });
 
+  // 画像の実体は files に分かれている。取り込み時に別データとの衝突を避けて
+  // fileId だけを振り直した場合も、保存すべき変更として残らなければならない。
+  it("画像の fileId が変わると署名が変わる", () => {
+    const before = [el({ id: "image", type: "image", fileId: "file-before" })];
+    const after = [el({ id: "image", type: "image", fileId: "file-after" })];
+
+    expect(sceneSignature(after, WHITE)).not.toBe(sceneSignature(before, WHITE));
+  });
+
   it("要素が増えると署名が変わる", () => {
     expect(sceneSignature([el({ id: "a" }), el({ id: "b" })], WHITE)).not.toBe(
       sceneSignature([el({ id: "a" })], WHITE),

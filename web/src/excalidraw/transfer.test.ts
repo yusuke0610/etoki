@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   exportFileName,
   readSceneFile,
+  remapImportedAnnotationIds,
   remapImportedFileIds,
   type ImportedScene,
   type LoadFromBlob,
@@ -155,6 +156,63 @@ describe("readSceneFile", () => {
     await expect(readSceneFile(blob, sceneSource(), load)).rejects.toThrow(
       "Invalid file",
     );
+  });
+});
+
+describe("remapImportedAnnotationIds", () => {
+  // 同じボードから書き出したファイルを戻すと board_id まで同じになる。注釈 ID を
+  // 保つと、保存後の ListStates が以前の sync_runs を新しい注釈へ結び付けてしまう。
+  it("注釈 ID とその範囲を指す要素を新しい ID に移す", () => {
+    const imported: ImportedScene = {
+      elements: [
+        {
+          id: "annotation-before",
+          type: "frame",
+          customData: { etoki: { granularity: "epic" } },
+        },
+        { id: "text-in-frame", type: "text", frameId: "annotation-before" },
+        { id: "bound-text", type: "text", containerId: "annotation-before" },
+        {
+          id: "bound-arrow",
+          type: "arrow",
+          startBinding: { elementId: "annotation-before", focus: 0, gap: 1 },
+          endBinding: { elementId: "outside", focus: 0, gap: 1 },
+        },
+        { id: "already-used", type: "rectangle" },
+      ],
+      files: {},
+      viewBackgroundColor: "#ffffff",
+    };
+    const ids = ["annotation-before", "already-used", "annotation-after"];
+
+    const remapped = remapImportedAnnotationIds(imported, () => ids.shift() ?? "unused");
+
+    expect(remapped.elements).toEqual([
+      {
+        id: "annotation-after",
+        type: "frame",
+        customData: { etoki: { granularity: "epic" } },
+      },
+      { id: "text-in-frame", type: "text", frameId: "annotation-after" },
+      { id: "bound-text", type: "text", containerId: "annotation-after" },
+      {
+        id: "bound-arrow",
+        type: "arrow",
+        startBinding: { elementId: "annotation-after", focus: 0, gap: 1 },
+        endBinding: { elementId: "outside", focus: 0, gap: 1 },
+      },
+      { id: "already-used", type: "rectangle" },
+    ]);
+  });
+
+  it("注釈ではない frame の ID は保つ", () => {
+    const imported: ImportedScene = {
+      elements: [{ id: "plain-frame", type: "frame" }],
+      files: {},
+      viewBackgroundColor: "#ffffff",
+    };
+
+    expect(remapImportedAnnotationIds(imported, () => "new-id")).toEqual(imported);
   });
 });
 

@@ -9,6 +9,8 @@ import { ETOKI_NAMESPACE, type SceneElement } from "./annotation";
  *
  * `customData` も含めるのは、注釈の付け外しが etoki 自身による書き換えであり、
  * Excalidraw が `version` を上げるとは限らないため。
+ * 画像の `fileId` も含める。画像の実体は要素とは別の files にあり、取り込み時に
+ * 同じ ID の別画像を避けるため参照だけを振り直すことがあるため。
  *
  * **背景色も含める。** あれは `appState` にあって要素には現れないが、保存は
  * シーン全体（`serializeAsJSON`）を書くので、背景色だけを変えた状態も保存すべき
@@ -32,7 +34,7 @@ export function sceneSignature(
   // 要素ごとの署名。**区切り文字で連結せず、JSON の構造で分ける。** 背景色も
   // 要素の id もファイルから来るので（取り込み、ADR 0045）、`|` や `:` を含む
   // 値を渡されうる。連結すると、違うシーンが同じ署名に化けて未保存が消える。
-  const parts: [string, number, string][] = [];
+  const parts: [string, number, string, string][] = [];
 
   for (const el of elements) {
     if (el.isDeleted) continue;
@@ -40,7 +42,12 @@ export function sceneSignature(
     const meta = el.customData?.[ETOKI_NAMESPACE];
     // メタデータは文字列にしてから入れる。「無い」（undefined）と「null が
     // 載っている」を別物として残すため。JSON.stringify(undefined) は値を落とす。
-    parts.push([el.id, el.version ?? 0, meta === undefined ? "" : JSON.stringify(meta)]);
+    parts.push([
+      el.id,
+      el.version ?? 0,
+      meta === undefined ? "" : JSON.stringify(meta),
+      el.type === "image" ? (el.fileId ?? "") : "",
+    ]);
   }
 
   return JSON.stringify([viewBackgroundColor ?? "", parts]);

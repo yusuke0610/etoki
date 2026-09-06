@@ -43,6 +43,7 @@ import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid
 import {
   exportFileName,
   readSceneFile,
+  remapImportedAnnotationIds,
   remapImportedFileIds,
   sceneJSON,
   type ImportedScene,
@@ -897,6 +898,9 @@ export function BoardPage({
           return;
         }
 
+        // 同じボードへ戻したファイルでも、以前の sync_runs / sync_items を
+        // 引き継がないよう、注釈とそれを指す要素を一緒に新しい ID へ移す。
+        imported = remapImportedAnnotationIds(imported);
         // addFiles は同じ ID のデータを上書きしない。別の画像がすでに同じ ID を
         // 使っていたら、取り込む画像とそれを指す要素を一緒に新しい ID へ移す。
         imported = remapImportedFileIds(imported, api.getFiles());
