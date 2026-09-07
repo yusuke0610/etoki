@@ -158,7 +158,9 @@ UI は未保存の変更があることを表示する。
 - **解釈結果の制約は `domain.Rules` に宣言する**（ADR 0029）。検査を足すなら表にも
   足す。**プロンプトの制約一覧は `domain.InterpretationConstraints()` が組み立てる**
   ので、書き写さない。写すと「指示していない制約で弾く」状態になり、LLM が
-  直しようのない再送を繰り返す。`ValidationError` は `newValidationError` で作り、
+  直しようのない再送を繰り返す。**user 側のメッセージで言い直すのも写しにあたる。**
+  前回ぶんの一覧や粒度のように、その場の材料に添える指示は書いてよいが、制約
+  そのものは `Rules` に任せる。`ValidationError` は `newValidationError` で作り、
   必ずどの制約かを名乗る。**両方向のずれは `TestRules_MatchValidation` が落とす**
   ので、片側だけ足しても緑にはならない。`Rule.Instruction` が空なのは「LLM の
   出力では起こりえない」もの（`previousItemId` だけ）。
