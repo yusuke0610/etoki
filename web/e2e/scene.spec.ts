@@ -52,6 +52,26 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
   });
 
+  // **背景色は要素に現れない。** `appState` にあり、保存はそれを含めてシーン
+  // 全体を書く（ADR 0044）。署名が要素しか見ていないと、色を変えただけの
+  // キャンバスが「未保存ではない」と出て、確認も出ないまま離れられる。
+  // ここは要素が 1 つも変わらない編集なので、`drawRectangle` では代われない。
+  test("キャンバスの背景色を変えると未保存になる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    // 背景色の見本はライブラリのメニューの中にある。**キャンバスは 830px を
+    // 下回るので Excalidraw は携帯向けの並びになり**、見本は左の島ではなく
+    // ここに出る。見本のボタンは色の値そのものを `title` に持つ。
+    await page.locator('[data-testid="main-menu-trigger"]').click();
+    await page.locator(".excalidraw .dropdown-menu button[title='#f5faff']").click();
+
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  });
+
   test("編集すると未保存が出て、保存すると消える", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
