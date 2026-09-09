@@ -37,14 +37,16 @@ paths:
 - **対で意味を持つ列は、CHECK に組み合わせの全象限を書く。** 「理由が NULL なら
   許す」だけだと、裏返しの不整合（結末が `incomplete` なのに理由が無い行）が
   通る。**許す形と禁じる形の両方を式に出す。** 既存行のための「どちらも NULL」を
-  許すなら、それも象限の 1 つとして書く（#117）。**ただし FK で参照される親
-  テーブル（`sync_runs` など）の CHECK を直すテーブル再作成マイグレーションは、
-  `migrate.go` の `applyMigration` が常にトランザクションでラップする現行の
-  runner とは相性が悪い。** `PRAGMA foreign_keys` はトランザクション内では
-  no-op なので `OFF` にできず、`foreign_keys=ON`（`db.go`）のまま親を
-  `DROP TABLE` すると暗黙 DELETE が子テーブルの `ON DELETE CASCADE` を発火させ、
-  履歴（`sync_items` 等）が全件消える。実装するなら runner 側の変更が先で、
-  SQL だけの変更では直せない（#129、未決着のまま）。
+  許すなら、それも象限の 1 つとして書く（#117 / #130）。
+- **子テーブルから `REFERENCES ... ON DELETE CASCADE` されている表を作り直すなら、
+  SQL の先頭行に `-- etoki:rebuild-table` を置く**（ADR 0046）。SQLite は CHECK を
+  後から変えられないのでテーブル再作成が要るが、`PRAGMA foreign_keys` は
+  トランザクション内では no-op なので、既定の適用経路（`applyMigration` が常に
+  1 トランザクションでラップする）では切れない。`foreign_keys=ON`（`db.go`）の
+  まま親を `DROP TABLE` すると暗黙 DELETE が子テーブルの `ON DELETE CASCADE` を
+  発火させ、履歴（`sync_items` 等）が全件消える。印を書き忘れると**エラーには
+  ならず、黙って消える。** 親テーブルを触る作り直しには、子の行が残ることを
+  見るテストを必ず添える（`TestMigrate_RebuildKeepsChildRows`）。
 
 ## 検証の範囲
 
