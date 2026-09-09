@@ -797,7 +797,7 @@ paths:
         比べる相手のテキストがシーンに無く、3 状態も名前も粒度も決まらない。
       responses:
         "200":
-          description: 注釈の状態。0 件でも配列を返す
+          description: 注釈の状態。annotations / detached とも 0 件でも配列を返す
           content:
             application/json:
               schema:

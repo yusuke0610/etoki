@@ -2164,7 +2164,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 注釈の状態。0 件でも配列を返す */
+            /** @description 注釈の状態。annotations / detached とも 0 件でも配列を返す */
             200: {
                 headers: {
                     [name: string]: unknown;

@@ -85,6 +85,12 @@ function excalidrawFontAssets(): Plugin {
           notFound();
           return;
         }
+        // NUL を含むパスは createReadStream が同期で ERR_INVALID_ARG_VALUE を
+        // 投げる。.on("error", notFound) を経ずに落ちるので、ここで弾く。
+        if (rel.includes("\0")) {
+          notFound();
+          return;
+        }
         const file = path.join(excalidrawFonts, rel);
 
         // フォントの外に出るパスは配らない。dev サーバーは開発者の手元の
