@@ -59,16 +59,16 @@ ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web start \
-        test test-go test-web test-e2e lint lint-go lint-web lint-docs lint-fmt \
+        test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
-        codegen codegen-go codegen-web migrate clean
+        codegen codegen-go codegen-web migrate token-report clean
 
 help: ## ターゲット一覧を表示する
 	@echo "使い方: make <target>"
 	@echo
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| sort \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-11s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
 
 setup: ## 依存関係を取得し DB を初期化する
 	go mod download
@@ -106,13 +106,18 @@ build-api:
 build-web:
 	cd $(WEB_DIR) && bun run build
 
-test: test-go test-web ## Go とフロントエンドのテストを実行する
+test: test-go test-web test-scripts ## Go / フロントエンド / scripts のテストを実行する
 
 test-go: ## Go のテストのみ実行する
 	go test ./...
 
 test-web: ## フロントエンドのテストのみ実行する
 	cd $(WEB_DIR) && bun run test
+
+test-scripts: ## scripts/ のテストのみ実行する
+	@# vitest ではなく bun test を使う。scripts/ は web/ の外にあり、web の
+	@# devDependencies（vitest）を前提にできない。bun は devShell に既にある。
+	bun test scripts
 
 test-e2e: ## Playwright で E2E テストを実行する（test には含めない）
 	@# 実行のたびに web/e2e-output/screenshots/ が作り直される。UI を変えたときは
@@ -174,6 +179,11 @@ codegen-web:
 
 migrate: ## マイグレーションを適用する
 	ETOKI_DB_PATH=$(DB_PATH) go run ./cmd/etoki migrate
+
+token-report: ## 直近のセッションのトークン消費の内訳を出す（docs/token-budget.md）
+	@# lint には入れない。読むのは Claude Code が手元に残す transcript で、CI には
+	@# 存在しない。検査ではなく、削る先を決めるための道具（#125）。
+	bun scripts/token-report.ts $(SESSION)
 
 clean: ## 生成物を削除する
 	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
