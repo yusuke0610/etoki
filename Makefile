@@ -183,7 +183,9 @@ migrate: ## マイグレーションを適用する
 token-report: ## 直近のセッションのトークン消費の内訳を出す（docs/token-budget.md）
 	@# lint には入れない。読むのは Claude Code が手元に残す transcript で、CI には
 	@# 存在しない。検査ではなく、削る先を決めるための道具（#125）。
-	bun scripts/token-report.ts $(SESSION)
+	@# SESSION はクォートして 1 個の引数として渡す。transcript のパスは
+	@# ~/.claude/projects/<作業ディレクトリ> の下にあり、空白を含みうる。
+	bun scripts/token-report.ts $(if $(SESSION),"$(SESSION)")
 
 clean: ## 生成物を削除する
 	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output

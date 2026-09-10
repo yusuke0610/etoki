@@ -26,10 +26,11 @@ const fmt = (n: number): string => n.toLocaleString("en-US");
  */
 export const displayWidth = (s: string): number =>
   Array.from(s).reduce(
-    (n, ch) => n + (/[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1),
+    (n, ch) => n + (/[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1),
     0,
   );
 
+/** 見た目の桁で右に詰める。桁を超えたものは切らない。 */
 export const padRight = (s: string, width: number): string =>
   s + " ".repeat(Math.max(0, width - displayWidth(s)));
 
@@ -64,6 +65,21 @@ type Usage = {
 
 type Bucket = { group: string; label: string; chars: number };
 
+export type Summary = {
+  sessionId: string;
+  /** API 呼び出しの回数。レコード数ではなく `message.id` の数。 */
+  calls: number;
+  output: number;
+  created: number;
+  read: number;
+  /** 最後の呼び出しが読んだ context の大きさ。 */
+  lastContext: number;
+  rows: Bucket[];
+  measured: number;
+  instructionFiles: [string, number][];
+  toolResults: { hint: string; chars: number }[];
+};
+
 /** 中身のテキストだけを数える。JSON の構文ぶんは context に載らない。 */
 export function blockChars(content: unknown): number {
   if (typeof content === "string") return countChars(content);
@@ -97,9 +113,8 @@ export function callHint(name: string, input: unknown): string {
   return hint === "" ? name : `${name}: ${hint}`;
 }
 
-function main(): void {
-  const path = findSession(process.argv[2]);
-
+/** transcript の各行から内訳を組み立てる。 */
+export function summarize(lines: Iterable<string>): Summary {
   const buckets = new Map<string, Bucket>();
   const add = (group: string, label: string, chars: number): void => {
     const key = `${group} ${label}`;
@@ -112,11 +127,18 @@ function main(): void {
   const toolNames = new Map<string, string>();
   const toolHints = new Map<string, string>();
   const toolResults: { hint: string; chars: number }[] = [];
-  const totals = { output: 0, created: 0, read: 0, calls: 0 };
+
+  // Claude Code は 1 回の API 応答を、同じ `message.id` を持つ複数の assistant
+  // レコードに割ることがある（本文と道具の呼び出しが別の行になる）。**usage は
+  // どの行にも同じ値が載る**ので、行ごとに足すと呼び出し回数もトークン数も
+  // 水増しになる（実測で 213 行 / 111 応答、合計は約 1.8 倍）。id ごとに 1 回だけ
+  // 数える。**内訳（content block）は行ごとに中身が違うので、そちらは全行から集める。**
+  const usageById = new Map<string, Usage>();
+  let records = 0;
   let lastContext = 0;
   let sessionId = "";
 
-  for (const line of readFileSync(path, "utf8").split("\n")) {
+  for (const line of lines) {
     if (line.trim() === "") continue;
 
     let entry: Record<string, unknown>;
@@ -145,27 +167,46 @@ function main(): void {
       // rendered が context に入る本文そのもの（system-reminder の囲みごと）。
       const rendered = (entry.rendered ?? []) as { content?: string }[];
       const chars = rendered.reduce((n, r) => n + countChars(r.content ?? ""), 0);
-      if (kind !== "instructions") {
-        add("ハーネス", kind, chars);
+
+      // 自動で読まれる規約は 2 つの形で来る。`instructions` がルートの CLAUDE.md、
+      // `nested_memory` が .claude/rules/ とディレクトリごとの CLAUDE.md。
+      // **どちらもリポジトリが握れるぶん。** ハーネスに数えると、#125 で最も
+      // 増えている場所（rules）が「動かせない費用」に見える。
+      if (kind === "instructions") {
+        add("リポジトリ", "規約", chars);
+        for (const file of (attachment.files ?? []) as Record<string, unknown>[]) {
+          const name = String(file.path ?? "?").replace(`${process.cwd()}/`, "");
+          instructionFiles.set(name, countChars(String(file.content ?? "")));
+        }
+        continue;
+      }
+      if (kind === "nested_memory") {
+        add("リポジトリ", "規約", chars);
+        const name = String(
+          attachment.displayPath ??
+            String(attachment.path ?? "?").replace(`${process.cwd()}/`, ""),
+        );
+        instructionFiles.set(name, chars);
         continue;
       }
 
-      add("リポジトリ", "CLAUDE.md 群", chars);
-      for (const file of (attachment.files ?? []) as Record<string, unknown>[]) {
-        const name = String(file.path ?? "?").replace(`${process.cwd()}/`, "");
-        instructionFiles.set(name, countChars(String(file.content ?? "")));
-      }
+      // 触ったファイルの読み直し。ハーネスの通知だが、載る量を決めているのは
+      // こちらのやり方（何をどう編集したか）なので、ツール結果と同じ側に置く。
+      add(kind === "edited_text_file" ? "ツール結果" : "ハーネス", kind, chars);
       continue;
     }
 
     if (entry.type === "assistant") {
       const message = (entry.message ?? {}) as Record<string, unknown>;
       const usage = message.usage as Usage | undefined;
+      records += 1;
       if (usage) {
-        totals.calls += 1;
-        totals.output += usage.output_tokens ?? 0;
-        totals.created += usage.cache_creation_input_tokens ?? 0;
-        totals.read += usage.cache_read_input_tokens ?? 0;
+        // id が無い行は畳まない。畳むと別の応答どうしが 1 つに潰れる。
+        const id =
+          typeof message.id === "string" && message.id !== ""
+            ? message.id
+            : `#${records}`;
+        usageById.set(id, usage);
         lastContext =
           (usage.cache_read_input_tokens ?? 0) +
           (usage.cache_creation_input_tokens ?? 0) +
@@ -207,26 +248,49 @@ function main(): void {
     }
   }
 
+  const totals = { output: 0, created: 0, read: 0 };
+  for (const usage of usageById.values()) {
+    totals.output += usage.output_tokens ?? 0;
+    totals.created += usage.cache_creation_input_tokens ?? 0;
+    totals.read += usage.cache_read_input_tokens ?? 0;
+  }
+
   const rows = [...buckets.values()]
     .filter((r) => r.chars > 0)
     .sort((a, b) => b.chars - a.chars);
-  const measured = rows.reduce((n, r) => n + r.chars, 0);
 
-  console.log(`セッション ${sessionId || "(不明)"}`);
+  return {
+    sessionId,
+    calls: usageById.size,
+    ...totals,
+    lastContext,
+    rows,
+    measured: rows.reduce((n, r) => n + r.chars, 0),
+    instructionFiles: [...instructionFiles].sort((a, b) => b[1] - a[1]),
+    toolResults,
+  };
+}
+
+/** transcript を選び、内訳を組み立てて出す。 */
+function main(): void {
+  const path = findSession(process.argv[2]);
+  const s = summarize(readFileSync(path, "utf8").split("\n"));
+
+  console.log(`セッション ${s.sessionId || "(不明)"}`);
   console.log(`transcript ${path}`);
-  console.log(`API 呼び出し ${fmt(totals.calls)} 回`);
+  console.log(`API 呼び出し ${fmt(s.calls)} 回`);
   console.log("");
 
   console.log("トークン（API が数えたもの）");
-  console.log(`  出力          ${fmt(totals.output).padStart(11)}`);
-  console.log(`  cache 作成    ${fmt(totals.created).padStart(11)}`);
-  console.log(`  cache 読み    ${fmt(totals.read).padStart(11)}  <- context x ターン数`);
-  console.log(`  最終 context  ${fmt(lastContext).padStart(11)}`);
+  console.log(`  出力          ${fmt(s.output).padStart(11)}`);
+  console.log(`  cache 作成    ${fmt(s.created).padStart(11)}`);
+  console.log(`  cache 読み    ${fmt(s.read).padStart(11)}  <- context x ターン数`);
+  console.log(`  最終 context  ${fmt(s.lastContext).padStart(11)}`);
   console.log("");
 
-  console.log(`context に載った文字数（計測できたぶん ${fmt(measured)} 字）`);
-  for (const row of rows) {
-    const share = `${((row.chars / measured) * 100).toFixed(1)}%`;
+  console.log(`context に載った文字数（計測できたぶん ${fmt(s.measured)} 字）`);
+  for (const row of s.rows) {
+    const share = `${((row.chars / s.measured) * 100).toFixed(1)}%`;
     console.log(
       `  ${padRight(row.group, 10)} ${padRight(row.label, 32)} ` +
         `${fmt(row.chars).padStart(8)} ${share.padStart(6)}`,
@@ -235,15 +299,18 @@ function main(): void {
   console.log("  ツール定義は transcript に残らないので計測できていない。");
   console.log("");
 
-  if (instructionFiles.size > 0) {
-    console.log("CLAUDE.md 群の内訳");
-    for (const [name, chars] of [...instructionFiles].sort((a, b) => b[1] - a[1])) {
+  if (s.instructionFiles.length > 0) {
+    // 同じファイルが 1 セッションで何度も差し込まれることがある（読み直し）。
+    // 上の合計は差し込まれた回数ぶん、ここはファイル 1 回ぶんの大きさ。削る先を
+    // 選ぶのに要るのは後者。
+    console.log("規約の内訳（ファイル 1 回ぶんの大きさ）");
+    for (const [name, chars] of s.instructionFiles) {
       console.log(`  ${padRight(name, 44)} ${fmt(chars).padStart(8)}`);
     }
     console.log("");
   }
 
-  const heaviest = [...toolResults].sort((a, b) => b.chars - a.chars).slice(0, 5);
+  const heaviest = [...s.toolResults].sort((a, b) => b.chars - a.chars).slice(0, 5);
   if (heaviest.length > 0) {
     console.log("ツール結果の重い呼び出し（単発の上位）");
     for (const r of heaviest) {
@@ -253,12 +320,12 @@ function main(): void {
   }
 
   // 削減の効き目。context は毎ターン読み直されるので、削った文字は残りターン数ぶん効く。
-  const ratio = measured > 0 ? lastContext / measured : 0;
+  const ratio = s.measured > 0 ? s.lastContext / s.measured : 0;
   console.log("削減の効き目");
   console.log(`  1 字 = 約 ${ratio.toFixed(2)} トークン（計測できたぶんからの概算）`);
   console.log(
-    `  規約を 1,000 字削ると、同じ長さのセッション（${fmt(totals.calls)} 回）で` +
-      ` 約 ${fmt(Math.round(1000 * ratio * totals.calls))} トークン減る`,
+    `  規約を 1,000 字削ると、同じ長さのセッション（${fmt(s.calls)} 回）で` +
+      ` 約 ${fmt(Math.round(1000 * ratio * s.calls))} トークン減る`,
   );
 }
 
