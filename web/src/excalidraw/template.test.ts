@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { diagramKinds } from "../board/diagramLabels";
-import { isAnnotation, type SceneElement } from "./annotation";
+import {
+  ETOKI_NAMESPACE,
+  isAnnotation,
+  markAsAnnotation,
+  type SceneElement,
+} from "./annotation";
 import { BLANK_TEMPLATE, templateElements, templateScene } from "./template";
 
 describe("templateScene", () => {
@@ -54,15 +59,18 @@ describe("templateElements", () => {
   // 気づくのは LLM の出力を見たときになる。
   it("囲めば 1 段で拾える形になっている", () => {
     for (const kind of diagramKinds()) {
-      const elements = templateElements(kind);
+      const wrapped = wrappedTemplate(kind);
+      const annotations = wrapped.filter(isAnnotation);
+      expect(annotations, kind).toHaveLength(1);
+      const annotation = annotations[0]!;
 
-      const texts = elements.filter((el) => el.type === "text");
+      const texts = wrapped.filter((el) => el.type === "text");
       expect(texts.length, kind).toBeGreaterThan(0);
 
-      // frame に入れれば直接の子になる要素の ID。ひな形は frame を作らないので、
-      // ここでは「frame に属していない要素」がそのまま候補になる。
+      // 実際に囲んだ後の注釈の直接の子だけを見る。ひな形そのものから取ると、
+      // frame を持たない全要素が top になり、入れ子の文字を見落としても通る。
       const top = new Set(
-        elements.filter((el) => frameIdOf(el) === null).map((el) => el.id),
+        wrapped.filter((el) => frameIdOf(el) === annotation.id).map((el) => el.id),
       );
 
       const lost = texts.filter((el) => {
@@ -73,6 +81,34 @@ describe("templateElements", () => {
         lost.map((el) => el.id),
         kind,
       ).toEqual([]);
+
+      // 図形のラベルは containerId 経由、ER 図の属性行は frameId 経由で
+      // AnnotationHash と解釈の入力に入る。囲んだ後もどちらも直接の子として
+      // 残ることを、実際の wrapped scene で固定する。
+      const labels = texts.filter((el) => containerIdOf(el) !== null);
+      expect(labels.length, kind).toBeGreaterThan(0);
+      expect(
+        labels.every((el) => {
+          const container = containerIdOf(el);
+          return top.has(el.id) || (container !== null && top.has(container));
+        }),
+        kind,
+      ).toBe(true);
+
+      if (kind === "er") {
+        const attributes = texts.filter((el) =>
+          ["名前", "作成日時"].includes(textOf(el)),
+        );
+        expect(attributes.map(textOf)).toEqual([
+          "名前",
+          "作成日時",
+          "名前",
+          "作成日時",
+          "名前",
+          "作成日時",
+        ]);
+        expect(attributes.every((el) => top.has(el.id))).toBe(true);
+      }
     }
   });
 
@@ -98,4 +134,31 @@ function frameIdOf(el: SceneElement): string | null {
 
 function containerIdOf(el: SceneElement): string | null {
   return (el as unknown as { containerId?: string | null }).containerId ?? null;
+}
+
+function textOf(el: SceneElement): string {
+  return (el as unknown as { text?: string }).text ?? "";
+}
+
+/**
+ * ユーザーが全体を選んで frame で囲み、それを注釈にした直後のシーン。
+ *
+ * Excalidraw は既存の入れ子 frame とその中身を外側の frame へ移さない。
+ * ここでも frame 自体と、すでに frame に属する要素は残す。そのため、ひな形が
+ * 入れ子 frame を作ってしまうと、その中の文字が `lost` に現れる。
+ */
+function wrappedTemplate(kind: ReturnType<typeof diagramKinds>[number]): SceneElement[] {
+  const annotationID = `template-${kind}-annotation`;
+  const frame: SceneElement = {
+    id: annotationID,
+    type: "frame",
+    name: `${kind} template`,
+    customData: { [ETOKI_NAMESPACE]: {} },
+  };
+  const wrapped = templateElements(kind).map((el) => {
+    if (el.type === "frame" || frameIdOf(el) !== null) return el;
+    return { ...el, frameId: annotationID } as SceneElement;
+  });
+
+  return markAsAnnotation([...wrapped, frame], annotationID, "epic");
 }
