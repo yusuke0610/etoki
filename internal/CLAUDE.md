@@ -109,7 +109,7 @@ UI は未保存の変更があることを表示する。
   `usecase.MaxSceneBytes` だけ。** ハンドラの `maxSceneBody` は読み込みの
   歯止めで、当たった側も同じ 413 に写す。ボディの大きさしだいで 400 と 413 に
   割れると、画面が同じ原因を 2 通りに案内することになる。
-  - **上限を導入する前に保存されたボードは、開いた時点で分かる（ADR 0045、
+  - **上限を導入する前に保存されたボードは、開いた時点で分かる（ADR 0046、
     issue #103）。** `BoardDetail.sceneOverLimit` が
     `usecase.SceneExceedsLimit(scene)` の結果をそのまま返す。**返すのは
     真偽値だけで、`MaxSceneBytes` の数値は境界に出さない。** フロントが
@@ -165,7 +165,9 @@ UI は未保存の変更があることを表示する。
 - **解釈結果の制約は `domain.Rules` に宣言する**（ADR 0029）。検査を足すなら表にも
   足す。**プロンプトの制約一覧は `domain.InterpretationConstraints()` が組み立てる**
   ので、書き写さない。写すと「指示していない制約で弾く」状態になり、LLM が
-  直しようのない再送を繰り返す。`ValidationError` は `newValidationError` で作り、
+  直しようのない再送を繰り返す。**user 側のメッセージで言い直すのも写しにあたる。**
+  前回ぶんの一覧や粒度のように、その場の材料に添える指示は書いてよいが、制約
+  そのものは `Rules` に任せる。`ValidationError` は `newValidationError` で作り、
   必ずどの制約かを名乗る。**両方向のずれは `TestRules_MatchValidation` が落とす**
   ので、片側だけ足しても緑にはならない。`Rule.Instruction` が空なのは「LLM の
   出力では起こりえない」もの（`previousItemId` だけ）。
