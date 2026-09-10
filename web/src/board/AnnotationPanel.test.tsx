@@ -32,6 +32,7 @@ function props(): ComponentProps<typeof AnnotationPanel> {
     interpretationUnavailable: null,
     creationUnavailable: null,
     projectLink: null,
+    importing: false,
   };
 }
 

@@ -117,6 +117,8 @@ type Props = {
   creations: Record<string, CreationState>;
   /** 保存中は作成させない。保存が作成の結果を捨てるため。 */
   saving: boolean;
+  /** 取り込み中は作成させない。キャンバスの置き換えと並走させないため。 */
+  importing: boolean;
   onCreate: (annotationId: string, interpretation: Interpretation) => void;
   /**
    * 編集できるか。viewer は false（ADR 0017）。
@@ -178,6 +180,7 @@ export function AnnotationPanel({
   onLoadRuns,
   creations,
   saving,
+  importing,
   onCreate,
   canEdit,
   projectAccess,
@@ -328,7 +331,7 @@ export function AnnotationPanel({
 
                   {/*
                     何の図として読ませるかを選ばせる。**ひな形は絵を置くだけ**
-                    （ADR 0045）で、どこを囲むかも何の図かも人が決めるので、
+                    （ADR 0046）で、どこを囲むかも何の図かも人が決めるので、
                     種別が載る先はここしかない。
 
                     粒度と同じ形（`<select>` + 表を引く）にしてあるのは、
@@ -417,6 +420,7 @@ export function AnnotationPanel({
                       creation={creations[a.id]}
                       stale={stale}
                       saving={saving}
+                      importing={importing}
                       projectAccess={projectAccess}
                       interpretationUnavailable={interpretationUnavailable}
                       creationUnavailable={creationUnavailable}
@@ -449,6 +453,7 @@ type InterpretationSectionProps = {
   /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
   stale: boolean;
   saving: boolean;
+  importing: boolean;
   projectAccess: ProjectAccess;
   /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
   interpretationUnavailable: string | null;
@@ -476,6 +481,7 @@ function InterpretationSection({
   creation,
   stale,
   saving,
+  importing,
   projectAccess,
   interpretationUnavailable,
   creationUnavailable,
@@ -555,6 +561,7 @@ function InterpretationSection({
           result={selected.result}
           creation={creation}
           saving={saving}
+          importing={importing}
           projectAccess={projectAccess}
           creationUnavailable={creationUnavailable}
           previous={previous}
@@ -741,6 +748,7 @@ function CreationSection({
   annotationId,
   state,
   saving,
+  importing,
   reasons,
   projectAccess,
   creationUnavailable,
@@ -750,6 +758,7 @@ function CreationSection({
   annotationId: string;
   state?: CreationState;
   saving: boolean;
+  importing: boolean;
   /** このまま作らせない理由。空なら押させる。 */
   reasons: string[];
   projectAccess: ProjectAccess;
@@ -779,7 +788,9 @@ function CreationSection({
       ? reasons.join(" ")
       : saving
         ? "保存が終わるまで作成できません。"
-        : null;
+        : importing
+          ? "取り込みが終わるまで作成できません。"
+          : null;
 
   // **GitHub が未設定なら、権限より先にこちら。** 未設定の構成では
   // projectAccess は unknown にしかならないので、下の denied では拾えない。
@@ -890,6 +901,7 @@ function InterpretationDraft({
   result,
   creation,
   saving,
+  importing,
   projectAccess,
   creationUnavailable,
   previous,
@@ -901,6 +913,7 @@ function InterpretationDraft({
   result: Interpretation;
   creation?: CreationState;
   saving: boolean;
+  importing: boolean;
   projectAccess: ProjectAccess;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
   creationUnavailable: string | null;
@@ -979,6 +992,7 @@ function InterpretationDraft({
         annotationId={annotationId}
         state={creation}
         saving={saving}
+        importing={importing}
         reasons={reasons}
         projectAccess={projectAccess}
         creationUnavailable={creationUnavailable}
