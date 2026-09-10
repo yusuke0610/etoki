@@ -146,6 +146,20 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+// 認証済み API の応答はキャッシュされない（CWE-525）。同じブラウザ
+// プロファイルで利用者を切り替えても、前の利用者の draft issue の内容が
+// 再利用されない。
+func TestAPIResponses_AreNotCached(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+
+	rec := do(t, r, http.MethodGet, "/api/boards", nil)
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want %q", got, "no-store")
+	}
+}
+
 func TestUnknownRouteReturns404(t *testing.T) {
 	t.Parallel()
 

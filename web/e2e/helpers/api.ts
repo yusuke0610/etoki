@@ -763,6 +763,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
 async function breakList(
   page: Page,
   match: (url: URL) => boolean,
+  body: unknown,
   hold?: Promise<void>,
 ): Promise<void> {
   await page.route(match, async (route) => {
@@ -780,7 +781,7 @@ async function breakList(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([null]),
+      body: JSON.stringify(body),
     });
   });
 }
@@ -790,18 +791,23 @@ async function breakList(
  *
  * `hold` を渡すと、それが解決するまで応答を返さない。ボードを開いて描いた
  * あとで落とす、という順番を作るために使う。
+ *
+ * **応答はトップレベル配列ではなくオブジェクト。** `GET .../annotations` は
+ * `BoardAnnotations`（`annotations` / `detached`）を返すので、壊すのは
+ * `annotations` の要素であって応答そのものの形ではない。
  */
 export function breakAnnotations(page: Page, hold?: Promise<void>): Promise<void> {
   return breakList(
     page,
     (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
+    { annotations: [null], detached: [] },
     hold,
   );
 }
 
 /** ボードの一覧を壊す。キャンバスへ入る前の画面ごと落ちる。 */
 export function breakBoards(page: Page): Promise<void> {
-  return breakList(page, (url) => url.pathname === "/api/boards");
+  return breakList(page, (url) => url.pathname === "/api/boards", [null]);
 }
 
 /**

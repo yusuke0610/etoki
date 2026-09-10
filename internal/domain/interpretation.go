@@ -192,11 +192,11 @@ var Rules = []Rule{
 	{RuleTitleSingleLine, "title に改行を入れないでください。draft issue のタイトルは" +
 		"一覧や通知で 1 行として扱われ、どこで折り返るか（あるいは切られるか）は" +
 		"GitHub 側の都合です。複数行にしたい内容は body に書いてください。"},
-	{RuleTitleLength, fmt.Sprintf("title は %d 文字までです。超えると GitHub が受け付けず、"+
-		"そこまでに作ったものだけが残ります。入りきらない内容は body に移してください。",
-		MaxTitleRunes)},
-	{RuleBodyLength, fmt.Sprintf("body は %d 文字までです。超えると GitHub が受け付けず、"+
-		"そこまでに作ったものだけが残ります。", MaxBodyRunes)},
+	{RuleTitleLength, fmt.Sprintf("title は Unicode コードポイントで %d 個までです。超えると"+
+		"GitHub が受け付けず、そこまでに作ったものだけが残ります。入りきらない内容は body に"+
+		"移してください。", MaxTitleRunes)},
+	{RuleBodyLength, fmt.Sprintf("body は Unicode コードポイントで %d 個までです。超えると"+
+		"GitHub が受け付けず、そこまでに作ったものだけが残ります。", MaxBodyRunes)},
 	{RuleEpicTitleUnique, "epic の title は出力の中で一意にしてください。子は親の epic を" +
 		"タイトルで指すため、同じタイトルの epic が 2 つあると、どちらの配下なのか区別が" +
 		"付かなくなります。**空白の違いだけでは別のタイトルになりません。** " +
@@ -493,12 +493,12 @@ func validateItems(items []InterpretedItem) ValidationErrors {
 		// GitHub に届くのより短い値で判定することになる。
 		if n := utf8.RuneCountInString(it.Title); n > MaxTitleRunes {
 			errs = append(errs, newValidationError(RuleTitleLength, field("title"), fmt.Sprintf(
-				"title が %d 文字あります。GitHub 側の上限は %d 文字です。"+
+				"title が Unicode コードポイントで %d 個あります。GitHub 側の上限は %d 個です。"+
 					"入りきらない内容は body に移してください", n, MaxTitleRunes)))
 		}
 		if n := utf8.RuneCountInString(it.Body); n > MaxBodyRunes {
 			errs = append(errs, newValidationError(RuleBodyLength, field("body"), fmt.Sprintf(
-				"body が %d 文字あります。GitHub 側の上限は %d 文字です", n, MaxBodyRunes)))
+				"body が Unicode コードポイントで %d 個あります。GitHub 側の上限は %d 個です", n, MaxBodyRunes)))
 		}
 
 		if it.LocalID == "" {

@@ -114,7 +114,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		auth.POST("/logout", h.logout)
 	}
 
-	api := r.Group("/api", requireAuth(deps.Auth))
+	api := r.Group("/api", requireAuth(deps.Auth), noStore())
 	{
 		// いま使える機能。設定していない機能を押す前に見せるために引く
 		// （ADR 0008 の帰結）。**認証の内側に置く。** プロセスの設定を
@@ -170,6 +170,17 @@ func NewRouter(deps Deps) *gin.Engine {
 	r.NoRoute(newWebUI(deps.WebDir))
 
 	return r
+}
+
+// noStore は認証済み API の応答をキャッシュさせない。
+//
+// ブラウザのキャッシュに残ると、同じプロファイルで利用者を切り替えたときに
+// 前の利用者の GitHub draft issue の内容が再利用されうる（CWE-525）。
+func noStore() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Next()
+	}
 }
 
 // handleHealthz はプロセスが生きていることだけを返す。
