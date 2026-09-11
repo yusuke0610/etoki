@@ -130,7 +130,7 @@ func appliedVersions(ctx context.Context, db *sql.DB) ([]string, error) {
 // 既定の適用経路では書けない。
 //
 // 印を Go 側のファイル名一覧ではなく SQL の側に置くのは、なぜ特別扱いなのかを
-// マイグレーション本体と同じ場所に残すため（ADR 0046）。
+// マイグレーション本体と同じ場所に残すため（ADR 0049）。
 const rebuildDirective = "-- etoki:rebuild-table"
 
 // applyMigration は 1 ファイルを適用し、適用済みとして記録する。
@@ -183,7 +183,7 @@ func applyInTx(ctx context.Context, db *sql.DB, name, body string) error {
 	return nil
 }
 
-// applyRebuild は外部キーを切った状態で 1 ファイルを適用する（ADR 0046）。
+// applyRebuild は外部キーを切った状態で 1 ファイルを適用する（ADR 0049）。
 //
 // SQLite が案内するテーブル再作成の手順に従い、切る／戻すの 2 つだけを
 // トランザクションの外に出す。作り直しそのものと記録は、これまでと同じく

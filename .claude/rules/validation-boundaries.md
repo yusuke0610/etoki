@@ -39,7 +39,7 @@ paths:
   通る。**許す形と禁じる形の両方を式に出す。** 既存行のための「どちらも NULL」を
   許すなら、それも象限の 1 つとして書く（#117 / #130）。
 - **子テーブルから `REFERENCES ... ON DELETE CASCADE` されている表を作り直すなら、
-  SQL の先頭行に `-- etoki:rebuild-table` を置く**（ADR 0046）。SQLite は CHECK を
+  SQL の先頭行に `-- etoki:rebuild-table` を置く**（ADR 0049）。SQLite は CHECK を
   後から変えられないのでテーブル再作成が要るが、`PRAGMA foreign_keys` は
   トランザクション内では no-op なので、既定の適用経路（`applyMigration` が常に
   1 トランザクションでラップする）では切れない。`foreign_keys=ON`（`db.go`）の

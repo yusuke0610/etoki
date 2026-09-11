@@ -409,6 +409,8 @@ export function baseMock(): ApiMock {
     boards: [summarize(detail)],
     details: { [detail.id]: detail },
     annotations: { [detail.id]: annotations() },
+    // 既定では消えた注釈は無い。ふつうはこちらなので、出す spec だけが足す。
+    detached: {},
     interpret: { status: 200, body: interpretation() },
     interpretRequests: [],
     createRequests: [],

@@ -377,7 +377,7 @@ func (h *handlers) saveScene(c *gin.Context) {
 }
 
 func (h *handlers) listAnnotations(c *gin.Context) {
-	states, err := h.annotations.ListStates(c.Request.Context(), c.Param("id"))
+	states, detached, err := h.annotations.ListStates(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		// ボードが無い場合と注釈が 0 件の場合は、ここで区別がついている。
 		// ListStates が引き当てられなければエラーを返すため、ボードを引き直す
@@ -386,12 +386,35 @@ func (h *handlers) listAnnotations(c *gin.Context) {
 		return
 	}
 
-	out := make([]apitypes.AnnotationStatus, 0, len(states))
+	out := apitypes.BoardAnnotations{
+		// nil を返すと JSON が null になる。一覧は常に配列にする。
+		Annotations: make([]apitypes.AnnotationStatus, 0, len(states)),
+		Detached:    make([]apitypes.DetachedAnnotation, 0, len(detached)),
+	}
 	for _, s := range states {
-		out = append(out, toAnnotationStatus(s))
+		out.Annotations = append(out.Annotations, toAnnotationStatus(s))
+	}
+	for _, d := range detached {
+		out.Detached = append(out.Detached, toDetachedAnnotation(d))
 	}
 
 	c.JSON(http.StatusOK, out)
+}
+
+// toDetachedAnnotation はシーンから消えた注釈を境界の形にする。
+//
+// **名前も粒度も 3 状態も載せない。** シーンに frame が無いので取りようが
+// 無く、既定で埋めると「名前の無い注釈」（ADR 0022）と見分けが付かなくなる。
+func toDetachedAnnotation(d usecase.DetachedAnnotation) apitypes.DetachedAnnotation {
+	res := apitypes.DetachedAnnotation{
+		ID:    d.ID,
+		Items: toSyncItems(d.Items),
+	}
+	if d.LatestRun != nil {
+		t := d.LatestRun.CreatedAt
+		res.LastSyncedAt = &t
+	}
+	return res
 }
 
 // listAnnotationRuns はその注釈の実行履歴を返す。
