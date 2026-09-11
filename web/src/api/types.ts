@@ -73,6 +73,14 @@ export type SyncRun = Schemas["SyncRun"];
 /** 注釈 1 つの状態。 */
 export type AnnotationStatus = Schemas["AnnotationStatus"];
 
+/**
+ * ボード 1 枚ぶんの注釈。シーンに在るものと、消えたものを分けて持つ。
+ */
+export type BoardAnnotations = Schemas["BoardAnnotations"];
+
+/** シーンから消えたのに GitHub 側にものが残っている注釈（#111）。 */
+export type DetachedAnnotation = Schemas["DetachedAnnotation"];
+
 /** 解釈結果に含まれる draft issue 1 件。まだ作成はしていない。 */
 export type InterpretedItem = Schemas["InterpretedItem"];
 
