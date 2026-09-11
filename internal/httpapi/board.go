@@ -64,8 +64,9 @@ func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
 		ProjectURL:      s.ProjectURL,
 
 		// ここから下が BoardSummary に無いぶん。
-		Scene:        a.Board.Scene,
-		TargetLocked: targetLocked,
+		Scene:          a.Board.Scene,
+		TargetLocked:   targetLocked,
+		SceneOverLimit: usecase.SceneExceedsLimit(a.Board.Scene),
 	}
 }
 
