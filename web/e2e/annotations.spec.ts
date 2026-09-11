@@ -44,6 +44,35 @@ test.describe("注釈の状態", () => {
     );
   });
 
+  // 何の図として読ませるかは人が選ぶ。**ひな形は絵を置くだけ**（ADR 0045）
+  // なので、種別が載る先はこのパネルしかない。
+  test("種別はサーバーが返した値が選ばれている", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(annotationCard(page, "セッション管理").getByLabel("種別")).toHaveValue(
+      "sequence",
+    );
+    // 選んでいない囲みは「指定なし」。空文字は DiagramKind に無い値なので、
+    // シーンには載っていない（キーごと落ちている）。
+    await expect(annotationCard(page, "ログイン").getByLabel("種別")).toHaveValue("");
+  });
+
+  // 種別は content_hash の入力なので、選び直せば「変更あり」になる。ここでは
+  // 保存前なので、選んだことが未保存として現れることまでを見る。
+  test("種別を選び直すと未保存になる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(page.getByText("未保存の変更あり")).toBeHidden();
+
+    await annotationCard(page, "ログイン").getByLabel("種別").selectOption("er");
+
+    await expect(page.getByText("未保存の変更あり")).toBeVisible();
+  });
+
   test("GitHub にある項目は畳まれていて、開くと中身が出る", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");

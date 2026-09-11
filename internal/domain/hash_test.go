@@ -14,8 +14,16 @@ func baseElements() []domain.TextElement {
 	}
 }
 
+// hash は種別を指定しない既定の呼び出し。種別を見るケースだけが
+// hashOfKind を使う。
 func hash(elems []domain.TextElement, g domain.Granularity) domain.ContentHash {
-	return domain.ComputeContentHash(elems, g)
+	return domain.ComputeContentHash(elems, g, domain.DiagramKindUnspecified)
+}
+
+func hashOfKind(
+	elems []domain.TextElement, g domain.Granularity, k domain.DiagramKind,
+) domain.ContentHash {
+	return domain.ComputeContentHash(elems, g, k)
 }
 
 // A-1: テキスト要素が 0 件でも算出できる。
@@ -134,6 +142,45 @@ func TestComputeContentHash_GranularityIsPartOfHash(t *testing.T) {
 	}
 	if auto == issue {
 		t.Error("指定なしと issue が同じハッシュになっている")
+	}
+}
+
+// 図の種別はハッシュに含まれる。
+//
+// **種別は解釈のプロンプトに載る**ので、差し替えれば LLM が読む前提が変わる。
+// 含めないと、種別だけを変えたボードが created のまま残り、前の種別で作った
+// draft issue が最新であるかのように見える。粒度と同じ扱い。
+func TestComputeContentHash_KindIsPartOfHash(t *testing.T) {
+	t.Parallel()
+
+	unspecified := hashOfKind(baseElements(), domain.GranularityAuto, domain.DiagramKindUnspecified)
+
+	seen := map[domain.ContentHash]domain.DiagramKind{
+		unspecified: domain.DiagramKindUnspecified,
+	}
+	// **全種類を見る。** 1 つだけ確かめると、種別の一部しか入力に混ぜて
+	// いない実装を素通りさせる。
+	for _, k := range domain.DiagramKinds() {
+		got := hashOfKind(baseElements(), domain.GranularityAuto, k)
+		if before, dup := seen[got]; dup {
+			t.Errorf("種別 %q と %q が同じハッシュになっている", before, k)
+		}
+		seen[got] = k
+	}
+}
+
+// 粒度と種別の境目が区切られていること。
+//
+// 詰めて書くと、境目が動いただけの別の組み合わせが同じ入力になる。
+// ElementBoundaryMatters と同じ形の確認。
+func TestComputeContentHash_GranularityKindBoundaryMatters(t *testing.T) {
+	t.Parallel()
+
+	split := hashOfKind(baseElements(), domain.Granularity("e"), domain.DiagramKind("pic"))
+	joined := hashOfKind(baseElements(), domain.GranularityEpic, domain.DiagramKindUnspecified)
+
+	if split == joined {
+		t.Error("粒度と種別の境界が区別されていない")
 	}
 }
 

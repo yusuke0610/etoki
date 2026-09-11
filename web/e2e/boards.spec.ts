@@ -54,6 +54,51 @@ test.describe("ボード", () => {
     ).toBeVisible();
   });
 
+  // ひな形は選ばせるもので、勝手に適用しない（中核思想 3）。既定が空白で
+  // あることと、選んだときにその絵で作られることの両方を見る。
+  test("ひな形を選ぶと、その絵でボードが作られる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+
+    const template = page.getByLabel("ひな形");
+    // 既定は空白。開いた直後に何かが選ばれていると、選んだ覚えのない絵が出る。
+    await expect(template).toHaveValue("");
+
+    await page.getByLabel("ボード名").fill("注文フローのブレスト");
+    await template.selectOption("sequence");
+
+    // 作成のリクエストを捕まえる。**シーンが載っていることを直接見る。**
+    // 画面が開けたことだけでは、空のシーンで作られても緑になる。
+    const [request] = await Promise.all([
+      page.waitForRequest(
+        (req) => req.url().endsWith("/api/boards") && req.method() === "POST",
+      ),
+      (async () => {
+        await page.getByRole("button", { name: "次へ" }).click();
+        await chooseTarget(page, "acme/web", "#1 ロードマップ");
+      })(),
+    ]);
+
+    const body = request.postDataJSON() as { scene?: string };
+    expect(body.scene, "ひな形のシーンが送られていない").toBeTruthy();
+    expect(body.scene).toContain("利用者");
+    // **ひな形は絵だけを置く**（ADR 0045）。frame を配ると、注釈にできる枠を
+    // etoki が作ったことになり、「frame は人が引く」線が黙って崩れる。
+    expect(body.scene).not.toContain('"type":"frame"');
+    // 注釈のメタデータも載らない。**種別が載る先は人が引いた frame** で、
+    // 選ぶのは注釈パネル（`AnnotationPanel` の「種別」）。
+    expect(body.scene).not.toContain('"etoki":');
+
+    await expect(
+      page.getByRole("heading", { name: "注文フローのブレスト", level: 1 }),
+    ).toBeVisible();
+    // 囲むのは人なので、開いた時点では注釈が無い。
+    await expect(page.getByText("保存済みの注釈はありません。")).toBeVisible();
+    // 作ったあとは空白に戻す。次のボードが前の選択を引き継ぐと、選んだ覚えの
+    // ない絵が出る。
+    await expect(page.getByLabel("ひな形")).toHaveValue("");
+  });
+
   // 作成先はボードの属性なので、開くまで分からないと取り違えたまま作成に
   // 進める。一覧をリポジトリ → Project でまとめて見せる（ADR 0019）。
   test("一覧は作成先ごとにまとまり、未選択は末尾に出る", async ({ page }) => {
