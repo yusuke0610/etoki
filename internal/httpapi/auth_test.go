@@ -183,6 +183,44 @@ func TestSession_UnauthenticatedIsStillOK(t *testing.T) {
 	}
 }
 
+// セッションの応答もキャッシュさせない（CWE-525）。**未ログインと
+// ログイン済みの両方を見る。** 認証の内側にだけ掛けると、`/api/auth` と
+// 401 で返る経路がキャッシュに残り、同じプロファイルで利用者を
+// 切り替えたときに前の応答が再利用されうる。
+func TestAuthResponses_AreNotCached(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newAuthRouter(t, &stubProvider{})
+
+	// 未ログインのセッション。
+	rec := do(t, r, http.MethodGet, "/api/auth/session", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("未ログインの Cache-Control = %q, want %q", got, "no-store")
+	}
+
+	// 弾かれた側にも掛かっていること。
+	rec = do(t, r, http.MethodGet, "/api/boards", nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (%s)", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("401 の Cache-Control = %q, want %q", got, "no-store")
+	}
+
+	// ログイン済みのセッション。利用者の情報が載る側。
+	cookie := signIn(t, r)
+	rec = withCookie(t, r, http.MethodGet, "/api/auth/session", cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("ログイン済みの Cache-Control = %q, want %q", got, "no-store")
+	}
+}
+
 func TestBoards_RequireLoginWhenAuthConfigured(t *testing.T) {
 	t.Parallel()
 

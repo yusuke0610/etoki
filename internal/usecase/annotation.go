@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/port"
@@ -24,6 +26,37 @@ type AnnotationState struct {
 	// 見せると、更新の run のあとに「前回作ったが今回は触らなかった」item が
 	// 画面から消える。GitHub 側には残っているのに etoki が見せなくなるのは、
 	// 状態を見せるという方針に反する（中核思想 3）。
+	Items []port.SyncItem
+}
+
+// DetachedAnnotation はシーンから消えた注釈が GitHub に残しているもの。
+//
+// **注釈にした frame をキャンバスから消して保存すると、その注釈は
+// `Scene.Annotations()` に現れなくなる。** `sync_runs` / `sync_items` は残り、
+// GitHub 側の draft issue も残る。**サーバーは読めるように作ってある**
+// （`ListRuns` はシーンに残っているかを見ない、ADR 0007）のに、画面から辿る
+// 導線だけが無かった。記録があるのに読めないのは、ADR 0009 が避けたかった
+// 「etoki からは存在しないのと同じ」状態と同じことになる。
+//
+// **自動で消さない・自動で作り直さない。見せるだけにする**（中核思想 3）。
+type DetachedAnnotation struct {
+	// ID は消えた frame の要素 ID。
+	//
+	// **名前は取れない。** シーンから消えているので、`Annotation.Name` の
+	// 出どころが無い。何で見分けるかは Items と LatestRun が担う。
+	ID string
+
+	// LatestRun は最後に issue 化したときの記録。**必ずある。**
+	//
+	// Items は run 履歴の畳み込みなので、Items があって run が無いことは
+	// 起こらない。それでもポインタなのは、起こらないことを型で言い切ると
+	// 永続化層の不整合が nil 参照になるため。
+	LatestRun *port.SyncRun
+
+	// Items はこの注釈が GitHub に在らしめているもの（ADR 0026）。
+	//
+	// **見分ける材料はここにしか無い。** frame の名前が取れない以上、
+	// 「何を作った囲みだったのか」はここから読むしかない。
 	Items []port.SyncItem
 }
 
@@ -67,32 +100,38 @@ func (s *AnnotationService) ListRuns(
 	return s.mappings.ListRunsByAnnotation(ctx, boardID, annotationID, MaxRunHistory)
 }
 
-// ListStates はボード上の全注釈の状態を返す。
+// ListStates はボード上の全注釈の状態と、シーンから消えた注釈を返す。
 //
 // ボードを引き当てられなければ ErrBoardNotFound。注釈が 0 件の場合と区別が
 // つく必要があるので、空スライスに丸めない。
-func (s *AnnotationService) ListStates(ctx context.Context, boardID string) ([]AnnotationState, error) {
+//
+// **2 つを 1 つのリストに混ぜない。** 消えた注釈には 3 状態の判定が無い
+// （比べる相手のテキストがシーンに無い）し、名前も粒度も取れない。混ぜると、
+// 決められない値を埋めるために架空の既定を置くことになる。
+func (s *AnnotationService) ListStates(
+	ctx context.Context, boardID string,
+) ([]AnnotationState, []DetachedAnnotation, error) {
 	// 状態を見るだけなので viewer でよい。
 	acc, err := s.access(ctx, boardID, port.RoleViewer)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	scene, err := domain.ParseScene([]byte(acc.Board.Scene))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	runs, err := s.mappings.ListLatestRunsByBoard(ctx, boardID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// 見せるものは畳み込みから取る。判定に使う最新 run とは出どころを分ける
 	// （ADR 0026）。
 	itemsByAnnotation, err := s.mappings.ListItemsByBoard(ctx, boardID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	latestByAnnotation := make(map[string]port.SyncRun, len(runs))
@@ -102,8 +141,12 @@ func (s *AnnotationService) ListStates(ctx context.Context, boardID string) ([]A
 
 	annotations := scene.Annotations()
 	states := make([]AnnotationState, 0, len(annotations))
+	// シーンに残っている注釈を控える。畳み込みに在ってここに無いものが、
+	// frame を消したまま保存された注釈。
+	inScene := make(map[string]struct{}, len(annotations))
 
 	for _, a := range annotations {
+		inScene[a.ID] = struct{}{}
 		current := scene.AnnotationHash(a)
 
 		var (
@@ -126,5 +169,47 @@ func (s *AnnotationService) ListStates(ctx context.Context, boardID string) ([]A
 		})
 	}
 
-	return states, nil
+	return states, detachedAnnotations(itemsByAnnotation, latestByAnnotation, inScene), nil
+}
+
+// detachedAnnotations は畳み込みに在ってシーンに無い注釈を組み立てる。
+//
+// **材料はすでに取れている。** ListStates は畳み込みをボード全体で引いておき
+// ながら、シーンに残っている注釈のぶんだけ配って残りを捨てていた。落として
+// いたものを返すだけで、問い合わせは増えない。
+//
+// **1 件も作っていない注釈は出さない。** 消したこと自体を知らせるのが目的では
+// なく、GitHub に残っているものへ辿れるようにするのが目的（ADR 0009）。
+// 作っていないなら辿る先が無く、消した frame の残骸が並ぶだけになる。
+//
+// 並びは ID 順に固定する。map の反復順は実行ごとに変わるので、揃えないと
+// 開き直すたびに並びが入れ替わる。
+func detachedAnnotations(
+	itemsByAnnotation map[string][]port.SyncItem,
+	latestByAnnotation map[string]port.SyncRun,
+	inScene map[string]struct{},
+) []DetachedAnnotation {
+	out := make([]DetachedAnnotation, 0)
+
+	for id, items := range itemsByAnnotation {
+		if _, ok := inScene[id]; ok {
+			continue
+		}
+		if len(items) == 0 {
+			continue
+		}
+
+		d := DetachedAnnotation{ID: id, Items: items}
+		if run, ok := latestByAnnotation[id]; ok {
+			r := run
+			d.LatestRun = &r
+		}
+		out = append(out, d)
+	}
+
+	slices.SortFunc(out, func(a, b DetachedAnnotation) int {
+		return strings.Compare(a.ID, b.ID)
+	})
+
+	return out
 }
