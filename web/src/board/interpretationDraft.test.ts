@@ -11,6 +11,7 @@ import {
   setBody,
   setKind,
   setTitle,
+  setUpdatesPrevious,
   toggleItem,
 } from "./interpretationDraft";
 
@@ -284,6 +285,58 @@ describe("leftBehindItemIds", () => {
     const draft = draftWith([{ localId: "n1", kind: "issue", title: "t", body: "" }]);
 
     expect(leftBehindItemIds(draft, []).size).toBe(0);
+  });
+
+  // 新しく作るに倒した項目も、そこへは書かない。選択を外したときと同じ扱いに
+  // する。片方だけ取り残しに出さないと、押す前に見せている数が実際と食い違う。
+  it("新しく作るに倒すと、その更新先は取り残しに戻る", () => {
+    let draft = draftWith([
+      { localId: "n1", kind: "issue", title: "t", body: "", previousItemId: "PVTI_a" },
+      { localId: "n2", kind: "issue", title: "t", body: "", previousItemId: "PVTI_b" },
+    ]);
+    expect(leftBehindItemIds(draft, previous).size).toBe(0);
+
+    draft = setUpdatesPrevious(draft, "n1", false);
+    expect([...leftBehindItemIds(draft, previous)]).toEqual(["PVTI_a"]);
+  });
+});
+
+// 対応づけを解釈させるのは LLM でも、決めるのは開発者（ADR 0026）。指す先が
+// GitHub から消えていると、更新のままでは作成が必ず失敗する。
+describe("setUpdatesPrevious", () => {
+  function draftWith(previousItemId?: string): Draft {
+    return createDraft({
+      summary: "s",
+      contentHash: "h",
+      items: [{ localId: "n1", kind: "issue", title: "t", body: "", previousItemId }],
+    });
+  }
+
+  it("既定は LLM の答えのまま", () => {
+    expect(draftWith("PVTI_a").items[0]?.updatesPrevious).toBe(true);
+    expect(draftWith().items[0]?.updatesPrevious).toBe(false);
+  });
+
+  it("新しく作るに倒すと previousItemId を送らない", () => {
+    const draft = setUpdatesPrevious(draftWith("PVTI_a"), "n1", false);
+
+    expect(buildInterpretation(draft).items[0]?.previousItemId).toBeUndefined();
+  });
+
+  // previousItemId を消して表すと戻せない。LLM が何と答えたのかも読めなくなる。
+  it("倒しても LLM の答えは残っていて、戻せる", () => {
+    let draft = setUpdatesPrevious(draftWith("PVTI_a"), "n1", false);
+    expect(draft.items[0]?.item.previousItemId).toBe("PVTI_a");
+
+    draft = setUpdatesPrevious(draft, "n1", true);
+    expect(buildInterpretation(draft).items[0]?.previousItemId).toBe("PVTI_a");
+  });
+
+  // LLM が「新しく作る」と答えた項目には指す先が無い。倒せても送るものは無い。
+  it("指す先の無い項目を更新に倒しても、送るものは増えない", () => {
+    const draft = setUpdatesPrevious(draftWith(), "n1", true);
+
+    expect(buildInterpretation(draft).items[0]?.previousItemId).toBeUndefined();
   });
 });
 

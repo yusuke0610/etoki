@@ -9,6 +9,7 @@ function props(): ComponentProps<typeof AnnotationPanel> {
     annotations: [
       { id: "frame-1", name: "ログイン", granularity: "", state: "uncreated" },
     ],
+    detached: [],
     markableFrames: [],
     unmarkableFrames: [],
     canvasFrameIds: ["frame-1"],

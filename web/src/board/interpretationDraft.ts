@@ -10,6 +10,18 @@ import type {
 export type DraftItem = {
   item: InterpretedItem;
   selected: boolean;
+
+  /**
+   * 前回作ったものを書き換えるか、新しく作るか。
+   *
+   * **`item.previousItemId` は LLM が答えたままにしておく。** 消して表すと
+   * 「新しく作る」に倒した操作を戻せず、LLM が何と答えたのかも読めなくなる。
+   * 対応づけを解釈させたうえで**決めるのは開発者**（ADR 0026）なので、
+   * 答えのほうは残したまま、従うかどうかだけをここで持つ。
+   *
+   * 既定は LLM の答え。**触られたときだけ変わる。**
+   */
+  updatesPrevious: boolean;
 };
 
 /**
@@ -30,7 +42,11 @@ export function createDraft(result: Interpretation): Draft {
   return {
     summary: result.summary,
     contentHash: result.contentHash,
-    items: result.items.map((item) => ({ item, selected: true })),
+    items: result.items.map((item) => ({
+      item,
+      selected: true,
+      updatesPrevious: Boolean(item.previousItemId),
+    })),
   };
 }
 
@@ -123,6 +139,30 @@ export function setBody(draft: Draft, localId: string, body: string): Draft {
 }
 
 /**
+ * 前回作ったものを書き換えるか、新しく作るかを決める。
+ *
+ * **LLM が対応づけた先が GitHub から消えていると、更新のままでは作成が必ず
+ * 失敗する。** その item は畳み込みに残り続けるので、解釈をやり直しても同じ
+ * ところで止まりうる。ここが無いと、出口はその項目ごと外すことしか無い。
+ *
+ * **`previousItemId` は書き換えない。** 戻せる形にしておく（`DraftItem`）。
+ * LLM が「新しく作る」と答えた項目には指す先が無いので、true に倒しても
+ * 送るものは増えない（`buildInterpretation`）。
+ */
+export function setUpdatesPrevious(
+  draft: Draft,
+  localId: string,
+  updatesPrevious: boolean,
+): Draft {
+  return {
+    ...draft,
+    items: draft.items.map((d) =>
+      d.item.localId === localId ? { ...d, updatesPrevious } : d,
+    ),
+  };
+}
+
+/**
  * 作成リクエストに載せる内容。選んだものだけを、持てる親だけつけて返す。
  *
  * 項目は 1 つずつ組み立て直す。まるごと写すと、契約に増えたフィールドが
@@ -141,9 +181,12 @@ export function buildInterpretation(draft: Draft): Interpretation {
         body: d.item.body,
       };
       if (parentLocalId !== undefined) item.parentLocalId = parentLocalId;
-      // 対応づけは開発者が確かめたまま送り返す。外したければ項目ごと外す
-      // （ADR 0026）。
-      if (d.item.previousItemId) item.previousItemId = d.item.previousItemId;
+      // 対応づけは開発者が確かめたものを送り返す。**新しく作るに倒したら
+      // 送らない**（ADR 0026）。サーバー側の検査（previous_item_unknown）は
+      // そのまま効く。
+      if (d.updatesPrevious && d.item.previousItemId) {
+        item.previousItemId = d.item.previousItemId;
+      }
       return item;
     });
 
@@ -208,11 +251,15 @@ export function blockingReasons(draft: Draft, granularity: Granularity): string[
  * **消す判断はしない。** GitHub の draft issue は削除できないので、etoki に
  * できるのは「これは GitHub 側に残ります」と見せるところまで。黙って落とすと、
  * 開発者は自分が何を置き去りにしたのかを確かめられない（中核思想 3）。
+ *
+ * **新しく作るに倒した項目の更新先も取り残しに戻る。** 選択を外したときと
+ * 同じ扱いにする。どちらも「そこへは書かない」という同じ結果になるので、
+ * 片方だけ取り残しに出さないと、押す前に見せている数が実際と食い違う。
  */
 export function leftBehindItemIds(draft: Draft, previous: SyncItem[]): Set<string> {
   const claimed = new Set(
     draft.items
-      .filter((d) => d.selected && d.item.previousItemId)
+      .filter((d) => d.selected && d.updatesPrevious && d.item.previousItemId)
       .map((d) => d.item.previousItemId as string),
   );
 

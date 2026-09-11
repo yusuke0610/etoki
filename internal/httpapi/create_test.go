@@ -204,7 +204,7 @@ func TestCreateItems(t *testing.T) {
 		t.Errorf("len(run.Items) = %d, want 2", len(run.Items))
 	}
 
-	states := decode[[]map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id+"/annotations", nil))
+	states := listAnnotations(t, r, id).Annotations
 	if len(states) != 1 {
 		t.Fatalf("len(states) = %d, want 1", len(states))
 	}
