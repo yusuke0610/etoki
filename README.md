@@ -55,25 +55,26 @@ direnv allow
 エンドポイントだけが「設定されていない」と返し、ボードの編集と注釈の状態表示は
 そのまま使えます。ブレストだけ先にやる、という使い方を潰さないためです。
 
-| 変数                             | 既定値                      | 用途                                                             |
-| -------------------------------- | --------------------------- | ---------------------------------------------------------------- |
-| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                                 |
-| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す       |
-| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                            |
-| `ETOKI_WEB_DIR`                  | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない     |
-| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント                                             |
-| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                        |
-| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                        |
-| `ETOKI_LLM_MAX_CONCURRENT`       | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                       |
-| `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい |
-| `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）         |
-| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                  |
-| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する            |
-| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                 |
-| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                |
-| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                 |
-| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                       |
-| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                         |
+| 変数                             | 既定値                      | 用途                                                                |
+| -------------------------------- | --------------------------- | ------------------------------------------------------------------- |
+| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                                    |
+| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す          |
+| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                               |
+| `ETOKI_WEB_DIR`                  | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない        |
+| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント                                                |
+| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                           |
+| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                           |
+| `ETOKI_LLM_MAX_CONCURRENT`       | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                          |
+| `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい    |
+| `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）            |
+| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                     |
+| `ETOKI_GITHUB_BASE_URL`          | `https://api.github.com`    | GitHub API のルート（`/graphql` を持つ先）。GHES では確かめていない |
+| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する               |
+| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                    |
+| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                   |
+| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                    |
+| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                          |
+| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                            |
 
 解釈と図のドラフト生成は LLM を叩くので課金を伴います。**上限は利用者ごとに
 効き、2 つで 1 つの枠を共有します**（ADR 0044）。既定で効くのは同時実行だけで、
@@ -121,6 +122,44 @@ GitHub App を設定しているなら、Callback URL と `ETOKI_PUBLIC_URL` も
 が無い場合は起動時に落ちます。**`ETOKI_ADDR` で公開インターフェースにバインド
 するなら、`ETOKI_ALLOWED_ORIGINS` にそのオリジンを足してください。** 足さないと
 API だけでなく画面も開けません。
+
+### 偽の GitHub / LLM で通しを確かめる
+
+鍵もネットワークも無しで、画面から GitHub への書き込みまでを 1 本通せます。
+各層の単体テストと E2E（バックエンドを起動しない）では、この並び全体を
+通していないためです（[ADR 0050](docs/adr/0050-walk-through-against-fake-upstream.md)）。
+
+```sh
+make try-fake   # 偽の上流（:8090）と、それに向けた etoki（:8080）を起動する
+```
+
+`.env` は読まず、DB は起動のたびに一時ディレクトリへ作り直します。止めると
+消えます。ポートは `ETOKI_ADDR` と `FAKE_ADDR=127.0.0.1:18090` のように変え
+られます。
+
+通す筋道:
+
+1. <http://127.0.0.1:8080> を開き、作成先に `fake-owner/fake-repo` の
+   `#1 Fake Project` を選んでボードを作る
+2. 文字を書き、フレームツール（F）で囲み、そのフレームを選んで注釈にする
+3. 保存して「解釈する」→「GitHub に作成する」。状態が「作成済み」になる
+4. 偽の GitHub に積まれたものを見る。epic と issue、`Kind` と `Parent` が入る
+
+   ```sh
+   curl -s http://127.0.0.1:8090/_fake/items
+   ```
+
+5. 囲みの文字を書き換えて保存する。状態が「変更あり」になる
+6. もう一度解釈すると、項目に「更新」が付く。作成すると 4 の item の
+   `title` が変わり、`updates` が増える
+
+対象外のもの:
+
+- **図のドラフト生成。** 偽の LLM は解釈と同じ JSON を返すので、画面では
+  失敗します。
+- **GitHub App の構成。** 認証の変数は外して起動します。
+- **本物の GitHub と一致していること。** 偽物が合わせているのは etoki の
+  アダプタが送るリクエストだけです。
 
 ### 鍵を `.env` に置く
 

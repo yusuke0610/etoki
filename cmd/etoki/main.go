@@ -65,6 +65,8 @@ environment:
                                単独では設定できない（回数の上限が要る）
   ETOKI_GITHUB_TOKEN    GitHub のトークン（repo の read と Projects の read/write）
                         認証を設定した場合は使わない
+  ETOKI_GITHUB_BASE_URL GitHub API のルート（既定: ` + github.DefaultBaseURL + `）
+                        /graphql を持つ先。GHES では確かめていない
   ETOKI_GITHUB_APP_CLIENT_ID      GitHub App の client ID（設定するとログインを要求する）
   ETOKI_GITHUB_APP_CLIENT_SECRET  同 client secret
   ETOKI_TOKEN_ENCRYPTION_KEY      トークンを暗号化する鍵（base64 の 32 バイト）
