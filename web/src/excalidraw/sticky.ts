@@ -17,8 +17,12 @@ export const STICKY_SIZE = 180;
  * その意味を読むコードを書きたくなる。構造は座標や色から推測せず LLM に
  * 解釈させる（中核思想 2）ので、etoki 側が色から何かを決めることはない。
  * 人が塗り分けたければ Excalidraw の既存の操作でできる。
+ *
+ * **テンプレート（`template.ts`）も同じものを使う。** 「付箋はこの見た目」を
+ * 2 箇所に持つと、片方だけ変えたときに、1 枚置いた付箋とひな形の付箋が
+ * 別の色で並ぶ。
  */
-const STICKY_STYLE = {
+export const STICKY_STYLE = {
   backgroundColor: "#fff3bf",
   strokeColor: "#e8b339",
   fillStyle: "solid",

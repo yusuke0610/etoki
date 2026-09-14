@@ -4,7 +4,9 @@ import {
   frameIds,
   granularityOf,
   isAnnotation,
+  kindOf,
   markAsAnnotation,
+  setAnnotationKind,
   selectableFrames,
   unmarkAnnotation,
   type SceneElement,
@@ -18,6 +20,13 @@ const annotation: SceneElement = {
   customData: { etoki: { granularity: "epic" } },
 };
 const text: SceneElement = { id: "t1", type: "text" };
+/** ひな形から始めた注釈。種別を持っている。 */
+const templated: SceneElement = {
+  id: "f3",
+  type: "frame",
+  name: "シーケンス図",
+  customData: { etoki: { granularity: "", kind: "sequence" } },
+};
 
 describe("isAnnotation", () => {
   // ブレスト中にユーザーが使った frame を注釈と誤認しないこと。
@@ -65,6 +74,16 @@ describe("markAsAnnotation", () => {
     const got = markAsAnnotation([annotation], "f2", "issue");
 
     expect(granularityOf(got[0]!)).toBe("issue");
+  });
+
+  // ひな形から始めた注釈で粒度を選び直しただけで種別が消えると、次の解釈で
+  // 「何の図か」が伝わらなくなる。消えたことは画面に出ないので、気づくのは
+  // LLM の出力を見たとき。
+  it("粒度を差し替えても種別を消さない", () => {
+    const got = markAsAnnotation([templated], "f3", "epic");
+
+    expect(granularityOf(got[0]!)).toBe("epic");
+    expect(kindOf(got[0]!)).toBe("sequence");
   });
 
   it("customData の他のキーを壊さない", () => {
@@ -134,6 +153,47 @@ describe("granularityOf", () => {
 
   it("granularity が無ければ指定なしとして空文字", () => {
     expect(granularityOf({ ...plainFrame, customData: { etoki: {} } })).toBe("");
+  });
+});
+
+describe("kindOf", () => {
+  it("ひな形から始めた注釈は種別を返す", () => {
+    expect(kindOf(templated)).toBe("sequence");
+  });
+
+  // **「注釈ではない」と「種別を選んでいない」を分けない。** どちらも
+  // 「何の図かは分からない」で、呼び出し側の打ち手は同じ。
+  it("注釈でないか、種別を選んでいなければ undefined", () => {
+    expect(kindOf(plainFrame)).toBeUndefined();
+    expect(kindOf(annotation)).toBeUndefined();
+  });
+});
+
+describe("setAnnotationKind", () => {
+  it("種別を差し替える", () => {
+    const got = setAnnotationKind([annotation], "f2", "er");
+
+    expect(kindOf(got[0]!)).toBe("er");
+    // 粒度は触らない。同じメタデータに載るが、選ぶ場面が違う。
+    expect(granularityOf(got[0]!)).toBe("epic");
+  });
+
+  // 空文字を置くと DiagramKind に無い値がシーンに載り、契約
+  // （AnnotationStatus.kind は省略可能）と形が食い違う。
+  it("指定なしはキーごと落とす", () => {
+    const got = setAnnotationKind([templated], "f3", undefined);
+
+    expect(kindOf(got[0]!)).toBeUndefined();
+    expect(got[0]!.customData?.etoki).not.toHaveProperty("kind");
+    expect(isAnnotation(got[0]!)).toBe(true);
+  });
+
+  // 種別だけを持つ注釈という状態を作らない。注釈にするのは markAsAnnotation。
+  it("注釈でない frame は注釈にしない", () => {
+    const got = setAnnotationKind([plainFrame], "f1", "er");
+
+    expect(got[0]).toBe(plainFrame);
+    expect(isAnnotation(got[0]!)).toBe(false);
   });
 });
 
