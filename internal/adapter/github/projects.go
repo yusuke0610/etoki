@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -19,11 +20,14 @@ import (
 	"github.com/yusuke0610/etoki/port"
 )
 
-// DefaultBaseURL は GitHub API のホスト。GHE では差し替える。
+// DefaultBaseURL は GitHub API のホスト。
 const DefaultBaseURL = "https://api.github.com"
 
-// envToken はトークンを読む環境変数。
-const envToken = "ETOKI_GITHUB_TOKEN"
+// 環境変数名。
+const (
+	envToken   = "ETOKI_GITHUB_TOKEN"
+	envBaseURL = "ETOKI_GITHUB_BASE_URL"
+)
 
 // defaultTimeout は 1 回の呼び出しを待つ上限。
 const defaultTimeout = 30 * time.Second
@@ -70,7 +74,11 @@ const (
 
 // Config は Client の設定。
 type Config struct {
-	// BaseURL は GitHub API のホスト。空なら DefaultBaseURL。
+	// BaseURL は GitHub API のルート。空なら DefaultBaseURL。
+	//
+	// GraphQL は {BaseURL}/graphql、REST は {BaseURL}{path} に送る。GHES は
+	// GraphQL が /api/graphql、REST が /api/v3 配下で揃わないうえ、認可側の
+	// ホストも差し替えられないので、GHES に向けられるとは言わない。
 	BaseURL string
 	// Token は Authorization ヘッダに載せるトークン。
 	//
@@ -87,9 +95,14 @@ type Config struct {
 	HTTPClient *http.Client
 }
 
-// ConfigFromEnv は ETOKI_GITHUB_TOKEN から設定を読む。
+// ConfigFromEnv は ETOKI_GITHUB_TOKEN と ETOKI_GITHUB_BASE_URL から設定を読む。
+//
+// 値の検証は行わない。既定への差し戻しと BaseURL の検証は New が行う。
 func ConfigFromEnv() Config {
-	return Config{Token: os.Getenv(envToken)}
+	return Config{
+		Token:   os.Getenv(envToken),
+		BaseURL: os.Getenv(envBaseURL),
+	}
 }
 
 // staticToken は Config.Token をトークン源として扱うためのラッパー。
@@ -106,6 +119,9 @@ type Client struct {
 }
 
 // New は Config を検証して Client を作る。
+//
+// BaseURL は起動時に検証する。綴り間違いを実行時まで持ち越すと、作成先の
+// 一覧や作成の失敗として現れて原因の切り分けが遠回りになる。
 func New(cfg Config) (*Client, error) {
 	tokens := cfg.TokenSource
 	if tokens == nil {
@@ -119,6 +135,17 @@ func New(cfg Config) (*Client, error) {
 	base := cfg.BaseURL
 	if base == "" {
 		base = DefaultBaseURL
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return nil, fmt.Errorf("etoki: invalid github base url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("etoki: invalid github base url %q: scheme must be http or https", u.Redacted())
+	}
+	// url.Parse は "http://" や "https:api.github.com" も通す。
+	if u.Hostname() == "" {
+		return nil, fmt.Errorf("etoki: invalid github base url %q: host is missing", u.Redacted())
 	}
 
 	c := &Client{
