@@ -76,9 +76,9 @@ const (
 type Config struct {
 	// BaseURL は GitHub API のルート。空なら DefaultBaseURL。
 	//
-	// GraphQL は {BaseURL}/graphql、REST は {BaseURL}{path} に送る。GHES は
-	// GraphQL が /api/graphql、REST が /api/v3 配下で揃わないうえ、認可側の
-	// ホストも差し替えられないので、GHES に向けられるとは言わない。
+	// GraphQL は {BaseURL}/graphql、REST は {BaseURL}{path} に送る。GHES に
+	// 向けられるとは言わない。認可側（auth/github）のホストを差し替える口が
+	// 無く、GHES で確かめてもいない。
 	BaseURL string
 	// Token は Authorization ヘッダに載せるトークン。
 	//
