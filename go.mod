@@ -1,6 +1,6 @@
 module github.com/yusuke0610/etoki
 
-go 1.26
+go 1.26.0
 
 // web/node_modules には Go ファイルを同梱した npm パッケージが混ざり、
 // ./... の走査対象に入ってしまう。モジュール外なので無視する。
@@ -9,7 +9,7 @@ ignore ./web
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0
-	golang.org/x/text v0.41.0
+	golang.org/x/text v0.42.0
 	modernc.org/sqlite v1.58.0
 )
 
