@@ -50,4 +50,53 @@ describe("AnnotationPanel", () => {
     expect(panelProps.onChangeKind).toHaveBeenCalledWith("frame-1", "sequence");
     expect(select).toHaveValue("sequence");
   });
+
+  // 前の選択（sequence）の保存だけが後から追いつくと、「保存済みの値が変わった
+  // から追いついた」という判定では、追いついたのが古い選択のほうでも pending を
+  // 消してしまい、選択欄がキャンバスと食い違う値（sequence）に戻ってしまう。
+  it("保存中に選び直しても、古い選択の保存が追いついた時点で表示を戻さない", () => {
+    const panelProps = props();
+    const { rerender } = render(<AnnotationPanel {...panelProps} />);
+
+    const select = screen.getByLabelText("種別");
+    fireEvent.change(select, { target: { value: "sequence" } });
+    fireEvent.change(select, { target: { value: "er" } });
+
+    expect(panelProps.onChangeKind).toHaveBeenLastCalledWith("frame-1", "er");
+    expect(select).toHaveValue("er");
+
+    // 1 回目の選択（sequence）の保存だけが先に追いつく。2 回目（er）はまだ未保存。
+    rerender(
+      <AnnotationPanel
+        {...panelProps}
+        annotations={[
+          {
+            id: "frame-1",
+            name: "ログイン",
+            granularity: "",
+            state: "uncreated",
+            kind: "sequence",
+          },
+        ]}
+      />,
+    );
+    expect(select).toHaveValue("er");
+
+    // 2 回目の選択（er）の保存が追いつく。ここで初めて表示の根拠が a.kind に戻る。
+    rerender(
+      <AnnotationPanel
+        {...panelProps}
+        annotations={[
+          {
+            id: "frame-1",
+            name: "ログイン",
+            granularity: "",
+            state: "uncreated",
+            kind: "er",
+          },
+        ]}
+      />,
+    );
+    expect(select).toHaveValue("er");
+  });
 });

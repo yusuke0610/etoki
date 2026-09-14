@@ -956,8 +956,7 @@ func TestListAnnotations_ReturnsKind(t *testing.T) {
 		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
 	}
 
-	got := decode[[]map[string]any](t,
-		do(t, r, http.MethodGet, "/api/boards/"+id+"/annotations", nil))
+	got := listAnnotations(t, r, id).Annotations
 
 	if len(got) != 1 {
 		t.Fatalf("注釈の件数 = %d, want 1 (%+v)", len(got), got)

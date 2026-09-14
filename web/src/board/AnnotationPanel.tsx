@@ -164,9 +164,7 @@ type Props = {
 };
 
 type PendingKind = {
-  /** 種別を選んだ時点の保存済みの値。 */
-  saved: DiagramKind | undefined;
-  /** 保存を待つあいだに表示する選択値。 */
+  /** 保存を待つあいだに表示する、最後に選んだ値。 */
   value: DiagramKind | undefined;
 };
 
@@ -200,8 +198,18 @@ export function AnnotationPanel({
 }: Props) {
   // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
   // 新しく、次の保存まで a.kind は古いので、そのあいだはここで選択値を持つ。
-  // 保存済みの値が選択時のものから変われば、保存が追いついた（または外部で
-  // 更新された）ので新しい a.kind を使う。
+  // **最後に選んだ値が a.kind に追いつくまで保持する。** 保存中に選び直すと
+  // 前の選択の保存が後から追いつくことがあり、そこで「保存済みの値が変わった
+  // から追いついた」と判定すると、追いついたのが古い選択のほうでも pending を
+  // 消してしまい、選択欄がキャンバスと違う値に戻る。
+  //
+  // **追いついた・注釈が消えた pending は掃除しない。** 掃除は「レンダー中に
+  // 前回の props と比べて setState する」か「effect で setState する」のどちらかに
+  // なるが、前者は ref を読み書きする形になり、後者は effect 内の直接の setState
+  // になるので、どちらもこのリポジトリの eslint-plugin-react-hooks が禁じる形に
+  // なる。**このパネルはボードを切り替えると `key={board.id}` ごと作り直される**
+  // （`App`）ので、残る量は開いているボードで選び直した種別の数に留まり、
+  // 実害の無い範囲。
   const [pendingKinds, setPendingKinds] = useState<Record<string, PendingKind>>({});
 
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
@@ -282,7 +290,7 @@ export function AnnotationPanel({
               const missingId = `annotation-missing-${a.id}`;
               const pendingKind = pendingKinds[a.id];
               const kind =
-                pendingKind && pendingKind.saved === a.kind ? pendingKind.value : a.kind;
+                pendingKind && pendingKind.value !== a.kind ? pendingKind.value : a.kind;
 
               return (
                 <li
@@ -358,7 +366,7 @@ export function AnnotationPanel({
                           | undefined;
                         setPendingKinds((current) => ({
                           ...current,
-                          [a.id]: { saved: a.kind, value: nextKind },
+                          [a.id]: { value: nextKind },
                         }));
                         onChangeKind(a.id, nextKind);
                       }}
