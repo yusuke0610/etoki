@@ -7,7 +7,13 @@ import {
   installApi,
   summarize,
 } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
+import {
+  annotationCard,
+  chooseTarget,
+  drawRectangle,
+  openBoard,
+  picker,
+} from "./helpers/board";
 import {
   ANNOTATION_IDS,
   BOARD_ID,
@@ -675,6 +681,53 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "ボードを削除" }).click();
     await page.getByRole("alertdialog").waitFor();
     await shot(page, "29-delete-confirm");
+  });
+
+  // ひな形は選ばせるものなので、選択と、置いたあとのキャンバスの両方を撮る
+  // （#52）。絵が本当に置けているかは、単体テストでは分からない。
+  test("ひな形の選択と、適用後のキャンバスを撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.getByLabel("ボード名").fill("注文フローのブレスト");
+    await page.getByLabel("ひな形").selectOption("sequence");
+    await shot(page, "31-template-choice");
+
+    await page.getByRole("button", { name: "次へ" }).click();
+    await chooseTarget(page, "acme/web", "#1 ロードマップ");
+    await page.getByRole("heading", { name: "注文フローのブレスト", level: 1 }).waitFor();
+    await page.locator(".excalidraw canvas").first().waitFor();
+    await shot(page, "32-template-sequence");
+  });
+
+  // 5 種すべてを 1 枚ずつ撮る。**見た目は種類ごとに違う。** 文字幅を測れる
+  // のはブラウザだけなので（`convertToExcalidrawElements` は jsdom では本物の
+  // 寸法を返さない）、置けた図が読めるかどうかはここでしか分からない。
+  test("ひな形を種類ごとに撮る", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    for (const [kind, label] of [
+      ["todo", "やること"],
+      ["mindmap", "マインドマップ"],
+      ["sequence", "シーケンス図"],
+      ["er", "ER 図"],
+      ["architecture", "システム構成図"],
+    ] as const) {
+      // ボードごとにモックを作り直す。同じページで作り続けると、前のボードの
+      // 絵が残っているのか新しく置けたのかが画像から読めない。
+      await installApi(page, baseMock());
+      await page.goto("/");
+
+      await page.getByLabel("ボード名").fill(`${label}のボード`);
+      await page.getByLabel("ひな形").selectOption(kind);
+      await page.getByRole("button", { name: "次へ" }).click();
+      await chooseTarget(page, "acme/web", "#1 ロードマップ");
+
+      await page.getByRole("heading", { name: `${label}のボード`, level: 1 }).waitFor();
+      await page.locator(".excalidraw canvas").first().waitFor();
+      await shot(page, `33-template-${kind}`);
+    }
   });
 
   // 保存と作成の相互排他（`.claude/rules/async-ui.md`）。**押せない理由が本文

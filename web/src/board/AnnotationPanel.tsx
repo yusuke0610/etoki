@@ -5,6 +5,7 @@ import type {
   AnnotationStatus,
   CreatedRun,
   DetachedAnnotation,
+  DiagramKind,
   Granularity,
   Interpretation,
   InterpretedItem,
@@ -17,6 +18,7 @@ import type {
 import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { groupByEpic } from "./interpretation";
 import {
   interpretationOrderLabel,
@@ -99,6 +101,8 @@ type Props = {
   onMark: (frameId: string, granularity: Granularity) => void;
   onUnmark: (frameId: string) => void;
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
+  /** 図の種別を差し替える。`undefined` は「指定なし」に戻す。 */
+  onChangeKind: (frameId: string, kind: DiagramKind | undefined) => void;
   /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
   stale: boolean;
   /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
@@ -159,6 +163,11 @@ type Props = {
   projectLink: ProjectLink | null;
 };
 
+type PendingKind = {
+  /** 保存を待つあいだに表示する、最後に選んだ値。 */
+  value: DiagramKind | undefined;
+};
+
 export function AnnotationPanel({
   annotations,
   detached,
@@ -170,6 +179,7 @@ export function AnnotationPanel({
   onMark,
   onUnmark,
   onChangeGranularity,
+  onChangeKind,
   stale,
   interpretations,
   onInterpret,
@@ -186,6 +196,22 @@ export function AnnotationPanel({
   creationUnavailable,
   projectLink,
 }: Props) {
+  // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
+  // 新しく、次の保存まで a.kind は古いので、そのあいだはここで選択値を持つ。
+  // **最後に選んだ値が a.kind に追いつくまで保持する。** 保存中に選び直すと
+  // 前の選択の保存が後から追いつくことがあり、そこで「保存済みの値が変わった
+  // から追いついた」と判定すると、追いついたのが古い選択のほうでも pending を
+  // 消してしまい、選択欄がキャンバスと違う値に戻る。
+  //
+  // **追いついた・注釈が消えた pending は掃除しない。** 掃除は「レンダー中に
+  // 前回の props と比べて setState する」か「effect で setState する」のどちらかに
+  // なるが、前者は ref を読み書きする形になり、後者は effect 内の直接の setState
+  // になるので、どちらもこのリポジトリの eslint-plugin-react-hooks が禁じる形に
+  // なる。**このパネルはボードを切り替えると `key={board.id}` ごと作り直される**
+  // （`App`）ので、残る量は開いているボードで選び直した種別の数に留まり、
+  // 実害の無い範囲。
+  const [pendingKinds, setPendingKinds] = useState<Record<string, PendingKind>>({});
+
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
   // 出ると、同じものが 2 つあるように見える。
   const labels = annotationLabels(annotations);
@@ -262,6 +288,9 @@ export function AnnotationPanel({
               const onCanvas = canvasFrameIds === null || canvasFrameIds.includes(a.id);
               const selected = selectedFrameIds.includes(a.id);
               const missingId = `annotation-missing-${a.id}`;
+              const pendingKind = pendingKinds[a.id];
+              const kind =
+                pendingKind && pendingKind.value !== a.kind ? pendingKind.value : a.kind;
 
               return (
                 <li
@@ -313,6 +342,44 @@ export function AnnotationPanel({
                       {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
                         <option key={g} value={g}>
                           {GRANULARITY_LABEL[g]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {/*
+                    何の図として読ませるかを選ばせる。**ひな形は絵を置くだけ**
+                    （ADR 0047）で、どこを囲むかも何の図かも人が決めるので、
+                    種別が載る先はここしかない。
+
+                    粒度と同じ形（`<select>` + 表を引く）にしてあるのは、
+                    同じメタデータに載る 2 つが画面で別物に見えないため。
+                  */}
+                  <label className="granularity">
+                    種別
+                    <select
+                      value={kind ?? ""}
+                      disabled={!canEdit}
+                      onChange={(e) => {
+                        const nextKind = (e.target.value || undefined) as
+                          | DiagramKind
+                          | undefined;
+                        setPendingKinds((current) => ({
+                          ...current,
+                          [a.id]: { value: nextKind },
+                        }));
+                        onChangeKind(a.id, nextKind);
+                      }}
+                    >
+                      {/*
+                        「指定なし」は種別の語彙（DiagramKind）に無い値なので、
+                        ここだけ空文字で表す。選ばれたら customData からキーごと
+                        落ちる（setAnnotationKind）。
+                      */}
+                      <option value="">指定なし</option>
+                      {diagramKinds().map((k) => (
+                        <option key={k} value={k}>
+                          {DIAGRAM_KIND_LABELS[k]}
                         </option>
                       ))}
                     </select>
