@@ -442,6 +442,12 @@ test.describe("axe（etoki が書いた DOM）", () => {
     await card.getByRole("button", { name: "解釈する" }).click();
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
     await card.getByText("3 件を作成しました。").waitFor();
+    // 検査したいのは作成済みの印が付いた下書き。完了の文言は作成結果だけで
+    // 出るので、下書きへの反映まで待たないと通常の下書きを検査して通る。
+    await expect(card.locator(".badge-created", { hasText: "作成した" })).toHaveCount(3);
+    await expect(
+      card.getByText("作成しました。選び直すと、作成した draft issue を書き換えます。"),
+    ).toHaveCount(3);
 
     await expectNoAxeViolations(page);
   });
