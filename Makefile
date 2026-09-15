@@ -184,12 +184,15 @@ clean: ## 生成物を削除する（etoki.db には触らない）
 reset-db: ## ボードと作成の記録（etoki.db）を消す。CONFIRM=1 が要る
 	@# 名前と説明で「データを消す」と分かるだけでは足りない。補完や履歴から
 	@# 呼ばれても消えないよう、明示の変数を要求する。
+	@if [ -z "$(DB_PATH)" ]; then echo "DB_PATH が空です"; exit 1; fi
 	@if [ "$(CONFIRM)" != "1" ]; then \
 		echo "reset-db は $(DB_PATH) を消します。ボード・メンバー・作成の記録を含み、元に戻せません。"; \
 		echo "GitHub に作った draft issue は残りますが、etoki のどこから作ったかは失われます。"; \
 		echo "消すなら: make reset-db CONFIRM=1"; \
 		exit 1; \
 	fi
-	rm -f $(DB_PATH) $(DB_PATH)-shm $(DB_PATH)-wal
+	@# DB_PATH は上書きできるので、空白や glob を含んでも 1 つのパスとして渡す。
+	@# 分割や展開を許すと、CONFIRM=1 で認めた範囲より広く消える。
+	rm -f -- "$(DB_PATH)" "$(DB_PATH)-shm" "$(DB_PATH)-wal"
 
 endif
