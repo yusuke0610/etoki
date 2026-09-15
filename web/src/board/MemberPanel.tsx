@@ -81,9 +81,15 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
       setInvitee(null);
       await reload();
     } catch (e) {
-      // 持ち主が変わったなら、見せている相手はもう招待できない。残すと、同じ
-      // 確認のまま押し直せるように見える。
-      if (e instanceof ApiError && e.code === "invitee_changed") setInvitee(null);
+      // 持ち主が変わった（invitee_changed）か、その login を持つ人がいなくなった
+      // （invalid_input）なら、見せている相手はもう招待できない。残すと、同じ
+      // 確認のまま押し直せるように見え、押すたびに同じ失敗を繰り返す。
+      if (
+        e instanceof ApiError &&
+        (e.code === "invitee_changed" || e.code === "invalid_input")
+      ) {
+        setInvitee(null);
+      }
       setError(describeFailure("招待できませんでした", e));
     } finally {
       setBusy(false);
