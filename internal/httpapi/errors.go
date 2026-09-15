@@ -59,6 +59,7 @@ var errorMappings = []errorMapping{
 	{usecase.ErrContentHashMismatch, http.StatusConflict, apitypes.ErrorCodeContentHashMismatch},
 	{usecase.ErrPreviousItemUnknown, http.StatusConflict, apitypes.ErrorCodePreviousItemUnknown},
 	{usecase.ErrAlreadyMember, http.StatusConflict, apitypes.ErrorCodeAlreadyMember},
+	{usecase.ErrInviteeChanged, http.StatusConflict, apitypes.ErrorCodeInviteeChanged},
 	{usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
 
 	// 大きすぎるシーン。400 に畳まない。中身の誤りではなく大きさなので、
