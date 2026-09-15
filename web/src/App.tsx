@@ -321,7 +321,7 @@ export function App() {
             増やすと、空白で始めたい人にも通り抜けるだけの手順が要る。
           */}
           <TemplatePicker value={template} onChange={setTemplate} />
-          <button type="submit" disabled={!name.trim()}>
+          <button type="submit" className="primary" disabled={!name.trim()}>
             次へ
           </button>
         </form>
