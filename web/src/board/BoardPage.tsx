@@ -53,6 +53,7 @@ import {
 import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { log } from "../logger";
+import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
 import {
   AnnotationPanel,
@@ -111,11 +112,19 @@ const DIAGRAM_KEY = "diagram";
  * **画像のエクスポートは閉じない。** 答えている問いが違う（持ち出しではなく、
  * 絵を他所に貼ること）。
  *
+ * **テーマの切り替えは開ける**（ADR 0049）。`theme` を渡すとライブラリは既定で
+ * この項目を隠すので、明示しないと手で切り替える口が消える。
+ *
  * **モジュールの定数として持つ。** 描画のたびに作り直すと、Excalidraw には
  * 毎回違うオブジェクトが渡る。
  */
 const UI_OPTIONS = {
-  canvasActions: { loadScene: false, export: false, saveToActiveFile: false },
+  canvasActions: {
+    loadScene: false,
+    export: false,
+    saveToActiveFile: false,
+    toggleTheme: true,
+  },
 } as const;
 
 /**
@@ -171,6 +180,15 @@ type Props = {
    * いるので、止めるかどうかを判断する材料をそこへ渡す必要がある。
    */
   onDirtyChange: (dirty: boolean) => void;
+  /** 画面の配色。持ち主は App（ADR 0049）。 */
+  theme: Theme;
+  /**
+   * キャンバスのメニューでテーマが切り替えられた。
+   *
+   * **ここで持ち直さない。** etoki のパネルとキャンバスで値が 2 つになり、
+   * 片方だけが暗い画面が起きる。
+   */
+  onThemeChange: (theme: Theme) => void;
 };
 
 export function BoardPage({
@@ -182,6 +200,8 @@ export function BoardPage({
   onRenamed,
   onDeleted,
   onDirtyChange,
+  theme,
+  onThemeChange,
 }: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
   const canEdit = board.role !== "viewer";
@@ -595,6 +615,9 @@ export function BoardPage({
   // いまのキャンバスの見え方。**state ではなく ref に持つ。** 重ねる枠の
   // 引き直しにしか使わないので、スクロールのたびに再描画を増やす理由が無い。
   const viewport = useRef<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1 });
+  // キャンバスが最後に言ってきたテーマ。マウント時は props のテーマで描かれる。
+  // 選び直したかどうかをこれとの差で見る（`handleChange`）。
+  const canvasTheme = useRef<Theme>(theme);
 
   /**
    * いまキャンバスに出ている背景色。
@@ -620,9 +643,24 @@ export function BoardPage({
         scrollY: number;
         zoom: { value: number };
         viewBackgroundColor: string;
+        theme: Theme;
       },
     ) => {
       const els = elements as SceneElement[];
+      // キャンバスのメニューで切り替えたテーマは、ここでしか届かない。持ち主の
+      // App に返して、パネルの配色も一緒に変える（ADR 0049）。
+      //
+      // **キャンバスが前回と違うテーマを言ってきたときだけ返す。** props と
+      // 比べると、OS の設定が変わって props を差し替えた直後に、まだ古い
+      // テーマのまま届く onChange を「選び直した」と取り違え、OS に従うのを
+      // やめてしまう。
+      //
+      // **署名には入れない。** テーマは保存が書かない（`sceneJSON` の直列化が
+      // 落とす）ので、入れると切り替えただけで未保存になる。
+      if (appState.theme !== canvasTheme.current) {
+        canvasTheme.current = appState.theme;
+        if (appState.theme !== theme) onThemeChange(appState.theme);
+      }
       applySignature(sceneSignature(els, appState.viewBackgroundColor));
       scheduleMeasure();
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
@@ -637,7 +675,7 @@ export function BoardPage({
       };
       setOverlayBoxes(annotationBoxes(els, viewport.current));
     },
-    [applySignature, scheduleMeasure],
+    [applySignature, scheduleMeasure, theme, onThemeChange],
   );
 
   /**
@@ -1585,6 +1623,7 @@ export function BoardPage({
             initialData={initialData as never}
             onChange={handleChange as never}
             langCode="ja-JP"
+            theme={theme}
             // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0045）。
             UIOptions={UI_OPTIONS}
             // viewer には描かせない。描けるのに保存できないと、描いた内容を

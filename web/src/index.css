@@ -1,11 +1,93 @@
+/*
+ * 配色の変数（ADR 0049）。**色はここでだけ決め、下の規則は変数を読む。**
+ * 直書きの色が 1 つでも残ると、ダークでそこだけ明るいまま残る。
+ *
+ * 名前は色味ではなく役割で付ける。`.hint` が読むのは「薄い文字」であって
+ * 「灰色」ではなく、ダークでは明るい灰色になる。
+ *
+ * 文字色を変えるときは、どちらのテーマでも AA の 4.5:1 を切らせない
+ * （web/CLAUDE.md の「アクセシビリティ」）。
+ */
 :root {
+  --color-bg: #fff;
+  --color-text: #1e1e1e;
+  --color-text-muted: #6b6b6b;
+  --color-text-subtle: #555;
+  --color-border: #ddd;
+  --color-border-subtle: #e0e0e0;
+  --color-surface-muted: #fafafa;
+  --color-surface-sunken: #f7f7f7;
+  --color-surface-cool: #eef1f4;
+  --color-hover: #f5f5f5;
+  --color-neutral-bg: #eee;
+  --color-selected-bg: #eef2f7;
+  --color-selected-fg: #3a4a5c;
+  --color-active-bg: #e7f0ff;
+  --color-accent-bg: #eef2ff;
+  --color-link: #3b4a9c;
+  --color-success: #1f7a34;
+  --color-success-bg: #e3f5e6;
+  --color-warning: #8a5a00;
+  --color-warning-bg: #fdf0d5;
+  --color-danger: #8a1c12;
+  --color-danger-bg: #fdecea;
+  --color-danger-border: #f3c5c0;
+  --color-danger-border-strong: #d9a7a1;
+  /* ライトはブラウザ既定のボタン地のまま。他のボタンと形を揃える。 */
+  --color-danger-button-bg: buttonface;
+  /* 注釈の印。Excalidraw の選択色に合わせてある。 */
+  --color-annotation: #6965db;
+  --color-annotation-bg: rgb(105 101 219 / 6%);
+  --color-on-annotation: #fff;
+
+  /* ボタンや入力欄などブラウザが描く部品も、テーマに合わせて描かせる。 */
+  color-scheme: light;
   font-family: system-ui, sans-serif;
   font-size: 14px;
-  color: #1e1e1e;
+  color: var(--color-text);
+}
+
+/*
+ * ダーク。**変数だけを差し替える。** 規則ごとにダーク用の上書きを書くと、
+ * 規則を足した日にダークだけ抜ける。
+ */
+:root[data-theme="dark"] {
+  --color-bg: #14171b;
+  --color-text: #e3e7ec;
+  --color-text-muted: #a3abb6;
+  --color-text-subtle: #b7bec8;
+  --color-border: #343a42;
+  --color-border-subtle: #2c3138;
+  --color-surface-muted: #1a1e23;
+  --color-surface-sunken: #1e2227;
+  --color-surface-cool: #232830;
+  --color-hover: #22272e;
+  --color-neutral-bg: #2a2f37;
+  --color-selected-bg: #1e2b40;
+  --color-selected-fg: #a9c1ec;
+  --color-active-bg: #1f2d4a;
+  --color-accent-bg: #232a4a;
+  --color-link: #aab6ff;
+  --color-success: #7fd8a6;
+  --color-success-bg: #133324;
+  --color-warning: #ffbe6b;
+  --color-warning-bg: #3b2a12;
+  --color-danger: #ff9a90;
+  --color-danger-bg: #3a1a17;
+  --color-danger-border: #6b2c27;
+  --color-danger-border-strong: #8a3a33;
+  --color-danger-button-bg: #2a1614;
+  --color-annotation: #8f8cf0;
+  --color-annotation-bg: rgb(143 140 240 / 8%);
+  --color-on-annotation: #15142b;
+
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
+  /* 塗らないとブラウザの既定（白）が透けて、ダークでも地が明るいまま残る。 */
+  background: var(--color-bg);
 }
 
 .app {
@@ -17,7 +99,7 @@ body {
   /* 入れ子のぶん字下げが要るので、平坦な一覧だったときより広い（ADR 0019）。 */
   width: 240px;
   flex-shrink: 0;
-  border-right: 1px solid #ddd;
+  border-right: 1px solid var(--color-border);
   padding: 12px;
   overflow-y: auto;
 }
@@ -72,7 +154,7 @@ body {
 }
 
 .board-list button.active {
-  background: #e7f0ff;
+  background: var(--color-active-bg);
   font-weight: 600;
 }
 
@@ -85,7 +167,7 @@ body {
 
 /* リポジトリと Project の見出し。ボードそのものではないので弱く出す。 */
 .board-tree .tree-branch {
-  color: #555;
+  color: var(--color-text-subtle);
   font-size: 12px;
   /* 名前が長いと折り返して縦に伸びる。1 行に収めて省略する。 */
   overflow: hidden;
@@ -117,7 +199,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .board-header h1 {
@@ -161,9 +243,9 @@ body {
 
 .annotation-overlay-frame {
   position: absolute;
-  border: 2px dashed #6965db;
+  border: 2px dashed var(--color-annotation);
   border-radius: 8px;
-  background: rgb(105 101 219 / 6%);
+  background: var(--color-annotation-bg);
 }
 
 .annotation-overlay-badge {
@@ -172,8 +254,8 @@ body {
   right: 4px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: #6965db;
-  color: #fff;
+  background: var(--color-annotation);
+  color: var(--color-on-annotation);
   font-size: 11px;
   line-height: 1.6;
   white-space: nowrap;
@@ -182,7 +264,7 @@ body {
 .panel {
   width: 280px;
   flex-shrink: 0;
-  border-left: 1px solid #ddd;
+  border-left: 1px solid var(--color-border);
   padding: 12px;
   overflow-y: auto;
 }
@@ -195,7 +277,7 @@ body {
 .panel h3 {
   font-size: 13px;
   margin: 0 0 6px;
-  color: #555;
+  color: var(--color-text-subtle);
 }
 
 .panel-section {
@@ -203,13 +285,13 @@ body {
 }
 
 .hint {
-  color: #6b6b6b;
+  color: var(--color-text-muted);
   font-size: 12px;
   line-height: 1.6;
 }
 
 .annotation {
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border-subtle);
   border-radius: 6px;
   padding: 8px;
   margin-bottom: 8px;
@@ -217,8 +299,8 @@ body {
 
 /* キャンバスで選択中のフレームに対応するカード。作成先の選択と同じ色を使う。 */
 .annotation.selected {
-  border-color: #3a4a5c;
-  background: #eef2f7;
+  border-color: var(--color-selected-fg);
+  background: var(--color-selected-bg);
 }
 
 .annotation-head {
@@ -248,7 +330,7 @@ body {
 }
 
 .annotation-name:disabled {
-  color: #6b6b6b;
+  color: var(--color-text-muted);
   cursor: default;
 }
 
@@ -261,18 +343,18 @@ body {
 }
 
 .badge-uncreated {
-  background: #eee;
-  color: #555;
+  background: var(--color-neutral-bg);
+  color: var(--color-text-subtle);
 }
 
 .badge-created {
-  background: #e3f5e6;
-  color: #1f7a34;
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 
 .badge-changed {
-  background: #fdf0d5;
-  color: #8a5a00;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
 }
 
 .granularity {
@@ -284,7 +366,7 @@ body {
 
 .kind {
   font-size: 11px;
-  color: #6b6b6b;
+  color: var(--color-text-muted);
 }
 
 /*
@@ -294,14 +376,14 @@ body {
  */
 .item-body > summary {
   font-size: 11px;
-  color: #6b6b6b;
+  color: var(--color-text-muted);
   cursor: pointer;
 }
 
 .item-body > pre {
   margin: 4px 0 8px;
   padding: 6px 8px;
-  background: #f7f7f7;
+  background: var(--color-surface-sunken);
   border-radius: 4px;
   /* pre の既定は等幅。textarea 側と揃えないと、読むときと直すときで書体が
      変わり、同じ本文が別物に見える。 */
@@ -323,8 +405,8 @@ body {
   box-sizing: border-box;
   margin: 4px 0 8px;
   padding: 6px 8px;
-  background: #f7f7f7;
-  border: 1px solid #ddd;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-family: inherit;
   font-size: 12px;
@@ -387,13 +469,13 @@ body {
 
 .dirty,
 .stale {
-  color: #8a5a00;
+  color: var(--color-warning);
   font-size: 12px;
 }
 
 .error {
-  background: #fdecea;
-  color: #8a1c12;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
   padding: 8px 12px;
   display: flex;
   justify-content: space-between;
@@ -440,8 +522,8 @@ body {
  * よいかを続けて読ませる必要があり、バッジに収まる長さにならない。
  */
 .conflict {
-  background: #fdf0d5;
-  color: #8a5a00;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
   padding: 8px 12px;
   margin: 0;
   font-size: 13px;
@@ -454,8 +536,11 @@ body {
   いるので（中核思想 3）、ここは「他と違う」と分かれば足りる。
 */
 button.danger {
-  border-color: #d9a7a1;
-  color: #8a1c12;
+  border-color: var(--color-danger-border-strong);
+  /* 地も変数で持つ。ブラウザ既定のボタン地はダークでは中間の灰色になり、
+     明るい赤の文字が AA を切る。 */
+  background: var(--color-danger-button-bg);
+  color: var(--color-danger);
 }
 
 /*
@@ -466,9 +551,9 @@ button.danger {
   何も起きていない状態なので、色は失敗ではなく注意として扱う。
 */
 .delete-confirm {
-  background: #fdecea;
-  color: #8a1c12;
-  border-bottom: 1px solid #f3c5c0;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-bottom: 1px solid var(--color-danger-border);
   padding: 12px;
   font-size: 13px;
   line-height: 1.6;
@@ -480,7 +565,7 @@ button.danger {
 */
 .delete-confirm:focus-visible {
   outline: none;
-  box-shadow: inset 3px 0 0 #8a1c12;
+  box-shadow: inset 3px 0 0 var(--color-danger);
 }
 
 .delete-confirm h2 {
@@ -502,9 +587,9 @@ button.danger {
   出るので、幅は置かれた場所に合わせる。
 */
 .error-boundary {
-  background: #fdecea;
-  color: #8a1c12;
-  border: 1px solid #f3c5c0;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
   border-radius: 4px;
   padding: 12px;
   margin: 12px;
@@ -515,7 +600,7 @@ button.danger {
   margin: 0 0 8px;
 }
 .error-boundary .hint {
-  color: #8a1c12;
+  color: var(--color-danger);
   opacity: 0.8;
 }
 
@@ -534,8 +619,8 @@ button.danger {
 }
 
 .badge-target {
-  background: #eef2f7;
-  color: #3a4a5c;
+  background: var(--color-selected-bg);
+  color: var(--color-selected-fg);
 }
 
 /*
@@ -559,7 +644,7 @@ a.badge-target:hover {
  * 下線は残す。色だけで押せることを示すと、色が読めない環境で手掛かりが消える。
  */
 .hint a {
-  color: #3b4a9c;
+  color: var(--color-link);
 }
 
 /*
@@ -580,7 +665,7 @@ a.badge-target:hover {
 .picker h2 {
   font-size: 13px;
   margin: 0 0 6px;
-  color: #555;
+  color: var(--color-text-subtle);
 }
 
 .picker .error {
@@ -595,19 +680,19 @@ a.badge-target:hover {
   width: 100%;
   text-align: left;
   padding: 6px 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border-subtle);
   border-radius: 4px;
   background: none;
   cursor: pointer;
 }
 
 .plain-list button:hover:not(:disabled) {
-  background: #f5f5f5;
+  background: var(--color-hover);
 }
 
 .plain-list button.active {
-  border-color: #3a4a5c;
-  background: #eef2f7;
+  border-color: var(--color-selected-fg);
+  background: var(--color-selected-bg);
 }
 
 .account {
@@ -655,16 +740,16 @@ a.badge-target:hover {
 /* 自分のロールはボードのヘッダに常に出す。操作して断られる前に、何ができる
    のかが見えている必要がある（ADR 0017）。 */
 .badge-role {
-  background: #eef2ff;
-  color: #3b4a9c;
+  background: var(--color-accent-bg);
+  color: var(--color-link);
 }
 
 /* メンバーはヘッダとキャンバスの間に開く。キャンバスの上に重ねると、
    ブレスト中の絵が隠れる。 */
 .member-panel {
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--color-border);
   padding: 12px 16px;
-  background: #fafafa;
+  background: var(--color-surface-muted);
 }
 
 .member-panel-header {
@@ -713,8 +798,8 @@ a.badge-target:hover {
  * 必要がある。どちらも取り消せないが、書き換えは前の内容を消す。
  */
 .badge-updated {
-  background: #fdf0d5;
-  color: #8a5a00;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
 }
 
 /*
@@ -724,7 +809,7 @@ a.badge-target:hover {
 .left-behind {
   margin: 8px 0;
   padding: 6px 8px;
-  border-left: 2px solid #ddd;
+  border-left: 2px solid var(--color-border);
 }
 
 /*
@@ -760,8 +845,8 @@ a.badge-target:hover {
  * 減らせという催促には見えないよう、状態を並べる他のバッジと同じ扱いにする。
  */
 .badge-size {
-  background: #eef1f4;
-  color: #555;
+  background: var(--color-surface-cool);
+  color: var(--color-text-subtle);
 }
 
 /*
@@ -801,7 +886,7 @@ a.badge-target:hover {
  */
 .diagram-chat {
   border-left: none;
-  border-right: 1px solid #ddd;
+  border-right: 1px solid var(--color-border);
 }
 
 .diagram-chat-header {
@@ -835,9 +920,9 @@ a.badge-target:hover {
 .diagram-mermaid {
   margin: 0 0 8px;
   padding: 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border-subtle);
   border-radius: 6px;
-  background: #fafafa;
+  background: var(--color-surface-muted);
   font-size: 12px;
   line-height: 1.5;
   overflow-x: auto;
@@ -848,5 +933,5 @@ a.badge-target:hover {
   padding-left: 20px;
   font-size: 12px;
   line-height: 1.6;
-  color: #555;
+  color: var(--color-text-subtle);
 }

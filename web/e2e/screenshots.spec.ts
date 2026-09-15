@@ -850,4 +850,21 @@ test.describe("スクリーンショット", () => {
       if (typeof release === "function") release();
     });
   });
+  // ダーク（ADR 0049）。変数を差し替えるだけなので、画面ごとに撮り分ける
+  // 価値があるのは、色の種類がいちばん多く並ぶところ（3 状態・解釈結果・
+  // 更新と取り残し）。
+  test("ダークで主要な画面を撮る", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await installApi(page, matchedInterpretationMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await shot(page, "34-dark-board-states");
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.locator(".left-behind").scrollIntoViewIfNeeded();
+    await shot(page, "35-dark-update-and-left-behind");
+  });
 });
