@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Failure } from "../api/errorMessage";
-import type { Granularity, Interpretation } from "../api/types";
+import type { Granularity, Interpretation, SyncItem } from "../api/types";
 import { createGenerations } from "./generation";
 import {
   addInterpretation,
@@ -9,6 +9,7 @@ import {
   failInterpretation,
   interpretationOrderLabel,
   MAX_INTERPRETATIONS,
+  recordCreated,
   selectedInterpretation,
   selectInterpretation,
   startInterpretation,
@@ -150,5 +151,40 @@ describe("世代との噛み合わせ", () => {
     }
 
     expect(state.runs.map((r) => r.id)).toEqual([gen]);
+  });
+});
+
+function syncItem(localId: string, itemId: string): SyncItem {
+  return { itemId, kind: "issue", title: localId, body: "", localId, action: "created" };
+}
+
+// 作ったものは、その解釈に結びつけて持つ（ADR 0052）。下書きは解釈を選び
+// 直すと作り直されるので、下書きの中だけに持つと、戻ってきたときに作成済みの
+// 項目が全部選ばれた状態に戻り、押せば重複する。
+describe("作ったものの記録", () => {
+  it("作った解釈にだけ、作成の回ごとに積まれる", () => {
+    let state = addInterpretation(addInterpretation(emptyInterpretation, run(1)), run(2));
+    state = recordCreated(state, 1, [syncItem("e1", "PVTI_a")]);
+    state = recordCreated(state, 1, [syncItem("i1", "PVTI_b")]);
+
+    expect(state.runs.find((r) => r.id === 1)?.created).toEqual([
+      [syncItem("e1", "PVTI_a")],
+      [syncItem("i1", "PVTI_b")],
+    ]);
+    expect(state.runs.find((r) => r.id === 2)?.created).toBeUndefined();
+  });
+
+  // 上限で落ちた解釈には、画面から作れない。無いものに積んだことにしない。
+  it("落ちた解釈を指したら何もしない", () => {
+    const state = addInterpretation(emptyInterpretation, run(1));
+
+    expect(recordCreated(state, 99, [syncItem("e1", "PVTI_a")])).toBe(state);
+  });
+
+  it("選択は動かさない", () => {
+    let state = addInterpretation(addInterpretation(emptyInterpretation, run(1)), run(2));
+    state = recordCreated(state, 1, [syncItem("e1", "PVTI_a")]);
+
+    expect(state.selectedId).toBe(2);
   });
 });

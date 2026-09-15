@@ -355,8 +355,12 @@ body {
 /*
  * 外した項目も残して薄くする。消すと、何を外したのかが確かめられない
  * （中核思想 3）。
+ *
+ * **薄くするのは入力欄だけ。** 行ごと薄くすると、その中に出す説明（作成した
+ * 項目の案内、ADR 0052）や本文の開閉まで AA の 4.5:1 を切る。外した行でも
+ * 読ませる文があるので、文字の色は落とさない（ADR 0039）。
  */
-.draft-item.unselected {
+.draft-item.unselected :is(select, input:not([type="checkbox"]), textarea) {
   opacity: 0.55;
 }
 
