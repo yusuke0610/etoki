@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, summarize, type ApiMock } from "./helpers/api";
+import { holdSave, installApi, summarize, type ApiMock } from "./helpers/api";
 import { drawRectangle, openBoard } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
@@ -362,6 +362,106 @@ test.describe("シーンの保存", () => {
     await expect(
       page.getByText("保存してから解釈できます", { exact: false }).first(),
     ).toBeVisible();
+  });
+
+  // 保存は明示操作だけ（ADR 0021）なので、押すまでの手数の少なさがそのまま
+  // 値打ちになる。**誰も拾わないと既定の動作（ブラウザの「ページを保存」）に
+  // 落ちる。** Excalidraw 側の Ctrl+S は `UIOptions` から外してある（ADR 0045）
+  // ので、押しても何も起きず preventDefault もされない（issue #145）。
+  test("Ctrl / Cmd + S で保存できる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    const saved = page.waitForRequest(
+      (req) =>
+        req.method() === "PUT" && new URL(req.url()).pathname.endsWith("/scene"),
+    );
+    await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
+    await saved;
+
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
+  // **押せないときも既定の動作は止める。** 「保存できなかった」の代わりに
+  // ブラウザの保存ダイアログが出るのは、押せない理由を見せるどころではない。
+  // viewer には保存そのものが無い（ADR 0017）ので、ここがいちばん外しやすい。
+  test("viewer が押しても保存せず、ブラウザの既定にも落とさない", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
+    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await expect(page.getByRole("button", { name: "保存" })).toHaveCount(0);
+
+    const requests: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PUT") requests.push(req.url());
+    });
+
+    // 既定の動作が止まったかは、押した側で見るしかない。ブラウザの保存
+    // ダイアログは Playwright からは観測できない。
+    const prevented = await page.evaluate(async () => {
+      let seen = false;
+      const watch = (e: KeyboardEvent) => {
+        if (e.key === "s") seen = e.defaultPrevented;
+      };
+      // **`keydown` の最後に見る。** 先に登録すると、保存側が
+      // preventDefault する前に読むことになる。
+      window.addEventListener("keydown", watch);
+      document.querySelector("canvas")?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "s",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      window.removeEventListener("keydown", watch);
+      return seen;
+    });
+
+    expect(prevented).toBe(true);
+    expect(requests).toEqual([]);
+  });
+
+  // 保存中にもう一度押しても、2 本目を投げない。**押せない条件はボタンと同じ式**
+  // を使っているので、ここが落ちるのは式が 2 つに分かれたとき（issue #145）。
+  test("保存中に押しても、保存を重ねない", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await holdSave(page, held);
+
+    const saves: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PUT" && new URL(req.url()).pathname.endsWith("/scene")) {
+        saves.push(req.url());
+      }
+    });
+
+    const canvas = page.locator(".excalidraw canvas").first();
+    await canvas.press("ControlOrMeta+s");
+    await expect(page.getByRole("button", { name: "保存中…" })).toBeVisible();
+
+    await canvas.press("ControlOrMeta+s");
+    await expect(page.getByRole("button", { name: "保存中…" })).toBeVisible();
+
+    release();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    expect(saves).toHaveLength(1);
   });
 
   test("保存すると、それまでの解釈結果は捨てられる", async ({ page }) => {
