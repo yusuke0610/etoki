@@ -28,8 +28,7 @@ func (h *handlers) createItems(c *gin.Context) {
 	}
 
 	var req apitypes.Interpretation
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindJSON(c, &req) {
 		return
 	}
 

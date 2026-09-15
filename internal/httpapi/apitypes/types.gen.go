@@ -53,6 +53,7 @@ const (
 	ErrorCodePreviousItemUnknown  ErrorCode = "previous_item_unknown"
 	ErrorCodeProjectFieldMissing  ErrorCode = "project_field_missing"
 	ErrorCodeRateLimited          ErrorCode = "rate_limited"
+	ErrorCodeRequestTooLarge      ErrorCode = "request_too_large"
 	ErrorCodeSceneConflict        ErrorCode = "scene_conflict"
 	ErrorCodeSceneTooLarge        ErrorCode = "scene_too_large"
 	ErrorCodeSharingNotConfigured ErrorCode = "sharing_not_configured"
@@ -861,8 +862,14 @@ type NotConfigured = ErrorResponse
 // NotFound 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type NotFound = ErrorResponse
 
+// RequestTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type RequestTooLarge = ErrorResponse
+
 // SceneTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type SceneTooLarge = ErrorResponse
+
+// TooManyLoginStarts 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type TooManyLoginStarts = ErrorResponse
 
 // TooManyRequests 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type TooManyRequests = ErrorResponse

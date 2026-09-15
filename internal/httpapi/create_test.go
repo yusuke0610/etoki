@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/internal/httpapi"
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
@@ -273,6 +275,81 @@ func TestCreateItems_ReportsPartialCreation(t *testing.T) {
 	}
 	if run == nil || len(run.Items) != 1 {
 		t.Errorf("部分的な run が記録されていない: %+v", run)
+	}
+}
+
+// 作成の本文にも `/api` の既定の上限が掛かる（issue #147）。
+//
+// **未設定の 503 より後に見る。** 設定していない機能は本文を読む前に断るのが
+// 正しいので、GitHub を設定したルーターで確かめる。
+func TestCreateItems_RejectsOversizedBody(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{}
+	r, mappings := newCreateRouter(t, gh)
+
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	body := createBody(currentHash(t, r, id))
+	// 1 フィールドで超えさせる。項目数で超えさせると、件数の上限
+	// （domain.MaxItems）のほうに先に当たる。
+	body["summary"] = strings.Repeat("あ", 64<<10)
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), body)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (%s)", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeRequestTooLarge {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeRequestTooLarge)
+	}
+	// 弾いた操作は「書かれていないこと」も断言する。検証の前に作ってしまう
+	// 実装は、エラーの検査だけでは素通りする。
+	if gh.seq != 0 {
+		t.Errorf("弾いたのに GitHub に作っている: %d 件", gh.seq)
+	}
+	run, err := mappings.FindLatestRun(t.Context(), id, "annot-1")
+	if err != nil {
+		t.Fatalf("FindLatestRun: %v", err)
+	}
+	if run != nil {
+		t.Errorf("弾いたのに run が残っている: %+v", run)
+	}
+}
+
+// 1 回の作成で扱える項目数には上限がある（domain.MaxItems、issue #147）。
+//
+// **作成はボード単位の排他を取ったまま進む。** 上限が無いと、1 回のリクエストで
+// そのボードの作成と作成先の変更を任意の長さ止められる。
+func TestCreateItems_RejectsTooManyItems(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{}
+	r, _ := newCreateRouter(t, gh)
+
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	items := make([]map[string]any, 0, domain.MaxItems+1)
+	for i := range domain.MaxItems + 1 {
+		items = append(items, map[string]any{
+			"localId": fmt.Sprintf("i%d", i),
+			"kind":    "issue",
+			"title":   fmt.Sprintf("課題 %d", i),
+		})
+	}
+	body := createBody(currentHash(t, r, id))
+	body["items"] = items
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+	}
+	// **弾いたのに 1 件も作っていないことまで見る。** 途中まで作ってから
+	// 弾く実装は、ステータスの検査だけでは素通りする。draft issue は消せない
+	// （ADR 0009）。
+	if gh.seq != 0 {
+		t.Errorf("弾いたのに GitHub に作っている: %d 件", gh.seq)
 	}
 }
 

@@ -160,6 +160,79 @@ func TestAPIResponses_AreNotCached(t *testing.T) {
 	}
 }
 
+// `/api` の入口で本文の読み込みに既定の上限が掛かる（issue #147）。
+//
+// **口ごとに置かず入口で掛ける。** シーン・解釈・図のドラフトに歯止めを入れた
+// あとも、改名・作成先・作成・招待の 6 つは素通しのままだった。
+//
+// **歯止めに当たった失敗も契約の code に写す**（`.claude/rules/api-contract.md`）。
+// 400 に落とすと、同じ「大きすぎる」がボディの大きさしだいで 400 と 413 に割れ、
+// 画面が同じ原因を 2 通りに案内することになる。
+//
+// 作成と共有の 2 つは、設定されていないと本文を読む前に 503 で返る。
+// そちらのルーターを持つ create_test.go / member_test.go に置いてある。
+func TestAPIBodies_AreLimitedAtTheEntrance(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "設計会")
+
+	// 既定の上限（64 KiB）を確実に超える値。**contentHash のような 1 フィールドに
+	// 載せる。** 項目数で超えさせると、件数の上限（domain.MaxItems）のほうに
+	// 先に当たり、歯止めを見ていない実装でも 4xx になる。
+	huge := strings.Repeat("あ", 64<<10)
+
+	cases := map[string]struct {
+		method string
+		path   string
+		body   map[string]any
+	}{
+		"改名": {http.MethodPatch, "/api/boards/" + id,
+			map[string]any{"name": huge}},
+		"作成先": {http.MethodPut, "/api/boards/" + id + "/target",
+			map[string]any{"repositoryOwner": huge, "repositoryName": "web", "projectId": "PVT_1"}},
+		"作成先の表示": {http.MethodPut, "/api/boards/" + id + "/target/display",
+			map[string]any{"projectId": "PVT_1", "projectTitle": huge}},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := do(t, r, tc.method, tc.path, tc.body)
+			if rec.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("status = %d, want %d (%s)",
+					rec.Code, http.StatusRequestEntityTooLarge, rec.Body)
+			}
+			if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeRequestTooLarge {
+				t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeRequestTooLarge)
+			}
+		})
+	}
+}
+
+// 既定の上限は、広い本文を受ける口では置き換わる（issue #147）。
+//
+// **これが無いと、入口の歯止めがシーンの保存を巻き込んでいても緑のまま通る。**
+// http.MaxBytesReader は重ねると内側が先に切るので、置き換えではなく重ねる形に
+// 戻すとここが落ちる。
+func TestSceneBody_IsNotCutByTheDefaultLimit(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "設計会")
+
+	// 既定（64 KiB）を超えるが、シーンの上限には収まる大きさ。
+	scene := `{"type":"excalidraw","version":2,"source":"test","elements":[],` +
+		`"appState":{"note":"` + strings.Repeat("x", 128<<10) + `"},"files":{}}`
+
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		map[string]any{"scene": scene, "baseUpdatedAt": fixedTime})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
 func TestUnknownRouteReturns404(t *testing.T) {
 	t.Parallel()
 

@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -776,6 +777,22 @@ func TestInterpretation_Validate_DuplicateEpicTitleMessage(t *testing.T) {
 	}
 }
 
+// manyItems は上限の検査だけを破る項目を n 件作る。
+//
+// **ほかの制約は満たす。** 満たさないと、件数の上限を見ていない実装でも
+// 別の指摘で緑になり、この制約に到達したかを見分けられなくなる。
+func manyItems(n int) []domain.InterpretedItem {
+	items := make([]domain.InterpretedItem, 0, n)
+	for i := range n {
+		items = append(items, domain.InterpretedItem{
+			LocalID: fmt.Sprintf("i%d", i),
+			Kind:    domain.KindIssue,
+			Title:   fmt.Sprintf("t%d", i),
+		})
+	}
+	return items
+}
+
 // errorRules は検証エラーが名乗った制約を出た順に返す。
 func errorRules(t *testing.T, err error) []domain.RuleID {
 	t.Helper()
@@ -812,6 +829,7 @@ func TestRules_MatchValidation(t *testing.T) {
 			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "t"}},
 		}},
 		domain.RuleItemsPresent: {in: domain.Interpretation{Summary: "s"}},
+		domain.RuleItemsCount:   {in: domain.Interpretation{Summary: "s", Items: manyItems(domain.MaxItems + 1)}},
 		domain.RuleKind: {in: domain.Interpretation{Summary: "s",
 			Items: []domain.InterpretedItem{{LocalID: "x1", Kind: "project", Title: "t"}},
 		}},

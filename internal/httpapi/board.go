@@ -152,7 +152,7 @@ const maxSceneBody = usecase.MaxSceneBytes*6 + 4<<10
 // 経路によって違うステータスで返らないようにする。** 写し替えの表は errors.go に
 // あるので、ここは sentinel を選ぶだけ。
 func (h *handlers) bindSceneBody(c *gin.Context, req any) bool {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSceneBody)
+	widenBody(c, maxSceneBody)
 
 	err := c.ShouldBindJSON(req)
 	if err == nil {
@@ -227,8 +227,7 @@ func (h *handlers) getBoard(c *gin.Context) {
 // 書けることになり、固定（ADR 0014）が意味を失う。
 func (h *handlers) renameBoard(c *gin.Context) {
 	var req apitypes.RenameBoardRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindJSON(c, &req) {
 		return
 	}
 
@@ -282,8 +281,7 @@ func (h *handlers) deleteBoard(c *gin.Context) {
 // 固定済みかどうかの判断はユースケース層が持つ。ここは 409 に写すだけ。
 func (h *handlers) setBoardTarget(c *gin.Context) {
 	var req apitypes.BoardTarget
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindJSON(c, &req) {
 		return
 	}
 
@@ -318,8 +316,7 @@ func (h *handlers) setBoardTarget(c *gin.Context) {
 // ない（ADR 0037）。同じかどうかの判断はユースケース層が持つ。
 func (h *handlers) refreshBoardTargetDisplay(c *gin.Context) {
 	var req apitypes.BoardTargetDisplay
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindJSON(c, &req) {
 		return
 	}
 
@@ -526,4 +523,29 @@ func (h *handlers) fail(c *gin.Context, err error) {
 // 表を引かずにここで code を決めるのはこの経路だけ。
 func (h *handlers) badRequest(c *gin.Context, err error) {
 	errorJSON(c, http.StatusBadRequest, apitypes.ErrorCodeInvalidInput, err.Error())
+}
+
+// bindJSON は既定の上限（router.go の defaultMaxBody）のもとで本文を読む。
+//
+// **歯止めに当たった失敗も契約の code に写す**（`.claude/rules/api-contract.md`）。
+// 写さないと、同じ「大きすぎる」がボディの大きさしだいで 400 と 413 に割れ、
+// 画面が同じ原因を 2 通りに案内することになる。
+//
+// シーン・解釈・図のドラフトは自分の上限と自分の sentinel を持つので、この
+// ヘルパーは通らない（bindSceneBody / bindInterpretImages / bindDiagramRequest）。
+func (h *handlers) bindJSON(c *gin.Context, req any) bool {
+	err := c.ShouldBindJSON(req)
+	if err == nil {
+		return true
+	}
+
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
+			errRequestTooLarge, defaultMaxBody))
+		return false
+	}
+
+	h.badRequest(c, err)
+	return false
 }

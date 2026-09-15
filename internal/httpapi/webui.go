@@ -94,8 +94,31 @@ func newWebUI(dir string) gin.HandlerFunc {
 			c.Header("Cache-Control", "no-cache")
 		}
 
+		setWebUIHeaders(c)
+
 		http.ServeContent(c.Writer, c.Request, info.Name(), info.ModTime(), f)
 	}
+}
+
+// setWebUIHeaders は画面の応答に付ける守りのヘッダを置く（issue #147）。
+//
+//   - frame-ancestors 'none': どのページからも iframe で埋め込ませない。
+//     **認証を設定していない構成では cookie が要らない**ので、埋め込まれた
+//     時点で etoki の API もそのまま通る（Origin は自分自身になるため、
+//     ADR 0013 の検証も素通りする）。クリックを誘導する攻撃の足場になる。
+//     etoki は埋め込まれて使うものではないので、禁じて困る場面は無い。
+//   - nosniff: 配るのは自分がビルドした成果物だけだが、Content-Type を
+//     推測させる理由も無い。
+//
+// **CSP はこの 1 指令だけにする。** script-src のような指令まで置くと、
+// Vite が配る画面（make dev）と etoki が配る画面（make start）で通る / 通らないが
+// 分かれる。埋め込みの禁止は配信元に依らない。
+//
+// X-Frame-Options は置かない。frame-ancestors を解さないブラウザ向けの
+// 重複で、同じ判断を 2 つのヘッダに書くと片方だけ変わる。
+func setWebUIHeaders(c *gin.Context) {
+	c.Header("Content-Security-Policy", "frame-ancestors 'none'")
+	c.Header("X-Content-Type-Options", "nosniff")
 }
 
 // notFound は配れなかったときの応答。API の 404 と同じ形（code と文言）に

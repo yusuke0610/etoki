@@ -28,6 +28,10 @@ import type { ErrorCode } from "./types";
  */
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   invalid_input: "送った内容に不備があります。",
+  // 既定の上限（64 KiB）を超える本文。**scene_too_large と言い分ける。**
+  // あちらは貼った画像の話だが、こちらに当たるのは名前・作成先・招待・作成の
+  // 項目のような、本来その大きさに収まるもの。
+  request_too_large: "送った内容が大きすぎます。量を減らして試してください。",
   login_required: "ログインが必要です。ログインし直してください。",
   // 403 の 2 層は直す場所が違う（ADR 0017）。畳まずに言い分ける。
   forbidden_role: "このボードでの権限が足りません。オーナーに頼んでください。",
