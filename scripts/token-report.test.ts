@@ -116,9 +116,24 @@ describe("summarize", () => {
     // 行ごとに足すと呼び出し 2 回・出力 100 になり、削減見積りまで倍に出る。
     const s = summarize(split);
     expect(s.calls).toBe(1);
+    expect(s.input).toBe(2);
     expect(s.output).toBe(50);
     expect(s.created).toBe(100);
     expect(s.read).toBe(900);
+  });
+
+  test("cache に当たらなかった入力も合計する", () => {
+    // input_tokens は最終 context の計算にしか使っていなかった。合計から落ちると、
+    // cache 未命中の呼び出しがあるセッションで消費が実際より小さく出る。
+    const uncached = JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_2",
+        usage: { input_tokens: 7, output_tokens: 1 },
+        content: [],
+      },
+    });
+    expect(summarize([...split, uncached]).input).toBe(9);
   });
 
   test("内訳は割られた行の両方から集める", () => {

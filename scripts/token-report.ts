@@ -69,6 +69,8 @@ export type Summary = {
   sessionId: string;
   /** API 呼び出しの回数。レコード数ではなく `message.id` の数。 */
   calls: number;
+  /** cache に当たらなかった入力。cache 作成・cache 読みとは別に数えられる。 */
+  input: number;
   output: number;
   created: number;
   read: number;
@@ -248,8 +250,9 @@ export function summarize(lines: Iterable<string>): Summary {
     }
   }
 
-  const totals = { output: 0, created: 0, read: 0 };
+  const totals = { input: 0, output: 0, created: 0, read: 0 };
   for (const usage of usageById.values()) {
+    totals.input += usage.input_tokens ?? 0;
     totals.output += usage.output_tokens ?? 0;
     totals.created += usage.cache_creation_input_tokens ?? 0;
     totals.read += usage.cache_read_input_tokens ?? 0;
@@ -282,6 +285,7 @@ function main(): void {
   console.log("");
 
   console.log("トークン（API が数えたもの）");
+  console.log(`  入力(cache 外)${fmt(s.input).padStart(11)}`);
   console.log(`  出力          ${fmt(s.output).padStart(11)}`);
   console.log(`  cache 作成    ${fmt(s.created).padStart(11)}`);
   console.log(`  cache 読み    ${fmt(s.read).padStart(11)}  <- context x ターン数`);
