@@ -49,6 +49,7 @@ var usage = `usage:
 
 environment:
   ETOKI_ADDR            リッスンアドレス（既定: ` + etoki.DefaultAddr + `）
+                        ループバックの外へ広げるなら先に認証を設定する
   ETOKI_ALLOWED_ORIGINS 追加で許すオリジン（カンマ区切り）。ループバックは常に許す
   ETOKI_DB_PATH         SQLite ファイルのパス（既定: ` + defaultDBPath + `）
   ETOKI_WEB_DIR         ビルド済みフロントエンドの置き場所（例: web/dist）
