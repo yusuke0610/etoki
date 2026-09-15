@@ -18,6 +18,7 @@ import type {
 import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import { groupByState } from "./annotationGroups";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { groupByEpic } from "./interpretation";
 import {
@@ -283,71 +284,89 @@ export function AnnotationPanel({
         {annotations.length === 0 ? (
           <p className="hint">保存済みの注釈はありません。</p>
         ) : (
-          <ul className="annotation-list">
-            {annotations.map((a) => {
-              const onCanvas = canvasFrameIds === null || canvasFrameIds.includes(a.id);
-              const selected = selectedFrameIds.includes(a.id);
-              const missingId = `annotation-missing-${a.id}`;
-              const pendingKind = pendingKinds[a.id];
-              const kind =
-                pendingKind && pendingKind.value !== a.kind ? pendingKind.value : a.kind;
+          // 状態ごとにまとめ、手を打つ必要があるものから並べる（#62）。**見出しは
+          // 見せ方だけで、状態の判定には触らない**（`groupByState`）。
+          <div className="state-groups">
+            {groupByState(annotations).map((group) => (
+              <section
+                key={group.state}
+                className={`state-group state-group-${group.state}`}
+                aria-labelledby={`state-group-${group.state}`}
+              >
+                <h4 id={`state-group-${group.state}`}>
+                  {STATE_LABEL[group.state]}
+                  <span className="state-group-count">{group.annotations.length} 件</span>
+                </h4>
+                <ul className="annotation-list">
+                  {group.annotations.map((a) => {
+                    const onCanvas =
+                      canvasFrameIds === null || canvasFrameIds.includes(a.id);
+                    const selected = selectedFrameIds.includes(a.id);
+                    const missingId = `annotation-missing-${a.id}`;
+                    const pendingKind = pendingKinds[a.id];
+                    const kind =
+                      pendingKind && pendingKind.value !== a.kind
+                        ? pendingKind.value
+                        : a.kind;
 
-              return (
-                <li
-                  key={a.id}
-                  className={`annotation${selected ? " selected" : ""}`}
-                  // キャンバスで選択したフレームがどのカードなのかを、色だけに
-                  // 頼らず読み上げにも届く形で示す。
-                  aria-current={selected ? "true" : undefined}
-                >
-                  <div className="annotation-head">
-                    {/*
+                    return (
+                      <li
+                        key={a.id}
+                        className={`annotation state-${a.state}${selected ? " selected" : ""}`}
+                        // キャンバスで選択したフレームがどのカードなのかを、色だけに
+                        // 頼らず読み上げにも届く形で示す。
+                        aria-current={selected ? "true" : undefined}
+                      >
+                        <div className="annotation-head">
+                          {/*
                       見出しを押すとキャンバスがそのフレームへ寄る。名前に頼らず
                       対応を確かめられる唯一の手段なので、名前の有無に関わらず
                       押せるようにしてある（ADR 0022）。
                     */}
-                    <button
-                      type="button"
-                      className="annotation-name"
-                      onClick={() => onFocusFrame(a.id)}
-                      disabled={!onCanvas}
-                      aria-describedby={onCanvas ? undefined : missingId}
-                    >
-                      {labels.get(a.id)}
-                    </button>
-                    <span className={`badge badge-${a.state}`}>
-                      {STATE_LABEL[a.state]}
-                    </span>
-                  </div>
+                          <button
+                            type="button"
+                            className="annotation-name"
+                            onClick={() => onFocusFrame(a.id)}
+                            disabled={!onCanvas}
+                            aria-describedby={onCanvas ? undefined : missingId}
+                          >
+                            {labels.get(a.id)}
+                          </button>
+                          <span className={`badge badge-${a.state}`}>
+                            {STATE_LABEL[a.state]}
+                          </span>
+                        </div>
 
-                  {/*
+                        {/*
                     状態は保存済みシーンが基準なので、未保存で消したフレームの
                     注釈がここに残る。押せない理由は title に隠さず本文で出す。
                   */}
-                  {!onCanvas && (
-                    <p className="hint" id={missingId}>
-                      このフレームはキャンバスにありません。保存すると一覧からも消えます。
-                    </p>
-                  )}
+                        {!onCanvas && (
+                          <p className="hint" id={missingId}>
+                            このフレームはキャンバスにありません。保存すると一覧からも消えます。
+                          </p>
+                        )}
 
-                  <label className="granularity">
-                    粒度
-                    <select
-                      value={a.granularity}
-                      disabled={!canEdit}
-                      onChange={(e) =>
-                        onChangeGranularity(a.id, e.target.value as Granularity)
-                      }
-                    >
-                      {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
-                        <option key={g} value={g}>
-                          {GRANULARITY_LABEL[g]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                        <label className="granularity">
+                          粒度
+                          <select
+                            value={a.granularity}
+                            disabled={!canEdit}
+                            onChange={(e) =>
+                              onChangeGranularity(a.id, e.target.value as Granularity)
+                            }
+                          >
+                            {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map(
+                              (g) => (
+                                <option key={g} value={g}>
+                                  {GRANULARITY_LABEL[g]}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                        </label>
 
-                  {/*
+                        {/*
                     何の図として読ませるかを選ばせる。**ひな形は絵を置くだけ**
                     （ADR 0047）で、どこを囲むかも何の図かも人が決めるので、
                     種別が載る先はここしかない。
@@ -355,52 +374,52 @@ export function AnnotationPanel({
                     粒度と同じ形（`<select>` + 表を引く）にしてあるのは、
                     同じメタデータに載る 2 つが画面で別物に見えないため。
                   */}
-                  <label className="granularity">
-                    種別
-                    <select
-                      value={kind ?? ""}
-                      disabled={!canEdit}
-                      onChange={(e) => {
-                        const nextKind = (e.target.value || undefined) as
-                          | DiagramKind
-                          | undefined;
-                        setPendingKinds((current) => ({
-                          ...current,
-                          [a.id]: { value: nextKind },
-                        }));
-                        onChangeKind(a.id, nextKind);
-                      }}
-                    >
-                      {/*
+                        <label className="granularity">
+                          種別
+                          <select
+                            value={kind ?? ""}
+                            disabled={!canEdit}
+                            onChange={(e) => {
+                              const nextKind = (e.target.value || undefined) as
+                                | DiagramKind
+                                | undefined;
+                              setPendingKinds((current) => ({
+                                ...current,
+                                [a.id]: { value: nextKind },
+                              }));
+                              onChangeKind(a.id, nextKind);
+                            }}
+                          >
+                            {/*
                         「指定なし」は種別の語彙（DiagramKind）に無い値なので、
                         ここだけ空文字で表す。選ばれたら customData からキーごと
                         落ちる（setAnnotationKind）。
                       */}
-                      <option value="">指定なし</option>
-                      {diagramKinds().map((k) => (
-                        <option key={k} value={k}>
-                          {DIAGRAM_KIND_LABELS[k]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                            <option value="">指定なし</option>
+                            {diagramKinds().map((k) => (
+                              <option key={k} value={k}>
+                                {DIAGRAM_KIND_LABELS[k]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
 
-                  {a.items && a.items.length > 0 && (
-                    <details>
-                      <summary>GitHub にある {a.items.length} 件</summary>
-                      <ul className="plain-list">
-                        {a.items.map((it) => (
-                          <li key={it.itemId}>
-                            <span className="kind">{it.kind}</span> {it.title}
-                            <ItemBody body={it.body} />
-                          </li>
-                        ))}
-                      </ul>
-                      <ProjectLinkLine link={projectLink} />
-                    </details>
-                  )}
+                        {a.items && a.items.length > 0 && (
+                          <details>
+                            <summary>GitHub にある {a.items.length} 件</summary>
+                            <ul className="plain-list">
+                              {a.items.map((it) => (
+                                <li key={it.itemId}>
+                                  <span className="kind">{it.kind}</span> {it.title}
+                                  <ItemBody body={it.body} />
+                                </li>
+                              ))}
+                            </ul>
+                            <ProjectLinkLine link={projectLink} />
+                          </details>
+                        )}
 
-                  {/*
+                        {/*
                     前回実行が途中で失敗したことは、履歴を開かなくても見える
                     ところに出す（ADR 0043）。**状態（3 状態）は変えない。**
                     作れたぶんは記録するので created のままであり、そこに件数
@@ -408,53 +427,56 @@ export function AnnotationPanel({
 
                     **理由はここには出さない。** 手掛かりの本文は履歴が持つ。
                   */}
-                  {a.lastRunOutcome === "incomplete" && (
-                    <p className="hint">
-                      前回の実行は途中で失敗しました。作れたところまでは GitHub
-                      側に残っています。
-                    </p>
-                  )}
+                        {a.lastRunOutcome === "incomplete" && (
+                          <p className="hint">
+                            前回の実行は途中で失敗しました。作れたところまでは GitHub
+                            側に残っています。
+                          </p>
+                        )}
 
-                  {/*
+                        {/*
                     履歴は一度でも実行した注釈にだけ出す。**未実行の注釈にも
                     出すと、常に空の枠が並ぶ。** lastSyncedAt があることと
                     run が 1 件以上あることは同じ（最新 run から来る）。
                   */}
-                  {a.lastSyncedAt !== undefined && (
-                    <details className="run-history">
-                      <summary>実行の履歴</summary>
-                      <RunHistory
-                        state={runHistories[a.id]}
-                        onLoad={() => onLoadRuns(a.id)}
-                      />
-                    </details>
-                  )}
+                        {a.lastSyncedAt !== undefined && (
+                          <details className="run-history">
+                            <summary>実行の履歴</summary>
+                            <RunHistory
+                              state={runHistories[a.id]}
+                              onLoad={() => onLoadRuns(a.id)}
+                            />
+                          </details>
+                        )}
 
-                  {canEdit && (
-                    <InterpretationSection
-                      annotationId={a.id}
-                      granularity={a.granularity}
-                      state={interpretations[a.id]}
-                      creation={creations[a.id]}
-                      stale={stale}
-                      saving={saving}
-                      importing={importing}
-                      projectAccess={projectAccess}
-                      interpretationUnavailable={interpretationUnavailable}
-                      creationUnavailable={creationUnavailable}
-                      previous={a.items ?? []}
-                      projectLink={projectLink}
-                      onInterpret={() => onInterpret(a.id)}
-                      onSelectInterpretation={(runId) =>
-                        onSelectInterpretation(a.id, runId)
-                      }
-                      onCreate={(interpretation) => onCreate(a.id, interpretation)}
-                    />
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                        {canEdit && (
+                          <InterpretationSection
+                            annotationId={a.id}
+                            granularity={a.granularity}
+                            state={interpretations[a.id]}
+                            creation={creations[a.id]}
+                            stale={stale}
+                            saving={saving}
+                            importing={importing}
+                            projectAccess={projectAccess}
+                            interpretationUnavailable={interpretationUnavailable}
+                            creationUnavailable={creationUnavailable}
+                            previous={a.items ?? []}
+                            projectLink={projectLink}
+                            onInterpret={() => onInterpret(a.id)}
+                            onSelectInterpretation={(runId) =>
+                              onSelectInterpretation(a.id, runId)
+                            }
+                            onCreate={(interpretation) => onCreate(a.id, interpretation)}
+                          />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+          </div>
         )}
       </section>
 

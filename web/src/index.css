@@ -314,31 +314,79 @@ button.primary:disabled {
 }
 
 .board-header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* 上段。どこの何を開いているかと、保存が要るか。 */
+.board-header-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 12px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  padding: 8px 16px;
+}
+
+.board-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.board-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .board-header h1 {
   font-size: 16px;
   margin: 0;
   white-space: nowrap;
-  /* 見出しは縮めない。縮めると操作の列が名前の上にかぶり、「名前を変更」が
-     押せなくなる。詰まったら操作の列のほうが折り返す。 */
-  flex-shrink: 0;
 }
 
+/*
+ * 下段。ボードに対する操作を群に分けて並べる。**畳まない。** 幅が足りなければ
+ * 群ごと折り返す。
+ */
 .board-actions {
-  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-muted);
+}
+
+.board-action-group {
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  padding: 0 10px;
+}
+
+/* 群の区切り。空の群（viewer に出さない操作だけの群）には線を引かない。 */
+.board-action-group + .board-action-group:not(:empty) {
+  border-left: 1px solid var(--color-border);
+}
+
+.board-action-group:empty {
+  display: none;
+}
+
+/* ボードの削除は他の操作から離す（ADR 0042）。押しにくくはしない。 */
+.board-action-group-end {
+  margin-left: auto;
+}
+
+.board-action-group-end,
+.board-action-group + .board-action-group-end:not(:empty) {
+  border-left: none;
 }
 
 .board-body {
@@ -412,6 +460,46 @@ button.primary:disabled {
   margin-bottom: 20px;
 }
 
+/*
+ * 状態ごとの組（#62）。見出しの色は状態の文字色と揃え、件数を添える。
+ * **色だけにしない。** 見出しの文字そのものが状態の名前になっている。
+ */
+.state-group + .state-group {
+  margin-top: 14px;
+}
+
+.state-group h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.state-group h4::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.state-group-changed h4 {
+  color: var(--color-warning);
+}
+
+.state-group-uncreated h4 {
+  color: var(--color-text-subtle);
+}
+
+.state-group-created h4 {
+  color: var(--color-success);
+}
+
+.state-group-count {
+  color: var(--color-text-muted);
+  font-weight: normal;
+}
+
 .hint {
   color: var(--color-text-muted);
   font-size: 12px;
@@ -441,7 +529,29 @@ button.primary:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  margin-bottom: 6px;
+  /* カードの見出しを帯にする。カードの余白を打ち消して端まで塗る。 */
+  margin: -10px -12px 10px;
+  padding: 8px 12px;
+  border-radius: 7px 7px 0 0;
+  background: var(--color-surface-muted);
+}
+
+/* 帯の色は状態のバッジの地と揃える。状態の名前はバッジの文字で読める。 */
+.annotation.state-changed .annotation-head {
+  background: var(--color-warning-bg);
+}
+
+.annotation.state-uncreated .annotation-head {
+  background: var(--color-neutral-bg);
+}
+
+.annotation.state-created .annotation-head {
+  background: var(--color-success-bg);
+}
+
+/* 帯と同じ地のままだとバッジの形が消えるので、面の色で浮かせる。 */
+.annotation-head .badge {
+  background: var(--color-surface);
 }
 
 /* 押すとキャンバスがそのフレームへ寄る。見た目は見出しのまま保つ。 */
@@ -806,14 +916,22 @@ a.badge-target:hover {
  * 作成先を選ぶ画面。ブレストに入る前に挟まるので、キャンバスと同じ幅を使う。
  */
 .picker {
-  padding: 16px;
+  padding: 24px 32px;
   overflow-y: auto;
-  /* 選択肢は 1 行 1 件。横に伸ばすと行の左右が離れすぎて対応が追えない。 */
-  max-width: 640px;
+  /* 左右 2 列ぶん。1 列の中の選択肢は 1 行 1 件のままなので、行の左右が
+     離れすぎて対応が追えなくなることは無い。 */
+  max-width: 880px;
+}
+
+/* リポジトリ → プロジェクトを左右に並べる。狭いときは縦に積む。 */
+.picker-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0 24px;
 }
 
 .picker h1 {
-  font-size: 16px;
+  font-size: 22px;
   margin: 0 0 8px;
 }
 
