@@ -641,6 +641,91 @@ func TestInterpret_IgnoresNonPositiveMaxAttempts(t *testing.T) {
 	}
 }
 
+// 種別を選んで始めた囲みは、何の図として読むかをプロンプトで伝える。
+//
+// **伝えないと、テンプレートがただの絵で終わる。** シーケンス図として描かれた
+// ものも ER 図として描かれたものも、同じテキスト一覧として渡ることになる。
+func TestInterpret_PassesKindInstruction(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		kind domain.DiagramKind
+		want string
+	}{
+		{kind: domain.DiagramKindTodo, want: "やることの洗い出し"},
+		{kind: domain.DiagramKindMindmap, want: "マインドマップ"},
+		{kind: domain.DiagramKindSequence, want: "シーケンス図"},
+		{kind: domain.DiagramKindER, want: "ER 図"},
+		{kind: domain.DiagramKindArchitecture, want: "システム構成図"},
+	}
+
+	// 全種類を並べる。1 つだけ確かめると、表に載せ忘れた種別が黙って
+	// 「指定なし」と同じ扱いに落ちても緑のままになる。
+	if len(tests) != len(domain.DiagramKinds()) {
+		t.Fatalf("確かめている種別が %d 件、DiagramKinds は %d 件",
+			len(tests), len(domain.DiagramKinds()))
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.kind), func(t *testing.T) {
+			t.Parallel()
+
+			scene := strings.Replace(interpretScene, `"granularity":""`,
+				`"granularity":"","kind":"`+string(tt.kind)+`"`, 1)
+
+			llm := &fakeLLM{responses: []string{validLLMOutput}}
+			svc, _ := newInterpretService(t, newBoard(scene), llm)
+
+			if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
+				t.Fatalf("Interpret() = %v", err)
+			}
+			if len(llm.requests) == 0 {
+				t.Fatal("LLM が呼ばれていない")
+			}
+			if !strings.Contains(llm.requests[0].Text, tt.want) {
+				t.Errorf("プロンプトに %q が無い:\n%s", tt.want, llm.requests[0].Text)
+			}
+		})
+	}
+}
+
+// 種別を選んでいない囲みには、種別の話をいっさい足さない。
+//
+// 「指定されていません」と書くと、モデルが図の種類を当てにいく余地を作る。
+// 指定なしの入力は、この機能が入る前と同じでなければならない。
+func TestInterpret_SaysNothingAboutKindWhenUnspecified(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("Interpret() = %v", err)
+	}
+
+	if strings.Contains(llm.requests[0].Text, "として描かれています") {
+		t.Errorf("種別を選んでいないのに図の種類の話がある:\n%s", llm.requests[0].Text)
+	}
+}
+
+// 知らない種別は既定に倒さず弾く。粒度と同じ扱い。
+func TestInterpret_RejectsUnknownKind(t *testing.T) {
+	t.Parallel()
+
+	scene := strings.Replace(interpretScene, `"granularity":""`,
+		`"granularity":"","kind":"gantt"`, 1)
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(scene), llm)
+
+	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	if !errors.Is(err, usecase.ErrInvalidInput) {
+		t.Fatalf("Interpret() = %v, want ErrInvalidInput", err)
+	}
+	if len(llm.requests) != 0 {
+		t.Error("種別が不正なのに LLM を呼んでいる")
+	}
+}
+
 // 既定に倒して進めると、開発者が指定したつもりの制約が黙って外れる。
 func TestInterpret_RejectsUnknownGranularity(t *testing.T) {
 	t.Parallel()

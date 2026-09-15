@@ -10,7 +10,9 @@ export async function openBoard(page: Page, name: string): Promise<void> {
   await page.locator(".board-list").getByRole("button", { name }).click();
   await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
   await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "注釈" })).toBeVisible();
+  // **見出しは階層まで絞る。** パネルの中には「キャンバスに無い注釈」
+  // （#111）のような h3 も並ぶので、名前だけで引くと 2 つ見つかって落ちる。
+  await expect(page.getByRole("heading", { name: "注釈", level: 2 })).toBeVisible();
 }
 
 /**

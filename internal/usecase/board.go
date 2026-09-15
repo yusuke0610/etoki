@@ -448,12 +448,18 @@ const emptyScene = `{"type":"excalidraw","version":2,"source":"etoki","elements"
 // **超えたぶんを削って保存しない。** 保存はシーン全体を書くので、削れるのは
 // 開発者が描いたものそのものになる（ADR 0038）。
 func validateScene(scene string) error {
-	if len(scene) > MaxSceneBytes {
+	if SceneExceedsLimit(scene) {
 		return fmt.Errorf("%w: scene is %d bytes, limit is %d",
 			ErrSceneTooLarge, len(scene), MaxSceneBytes)
 	}
-	if _, err := domain.ParseScene([]byte(scene)); err != nil {
+	parsed, err := domain.ParseScene([]byte(scene))
+	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	for _, a := range parsed.Annotations() {
+		if !a.Kind.Valid() {
+			return fmt.Errorf("%w: unknown diagram kind %q", ErrInvalidInput, a.Kind)
+		}
 	}
 	return nil
 }

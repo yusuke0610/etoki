@@ -3,6 +3,7 @@ import type { Page, Route } from "@playwright/test";
 import type {
   AnnotationStatus,
   BoardAccess,
+  BoardAnnotations,
   BoardDeletion,
   BoardDetail,
   BoardMember,
@@ -12,6 +13,7 @@ import type {
   BoardTargetDisplay,
   Capabilities,
   CreatedRun,
+  DetachedAnnotation,
   DiagramDraft,
   ErrorResponse,
   GenerateDiagramRequest,
@@ -46,6 +48,13 @@ export type ApiMock = {
   details: Record<string, BoardDetail>;
   /** ボード ID をキーにした注釈の状態。 */
   annotations: Record<string, AnnotationStatus[]>;
+  /**
+   * ボード ID をキーにした「シーンから消えた注釈」（#111）。
+   *
+   * **`annotations` と分けて持つ。** 契約でも別のリストなので（3 状態も名前も
+   * 無い）、混ぜて持つとモックだけが混ざった形を返せてしまう。
+   */
+  detached: Record<string, DetachedAnnotation[]>;
   interpret: Reply<Interpretation>;
   /**
    * 解釈で受け取ったリクエストボディ。届いた順に積む。
@@ -174,7 +183,14 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
 
   // 新しいボードは作成先を持って生まれる。作成先を選ばないと作れない
   // （ADR 0017）。
-  const newBoard = (name: string, target: BoardTarget): BoardDetail => {
+  /**
+   * 作成のリクエストからボードを組み立てる。
+   *
+   * **送られてきたシーンをそのまま返す。** ひな形から作ったボードは、開いた
+   * ときにその絵が出ていなければ「作れた」と言えない。空のシーンに固定すると、
+   * シーンを送り忘れていても緑になる。
+   */
+  const newBoard = (name: string, target: BoardTarget, scene?: string): BoardDetail => {
     issued += 1;
     return {
       id: `board-new-${issued}`,
@@ -183,7 +199,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       role: "owner",
       createdAt: "2026-08-05T10:00:00Z",
       updatedAt: "2026-08-05T10:00:00Z",
-      scene: emptyScene(),
+      scene: scene ?? emptyScene(),
       repositoryOwner: target.repositoryOwner,
       repositoryName: target.repositoryName,
       projectId: target.projectId,
@@ -193,6 +209,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       projectTitle: target.projectTitle ?? "",
       projectUrl: target.projectUrl ?? "",
       targetLocked: false,
+      sceneOverLimit: false,
     };
   };
 
@@ -215,11 +232,19 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
     (url) => url.pathname === "/api/boards",
     async (route) => {
       if (route.request().method() === "POST") {
-        const req = route.request().postDataJSON() as { name: string } & BoardTarget;
-        const board = newBoard(req.name, req);
+        const req = route.request().postDataJSON() as {
+          name: string;
+          scene?: string;
+        } & BoardTarget;
+        const board = newBoard(req.name, req, req.scene);
         mock.boards = [summarize(board), ...mock.boards];
         mock.details[board.id] = board;
-        mock.annotations[board.id] ??= [];
+        // **保存されたシーンから注釈を立てる。** サーバーは保存済みシーンを
+        // 読んで状態を返す（`internal/CLAUDE.md` の 3 状態のデータフロー）ので、
+        // ひな形つきで作ったボードは開いた時点で注釈を 1 つ持つ。空に固定すると、
+        // ひな形が注釈になっていなくても緑になる。
+        mock.annotations[board.id] ??= annotationsOfScene(board.scene);
+        mock.detached[board.id] ??= [];
         await json(route, 201, board);
         return;
       }
@@ -272,6 +297,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         // いないフロントでも緑になる（ADR 0042）。
         delete mock.details[id];
         delete mock.annotations[id];
+        delete mock.detached[id];
         delete mock.deletion?.[id];
         mock.boards = mock.boards.filter((b) => b.id !== id);
         await route.fulfill({ status: 204, body: "" });
@@ -396,6 +422,9 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       const next: BoardDetail = {
         ...detail,
         scene: req.scene,
+        // 実 API は上限を超えるシーンの保存を拒むので、保存に通ったシーンは
+        // 上限内。据え置くと、開き直しても警告が消えない食い違いが残る。
+        sceneOverLimit: false,
         updatedAt: new Date(Date.parse(detail.updatedAt) + 1000).toISOString(),
       };
       mock.details[id] = next;
@@ -498,7 +527,14 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
     async (route) => {
-      await json(route, 200, mock.annotations[boardIdOf(route)] ?? []);
+      const id = boardIdOf(route);
+      // **応答は 1 つ。** サーバーは畳み込みをボード全体で引いており、シーンに
+      // 残っていないぶんも同じ問い合わせで返る（#111）。
+      const body: BoardAnnotations = {
+        annotations: mock.annotations[id] ?? [],
+        detached: mock.detached[id] ?? [],
+      };
+      await json(route, 200, body);
     },
   );
 
@@ -745,6 +781,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
 async function breakList(
   page: Page,
   match: (url: URL) => boolean,
+  body: unknown,
   hold?: Promise<void>,
 ): Promise<void> {
   await page.route(match, async (route) => {
@@ -762,7 +799,7 @@ async function breakList(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([null]),
+      body: JSON.stringify(body),
     });
   });
 }
@@ -772,18 +809,23 @@ async function breakList(
  *
  * `hold` を渡すと、それが解決するまで応答を返さない。ボードを開いて描いた
  * あとで落とす、という順番を作るために使う。
+ *
+ * **応答はトップレベル配列ではなくオブジェクト。** `GET .../annotations` は
+ * `BoardAnnotations`（`annotations` / `detached`）を返すので、壊すのは
+ * `annotations` の要素であって応答そのものの形ではない。
  */
 export function breakAnnotations(page: Page, hold?: Promise<void>): Promise<void> {
   return breakList(
     page,
     (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
+    { annotations: [null], detached: [] },
     hold,
   );
 }
 
 /** ボードの一覧を壊す。キャンバスへ入る前の画面ごと落ちる。 */
 export function breakBoards(page: Page): Promise<void> {
-  return breakList(page, (url) => url.pathname === "/api/boards");
+  return breakList(page, (url) => url.pathname === "/api/boards", [null]);
 }
 
 /**
@@ -873,4 +915,44 @@ export function emptyScene(): string {
     appState: {},
     files: {},
   });
+}
+
+/**
+ * シーンから注釈の状態を組み立てる。
+ *
+ * **サーバーと同じ順で同じ規則を使う。** 判定は「`type === "frame"` かつ
+ * `customData.etoki` をメタデータとして読める形で持つ」で、これはルートの
+ * `CLAUDE.md` が正本（Go 側は `internal/domain/scene.go`）。緩めると、注釈に
+ * なっていない frame まで注釈として並ぶモックになり、判定の誤りを隠す。
+ *
+ * 3 状態は必ず `uncreated`。作ったばかりのボードには run が無い。
+ */
+function annotationsOfScene(scene: string): AnnotationStatus[] {
+  const parsed = JSON.parse(scene) as {
+    elements?: {
+      id: string;
+      type: string;
+      name?: string | null;
+      isDeleted?: boolean;
+      customData?: { etoki?: unknown };
+    }[];
+  };
+
+  return (parsed.elements ?? [])
+    .filter((el) => {
+      if (el.type !== "frame" || el.isDeleted) return false;
+      const meta = el.customData?.etoki;
+      return typeof meta === "object" && meta !== null && !Array.isArray(meta);
+    })
+    .map((el) => {
+      const meta = el.customData?.etoki as { granularity?: string; kind?: string };
+      return {
+        id: el.id,
+        name: el.name ?? "",
+        granularity: (meta.granularity ?? "") as AnnotationStatus["granularity"],
+        // 種別はひな形から始めたときだけ載る。無ければキーごと省く。
+        ...(meta.kind ? { kind: meta.kind as AnnotationStatus["kind"] } : {}),
+        state: "uncreated" as const,
+      };
+    });
 }

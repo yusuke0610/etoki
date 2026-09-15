@@ -496,9 +496,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 注釈の 3 状態を返す
+         * 注釈の 3 状態と、シーンから消えた注釈を返す
          * @description 保存済みシーンから注釈を取り出し、最新の run の content_hash と
          *     突き合わせて uncreated / created / changed を決める。
+         *
+         *     あわせて、シーンから消えたのに GitHub 側にはものが残っている注釈を
+         *     detached に返す。**2 つを 1 つのリストに混ぜない。** 消えた注釈には
+         *     比べる相手のテキストがシーンに無く、3 状態も名前も粒度も決まらない。
          */
         get: operations["listAnnotations"];
         put?: never;
@@ -853,6 +857,18 @@ export interface components {
              *     数えられないので、状態としてサーバーが返す
              */
             targetLocked: boolean;
+            /**
+             * @description いま保存されているシーンが保存できる上限（ADR 0038）を超えて
+             *     いて、このままでは保存し直せないことを表す（issue #103）。
+             *     上限を導入する前に保存されたボードや、上限を引き下げた後にだけ
+             *     真になりうる。
+             *
+             *     **上限の数値そのものは返さない。** フロントは判定結果だけを
+             *     受け取り、上限を複製しない。`projectAccess` の
+             *     `unknown` / `allowed` / `denied` と同じで、判定はサーバーの
+             *     持ち場のまま
+             */
+            sceneOverLimit: boolean;
         };
         /**
          * @description ボードを削除したときに etoki から失われるもの（ADR 0042）。
@@ -1073,11 +1089,64 @@ export interface components {
              */
             items: components["schemas"]["SyncItem"][];
         };
+        /**
+         * @description ボード 1 枚ぶんの注釈。**シーンに在るものと、消えたのに GitHub 側には
+         *     残っているものを分けて返す。**
+         */
+        BoardAnnotations: {
+            /** @description 保存済みシーンに在る注釈。0 件でも配列を返す */
+            annotations: components["schemas"]["AnnotationStatus"][];
+            /**
+             * @description シーンから消えたのに GitHub 側にものが残っている注釈。
+             *     0 件でも配列を返す
+             */
+            detached: components["schemas"]["DetachedAnnotation"][];
+        };
+        /**
+         * @description 注釈にした frame をキャンバスから消して保存したあとも、GitHub 側に
+         *     残っている draft issue（#111）。
+         *
+         *     **run の記録は消えていない**（ADR 0007）ので `.../annotations/{id}/runs`
+         *     はそのまま読める。ここはその導線を出すための一覧。
+         *
+         *     **etoki は消しも作り直しもしない**（中核思想 3）。frame を引き直すと
+         *     要素の ID が変わるので、以後は別の注釈として扱われる。
+         */
+        DetachedAnnotation: {
+            /**
+             * @description 消えた frame の要素 ID。**名前は返さない。** シーンから消えている
+             *     ので取りようが無い。何の囲みだったかは items から読む
+             */
+            id: string;
+            /**
+             * Format: date-time
+             * @description 最後に実行した時刻
+             */
+            lastSyncedAt?: string;
+            /**
+             * @description この注釈が GitHub に在らしめている draft issue。畳み込みは
+             *     AnnotationStatus.items と同じ（ADR 0026）
+             */
+            items: components["schemas"]["SyncItem"][];
+        };
         /** @description 注釈 1 つの状態 */
         AnnotationStatus: {
             id: string;
             name: string;
             granularity: components["schemas"]["Granularity"];
+            /**
+             * @description 開発者が選んだ図の種別。**選んでいなければ省略する**（テンプレート
+             *     から始めていない注釈がそれ）。
+             *
+             *     `Granularity` のように空文字を値に持たせず省略で表すのは、種別の
+             *     語彙を 1 つに保つため。プロンプトからのドラフト生成は「何の図か」が
+             *     入力そのものなので指定なしを受け付けず、enum に空文字を足すと
+             *     そちらの契約まで緩む。
+             *
+             *     **解釈のプロンプトに載り、`content_hash` の入力にも入る。**
+             *     差し替えれば `changed` になる（粒度と同じ）。
+             */
+            kind?: components["schemas"]["DiagramKind"];
             state: components["schemas"]["SyncState"];
             /**
              * Format: date-time
@@ -2120,13 +2189,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 注釈の状態。0 件でも配列を返す */
+            /** @description 注釈の状態。annotations / detached とも 0 件でも配列を返す */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnnotationStatus"][];
+                    "application/json": components["schemas"]["BoardAnnotations"];
                 };
             };
             401: components["responses"]["Unauthorized"];

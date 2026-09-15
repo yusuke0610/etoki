@@ -7,7 +7,13 @@ import {
   installApi,
   summarize,
 } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard, picker } from "./helpers/board";
+import {
+  annotationCard,
+  chooseTarget,
+  drawRectangle,
+  openBoard,
+  picker,
+} from "./helpers/board";
 import {
   ANNOTATION_IDS,
   BOARD_ID,
@@ -187,7 +193,7 @@ test.describe("スクリーンショット", () => {
     // バッジはキャンバスより先に出る。ここで待たないと Excalidraw の
     // 「Loading scene...」を撮ってしまい、報告に使えない画像になる。
     await page.locator(".excalidraw canvas").first().waitFor();
-    await page.getByRole("heading", { name: "注釈" }).waitFor();
+    await page.getByRole("heading", { name: "注釈", level: 2 }).waitFor();
     await shot(page, "07-target-selected");
   });
 
@@ -274,6 +280,21 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "保存" }).click();
     await page.getByText("貼った画像が大きすぎて保存できません").waitFor();
     await shot(page, "22-scene-too-large");
+  });
+
+  // 上限を導入する前に保存されたボードは、開いた時点で保存できないと分かる
+  // (issue #103)。押してから 413 で気づくのではなく、開いた瞬間に見える形に
+  // なっているかを画像で見る。
+  test("上限を超えたまま保存されているボードを開いた状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), sceneOverLimit: true };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByText("このボードは保存できる上限を超えています").waitFor();
+    await shot(page, "31-scene-over-limit");
   });
 
   // 設定していない機能の見せ方（ADR 0030）。LLM を設定しない構成は README が
@@ -677,6 +698,53 @@ test.describe("スクリーンショット", () => {
     await shot(page, "29-delete-confirm");
   });
 
+  // ひな形は選ばせるものなので、選択と、置いたあとのキャンバスの両方を撮る
+  // （#52）。絵が本当に置けているかは、単体テストでは分からない。
+  test("ひな形の選択と、適用後のキャンバスを撮る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.getByLabel("ボード名").fill("注文フローのブレスト");
+    await page.getByLabel("ひな形").selectOption("sequence");
+    await shot(page, "31-template-choice");
+
+    await page.getByRole("button", { name: "次へ" }).click();
+    await chooseTarget(page, "acme/web", "#1 ロードマップ");
+    await page.getByRole("heading", { name: "注文フローのブレスト", level: 1 }).waitFor();
+    await page.locator(".excalidraw canvas").first().waitFor();
+    await shot(page, "32-template-sequence");
+  });
+
+  // 5 種すべてを 1 枚ずつ撮る。**見た目は種類ごとに違う。** 文字幅を測れる
+  // のはブラウザだけなので（`convertToExcalidrawElements` は jsdom では本物の
+  // 寸法を返さない）、置けた図が読めるかどうかはここでしか分からない。
+  test("ひな形を種類ごとに撮る", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    for (const [kind, label] of [
+      ["todo", "やること"],
+      ["mindmap", "マインドマップ"],
+      ["sequence", "シーケンス図"],
+      ["er", "ER 図"],
+      ["architecture", "システム構成図"],
+    ] as const) {
+      // ボードごとにモックを作り直す。同じページで作り続けると、前のボードの
+      // 絵が残っているのか新しく置けたのかが画像から読めない。
+      await installApi(page, baseMock());
+      await page.goto("/");
+
+      await page.getByLabel("ボード名").fill(`${label}のボード`);
+      await page.getByLabel("ひな形").selectOption(kind);
+      await page.getByRole("button", { name: "次へ" }).click();
+      await chooseTarget(page, "acme/web", "#1 ロードマップ");
+
+      await page.getByRole("heading", { name: `${label}のボード`, level: 1 }).waitFor();
+      await page.locator(".excalidraw canvas").first().waitFor();
+      await shot(page, `33-template-${kind}`);
+    }
+  });
+
   // 保存と作成の相互排他（`.claude/rules/async-ui.md`）。**押せない理由が本文
   // として出ているか**を画像で見る。title に隠すと、この画像には何も写らない。
   test("保存中で作成できない状態を撮る", async ({ page }) => {
@@ -703,6 +771,57 @@ test.describe("スクリーンショット", () => {
 
     // 止めたまま終わらない。次のテストへ持ち越すものを残さない。
     release();
+  });
+
+  // 更新をやめて新しく作るに倒したところ（#112）。**LLM が言ったこととの差と、
+  // 取り残しが増えたことが同じ画面で読めているか**を画像で見る。
+  test("更新をやめた確認画面を撮る", async ({ page }) => {
+    await installApi(page, matchedInterpretationMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card
+      .getByLabel("i1 を更新するか新しく作るか")
+      .selectOption({ label: "新しく作る" });
+    await card.getByText("解釈では既存の draft issue の更新でした").waitFor();
+    await shot(page, "31-update-to-create");
+  });
+
+  // キャンバスに無い注釈（#111）。**注釈のカードと同じ形に見えていないか**を
+  // 画像で見る。あちらは解釈も作成もできるが、こちらは辿れるだけ。
+  test("キャンバスに無い注釈を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.detached[BOARD_ID] = [
+      {
+        id: "frame-gone",
+        lastSyncedAt: "2026-08-04T12:00:00Z",
+        items: [
+          {
+            itemId: "PVTI_gone",
+            kind: "epic",
+            title: "二要素認証",
+            body: "囲みは消えているが GitHub には残っている",
+            localId: "e1",
+            action: "created",
+          },
+        ],
+      },
+    ];
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const section = page.locator(".panel-section").filter({
+      has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
+    });
+    await section.getByText("二要素認証").waitFor();
+    await shot(page, "32-detached-annotations");
   });
 
   test("取り込み中で作成できない状態を撮る", async ({ page }) => {
@@ -739,7 +858,7 @@ test.describe("スクリーンショット", () => {
     });
 
     await page.getByText("取り込みが終わるまで作成できません").waitFor();
-    await shot(page, "31-create-blocked-while-importing");
+    await shot(page, "33-create-blocked-while-importing");
 
     await page.evaluate(() => {
       const release = Reflect.get(window, "releaseImport") as unknown;

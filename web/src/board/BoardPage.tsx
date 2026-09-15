@@ -16,6 +16,7 @@ import type {
   BoardDeletion,
   BoardDetail,
   Capabilities,
+  DetachedAnnotation,
   DiagramKind,
   Granularity,
   Interpretation,
@@ -26,6 +27,7 @@ import {
   frameIds,
   isAnnotation,
   markAsAnnotation,
+  setAnnotationKind,
   selectableFrames,
   unmarkAnnotation,
   type SceneElement,
@@ -186,6 +188,11 @@ export function BoardPage({
 
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationStatus[]>([]);
+  // シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
+  //
+  // **`annotations` と混ぜない。** 3 状態も名前も無いので、注釈のカードと
+  // 同じ形では出せない。同じ問い合わせで返るので、引く回数は増えない。
+  const [detached, setDetached] = useState<DetachedAnnotation[]>([]);
   const [selectedFrames, setSelectedFrames] = useState<SelectableFrame[]>([]);
   // キャンバスにいま在る frame。状態欄のカードが飛べるかどうかの判定に使う。
   // 状態は保存済みシーンが基準なので、未保存で消したフレームは一覧に残る。
@@ -213,6 +220,14 @@ export function BoardPage({
   // **上限は持たない。** 判定はサーバーだけが持つ（ADR 0018 / 0038）ので、
   // ここが出すのは「いまどれくらいか」という状態にとどめる。
   const [sceneSize, setSceneSize] = useState<number | null>(null);
+  // 保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
+  // 状態（issue #103）。`board.sceneOverLimit` を初期値にする。
+  //
+  // **保存が成功したら手元で false に倒す。** 保存が成功した = サーバーの
+  // 上限を満たした、という事実からそう言える。上限の数値をフロントが持って
+  // いなくても、判定結果だけを追随させられる（ADR 0038 は数値の複製を禁じて
+  // いるのであって、この推論を禁じてはいない）。
+  const [overLimit, setOverLimit] = useState(board.sceneOverLimit);
   // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
   // 未保存のまま残すので、dirty とは別に持つ。
   const [conflicted, setConflicted] = useState(false);
@@ -459,7 +474,15 @@ export function BoardPage({
 
   const initialData = useMemo(() => {
     try {
-      return JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
+      const scene = JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
+      // **開いたら中身が見えている位置から始める。** シーンの原点はキャンバスの
+      // 左上に来るので、原点あたりに描かれたものはツールバーの下に隠れる。
+      // ひな形から作ったボードは必ずそこから始まる（`excalidraw/template.ts`）
+      // ので、見出しが隠れた状態が最初の 1 画面になる。
+      //
+      // **要素は動かさない。** 動かすと座標の変更として未保存になり、開いた
+      // だけで保存を促すことになる。動かすのは見ている位置のほう。
+      return { ...scene, scrollToContent: true };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
       onError(sceneUnreadableFailure());
@@ -477,7 +500,8 @@ export function BoardPage({
     try {
       const next = await boardsApi.annotations(board.id);
       if (request !== annotationsRequest.current) return;
-      setAnnotations(next);
+      setAnnotations(next.annotations);
+      setDetached(next.detached);
     } catch (e) {
       if (request !== annotationsRequest.current) return;
       onError(describeFailure("注釈の状態を取得できませんでした", e));
@@ -795,6 +819,20 @@ export function BoardPage({
     [currentElements, updateElements],
   );
 
+  /**
+   * 注釈の図の種別を差し替える。
+   *
+   * **注釈にする操作とは分ける。** 種別は「何の図として読ませるか」で、
+   * 粒度（どう分解させるか）とは選ぶ場面が違う。`handleMark` に相乗りさせると、
+   * 片方だけ変えたい呼び出しがもう片方の現在値を読み直して渡すことになる。
+   */
+  const handleChangeAnnotationKind = useCallback(
+    (frameId: string, kind: DiagramKind | undefined) => {
+      updateElements(setAnnotationKind(currentElements(), frameId, kind));
+    },
+    [currentElements, updateElements],
+  );
+
   const handleUnmark = useCallback(
     (frameId: string) => {
       updateElements(unmarkAnnotation(currentElements(), frameId));
@@ -953,6 +991,8 @@ export function BoardPage({
       // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
       baseUpdatedAt.current = updatedAt;
       setConflicted(false);
+      // 保存が成功した = いまのシーンはサーバーの上限を満たしている。
+      setOverLimit(false);
       savedSignature.current = sent;
       setDirty(latestSignature.current !== sent);
       // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
@@ -1513,6 +1553,21 @@ export function BoardPage({
       )}
 
       {/*
+        保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
+        状態（issue #103、ADR 0038）。**上限の数値は出さない。** サーバーの
+        判定結果を見せるだけで、フロントは上限を複製しない。開いた時点で
+        分かるよう、キャンバスを描く前から出す（中核思想 3）。
+      */}
+      {overLimit && (
+        <p className="scene-limit-warning" role="alert">
+          {
+            "このボードは保存できる上限を超えています。保存し直すには貼った画像を減らしてください。"
+          }
+          {sceneSize !== null && `（いまの大きさ: ${formatSceneSize(sceneSize)}）`}
+        </p>
+      )}
+
+      {/*
         パネルは境界で包み、キャンバスを巻き込ませない。落ちたのがパネルでも、
         外側の 1 枚だけで受けるとツリーごと外れ、保存していないブレストが
         その場で消える（ADR 0027）。
@@ -1576,6 +1631,7 @@ export function BoardPage({
         <ErrorBoundary name="注釈パネル" recovery="remount">
           <AnnotationPanel
             annotations={annotations}
+            detached={detached}
             markableFrames={markable}
             unmarkableFrames={unmarkable}
             canvasFrameIds={canvasFrameIds}
@@ -1584,6 +1640,7 @@ export function BoardPage({
             onMark={handleMark}
             onUnmark={handleUnmark}
             onChangeGranularity={(id, g) => handleMark(id, g)}
+            onChangeKind={handleChangeAnnotationKind}
             stale={dirty}
             interpretations={interpretations}
             onInterpret={(id) => void interpret(id)}

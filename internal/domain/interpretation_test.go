@@ -285,6 +285,74 @@ func TestInterpretation_Validate_TitleOfOnlyLineBreaksIsEmpty(t *testing.T) {
 }
 
 // 粒度はプロンプトでも指示するが、LLM が従う保証はないので構造で守る。
+// 長さの上限は GitHub が課すもので、超えると作成が途中で止まり、そこまでに
+// 作った draft issue だけが消せないまま残る（ADR 0009）。**境界を跨いで見る。**
+// 「長すぎる」だけを見ると、上限ちょうどを弾く実装でも通る。
+func TestInterpretation_Validate_Length(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		title string
+		body  string
+		want  domain.RuleID
+	}{
+		{
+			name:  "title が上限ちょうど",
+			title: strings.Repeat("あ", domain.MaxTitleRunes),
+		},
+		{
+			name:  "title が 1 文字超過",
+			title: strings.Repeat("あ", domain.MaxTitleRunes+1),
+			want:  domain.RuleTitleLength,
+		},
+		{
+			name: "body が上限ちょうど",
+			body: strings.Repeat("あ", domain.MaxBodyRunes),
+		},
+		{
+			name: "body が 1 文字超過",
+			body: strings.Repeat("あ", domain.MaxBodyRunes+1),
+			want: domain.RuleBodyLength,
+		},
+		{
+			// 数えるのはコードポイント。UTF-8 のバイト数で数えると、日本語の
+			// title が上限の 3 分の 1 で弾かれる。
+			name:  "多バイト文字でもバイト数では数えない",
+			title: strings.Repeat("🙂", domain.MaxTitleRunes),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := validInterpretation()
+			if tt.title != "" {
+				in.Items[0].Title = tt.title
+			}
+			if tt.body != "" {
+				in.Items[0].Body = tt.body
+			}
+
+			err := in.Validate(domain.GranularityAuto)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("Validate() = nil, want error")
+			}
+			if got := errorRules(t, err); !slices.Contains(got, tt.want) {
+				t.Errorf("Rule = %v, want %v を含む", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestInterpretation_Validate_Granularity(t *testing.T) {
 	t.Parallel()
 
@@ -752,6 +820,18 @@ func TestRules_MatchValidation(t *testing.T) {
 		}},
 		domain.RuleTitleSingleLine: {in: domain.Interpretation{Summary: "s",
 			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "認証\nの見直し"}},
+		}},
+		domain.RuleTitleLength: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{
+				LocalID: "e1", Kind: domain.KindEpic,
+				Title: strings.Repeat("あ", domain.MaxTitleRunes+1),
+			}},
+		}},
+		domain.RuleBodyLength: {in: domain.Interpretation{Summary: "s",
+			Items: []domain.InterpretedItem{{
+				LocalID: "e1", Kind: domain.KindEpic, Title: "t",
+				Body: strings.Repeat("あ", domain.MaxBodyRunes+1),
+			}},
 		}},
 		domain.RuleEpicTitleUnique: {in: domain.Interpretation{Summary: "s",
 			Items: []domain.InterpretedItem{

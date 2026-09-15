@@ -11,7 +11,7 @@ boards.scene （SQLite に保存された Excalidraw シーン JSON）
    ↓ domain.ParseScene
 Scene.Annotations()           … customData.etoki を持つ frame 要素
    ↓ Scene.AnnotationTexts(id)  … frameId と containerId の両方を辿る
-   ↓ domain.ComputeContentHash  … 正規化して SHA-256
+   ↓ domain.ComputeContentHash  … 正規化して SHA-256（粒度と図の種別も入力）
 現在のハッシュ
    ↕ 比較（domain.DecideState）
 sync_runs の最新 run の content_hash
@@ -24,9 +24,21 @@ UI は未保存の変更があることを表示する。
 
 押さえるべき点:
 
-- **`content_hash` の入力はテキストのみ。** 図形・矢印・座標だけの変更は検知
-  しない。これは仕様であり、`TestComputeContentHash_IgnoresNonTextChanges` で
-  固定してある。善意で「直さない」こと。
+- **`content_hash` の入力はテキストと注釈のメタデータ。** 図形・矢印・座標だけの
+  変更は検知しない。これは仕様であり、`TestComputeContentHash_IgnoresNonTextChanges`
+  で固定してある。善意で「直さない」こと。メタデータは粒度と図の種別
+  （ADR 0047）の 2 つで、どちらも解釈のプロンプトに載るので、変えたら
+  「変更あり」になる必要がある。
+  - **指定なしでも入力に書く**（ADR 0047）。書かない形にすれば種別を持つ前の
+    値と一致させられるが、算出の入力が種別の有無で分岐する。一度きりの移行の
+    ために恒久的な分岐を抱えない、という判断。**代償は移行時に一度だけ払う**
+    （既存の `created` な注釈が一斉に `changed` に見える）。中身は変わって
+    いないので、更新するかどうかは開発者が選ぶ。
+- **`Scene.AnnotationTexts` は入れ子の frame を辿らない**（ADR 0047）。内側の
+  frame に入れた要素は `frameId` が内側を指すので、外側の注釈の子には出て
+  こない。仕様として `TestAnnotationTexts_DoesNotFollowNestedFrames` が固定して
+  ある。辿るように変えるなら ADR に記録してから直す。黙って辿ると、ユーザーが
+  自分の用途で注釈の中に置いた frame の中身まで入力に混ざる。
 - **フロントの「未保存」判定（`web/src/excalidraw/dirty.ts`）は別物。** 保存は
   シーン全体を書くので、図形を動かしただけでも未保存にする。`content_hash` に
   揃えると、保存すべき変更を取りこぼす。
@@ -57,11 +69,16 @@ UI は未保存の変更があることを表示する。
     （ADR 0018）のとは非対称だが、副作用の有無から出る違いであって手抜きでは
     ない。
   - **どの mermaid 記法で書かせるかはサーバーが決める。** 語彙（`domain.DiagramKind`
-    の 5 種）は #52 と共有し、記法は `diagramNotations` が持つ。**選ぶ基準は
-    「mermaid で書けるか」ではなく「Excalidraw の要素として置けるか」**で、
-    `mindmap` と `architecture-beta` は変換器が画像 1 枚にしてしまうので使わない
-    （ADR 0040）。**指示と検査（先頭に来る語）は同じ表から出す。** 片方だけ直すと、
-    頼んだとおりに書いた出力を弾く。
+    の 5 種）はブレストの出発点になるひな形（ADR 0047）と共有し、記法は
+    `diagramNotations` が持つ。**選ぶ基準は「mermaid で書けるか」ではなく
+    「Excalidraw の要素として置けるか」**で、`mindmap` と `architecture-beta` は
+    変換器が画像 1 枚にしてしまうので使わない（ADR 0040）。**指示と検査
+    （先頭に来る語）は同じ表から出す。** 片方だけ直すと、頼んだとおりに書いた
+    出力を弾く。
+  - **解釈のときの指示（`usecase.diagramReadings`）とは別の表。** あちらは
+    「どう読ませるか」、こちらは「どう描かせるか」で、答えている問いが違う。
+    まとめると、mermaid の記法の話が解釈のプロンプトに混ざる。共有するのは
+    語彙だけ。
   - **mermaid の構文は検証しない。** 本当に要るのは「置けるか」で、それを知って
     いるのは変換器だけ。サーバーが見るのは、何も返さなかったことと、頼んだのと
     違う記法で書いたことの 2 つだけ。構文エラーでの投げ直しはフロントが会話の
@@ -109,6 +126,13 @@ UI は未保存の変更があることを表示する。
   `usecase.MaxSceneBytes` だけ。** ハンドラの `maxSceneBody` は読み込みの
   歯止めで、当たった側も同じ 413 に写す。ボディの大きさしだいで 400 と 413 に
   割れると、画面が同じ原因を 2 通りに案内することになる。
+  - **上限を導入する前に保存されたボードは、開いた時点で分かる（ADR 0048、
+    issue #103）。** `BoardDetail.sceneOverLimit` が
+    `usecase.SceneExceedsLimit(scene)` の結果をそのまま返す。**返すのは
+    真偽値だけで、`MaxSceneBytes` の数値は境界に出さない。** フロントが
+    上限を複製しないため（ADR 0038 と同じ理由）。413 判定
+    （`validateScene`）とこの真偽値は同じ `SceneExceedsLimit` を呼ぶので、
+    2 箇所で `len(scene) > MaxSceneBytes` を書かない。
 - **`sync_runs` は履歴。** 再実行しても過去の run を消さない。上書きすると
   GitHub 側に残っている draft issue を追跡できなくなるため（ADR 0007）。
   **読む口は `ListRunsByAnnotation`**（`GET .../annotations/{id}/runs`）。
@@ -135,6 +159,12 @@ UI は未保存の変更があることを表示する。
   **画面に見せるのは畳み込みのほうで、最新 run の Items ではない。** 最新 run
   だけを見せると、更新の run のあとに取り残しが消える。判定に使うのは最新 run の
   ハッシュだけ、と出どころを分けておく。
+- **シーンから消えた注釈は捨てずに別のリストで返す**（ADR 0046）。`ListStates` は
+  畳み込みをボード全体で引くので、シーンに残っていない `annotationId` も手元に
+  ある。**`AnnotationStatus` に混ぜないこと。** 比べる相手のテキストがシーンに
+  無いので 3 状態が決まらず、frame が無いので名前も粒度も取れない。混ぜると、
+  決められない値を架空の既定で埋めることになる。**1 件も作っていない注釈は
+  出さない**（辿る先が無い）。**並びは ID 順に固定する**（畳み込みは map で返る）。
 - **更新先は畳み込み集合に属することを確かめてから触る**（ADR 0026）。
   `previousItemId` はリクエストから来るので、確かめずに通すと任意の node ID で
   無関係な draft issue を書き換えられる。1 件でも見知らぬ ID があれば、何も作らず
@@ -156,7 +186,13 @@ UI は未保存の変更があることを表示する。
 - **GitHub に作るのは epic と issue の 2 階層のみ。** LLM 出力の最上位
   `summary` は作成前の確認表示にだけ使い、GitHub には作らない（ADR 0006）。
 - **解釈結果の制約は `domain.Rules` に宣言する**（ADR 0029）。検査を足すなら表にも
-  足す。**プロンプトの制約一覧は `domain.InterpretationConstraints()` が組み立てる**
+  足す。**GitHub が課している制約も宣言する。** 宣言していないと LLM に伝わらず、
+  検査も無いので再送ループが働かない。**取り返しのつかない側（GitHub への書き込み）
+  で初めて分かる**ことになり、ADR 0009 の「作ったものは消さない」と組み合わさると
+  代償は消せない draft issue になる（title / body の長さ、#113）。**etoki が切り
+  詰めない。弾く**（ADR 0038 と同じ理由）。上限値の出どころと、それが draft issue
+  そのもので確かめた値ではないことは `MaxTitleRunes` の doc コメントにある。
+  **プロンプトの制約一覧は `domain.InterpretationConstraints()` が組み立てる**
   ので、書き写さない。写すと「指示していない制約で弾く」状態になり、LLM が
   直しようのない再送を繰り返す。**user 側のメッセージで言い直すのも写しにあたる。**
   前回ぶんの一覧や粒度のように、その場の材料に添える指示は書いてよいが、制約

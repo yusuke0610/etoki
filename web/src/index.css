@@ -29,11 +29,26 @@ body {
 
 .create-board {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 12px;
 }
 
 .create-board input {
+  min-width: 0;
+  flex: 1;
+}
+
+/* ひな形は名前の下の行に置く。同じ行に並べるとサイドバーの幅で潰れる。 */
+.template-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+.template-picker select {
   min-width: 0;
   flex: 1;
 }
@@ -346,9 +361,22 @@ body {
 }
 
 .draft-kind,
+.draft-previous select,
 .draft-title {
   font-size: 12px;
   padding: 2px 4px;
+}
+
+/*
+ * 更新するか新しく作るかの切り替え（ADR 0026、#112）。**見出しの行には
+ * 置かない。** パネルが狭く、同じ行に足すとタイトルが読めなくなる。
+ */
+.draft-previous {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
 }
 
 .draft-title {
@@ -412,6 +440,20 @@ body {
  * よいかを続けて読ませる必要があり、バッジに収まる長さにならない。
  */
 .conflict {
+  background: #fdf0d5;
+  color: #8a5a00;
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+/*
+ * 保存済みシーンが保存できる上限を超えている状態（issue #103、ADR 0038）。
+ *
+ * .conflict と同じ「注意の帯」なので見た目も揃える。**失敗ではない。**
+ * 描いたものは残っており、保存だけがこのままでは通らない。
+ */
+.scene-limit-warning {
   background: #fdf0d5;
   color: #8a5a00;
   padding: 8px 12px;

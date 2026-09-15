@@ -103,7 +103,12 @@ func NewRouter(deps Deps) *gin.Engine {
 	// ここでは載せるだけ。/api/auth/session は未ログインでも 200 を返す。
 	r.Use(resolveSession(deps.Auth, logger))
 
-	auth := r.Group("/api/auth")
+	// キャッシュ禁止は `/api` の入口 1 箇所で掛ける。認証の要否で分かれる
+	// **前**に置くのは、あとから増やしたグループだけが漏れるのを防ぐため
+	// （`/api/auth` が実際にそうなっていた）。
+	apiRoot := r.Group("/api", noStore())
+
+	auth := apiRoot.Group("/auth")
 	{
 		auth.GET("/session", h.getSession)
 		// state の発行は書き込みなので POST。GET にすると外部ページから
@@ -114,7 +119,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		auth.POST("/logout", h.logout)
 	}
 
-	api := r.Group("/api", requireAuth(deps.Auth))
+	api := apiRoot.Group("", requireAuth(deps.Auth))
 	{
 		// いま使える機能。設定していない機能を押す前に見せるために引く
 		// （ADR 0008 の帰結）。**認証の内側に置く。** プロセスの設定を
@@ -170,6 +175,19 @@ func NewRouter(deps Deps) *gin.Engine {
 	r.NoRoute(newWebUI(deps.WebDir))
 
 	return r
+}
+
+// noStore は `/api` の応答をキャッシュさせない。
+//
+// ブラウザのキャッシュに残ると、同じプロファイルで利用者を切り替えたときに
+// 前の利用者の GitHub draft issue の内容やセッションが再利用されうる
+// （CWE-525）。**未ログインの応答にも掛ける。** ログイン前の
+// `/api/auth/session` が残ると、ログイン後も未ログインとして読まれうる。
+func noStore() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Next()
+	}
 }
 
 // handleHealthz はプロセスが生きていることだけを返す。

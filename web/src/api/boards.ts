@@ -1,6 +1,6 @@
 import type {
   AnnotationImage,
-  AnnotationStatus,
+  BoardAnnotations,
   BoardDeletion,
   Capabilities,
   InterpretRequest,
@@ -103,11 +103,19 @@ export const boardsApi = {
    *
    * **作成先は必須。** 候補は書ける Project だけに絞ってあるので、書ける先を
    * 1 つも持たない人はここまで来られない（ADR 0017）。
+   *
+   * `scene` はテンプレートから始めるときだけ渡す。**空白のときは送らない。**
+   * 省略すると空のシーンで作るのはサーバーの既定で、手元で組み立てると同じ
+   * ものが 2 箇所になる（`excalidraw/template.ts`）。
    */
-  create: (name: string, target: BoardTarget) =>
+  create: (name: string, target: BoardTarget, scene?: string) =>
     request<BoardDetail>("/api/boards", {
       method: "POST",
-      body: JSON.stringify({ name, ...target }),
+      body: JSON.stringify({
+        name,
+        ...target,
+        ...(scene === undefined ? {} : { scene }),
+      }),
     }),
 
   get: (id: string) => request<BoardDetail>(`/api/boards/${id}`),
@@ -180,8 +188,14 @@ export const boardsApi = {
       body: JSON.stringify(display),
     }),
 
-  annotations: (id: string) =>
-    request<AnnotationStatus[]>(`/api/boards/${id}/annotations`),
+  /**
+   * 注釈の 3 状態と、シーンから消えた注釈をまとめて引く。
+   *
+   * **`detached` のために問い合わせを増やさない。** サーバーは畳み込みを
+   * ボード全体で引いており、シーンに残っていないぶんは今まで捨てていただけ
+   * （#111）。別の口にすると、同じ問いを 2 回投げることになる。
+   */
+  annotations: (id: string) => request<BoardAnnotations>(`/api/boards/${id}/annotations`),
 
   /**
    * その注釈の実行履歴を新しい順で引く。

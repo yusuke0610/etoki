@@ -4,6 +4,8 @@ import { partialCreationFailure, type Failure } from "../api/errorMessage";
 import type {
   AnnotationStatus,
   CreatedRun,
+  DetachedAnnotation,
+  DiagramKind,
   Granularity,
   Interpretation,
   InterpretedItem,
@@ -16,6 +18,7 @@ import type {
 import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { groupByEpic } from "./interpretation";
 import {
   interpretationOrderLabel,
@@ -32,6 +35,7 @@ import {
   setBody,
   setKind,
   setTitle,
+  setUpdatesPrevious,
   toggleItem,
 } from "./interpretationDraft";
 import type { ProjectLink } from "./projectLink";
@@ -68,6 +72,13 @@ const STATE_LABEL: Record<SyncState, string> = {
 
 type Props = {
   annotations: AnnotationStatus[];
+  /**
+   * シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
+   *
+   * **`annotations` と混ぜて渡さない。** 3 状態も名前も無いので、注釈の
+   * カードと同じ形では出せない。
+   */
+  detached: DetachedAnnotation[];
   /** 選択中の frame のうち、まだ注釈になっていないもの。 */
   markableFrames: SelectableFrame[];
   /** 選択中の frame のうち、すでに注釈になっているもの。 */
@@ -90,6 +101,8 @@ type Props = {
   onMark: (frameId: string, granularity: Granularity) => void;
   onUnmark: (frameId: string) => void;
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
+  /** 図の種別を差し替える。`undefined` は「指定なし」に戻す。 */
+  onChangeKind: (frameId: string, kind: DiagramKind | undefined) => void;
   /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
   stale: boolean;
   /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
@@ -150,8 +163,14 @@ type Props = {
   projectLink: ProjectLink | null;
 };
 
+type PendingKind = {
+  /** 保存を待つあいだに表示する、最後に選んだ値。 */
+  value: DiagramKind | undefined;
+};
+
 export function AnnotationPanel({
   annotations,
+  detached,
   markableFrames,
   unmarkableFrames,
   canvasFrameIds,
@@ -160,6 +179,7 @@ export function AnnotationPanel({
   onMark,
   onUnmark,
   onChangeGranularity,
+  onChangeKind,
   stale,
   interpretations,
   onInterpret,
@@ -176,6 +196,22 @@ export function AnnotationPanel({
   creationUnavailable,
   projectLink,
 }: Props) {
+  // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
+  // 新しく、次の保存まで a.kind は古いので、そのあいだはここで選択値を持つ。
+  // **最後に選んだ値が a.kind に追いつくまで保持する。** 保存中に選び直すと
+  // 前の選択の保存が後から追いつくことがあり、そこで「保存済みの値が変わった
+  // から追いついた」と判定すると、追いついたのが古い選択のほうでも pending を
+  // 消してしまい、選択欄がキャンバスと違う値に戻る。
+  //
+  // **追いついた・注釈が消えた pending は掃除しない。** 掃除は「レンダー中に
+  // 前回の props と比べて setState する」か「effect で setState する」のどちらかに
+  // なるが、前者は ref を読み書きする形になり、後者は effect 内の直接の setState
+  // になるので、どちらもこのリポジトリの eslint-plugin-react-hooks が禁じる形に
+  // なる。**このパネルはボードを切り替えると `key={board.id}` ごと作り直される**
+  // （`App`）ので、残る量は開いているボードで選び直した種別の数に留まり、
+  // 実害の無い範囲。
+  const [pendingKinds, setPendingKinds] = useState<Record<string, PendingKind>>({});
+
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
   // 出ると、同じものが 2 つあるように見える。
   const labels = annotationLabels(annotations);
@@ -252,6 +288,9 @@ export function AnnotationPanel({
               const onCanvas = canvasFrameIds === null || canvasFrameIds.includes(a.id);
               const selected = selectedFrameIds.includes(a.id);
               const missingId = `annotation-missing-${a.id}`;
+              const pendingKind = pendingKinds[a.id];
+              const kind =
+                pendingKind && pendingKind.value !== a.kind ? pendingKind.value : a.kind;
 
               return (
                 <li
@@ -303,6 +342,44 @@ export function AnnotationPanel({
                       {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
                         <option key={g} value={g}>
                           {GRANULARITY_LABEL[g]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {/*
+                    何の図として読ませるかを選ばせる。**ひな形は絵を置くだけ**
+                    （ADR 0047）で、どこを囲むかも何の図かも人が決めるので、
+                    種別が載る先はここしかない。
+
+                    粒度と同じ形（`<select>` + 表を引く）にしてあるのは、
+                    同じメタデータに載る 2 つが画面で別物に見えないため。
+                  */}
+                  <label className="granularity">
+                    種別
+                    <select
+                      value={kind ?? ""}
+                      disabled={!canEdit}
+                      onChange={(e) => {
+                        const nextKind = (e.target.value || undefined) as
+                          | DiagramKind
+                          | undefined;
+                        setPendingKinds((current) => ({
+                          ...current,
+                          [a.id]: { value: nextKind },
+                        }));
+                        onChangeKind(a.id, nextKind);
+                      }}
+                    >
+                      {/*
+                        「指定なし」は種別の語彙（DiagramKind）に無い値なので、
+                        ここだけ空文字で表す。選ばれたら customData からキーごと
+                        落ちる（setAnnotationKind）。
+                      */}
+                      <option value="">指定なし</option>
+                      {diagramKinds().map((k) => (
+                        <option key={k} value={k}>
+                          {DIAGRAM_KIND_LABELS[k]}
                         </option>
                       ))}
                     </select>
@@ -380,7 +457,86 @@ export function AnnotationPanel({
           </ul>
         )}
       </section>
+
+      <DetachedSection
+        annotations={detached}
+        runHistories={runHistories}
+        onLoadRuns={onLoadRuns}
+        projectLink={projectLink}
+      />
     </aside>
+  );
+}
+
+/**
+ * シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
+ *
+ * **注釈のカードと同じ形にはしない。** 名前も 3 状態も無く、解釈も作成も
+ * できない。混ぜると「押せない注釈」が状態の一覧に並ぶことになる。
+ *
+ * **etoki からは消しも作り直しもしない**（中核思想 3）。できるのは、GitHub に
+ * 残っているものへ辿れるようにするところまで。frame を引き直すと要素の ID が
+ * 変わるので、以後は別の注釈として扱われる。**それも書いて渡す。** 書かないと、
+ * 引き直せば戻ると読める。
+ *
+ * 1 件も無ければ節ごと出さない。ふつうは空なので、常に空の枠が並ぶと、
+ * 本当に何か残っているときに気づけない。
+ */
+function DetachedSection({
+  annotations,
+  runHistories,
+  onLoadRuns,
+  projectLink,
+}: {
+  annotations: DetachedAnnotation[];
+  runHistories: Record<string, RunHistoryState>;
+  onLoadRuns: (annotationId: string) => void;
+  projectLink: ProjectLink | null;
+}) {
+  if (annotations.length === 0) return null;
+
+  return (
+    <section className="panel-section">
+      <h3>キャンバスに無い注釈</h3>
+      <p className="hint">
+        囲みは消えていますが、そこから作った draft issue は GitHub に残っています。
+        囲みを引き直しても、これらとは繋がりません。
+      </p>
+
+      <ul className="annotation-list">
+        {annotations.map((a) => (
+          <li key={a.id} className="annotation">
+            {/*
+              **名前は出せない。** シーンから消えているので取りようが無い。
+              何の囲みだったかは、下に並ぶ「作ったもの」から読む。
+            */}
+            <p className="hint">
+              最後の実行:{" "}
+              {a.lastSyncedAt === undefined ? "不明" : formatRunTimestamp(a.lastSyncedAt)}
+            </p>
+
+            <details open>
+              <summary>GitHub にある {a.items.length} 件</summary>
+              <ul className="plain-list">
+                {a.items.map((it) => (
+                  <li key={it.itemId}>
+                    <span className="kind">{it.kind}</span> {it.title}
+                    <ItemBody body={it.body} />
+                  </li>
+                ))}
+              </ul>
+              <ProjectLinkLine link={projectLink} />
+            </details>
+
+            {/* 履歴の口はシーンに注釈が残っているかを見ない（ADR 0007）。 */}
+            <details className="run-history">
+              <summary>実行の履歴</summary>
+              <RunHistory state={runHistories[a.id]} onLoad={() => onLoadRuns(a.id)} />
+            </details>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -870,6 +1026,10 @@ function InterpretationDraft({
   // groupByEpic は下書きの項目そのものを並べ替えて返すので、引けない localId は
   // 無い。それでも既定を持つのは、無いものを「選ばれている」と倒さないため。
   const selected = new Map(draft.items.map((d) => [d.item.localId, d.selected]));
+  // LLM の答えに従うかどうか。既定は従う（ADR 0026）。
+  const updatesPrevious = new Map(
+    draft.items.map((d) => [d.item.localId, d.updatesPrevious]),
+  );
   const orphans = orphanedLocalIds(draft);
   const reasons = blockingReasons(draft, granularity);
   // 今回の作成で GitHub 側に置き去りになるもの（ADR 0026）。
@@ -887,6 +1047,7 @@ function InterpretationDraft({
     <DraftItemFields
       item={item}
       selected={selected.get(item.localId) ?? false}
+      updatesPrevious={updatesPrevious.get(item.localId) ?? false}
       orphan={orphans.has(item.localId)}
       frozen={frozen}
       editableKind={editableKind}
@@ -894,6 +1055,9 @@ function InterpretationDraft({
       onKind={(kind) => setDraft((d) => setKind(d, item.localId, kind))}
       onTitle={(title) => setDraft((d) => setTitle(d, item.localId, title))}
       onBody={(body) => setDraft((d) => setBody(d, item.localId, body))}
+      onUpdatesPrevious={(updates) =>
+        setDraft((d) => setUpdatesPrevious(d, item.localId, updates))
+      }
     />
   );
 
@@ -953,6 +1117,7 @@ function InterpretationDraft({
 function DraftItemFields({
   item,
   selected,
+  updatesPrevious,
   orphan,
   frozen,
   editableKind,
@@ -960,9 +1125,17 @@ function DraftItemFields({
   onKind,
   onTitle,
   onBody,
+  onUpdatesPrevious,
 }: {
   item: InterpretedItem;
   selected: boolean;
+  /**
+   * LLM が対応づけた更新先に、実際に書き込むかどうか。
+   *
+   * `item.previousItemId` を持たない項目では常に false。切り替えも出さない。
+   * 指す先が無いので、選ばせるものが無い。
+   */
+  updatesPrevious: boolean;
   /**
    * 親を失ったまま作られる issue かどうか。
    *
@@ -976,6 +1149,7 @@ function DraftItemFields({
   onKind: (kind: ItemKind) => void;
   onTitle: (title: string) => void;
   onBody: (body: string) => void;
+  onUpdatesPrevious: (updatesPrevious: boolean) => void;
 }) {
   return (
     <div className={`draft-item${selected ? "" : " unselected"}`}>
@@ -1015,9 +1189,41 @@ function DraftItemFields({
           作るのか書き換えるのかは、押す前に見えている必要がある（ADR 0026）。
           どちらも取り消せないが、取り返しのつかなさが違う。書き換えは前の内容を
           消す。
+
+          **印だけでなく、覆せる形で出す。** 対応づけを解釈させるのは LLM でも、
+          決めるのは開発者（ADR 0026）。指す先が GitHub から消えていると、
+          更新のままでは作成が必ず失敗する。
         */}
-        {item.previousItemId && <span className="badge badge-updated">更新</span>}
+        {item.previousItemId && updatesPrevious && (
+          <span className="badge badge-updated">更新</span>
+        )}
       </div>
+
+      {/*
+        **切り替えは見出しの行に置かない。** パネルは狭く、種別とタイトルが
+        すでに並んでいる。同じ行に足すとタイトルが読めなくなり、押す前に中身が
+        見えているという前提（ADR 0024）が崩れる。
+
+        LLM が言ったこととの差も添える。既定のままなら出さない。「残ります」は
+        ここでは言わない。取り残しは作成ボタンの手前にまとめて出しており
+        （ADR 0026）、同じことを 2 箇所で数えることになる。
+      */}
+      {item.previousItemId && (
+        <div className="draft-previous">
+          <select
+            value={updatesPrevious ? "update" : "create"}
+            disabled={frozen}
+            onChange={(e) => onUpdatesPrevious(e.target.value === "update")}
+            aria-label={`${item.localId} を更新するか新しく作るか`}
+          >
+            <option value="update">更新する</option>
+            <option value="create">新しく作る</option>
+          </select>
+          {!updatesPrevious && (
+            <span className="hint">解釈では既存の draft issue の更新でした。</span>
+          )}
+        </div>
+      )}
 
       {/*
         親が消えたことを黙って起こさない（ADR 0024）。作られるものが変わって

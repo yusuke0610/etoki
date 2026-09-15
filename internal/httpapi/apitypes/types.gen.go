@@ -131,6 +131,18 @@ type AnnotationStatus struct {
 	// 1 件も無ければ省略する
 	Items []SyncItem `json:"items,omitempty"`
 
+	// Kind 開発者が選んだ図の種別。**選んでいなければ省略する**（テンプレート
+	// から始めていない注釈がそれ）。
+	//
+	// `Granularity` のように空文字を値に持たせず省略で表すのは、種別の
+	// 語彙を 1 つに保つため。プロンプトからのドラフト生成は「何の図か」が
+	// 入力そのものなので指定なしを受け付けず、enum に空文字を足すと
+	// そちらの契約まで緩む。
+	//
+	// **解釈のプロンプトに載り、`content_hash` の入力にも入る。**
+	// 差し替えれば `changed` になる（粒度と同じ）。
+	Kind *DiagramKind `json:"kind,omitempty"`
+
 	// LastRunOutcome 前回実行が最後まで進んだかどうか（ADR 0043）。未実行と、記録して
 	// いなかった頃の run では省略する。
 	//
@@ -180,6 +192,17 @@ type BoardAccess struct {
 	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
 	//   あり、閲覧者に許すのは「閲覧」ではない
 	Role BoardRole `json:"role"`
+}
+
+// BoardAnnotations ボード 1 枚ぶんの注釈。**シーンに在るものと、消えたのに GitHub 側には
+// 残っているものを分けて返す。**
+type BoardAnnotations struct {
+	// Annotations 保存済みシーンに在る注釈。0 件でも配列を返す
+	Annotations []AnnotationStatus `json:"annotations"`
+
+	// Detached シーンから消えたのに GitHub 側にものが残っている注釈。
+	// 0 件でも配列を返す
+	Detached []DetachedAnnotation `json:"detached"`
 }
 
 // BoardDeletion ボードを削除したときに etoki から失われるもの（ADR 0042）。
@@ -239,6 +262,17 @@ type BoardDetail struct {
 
 	// Scene Excalidraw のシーン JSON をそのまま入れた文字列
 	Scene string `json:"scene"`
+
+	// SceneOverLimit いま保存されているシーンが保存できる上限（ADR 0038）を超えて
+	// いて、このままでは保存し直せないことを表す（issue #103）。
+	// 上限を導入する前に保存されたボードや、上限を引き下げた後にだけ
+	// 真になりうる。
+	//
+	// **上限の数値そのものは返さない。** フロントは判定結果だけを
+	// 受け取り、上限を複製しない。`projectAccess` の
+	// `unknown` / `allowed` / `denied` と同じで、判定はサーバーの
+	// 持ち場のまま
+	SceneOverLimit bool `json:"sceneOverLimit"`
 
 	// TargetLocked 作成先を変更できないことを表す。そのボードで draft issue を
 	// 1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
@@ -431,6 +465,27 @@ type CreatedRun struct {
 	Incomplete bool       `json:"incomplete,omitempty"`
 	Items      []SyncItem `json:"items"`
 	RunID      int64      `json:"runId"`
+}
+
+// DetachedAnnotation 注釈にした frame をキャンバスから消して保存したあとも、GitHub 側に
+// 残っている draft issue（#111）。
+//
+// **run の記録は消えていない**（ADR 0007）ので `.../annotations/{id}/runs`
+// はそのまま読める。ここはその導線を出すための一覧。
+//
+// **etoki は消しも作り直しもしない**（中核思想 3）。frame を引き直すと
+// 要素の ID が変わるので、以後は別の注釈として扱われる。
+type DetachedAnnotation struct {
+	// ID 消えた frame の要素 ID。**名前は返さない。** シーンから消えている
+	// ので取りようが無い。何の囲みだったかは items から読む
+	ID string `json:"id"`
+
+	// Items この注釈が GitHub に在らしめている draft issue。畳み込みは
+	// AnnotationStatus.items と同じ（ADR 0026）
+	Items []SyncItem `json:"items"`
+
+	// LastSyncedAt 最後に実行した時刻
+	LastSyncedAt *time.Time `json:"lastSyncedAt,omitempty"`
 }
 
 // DiagramDraft 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは

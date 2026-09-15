@@ -294,7 +294,7 @@ func TestInterpretAnnotation_DoesNotRecordRun(t *testing.T) {
 	}
 
 	// 状態も uncreated のまま。
-	states := decode[[]map[string]any](t, do(t, r, http.MethodGet, "/api/boards/"+id+"/annotations", nil))
+	states := listAnnotations(t, r, id).Annotations
 	if len(states) != 1 {
 		t.Fatalf("len(states) = %d, want 1", len(states))
 	}
