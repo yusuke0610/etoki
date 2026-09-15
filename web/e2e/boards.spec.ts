@@ -1,10 +1,19 @@
 import { expect, test } from "@playwright/test";
 
 import { installApi, summarize } from "./helpers/api";
-import { chooseTarget, drawRectangle, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock, board, unselectedBoard } from "./helpers/fixtures";
-
-const BOARD_NAME = "認証まわりのブレスト";
+import {
+  chooseTarget,
+  drawRectangle,
+  openBoard,
+  openBoardWithMock,
+} from "./helpers/board";
+import {
+  BOARD_ID,
+  BOARD_NAME,
+  baseMock,
+  board,
+  unselectedBoard,
+} from "./helpers/fixtures";
 
 test.describe("ボード", () => {
   test("一覧から選ぶとキャンバスと注釈パネルが開く", async ({ page }) => {
@@ -15,7 +24,7 @@ test.describe("ボード", () => {
       page.getByText("左からボードを選ぶか、新しく作成してください。"),
     ).toBeVisible();
 
-    await openBoard(page, "認証まわりのブレスト");
+    await openBoard(page, BOARD_NAME);
     await expect(page.getByRole("heading", { name: "選択中のフレーム" })).toBeVisible();
   });
 
@@ -144,7 +153,7 @@ test.describe("ボード", () => {
 
     const tree = page.locator(".board-tree");
     const branch = tree.getByRole("button", { name: "acme/web" });
-    const boardButton = tree.getByRole("button", { name: "認証まわりのブレスト" });
+    const boardButton = tree.getByRole("button", { name: BOARD_NAME });
 
     await expect(branch).toHaveAttribute("aria-expanded", "true");
     await expect(boardButton).toBeVisible();
@@ -160,9 +169,7 @@ test.describe("ボード", () => {
   // 打ち間違えたボードがそのまま残らないようにする。**改名でキャンバスは
   // 外れない。** 外すと、名前を直すたびに未保存の確認を通ることになる。
   test("ボードの名前を変えると、見出しと一覧の両方が変わる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await page.getByRole("button", { name: "名前を変更" }).click();
     await page.getByLabel("ボードの名前").fill("認証の設計会");
@@ -187,9 +194,7 @@ test.describe("ボード", () => {
   // いないこと（動かすと、次の保存が誰もシーンを触っていないのに 409 になる、
   // ADR 0020）。どちらが切れてもここが落ちる。
   test("描いている途中に改名しても、描いたものは残って保存できる", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     await drawRectangle(page);
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
@@ -219,9 +224,7 @@ test.describe("ボード", () => {
   });
 
   test("名前を空にしたままでは保存できない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await page.getByRole("button", { name: "名前を変更" }).click();
     await page.getByLabel("ボードの名前").fill("   ");
@@ -234,9 +237,7 @@ test.describe("ボード", () => {
   test("削除は、GitHub 側に残るものを見せてから確認させる", async ({ page }) => {
     const mock = baseMock();
     mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await page.getByRole("button", { name: "ボードを削除" }).click();
 
@@ -254,9 +255,7 @@ test.describe("ボード", () => {
   });
 
   test("削除すると一覧から消え、キャンバスが閉じる", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     await page.getByRole("button", { name: "ボードを削除" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "削除する" }).click();
@@ -276,9 +275,7 @@ test.describe("ボード", () => {
   // 404 になる行が並ぶ。消えたことは 204 で確かめてあるので、外すのは推測では
   // ない。
   test("引き直しに失敗しても、消したボードは一覧に残らない", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     // 削除そのものは通し、そのあとの引き直しだけを落とす。
     mock.boardsError = {

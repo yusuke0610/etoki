@@ -1,5 +1,8 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+import { installApi, type ApiMock } from "./api";
+import { BOARD_NAME } from "./fixtures";
+
 /**
  * サイドバーからボードを開き、キャンバスと注釈パネルが出るまで待つ。
  *
@@ -13,6 +16,25 @@ export async function openBoard(page: Page, name: string): Promise<void> {
   // **見出しは階層まで絞る。** パネルの中には「キャンバスに無い注釈」
   // （#111）のような h3 も並ぶので、名前だけで引くと 2 つ見つかって落ちる。
   await expect(page.getByRole("heading", { name: "注釈", level: 2 })).toBeVisible();
+}
+
+/**
+ * モックを入れてトップを開き、ボードを開くところまで進める。
+ *
+ * ほとんどの spec が同じ 3 手から始まるので、ここ 1 つに置く（#156）。**途中に
+ * 何かを挟む spec（開く前の画面を撮る、モックを差し替えてから開く）は、
+ * これを使わずに 3 手を書く。** 返すのは `installApi` と同じく、記録を読むための
+ * モック。
+ */
+export async function openBoardWithMock(
+  page: Page,
+  mock: ApiMock,
+  name: string = BOARD_NAME,
+): Promise<ApiMock> {
+  const installed = await installApi(page, mock);
+  await page.goto("/");
+  await openBoard(page, name);
+  return installed;
 }
 
 /**

@@ -1,16 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { annotationCard, openBoard } from "./helpers/board";
+import { annotationCard, openBoardWithMock } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
-
-const BOARD_NAME = "認証まわりのブレスト";
 
 test.describe("共有", () => {
   test("オーナーは招待でき、招待した相手が一覧に並ぶ", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await page.getByRole("button", { name: "メンバー", exact: true }).click();
 
@@ -35,9 +30,7 @@ test.describe("共有", () => {
     };
     mock.details[BOARD_ID] = { ...board(), role: "editor" };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -59,9 +52,7 @@ test.describe("共有", () => {
     mock.details[BOARD_ID] = { ...board(), role: "viewer" };
     mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expect(
       page.getByText("読むだけの権限で開いています。編集・解釈・作成はできません。"),
@@ -76,9 +67,7 @@ test.describe("共有", () => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), role: "editor" };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
     await expect(page.getByText("作成先を変えられるのはオーナーだけです")).toBeVisible();
@@ -91,9 +80,7 @@ test.describe("共有", () => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), role: "editor" };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expect(page.getByRole("button", { name: "ボードを削除" })).toHaveCount(0);
     await expect(page.getByText("ボードを削除できるのはオーナーだけです")).toBeVisible();
@@ -119,9 +106,7 @@ test.describe("共有", () => {
       ],
     };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await page.getByRole("button", { name: "メンバー", exact: true }).click();
 
     await expect(page.getByRole("region", { name: "メンバー" })).toContainText("Alice");
@@ -140,9 +125,7 @@ test.describe("共有", () => {
       },
     };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await page.getByRole("button", { name: "メンバー", exact: true }).click();
 
     await page.getByLabel("招待する login").fill("carol");

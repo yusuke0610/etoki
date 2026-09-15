@@ -12,14 +12,17 @@ import {
   chooseTarget,
   drawRectangle,
   openBoard,
+  openBoardWithMock,
   picker,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
   BOARD_ID,
+  BOARD_NAME,
   annotations,
   baseMock,
   board,
+  historyRuns,
   interpretation,
   matchedInterpretationMock,
   mixedFramesMock,
@@ -39,16 +42,18 @@ import {
  */
 
 const SHOT_DIR = "e2e-output/screenshots";
-const BOARD_NAME = "認証まわりのブレスト";
 
 async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: `${SHOT_DIR}/${name}.png`, fullPage: false });
 }
 
 test.describe("スクリーンショット", () => {
+  // 画像の大きさを揃える。テストごとに setViewportSize を書くと、1 つだけ
+  // 違う大きさで撮られても気づけない（#156）。
+  test.use({ viewport: { width: 1440, height: 900 } });
+
   test("主要な画面を撮る", async ({ page }) => {
     const mock = await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
     await shot(page, "01-boards-empty");
@@ -86,11 +91,7 @@ test.describe("スクリーンショット", () => {
   // changed の注釈に更新の出口ができた（ADR 0026）。何が書き換わり、何が
   // GitHub 側に取り残されるのかを、押す前に見せている画面を撮る。
   test("更新と取り残しの内訳を撮る", async ({ page }) => {
-    await installApi(page, matchedInterpretationMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -100,11 +101,7 @@ test.describe("スクリーンショット", () => {
 
   // 作る前に選び直せること、選び直した結果がどう見えるかを撮る（ADR 0024）。
   test("作るものを選び直した画面を撮る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -126,11 +123,7 @@ test.describe("スクリーンショット", () => {
   // 複数フレームのとき、パネルの項目とキャンバスのフレームが対応して見える
   // ことを撮る（ADR 0022）。
   test("カードとフレームの対応を撮る", async ({ page }) => {
-    await installApi(page, multiFrameMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, multiFrameMock());
 
     await annotationCard(page, "注釈 2").getByRole("button", { name: "注釈 2" }).click();
     // 寄せる動きはアニメーションする。終わる前に撮ると、途中の位置が写る。
@@ -141,11 +134,7 @@ test.describe("スクリーンショット", () => {
   // 注釈にした frame と、ユーザーが自分の用途で使った frame は混在するのが
   // 前提（ルートの CLAUDE.md）。キャンバス上で見分けが付くかを撮る。
   test("注釈にした frame の印を撮る", async ({ page }) => {
-    await installApi(page, mixedFramesMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mixedFramesMock());
     await page.locator(".annotation-overlay-frame").first().waitFor();
     await shot(page, "20-annotation-marks");
   });
@@ -153,11 +142,7 @@ test.describe("スクリーンショット", () => {
   // 未保存のあいだは解釈できない。テキストは保存済みシーンから、画像は画面から
   // 取るので、揃っていないと入力が食い違う（ADR 0018）。
   test("未保存で解釈できない状態を撮る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
     await annotationCard(page, "ログイン")
@@ -175,7 +160,6 @@ test.describe("スクリーンショット", () => {
     mock.annotations = { [board.id]: [] };
 
     await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
     await page.locator(".board-list").getByRole("button", { name: board.name }).click();
@@ -214,11 +198,7 @@ test.describe("スクリーンショット", () => {
       ],
     };
 
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await shot(page, "21-target-locked");
 
     await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
@@ -233,11 +213,7 @@ test.describe("スクリーンショット", () => {
   // 押せない理由は title ではなく本文で出す。ホバーできない利用者と読み上げにも
   // 届く必要がある。見た目の話でもあるので撮る。
   test("作成先を変更できない状態を撮る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
     await page.getByText("未保存", { exact: true }).waitFor();
     await shot(page, "08-target-change-blocked");
@@ -246,11 +222,7 @@ test.describe("スクリーンショット", () => {
   // 他の人が先に保存した状態（ADR 0020）。上書きしなかったことと、この後どう
   // すればよいかが読める必要がある。
   test("保存が衝突した状態を撮る", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
     await drawRectangle(page);
@@ -271,11 +243,7 @@ test.describe("スクリーンショット", () => {
         error: "etoki: board scene is 9437184 bytes, limit is 8388608",
       },
     };
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await drawRectangle(page);
     await page.getByRole("button", { name: "保存" }).click();
     await page.getByText("貼った画像が大きすぎて保存できません").waitFor();
@@ -296,11 +264,7 @@ test.describe("スクリーンショット", () => {
       },
     };
 
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     // 理由はパネルに 1 つだけ出る（注釈ごとには並べない）。
     await page.getByText("ETOKI_LLM_API_KEY").waitFor();
     await shot(page, "21-not-configured");
@@ -321,7 +285,6 @@ test.describe("スクリーンショット", () => {
     };
 
     await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
     await page.locator(".board-list").getByRole("button", { name: target.name }).click();
@@ -367,11 +330,7 @@ test.describe("スクリーンショット", () => {
       ],
     };
 
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await page.getByRole("button", { name: "メンバー", exact: true }).click();
     await page.getByText("Carol").waitFor();
     await shot(page, "11-members");
@@ -386,11 +345,7 @@ test.describe("スクリーンショット", () => {
       [BOARD_ID]: { status: 200, body: { role: "editor", projectAccess: "denied" } },
     };
 
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await annotationCard(page, "ログイン")
       .getByRole("button", { name: "解釈する" })
       .click();
@@ -404,11 +359,7 @@ test.describe("スクリーンショット", () => {
     mock.details[BOARD_ID] = { ...board(), role: "viewer" };
     mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
 
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await page
       .getByText("読むだけの権限で開いています。編集・解釈・作成はできません。")
       .waitFor();
@@ -449,11 +400,7 @@ test.describe("スクリーンショット", () => {
       mock.annotations[b.id] = [];
     }
 
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await shot(page, "14-board-tree");
   });
 
@@ -463,7 +410,6 @@ test.describe("スクリーンショット", () => {
     mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
 
     await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
     await page.getByRole("button", { name: "GitHub でログイン" }).waitFor();
@@ -481,7 +427,6 @@ test.describe("スクリーンショット", () => {
   test("落ちたパネルとアプリ全体を撮る", async ({ page }) => {
     await installApi(page, baseMock());
     await breakAnnotations(page);
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
     await page.locator(".board-list").getByRole("button", { name: BOARD_NAME }).click();
@@ -494,7 +439,6 @@ test.describe("スクリーンショット", () => {
   test("アプリ全体が落ちた画面を撮る", async ({ page }) => {
     await installApi(page, baseMock());
     await breakBoards(page);
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
     await page.getByRole("alert").waitFor();
@@ -504,11 +448,7 @@ test.describe("スクリーンショット", () => {
   // 付箋を 1 枚置いた状態と、保存に送る大きさの表示。**大きさは上限との比を
   // 出さない**（ADR 0018 / 0038）ので、催促に見えていないかを画像で見る。
   test("付箋を置いた状態と大きさの表示を撮る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await page.getByRole("button", { name: "付箋" }).click();
     await page.getByText("未保存", { exact: true }).waitFor();
     await shot(page, "23-sticky-note");
@@ -516,11 +456,7 @@ test.describe("スクリーンショット", () => {
 
   // 引いた解釈が 2 件並んだ状態。どれを作成に送るのかが読めるかを見る。
   test("解釈の履歴を撮る", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -539,46 +475,8 @@ test.describe("スクリーンショット", () => {
   // いるように見えていないかを画像で見る。
   test("実行の履歴を撮る", async ({ page }) => {
     const mock = baseMock();
-    mock.runs = {
-      [ANNOTATION_IDS.created]: {
-        status: 200,
-        body: [
-          {
-            id: 2,
-            createdAt: "2026-08-04T12:00:00Z",
-            items: [
-              {
-                itemId: "PVTI_issue",
-                kind: "issue",
-                title: "再設定メールを送る",
-                body: "有効期限つきのリンクを送る",
-                localId: "i1",
-                action: "created",
-              },
-            ],
-          },
-          {
-            id: 1,
-            createdAt: "2026-08-03T12:00:00Z",
-            items: [
-              {
-                itemId: "PVTI_epic",
-                kind: "epic",
-                title: "パスワード再設定",
-                body: "忘れたときの導線をまとめる",
-                localId: "e1",
-                action: "created",
-              },
-            ],
-          },
-        ],
-      },
-    };
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    mock.runs = { [ANNOTATION_IDS.created]: { status: 200, body: historyRuns() } };
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "パスワード再設定");
     await card.getByText("実行の履歴").click();
@@ -594,34 +492,22 @@ test.describe("スクリーンショット", () => {
     mock.annotations[BOARD_ID] = annotations().map((a) =>
       a.id === ANNOTATION_IDS.created ? { ...a, lastRunOutcome: "incomplete" } : a,
     );
+    // 1 回目の作成（epic だけ）が途中で止まった形。中身は履歴の fixture の古い側
+    // （新しい順なので末尾）。
     mock.runs = {
       [ANNOTATION_IDS.created]: {
         status: 200,
-        body: [
-          {
-            id: 1,
+        body: historyRuns()
+          .slice(-1)
+          .map((run) => ({
+            ...run,
             createdAt: "2026-08-04T12:00:00Z",
             outcome: "incomplete",
             error: 'create "再設定メールを送る": github graphql: rate limited',
-            items: [
-              {
-                itemId: "PVTI_epic",
-                kind: "epic",
-                title: "パスワード再設定",
-                body: "忘れたときの導線をまとめる",
-                localId: "e1",
-                action: "created",
-              },
-            ],
-          },
-        ],
+          })),
       },
     };
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "パスワード再設定");
     await card.getByText("実行の履歴").click();
@@ -633,11 +519,7 @@ test.describe("スクリーンショット", () => {
   // 名前を変えている最中。見出しが入力に変わるので、押し間違いで名前が
   // 変わるように見えていないかを画像で見る。
   test("名前の変更中を撮る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await page.getByRole("button", { name: "名前を変更" }).click();
     await page.getByLabel("ボードの名前").fill("認証の設計会");
@@ -648,11 +530,7 @@ test.describe("スクリーンショット", () => {
   // 変わらない**ので、生成した直後と置いた後の 2 枚を撮る。1 枚だけだと、
   // 「置く」を挟んでいることが画像から読めない。
   test("図のドラフトのチャットを撮る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
@@ -672,11 +550,7 @@ test.describe("スクリーンショット", () => {
   test("削除の確認を撮る", async ({ page }) => {
     const mock = baseMock();
     mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await page.getByRole("button", { name: "ボードを削除" }).click();
     await page.getByRole("alertdialog").waitFor();
@@ -687,7 +561,6 @@ test.describe("スクリーンショット", () => {
   // （#52）。絵が本当に置けているかは、単体テストでは分からない。
   test("ひな形の選択と、適用後のキャンバスを撮る", async ({ page }) => {
     await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
     await page.getByLabel("ボード名").fill("注文フローのブレスト");
@@ -705,8 +578,6 @@ test.describe("スクリーンショット", () => {
   // のはブラウザだけなので（`convertToExcalidrawElements` は jsdom では本物の
   // 寸法を返さない）、置けた図が読めるかどうかはここでしか分からない。
   test("ひな形を種類ごとに撮る", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-
     for (const [kind, label] of [
       ["todo", "やること"],
       ["mindmap", "マインドマップ"],
@@ -741,7 +612,6 @@ test.describe("スクリーンショット", () => {
         release = resolve;
       }),
     );
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
@@ -761,11 +631,7 @@ test.describe("スクリーンショット", () => {
   // 更新をやめて新しく作るに倒したところ（#112）。**LLM が言ったこととの差と、
   // 取り残しが増えたことが同じ画面で読めているか**を画像で見る。
   test("更新をやめた確認画面を撮る", async ({ page }) => {
-    await installApi(page, matchedInterpretationMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -796,11 +662,7 @@ test.describe("スクリーンショット", () => {
         ],
       },
     ];
-    await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const section = page.locator(".panel-section").filter({
       has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
@@ -810,11 +672,7 @@ test.describe("スクリーンショット", () => {
   });
 
   test("取り込み中で作成できない状態を撮る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();

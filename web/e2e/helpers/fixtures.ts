@@ -8,10 +8,14 @@ import type {
   Project,
   Repository,
   SessionStatus,
+  SyncRun,
 } from "../../src/api/types";
 import { summarize, type ApiMock } from "./api";
 
 export const BOARD_ID = "board-1";
+
+/** `board()` の名前。サイドバーからボードを開くときに引く。 */
+export const BOARD_NAME = "認証まわりのブレスト";
 
 /** 3 状態それぞれを 1 つずつ持たせてある。並びは画面の並びと同じ。 */
 export const ANNOTATION_IDS = {
@@ -26,7 +30,7 @@ export const ANNOTATION_IDS = {
 export function board(): BoardDetail {
   return {
     id: BOARD_ID,
-    name: "認証まわりのブレスト",
+    name: BOARD_NAME,
     role: "owner",
     createdAt: "2026-08-01T09:00:00Z",
     updatedAt: "2026-08-05T09:30:00Z",
@@ -330,6 +334,44 @@ export function annotations(): AnnotationStatus[] {
           // 本文を記録していなかった頃に作られた item。空文字で返る。
           body: "",
           localId: "i9",
+          action: "created",
+        },
+      ],
+    },
+  ];
+}
+
+/**
+ * `ANNOTATION_IDS.created` を 2 回に分けて作った実行の履歴。新しい順で返る。
+ *
+ * 実行の履歴を見る spec と、それを撮るスクリーンショットが同じ中身を使う（#156）。
+ */
+export function historyRuns(): SyncRun[] {
+  return [
+    {
+      id: 2,
+      createdAt: "2026-08-04T12:00:00Z",
+      items: [
+        {
+          itemId: "PVTI_issue",
+          kind: "issue",
+          title: "再設定メールを送る",
+          body: "有効期限つきのリンクを送る",
+          localId: "i1",
+          action: "created",
+        },
+      ],
+    },
+    {
+      id: 1,
+      createdAt: "2026-08-03T12:00:00Z",
+      items: [
+        {
+          itemId: "PVTI_epic",
+          kind: "epic",
+          title: "パスワード再設定",
+          body: "忘れたときの導線をまとめる",
+          localId: "e1",
           action: "created",
         },
       ],
