@@ -42,7 +42,11 @@ type fakeGitHub struct {
 	// afterCreate が非 nil なら、draft issue を 1 件作った直後に呼ぶ。
 	// GitHub 側では作れた直後にブラウザがタブを閉じた、という並びを作る。
 	afterCreate func()
-	seq         int
+	// cancelDuring が非 nil なら、draft issue を作る呼び出しの途中で呼び、
+	// そのあと実物の HTTP クライアントと同じく ctx が切れていれば失敗する。
+	// GitHub が受理したのに応答が届かない並びを作る。
+	cancelDuring func()
+	seq          int
 	// repos と projects は作成先の候補一覧が返すもの。
 	repos    []port.Repository
 	projects []port.Project
@@ -73,8 +77,14 @@ func (f *fakeGitHub) ListProjectFields(_ context.Context, projectID string) ([]p
 	return f.fields, nil
 }
 
-func (f *fakeGitHub) CreateDraftIssue(_ context.Context, projectID string, item port.DraftIssue) (string, error) {
+func (f *fakeGitHub) CreateDraftIssue(ctx context.Context, projectID string, item port.DraftIssue) (string, error) {
 	f.projectIDs = append(f.projectIDs, projectID)
+	if f.cancelDuring != nil {
+		f.cancelDuring()
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+	}
 	if f.failOnTitle != "" && item.Title == f.failOnTitle {
 		return "", errors.New("github: boom")
 	}
@@ -601,6 +611,45 @@ func TestCreate_RecordsRunWhenRequestIsCanceled(t *testing.T) {
 	}
 	if len(saved.Items) != 1 || saved.Items[0].ItemID != "PVTI_a" || saved.Items[0].LocalID != "e1" {
 		t.Errorf("保存された Items = %+v, want e1 → PVTI_a の 1 件", saved.Items)
+	}
+}
+
+// 書き込みの途中でリクエストが切れた（ADR 0051、#160 のレビュー）。GitHub が
+// 受理したあとに応答だけが失われると、作ったのに ID が分からず記録できない。
+// **始めた 1 件は取り消しから切り離して最後まで待つ。** 止めるのは次の 1 件に
+// 手を付けないことだけ。
+func TestCreate_FinishesTheItemInFlightWhenRequestIsCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	gh := &fakeGitHub{fields: projectFields(), cancelDuring: cancel}
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	_, err := svc.Create(ctx, "board-1", "annot-1", currentContentHash(t), interpretation())
+	if !errors.Is(err, usecase.ErrCreationIncomplete) {
+		t.Fatalf("Create() = %v, want ErrCreationIncomplete", err)
+	}
+
+	if len(mappings.runs) != 1 {
+		t.Fatalf("保存された run = %d 件, want 1（書き込み中に切れても作れた 1 件は記録する）", len(mappings.runs))
+	}
+	saved := mappings.runs[0]
+	if len(saved.Items) != 1 || saved.Items[0].ItemID != "PVTI_a" {
+		t.Errorf("保存された Items = %+v, want PVTI_a の 1 件", saved.Items)
+	}
+	// 始めた epic はフィールドまで張り終える。途中で止めると、種別の無い
+	// draft issue が残る。
+	var fields int
+	for _, c := range gh.calls {
+		if c.op == "field" && c.itemID == "PVTI_a" {
+			fields++
+		}
+	}
+	if fields != 1 {
+		t.Errorf("PVTI_a のフィールド設定 = %d 回, want 1（種別）", fields)
 	}
 }
 

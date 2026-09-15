@@ -413,11 +413,13 @@ describe("markCreated", () => {
   it("LLM の答えは残したまま、作った ID を更新先にする", () => {
     const result = sample();
     result.items[0] = { ...epic("e1"), previousItemId: "PVTI_old" };
-    let draft = markCreated(createDraft(result), [created("e1", "PVTI_old")]);
+    // LLM の対応づけと、実際に作った ID を別の値にする。同じ値だと、どちらを
+    // 送っているのかをテストが見分けられない。
+    let draft = markCreated(createDraft(result), [created("e1", "PVTI_new")]);
     draft = toggleItem(draft, "e1");
 
     expect(draft.items[0]?.item.previousItemId).toBe("PVTI_old");
-    expect(sentItem(draft, "e1").previousItemId).toBe("PVTI_old");
+    expect(sentItem(draft, "e1").previousItemId).toBe("PVTI_new");
   });
 
   // 部分失敗のいちばん多い形。epic は先に作られるので、epic だけ作れて子が
