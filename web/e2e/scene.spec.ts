@@ -309,6 +309,12 @@ test.describe("シーンの保存", () => {
 
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     await expect(page.getByText("このボードは保存できる上限を超えています")).toBeHidden();
+
+    // 開き直しても出ない。サーバーが返す sceneOverLimit で出し直すので、
+    // 画面上で消えただけで開き直すと戻るなら、警告の出どころがずれている。
+    await page.reload();
+    await openBoard(page, BOARD_NAME);
+    await expect(page.getByText("このボードは保存できる上限を超えています")).toBeHidden();
   });
 
   // 付箋は描いている最中に置くもの。**置くだけで保存はしない**（確定させる
