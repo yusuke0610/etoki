@@ -116,79 +116,85 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
 
       {error && <ErrorNotice failure={error} />}
 
-      <section className="panel-section">
-        <h2>リポジトリ</h2>
-        {repositories === null ? (
-          <p className="hint">読み込み中…</p>
-        ) : repositories.length === 0 ? (
-          // 権限不足と「本当に 1 つも無い」は API からは区別できない。
-          // どちらの可能性も書いておく。**ここで止まる人はボードを作れない**
-          // ので（ADR 0017）、行き止まりの理由が読める必要がある。
-          <p className="hint">
-            {"リポジトリが 1 つも見つかりませんでした。"}
-            {"GitHub App を入れたリポジトリがあるか、"}
-            {"PAT で動かしているなら repo の read 権限があるかを確認してください。"}
-          </p>
-        ) : (
-          <ul className="plain-list">
-            {repositories.map((r) => (
-              <li key={`${r.owner}/${r.name}`}>
-                <button
-                  type="button"
-                  // 選択中であることを class だけで表すと、色の違いを見ない
-                  // 利用者には伝わらない。状態として持たせる。
-                  aria-pressed={
-                    repository?.owner === r.owner && repository?.name === r.name
-                  }
-                  className={
-                    repository?.owner === r.owner && repository?.name === r.name
-                      ? "active"
-                      : ""
-                  }
-                  // 設定の最中に選び直させない。送っている中身は押した時点の
-                  // ものなので取り違えはしないが、画面だけ先に進むと、どれで
-                  // 確定したのか分からなくなる。
-                  disabled={saving}
-                  onClick={() => void chooseRepository(r)}
-                >
-                  {r.owner}/{r.name}
-                  {r.description && <span className="kind">{r.description}</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {repository && (
+      {/*
+        リポジトリ → プロジェクトを左右に並べる。選ぶ順番が見えていないと、
+        右が空のうちは何を待っているのか読めない（#62）。
+      */}
+      <div className="picker-steps">
         <section className="panel-section">
-          <h2>
-            {repository.owner}/{repository.name} のプロジェクト
-          </h2>
-          {projects === null ? (
+          <h2>リポジトリ</h2>
+          {repositories === null ? (
             <p className="hint">読み込み中…</p>
-          ) : projects.length === 0 ? (
+          ) : repositories.length === 0 ? (
+            // 権限不足と「本当に 1 つも無い」は API からは区別できない。
+            // どちらの可能性も書いておく。**ここで止まる人はボードを作れない**
+            // ので（ADR 0017）、行き止まりの理由が読める必要がある。
             <p className="hint">
-              {"このリポジトリに紐づく Projects v2 がありません。"}
-              {"GitHub 側で作ってから選び直してください。"}
+              {"リポジトリが 1 つも見つかりませんでした。"}
+              {"GitHub App を入れたリポジトリがあるか、"}
+              {"PAT で動かしているなら repo の read 権限があるかを確認してください。"}
             </p>
           ) : (
             <ul className="plain-list">
-              {projects.map((p) => (
-                <li key={p.id}>
+              {repositories.map((r) => (
+                <li key={`${r.owner}/${r.name}`}>
                   <button
                     type="button"
+                    // 選択中であることを class だけで表すと、色の違いを見ない
+                    // 利用者には伝わらない。状態として持たせる。
+                    aria-pressed={
+                      repository?.owner === r.owner && repository?.name === r.name
+                    }
+                    className={
+                      repository?.owner === r.owner && repository?.name === r.name
+                        ? "active"
+                        : ""
+                    }
+                    // 設定の最中に選び直させない。送っている中身は押した時点の
+                    // ものなので取り違えはしないが、画面だけ先に進むと、どれで
+                    // 確定したのか分からなくなる。
                     disabled={saving}
-                    onClick={() => void chooseProject(p)}
+                    onClick={() => void chooseRepository(r)}
                   >
-                    #{p.number} {p.title}
+                    {r.owner}/{r.name}
+                    {r.description && <span className="kind">{r.description}</span>}
                   </button>
                 </li>
               ))}
             </ul>
           )}
         </section>
-      )}
+
+        {repository && (
+          <section className="panel-section">
+            <h2>
+              {repository.owner}/{repository.name} のプロジェクト
+            </h2>
+            {projects === null ? (
+              <p className="hint">読み込み中…</p>
+            ) : projects.length === 0 ? (
+              <p className="hint">
+                {"このリポジトリに紐づく Projects v2 がありません。"}
+                {"GitHub 側で作ってから選び直してください。"}
+              </p>
+            ) : (
+              <ul className="plain-list">
+                {projects.map((p) => (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void chooseProject(p)}
+                    >
+                      #{p.number} {p.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+      </div>
 
       {onCancel && (
         <button type="button" onClick={onCancel}>
