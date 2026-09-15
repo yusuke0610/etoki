@@ -52,3 +52,4 @@
 | [0046](0046-show-annotations-that-left-the-scene.md)             | シーンから消えた注釈は別のリストとして見せるだけにする                 | 採用                 |
 | [0047](0047-diagram-kind-as-annotation-metadata.md)              | 図の種別は注釈のメタデータに持ち、読み方の規則は実装に書かない         | 採用                 |
 | [0048](0048-show-scene-over-limit-on-open.md)                    | 保存できる上限を超えたボードは、開いた時点で真偽値だけを返して知らせる | 採用                 |
+| [0051](0051-stop-creation-on-disconnect-and-record.md)           | 接続が切れたら作成を止め、作れたぶんは切れない文脈で記録する           | 採用                 |
