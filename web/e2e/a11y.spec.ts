@@ -430,6 +430,22 @@ test.describe("axe（etoki が書いた DOM）", () => {
     await expectNoAxeViolations(page);
   });
 
+  // 作った項目の説明は、選択の外れた（薄く描く）行の中に出る（ADR 0052）。
+  // **作成が済まないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
+  test("作成が済んだ下書き", async ({ page }) => {
+    await installApi(page, baseMock());
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await card.getByText("3 件を作成しました。").waitFor();
+
+    await expectNoAxeViolations(page);
+  });
+
   // 削除の確認は etoki が自前で `role` を書いている唯一の場所（ADR 0042）。
   // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
   test("削除の確認を開いた状態", async ({ page }) => {
