@@ -1480,6 +1480,7 @@ export function BoardPage({
               */}
               <button
                 type="button"
+                className="primary"
                 onClick={() => void save()}
                 disabled={saving || creating || importing || !api}
                 aria-describedby={saveBlocked !== null ? "save-blocked" : undefined}

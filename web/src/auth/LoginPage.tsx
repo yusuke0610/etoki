@@ -42,7 +42,12 @@ export function LoginPage() {
 
       {error && <ErrorNotice failure={error} />}
 
-      <button type="button" disabled={starting} onClick={() => void start()}>
+      <button
+        type="button"
+        className="primary"
+        disabled={starting}
+        onClick={() => void start()}
+      >
         {starting ? "GitHub へ移動中…" : "GitHub でログイン"}
       </button>
     </div>
