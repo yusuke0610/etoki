@@ -21,9 +21,81 @@ test.describe("共有", () => {
 
     await page.getByLabel("招待する login").fill("bob");
     await page.getByLabel("招待するロール").selectOption("editor");
-    await page.getByRole("button", { name: "招待" }).click();
+    await page.getByRole("button", { name: "確認する" }).click();
+    await page.getByRole("button", { name: "@bob を招待する" }).click();
 
     await expect(page.getByRole("region", { name: "メンバー" })).toContainText("bob");
+  });
+
+  // **login だけで招待しない**（ADR 0053、#142）。etoki が知っているのは「最後に
+  // その login でログインした人」までなので、表示名・ID・最終ログインを見せてから
+  // 送る。確かめた相手の ID を招待に載せ、確かめる前には何も送らない。
+  test("招待する前に、login が当たった相手を見せる", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    let invites = 0;
+    page.on("request", (req) => {
+      if (req.method() === "POST" && new URL(req.url()).pathname.endsWith("/members")) {
+        invites++;
+      }
+    });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+
+    await page.getByLabel("招待する login").fill("bob");
+    await page.getByRole("button", { name: "確認する" }).click();
+
+    const confirm = page.getByRole("group", { name: "招待する相手の確認" });
+    await expect(confirm).toContainText("@bob");
+    await expect(confirm).toContainText("user-bob");
+    await expect(confirm).toContainText("2026/8/1");
+    expect(invites).toBe(0);
+
+    // やめたら何も送らない。
+    await confirm.getByRole("button", { name: "やめる" }).click();
+    await expect(confirm).toHaveCount(0);
+    expect(invites).toBe(0);
+
+    await page.getByRole("button", { name: "確認する" }).click();
+    const sent = page.waitForRequest(
+      (req) =>
+        req.method() === "POST" && new URL(req.url()).pathname.endsWith("/members"),
+    );
+    await page.getByRole("button", { name: "@bob を招待する" }).click();
+    expect((await sent).postDataJSON()).toEqual({
+      login: "bob",
+      userId: "user-bob",
+      role: "editor",
+    });
+    await expect(page.getByRole("region", { name: "メンバー" })).toContainText("bob");
+    expect(mock.members?.[BOARD_ID]).toHaveLength(1);
+  });
+
+  // 確認したあとで持ち主が変わった。見せている相手はもう招待できないので消し、
+  // もう一度確かめてもらう。
+  test("確認したあとで持ち主が変わったら、確認からやり直させる", async ({ page }) => {
+    const mock = baseMock();
+    mock.inviteError = {
+      status: 409,
+      body: {
+        code: "invitee_changed",
+        error: "etoki: the login now belongs to a different user: bob",
+      },
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+
+    await page.getByLabel("招待する login").fill("bob");
+    await page.getByRole("button", { name: "確認する" }).click();
+    await page.getByRole("button", { name: "@bob を招待する" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "この login の持ち主が変わりました",
+    );
+    await expect(page.getByRole("group", { name: "招待する相手の確認" })).toHaveCount(0);
   });
 
   // 招待された側にリポジトリのアクセス権は要らない（ADR 0017）。ブレストには
@@ -132,7 +204,7 @@ test.describe("共有", () => {
   // 「まだログインしていない」のような具体は、開けば読める。
   test("招待が断られたら理由を出す", async ({ page }) => {
     const mock = baseMock();
-    mock.inviteError = {
+    mock.lookupInviteeError = {
       status: 400,
       body: {
         code: "invalid_input",
@@ -146,10 +218,10 @@ test.describe("共有", () => {
     await page.getByRole("button", { name: "メンバー", exact: true }).click();
 
     await page.getByLabel("招待する login").fill("carol");
-    await page.getByRole("button", { name: "招待" }).click();
+    await page.getByRole("button", { name: "確認する" }).click();
 
     const alert = page.getByRole("alert");
-    await expect(alert).toContainText("招待できませんでした");
+    await expect(alert).toContainText("招待する相手を確認できませんでした");
     await expect(alert.getByText("has not signed in")).toBeHidden();
 
     await alert.locator("summary").click();

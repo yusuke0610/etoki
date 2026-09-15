@@ -375,6 +375,12 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "メンバー", exact: true }).click();
     await page.getByText("Carol").waitFor();
     await shot(page, "11-members");
+
+    // 招待する前に、login が当たった相手を見せる（ADR 0053）。
+    await page.getByLabel("招待する login").fill("dave");
+    await page.getByRole("button", { name: "確認する" }).click();
+    await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
+    await shot(page, "11-members-invitee");
   });
 
   // 招待された側にリポジトリのアクセス権は要らない。ブレストと解釈まではでき、

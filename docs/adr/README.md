@@ -51,3 +51,4 @@
 | [0045](0045-export-and-import-boards.md)                         | ボードの持ち出しと取り込みは etoki の口 1 つに寄せる                   | 採用                 |
 | [0046](0046-show-annotations-that-left-the-scene.md)             | シーンから消えた注釈は別のリストとして見せるだけにする                 | 採用                 |
 | [0047](0047-diagram-kind-as-annotation-metadata.md)              | 図の種別は注釈のメタデータに持ち、読み方の規則は実装に書かない         | 採用                 |
+| [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる            | 採用                 |

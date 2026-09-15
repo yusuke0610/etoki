@@ -5,10 +5,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -45,7 +47,9 @@ const defaultDBPath = "etoki.db"
 var usage = `usage:
   etoki                 サーバーを起動する
   etoki migrate         マイグレーションを適用する
-  etoki claim <login>   所有者の無いボードを引き受ける
+  etoki claim [--yes] <login>
+                        所有者の無いボードを引き受ける。引き当てた相手を
+                        見せて確かめる（--yes で省く）
 
 environment:
   ETOKI_ADDR            リッスンアドレス（既定: ` + etoki.DefaultAddr + `）
@@ -101,11 +105,12 @@ func run() error {
 	case args[0] == "migrate":
 		return migrate(ctx)
 	case args[0] == "claim":
-		if len(args) != 2 {
+		login, yes, err := parseClaimArgs(args[1:])
+		if err != nil {
 			fmt.Fprint(os.Stderr, usage)
-			return errors.New("claim requires a login")
+			return err
 		}
-		return claim(ctx, args[1])
+		return claim(ctx, login, yes)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return fmt.Errorf("unknown command %q", args[0])
@@ -289,8 +294,17 @@ func newGitHubClient(auth *etoki.Authenticator) (port.GitHubClient, error) {
 //
 // 初回ログインした利用者に自動で寄せない。共有サーバーで先に入った人が全部を
 // 持っていく決まり方は説明できないため、明示的な操作にしてある（ADR 0016）。
-func claim(ctx context.Context, login string) error {
+//
+// **引き受ける前に、login が当たった相手を見せて確かめる**（ADR 0053）。etoki が
+// 知っているのは最後にその login でログインした人までで、改名で空いた login を
+// 取った別人かどうかは GitHub にしか分からない。
+func claim(ctx context.Context, login string, yes bool) error {
 	path := dbPath()
+
+	// 確かめられない入力で黙って進めない。パイプから呼ぶなら --yes を明示させる。
+	if !yes && !isTerminal(os.Stdin) {
+		return errors.New("claim asks for confirmation; pass --yes when stdin is not a terminal")
+	}
 
 	db, err := sqlite.Open(ctx, path)
 	if err != nil {
@@ -327,14 +341,82 @@ func claim(ctx context.Context, login string) error {
 		return fmt.Errorf("unknown user %q: sign in once before claiming boards", login)
 	}
 
-	n, err := sqlite.NewBoardRepository(db).ClaimUnowned(ctx, user.ID)
+	boards := sqlite.NewBoardRepository(db)
+	unowned, err := boards.CountUnowned(ctx)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "etoki: claimed %d board(s) for %s\n", n, login)
+	if !yes && !confirmClaim(os.Stdin, os.Stderr, *user, unowned) {
+		return errors.New("claim canceled")
+	}
+
+	n, err := boards.ClaimUnowned(ctx, user.ID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "etoki: claimed %d board(s) for %s (%s)\n", n, user.Login, user.ID)
 
 	return nil
+}
+
+// parseClaimArgs は claim の引数を読む。
+//
+// フラグは --yes の 1 つだけなので flag パッケージは使わない（サブコマンドと同じ
+// 判断）。位置は login の前後どちらでもよい。
+func parseClaimArgs(args []string) (login string, yes bool, err error) {
+	for _, a := range args {
+		switch {
+		case a == "--yes":
+			yes = true
+		case strings.HasPrefix(a, "-"):
+			return "", false, fmt.Errorf("claim: unknown flag %q", a)
+		case login != "":
+			return "", false, errors.New("claim takes exactly one login")
+		default:
+			login = a
+		}
+	}
+	if login == "" {
+		return "", false, errors.New("claim requires a login")
+	}
+	return login, yes, nil
+}
+
+// confirmClaim は引き当てた相手を見せ、y / yes のときだけ true を返す。
+//
+// **既定は止める。** 何も打たずに Enter を押しただけで、別人に全ボードが
+// 渡らないようにする。
+func confirmClaim(in io.Reader, out io.Writer, u port.User, unowned int) bool {
+	// 書けなくても確かめる手段が無いだけなので、読む側（既定は止める）に任せる。
+	_, _ = fmt.Fprintf(out, `所有者の無いボード %d 枚を、次の利用者に引き受けさせます。
+  表示名        %s
+  login         @%s
+  ID            %s
+  最終ログイン  %s
+login は最後にログインしたときのものです。改名で空いた login を別人が取って
+いないか、表示名と最終ログインで確かめてください。
+引き受けますか？ [y/N] `,
+		unowned, u.DisplayName, u.Login, u.ID,
+		u.UpdatedAt.UTC().Format("2006-01-02 15:04 MST"))
+
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// isTerminal は f が端末につながっているかを返す。
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 // newSecretBox は保存する資格情報に封をする道具を作る。
