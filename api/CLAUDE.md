@@ -30,7 +30,7 @@ HTTP 契約を触るときの約束。全体の規約はリポジトリルート
 - **`make codegen` は必ず devShell の中で実行する。** `types.gen.go` の冒頭
   バナーには生成器のバージョン文字列が埋まる。しかもこれは「どのバージョンか」
   ではなく「どうビルドされたか」で変わる。nixpkgs は
-  `-X main.noVCSVersionOverride=2.5.1` を渡すので `2.5.1` になるが、
-  `go run ...@v2.5.1` で入れた同じバージョンは `v2.5.1` と出る。devShell の外で
+  `-X main.noVCSVersionOverride=2.8.0` を渡すので `2.8.0` になるが、
+  `go run ...@v2.8.0` で入れた同じバージョンは `v2.8.0` と出る。devShell の外で
   生成すると、中身が同じでも codegen drift で落ちる。`make` は devShell の外から
   呼ばれると自分を包み直すので、`make codegen` で呼ぶかぎりは満たされる。
