@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { chooseTarget } from "./helpers/board";
-import { AUTHORIZE_URL, baseMock, signedIn } from "./helpers/fixtures";
+import { AUTHORIZE_URL, BOARD_NAME, baseMock, signedIn } from "./helpers/fixtures";
 
 /** 認証を設定した構成のモック。既定は未ログイン。 */
 function withAuth() {
@@ -63,9 +63,7 @@ test.describe("ログイン", () => {
 
     await expect(page.getByLabel("ボード名")).toBeVisible();
     await expect(page.getByText("Octo Cat")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "認証まわりのブレスト" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: BOARD_NAME })).toBeVisible();
   });
 
   test("ログアウトするとログイン画面に戻る", async ({ page }) => {
@@ -128,7 +126,7 @@ test.describe("ログイン", () => {
     // ログイン画面へ落ちるのは「読み直す操作をさせたから」ではなくなり、
     // このテストが見たい経路を通らないまま緑にも赤にもなる。
     await expect(
-      page.locator(".board-list").getByRole("button", { name: "認証まわりのブレスト" }),
+      page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
     ).toBeVisible();
 
     // ここで失効させる。一覧の取得だけが 401 を返し、状態を読み直すと
