@@ -586,7 +586,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
           await json(route, 400, {
             code: "invalid_input",
             error: "etoki: invalid input: userId is required",
-          });
+          } satisfies ErrorResponse);
           return;
         }
         const member: BoardMember = {

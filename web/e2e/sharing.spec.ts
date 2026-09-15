@@ -72,31 +72,42 @@ test.describe("共有", () => {
     expect(mock.members?.[BOARD_ID]).toHaveLength(1);
   });
 
-  // 確認したあとで持ち主が変わった。見せている相手はもう招待できないので消し、
-  // もう一度確かめてもらう。
-  test("確認したあとで持ち主が変わったら、確認からやり直させる", async ({ page }) => {
-    const mock = baseMock();
-    mock.inviteError = {
+  // 確認したあとで持ち主が変わった、またはその login を持つ人がいなくなった。
+  // 見せている相手はもう招待できないので消し、もう一度確かめてもらう。
+  for (const { name, status, code, error, message } of [
+    {
+      name: "持ち主が変わった",
       status: 409,
-      body: {
-        code: "invitee_changed",
-        error: "etoki: the login now belongs to a different user: bob",
-      },
-    };
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+      code: "invitee_changed",
+      error: "etoki: the login now belongs to a different user: bob",
+      message: "この login の持ち主が変わりました",
+    },
+    {
+      name: "持ち主がいなくなった",
+      status: 400,
+      code: "invalid_input",
+      error: 'etoki: invalid input: "bob" has not signed in to etoki yet',
+      message: "招待できませんでした",
+    },
+  ] as const) {
+    test(`確認したあとで${name}ら、確認からやり直させる`, async ({ page }) => {
+      const mock = baseMock();
+      mock.inviteError = { status, body: { code, error } };
+      await installApi(page, mock);
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+      await page.getByRole("button", { name: "メンバー", exact: true }).click();
 
-    await page.getByLabel("招待する login").fill("bob");
-    await page.getByRole("button", { name: "確認する" }).click();
-    await page.getByRole("button", { name: "@bob を招待する" }).click();
+      await page.getByLabel("招待する login").fill("bob");
+      await page.getByRole("button", { name: "確認する" }).click();
+      await page.getByRole("button", { name: "@bob を招待する" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(
-      "この login の持ち主が変わりました",
-    );
-    await expect(page.getByRole("group", { name: "招待する相手の確認" })).toHaveCount(0);
-  });
+      await expect(page.getByRole("alert")).toContainText(message);
+      await expect(page.getByRole("group", { name: "招待する相手の確認" })).toHaveCount(
+        0,
+      );
+    });
+  }
 
   // 招待された側にリポジトリのアクセス権は要らない（ADR 0017）。ブレストには
   // 参加できて、作成だけができない。
