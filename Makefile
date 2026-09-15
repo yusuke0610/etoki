@@ -61,7 +61,7 @@ LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 .PHONY: help setup dev dev-api dev-web build build-api build-web start \
         test test-go test-web test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
-        codegen codegen-go codegen-web migrate clean
+        codegen codegen-go codegen-web migrate clean reset-db
 
 help: ## ターゲット一覧を表示する
 	@echo "使い方: make <target>"
@@ -175,8 +175,24 @@ codegen-web:
 migrate: ## マイグレーションを適用する
 	ETOKI_DB_PATH=$(DB_PATH) go run ./cmd/etoki migrate
 
-clean: ## 生成物を削除する
+clean: ## 生成物を削除する（etoki.db には触らない）
+	@# DB は生成物ではなく利用者のデータ。sync_runs / sync_items は作成の瞬間に
+	@# 控えたもので取り直せない（ADR 0023）。ビルドをやり直すつもりの 1 コマンドで
+	@# 消えないよう、消すのは reset-db に分けてある。
 	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
-	rm -f $(DB_PATH) $(DB_PATH)-shm $(DB_PATH)-wal
+
+reset-db: ## ボードと作成の記録（etoki.db）を消す。CONFIRM=1 が要る
+	@# 名前と説明で「データを消す」と分かるだけでは足りない。補完や履歴から
+	@# 呼ばれても消えないよう、明示の変数を要求する。
+	@if [ -z "$(DB_PATH)" ]; then echo "DB_PATH が空です"; exit 1; fi
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		echo "reset-db は $(DB_PATH) を消します。ボード・メンバー・作成の記録を含み、元に戻せません。"; \
+		echo "GitHub に作った draft issue は残りますが、etoki のどこから作ったかは失われます。"; \
+		echo "消すなら: make reset-db CONFIRM=1"; \
+		exit 1; \
+	fi
+	@# DB_PATH は上書きできるので、空白や glob を含んでも 1 つのパスとして渡す。
+	@# 分割や展開を許すと、CONFIRM=1 で認めた範囲より広く消える。
+	rm -f -- "$(DB_PATH)" "$(DB_PATH)-shm" "$(DB_PATH)-wal"
 
 endif
