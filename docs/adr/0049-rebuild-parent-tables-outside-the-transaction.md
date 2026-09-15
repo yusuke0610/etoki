@@ -62,6 +62,25 @@ ON のままで、**親表の DROP が子表を消す。** `db.Conn` で固定�
 止める。戻すときも同じ。**切ったままプールへ帰した接続は、以後の
 `ON DELETE CASCADE` を黙って効かなくする。**
 
+### 戻しはキャンセルの対象外にし、戻せなければ接続ごと捨てる
+
+**戻しに呼び出し元の `ctx` をそのまま使わない。** 切ったあとにキャンセルされる
+と、`database/sql` は以後の実行を `context canceled` で断るので、戻しまで道連れ
+になる。期限だけを切った `context.WithoutCancel` で戻す。
+
+それでも戻せなかったら、**その接続をプールへ帰さない。** キャンセルやタイムアウト
+は接続を壊さないので、`Conn.Close()` はそれを物理接続としてプールへ戻す。
+`database/sql` の `ResetSession` は `PRAGMA` を戻さないので、次にその接続を掴んだ
+書き込みは `foreign_keys=OFF` のまま走り、**`ON DELETE CASCADE` が黙って効かなく
+なる。** 「戻せたことを確かめられなかった接続は使わせない」をこちら側で決め、
+`Conn.Raw` に `driver.ErrBadConn` を返させて捨てる。配り直されるのは DSN の
+`foreign_keys=ON` が効いた新しい接続になる。**ドライバが接続をどう扱うかに
+依らない。**
+
+**適用の失敗と戻しの失敗は両方返す**（`errors.Join`）。戻せなかったことは接続の
+状態についての情報で、適用がなぜ失敗したかとは別の話。片方に畳むと、DB を直す
+側がどちらを見ればよいか分からなくなる。
+
 ### トリガーで代用しない
 
 `BEFORE INSERT` / `BEFORE UPDATE` のトリガーで `RAISE(ABORT)` すれば、テーブルを
@@ -90,3 +109,8 @@ COMMIT の前に検査し、1 行でも返ったら何も書かずに止める�
   固定する。** `TestMigrate_RebuildKeepsChildRows` は、分岐を外すと
   `sync_items` が 0 件になって落ちる。仕組みの正しさを型では表せないので、
   そこは検知できるテストで持つ。
+- **接続の後始末も同じくテストで持つ。**
+  `TestRestoreForeignKeys_SurvivesCanceledContext` は戻しを `ctx` のままに
+  戻すと `context canceled` で落ち、
+  `TestDiscardConn_DoesNotReturnConnectionToPool` は捨てるのをやめると、
+  次に配られた接続の `foreign_keys` が 0 のままで落ちる。

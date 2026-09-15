@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -199,6 +200,9 @@ func applyRebuild(ctx context.Context, db *sql.DB, name, body string) error {
 	defer func() { _ = conn.Close() }()
 
 	if err := setForeignKeys(ctx, conn, false); err != nil {
+		// **切れたかどうかが分からない接続はプールへ帰さない。** PRAGMA は通って
+		// 読み返しだけが失敗した場合、OFF のまま帰る。
+		discardConn(conn)
 		return fmt.Errorf("disable foreign keys for migration %s: %w", name, err)
 	}
 
@@ -206,16 +210,43 @@ func applyRebuild(ctx context.Context, db *sql.DB, name, body string) error {
 
 	// **成功しても失敗しても戻す。** 切ったままプールへ帰した接続は、以後の
 	// ON DELETE CASCADE を黙って効かなくする。戻せなかったことも握り潰さない。
-	restoreErr := setForeignKeys(ctx, conn, true)
-
-	if applyErr != nil {
-		return applyErr
-	}
-	if restoreErr != nil {
-		return fmt.Errorf("restore foreign keys after migration %s: %w", name, restoreErr)
+	if restoreErr := restoreForeignKeys(ctx, conn); restoreErr != nil {
+		discardConn(conn)
+		return errors.Join(applyErr,
+			fmt.Errorf("restore foreign keys after migration %s: %w", name, restoreErr))
 	}
 
-	return nil
+	return applyErr
+}
+
+// restoreForeignKeysTimeout は戻しに与える猶予。PRAGMA 1 つなので短くてよいが、
+// 無制限にはしない。切った接続を掴んだまま止まると、以後の書き込みも止まる。
+const restoreForeignKeysTimeout = 5 * time.Second
+
+// restoreForeignKeys は、**呼び出し元の ctx がキャンセルされていても**外部キーを
+// 戻す。
+//
+// ctx をそのまま使うと、切ったあとにキャンセルされた場合に戻しまで道連れになる。
+// キャンセルは接続を壊さないので、その接続は foreign_keys=OFF のままプールへ
+// 帰りうる（database/sql の ResetSession は PRAGMA を戻さない）。以後の書き込みが
+// その接続に載ると、ON DELETE CASCADE が黙って効かなくなる。戻しはキャンセルの
+// 対象外にし、代わりに期限を切る。
+func restoreForeignKeys(ctx context.Context, conn *sql.Conn) error {
+	restoreCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), restoreForeignKeysTimeout)
+	defer cancel()
+
+	return setForeignKeys(restoreCtx, conn, true)
+}
+
+// discardConn は接続をプールへ帰さずに捨てる。
+//
+// database/sql は Conn.Close() で物理接続をプールへ戻すので、外部キーを戻せな
+// かった接続は「以後の CASCADE が効かない接続」として再利用されうる。Raw に
+// driver.ErrBadConn を返させると、database/sql はその接続を再利用せずに閉じる。
+// 次に配られるのは DSN の foreign_keys=ON が効いた新しい接続になる。
+func discardConn(conn *sql.Conn) {
+	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 }
 
 // rebuildInTx は作り直しの SQL と記録を 1 トランザクションで適用する。

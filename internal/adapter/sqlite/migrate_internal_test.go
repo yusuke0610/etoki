@@ -96,6 +96,85 @@ func TestCheckForeignKeys_Clean(t *testing.T) {
 	}
 }
 
+// 呼び出し元の ctx がキャンセルされていても、外部キーは戻る。
+//
+// 切ったあとにキャンセルされると、戻しまで道連れになる。そのとき接続は壊れて
+// いないのでプールへ帰り、以後の書き込みが foreign_keys=OFF のまま走る。
+// **ctx をそのまま渡す形に戻すと、ここが `context canceled` で落ちる。**
+func TestRestoreForeignKeys_SurvivesCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("Conn: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	if err := setForeignKeys(ctx, conn, false); err != nil {
+		t.Fatalf("setForeignKeys(false): %v", err)
+	}
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if err := restoreForeignKeys(canceled, conn); err != nil {
+		t.Fatalf("restoreForeignKeys = %v, want nil", err)
+	}
+
+	// 戻り値だけでなく、接続の状態でも見る。
+	var on int
+	if err := conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&on); err != nil {
+		t.Fatalf("PRAGMA foreign_keys: %v", err)
+	}
+	if on != 1 {
+		t.Errorf("PRAGMA foreign_keys = %d, want 1（戻っていない）", on)
+	}
+}
+
+// 戻せなかった接続はプールへ帰さない。
+//
+// Conn.Close() は物理接続をプールへ戻し、ResetSession は PRAGMA を戻さない。
+// **discardConn を単なる Close に戻すと、次に配られる接続が
+// foreign_keys=0 のままになり、ここが落ちる。** 接続を 1 本に絞っているのは、
+// 帰ってきた接続とそうでないものを見分けるため。
+func TestDiscardConn_DoesNotReturnConnectionToPool(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	db.SetMaxOpenConns(1)
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("Conn: %v", err)
+	}
+	if err := setForeignKeys(ctx, conn, false); err != nil {
+		t.Fatalf("setForeignKeys(false): %v", err)
+	}
+
+	discardConn(conn)
+	_ = conn.Close()
+
+	var on int
+	if err := db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&on); err != nil {
+		t.Fatalf("PRAGMA foreign_keys: %v", err)
+	}
+	if on != 1 {
+		t.Errorf("PRAGMA foreign_keys = %d, want 1（切れた接続がプールに残った）", on)
+	}
+}
+
 // 印は先頭行が印そのものであることを要求する。
 //
 // **前方一致にしない。** 似た行が黙って外部キーを切る経路に入ると、親テーブルを
