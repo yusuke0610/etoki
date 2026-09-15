@@ -51,3 +51,4 @@
 | [0045](0045-export-and-import-boards.md)                         | ボードの持ち出しと取り込みは etoki の口 1 つに寄せる                   | 採用                 |
 | [0046](0046-show-annotations-that-left-the-scene.md)             | シーンから消えた注釈は別のリストとして見せるだけにする                 | 採用                 |
 | [0047](0047-diagram-kind-as-annotation-metadata.md)              | 図の種別は注釈のメタデータに持ち、読み方の規則は実装に書かない         | 採用                 |
+| [0048](0048-show-scene-over-limit-on-open.md)                    | 保存できる上限を超えたボードは、開いた時点で真偽値だけを返して知らせる | 採用                 |
