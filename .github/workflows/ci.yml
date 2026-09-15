@@ -77,5 +77,8 @@ jobs:
 
       # 最後に置く。外で新しい脆弱性が公開されると差分と関係なく落ちるので、
       # 前に置くとその日の PR が lint / test の結果を見られなくなる。
+      # 先のステップが落ちても回す。定期実行は差分が無いので、lint や e2e の
+      # 不安定さで止まると、その週は脆弱性に気づく唯一の経路が抜ける。
       - name: vulncheck
+        if: ${{ !cancelled() }}
         run: nix develop --command make vulncheck
