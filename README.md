@@ -235,7 +235,10 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
    - **Organization permissions**: `Projects: Read and write`
    - Webhook は要りません（Active のチェックを外す）
 2. 使いたいリポジトリにインストールする。**候補に出るのはここで許可した
-   リポジトリだけ**です。
+   リポジトリだけ**です。候補が多いときは途中で一覧を打ち切ります。打ち切った
+   ことは選択の画面に出るので、目当てが出ない理由が「許可していない」のか
+   「打ち切りの外」なのかは画面で分かります
+   （[ADR 0054](docs/adr/0054-report-repository-list-truncation.md)）。
 3. 環境変数を設定する。
 
 ```sh

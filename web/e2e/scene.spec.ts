@@ -377,8 +377,7 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
 
     const saved = page.waitForRequest(
-      (req) =>
-        req.method() === "PUT" && new URL(req.url()).pathname.endsWith("/scene"),
+      (req) => req.method() === "PUT" && new URL(req.url()).pathname.endsWith("/scene"),
     );
     await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
     await saved;
@@ -430,8 +429,15 @@ test.describe("シーンの保存", () => {
     expect(requests).toEqual([]);
   });
 
-  // 保存中にもう一度押しても、2 本目を投げない。**押せない条件はボタンと同じ式**
-  // を使っているので、ここが落ちるのは式が 2 つに分かれたとき（issue #145）。
+  // 保存中にもう一度押しても、2 本目を投げない（issue #145）。
+  //
+  // **同じ tick に 2 回押す。** `saving` は state なので、次の描画までは 2 回目が
+  // まだ false を読む。ボタンだけなら押し間違いの二度押しで済んだが、
+  // Ctrl / Cmd + S には**キーの自動リピート**があり、押しっぱなしで keydown が
+  // 連続する。押した時点で弾く ref を外すと、ここが 2 本目を数える。
+  //
+  // 押す間隔を空けると、そのあいだに再描画が入って state だけでも通ってしまう。
+  // dispatchEvent で 2 つ続けて投げているのはそのため。
   test("保存中に押しても、保存を重ねない", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
@@ -451,11 +457,24 @@ test.describe("シーンの保存", () => {
       }
     });
 
-    const canvas = page.locator(".excalidraw canvas").first();
-    await canvas.press("ControlOrMeta+s");
+    await page.evaluate(() => {
+      for (let i = 0; i < 2; i++) {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "s",
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    });
+
     await expect(page.getByRole("button", { name: "保存中…" })).toBeVisible();
 
-    await canvas.press("ControlOrMeta+s");
+    // 再描画を挟んだあとの 1 回も通さない。こちらはボタンの disabled と同じ式が
+    // 効いていることを見る。
+    await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
     await expect(page.getByRole("button", { name: "保存中…" })).toBeVisible();
 
     release();

@@ -66,6 +66,15 @@ var wantMappings = map[string]wantMapping{
 	"usecase.ErrLastOwner": {
 		usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
 
+	// 413 の 3 つ。**畳まない。** 「貼った画像を減らす」「会話をやり直す」
+	// 「送っているものを見直す」で打ち手が違う。
+	//
+	// errRequestTooLarge だけ sentinel が httpapi にある（errors.go に理由）。
+	// 下の網羅検査は usecase と port のソースを数え直すので対象外だが、
+	// 写し先はここでも固定しておく。
+	"httpapi.errRequestTooLarge": {
+		errRequestTooLarge, http.StatusRequestEntityTooLarge,
+		apitypes.ErrorCodeRequestTooLarge},
 	"usecase.ErrSceneTooLarge": {
 		usecase.ErrSceneTooLarge, http.StatusRequestEntityTooLarge, apitypes.ErrorCodeSceneTooLarge},
 	// 積み上がりすぎた会話。送られた内容は正しいので 400 に畳まない（ADR 0041）。

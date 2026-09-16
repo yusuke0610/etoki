@@ -313,15 +313,15 @@ func TestNewWarnsWhenExposedWithoutAuth(t *testing.T) {
 		auth bool
 		want bool
 	}{
-		"既定（ループバック）":        {addr: "", want: false},
-		"127.0.0.1 を明示":     {addr: "127.0.0.1:8080", want: false},
-		"localhost":         {addr: "localhost:8080", want: false},
-		"IPv6 のループバック":      {addr: "[::1]:8080", want: false},
-		"0.0.0.0":           {addr: "0.0.0.0:8080", want: true},
-		"ホストを省いた全インターフェース":  {addr: ":8080", want: true},
-		"LAN のアドレス":         {addr: "192.168.1.10:8080", want: true},
-		"公開しても認証があれば言わない":   {addr: "0.0.0.0:8080", auth: true, want: false},
-		"ループバック + 認証も言わない":  {addr: "", auth: true, want: false},
+		"既定（ループバック）":    {addr: "", want: false},
+		"127.0.0.1 を明示": {addr: "127.0.0.1:8080", want: false},
+		"localhost":     {addr: "localhost:8080", want: false},
+		"IPv6 のループバック":  {addr: "[::1]:8080", want: false},
+		"0.0.0.0":       {addr: "0.0.0.0:8080", want: true},
+		"ホストを省いた全インターフェース": {addr: ":8080", want: true},
+		"LAN のアドレス":        {addr: "192.168.1.10:8080", want: true},
+		"公開しても認証があれば言わない":  {addr: "0.0.0.0:8080", auth: true, want: false},
+		"ループバック + 認証も言わない": {addr: "", auth: true, want: false},
 	}
 
 	for name, tc := range cases {

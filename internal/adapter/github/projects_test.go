@@ -730,6 +730,37 @@ func TestListRepositories_FollowsPagination(t *testing.T) {
 	}
 }
 
+// 選択肢として見せるものなので、全部を取り切らずに打ち切る（ADR 0054）。
+//
+// **PAT と GitHub App で経路が別**（ADR 0015）なので、App 側のテストがあっても
+// ここは要る。片方だけ打ち切りを載せ忘れても緑にならないようにする。
+func TestListRepositories_StopsAtMaxRepositories(t *testing.T) {
+	t.Parallel()
+
+	// 上限（500）を超える件数を 1 ページで返す。ページの件数で打ち切る実装では
+	// ないので、これで上限の判定に当たる。
+	nodes := make([]string, 0, 600)
+	for i := range 600 {
+		nodes = append(nodes, fmt.Sprintf(`{"name":"repo-%d","owner":{"login":"acme"}}`, i))
+	}
+	body := `{"data":{"viewer":{"repositories":{` +
+		`"pageInfo":{"hasNextPage":false,"endCursor":"c1"},` +
+		`"nodes":[` + strings.Join(nodes, ",") + `]}}}}`
+
+	c, _ := newClient(t, body)
+
+	list, err := c.ListRepositories(t.Context())
+	if err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+	if len(list.Repositories) != 500 {
+		t.Errorf("len(repos) = %d, want 500", len(list.Repositories))
+	}
+	if !list.Truncated {
+		t.Error("Truncated = false, want true（上限に当たっている）")
+	}
+}
+
 // カーソルが進まないと、辿り続けても同じページを取り直すだけで終わらない。
 func TestListRepositories_StopsWhenCursorDoesNotAdvance(t *testing.T) {
 	t.Parallel()

@@ -893,6 +893,9 @@ export function BoardPage({
   // 同じ形）。どちらも非同期なので、state で覚えると同じ tick の次の操作がまだ
   // false を読み、キャンバスの置き換えと GitHub への作成が並走する。
   const exclusiveOperation = useRef<"importing" | "creating" | null>(null);
+  // 保存が走っているか。**`saving` と二重に持つ。** あちらは画面を描くための
+  // state で、次の描画までは古い値を読む。押した時点で弾く判定はこちらが持つ。
+  const savingNow = useRef(false);
 
   /**
    * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0045）。
@@ -971,6 +974,13 @@ export function BoardPage({
     // 永続化の入口でも同じ排他を確かめる。
     if (!api || exclusiveOperation.current === "importing") return;
 
+    // **押した時点で弾く**（`exclusiveOperation` と同じ形）。`saving` は state な
+    // ので、次の描画までは同じ tick の 2 回目がまだ false を読む。ボタンだけなら
+    // 押し間違いの二度押しで済んだが、Ctrl / Cmd + S にはキーの自動リピートが
+    // あり（押しっぱなしで keydown が連続する）、保存が何本も並走する。
+    if (savingNow.current) return;
+    savingNow.current = true;
+
     setSaving(true);
     try {
       const elements = api.getSceneElements();
@@ -1013,6 +1023,7 @@ export function BoardPage({
       }
       onError(describeFailure("保存できませんでした", e));
     } finally {
+      savingNow.current = false;
       setSaving(false);
     }
   }, [
