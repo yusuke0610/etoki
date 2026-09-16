@@ -656,7 +656,7 @@ func TestListRepositories(t *testing.T) {
 
 	c, got := newClient(t, body)
 
-	repos, err := c.ListRepositories(t.Context())
+	list, err := c.ListRepositories(t.Context())
 	if err != nil {
 		t.Fatalf("ListRepositories() = %v", err)
 	}
@@ -665,6 +665,7 @@ func TestListRepositories(t *testing.T) {
 		{Owner: "acme", Name: "web", Description: "フロント"},
 		{Owner: "other", Name: "api"},
 	}
+	repos := list.Repositories
 	if len(repos) != len(want) {
 		t.Fatalf("len(repos) = %d, want %d (%+v)", len(repos), len(want), repos)
 	}
@@ -672,6 +673,11 @@ func TestListRepositories(t *testing.T) {
 		if repos[i] != want[i] {
 			t.Errorf("repos[%d] = %+v, want %+v", i, repos[i], want[i])
 		}
+	}
+	// 取り切ったので打ち切っていない。**ここを見ないと、常に true を返す
+	// 実装でも「打ち切りが出る」側のテストだけで緑になる**（ADR 0054）。
+	if list.Truncated {
+		t.Error("Truncated = true, want false（上限に当たっていない）")
 	}
 
 	if (*got)[0].Path != "/graphql" {
@@ -712,12 +718,12 @@ func TestListRepositories_FollowsPagination(t *testing.T) {
 
 	c, got := newClient(t, page1, page2)
 
-	repos, err := c.ListRepositories(t.Context())
+	list, err := c.ListRepositories(t.Context())
 	if err != nil {
 		t.Fatalf("ListRepositories() = %v", err)
 	}
-	if len(repos) != 2 {
-		t.Fatalf("len(repos) = %d, want 2", len(repos))
+	if len(list.Repositories) != 2 {
+		t.Fatalf("len(repos) = %d, want 2", len(list.Repositories))
 	}
 	if (*got)[1].Variables["after"] != "cursor-1" {
 		t.Errorf("2 回目の after = %v, want cursor-1", (*got)[1].Variables["after"])
@@ -926,10 +932,11 @@ func TestListRepositories_AppModeFollowsInstallationPages(t *testing.T) {
 
 	c, tokens := newAppClient(t, ids, repos)
 
-	got, err := c.ListRepositories(t.Context())
+	list, err := c.ListRepositories(t.Context())
 	if err != nil {
 		t.Fatalf("ListRepositories() = %v", err)
 	}
+	got := list.Repositories
 	if len(got) != installs {
 		t.Fatalf("len(repos) = %d, want %d", len(got), installs)
 	}
@@ -937,6 +944,9 @@ func TestListRepositories_AppModeFollowsInstallationPages(t *testing.T) {
 	// 切り詰めている。
 	if got[installs-1].Name != "repo-101" {
 		t.Errorf("最後の要素 = %+v, want repo-101", got[installs-1])
+	}
+	if list.Truncated {
+		t.Error("Truncated = true, want false（上限に当たっていない）")
 	}
 
 	// トークンはリクエストのたびに引く。1 回で使い回すと、更新後も古い
@@ -957,10 +967,11 @@ func TestListRepositories_AppModeSkipsArchived(t *testing.T) {
 		},
 	})
 
-	got, err := c.ListRepositories(t.Context())
+	list, err := c.ListRepositories(t.Context())
 	if err != nil {
 		t.Fatalf("ListRepositories() = %v", err)
 	}
+	got := list.Repositories
 
 	// この REST にはアーカイブ済みを除くパラメータが無いので、取ってから捨てる。
 	want := []port.Repository{{Owner: "acme", Name: "web"}, {Owner: "other", Name: "api"}}
@@ -993,12 +1004,17 @@ func TestListRepositories_AppModeStopsAtMaxRepositories(t *testing.T) {
 
 	c, _ := newAppClient(t, ids, repos)
 
-	got, err := c.ListRepositories(t.Context())
+	list, err := c.ListRepositories(t.Context())
 	if err != nil {
 		t.Fatalf("ListRepositories() = %v", err)
 	}
-	if len(got) != 500 {
-		t.Errorf("len(repos) = %d, want 500", len(got))
+	if len(list.Repositories) != 500 {
+		t.Errorf("len(repos) = %d, want 500", len(list.Repositories))
+	}
+	// **打ち切ったことを返す**（ADR 0054）。黙って切ると、目当てが出ない
+	// 利用者が権限やインストールを疑うことになる。
+	if !list.Truncated {
+		t.Error("Truncated = false, want true（上限に当たっている）")
 	}
 }
 

@@ -26,6 +26,8 @@ type stubGitHub struct {
 	// repos と projects は作成先の候補一覧が返すもの。
 	repos    []port.Repository
 	projects []port.Project
+	// truncated は候補を取り切らずに辿るのをやめたこと（ADR 0054）。
+	truncated bool
 	// listErr が非 nil なら候補一覧が失敗する。
 	listErr error
 	// canWrite は CanWriteProject が返す値。
@@ -36,8 +38,8 @@ func (s *stubGitHub) CanWriteProject(context.Context, string) (bool, error) {
 	return s.canWrite, nil
 }
 
-func (s *stubGitHub) ListRepositories(context.Context) ([]port.Repository, error) {
-	return s.repos, s.listErr
+func (s *stubGitHub) ListRepositories(context.Context) (port.RepositoryList, error) {
+	return port.RepositoryList{Repositories: s.repos, Truncated: s.truncated}, s.listErr
 }
 
 func (s *stubGitHub) ListRepositoryProjects(context.Context, string, string) ([]port.Project, error) {
@@ -701,24 +703,50 @@ func TestListRepositories(t *testing.T) {
 	gh := &stubGitHub{repos: []port.Repository{{Owner: "acme", Name: "web", Description: "フロント"}}}
 	r, _ := newCreateRouter(t, gh)
 
-	got := decode[[]map[string]any](t, do(t, r, http.MethodGet, "/api/github/repositories", nil))
-	if len(got) != 1 {
-		t.Fatalf("len = %d, want 1 (%+v)", len(got), got)
+	got := decode[apitypes.RepositoryList](t,
+		do(t, r, http.MethodGet, "/api/github/repositories", nil))
+	if len(got.Repositories) != 1 {
+		t.Fatalf("len = %d, want 1 (%+v)", len(got.Repositories), got)
 	}
-	if got[0]["owner"] != "acme" || got[0]["name"] != "web" {
-		t.Errorf("repositories[0] = %+v", got[0])
+	if got.Repositories[0].Owner != "acme" || got.Repositories[0].Name != "web" {
+		t.Errorf("repositories[0] = %+v", got.Repositories[0])
+	}
+	// 取り切ったので打ち切っていない。**ここを見ないと、常に true を返す
+	// 実装でも「打ち切りが出る」側のテストだけで緑になる**（ADR 0054）。
+	if got.Truncated {
+		t.Error("truncated = true, want false")
 	}
 }
 
-// 0 件でも null ではなく配列を返す。
+// 打ち切ったことを画面まで運ぶ（ADR 0054）。黙って切ると、目当てが出ない
+// 利用者は「権限が無いのか」「インストールしていないのか」「上限の外なのか」を
+// 区別できない（中核思想 3）。
+func TestListRepositories_ReportsTruncation(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{
+		repos:     []port.Repository{{Owner: "acme", Name: "web"}},
+		truncated: true,
+	}
+	r, _ := newCreateRouter(t, gh)
+
+	got := decode[apitypes.RepositoryList](t,
+		do(t, r, http.MethodGet, "/api/github/repositories", nil))
+	if !got.Truncated {
+		t.Error("truncated = false, want true")
+	}
+}
+
+// 0 件でも null ではなく配列を返す。**包んだあとも同じ。** repositories が
+// null になると、画面は長さを見る前に落ちる。
 func TestListRepositories_EmptyIsArray(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newCreateRouter(t, &stubGitHub{})
 
 	rec := do(t, r, http.MethodGet, "/api/github/repositories", nil)
-	if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
-		t.Errorf("body = %q, want []", body)
+	if body := strings.TrimSpace(rec.Body.String()); body != `{"repositories":[],"truncated":false}` {
+		t.Errorf("body = %q", body)
 	}
 }
 

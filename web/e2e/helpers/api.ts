@@ -21,7 +21,7 @@ import type {
   InterpretRequest,
   LoginResponse,
   Project,
-  Repository,
+  RepositoryList,
   SaveSceneRequest,
   SaveSceneResponse,
   SessionStatus,
@@ -85,8 +85,8 @@ export type ApiMock = {
    * いるかは、送ったボディを見ないと確かめられない。
    */
   diagramRequests: GenerateDiagramRequest[];
-  /** 作成先の候補。リポジトリ選択の画面が読む。 */
-  repositories: Reply<Repository[]>;
+  /** 作成先の候補と、取り切ったかどうか（ADR 0054）。 */
+  repositories: Reply<RepositoryList>;
   /** `owner/name` をキーにした Projects v2。 */
   projects: Record<string, Reply<Project[]>>;
   /**

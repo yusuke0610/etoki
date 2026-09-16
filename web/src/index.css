@@ -613,6 +613,25 @@ a.badge-target:hover {
   border-radius: 4px;
 }
 
+/*
+ * 候補の絞り込み（issue #150）。**ラベルは置く。** placeholder だけにすると、
+ * 打ち始めた時点で何の欄なのかが画面から消える。
+ */
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #555;
+}
+
+.filter input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+}
+
 .plain-list button {
   display: flex;
   align-items: baseline;

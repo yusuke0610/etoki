@@ -928,6 +928,31 @@ export interface components {
             projectTitle?: string;
             projectUrl?: string;
         };
+        /**
+         * @description 作成先の候補と、取りきったかどうか（ADR 0054）。
+         *
+         *     **配列ではなく包んだ形で返す。** 候補は上限で打ち切られうるので、配列
+         *     だけでは「これで全部」と「ここまでしか見ていない」を画面が区別できない。
+         *     区別できないと、目当てが出ないときに権限を疑うのか件数を疑うのかを利用者が
+         *     決められない（中核思想 3）。
+         *
+         *     **ヘッダでは返さない。** 契約に現れないものを画面が読むことになり、
+         *     生成した型から辿れなくなる（ADR 0011）。
+         */
+        RepositoryList: {
+            /** @description 候補。0 件でも配列を返す */
+            repositories: components["schemas"]["Repository"][];
+            /**
+             * @description 上限に当たって辿るのをやめた。**「まだある」ではなく「見るのを
+             *     やめた」。** 打ち切った先に候補が残っているかどうかは、辿るのを
+             *     やめた以上サーバーにも分からない。
+             *
+             *     **件数も上限値も返さない。** 画面が出せるのは「ここまでしか見て
+             *     いない」までで、数を出すと上限を画面が知ることになる（ADR 0038 が
+             *     シーンの上限を返さないのと同じ理由）。
+             */
+            truncated: boolean;
+        };
         /** @description 作成先を選ぶときに見せるリポジトリ */
         Repository: {
             owner: string;
@@ -2145,13 +2170,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description リポジトリの一覧。0 件でも配列を返す */
+            /** @description リポジトリの一覧 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Repository"][];
+                    "application/json": components["schemas"]["RepositoryList"];
                 };
             };
             401: components["responses"]["Unauthorized"];

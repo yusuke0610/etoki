@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { githubApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
@@ -31,10 +31,13 @@ type Props = {
  */
 export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
   const [repositories, setRepositories] = useState<Repository[] | null>(null);
+  // 候補を取り切らずに辿るのをやめたか（ADR 0054）。
+  const [truncated, setTruncated] = useState(false);
   const [repository, setRepository] = useState<Repository | null>(null);
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<Failure | null>(null);
   const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +45,9 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
     void (async () => {
       try {
         const list = await githubApi.repositories();
-        if (!cancelled) setRepositories(list);
+        if (cancelled) return;
+        setRepositories(list.repositories);
+        setTruncated(list.truncated);
       } catch (e) {
         if (!cancelled) setError(describeFailure("リポジトリを取得できませんでした", e));
       }
@@ -52,6 +57,27 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * 絞り込みは手元で行う（ADR 0054）。
+   *
+   * **サーバーに問い合わせ直さない。** 打ち切りの外は絞り込んでも出てこないので、
+   * 問い合わせ直しても答えは変わらない。絞れるのは取れたぶんまで、という事実は
+   * 打ち切りの知らせのほうが持つ。
+   *
+   * 見るのは `owner/name` だけ。説明文まで対象にすると、打った語がどこに
+   * 当たったのかが一覧から読めない。
+   */
+  const visible = useMemo(() => {
+    if (repositories === null) return null;
+
+    const needle = filter.trim().toLowerCase();
+    if (needle === "") return repositories;
+
+    return repositories.filter((r) =>
+      `${r.owner}/${r.name}`.toLowerCase().includes(needle),
+    );
+  }, [filter, repositories]);
 
   // リポジトリを続けて押すと応答が前後しうる。番号を振って最後に投げたものだけ
   // 反映する。古い応答で上書きすると、選んでいないリポジトリのプロジェクトが
@@ -118,9 +144,35 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
 
       <section className="panel-section">
         <h2>リポジトリ</h2>
-        {repositories === null ? (
+        {/*
+          候補を取り切っていないことを出す（ADR 0054）。**絞り込みの手前に
+          置く。** 打った語で出てこなかったときに、初めて読む場所ではなく
+          最初から見えている必要がある。目当てが出ない理由が「権限が無い」
+          「インストールしていない」「見た範囲の外」のどれなのかを、利用者が
+          区別できるようにする（中核思想 3）。
+        */}
+        {truncated && (
+          <p className="hint">
+            {"候補が多いため、途中まで見て一覧を打ち切っています。"}
+            {"目当てのリポジトリが出ないときは、この一覧の外にあるかもしれません。"}
+          </p>
+        )}
+        {repositories !== null && repositories.length > 0 && (
+          <p className="filter">
+            <label htmlFor="repository-filter">名前で絞り込む</label>
+            <input
+              id="repository-filter"
+              type="search"
+              value={filter}
+              placeholder="owner/name の一部"
+              // 絞り込みは選び直しを伴わない。設定中でも触れてよい。
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </p>
+        )}
+        {visible === null ? (
           <p className="hint">読み込み中…</p>
-        ) : repositories.length === 0 ? (
+        ) : repositories !== null && repositories.length === 0 ? (
           // 権限不足と「本当に 1 つも無い」は API からは区別できない。
           // どちらの可能性も書いておく。**ここで止まる人はボードを作れない**
           // ので（ADR 0017）、行き止まりの理由が読める必要がある。
@@ -129,9 +181,17 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
             {"GitHub App を入れたリポジトリがあるか、"}
             {"PAT で動かしているなら repo の read 権限があるかを確認してください。"}
           </p>
+        ) : visible.length === 0 ? (
+          // 絞り込んだ結果が 0 件。**「1 つも無い」と言い分ける。** あちらは
+          // 権限の話で、こちらは打った語の話。同じ文にすると、直す場所を
+          // 間違える。
+          <p className="hint">
+            {`「${filter}」に当てはまるリポジトリはありません。`}
+            {"打った語を短くしてみてください。"}
+          </p>
         ) : (
           <ul className="plain-list">
-            {repositories.map((r) => (
+            {visible.map((r) => (
               <li key={`${r.owner}/${r.name}`}>
                 <button
                   type="button"
