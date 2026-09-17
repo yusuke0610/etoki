@@ -21,21 +21,22 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 
 ## 記録
 
-| PR                                                   | 初回指摘 | 直した | 取り下げ | 未決着 | 還した先                                                                                     |
-| ---------------------------------------------------- | -------: | -----: | -------: | -----: | -------------------------------------------------------------------------------------------- |
-| [#96](https://github.com/yusuke0610/etoki/pull/96)   |        6 |      2 |        4 |      0 | async-ui / validation-boundaries                                                             |
-| [#100](https://github.com/yusuke0610/etoki/pull/100) |        4 |      1 |        3 |      0 | validation-boundaries                                                                        |
-| [#104](https://github.com/yusuke0610/etoki/pull/104) |        4 |      3 |        1 |      0 | docs-consistency / test-effectiveness                                                        |
-| [#105](https://github.com/yusuke0610/etoki/pull/105) |        3 |      1 |        2 |      0 | async-ui / validation-boundaries                                                             |
-| [#106](https://github.com/yusuke0610/etoki/pull/106) |        2 |      1 |        1 |      0 | docs-consistency                                                                             |
-| [#108](https://github.com/yusuke0610/etoki/pull/108) |        9 |      5 |        4 |      0 | 還していなかった。#126 で api-contract / async-ui / test-effectiveness / docs-consistency へ |
-| [#109](https://github.com/yusuke0610/etoki/pull/109) |        5 |      3 |        2 |      0 | async-ui / validation-boundaries                                                             |
-| [#117](https://github.com/yusuke0610/etoki/pull/117) |        4 |      0 |        3 |      1 | validation-boundaries。未決着は DB の CHECK（#126 で還した）                                 |
-| [#121](https://github.com/yusuke0610/etoki/pull/121) |        1 |      1 |        0 |      0 | 還していなかった。#126 で async-ui へ                                                        |
-| [#129](https://github.com/yusuke0610/etoki/pull/129) |        4 |      3 |        0 |      1 | async-ui / pr-review スキル / validation-boundaries を直接修正。未決着は DB の CHECK（#130） |
-| [#123](https://github.com/yusuke0610/etoki/pull/123) |        8 |      7 |        0 |      1 | e2e-mocks / http-handlers。未決着は draft issue の長さ上限（実 API で確かめられていない）    |
-| [#124](https://github.com/yusuke0610/etoki/pull/124) |        7 |      7 |        0 |      0 | async-ui。ほかは autofix で直った / 既存の規約でカバー済み                                   |
-| [#131](https://github.com/yusuke0610/etoki/pull/131) |        2 |      2 |        0 |      0 | e2e-mocks。ADR 番号の誤記は単発で還さず                                                      |
+| PR                                                   | 初回指摘 | 直した | 取り下げ | 未決着 | 還した先                                                                                      |
+| ---------------------------------------------------- | -------: | -----: | -------: | -----: | --------------------------------------------------------------------------------------------- |
+| [#96](https://github.com/yusuke0610/etoki/pull/96)   |        6 |      2 |        4 |      0 | async-ui / validation-boundaries                                                              |
+| [#100](https://github.com/yusuke0610/etoki/pull/100) |        4 |      1 |        3 |      0 | validation-boundaries                                                                         |
+| [#104](https://github.com/yusuke0610/etoki/pull/104) |        4 |      3 |        1 |      0 | docs-consistency / test-effectiveness                                                         |
+| [#105](https://github.com/yusuke0610/etoki/pull/105) |        3 |      1 |        2 |      0 | async-ui / validation-boundaries                                                              |
+| [#106](https://github.com/yusuke0610/etoki/pull/106) |        2 |      1 |        1 |      0 | docs-consistency                                                                              |
+| [#108](https://github.com/yusuke0610/etoki/pull/108) |        9 |      5 |        4 |      0 | 還していなかった。#126 で api-contract / async-ui / test-effectiveness / docs-consistency へ  |
+| [#109](https://github.com/yusuke0610/etoki/pull/109) |        5 |      3 |        2 |      0 | async-ui / validation-boundaries                                                              |
+| [#117](https://github.com/yusuke0610/etoki/pull/117) |        4 |      0 |        3 |      1 | validation-boundaries。未決着は DB の CHECK（#126 で還した）                                  |
+| [#121](https://github.com/yusuke0610/etoki/pull/121) |        1 |      1 |        0 |      0 | 還していなかった。#126 で async-ui へ                                                         |
+| [#129](https://github.com/yusuke0610/etoki/pull/129) |        4 |      3 |        0 |      1 | async-ui / pr-review スキル / validation-boundaries を直接修正。未決着は DB の CHECK（#130）  |
+| [#123](https://github.com/yusuke0610/etoki/pull/123) |        8 |      7 |        0 |      1 | e2e-mocks / http-handlers。未決着は draft issue の長さ上限（実 API で確かめられていない）     |
+| [#124](https://github.com/yusuke0610/etoki/pull/124) |        7 |      7 |        0 |      0 | async-ui。ほかは autofix で直った / 既存の規約でカバー済み                                    |
+| [#131](https://github.com/yusuke0610/etoki/pull/131) |        2 |      2 |        0 |      0 | e2e-mocks。ADR 番号の誤記は単発で還さず                                                       |
+| [#167](https://github.com/yusuke0610/etoki/pull/167) |        1 |      1 |        0 |      0 | 還していない。CI の最後に置く検査へ `if: !cancelled()` を付ける話で、rules に該当テーマが無い |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
