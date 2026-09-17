@@ -116,7 +116,7 @@ test-web: ## フロントエンドのテストのみ実行する
 
 test-e2e: ## Playwright で E2E テストを実行する（test には含めない）
 	@# 実行のたびに web/e2e-output/screenshots/ が作り直される。UI を変えたときは
-	@# ここの画像を報告に添える（CLAUDE.md の「報告にスクリーンショットを添える」）。
+	@# ここの画像を報告に添える（web/CLAUDE.md の「報告にブラウザの実行結果を添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
 
 lint: lint-go lint-web lint-docs lint-fmt lint-nix lint-actions lint-sh ## Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
