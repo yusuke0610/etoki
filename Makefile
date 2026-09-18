@@ -115,13 +115,13 @@ try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki �
 	@tmp=$$(mktemp -d); \
 	trap 'rm -rf "$$tmp"; kill 0' EXIT INT TERM; \
 	ETOKI_DB_PATH="$$tmp/etoki.db" $(BINARY) migrate || exit 1; \
-	FAKE_ADDR=$(FAKE_ADDR) $(BIN_DIR)/etoki-fakeupstream & \
+	FAKE_ADDR="$(FAKE_ADDR)" $(BIN_DIR)/etoki-fakeupstream & \
 	env -u ETOKI_GITHUB_APP_CLIENT_ID -u ETOKI_GITHUB_APP_CLIENT_SECRET \
 		-u ETOKI_TOKEN_ENCRYPTION_KEY -u ETOKI_PUBLIC_URL -u ETOKI_LLM_API_KEY \
 		ETOKI_DB_PATH="$$tmp/etoki.db" \
 		ETOKI_WEB_DIR=$(WEB_DIR)/dist \
-		ETOKI_LLM_BASE_URL=http://$(FAKE_ADDR) \
-		ETOKI_GITHUB_BASE_URL=http://$(FAKE_ADDR) \
+		ETOKI_LLM_BASE_URL="http://$(FAKE_ADDR)" \
+		ETOKI_GITHUB_BASE_URL="http://$(FAKE_ADDR)" \
 		ETOKI_GITHUB_TOKEN=fake \
 		$(BINARY) & \
 	wait
