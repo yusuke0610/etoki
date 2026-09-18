@@ -123,6 +123,34 @@ GitHub App を設定しているなら、Callback URL と `ETOKI_PUBLIC_URL` も
 するなら、`ETOKI_ALLOWED_ORIGINS` にそのオリジンを足してください。** 足さないと
 API だけでなく画面も開けません。
 
+### データを残す
+
+ボード・メンバー・作成の記録は `ETOKI_DB_PATH`（既定は `etoki.db`）の SQLite
+ファイルにあります。**作成の記録は取り直せません。** どの注釈からどの draft issue
+を作ったかは作成の瞬間にしか控えられず、GitHub 側の draft issue は etoki から
+消せないので残ります（[ADR 0023](docs/adr/0023-record-created-issue-body.md)）。
+
+`make clean` はこのファイルに触りません。消すターゲットは `make reset-db CONFIRM=1`
+に分けてあり、消す先は `ETOKI_DB_PATH` ではなく `make migrate` と同じ `DB_PATH`
+（既定は `etoki.db`）です。
+
+**消す前に etoki を止め、`sqlite3` で開いているなら閉じてください。** 開いたまま
+消すと、開いている側は消えたファイルを読み書きし続け、そのあいだの書き込みは
+閉じた時点で失われます。動いている etoki が DB を開いていれば、`reset-db` は
+消さずに止まります。
+
+バックアップは SQLite の `.backup` で取ってください。動いているあいだでも
+一貫した 1 ファイルになります。
+
+```sh
+sqlite3 "${ETOKI_DB_PATH:-etoki.db}" ".backup 'etoki-backup.db'"
+```
+
+**`etoki.db` だけを `cp` しないでください。** DB は WAL で開いているので、
+まだ本体に書き戻されていない書き込みが `etoki.db-wal` に残っています。
+戻すときは etoki を止め、残っている `-wal` / `-shm` を消してから、取ったファイルを
+`ETOKI_DB_PATH` に置きます。
+
 ### 偽の GitHub / LLM で通しを確かめる
 
 鍵もネットワークも無しで、画面から GitHub への書き込みまでを 1 本通せます。
