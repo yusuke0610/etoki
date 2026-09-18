@@ -13,7 +13,7 @@ export const GRANULARITY_LABEL: Record<Granularity, string> = {
 };
 
 /**
- * 注釈の見出し。名前が無ければ一覧上の位置で採番する。
+ * 注釈の見出し。名前が無ければ、保存済みの注釈の並び（サーバーが返した順）で採番する。
  *
  * Excalidraw の frame は既定で名前を持たず、キャンバス側もそれを `Frame` と
  * しか描かない（採番しない）。名前を頼りにすると、複数の注釈がすべて同じ
