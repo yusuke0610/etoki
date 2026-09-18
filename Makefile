@@ -178,7 +178,7 @@ codegen-web:
 	cd $(WEB_DIR) && bun run codegen
 
 migrate: ## マイグレーションを適用する
-	ETOKI_DB_PATH=$(DB_PATH) go run ./cmd/etoki migrate
+	ETOKI_DB_PATH="$(DB_PATH)" go run ./cmd/etoki migrate
 
 token-report: ## 直近のセッションのトークン消費の内訳を出す（docs/token-budget.md）
 	@# lint には入れない。読むのは Claude Code が手元に残す transcript で、CI には
