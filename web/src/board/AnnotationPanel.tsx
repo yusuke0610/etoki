@@ -932,6 +932,7 @@ function CreationSection({
     <div className="creation">
       <button
         type="button"
+        className="primary"
         onClick={onCreate}
         disabled={running || blocked !== null}
         aria-describedby={blocked !== null ? blockedId : undefined}

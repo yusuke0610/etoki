@@ -169,7 +169,12 @@ export function DiagramChatPanel({
             **ここが「置く」を挟む唯一の場所。** 生成した瞬間に流し込むと、
             開発者が見てから決める形（中核思想 3）が消える。
           */}
-          <button type="button" onClick={onPlace} disabled={generating}>
+          <button
+            type="button"
+            className="primary"
+            onClick={onPlace}
+            disabled={generating}
+          >
             キャンバスに置く
           </button>
           <p className="hint">
