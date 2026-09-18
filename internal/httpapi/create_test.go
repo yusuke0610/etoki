@@ -276,6 +276,63 @@ func TestCreateItems_ReportsPartialCreation(t *testing.T) {
 	}
 }
 
+// cancelingGitHub は 1 件目の draft issue を作った直後にリクエストを切る。
+// GitHub 側では作れた直後に、ブラウザがタブを閉じた並び（#140）。
+type cancelingGitHub struct {
+	stubGitHub
+	cancel context.CancelFunc
+}
+
+func (g *cancelingGitHub) CreateDraftIssue(ctx context.Context, p string, item port.DraftIssue) (string, error) {
+	// 実物の HTTP クライアントも、切れた ctx では失敗する。
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	id, err := g.stubGitHub.CreateDraftIssue(ctx, p, item)
+	g.cancel()
+	return id, err
+}
+
+func (g *cancelingGitHub) SetItemFieldValue(ctx context.Context, p, id string, v port.FieldValue) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return g.stubGitHub.SetItemFieldValue(ctx, p, id, v)
+}
+
+// 作成中に接続が切れても、GitHub に作れたぶんは実物の DB に残る（ADR 0051）。
+// 記録に切れた ctx を渡すと、sqlite の BeginTx が context canceled で失敗し、
+// 作ったのに run が無い状態に落ちる。
+func TestCreateItems_RecordsRunWhenRequestIsCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	r, mappings := newCreateRouter(t, &cancelingGitHub{cancel: cancel})
+
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+	body := createBody(currentHash(t, r, id))
+
+	// 応答は届かない（接続が切れている）ので、残ったものを DB から見る。
+	_ = doWithContext(t, ctx, r, http.MethodPost, itemsPath(id, "annot-1"), body)
+
+	run, err := mappings.FindLatestRun(t.Context(), id, "annot-1")
+	if err != nil {
+		t.Fatalf("FindLatestRun: %v", err)
+	}
+	if run == nil {
+		t.Fatal("GitHub に作ったのに run が記録されていない")
+	}
+	if run.Outcome != port.OutcomeIncomplete {
+		t.Errorf("Outcome = %q, want %q", run.Outcome, port.OutcomeIncomplete)
+	}
+	if len(run.Items) != 1 || run.Items[0].ItemID != "PVTI_a" {
+		t.Errorf("Items = %+v, want PVTI_a の 1 件", run.Items)
+	}
+}
+
 func TestCreateItems_WithoutGitHub(t *testing.T) {
 	t.Parallel()
 

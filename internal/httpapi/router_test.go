@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"io"
@@ -88,6 +89,16 @@ func withScene(body map[string]string, scene string) map[string]string {
 func do(t *testing.T, r *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 
+	return doWithContext(t, t.Context(), r, method, path, body)
+}
+
+// doWithContext はリクエストの ctx を渡せる do。途中で接続が切れた経路を
+// 再現するときだけ使う。
+func doWithContext(
+	t *testing.T, ctx context.Context, r *gin.Engine, method, path string, body any,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -97,7 +108,7 @@ func do(t *testing.T, r *gin.Engine, method, path string, body any) *httptest.Re
 		reader = bytes.NewReader(raw)
 	}
 
-	req := httptest.NewRequestWithContext(t.Context(), method, path, reader)
+	req := httptest.NewRequestWithContext(ctx, method, path, reader)
 	req.Header.Set("Content-Type", "application/json")
 	// httptest の既定の Host は example.com。実際に届く形と揃えないと、
 	// cross-site を弾くミドルウェアに引っかかる（origin.go）。

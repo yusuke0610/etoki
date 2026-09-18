@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,9 +17,11 @@ type fakeUsers struct {
 	users []port.User
 }
 
+// 実装と同じく大文字小文字を区別しない。区別するフェイクだと、NOCASE で
+// 引く実装にだけ依る振る舞いを usecase の側で確かめられない。
 func (f *fakeUsers) FindUserByLogin(_ context.Context, login string) (*port.User, error) {
 	for _, u := range f.users {
-		if u.Login == login {
+		if login != "" && strings.EqualFold(u.Login, login) {
 			return &u, nil
 		}
 	}
@@ -53,7 +56,7 @@ func memberSetup(t *testing.T, role port.BoardRole) (*usecase.BoardMemberService
 	}
 	users := &fakeUsers{users: []port.User{
 		{ID: "user-a", Login: "alice", DisplayName: "Alice"},
-		{ID: "user-b", Login: "bob", DisplayName: "Bob"},
+		{ID: "user-b", Login: "bob", DisplayName: "Bob", UpdatedAt: baseTime.Add(-time.Hour)},
 	}}
 
 	svc := usecase.NewBoardMemberService(boards, users, usecase.NewBoardLocks(),
@@ -71,7 +74,7 @@ func TestInvite_AddsMember(t *testing.T) {
 
 	svc, boards := memberSetup(t, port.RoleOwner)
 
-	m, err := svc.Invite(t.Context(), "board-1", "bob", port.RoleEditor)
+	m, err := svc.Invite(t.Context(), "board-1", "bob", "user-b", port.RoleEditor)
 	if err != nil {
 		t.Fatalf("Invite() = %v", err)
 	}
@@ -93,8 +96,73 @@ func TestInvite_RejectsUnknownLogin(t *testing.T) {
 
 	svc, boards := memberSetup(t, port.RoleOwner)
 
-	_, err := svc.Invite(t.Context(), "board-1", "carol", port.RoleEditor)
+	_, err := svc.Invite(t.Context(), "board-1", "carol", "user-c", port.RoleEditor)
 	if !errors.Is(err, usecase.ErrInvalidInput) {
+		t.Fatalf("Invite() = %v, want ErrInvalidInput", err)
+	}
+	if len(boards.members) != 1 {
+		t.Errorf("招待を積んでいる: %+v", boards.members)
+	}
+}
+
+// 招待の前に、login が誰に当たるのかを見せる（ADR 0053、#142）。etoki が知って
+// いるのは「最後にその login でログインした人」までなので、表示名と最終ログインを
+// 見て、招待する相手かどうかを owner が決める。
+func TestLookupInvitee_ReturnsTheSignedInUser(t *testing.T) {
+	t.Parallel()
+
+	svc, boards := memberSetup(t, port.RoleOwner)
+
+	u, err := svc.LookupInvitee(t.Context(), "board-1", "BOB")
+	if err != nil {
+		t.Fatalf("LookupInvitee() = %v", err)
+	}
+	if u.ID != "user-b" || u.DisplayName != "Bob" || !u.UpdatedAt.Equal(baseTime.Add(-time.Hour)) {
+		t.Errorf("LookupInvitee() = %+v", u)
+	}
+	if boards.writes != 0 {
+		t.Errorf("引き当てただけで書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
+// 未ログインは招待と同じ理由で断る。引き当てで通して招待で断ると、確認画面まで
+// 進んだあとで止まる。
+func TestLookupInvitee_RejectsUnknownLogin(t *testing.T) {
+	t.Parallel()
+
+	svc, _ := memberSetup(t, port.RoleOwner)
+
+	for _, login := range []string{"carol", ""} {
+		if _, err := svc.LookupInvitee(t.Context(), "board-1", login); !errors.Is(err, usecase.ErrInvalidInput) {
+			t.Errorf("LookupInvitee(%q) = %v, want ErrInvalidInput", login, err)
+		}
+	}
+}
+
+// 確認してから押すまでのあいだに login の持ち主が変わった。確認で見せた相手と
+// 違う人に権限を渡さない（ADR 0053）。
+func TestInvite_RejectsInviteeChangedSinceLookup(t *testing.T) {
+	t.Parallel()
+
+	svc, boards := memberSetup(t, port.RoleOwner)
+
+	_, err := svc.Invite(t.Context(), "board-1", "bob", "user-someone-else", port.RoleEditor)
+	if !errors.Is(err, usecase.ErrInviteeChanged) {
+		t.Fatalf("Invite() = %v, want ErrInviteeChanged", err)
+	}
+	if len(boards.members) != 1 {
+		t.Errorf("確認した相手と違うのに招待を積んでいる: %+v", boards.members)
+	}
+}
+
+// 確認で見た相手を指さない招待は受けない。login だけで通すと、確認を飛ばす
+// 経路が残る。
+func TestInvite_RequiresUserID(t *testing.T) {
+	t.Parallel()
+
+	svc, boards := memberSetup(t, port.RoleOwner)
+
+	if _, err := svc.Invite(t.Context(), "board-1", "bob", "", port.RoleEditor); !errors.Is(err, usecase.ErrInvalidInput) {
 		t.Fatalf("Invite() = %v, want ErrInvalidInput", err)
 	}
 	if len(boards.members) != 1 {
@@ -107,7 +175,7 @@ func TestInvite_RejectsUnknownRole(t *testing.T) {
 
 	svc, _ := memberSetup(t, port.RoleOwner)
 
-	if _, err := svc.Invite(t.Context(), "board-1", "bob", "admin"); !errors.Is(err, usecase.ErrInvalidInput) {
+	if _, err := svc.Invite(t.Context(), "board-1", "bob", "user-b", "admin"); !errors.Is(err, usecase.ErrInvalidInput) {
 		t.Fatalf("Invite() = %v, want ErrInvalidInput", err)
 	}
 }
@@ -119,12 +187,12 @@ func TestInvite_RejectsDuplicate(t *testing.T) {
 
 	svc, _ := memberSetup(t, port.RoleOwner)
 
-	if _, err := svc.Invite(t.Context(), "board-1", "bob", port.RoleEditor); err != nil {
+	if _, err := svc.Invite(t.Context(), "board-1", "bob", "user-b", port.RoleEditor); err != nil {
 		t.Fatalf("1 回目の Invite() = %v", err)
 	}
 
 	// ロールを変えて招待し直しても通さない。
-	_, err := svc.Invite(t.Context(), "board-1", "bob", port.RoleViewer)
+	_, err := svc.Invite(t.Context(), "board-1", "bob", "user-b", port.RoleViewer)
 	if !errors.Is(err, usecase.ErrAlreadyMember) {
 		t.Fatalf("2 回目の Invite() = %v, want ErrAlreadyMember", err)
 	}
@@ -140,8 +208,13 @@ func TestMemberWrites_RequireOwner(t *testing.T) {
 
 			svc, boards := memberSetup(t, role)
 
-			if _, err := svc.Invite(t.Context(), "board-1", "bob", port.RoleEditor); !errors.Is(err, usecase.ErrForbidden) {
+			if _, err := svc.Invite(t.Context(), "board-1", "bob", "user-b", port.RoleEditor); !errors.Is(err, usecase.ErrForbidden) {
 				t.Errorf("Invite() = %v, want ErrForbidden", err)
+			}
+			// 引き当ても owner だけ。招待できない人に、誰がログインしたことがあるかを
+			// 見せる理由が無い。
+			if _, err := svc.LookupInvitee(t.Context(), "board-1", "bob"); !errors.Is(err, usecase.ErrForbidden) {
+				t.Errorf("LookupInvitee() = %v, want ErrForbidden", err)
 			}
 			if _, err := svc.SetRole(t.Context(), "board-1", "user-a", port.RoleViewer); !errors.Is(err, usecase.ErrForbidden) {
 				t.Errorf("SetRole() = %v, want ErrForbidden", err)
@@ -254,8 +327,11 @@ func TestMembers_HideBoardFromNonMembers(t *testing.T) {
 	if _, err := svc.List(t.Context(), "board-1"); !errors.Is(err, usecase.ErrBoardNotFound) {
 		t.Errorf("List() = %v, want ErrBoardNotFound", err)
 	}
-	if _, err := svc.Invite(t.Context(), "board-1", "bob", port.RoleEditor); !errors.Is(err, usecase.ErrBoardNotFound) {
+	if _, err := svc.Invite(t.Context(), "board-1", "bob", "user-b", port.RoleEditor); !errors.Is(err, usecase.ErrBoardNotFound) {
 		t.Errorf("Invite() = %v, want ErrBoardNotFound", err)
+	}
+	if _, err := svc.LookupInvitee(t.Context(), "board-1", "bob"); !errors.Is(err, usecase.ErrBoardNotFound) {
+		t.Errorf("LookupInvitee() = %v, want ErrBoardNotFound", err)
 	}
 }
 
