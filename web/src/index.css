@@ -1,5 +1,5 @@
 /*
- * 配色の変数（ADR 0049）。**色はここでだけ決め、下の規則は変数を読む。**
+ * 配色の変数（ADR 0055）。**色はここでだけ決め、下の規則は変数を読む。**
  * 直書きの色が 1 つでも残ると、ダークでそこだけ明るいまま残る。
  *
  * 名前は色味ではなく役割で付ける。`.hint` が読むのは「薄い文字」であって
@@ -785,6 +785,20 @@ button.primary:disabled {
 .conflict {
   background: var(--color-warning-bg);
   color: var(--color-warning);
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+/*
+ * 保存済みシーンが保存できる上限を超えている状態（issue #103、ADR 0038）。
+ *
+ * .conflict と同じ「注意の帯」なので見た目も揃える。**失敗ではない。**
+ * 描いたものは残っており、保存だけがこのままでは通らない。
+ */
+.scene-limit-warning {
+  background: #fdf0d5;
+  color: #8a5a00;
   padding: 8px 12px;
   margin: 0;
   font-size: 13px;

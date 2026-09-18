@@ -39,6 +39,7 @@ export function board(): BoardDetail {
     projectTitle: "ロードマップ",
     projectUrl: "https://github.com/orgs/acme/projects/1",
     targetLocked: false,
+    sceneOverLimit: false,
   };
 }
 

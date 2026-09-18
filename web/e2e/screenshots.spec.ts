@@ -282,6 +282,21 @@ test.describe("スクリーンショット", () => {
     await shot(page, "22-scene-too-large");
   });
 
+  // 上限を導入する前に保存されたボードは、開いた時点で保存できないと分かる
+  // (issue #103)。押してから 413 で気づくのではなく、開いた瞬間に見える形に
+  // なっているかを画像で見る。
+  test("上限を超えたまま保存されているボードを開いた状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), sceneOverLimit: true };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByText("このボードは保存できる上限を超えています").waitFor();
+    await shot(page, "31-scene-over-limit");
+  });
+
   // 設定していない機能の見せ方（ADR 0030）。LLM を設定しない構成は README が
   // 想定している使い方なので、その画面が行き止まりに見えないかを画像で見る。
   test("設定していない機能の見せ方を撮る", async ({ page }) => {
@@ -850,7 +865,7 @@ test.describe("スクリーンショット", () => {
       if (typeof release === "function") release();
     });
   });
-  // ダーク（ADR 0049）。変数を差し替えるだけなので、画面ごとに撮り分ける
+  // ダーク（ADR 0055）。変数を差し替えるだけなので、画面ごとに撮り分ける
   // 価値があるのは、色の種類がいちばん多く並ぶところ（3 状態・解釈結果・
   // 更新と取り残し）。
   test("ダークで主要な画面を撮る", async ({ page }) => {
