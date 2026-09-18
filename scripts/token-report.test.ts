@@ -111,6 +111,10 @@ describe("summarize", () => {
       },
     },
   ].map((e) => JSON.stringify(e));
+  const user = JSON.stringify({
+    type: "user",
+    message: { content: [{ type: "text", text: "あいうえお" }] },
+  });
 
   test("同じ message.id の usage を二重に数えない", () => {
     // 行ごとに足すと呼び出し 2 回・出力 100 になり、削減見積りまで倍に出る。
@@ -175,6 +179,28 @@ describe("summarize", () => {
       },
     });
     expect(summarize([...split, last]).lastContext).toBe(2006);
+  });
+
+  test("最後の応答そのものは分母に入れない", () => {
+    // lastContext は最後の呼び出しが「読んだ」入力なので、その応答の本文は載って
+    // いない。measured を分母にすると、最後の応答が長いセッションで効き目を
+    // 小さく見積もる。
+    const long = JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_2",
+        usage: { cache_read_input_tokens: 2000 },
+        content: [{ type: "text", text: "x".repeat(500) }],
+      },
+    });
+    const s = summarize([user, ...split, long]);
+    expect(s.measured).toBe(509);
+    expect(s.measuredAtLastCall).toBe(9);
+  });
+
+  test("割られた行は 1 行目で分母の目印を取る", () => {
+    // 2 行目で取ると、同じ応答の前半（本文）が分母に入る。
+    expect(summarize([user, ...split]).measuredAtLastCall).toBe(5);
   });
 
   test("読めない行は飛ばして続ける", () => {

@@ -78,6 +78,12 @@ export type Summary = {
   lastContext: number;
   rows: Bucket[];
   measured: number;
+  /**
+   * 最後の呼び出しの**直前まで**に計測できた文字数。`lastContext` はその呼び出しが
+   * 読んだ入力なので、最後の応答そのもの（思考・本文・道具の呼び出し）は載っていない。
+   * `measured` を分母にすると、最後の応答が長いセッションで効き目を小さく見積もる。
+   */
+  measuredAtLastCall: number;
   instructionFiles: [string, number][];
   toolResults: { hint: string; chars: number }[];
 };
@@ -118,11 +124,13 @@ export function callHint(name: string, input: unknown): string {
 /** transcript の各行から内訳を組み立てる。 */
 export function summarize(lines: Iterable<string>): Summary {
   const buckets = new Map<string, Bucket>();
+  let charsSoFar = 0;
   const add = (group: string, label: string, chars: number): void => {
     const key = `${group} ${label}`;
     const found = buckets.get(key) ?? { group, label, chars: 0 };
     found.chars += chars;
     buckets.set(key, found);
+    charsSoFar += chars;
   };
 
   const instructionFiles = new Map<string, number>();
@@ -138,6 +146,7 @@ export function summarize(lines: Iterable<string>): Summary {
   const usageById = new Map<string, Usage>();
   let records = 0;
   let lastContext = 0;
+  let measuredAtLastCall = 0;
   let sessionId = "";
 
   for (const line of lines) {
@@ -208,6 +217,9 @@ export function summarize(lines: Iterable<string>): Summary {
           typeof message.id === "string" && message.id !== ""
             ? message.id
             : `#${records}`;
+        // 割られた 2 行目以降は同じ応答なので、分母の目印は最初の 1 行だけで取る。
+        // 2 行目で取ると、同じ応答の前半（思考や本文）が分母に入ってしまう。
+        if (!usageById.has(id)) measuredAtLastCall = charsSoFar;
         usageById.set(id, usage);
         lastContext =
           (usage.cache_read_input_tokens ?? 0) +
@@ -269,6 +281,7 @@ export function summarize(lines: Iterable<string>): Summary {
     lastContext,
     rows,
     measured: rows.reduce((n, r) => n + r.chars, 0),
+    measuredAtLastCall,
     instructionFiles: [...instructionFiles].sort((a, b) => b[1] - a[1]),
     toolResults,
   };
@@ -324,7 +337,9 @@ function main(): void {
   }
 
   // 削減の効き目。context は毎ターン読み直されるので、削った文字は残りターン数ぶん効く。
-  const ratio = s.measured > 0 ? s.lastContext / s.measured : 0;
+  // 分母は `measured` ではなく、最後の呼び出しの直前までの文字数。`lastContext` に
+  // 最後の応答は載っていないので、`measured` と割ると効き目を小さく見積もる。
+  const ratio = s.measuredAtLastCall > 0 ? s.lastContext / s.measuredAtLastCall : 0;
   console.log("削減の効き目");
   console.log(`  1 字 = 約 ${ratio.toFixed(2)} トークン（計測できたぶんからの概算）`);
   console.log(
