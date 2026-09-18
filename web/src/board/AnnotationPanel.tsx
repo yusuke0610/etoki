@@ -28,6 +28,7 @@ import {
 } from "./interpretationHistory";
 import {
   blockingReasons,
+  canResend,
   buildInterpretation,
   createDraft,
   leftBehindItemIds,
@@ -410,6 +411,13 @@ export function AnnotationPanel({
                   )}
 
                   {/*
+                    **畳まない**（ADR 0056）。「GitHub にある N 件」は開いて
+                    確かめるものだが、こちらは開発者が手を打つまで消えない。
+                    details に入れると、開かない限り気づけない。
+                  */}
+                  <UnconfirmedItems items={a.unconfirmedItems ?? []} link={projectLink} />
+
+                  {/*
                     前回実行が途中で失敗したことは、履歴を開かなくても見える
                     ところに出す（ADR 0043）。**状態（3 状態）は変えない。**
                     作れたぶんは記録するので created のままであり、そこに件数
@@ -526,18 +534,24 @@ function DetachedSection({
               {a.lastSyncedAt === undefined ? "不明" : formatRunTimestamp(a.lastSyncedAt)}
             </p>
 
-            <details open>
-              <summary>GitHub にある {a.items.length} 件</summary>
-              <ul className="plain-list">
-                {a.items.map((it) => (
-                  <li key={it.itemId}>
-                    <span className="kind">{it.kind}</span> {it.title}
-                    <ItemBody body={it.body} />
-                  </li>
-                ))}
-              </ul>
-              <ProjectLinkLine link={projectLink} />
-            </details>
+            {/* 1 件も無いことはありうる（届いたか分からないものだけが残る）。 */}
+            {a.items.length > 0 && (
+              <details open>
+                <summary>GitHub にある {a.items.length} 件</summary>
+                <ul className="plain-list">
+                  {a.items.map((it) => (
+                    <li key={it.itemId}>
+                      <span className="kind">{it.kind}</span> {it.title}
+                      <ItemBody body={it.body} />
+                    </li>
+                  ))}
+                </ul>
+                <ProjectLinkLine link={projectLink} />
+              </details>
+            )}
+
+            {/* 囲みを消しても、確かめようのない書き込みは落とさない（ADR 0056）。 */}
+            <UnconfirmedItems items={a.unconfirmedItems ?? []} link={projectLink} />
 
             {/* 履歴の口はシーンに注釈が残っているかを見ない（ADR 0007）。 */}
             <details className="run-history">
@@ -969,21 +983,31 @@ function CreationSection({
             <p className="hint">{resultSummary(state.run.items)}。</p>
           )}
           <ul className="plain-list">
-            {state.run.items.map((it) => (
-              <li key={it.itemId}>
-                <span className="kind">{it.kind}</span> {it.title}
-                {/*
-                  作ったのか書き換えたのかを残す。GitHub 側に何が増えたのかは
-                  この内訳でしか数えられない（ADR 0026）。
-                */}
-                {it.action === "updated" && (
-                  <span className="badge badge-updated">更新</span>
-                )}
-                <ItemBody body={it.body} />
-              </li>
-            ))}
+            {state.run.items
+              .filter((it) => it.confirmed)
+              .map((it) => (
+                <li key={it.itemId}>
+                  <span className="kind">{it.kind}</span> {it.title}
+                  {/*
+                    作ったのか書き換えたのかを残す。GitHub 側に何が増えたのかは
+                    この内訳でしか数えられない（ADR 0026）。
+                  */}
+                  {it.action === "updated" && (
+                    <span className="badge badge-updated">更新</span>
+                  )}
+                  <ItemBody body={it.body} />
+                </li>
+              ))}
           </ul>
           <ProjectLinkLine link={projectLink} />
+          {/*
+            届いたか分からないものは、確かに作れたものと同じリストに並べない
+            （ADR 0056）。並べると「作れた」と読まれる。
+          */}
+          <UnconfirmedItems
+            items={state.run.items.filter((it) => !it.confirmed)}
+            link={projectLink}
+          />
         </div>
       )}
     </div>
@@ -1064,6 +1088,14 @@ function InterpretationDraft({
   const createdItems = new Set(
     draft.items.filter((d) => d.createdItemId).map((d) => d.item.localId),
   );
+  // 送ったが、GitHub に届いたか分からない項目（ADR 0056）。
+  const unconfirmedItems = new Set(
+    draft.items.filter((d) => d.unconfirmed).map((d) => d.item.localId),
+  );
+  // そのうち、送り先も分からないので押し直せない項目。
+  const lockedItems = new Set(
+    draft.items.filter((d) => !canResend(d)).map((d) => d.item.localId),
+  );
   const orphans = orphanedLocalIds(draft);
   const reasons = blockingReasons(draft, granularity);
   // 今回の作成で GitHub 側に置き去りになるもの（ADR 0026）。
@@ -1082,6 +1114,8 @@ function InterpretationDraft({
       item={item}
       selected={selected.get(item.localId) ?? false}
       createdItem={createdItems.has(item.localId)}
+      unconfirmed={unconfirmedItems.has(item.localId)}
+      locked={lockedItems.has(item.localId)}
       updatesPrevious={updatesPrevious.get(item.localId) ?? false}
       orphan={orphans.has(item.localId)}
       frozen={frozen}
@@ -1153,6 +1187,8 @@ function DraftItemFields({
   item,
   selected,
   createdItem,
+  unconfirmed,
+  locked,
   updatesPrevious,
   orphan,
   frozen,
@@ -1172,6 +1208,20 @@ function DraftItemFields({
    * なる。
    */
   createdItem: boolean;
+  /**
+   * 送ったが、GitHub に届いたか分からない項目かどうか（ADR 0056）。
+   *
+   * **`createdItem` と重ならないとは限らない。** 更新では相手の ID が分かって
+   * いるので、届いたか分からなくても書き直しには送れる。
+   */
+  unconfirmed: boolean;
+  /**
+   * もう一度送れない項目かどうか（ADR 0056）。
+   *
+   * 送り先の ID が分からない未確定の作成がこれ。受理されていた場合、もう一度
+   * 送ると消せない draft issue が重複する。
+   */
+  locked: boolean;
   /**
    * LLM が対応づけた更新先に、実際に書き込むかどうか。
    *
@@ -1200,9 +1250,12 @@ function DraftItemFields({
         <input
           type="checkbox"
           checked={selected}
-          disabled={frozen}
+          // **押し直せない項目は選ばせない**（ADR 0056）。押せない理由は
+          // 下の本文に出す（ADR 0039）。title に隠さない。
+          disabled={frozen || locked}
           onChange={onToggle}
           aria-label={`${item.localId} を作成する`}
+          aria-describedby={locked ? `${item.localId}-unconfirmed` : undefined}
         />
 
         {editableKind ? (
@@ -1237,7 +1290,11 @@ function DraftItemFields({
           決めるのは開発者（ADR 0026）。指す先が GitHub から消えていると、
           更新のままでは作成が必ず失敗する。
         */}
-        {createdItem ? (
+        {unconfirmed ? (
+          // **「作成した」より先に出す**（ADR 0056）。届いたか分からない
+          // ものを「作成した」と名乗らせない。
+          <span className="badge badge-unconfirmed">確認できていません</span>
+        ) : createdItem ? (
           <span className="badge badge-created">作成した</span>
         ) : (
           item.previousItemId &&
@@ -1246,10 +1303,23 @@ function DraftItemFields({
       </div>
 
       {/*
+        分からないことを分からないと出す（中核思想 3）。**「失敗しました」とは
+        書かない。** GitHub が受理したあとで応答だけを失った場合も、受理せずに
+        返した場合も、etoki からは区別できない。
+      */}
+      {unconfirmed && (
+        <p className="hint" id={`${item.localId}-unconfirmed`}>
+          {locked
+            ? "GitHub に届いたか確認できていません。作られているかもしれないので、この下書きからは送り直せません。GitHub を見て確かめてください。"
+            : "GitHub に届いたか確認できていません。選び直すと、同じ draft issue に書き直します。"}
+        </p>
+      )}
+
+      {/*
         作った項目は、選び直すと書き換えになることを先に言う。チェックだけ
         外れていると、作り損ねたのか作ったのかが読めない。
       */}
-      {createdItem && (
+      {createdItem && !unconfirmed && (
         <p className="hint">
           {selected
             ? "作成した draft issue を書き換えます。"
@@ -1367,9 +1437,59 @@ function partialSummary(items: SyncItem[]): string {
   return `${created} 件は作成済み、${updated} 件は更新済み`;
 }
 
+/**
+ * 何件作って何件更新したか。
+ *
+ * **届いたか分からないものは数えない**（ADR 0056）。混ぜると「2 件は作成済み」が
+ * 嘘になる。そちらは件数ではなく 1 件ずつ `UnconfirmedItems` に出す。確かめ方が
+ * 違う（GitHub を見にいく）ので、同じ数に足し込まない。
+ */
 function countByAction(items: SyncItem[]): { created: number; updated: number } {
-  const updated = items.filter((it) => it.action === "updated").length;
-  return { created: items.length - updated, updated };
+  const confirmed = items.filter((it) => it.confirmed);
+  const updated = confirmed.filter((it) => it.action === "updated").length;
+  return { created: confirmed.length - updated, updated };
+}
+
+/**
+ * GitHub に届いたか分からない書き込み（ADR 0056）。
+ *
+ * **「失敗した」とは書かない。** GitHub が受理したあとで応答だけを失った場合も、
+ * 受理せずに返した場合も、etoki からは区別できない。分からないことを分からない
+ * と出して、確かめるのは開発者に任せる（中核思想 3）。
+ *
+ * **押し直しの導線は置かない。** 受理されていた場合、もう一度送ると消せない
+ * draft issue が重複する。出口は GitHub を見ること 1 つだけなので、リンクを
+ * 添える。
+ */
+function UnconfirmedItems({
+  items,
+  link,
+}: {
+  items: SyncItem[];
+  link: ProjectLink | null;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="unconfirmed-items">
+      <p className="hint">
+        {items.length} 件は、GitHub に届いたか確認できていません。作られている
+        かもしれません。<strong>もう一度作る前に GitHub を見てください。</strong>
+      </p>
+      <ul className="plain-list">
+        {items.map((it, i) => (
+          // 未確定の作成は itemId を持たないので、鍵には使えない。並びは
+          // サーバーが返した順で、再描画で入れ替わらない。
+          <li key={it.itemId === "" ? `${it.localId}-${i}` : it.itemId}>
+            <span className="kind">{it.kind}</span> {it.title}
+            <span className="badge badge-unconfirmed">確認できていません</span>
+            <ItemBody body={it.body} />
+          </li>
+        ))}
+      </ul>
+      <ProjectLinkLine link={link} />
+    </div>
+  );
 }
 
 /**

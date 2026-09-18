@@ -182,6 +182,12 @@ func (r *racingMappings) ListItemsByBoard(
 	return nil, nil
 }
 
+func (r *racingMappings) ListUnconfirmedItemsByBoard(
+	context.Context, string,
+) (map[string][]port.SyncItem, error) {
+	return nil, nil
+}
+
 func (r *racingMappings) ListRunsByAnnotation(
 	context.Context, string, string, int,
 ) ([]port.SyncRun, error) {

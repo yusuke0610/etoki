@@ -15,6 +15,7 @@ import (
 
 	"github.com/yusuke0610/etoki"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
+	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -189,6 +190,98 @@ func TestRunShutsDownOnContextCancel(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after context cancel")
+	}
+}
+
+// 停止の猶予は、作成が記録を終えるまでの最長を覆う（ADR 0056、#170）。
+//
+// **これが崩れると失われるのは 1 件ではなく run ごと。** 書き込み中の 1 件は
+// 取り消しから切り離して待つので（ADR 0051）、猶予が先に尽きるとプロセスが
+// 終わり、その run で先に作れていた項目の記録まで消える。GitHub には draft
+// issue があるのに etoki は何も知らない、という ADR 0009 がいちばん避けたかった
+// 状態に戻る。
+//
+// 実際に 75 秒待つわけにはいかないので、定数どうしの関係で固定する。猶予を
+// 固定値（以前の 10 秒）に書き戻すと落ちる。
+func TestShutdownBudgetCoversCreationDrain(t *testing.T) {
+	t.Parallel()
+
+	shutdown, cancelAfter := etoki.ShutdownBudgetForTest()
+
+	if want := cancelAfter + usecase.MaxCreationDrain; shutdown < want {
+		t.Errorf("shutdownTimeout = %v, want >= %v（切るまで %v + 後始末 %v）",
+			shutdown, want, cancelAfter, usecase.MaxCreationDrain)
+	}
+	// 切るのは猶予の中でなければ意味が無い。等しくすると後始末の時間が残らない。
+	if cancelAfter >= shutdown {
+		t.Errorf("cancelRequestsAfter = %v, want < shutdownTimeout %v", cancelAfter, shutdown)
+	}
+}
+
+// 取り消しのあとも走り続けるハンドラを、猶予の中なら待ち切る。
+//
+// **ctx を切ることと、ハンドラを打ち切ることは別。** `Shutdown` は処理中の
+// ハンドラが返るのを待つので、切り離して書き込みを続ける作成（ADR 0051）は
+// 最後まで進んで記録できる。猶予を超えて打ち切る実装に変えると落ちる。
+func TestRunWaitsForHandlersThatOutliveTheCancel(t *testing.T) {
+	t.Parallel()
+
+	const (
+		cancelAfter = 50 * time.Millisecond
+		// 切られたあとも走り続ける「書き込み中の 1 件 + 記録」のぶん。
+		drain    = 250 * time.Millisecond
+		shutdown = cancelAfter + drain + 250*time.Millisecond
+	)
+
+	entered := make(chan struct{})
+	recorded := make(chan struct{})
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		// ctx は見ない。始めた 1 件は取り消しから切り離して待つ（ADR 0051）。
+		time.Sleep(drain)
+		close(recorded)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	srv := etoki.NewServerForTest(freeAddr(t), h, shutdown, cancelAfter)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	waitForListener(t, srv.Addr())
+
+	go func() {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+srv.Addr()+"/", nil)
+		if err != nil {
+			return
+		}
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler was not entered")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return")
+	}
+
+	// **Run が返ったときには記録まで終わっている。** 先に返る実装だと、
+	// この時点ではまだ書き込みの途中で、プロセスが終われば記録は残らない。
+	select {
+	case <-recorded:
+	default:
+		t.Error("Run が記録の前に返った（猶予を超えて打ち切っている）")
 	}
 }
 

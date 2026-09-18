@@ -1082,9 +1082,19 @@ export interface components {
          * @enum {string}
          */
         SyncAction: "created" | "updated";
-        /** @description 作成済みの draft issue 1 件 */
+        /**
+         * @description 1 回の実行がその draft issue に対して行った書き込み 1 件。
+         *
+         *     **「作成済みの 1 件」ではない。** `confirmed` が false なら、GitHub に
+         *     届いたかどうかを etoki は知らない（ADR 0056）。
+         */
         SyncItem: {
-            /** @description GitHub Projects v2 の item ID */
+            /**
+             * @description GitHub Projects v2 の item ID。
+             *
+             *     **`confirmed` が false の作成では空文字**（ID が返ってこなかった）。
+             *     更新では相手の ID が分かっているので、未確定でも入る
+             */
             itemId: string;
             kind: components["schemas"]["ItemKind"];
             title: string;
@@ -1095,6 +1105,18 @@ export interface components {
             /** @description epic に属する issue のとき、その epic の localId */
             parentLocalId?: string;
             action: components["schemas"]["SyncAction"];
+            /**
+             * @description この書き込みが GitHub に届いたことを確かめられたかどうか
+             *     （ADR 0056）。
+             *
+             *     false は「失敗した」ではなく「**分からない**」。GitHub が受理した
+             *     あとで応答だけを失った場合も、受理せずに返した場合も、etoki からは
+             *     区別できない。**確かめるのは開発者**（中核思想 3）。
+             *
+             *     記録していなかった頃の run では true。当時は確定したものしか
+             *     記録できなかった
+             */
+            confirmed: boolean;
         };
         /**
          * @description run が最後まで進んだかどうか（ADR 0043）。
@@ -1177,9 +1199,20 @@ export interface components {
             lastSyncedAt?: string;
             /**
              * @description この注釈が GitHub に在らしめている draft issue。畳み込みは
-             *     AnnotationStatus.items と同じ（ADR 0026）
+             *     AnnotationStatus.items と同じ（ADR 0026）。
+             *
+             *     **空でも省略しない。** 届いたか分からない書き込みだけが残っている
+             *     注釈がありうる（ADR 0056）
              */
             items: components["schemas"]["SyncItem"][];
+            /**
+             * @description GitHub に届いたか分からない書き込み（ADR 0056）。1 件も無ければ
+             *     省略する。意味は AnnotationStatus.unconfirmedItems と同じ。
+             *
+             *     **囲みを消しても落とさない。** 確かめようのない書き込みが画面から
+             *     消えてよい理由にはならない
+             */
+            unconfirmedItems?: components["schemas"]["SyncItem"][];
         };
         /** @description 注釈 1 つの状態 */
         AnnotationStatus: {
@@ -1226,6 +1259,20 @@ export interface components {
              *     1 件も無ければ省略する
              */
             items?: components["schemas"]["SyncItem"][];
+            /**
+             * @description GitHub に届いたか分からない書き込み（ADR 0056）。1 件も無ければ
+             *     省略する。
+             *
+             *     **`items` とは別のリスト。** あちらは「いま GitHub に在るもの」で、
+             *     こちらは在るかどうかが分からないもの。混ぜると件数が嘘になり、
+             *     更新先としても選べてしまう（未確定の作成は `itemId` を持たない）。
+             *     分けているのは `detached` と同じ理由（ADR 0046）。
+             *
+             *     **`state` はこれを見ない。** 確定が 1 件も無くても `created` に
+             *     なる。押し直しで消せない draft issue が重複するほうを避ける
+             *     （ADR 0009 / 0056）
+             */
+            unconfirmedItems?: components["schemas"]["SyncItem"][];
         };
         /** @description 解釈結果に含まれる draft issue 1 件。まだ作成はしていない */
         InterpretedItem: {

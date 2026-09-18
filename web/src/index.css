@@ -759,6 +759,29 @@ a.badge-target:hover {
 }
 
 /*
+ * GitHub に届いたか分からない書き込み（ADR 0056）。
+ *
+ * **「作れた」とも「失敗した」とも見えない色にする。** 成功の側に寄せると
+ * 確かめずに済ませてしまい、失敗の側に寄せると押し直して重複を作る。打ち手が
+ * 「GitHub を見る」しかないので、注意を引く帯で出して畳まない。
+ *
+ * 色だけに頼らない。文言（「確認できていません」）とバッジの文字が同じことを
+ * 言っている。
+ */
+.unconfirmed-items {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border-left: 2px solid #8a5a00;
+  background: #fdf0d5;
+  color: #8a5a00;
+}
+
+.badge-unconfirmed {
+  background: #8a5a00;
+  color: #fdf0d5;
+}
+
+/*
  * 今回の作成で置き去りになるもの。作成ボタンの手前に置く。押したあとに
  * 気づいても、draft issue は削除できない。
  */

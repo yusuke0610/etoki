@@ -491,7 +491,7 @@ func TestListAnnotationRuns(t *testing.T) {
 			Outcome:   port.OutcomeComplete,
 			Items: []port.SyncItem{{
 				ItemID: "PVTI_" + title, Kind: port.KindEpic, Title: title,
-				LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+				LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 			}},
 		}); err != nil {
 			t.Fatalf("SaveRun: %v", err)
@@ -534,7 +534,7 @@ func TestListAnnotationRuns_ShowsIncomplete(t *testing.T) {
 		Outcome: port.OutcomeIncomplete, Error: "github graphql: rate limited",
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "作れたほう",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -583,7 +583,7 @@ func TestListAnnotationRuns_OmitsOutcomeWhenNotRecorded(t *testing.T) {
 		CreatedAt: fixedTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "古い run",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -861,7 +861,7 @@ func TestListAnnotations_Detached(t *testing.T) {
 		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -1001,8 +1001,8 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		CreatedAt:    fixedTime,
 		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{
-			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime},
-			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, Action: port.ActionCreated, CreatedAt: fixedTime},
+			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime},
+			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime},
 		},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
