@@ -5,7 +5,7 @@ import { openBoard } from "./helpers/board";
 import { baseMock } from "./helpers/fixtures";
 
 /**
- * 配色の持ち方（ADR 0049）。
+ * 配色の持ち方（ADR 0055）。
  *
  * **ここで守るのは 3 つ。** OS の設定に従うこと、キャンバスのメニューで
  * 切り替えるとパネルも一緒に変わること、切り替えが保存すべき変更にならないこと。

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 /**
  * 画面の配色。etoki のパネルと Excalidraw のキャンバスで 1 つの値を共有する
- * （ADR 0049）。
+ * （ADR 0055）。
  */
 export type Theme = "light" | "dark";
 
@@ -87,7 +87,7 @@ export function initialTheme(): Theme {
 }
 
 /**
- * テーマの状態。**持つのは App の 1 箇所だけ**（ADR 0049）。
+ * テーマの状態。**持つのは App の 1 箇所だけ**（ADR 0055）。
  *
  * 選んでいないあいだは OS の設定の変化にも付いていく。
  */

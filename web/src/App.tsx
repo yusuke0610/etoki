@@ -54,7 +54,7 @@ export function App() {
   // state だと通信の待ちを挟んだ判定が、待ち始めた時点の値を見てしまう。
   const unsaved = useRef(false);
   // 配色。**持つのはここだけ**で、キャンバスのメニューで切り替えても BoardPage
-  // から戻ってくる（ADR 0049）。ログインや作成先の選択の画面にも効かせるため、
+  // から戻ってくる（ADR 0055）。ログインや作成先の選択の画面にも効かせるため、
   // ボードより上に置く。
   const [theme, setTheme] = useTheme();
 
