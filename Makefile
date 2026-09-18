@@ -59,16 +59,16 @@ ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web start \
-        test test-go test-web test-e2e lint lint-go lint-web lint-docs lint-fmt \
+        test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
-        codegen codegen-go codegen-web migrate clean
+        codegen codegen-go codegen-web migrate token-report clean reset-db
 
 help: ## ターゲット一覧を表示する
 	@echo "使い方: make <target>"
 	@echo
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| sort \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-11s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
 
 setup: ## 依存関係を取得し DB を初期化する
 	go mod download
@@ -106,13 +106,18 @@ build-api:
 build-web:
 	cd $(WEB_DIR) && bun run build
 
-test: test-go test-web ## Go とフロントエンドのテストを実行する
+test: test-go test-web test-scripts ## Go / フロントエンド / scripts のテストを実行する
 
 test-go: ## Go のテストのみ実行する
 	go test ./...
 
 test-web: ## フロントエンドのテストのみ実行する
 	cd $(WEB_DIR) && bun run test
+
+test-scripts: ## scripts/ のテストのみ実行する
+	@# vitest ではなく bun test を使う。scripts/ は web/ の外にあり、web の
+	@# devDependencies（vitest）を前提にできない。bun は devShell に既にある。
+	bun test scripts
 
 test-e2e: ## Playwright で E2E テストを実行する（test には含めない）
 	@# 実行のたびに web/e2e-output/screenshots/ が作り直される。UI を変えたときは
@@ -173,10 +178,57 @@ codegen-web:
 	cd $(WEB_DIR) && bun run codegen
 
 migrate: ## マイグレーションを適用する
-	ETOKI_DB_PATH=$(DB_PATH) go run ./cmd/etoki migrate
+	ETOKI_DB_PATH="$(DB_PATH)" go run ./cmd/etoki migrate
 
-clean: ## 生成物を削除する
+token-report: ## 直近のセッションのトークン消費の内訳を出す（docs/token-budget.md）
+	@# lint には入れない。読むのは Claude Code が手元に残す transcript で、CI には
+	@# 存在しない。検査ではなく、削る先を決めるための道具（#125）。
+	@# SESSION はクォートして 1 個の引数として渡す。transcript のパスは
+	@# ~/.claude/projects/<作業ディレクトリ> の下にあり、空白を含みうる。
+	bun scripts/token-report.ts $(if $(SESSION),"$(SESSION)")
+
+clean: ## 生成物を削除する（etoki.db には触らない）
+	@# DB は生成物ではなく利用者のデータ。sync_runs / sync_items は作成の瞬間に
+	@# 控えたもので取り直せない（ADR 0023）。ビルドをやり直すつもりの 1 コマンドで
+	@# 消えないよう、消すのは reset-db に分けてある。
 	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
-	rm -f $(DB_PATH) $(DB_PATH)-shm $(DB_PATH)-wal
+
+reset-db: ## ボードと作成の記録（etoki.db）を消す。etoki を止めて CONFIRM=1 を付ける
+	@# 名前と説明で「データを消す」と分かるだけでは足りない。補完や履歴から
+	@# 呼ばれても消えないよう、明示の変数を要求する。
+	@if [ -z "$(DB_PATH)" ]; then echo "DB_PATH が空です"; exit 1; fi
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		echo "reset-db は $(DB_PATH) を消します。ボード・メンバー・作成の記録を含み、元に戻せません。"; \
+		echo "GitHub に作った draft issue は残りますが、etoki のどこから作ったかは失われます。"; \
+		echo "消すなら、etoki を止めてから: make reset-db CONFIRM=1"; \
+		exit 1; \
+	fi
+	@# 接続が残っているうちは消さない。開いている側は消えたファイルを読み書きし
+	@# 続け、そのあいだの書き込み（作成の記録を含む）は閉じた時点で失われる。
+	@# WAL の接続は DB を一度読むと閉じるまで共有ロックを持ち続けるので、排他で
+	@# 開けるかで残りが分かる（SQLite が最後の接続を閉じるときの判定と同じ）。
+	@# 止めるのは、ロックで開けないときと、sqlite3 が動かず確かめられないとき
+	@# （終了コード 2 以上）。SQL のエラー（1）では止めない。壊れた DB で止めると
+	@# reset-db で消せなくなる。無いファイルを渡すと空の DB ができるので、ある
+	@# ときだけ試す。確かめてから消すまでのあいだに開かれた接続は防げない。
+	@# etoki を止めてから呼ぶ前提（README）の上での、取り違えへの歯止め。
+	@if [ -e "$(DB_PATH)" ]; then \
+		out=$$(sqlite3 -- "$(DB_PATH)" \
+			'PRAGMA locking_mode=EXCLUSIVE; SELECT count(*) FROM sqlite_master;' 2>&1 >/dev/null); \
+		rc=$$?; \
+		if printf '%s\n' "$$out" | grep -q 'database is locked'; then \
+			echo "$(DB_PATH) を開いている接続があるので、消さずに止めました。"; \
+			echo "etoki（make dev / make start）や sqlite3 を止めてから、もう一度実行してください。"; \
+			exit 1; \
+		fi; \
+		if [ "$$rc" -gt 1 ]; then \
+			echo "sqlite3 で $(DB_PATH) を確かめられないので、消さずに止めました（終了コード $${rc}）。"; \
+			[ -z "$$out" ] || printf '%s\n' "$$out"; \
+			exit 1; \
+		fi; \
+	fi
+	@# DB_PATH は上書きできるので、空白や glob を含んでも 1 つのパスとして渡す。
+	@# 分割や展開を許すと、CONFIRM=1 で認めた範囲より広く消える。
+	rm -f -- "$(DB_PATH)" "$(DB_PATH)-shm" "$(DB_PATH)-wal"
 
 endif

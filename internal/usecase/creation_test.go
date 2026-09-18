@@ -39,7 +39,14 @@ type fakeGitHub struct {
 	failOnField string
 	// listErr が非 nil なら ListProjectFields が失敗する。
 	listErr error
-	seq     int
+	// afterCreate が非 nil なら、draft issue を 1 件作った直後に呼ぶ。
+	// GitHub 側では作れた直後にブラウザがタブを閉じた、という並びを作る。
+	afterCreate func()
+	// cancelDuring が非 nil なら、draft issue を作る呼び出しの途中で呼び、
+	// そのあと実物の HTTP クライアントと同じく ctx が切れていれば失敗する。
+	// GitHub が受理したのに応答が届かない並びを作る。
+	cancelDuring func()
+	seq          int
 	// repos と projects は作成先の候補一覧が返すもの。
 	repos    []port.Repository
 	projects []port.Project
@@ -70,14 +77,23 @@ func (f *fakeGitHub) ListProjectFields(_ context.Context, projectID string) ([]p
 	return f.fields, nil
 }
 
-func (f *fakeGitHub) CreateDraftIssue(_ context.Context, projectID string, item port.DraftIssue) (string, error) {
+func (f *fakeGitHub) CreateDraftIssue(ctx context.Context, projectID string, item port.DraftIssue) (string, error) {
 	f.projectIDs = append(f.projectIDs, projectID)
+	if f.cancelDuring != nil {
+		f.cancelDuring()
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+	}
 	if f.failOnTitle != "" && item.Title == f.failOnTitle {
 		return "", errors.New("github: boom")
 	}
 	f.seq++
 	id := "PVTI_" + string(rune('a'+f.seq-1))
 	f.calls = append(f.calls, githubCall{op: "create", title: item.Title, body: item.Body, itemID: id})
+	if f.afterCreate != nil {
+		f.afterCreate()
+	}
 	return id, nil
 }
 
@@ -117,9 +133,14 @@ type fakeMappings struct {
 	saveErr error
 }
 
-func (f *fakeMappings) SaveRun(_ context.Context, run port.SyncRun) (int64, error) {
+func (f *fakeMappings) SaveRun(ctx context.Context, run port.SyncRun) (int64, error) {
 	if f.saveErr != nil {
 		return 0, f.saveErr
+	}
+	// 実装（sqlite の BeginTx）と同じく、切れた ctx では書けない。ctx を
+	// 見ないフェイクだと、記録に切れた ctx を渡す実装でも緑になる（#140）。
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 	// 実装と同じく採番する。ID を振らないと、履歴の並び（新しい順は id で
 	// 決める）をフェイクの上で確かめられない。
@@ -538,6 +559,97 @@ func TestCreate_RecordsPartialRunOnFailure(t *testing.T) {
 	// 2 通りの見え方になる。
 	if saved.Error != err.Error() {
 		t.Errorf("保存された Error = %q, want %q", saved.Error, err.Error())
+	}
+}
+
+// 作成の途中でリクエストが切れた（タブを閉じた、リロードした、停止の猶予が
+// 尽きた）。GitHub に作れたぶんは記録に残し、残りは作らない（ADR 0051、#140）。
+//
+// **記録が切れた ctx に引きずられると、作ったのに run が無い状態に落ちる。**
+// 3 状態は uncreated のままなので、開き直した開発者が作り直して重複する。
+func TestCreate_RecordsRunWhenRequestIsCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	gh := &fakeGitHub{fields: projectFields()}
+	// 1 件目（epic）を作った直後に切る。フェイクのフィールド設定は ctx を
+	// 見ないので、epic は最後まで済む。止めるのが GitHub クライアント任せでは
+	// なくユースケースであることを、次の issue を作らないことで確かめる。
+	gh.afterCreate = cancel
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	run, err := svc.Create(ctx, "board-1", "annot-1", currentContentHash(t), interpretation())
+	if !errors.Is(err, usecase.ErrCreationIncomplete) {
+		t.Fatalf("Create() = %v, want ErrCreationIncomplete", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Create() = %v, want context.Canceled を包む", err)
+	}
+	if run == nil {
+		t.Fatal("run = nil, want 作れたぶんの記録")
+	}
+
+	var created []string
+	for _, c := range gh.calls {
+		if c.op == "create" {
+			created = append(created, c.itemID)
+		}
+	}
+	if strings.Join(created, ",") != "PVTI_a" {
+		t.Errorf("作られた draft issue = %v, want [PVTI_a]（切れたあとは作らない）", created)
+	}
+
+	if len(mappings.runs) != 1 {
+		t.Fatalf("保存された run = %d 件, want 1", len(mappings.runs))
+	}
+	saved := mappings.runs[0]
+	if saved.Outcome != port.OutcomeIncomplete {
+		t.Errorf("Outcome = %q, want %q", saved.Outcome, port.OutcomeIncomplete)
+	}
+	if len(saved.Items) != 1 || saved.Items[0].ItemID != "PVTI_a" || saved.Items[0].LocalID != "e1" {
+		t.Errorf("保存された Items = %+v, want e1 → PVTI_a の 1 件", saved.Items)
+	}
+}
+
+// 書き込みの途中でリクエストが切れた（ADR 0051、#160 のレビュー）。GitHub が
+// 受理したあとに応答だけが失われると、作ったのに ID が分からず記録できない。
+// **始めた 1 件は取り消しから切り離して最後まで待つ。** 止めるのは次の 1 件に
+// 手を付けないことだけ。
+func TestCreate_FinishesTheItemInFlightWhenRequestIsCanceled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	gh := &fakeGitHub{fields: projectFields(), cancelDuring: cancel}
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	_, err := svc.Create(ctx, "board-1", "annot-1", currentContentHash(t), interpretation())
+	if !errors.Is(err, usecase.ErrCreationIncomplete) {
+		t.Fatalf("Create() = %v, want ErrCreationIncomplete", err)
+	}
+
+	if len(mappings.runs) != 1 {
+		t.Fatalf("保存された run = %d 件, want 1（書き込み中に切れても作れた 1 件は記録する）", len(mappings.runs))
+	}
+	saved := mappings.runs[0]
+	if len(saved.Items) != 1 || saved.Items[0].ItemID != "PVTI_a" {
+		t.Errorf("保存された Items = %+v, want PVTI_a の 1 件", saved.Items)
+	}
+	// 始めた epic はフィールドまで張り終える。途中で止めると、種別の無い
+	// draft issue が残る。
+	var fields int
+	for _, c := range gh.calls {
+		if c.op == "field" && c.itemID == "PVTI_a" {
+			fields++
+		}
+	}
+	if fields != 1 {
+		t.Errorf("PVTI_a のフィールド設定 = %d 回, want 1（種別）", fields)
 	}
 }
 

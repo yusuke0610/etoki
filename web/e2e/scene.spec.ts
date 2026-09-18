@@ -1,7 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, summarize, type ApiMock } from "./helpers/api";
-import { drawRectangle, openBoard, openBoardWithMock } from "./helpers/board";
+import { holdCreate, installApi, summarize, type ApiMock } from "./helpers/api";
+import {
+  annotationCard,
+  drawRectangle,
+  openBoard,
+  openBoardWithMock,
+} from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
 const OTHER_NAME = "課金まわりのブレスト";
@@ -166,6 +171,38 @@ test.describe("シーンの保存", () => {
     await expect.poll(() => types).toContain("beforeunload");
   });
 
+  // 解釈は保存を要求するので、作成を押す時点ではふつう保存済み。未保存だけを
+  // 見ていると、作成中にタブを閉じても何も訊かれず、作成はそこで止まる
+  // （ADR 0051、#140）。
+  test("作成中にタブを閉じようとすると、ブラウザの確認が出る", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdCreate(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(card.getByRole("button", { name: "作成中…" })).toBeVisible();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    const types: string[] = [];
+    page.on("dialog", (dialog) => {
+      types.push(dialog.type());
+      void dialog.dismiss();
+    });
+
+    await page.close({ runBeforeUnload: true });
+    await expect.poll(() => types).toContain("beforeunload");
+    release();
+  });
+
   // 止めるのは「知らせずに捨てる」ことだけ。捨てると決めたなら通す（中核思想 3）。
   test("確認を承諾すれば、ボードは切り替わる", async ({ page }) => {
     await openBoardWithMock(page, twoBoards());
@@ -250,6 +287,47 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("貼った画像が大きすぎて保存できません")).toBeVisible();
     // 拒まれたのは保存だけ。描いたものはキャンバスに残り、続けて編集できる。
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  });
+
+  // 上限を導入する前に保存された(と想定する)大きいボードは、開いた時点で
+  // 保存できないと分かる（issue #103）。押してから 413 で気づくのでは遅い。
+  test("上限を超えたまま保存されているボードは、開いた時点で分かる", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), sceneOverLimit: true };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await expect(
+      page.getByText("このボードは保存できる上限を超えています"),
+    ).toBeVisible();
+  });
+
+  // 保存が成功した = サーバーの上限を満たした、という事実で警告を下ろす。
+  // フロントは上限の数値を知らないので、この推論でしか消せない（ADR 0038）。
+  test("保存に成功すると、上限超過の警告が消える", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), sceneOverLimit: true };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await expect(
+      page.getByText("このボードは保存できる上限を超えています"),
+    ).toBeVisible();
+
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    await expect(page.getByText("このボードは保存できる上限を超えています")).toBeHidden();
+
+    // 開き直しても出ない。サーバーが返す sceneOverLimit で出し直すので、
+    // 画面上で消えただけで開き直すと戻るなら、警告の出どころがずれている。
+    await page.reload();
+    await openBoard(page, BOARD_NAME);
+    await expect(page.getByText("このボードは保存できる上限を超えています")).toBeHidden();
   });
 
   // 付箋は描いている最中に置くもの。**置くだけで保存はしない**（確定させる

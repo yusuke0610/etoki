@@ -37,6 +37,7 @@ import {
   buildInterpretation,
   createDraft,
   leftBehindItemIds,
+  markCreated,
   orphanedLocalIds,
   setBody,
   setKind,
@@ -134,7 +135,15 @@ type Props = {
   saving: boolean;
   /** 取り込み中は作成させない。キャンバスの置き換えと並走させないため。 */
   importing: boolean;
-  onCreate: (annotationId: string, interpretation: Interpretation) => void;
+  /**
+   * `interpretationId` は下書きの元になった解釈。作ったものをその解釈に
+   * 結びつけて持つために渡す（ADR 0052）。
+   */
+  onCreate: (
+    annotationId: string,
+    interpretationId: number,
+    interpretation: Interpretation,
+  ) => void;
   /**
    * 編集できるか。viewer は false（ADR 0017）。
    *
@@ -454,7 +463,9 @@ export function AnnotationPanel({
                       onSelectInterpretation={(runId) =>
                         onSelectInterpretation(a.id, runId)
                       }
-                      onCreate={(interpretation) => onCreate(a.id, interpretation)}
+                      onCreate={(interpretationId, interpretation) =>
+                        onCreate(a.id, interpretationId, interpretation)
+                      }
                     />
                   )}
                 </li>
@@ -568,7 +579,7 @@ type InterpretationSectionProps = {
   projectLink: ProjectLink | null;
   onInterpret: () => void;
   onSelectInterpretation: (runId: number) => void;
-  onCreate: (interpretation: Interpretation) => void;
+  onCreate: (interpretationId: number, interpretation: Interpretation) => void;
 };
 
 /**
@@ -662,6 +673,7 @@ function InterpretationSection({
           annotationId={annotationId}
           granularity={granularity}
           result={selected.result}
+          created={selected.created ?? []}
           creation={creation}
           saving={saving}
           importing={importing}
@@ -669,7 +681,7 @@ function InterpretationSection({
           creationUnavailable={creationUnavailable}
           previous={previous}
           projectLink={projectLink}
-          onCreate={onCreate}
+          onCreate={(interpretation) => onCreate(selected.id, interpretation)}
         />
       )}
     </div>
@@ -1002,6 +1014,7 @@ function InterpretationDraft({
   annotationId,
   granularity,
   result,
+  created,
   creation,
   saving,
   importing,
@@ -1014,6 +1027,8 @@ function InterpretationDraft({
   annotationId: string;
   granularity: Granularity;
   result: Interpretation;
+  /** この解釈から作ったもの。作成の 1 回ごとに 1 要素（ADR 0052）。 */
+  created: SyncItem[][];
   creation?: CreationState;
   saving: boolean;
   importing: boolean;
@@ -1025,7 +1040,22 @@ function InterpretationDraft({
   projectLink: ProjectLink | null;
   onCreate: (interpretation: Interpretation) => void;
 }) {
-  const [draft, setDraft] = useState(() => createDraft(result));
+  // 作ったものは作り直した下書きにも反映する。解釈を選び直して戻ってきた
+  // ときに、作成済みの項目が全部選ばれた状態に戻ると押し直しで重複する
+  // （ADR 0052）。
+  const [draft, setDraft] = useState(() =>
+    created.reduce(markCreated, createDraft(result)),
+  );
+  // 下書きに反映した作成の回数。**増えたぶんだけを反映する。** 前に作った
+  // 項目を選び直していたのに、今回の作成に載らなかったものまで外すと、選んだ
+  // 操作が黙って消える（`markCreated`）。
+  const [appliedCreations, setAppliedCreations] = useState(created.length);
+  if (created.length > appliedCreations) {
+    // 描画中に揃える。effect にすると、作成が済んだのに選択が残った 1 フレームで
+    // ボタンが押せてしまう。
+    setAppliedCreations(created.length);
+    setDraft((d) => created.slice(appliedCreations).reduce(markCreated, d));
+  }
 
   // 編集後の kind で組み直す。構造を変えたことがその場で見えるようにする。
   const groups = groupByEpic(draft.items.map((d) => d.item));
@@ -1035,6 +1065,10 @@ function InterpretationDraft({
   // LLM の答えに従うかどうか。既定は従う（ADR 0026）。
   const updatesPrevious = new Map(
     draft.items.map((d) => [d.item.localId, d.updatesPrevious]),
+  );
+  // この解釈から作った項目。
+  const createdItems = new Set(
+    draft.items.filter((d) => d.createdItemId).map((d) => d.item.localId),
   );
   const orphans = orphanedLocalIds(draft);
   const reasons = blockingReasons(draft, granularity);
@@ -1053,6 +1087,7 @@ function InterpretationDraft({
     <DraftItemFields
       item={item}
       selected={selected.get(item.localId) ?? false}
+      createdItem={createdItems.has(item.localId)}
       updatesPrevious={updatesPrevious.get(item.localId) ?? false}
       orphan={orphans.has(item.localId)}
       frozen={frozen}
@@ -1123,6 +1158,7 @@ function InterpretationDraft({
 function DraftItemFields({
   item,
   selected,
+  createdItem,
   updatesPrevious,
   orphan,
   frozen,
@@ -1135,6 +1171,13 @@ function DraftItemFields({
 }: {
   item: InterpretedItem;
   selected: boolean;
+  /**
+   * この解釈から作った項目かどうか（ADR 0052）。
+   *
+   * 作った項目は新規には戻せない。選び直すと、作った draft issue の書き換えに
+   * なる。
+   */
+  createdItem: boolean;
   /**
    * LLM が対応づけた更新先に、実際に書き込むかどうか。
    *
@@ -1203,10 +1246,25 @@ function DraftItemFields({
           決めるのは開発者（ADR 0026）。指す先が GitHub から消えていると、
           更新のままでは作成が必ず失敗する。
         */}
-        {item.previousItemId && updatesPrevious && (
-          <span className="badge badge-updated">更新</span>
+        {createdItem ? (
+          <span className="badge badge-created">作成した</span>
+        ) : (
+          item.previousItemId &&
+          updatesPrevious && <span className="badge badge-updated">更新</span>
         )}
       </div>
+
+      {/*
+        作った項目は、選び直すと書き換えになることを先に言う。チェックだけ
+        外れていると、作り損ねたのか作ったのかが読めない。
+      */}
+      {createdItem && (
+        <p className="hint">
+          {selected
+            ? "作成した draft issue を書き換えます。"
+            : "作成しました。選び直すと、作成した draft issue を書き換えます。"}
+        </p>
+      )}
 
       {/*
         **切り替えは見出しの行に置かない。** パネルは狭く、種別とタイトルが
@@ -1217,7 +1275,11 @@ function DraftItemFields({
         ここでは言わない。取り残しは作成ボタンの手前にまとめて出しており
         （ADR 0026）、同じことを 2 箇所で数えることになる。
       */}
-      {item.previousItemId && (
+      {/*
+        作った項目には出さない。作った ID の書き換えにしか送れないので
+        （`markCreated`）、選ばせるものが無い。
+      */}
+      {item.previousItemId && !createdItem && (
         <div className="draft-previous">
           <select
             value={updatesPrevious ? "update" : "create"}

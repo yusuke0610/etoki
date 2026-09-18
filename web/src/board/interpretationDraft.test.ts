@@ -7,6 +7,7 @@ import {
   createDraft,
   type Draft,
   leftBehindItemIds,
+  markCreated,
   orphanedLocalIds,
   setBody,
   setKind,
@@ -355,5 +356,101 @@ describe("buildInterpretation と previousItemId", () => {
     const built = buildInterpretation(draft);
     expect(built.items[0]?.previousItemId).toBe("PVTI_a");
     expect(built.items[1]?.previousItemId).toBeUndefined();
+  });
+});
+
+/** 作成の応答に載る 1 件。 */
+function created(localId: string, itemId: string): SyncItem {
+  return {
+    itemId,
+    kind: localId.startsWith("e") ? "epic" : "issue",
+    title: localId,
+    body: "",
+    localId,
+    action: "created",
+  };
+}
+
+// 作れた項目を、同じ下書きから新規に作らせない（ADR 0052、#139）。
+// draft issue は削除できないので、押し直しの重複は取り消せない。
+describe("markCreated", () => {
+  it("作れた項目は選択が外れ、残りは選ばれたまま", () => {
+    const draft = markCreated(createDraft(sample()), [
+      created("e1", "PVTI_e1"),
+      created("i1", "PVTI_i1"),
+    ]);
+
+    expect(selectedIds(draft)).toEqual(["i2", "i3"]);
+  });
+
+  it("全部作れたら、作るものが 1 件も選ばれていない理由で止まる", () => {
+    const draft = markCreated(
+      createDraft(sample()),
+      ["e1", "i1", "i2", "i3"].map((id) => created(id, `PVTI_${id}`)),
+    );
+
+    expect(blockingReasons(draft, "")).toContain("作るものが 1 件も選ばれていません。");
+  });
+
+  // **選び直しても新規には戻らない。** 作った ID を更新先として送るので、
+  // 押し直しは書き換えになり、重複は増えない。
+  it("選び直した作成済みの項目は、作った ID の更新として送る", () => {
+    let draft = markCreated(createDraft(sample()), [created("e1", "PVTI_e1")]);
+    draft = toggleItem(draft, "e1");
+
+    expect(sentItem(draft, "e1").previousItemId).toBe("PVTI_e1");
+  });
+
+  it("作成済みの項目は「新しく作る」に倒せない", () => {
+    let draft = markCreated(createDraft(sample()), [created("e1", "PVTI_e1")]);
+    draft = toggleItem(draft, "e1");
+    draft = setUpdatesPrevious(draft, "e1", false);
+
+    expect(sentItem(draft, "e1").previousItemId).toBe("PVTI_e1");
+  });
+
+  // LLM が対応づけた先があっても、作った ID を優先する。LLM の答えは消さない。
+  it("LLM の答えは残したまま、作った ID を更新先にする", () => {
+    const result = sample();
+    result.items[0] = { ...epic("e1"), previousItemId: "PVTI_old" };
+    // LLM の対応づけと、実際に作った ID を別の値にする。同じ値だと、どちらを
+    // 送っているのかをテストが見分けられない。
+    let draft = markCreated(createDraft(result), [created("e1", "PVTI_new")]);
+    draft = toggleItem(draft, "e1");
+
+    expect(draft.items[0]?.item.previousItemId).toBe("PVTI_old");
+    expect(sentItem(draft, "e1").previousItemId).toBe("PVTI_new");
+  });
+
+  // 部分失敗のいちばん多い形。epic は先に作られるので、epic だけ作れて子が
+  // 残る。子だけ送ると親に紐づけられないので、epic を選び直せば
+  // 「epic の更新 + 子の作成」で親子がつながる。
+  it("部分失敗のあと、epic を選び直すと子は親つきで作られる", () => {
+    let draft = markCreated(createDraft(sample()), [created("e1", "PVTI_e1")]);
+
+    // epic が外れたままでは、子は親なしになることを見せる。
+    expect(orphanedLocalIds(draft)).toEqual(new Set(["i1", "i2"]));
+
+    draft = toggleItem(draft, "e1");
+
+    expect(orphanedLocalIds(draft).size).toBe(0);
+    expect(sentItem(draft, "e1").previousItemId).toBe("PVTI_e1");
+    expect(sentItem(draft, "i1").previousItemId).toBeUndefined();
+    expect(sentItem(draft, "i1").parentLocalId).toBe("e1");
+  });
+
+  it("下書きに無い localId は無視する", () => {
+    const draft = markCreated(createDraft(sample()), [created("x9", "PVTI_x9")]);
+
+    expect(selectedIds(draft)).toEqual(["e1", "i1", "i2", "i3"]);
+  });
+
+  // 作ったばかりの item は畳み込みに入ってくる。どの項目からも指されていない
+  // ので、数えると「今回の作成では書き換わらない」一覧に自分が作ったものが並ぶ。
+  it("作った item は選択を外していても取り残しに数えない", () => {
+    const draft = markCreated(createDraft(sample()), [created("e1", "PVTI_e1")]);
+    const previous = [created("e1", "PVTI_e1"), created("zz", "PVTI_other")];
+
+    expect(leftBehindItemIds(draft, previous)).toEqual(new Set(["PVTI_other"]));
   });
 });

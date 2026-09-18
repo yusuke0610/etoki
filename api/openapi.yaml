@@ -607,6 +607,11 @@ paths:
         指す相手は login だが、一度 etoki にログインしている必要がある。
         未ログインの login 宛に招待を積むと、改名で空いた login を取った別人に
         権限が渡る。その場合は 400 を返す。
+
+        **`userId` には、招待の前に `lookupInvitee` で見せた相手を渡す**
+        （ADR 0053）。いまその login を持つ相手と違えば、招待せずに
+        `invitee_changed` の 409 を返す。確認してから押すまでのあいだに、
+        改名で空いた login を別人が取ったときに起きる。
       requestBody:
         required: true
         content:
@@ -629,11 +634,52 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: すでにメンバー
+          description: すでにメンバー、または確認した相手といまの持ち主が違う
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/boards/{id}/invitee:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [members]
+      operationId: lookupInvitee
+      summary: 招待する前に、login が誰に当たるのかを返す
+      description: |
+        **etoki が知っているのは「最後にその login でログインした人」まで**
+        （ADR 0053）。いまの持ち主は GitHub にしか分からないので、表示名と
+        最終ログインを見せて、招待する相手かどうかを owner に決めさせる。
+
+        引けるのは owner だけ。未ログインの login は招待と同じく 400 を返す。
+        招待の 400 からすでに分かることなので、新しく漏れる情報は無い。
+      parameters:
+        - name: login
+          in: query
+          required: true
+          description: 招待する相手の login。大文字小文字は区別しない
+          schema:
+            type: string
+      responses:
+        "200":
+          description: その login で最後にログインした利用者
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitee"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/NotConfigured"
         "500":
@@ -1289,6 +1335,7 @@ components:
         - content_hash_mismatch
         - previous_item_unknown
         - already_member
+        - invitee_changed
         - last_owner
         - target_not_selected
         - project_field_missing
@@ -1426,14 +1473,39 @@ components:
           type: string
           format: date-time
 
+    Invitee:
+      type: object
+      description: 招待する前に見せる、login が当たった利用者
+      required: [userId, login, displayName, lastSignedInAt]
+      properties:
+        userId:
+          type: string
+          description: etoki が発番した ID。招待のときにそのまま送り返す
+        login:
+          type: string
+          description: 最後にログインしたときの login
+        displayName:
+          type: string
+        lastSignedInAt:
+          type: string
+          format: date-time
+          description: |
+            最後に etoki にログインした時刻。login はこのときのもので、いまの
+            持ち主かどうかは GitHub にしか分からない
+
     InviteMemberRequest:
       type: object
       description: 招待のリクエストボディ
-      required: [login, role]
+      required: [login, userId, role]
       properties:
         login:
           type: string
           description: 招待する相手の login。一度 etoki にログインしている必要がある
+        userId:
+          type: string
+          description: |
+            `lookupInvitee` で確認した相手の ID。いまその login を持つ相手と
+            違えば 409（`invitee_changed`）
         role:
           $ref: "#/components/schemas/BoardRole"
 
@@ -1514,7 +1586,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/BoardSummary"
         - type: object
-          required: [scene, targetLocked]
+          required: [scene, targetLocked, sceneOverLimit]
           properties:
             scene:
               type: string
@@ -1525,6 +1597,18 @@ components:
                 作成先を変更できないことを表す。そのボードで draft issue を
                 1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
                 数えられないので、状態としてサーバーが返す
+            sceneOverLimit:
+              type: boolean
+              description: |
+                いま保存されているシーンが保存できる上限（ADR 0038）を超えて
+                いて、このままでは保存し直せないことを表す（issue #103）。
+                上限を導入する前に保存されたボードや、上限を引き下げた後にだけ
+                真になりうる。
+
+                **上限の数値そのものは返さない。** フロントは判定結果だけを
+                受け取り、上限を複製しない。`projectAccess` の
+                `unknown` / `allowed` / `denied` と同じで、判定はサーバーの
+                持ち場のまま
 
     BoardDeletion:
       type: object

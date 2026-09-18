@@ -1,5 +1,5 @@
 import type { Failure } from "../api/errorMessage";
-import type { Granularity, Interpretation } from "../api/types";
+import type { Granularity, Interpretation, SyncItem } from "../api/types";
 
 /**
  * 1 つの注釈に残す解釈の件数。
@@ -30,6 +30,17 @@ export type InterpretationRun = {
    */
   granularity: Granularity;
   result: Interpretation;
+  /**
+   * この解釈から作ったもの。作成の 1 回ごとに 1 要素で、古い順。
+   *
+   * **下書きではなく解釈の側に持つ**（ADR 0052）。下書きは解釈を選び直すと
+   * 作り直されるので、そちらだけに持つと、戻ってきたときに作成済みの項目が
+   * 全部選ばれた状態に戻る。解釈と同じく保存で捨てる（前提のシーンが変わる）。
+   *
+   * **回ごとに分けて持つ。** 下書きが外すのは 1 回の作成で増えたぶんだけ
+   * （`markCreated`）なので、平らにすると「どこまで反映したか」を数えられない。
+   */
+  created?: SyncItem[][];
 };
 
 /** 1 つの注釈ぶんの解釈の状態。 */
@@ -107,6 +118,25 @@ export function selectInterpretation(
 ): InterpretationState {
   if (!prev.runs.some((r) => r.id === id)) return prev;
   return { ...prev, selectedId: id };
+}
+
+/**
+ * 解釈から作った 1 回ぶんを積む。
+ *
+ * 上限を超えて落ちた id を指したら何もしない。
+ */
+export function recordCreated(
+  prev: InterpretationState,
+  id: number,
+  items: SyncItem[],
+): InterpretationState {
+  if (!prev.runs.some((r) => r.id === id)) return prev;
+  return {
+    ...prev,
+    runs: prev.runs.map((r) =>
+      r.id === id ? { ...r, created: [...(r.created ?? []), items] } : r,
+    ),
+  };
 }
 
 /** いま見ている解釈。1 件も無ければ undefined。 */

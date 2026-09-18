@@ -252,6 +252,39 @@ test.describe("取り込み", () => {
     await expect(page.locator(".badge-size")).not.toHaveText(size);
   });
 
+  // 取り込みは確認を経た置き換えだが、戻せるほうが失うものが少ない（#144）。
+  // 戻せないと、別のファイルを選び間違えただけで元の注釈に戻る道が無い。
+  test("取り込んだあと元に戻すと、元のキャンバスに戻る", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await expect(annotationFrames(page)).toHaveCount(3);
+
+    await chooseFile(page, importedFile());
+    await expect(annotationFrames(page)).toHaveCount(1);
+
+    await page.getByRole("button", { name: "元に戻す" }).click();
+    await expect(annotationFrames(page)).toHaveCount(3);
+    // 「未保存」は消えなくてよい。戻した要素は Excalidraw が version を上げて
+    // 書き戻すので、中身が同じでも未保存の署名（dirty.ts）は変わる。保存すべき
+    // でないものを保存させる向きの食い違いで、描いたものを失う向きではない。
+
+    // **取り込んだ画像は戻しても file store に残る**（addFiles は履歴に積まれない）。
+    // 残ったものが保存に紛れ込まないことを、書き出しで見る。書き出しは保存と同じ
+    // 直列化（`sceneJSON`）を通る。
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "書き出し" }).click(),
+    ]);
+    const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
+      elements: { id: string; isDeleted?: boolean }[];
+      files?: Record<string, unknown>;
+    };
+    const live = scene.elements.filter((el) => !el.isDeleted).map((el) => el.id);
+    expect(live).not.toContain("image-imported");
+    expect(Object.keys(scene.files ?? {})).not.toContain(IMAGE_FILE_ID);
+  });
+
   test("同じ id と version の要素でも位置が違えば未保存になる", async ({ page }) => {
     const mock = baseMock();
     const detail = mock.details[BOARD_ID];

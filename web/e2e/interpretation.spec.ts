@@ -369,6 +369,96 @@ test.describe("解釈と作成", () => {
     await expect(result.getByText("ログイン失敗を数える")).toHaveCount(0);
   });
 
+  // draft issue は削除できない（ADR 0009）。作ったあとも同じ解釈のまま押せると、
+  // 「反応が無かった気がする」もう 1 回で重複する（ADR 0052、#139）。
+  test("作成が済んだら、同じ解釈から押し直しても作らない", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+
+    const button = card.getByRole("button", { name: "GitHub に作成する" });
+    await expect(button).toBeDisabled();
+    await expect(card.getByText("作るものが 1 件も選ばれていません。")).toBeVisible();
+    for (const id of ["e1", "i1", "i2"]) {
+      await expect(card.getByLabel(`${id} を作成する`)).not.toBeChecked();
+    }
+    expect(mock.createRequests).toHaveLength(1);
+  });
+
+  // 解釈を選び直すと下書きは作り直される。戻ってきたときに作成済みが全部
+  // 選ばれていると、押し直しで重複する。
+  test("別の解釈を見てから戻っても、作った項目は選ばれていない", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+
+    await card.getByRole("button", { name: "解釈する" }).click();
+    const history = card.getByLabel("解釈結果");
+    await expect(history.locator("option")).toHaveCount(2);
+    // 引き直した解釈は別の下書き。こちらから作ったものは無い。
+    await expect(card.getByLabel("e1 を作成する")).toBeChecked();
+
+    await history.selectOption({ index: 1 });
+    for (const id of ["e1", "i1", "i2"]) {
+      await expect(card.getByLabel(`${id} を作成する`)).not.toBeChecked();
+    }
+  });
+
+  // 部分失敗のいちばん多い形。epic が先に作られるので、epic だけ作れて子が残る。
+  // 残りを作るつもりの押し直しで、作れていた epic を重複させない。epic を
+  // 選び直せば、作った ID の書き換えとして一緒に送られ、子に親が付く。
+  test("途中で失敗したあと、残りの子は作った epic の下に作れる", async ({ page }) => {
+    const mock = baseMock();
+    mock.createItems = {
+      status: 201,
+      body: {
+        ...createdRun(),
+        items: createdRun().items.slice(0, 1),
+        incomplete: true,
+        error: "github: rate limited",
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(card.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
+
+    await expect(card.getByLabel("e1 を作成する")).not.toBeChecked();
+    await expect(card.getByLabel("i1 を作成する")).toBeChecked();
+    await expect(card.getByLabel("i2 を作成する")).toBeChecked();
+    // epic が外れたままなら、子は親なしで作られることを先に見せる。
+    await expect(card.getByText("epic に属さない issue として作られます。")).toHaveCount(
+      2,
+    );
+
+    await card.getByLabel("e1 を作成する").check();
+    await expect(card.getByText("作成した draft issue を書き換えます。")).toBeVisible();
+    await expect(card.getByText("epic に属さない issue として作られます。")).toHaveCount(
+      0,
+    );
+
+    mock.createItems = { status: 201, body: createdRun() };
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    expect(mock.createRequests).toHaveLength(2);
+
+    const second = mock.createRequests[1];
+    const byId = new Map((second?.items ?? []).map((it) => [it.localId, it]));
+    expect(byId.get("e1")?.previousItemId).toBe("PVTI_1");
+    expect(byId.get("i1")?.previousItemId).toBeUndefined();
+    expect(byId.get("i1")?.parentLocalId).toBe("e1");
+    expect(byId.get("i2")?.previousItemId).toBeUndefined();
+    expect(byId.get("i2")?.parentLocalId).toBe("e1");
+  });
+
   test("LLM が未設定なら、その注釈の中だけにエラーを出す", async ({ page }) => {
     const mock = baseMock();
     mock.interpret = {

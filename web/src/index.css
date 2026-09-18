@@ -355,9 +355,17 @@ body {
 /*
  * 外した項目も残して薄くする。消すと、何を外したのかが確かめられない
  * （中核思想 3）。
+ *
+ * **薄くするのは入力欄だけ。** 行ごと薄くすると、その中に出す説明（作成した
+ * 項目の案内、ADR 0052）や本文の開閉まで AA の 4.5:1 を切る。外した行でも
+ * 読ませる文があるので、文字の色は落とさない（ADR 0039）。
+ *
+ * **入力欄も `opacity` では薄くしない。** 中の文字ごと透けて、選び直す前に
+ * 読む種別やタイトルが 4.5:1 を切る。薄さは AA を満たす灰色の文字で出す。
  */
-.draft-item.unselected {
-  opacity: 0.55;
+.draft-item.unselected :is(select, input:not([type="checkbox"]), textarea) {
+  color: #6b6b6b;
+  border-color: #ddd;
 }
 
 .draft-kind,
@@ -440,6 +448,20 @@ body {
  * よいかを続けて読ませる必要があり、バッジに収まる長さにならない。
  */
 .conflict {
+  background: #fdf0d5;
+  color: #8a5a00;
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+/*
+ * 保存済みシーンが保存できる上限を超えている状態（issue #103、ADR 0038）。
+ *
+ * .conflict と同じ「注意の帯」なので見た目も揃える。**失敗ではない。**
+ * 描いたものは残っており、保存だけがこのままでは通らない。
+ */
+.scene-limit-warning {
   background: #fdf0d5;
   color: #8a5a00;
   padding: 8px 12px;
@@ -706,6 +728,25 @@ a.badge-target:hover {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* 招待する前に見せる相手（ADR 0053）。ID は長いので折り返させる。 */
+.invitee dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 8px;
+  margin: 8px 0;
+}
+
+.invitee dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.invitee-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /*
