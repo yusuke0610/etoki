@@ -1,4 +1,4 @@
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -636,6 +636,11 @@ export function BoardPage({
    *
    * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0045）。
    * 表示状態そのものはここで触らない。
+   *
+   * **ここを通る変更は、人の操作として「元に戻す」に積む**（#144）。付箋・図の
+   * ドラフト・注釈の付け外しと種別・取り込みが通る。どれも開発者が押して
+   * 起こした変更で、置き間違いを戻す手段が要る。取り込みは確認を経た置き換え
+   * だが、戻せるほうが失うものが少ない。
    */
   const updateElements = useCallback(
     (next: SceneElement[], appState?: Record<string, unknown>) => {
@@ -645,7 +650,14 @@ export function BoardPage({
       const background =
         (appState?.viewBackgroundColor as string | undefined) ?? currentBackground();
 
-      api?.updateScene({ elements: next as never, appState: appState as never });
+      // `captureUpdate` の既定（EVENTUALLY）はすぐには履歴に積まない。積まれない
+      // まま次の操作と一緒に記録されるので、戻すとこの変更ではなく直前に描いた
+      // ものが消える。
+      api?.updateScene({
+        elements: next as never,
+        appState: appState as never,
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
       // onChange の発火を待たずにここでも判定する。注釈の付け外しが未保存として
       // 出るかどうかを、updateScene が onChange を呼ぶかに依存させない。
       applySignature(sceneSignature(next, background));

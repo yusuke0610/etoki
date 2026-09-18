@@ -730,6 +730,25 @@ a.badge-target:hover {
   overflow-wrap: anywhere;
 }
 
+/* 招待する前に見せる相手（ADR 0053）。ID は長いので折り返させる。 */
+.invitee dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 8px;
+  margin: 8px 0;
+}
+
+.invitee dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.invitee-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /*
  * 書き換える項目の印（ADR 0026）。作るのか書き換えるのかは押す前に見えている
  * 必要がある。どちらも取り消せないが、書き換えは前の内容を消す。

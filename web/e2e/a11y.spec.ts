@@ -501,6 +501,13 @@ test.describe("axe（etoki が書いた DOM）", () => {
     await page.getByText("Bob").waitFor();
 
     await expectNoAxeViolations(page);
+
+    // 招待する前の確認（ADR 0053）も、確認を押すまで DOM に出ない。
+    await page.getByLabel("招待する login").fill("carol");
+    await page.getByRole("button", { name: "確認する" }).click();
+    await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
+
+    await expectNoAxeViolations(page);
   });
 
   // 解釈結果は画面の中でいちばん要素が多い。作る前に読ませる場所なので

@@ -157,6 +157,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 共有。招待される側にリポジトリのアクセス権は要らない（ADR 0017）。
 		api.GET("/boards/:id/members", h.listBoardMembers)
 		api.POST("/boards/:id/members", h.inviteBoardMember)
+		api.GET("/boards/:id/invitee", h.lookupInvitee)
 		api.PUT("/boards/:id/members/:userId", h.setBoardMemberRole)
 		api.DELETE("/boards/:id/members/:userId", h.removeBoardMember)
 		// 解釈と作成は別のエンドポイントに保つ。解釈結果を見た開発者が
