@@ -53,6 +53,15 @@ const DefaultAddr = "127.0.0.1:8080"
 // shutdownTimeout は graceful shutdown で処理中のリクエストを待つ上限。
 const shutdownTimeout = 10 * time.Second
 
+// cancelRequestsAfter は停止を始めてから、処理中のリクエストの ctx を切るまでの長さ。
+//
+// **猶予が尽きるまで待たせたままにしない。** Shutdown は処理中のハンドラを
+// 待つだけで ctx は切らないので、猶予を超えた作成はプロセスごと終わり、GitHub に
+// 作ったのに run が残らない（#140）。猶予の半分で切れば、作成は次の 1 件に
+// 手を付けずに止まり、書き込み中の 1 件が返れば残り半分で記録まで終わる
+// （ADR 0051）。
+const cancelRequestsAfter = shutdownTimeout / 2
+
 // Options は Server の組み立てに必要な設定と依存を束ねる。
 //
 // リポジトリを引数で受け取るのは、利用者が独自の実装を差し込めるようにする
@@ -156,6 +165,10 @@ func NewAuthenticator(
 type Server struct {
 	addr    string
 	handler http.Handler
+
+	// 停止の猶予。テストで短くするためにフィールドで持つ。
+	shutdownTimeout     time.Duration
+	cancelRequestsAfter time.Duration
 }
 
 // New は Options を検証し Server を組み立てる。
@@ -236,7 +249,12 @@ func New(opts Options) (*Server, error) {
 
 	warnIfExposedWithoutAuth(addr, opts.Auth != nil, opts.Logger)
 
-	return &Server{addr: addr, handler: handler}, nil
+	return &Server{
+		addr:                addr,
+		handler:             handler,
+		shutdownTimeout:     shutdownTimeout,
+		cancelRequestsAfter: cancelRequestsAfter,
+	}, nil
 }
 
 // warnIfExposedWithoutAuth は認証なしで公開インターフェースにバインドしたことを
@@ -310,10 +328,17 @@ func (s *Server) Handler() http.Handler { return s.handler }
 // Run はサーバーを起動し、ctx がキャンセルされたら graceful shutdown する。
 // 正常に停止した場合は nil を返す。
 func (s *Server) Run(ctx context.Context) error {
+	// リクエストの ctx の親。停止の途中で切るために、Run の ctx とは別に持つ。
+	// Run の ctx をそのまま親にすると、停止を始めた瞬間に処理中の保存まで
+	// 切れる。
+	requests, cancelRequests := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelRequests()
+
 	srv := &http.Server{
 		Addr:              s.addr,
 		Handler:           s.handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return requests },
 	}
 
 	errCh := make(chan error, 1)
@@ -333,8 +358,11 @@ func (s *Server) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		// ctx はすでにキャンセル済みなので、そのまま渡すと Shutdown が
 		// 即座に打ち切られる。猶予を持たせるためキャンセルを切り離す。
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.shutdownTimeout)
 		defer cancel()
+
+		stop := time.AfterFunc(s.cancelRequestsAfter, cancelRequests)
+		defer stop.Stop()
 
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown: %w", err)

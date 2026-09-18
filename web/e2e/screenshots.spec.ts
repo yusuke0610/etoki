@@ -82,6 +82,12 @@ test.describe("スクリーンショット", () => {
     // GitHub へ辿るリンク（ADR 0025）が画面の外に残る。
     await card.locator(".creation-result").scrollIntoViewIfNeeded();
     await shot(page, "04-created");
+
+    // 作れた項目は選択が外れ、同じ解釈からは新規に作れない（ADR 0052）。
+    // 選び直すと書き換えになることを、下書きの側で読める画面を撮る。
+    await card.getByLabel("e1 を作成する").check();
+    await card.getByLabel("e1 を作成する").scrollIntoViewIfNeeded();
+    await shot(page, "04-created-draft");
   });
 
   // changed の注釈に更新の出口ができた（ADR 0026）。何が書き換わり、何が

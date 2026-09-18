@@ -22,6 +22,18 @@ export type DraftItem = {
    * 既定は LLM の答え。**触られたときだけ変わる。**
    */
   updatesPrevious: boolean;
+
+  /**
+   * この下書きから作った draft issue の itemId。まだ作っていなければ undefined。
+   *
+   * **作れた項目を同じ下書きから新規に作らせない**（ADR 0052）。draft issue は
+   * 削除できないので、押し直しで重複すると取り消せない。選び直せば、この ID を
+   * 更新先として送る。
+   *
+   * **`item.previousItemId` には書き込まない。** あちらは LLM の答えで、残す
+   * 約束がある（`updatesPrevious`）。
+   */
+  createdItemId?: string;
 };
 
 /**
@@ -47,6 +59,47 @@ export function createDraft(result: Interpretation): Draft {
       selected: true,
       updatesPrevious: Boolean(item.previousItemId),
     })),
+  };
+}
+
+/**
+ * その項目を送るときの更新先。新しく作るなら undefined。
+ *
+ * **作った ID が先。** 作ったあとに「新しく作る」へ倒せると、同じ下書きから
+ * 重複を作る道が戻る。
+ */
+function targetItemIdOf(d: DraftItem): string | undefined {
+  if (d.createdItemId) return d.createdItemId;
+  return d.updatesPrevious ? d.item.previousItemId : undefined;
+}
+
+/**
+ * 作成の応答に載った項目を「この下書きから作ったもの」にする（ADR 0052）。
+ *
+ * 載った項目は選択を外す。全部作れたら何も選ばれていないので、ボタンは
+ * `blockingReasons` の理由で止まる。途中で失敗したなら、残りだけが選ばれた
+ * まま残る。
+ *
+ * **作った epic を外すと、その子は親なしに見える。** 親は同じリクエストに
+ * 載った epic のタイトルで指すため（ADR 0006）。epic を選び直せば、作った ID の
+ * 更新として一緒に送られて親子がつながる。**勝手に選び直さない。** どちらに
+ * するかは開発者が決める（中核思想 3）。親なしになることは画面に出ている
+ * （`orphanedLocalIds`）。
+ *
+ * 渡すのは 1 回の作成で増えたぶんだけにする。前に作った項目を選び直して
+ * いたのに、今回の作成に載らなかった（手前で失敗した）ものまで外すと、
+ * 選んだ操作が黙って消える。
+ */
+export function markCreated(draft: Draft, created: SyncItem[]): Draft {
+  const byLocalId = new Map(created.map((it) => [it.localId, it.itemId]));
+
+  return {
+    ...draft,
+    items: draft.items.map((d) => {
+      const itemId = byLocalId.get(d.item.localId);
+      if (itemId === undefined) return d;
+      return { ...d, selected: false, createdItemId: itemId };
+    }),
   };
 }
 
@@ -157,7 +210,9 @@ export function setUpdatesPrevious(
   return {
     ...draft,
     items: draft.items.map((d) =>
-      d.item.localId === localId ? { ...d, updatesPrevious } : d,
+      // 作った項目は更新にしか送れない（`targetItemIdOf`）。切り替えだけ
+      // 受け付けると、画面と送るものが食い違う。
+      d.item.localId === localId && !d.createdItemId ? { ...d, updatesPrevious } : d,
     ),
   };
 }
@@ -182,11 +237,10 @@ export function buildInterpretation(draft: Draft): Interpretation {
       };
       if (parentLocalId !== undefined) item.parentLocalId = parentLocalId;
       // 対応づけは開発者が確かめたものを送り返す。**新しく作るに倒したら
-      // 送らない**（ADR 0026）。サーバー側の検査（previous_item_unknown）は
-      // そのまま効く。
-      if (d.updatesPrevious && d.item.previousItemId) {
-        item.previousItemId = d.item.previousItemId;
-      }
+      // 送らない**（ADR 0026）。この下書きから作った項目は、作った ID を送る
+      // （ADR 0052）。サーバー側の検査（previous_item_unknown）はそのまま効く。
+      const target = targetItemIdOf(d);
+      if (target) item.previousItemId = target;
       return item;
     });
 
@@ -257,11 +311,18 @@ export function blockingReasons(draft: Draft, granularity: Granularity): string[
  * 片方だけ取り残しに出さないと、押す前に見せている数が実際と食い違う。
  */
 export function leftBehindItemIds(draft: Draft, previous: SyncItem[]): Set<string> {
-  const claimed = new Set(
-    draft.items
-      .filter((d) => d.selected && d.updatesPrevious && d.item.previousItemId)
-      .map((d) => d.item.previousItemId as string),
-  );
+  const claimed = new Set<string>();
+  for (const d of draft.items) {
+    // **この下書きから作ったものは、選択を外していても数えない**（ADR 0052）。
+    // 作った直後の item は畳み込みに入ってくるので、数えると自分が今作った
+    // ものが「置き去り」として並ぶ。
+    if (d.createdItemId) {
+      claimed.add(d.createdItemId);
+      continue;
+    }
+    const target = targetItemIdOf(d);
+    if (d.selected && target) claimed.add(target);
+  }
 
   return new Set(previous.map((it) => it.itemId).filter((id) => !claimed.has(id)));
 }
