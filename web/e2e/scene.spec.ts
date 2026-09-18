@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, summarize, type ApiMock } from "./helpers/api";
-import { drawRectangle, openBoard } from "./helpers/board";
+import { holdCreate, installApi, summarize, type ApiMock } from "./helpers/api";
+import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
@@ -177,6 +177,38 @@ test.describe("シーンの保存", () => {
     // 待たないので、確認が出たかどうかは後から見る。
     await page.close({ runBeforeUnload: true });
     await expect.poll(() => types).toContain("beforeunload");
+  });
+
+  // 解釈は保存を要求するので、作成を押す時点ではふつう保存済み。未保存だけを
+  // 見ていると、作成中にタブを閉じても何も訊かれず、作成はそこで止まる
+  // （ADR 0051、#140）。
+  test("作成中にタブを閉じようとすると、ブラウザの確認が出る", async ({ page }) => {
+    await installApi(page, baseMock());
+    let release = () => {};
+    await holdCreate(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(card.getByRole("button", { name: "作成中…" })).toBeVisible();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    const types: string[] = [];
+    page.on("dialog", (dialog) => {
+      types.push(dialog.type());
+      void dialog.dismiss();
+    });
+
+    await page.close({ runBeforeUnload: true });
+    await expect.poll(() => types).toContain("beforeunload");
+    release();
   });
 
   // 止めるのは「知らせずに捨てる」ことだけ。捨てると決めたなら通す（中核思想 3）。
