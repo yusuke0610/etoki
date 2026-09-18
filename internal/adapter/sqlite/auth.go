@@ -32,11 +32,31 @@ func NewSessionRepository(db *sql.DB, box secret.Box) *SessionRepository {
 var _ port.SessionRepository = (*SessionRepository)(nil)
 
 // UpsertUser は provider と subject で利用者を引き当て、無ければ作る。
+//
+// **同じ login を持つ他の行からは login を外す**（ADR 0053）。login は
+// ログインしたときにしか書き換わらないので、改名で空いた login を別人が取ると
+// 以前の持ち主の行が同じ login を名乗り続ける。いまその login でログインした
+// のはこの利用者なので、引き当てはここに寄せる。
 func (r *SessionRepository) UpsertUser(ctx context.Context, u port.User) (port.User, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return port.User{}, fmt.Errorf("begin upsert user: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// updated_at は触らない。「最後にログインした時刻」で、招待の確認に出す。
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET login = ''
+		 WHERE provider = ? AND subject <> ? AND login <> '' AND login = ? COLLATE NOCASE`,
+		u.Provider, u.Subject, u.Login,
+	); err != nil {
+		return port.User{}, fmt.Errorf("release login %q: %w", u.Login, err)
+	}
+
 	// login と display_name は変わりうるので毎回書く。id と created_at は
 	// 既存のものを保つ。ここで id を振り直すと、ボードの所有者（PR-C）を
 	// 見失う。
-	_, err := r.db.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO users (id, provider, subject, login, display_name, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (provider, subject) DO UPDATE SET
@@ -45,18 +65,21 @@ func (r *SessionRepository) UpsertUser(ctx context.Context, u port.User) (port.U
 		   updated_at = excluded.updated_at`,
 		r.newID(), u.Provider, u.Subject, u.Login, u.DisplayName,
 		formatTime(u.CreatedAt), formatTime(u.UpdatedAt),
-	)
-	if err != nil {
+	); err != nil {
 		return port.User{}, fmt.Errorf("upsert user %s/%s: %w", u.Provider, u.Subject, err)
 	}
 
-	row := r.db.QueryRowContext(ctx,
+	row := tx.QueryRowContext(ctx,
 		`SELECT `+userColumns+` FROM users WHERE provider = ? AND subject = ?`,
 		u.Provider, u.Subject)
 
 	got, err := scanUser(row)
 	if err != nil {
 		return port.User{}, fmt.Errorf("read back user %s/%s: %w", u.Provider, u.Subject, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return port.User{}, fmt.Errorf("commit upsert user %s/%s: %w", u.Provider, u.Subject, err)
 	}
 
 	return got, nil
@@ -114,11 +137,20 @@ func (r *SessionRepository) FindUsers(ctx context.Context, ids []string) ([]port
 }
 
 // FindUserByLogin は login で利用者を引く。存在しなければ (nil, nil) を返す。
+//
+// 大文字小文字は区別しない（GitHub の login と同じ）。同じ login を持つ行は
+// 1 つに保ってある（`UpsertUser` と一意索引、ADR 0053）。
 func (r *SessionRepository) FindUserByLogin(
 	ctx context.Context, provider, login string,
 ) (*port.User, error) {
+	// 外した login は空文字で持っている。空の入力でそのどれかを引かない。
+	if login == "" {
+		return nil, nil
+	}
+
 	row := r.db.QueryRowContext(ctx,
-		`SELECT `+userColumns+` FROM users WHERE provider = ? AND login = ?`, provider, login)
+		`SELECT `+userColumns+` FROM users
+		 WHERE provider = ? AND login <> '' AND login = ? COLLATE NOCASE`, provider, login)
 
 	u, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {

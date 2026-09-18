@@ -398,8 +398,41 @@ export interface paths {
          *     指す相手は login だが、一度 etoki にログインしている必要がある。
          *     未ログインの login 宛に招待を積むと、改名で空いた login を取った別人に
          *     権限が渡る。その場合は 400 を返す。
+         *
+         *     **`userId` には、招待の前に `lookupInvitee` で見せた相手を渡す**
+         *     （ADR 0053）。いまその login を持つ相手と違えば、招待せずに
+         *     `invitee_changed` の 409 を返す。確認してから押すまでのあいだに、
+         *     改名で空いた login を別人が取ったときに起きる。
          */
         post: operations["inviteBoardMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/invitee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 招待する前に、login が誰に当たるのかを返す
+         * @description **etoki が知っているのは「最後にその login でログインした人」まで**
+         *     （ADR 0053）。いまの持ち主は GitHub にしか分からないので、表示名と
+         *     最終ログインを見せて、招待する相手かどうかを owner に決めさせる。
+         *
+         *     引けるのは owner だけ。未ログインの login は招待と同じく 400 を返す。
+         *     招待の 400 からすでに分かることなので、新しく漏れる情報は無い。
+         */
+        get: operations["lookupInvitee"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -711,7 +744,7 @@ export interface components {
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -796,10 +829,29 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        /** @description 招待する前に見せる、login が当たった利用者 */
+        Invitee: {
+            /** @description etoki が発番した ID。招待のときにそのまま送り返す */
+            userId: string;
+            /** @description 最後にログインしたときの login */
+            login: string;
+            displayName: string;
+            /**
+             * Format: date-time
+             * @description 最後に etoki にログインした時刻。login はこのときのもので、いまの
+             *     持ち主かどうかは GitHub にしか分からない
+             */
+            lastSignedInAt: string;
+        };
         /** @description 招待のリクエストボディ */
         InviteMemberRequest: {
             /** @description 招待する相手の login。一度 etoki にログインしている必要がある */
             login: string;
+            /**
+             * @description `lookupInvitee` で確認した相手の ID。いまその login を持つ相手と
+             *     違えば 409（`invitee_changed`）
+             */
+            userId: string;
             role: components["schemas"]["BoardRole"];
         };
         /** @description ロール変更のリクエストボディ */
@@ -1989,7 +2041,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description すでにメンバー */
+            /** @description すでにメンバー、または確認した相手といまの持ち主が違う */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1998,6 +2050,38 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    lookupInvitee: {
+        parameters: {
+            query: {
+                /** @description 招待する相手の login。大文字小文字は区別しない */
+                login: string;
+            };
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description その login で最後にログインした利用者 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitee"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["NotConfigured"];
         };

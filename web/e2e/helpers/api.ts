@@ -19,6 +19,8 @@ import type {
   GenerateDiagramRequest,
   Interpretation,
   InterpretRequest,
+  Invitee,
+  InviteMemberRequest,
   LoginResponse,
   Project,
   Repository,
@@ -129,6 +131,13 @@ export type ApiMock = {
   members?: Record<string, BoardMember[]>;
   /** 招待を失敗させたいときに指定する。 */
   inviteError?: Reply<never>;
+  /**
+   * 招待する前の引き当てを失敗させたいときに指定する（ADR 0053）。
+   *
+   * 無ければ、どの login も `user-<login>` として引き当てる。一度ログインした
+   * 相手を spec ごとに並べさせないため。
+   */
+  lookupInviteeError?: Reply<never>;
   /** 改名を失敗させたいときに指定する。 */
   renameError?: Reply<never>;
   /**
@@ -570,7 +579,16 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
           return;
         }
 
-        const req = route.request().postDataJSON() as { login: string; role: BoardRole };
+        const req = route.request().postDataJSON() as InviteMemberRequest;
+        // サーバーと同じく、確認した相手を指さない招待は受けない。受けると、
+        // 画面が確認を飛ばして送っていても緑になる。
+        if (!req.userId) {
+          await json(route, 400, {
+            code: "invalid_input",
+            error: "etoki: invalid input: userId is required",
+          } satisfies ErrorResponse);
+          return;
+        }
         const member: BoardMember = {
           userId: `user-${req.login}`,
           login: req.login,
@@ -591,6 +609,29 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       }
 
       await json(route, 200, mock.members[id]);
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/invitee$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      if (mock.lookupInviteeError) {
+        await json(route, mock.lookupInviteeError.status, mock.lookupInviteeError.body);
+        return;
+      }
+
+      const login = new URL(route.request().url()).searchParams.get("login") ?? "";
+      const invitee: Invitee = {
+        userId: `user-${login}`,
+        login,
+        displayName: login,
+        lastSignedInAt: "2026-08-01T09:30:00Z",
+      };
+      await json(route, 200, invitee);
     },
   );
 
