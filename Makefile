@@ -207,14 +207,25 @@ reset-db: ## ボードと作成の記録（etoki.db）を消す。etoki を止�
 	@# 続け、そのあいだの書き込み（作成の記録を含む）は閉じた時点で失われる。
 	@# WAL の接続は DB を一度読むと閉じるまで共有ロックを持ち続けるので、排他で
 	@# 開けるかで残りが分かる（SQLite が最後の接続を閉じるときの判定と同じ）。
-	@# 止めるのはロックで開けないときだけ。壊れた DB で止めると reset-db で
-	@# 消せなくなる。無いファイルを渡すと空の DB ができるので、あるときだけ試す。
-	@if [ -e "$(DB_PATH)" ] && sqlite3 -- "$(DB_PATH)" \
-		'PRAGMA locking_mode=EXCLUSIVE; SELECT count(*) FROM sqlite_master;' 2>&1 >/dev/null \
-		| grep -q 'database is locked'; then \
-		echo "$(DB_PATH) を開いている接続があるので、消さずに止めました。"; \
-		echo "etoki（make dev / make start）や sqlite3 を止めてから、もう一度実行してください。"; \
-		exit 1; \
+	@# 止めるのは、ロックで開けないときと、sqlite3 が動かず確かめられないとき
+	@# （終了コード 2 以上）。SQL のエラー（1）では止めない。壊れた DB で止めると
+	@# reset-db で消せなくなる。無いファイルを渡すと空の DB ができるので、ある
+	@# ときだけ試す。確かめてから消すまでのあいだに開かれた接続は防げない。
+	@# etoki を止めてから呼ぶ前提（README）の上での、取り違えへの歯止め。
+	@if [ -e "$(DB_PATH)" ]; then \
+		out=$$(sqlite3 -- "$(DB_PATH)" \
+			'PRAGMA locking_mode=EXCLUSIVE; SELECT count(*) FROM sqlite_master;' 2>&1 >/dev/null); \
+		rc=$$?; \
+		if printf '%s\n' "$$out" | grep -q 'database is locked'; then \
+			echo "$(DB_PATH) を開いている接続があるので、消さずに止めました。"; \
+			echo "etoki（make dev / make start）や sqlite3 を止めてから、もう一度実行してください。"; \
+			exit 1; \
+		fi; \
+		if [ "$$rc" -gt 1 ]; then \
+			echo "sqlite3 で $(DB_PATH) を確かめられないので、消さずに止めました（終了コード $${rc}）。"; \
+			[ -z "$$out" ] || printf '%s\n' "$$out"; \
+			exit 1; \
+		fi; \
 	fi
 	@# DB_PATH は上書きできるので、空白や glob を含んでも 1 つのパスとして渡す。
 	@# 分割や展開を許すと、CONFIRM=1 で認めた範囲より広く消える。
