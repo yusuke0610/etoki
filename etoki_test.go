@@ -192,6 +192,67 @@ func TestRunShutsDownOnContextCancel(t *testing.T) {
 	}
 }
 
+// 停止の猶予が尽きる前に、処理中のリクエストの ctx を切る（ADR 0051、#140）。
+//
+// Shutdown は処理中のハンドラを待つだけなので、切らないと作成は猶予を超えて
+// 走り続け、プロセスごと終わって記録が残らない。ctx が切れれば作成は次の 1 件に
+// 手を付けずに止まり、残りの猶予で run を記録できる。
+func TestRunCancelsInFlightRequestsBeforeShutdownTimeout(t *testing.T) {
+	t.Parallel()
+
+	entered := make(chan struct{})
+	sawCancel := make(chan bool, 1)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		select {
+		case <-r.Context().Done():
+			sawCancel <- true
+		case <-time.After(10 * time.Second):
+			sawCancel <- false
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	// 猶予は長く、切るまでは短く取る。切らない実装だと猶予いっぱい待って
+	// Shutdown がタイムアウトする。
+	srv := etoki.NewServerForTest(freeAddr(t), h, 5*time.Second, 50*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	waitForListener(t, srv.Addr())
+
+	go func() {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+srv.Addr()+"/", nil)
+		if err != nil {
+			return
+		}
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler was not entered")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run: %v, want 猶予内に停止する", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return before the shutdown timeout")
+	}
+
+	if !<-sawCancel {
+		t.Error("処理中のリクエストの ctx が切れていない")
+	}
+}
+
 func TestRunReportsListenFailure(t *testing.T) {
 	t.Parallel()
 

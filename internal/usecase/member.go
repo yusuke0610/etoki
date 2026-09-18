@@ -22,6 +22,14 @@ var (
 	// 通すと、誰も招待できず作成先も変えられないボードが残る。所有者のいない
 	// ボードは etoki claim でしか戻せない（ADR 0016）ので、画面からは直せない。
 	ErrLastOwner = errors.New("etoki: board would have no owner")
+
+	// ErrInviteeChanged は、確認で見せた相手と、いまその login を持つ相手が
+	// 違うことを表す（ADR 0053）。
+	//
+	// 確認してから押すまでのあいだに、改名で空いた login を別人がログインして
+	// 取ると起きる。黙っていまの持ち主を招待すると、確認で見せた相手と違う人に
+	// 権限が渡る。
+	ErrInviteeChanged = errors.New("etoki: the login now belongs to a different user")
 )
 
 // Member は表示に必要な情報を添えたメンバー。
@@ -105,12 +113,38 @@ func (s *BoardMemberService) List(ctx context.Context, boardID string) ([]Member
 	return s.withUsers(ctx, members)
 }
 
-// Invite は login で指した利用者をメンバーに加える。
+// LookupInvitee は、招待の前に login が誰に当たるのかを返す（ADR 0053）。
+//
+// **etoki が知っているのは「最後にその login でログインした人」まで。** いまの
+// 持ち主は GitHub にしか分からないので、表示名と最終ログインを見せて owner に
+// 決めさせる（中核思想 3）。招待できるのは owner だけなので、引けるのも owner
+// だけにする。
+func (s *BoardMemberService) LookupInvitee(
+	ctx context.Context, boardID, login string,
+) (port.User, error) {
+	if login == "" {
+		return port.User{}, fmt.Errorf("%w: login is required", ErrInvalidInput)
+	}
+	if _, err := s.access(ctx, boardID, port.RoleOwner); err != nil {
+		return port.User{}, err
+	}
+
+	return s.signedInUser(ctx, login)
+}
+
+// Invite は、確認で見せた利用者をメンバーに加える。
+//
+// **login と userID の両方を受け取る。** login だけで通すと確認を飛ばす経路が
+// 残り、いまの持ち主を引き直すだけになる。引き直した相手が userID と違えば
+// ErrInviteeChanged で止める。
 func (s *BoardMemberService) Invite(
-	ctx context.Context, boardID, login string, role port.BoardRole,
+	ctx context.Context, boardID, login, userID string, role port.BoardRole,
 ) (Member, error) {
 	if login == "" {
 		return Member{}, fmt.Errorf("%w: login is required", ErrInvalidInput)
+	}
+	if userID == "" {
+		return Member{}, fmt.Errorf("%w: userId is required", ErrInvalidInput)
 	}
 	if !role.Valid() {
 		return Member{}, fmt.Errorf("%w: unknown role %q", ErrInvalidInput, role)
@@ -119,15 +153,12 @@ func (s *BoardMemberService) Invite(
 		return Member{}, err
 	}
 
-	user, err := s.users.FindUserByLogin(ctx, login)
+	user, err := s.signedInUser(ctx, login)
 	if err != nil {
 		return Member{}, err
 	}
-	if user == nil {
-		// 未ログインの login 宛に招待を積まない。login は改名で変わるので、
-		// 空いた login を取った別人に権限が渡る（ADR 0017）。
-		return Member{}, fmt.Errorf(
-			"%w: %q has not signed in to etoki yet", ErrInvalidInput, login)
+	if user.ID != userID {
+		return Member{}, fmt.Errorf("%w: %s", ErrInviteeChanged, login)
 	}
 
 	// 招待は排他を取らない。重複は board_members の主キーが弾き、
@@ -146,6 +177,21 @@ func (s *BoardMemberService) Invite(
 	}
 
 	return Member{Membership: m, Login: user.Login, DisplayName: user.DisplayName}, nil
+}
+
+// signedInUser は login で一度ログインした利用者を引く。
+func (s *BoardMemberService) signedInUser(ctx context.Context, login string) (port.User, error) {
+	user, err := s.users.FindUserByLogin(ctx, login)
+	if err != nil {
+		return port.User{}, err
+	}
+	if user == nil {
+		// 未ログインの login 宛に招待を積まない。login は改名で変わるので、
+		// 空いた login を取った別人に権限が渡る（ADR 0017）。
+		return port.User{}, fmt.Errorf(
+			"%w: %q has not signed in to etoki yet", ErrInvalidInput, login)
+	}
+	return *user, nil
 }
 
 // SetRole はメンバーのロールを変える。

@@ -45,6 +45,7 @@ const (
 	ErrorCodeInternal             ErrorCode = "internal"
 	ErrorCodeInterpretationFailed ErrorCode = "interpretation_failed"
 	ErrorCodeInvalidInput         ErrorCode = "invalid_input"
+	ErrorCodeInviteeChanged       ErrorCode = "invitee_changed"
 	ErrorCodeLastOwner            ErrorCode = "last_owner"
 	ErrorCodeLlmNotConfigured     ErrorCode = "llm_not_configured"
 	ErrorCodeLlmUnavailable       ErrorCode = "llm_unavailable"
@@ -663,6 +664,25 @@ type InviteMemberRequest struct {
 	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
 	//   あり、閲覧者に許すのは「閲覧」ではない
 	Role BoardRole `json:"role"`
+
+	// UserID `lookupInvitee` で確認した相手の ID。いまその login を持つ相手と
+	// 違えば 409（`invitee_changed`）
+	UserID string `json:"userId"`
+}
+
+// Invitee 招待する前に見せる、login が当たった利用者
+type Invitee struct {
+	DisplayName string `json:"displayName"`
+
+	// LastSignedInAt 最後に etoki にログインした時刻。login はこのときのもので、いまの
+	// 持ち主かどうかは GitHub にしか分からない
+	LastSignedInAt time.Time `json:"lastSignedInAt"`
+
+	// Login 最後にログインしたときの login
+	Login string `json:"login"`
+
+	// UserID etoki が発番した ID。招待のときにそのまま送り返す
+	UserID string `json:"userId"`
 }
 
 // ItemKind GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ
@@ -874,6 +894,12 @@ type Unauthorized = ErrorResponse
 type CompleteLoginParams struct {
 	Code  string `form:"code" json:"code"`
 	State string `form:"state" json:"state"`
+}
+
+// LookupInviteeParams defines parameters for LookupInvitee.
+type LookupInviteeParams struct {
+	// Login 招待する相手の login。大文字小文字は区別しない
+	Login string `form:"login" json:"login"`
 }
 
 // CreateBoardJSONRequestBody defines body for CreateBoard for application/json ContentType.

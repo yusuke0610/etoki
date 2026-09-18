@@ -1,4 +1,4 @@
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -74,6 +74,7 @@ import { createGenerations } from "./generation";
 import {
   addInterpretation,
   failInterpretation,
+  recordCreated,
   selectInterpretation,
   startInterpretation,
   type InterpretationState,
@@ -535,24 +536,6 @@ export function BoardPage({
   // 外れるときは未保存を下ろす。残すと、キャンバスがもう無いのに親が止め続ける。
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
 
-  // 未保存のあいだだけ離脱を確認する。ブレストは etoki の最初のフェーズなので、
-  // ここで失うと後段（注釈・解釈・作成）が全部やり直しになる。保存は明示操作で
-  // ある以上（中核思想 3）押し忘れは構造的に起きるので、**自動で保存しないなら
-  // 失う直前に知らせる責任が対になる。**
-  useEffect(() => {
-    if (!dirty) return;
-
-    const confirmLeave = (e: BeforeUnloadEvent) => {
-      // 文面はブラウザが決める。ここで渡した文字列は表示されない。
-      e.preventDefault();
-      // preventDefault だけを見ないブラウザが残っているので両方立てる。
-      e.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", confirmLeave);
-    return () => window.removeEventListener("beforeunload", confirmLeave);
-  }, [dirty]);
-
   /**
    * シーンの大きさを数え直す。
    *
@@ -653,6 +636,11 @@ export function BoardPage({
    *
    * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0045）。
    * 表示状態そのものはここで触らない。
+   *
+   * **ここを通る変更は、人の操作として「元に戻す」に積む**（#144）。付箋・図の
+   * ドラフト・注釈の付け外しと種別・取り込みが通る。どれも開発者が押して
+   * 起こした変更で、置き間違いを戻す手段が要る。取り込みは確認を経た置き換え
+   * だが、戻せるほうが失うものが少ない。
    */
   const updateElements = useCallback(
     (next: SceneElement[], appState?: Record<string, unknown>) => {
@@ -662,7 +650,14 @@ export function BoardPage({
       const background =
         (appState?.viewBackgroundColor as string | undefined) ?? currentBackground();
 
-      api?.updateScene({ elements: next as never, appState: appState as never });
+      // `captureUpdate` の既定（EVENTUALLY）はすぐには履歴に積まない。積まれない
+      // まま次の操作と一緒に記録されるので、戻すとこの変更ではなく直前に描いた
+      // ものが消える。
+      api?.updateScene({
+        elements: next as never,
+        appState: appState as never,
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
       // onChange の発火を待たずにここでも判定する。注釈の付け外しが未保存として
       // 出るかどうかを、updateScene が onChange を呼ぶかに依存させない。
       applySignature(sceneSignature(next, background));
@@ -1102,7 +1097,11 @@ export function BoardPage({
    * 作成後は状態が created に変わるので、注釈の状態を取り直す。
    */
   const create = useCallback(
-    async (annotationId: string, interpretation: Interpretation) => {
+    async (
+      annotationId: string,
+      interpretationId: number,
+      interpretation: Interpretation,
+    ) => {
       // disabled は表示の約束。取り込み中、または別の注釈を作成中に直接呼ばれても
       // 取り消せない GitHub への作成を並走させない。
       if (exclusiveOperation.current !== null) return;
@@ -1116,10 +1115,17 @@ export function BoardPage({
         // 保存が挟まっていたら、この結果は保存前の解釈に対するもの。表示すると
         // いまの内容に対して作られたと誤読される。
         if (!creationGenerations.isCurrent(annotationId, generation)) return;
-        setCreations((prev) => ({
-          ...prev,
-          [annotationId]: { status: "done", run },
-        }));
+        // 作ったものを解釈に結びつける。下書きはこれを見て、作れた項目を
+        // 同じ下書きから新規に作らせない（ADR 0052）。応答を受けた時点で
+        // 入れる。実行中は下書きが止まっているので、ここで外れても押せない。
+        setInterpretations((prev) => {
+          const state = prev[annotationId];
+          if (!state) return prev;
+          return {
+            ...prev,
+            [annotationId]: recordCreated(state, interpretationId, run.items),
+          };
+        });
         // 履歴は 1 件増えたので、引いてあるものは捨てる。**黙って古いまま
         // 出さない。** 読み直すかどうかは、これまでどおり押した人が決める。
         // 走っている読み込みも無効にする。捨てた直後に古い応答が入ると、
@@ -1132,6 +1138,15 @@ export function BoardPage({
           return next;
         });
         await refreshAnnotations();
+        // **状態を取り直してから done にする。** 先に done にすると、作ったばかりの
+        // item が畳み込みに入る前の隙間で、保存や押し直しと競合する
+        // （.claude/rules/async-ui.md）。取り直しの失敗は refreshAnnotations が
+        // 自分で出すので、ここでは待つだけ。
+        if (!creationGenerations.isCurrent(annotationId, generation)) return;
+        setCreations((prev) => ({
+          ...prev,
+          [annotationId]: { status: "done", run },
+        }));
       } catch (e) {
         if (!creationGenerations.isCurrent(annotationId, generation)) return;
         setCreations((prev) => ({
@@ -1154,6 +1169,29 @@ export function BoardPage({
   // GitHub には残ったまま結果だけ消え、作られていないと思って再実行した開発者が
   // draft issue を重複させる。保存側は creating で、作成側は saving を渡して止める。
   const creating = Object.values(creations).some((c) => c.status === "running");
+
+  // 未保存のあいだと、作成の実行中は離脱を確認する。ブレストは etoki の最初のフェーズなので、
+  // ここで失うと後段（注釈・解釈・作成）が全部やり直しになる。保存は明示操作で
+  // ある以上（中核思想 3）押し忘れは構造的に起きるので、**自動で保存しないなら
+  // 失う直前に知らせる責任が対になる。**
+  //
+  // **作成中も確認する**（ADR 0051）。解釈が保存を要求するので、作成を押す時点では
+  // ふつう保存済みで、未保存だけを見ていると何も訊かれない。閉じれば作成は
+  // 止まり、残りは作られない。作れたぶんは記録されるが、閉じた人は結果を
+  // 見られない。
+  useEffect(() => {
+    if (!dirty && !creating) return;
+
+    const confirmLeave = (e: BeforeUnloadEvent) => {
+      // 文面はブラウザが決める。ここで渡した文字列は表示されない。
+      e.preventDefault();
+      // preventDefault だけを見ないブラウザが残っているので両方立てる。
+      e.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", confirmLeave);
+    return () => window.removeEventListener("beforeunload", confirmLeave);
+  }, [dirty, creating]);
 
   const importBlocked = saving
     ? "保存が終わるまで取り込めません"
@@ -1650,7 +1688,9 @@ export function BoardPage({
             creations={creations}
             saving={saving}
             importing={importing}
-            onCreate={(id, interpretation) => void create(id, interpretation)}
+            onCreate={(id, interpretationId, interpretation) =>
+              void create(id, interpretationId, interpretation)
+            }
             canEdit={canEdit}
             projectAccess={projectAccess}
             interpretationUnavailable={interpretationUnavailable}

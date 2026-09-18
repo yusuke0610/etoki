@@ -120,6 +120,34 @@ GitHub App を設定しているなら、Callback URL と `ETOKI_PUBLIC_URL` も
 `ETOKI_ALLOWED_ORIGINS` は[上に書いたとおり](#設定)で、足さないと API だけでなく
 画面も開けません。
 
+### データを残す
+
+ボード・メンバー・作成の記録は `ETOKI_DB_PATH`（既定は `etoki.db`）の SQLite
+ファイルにあります。**作成の記録は取り直せません。** どの注釈からどの draft issue
+を作ったかは作成の瞬間にしか控えられず、GitHub 側の draft issue は etoki から
+消せないので残ります（[ADR 0023](docs/adr/0023-record-created-issue-body.md)）。
+
+`make clean` はこのファイルに触りません。消すターゲットは `make reset-db CONFIRM=1`
+に分けてあり、消す先は `ETOKI_DB_PATH` ではなく `make migrate` と同じ `DB_PATH`
+（既定は `etoki.db`）です。
+
+**消す前に etoki を止め、`sqlite3` で開いているなら閉じてください。** 開いたまま
+消すと、開いている側は消えたファイルを読み書きし続け、そのあいだの書き込みは
+閉じた時点で失われます。動いている etoki が DB を開いていれば、`reset-db` は
+消さずに止まります。
+
+バックアップは SQLite の `.backup` で取ってください。動いているあいだでも
+一貫した 1 ファイルになります。
+
+```sh
+sqlite3 "${ETOKI_DB_PATH:-etoki.db}" ".backup 'etoki-backup.db'"
+```
+
+**`etoki.db` だけを `cp` しないでください。** DB は WAL で開いているので、
+まだ本体に書き戻されていない書き込みが `etoki.db-wal` に残っています。
+戻すときは etoki を止め、残っている `-wal` / `-shm` を消してから、取ったファイルを
+`ETOKI_DB_PATH` に置きます。
+
 ### 鍵を `.env` に置く
 
 毎回 `export` する代わりに、`.env` に置けます。雛形が `.env.example` にあります。
@@ -299,6 +327,9 @@ etoki claim <あなたの GitHub login>
 記録はログイン時に作られるため）。初回ログインした人に自動で寄せないのは、
 共有サーバーで先に入った人が全部を持っていく決まり方を説明できないためです。
 
+実行すると、引き当てた相手（表示名・login・ID・最終ログイン）を出して `y/N` で
+確かめます。スクリプトから呼ぶなど端末でないときは `--yes` を付けてください。
+
 #### ボードを共有する
 
 ボードは作った人（オーナー）が招待した相手にだけ見えます。メンバーでないボードは
@@ -326,6 +357,11 @@ ID を知っていても 404 になります（[ADR 0017](docs/adr/0017-board-sh
 招待できるのは **一度 etoki にログインしたことがある相手だけ**です。login は
 改名で変わるため、未ログインの login 宛に招待を積むと、空いた login を取った
 別人に権限が渡ります。
+
+**招待する前に、login が当たった相手（表示名・ID・最終ログイン）が出ます。**
+etoki が知っているのは「最後にその login でログインした人」までなので、改名で
+空いた login を別の人が取っていないか、そこで確かめてから招待してください
+（[ADR 0053](docs/adr/0053-confirm-login-before-granting.md)）。
 
 **ボードを作るには、書き込める Projects v2 が 1 つ以上必要です。** 作成時に
 作成先を選ぶので、選択肢が無いとボードを作れません。
@@ -358,6 +394,9 @@ ID を知っていても 404 になります（[ADR 0017](docs/adr/0017-board-sh
 
 変更を送るときの約束（ブランチ・コミット・PR 本文・レビュー対応）は
 [`CONTRIBUTING.md`](CONTRIBUTING.md) にあります。
+
+AI コーディングエージェントに読ませている規約の量と、その測り方は
+[`docs/token-budget.md`](docs/token-budget.md) にあります。
 
 ## ライセンス
 
