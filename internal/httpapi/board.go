@@ -525,7 +525,8 @@ func (h *handlers) badRequest(c *gin.Context, err error) {
 	errorJSON(c, http.StatusBadRequest, apitypes.ErrorCodeInvalidInput, err.Error())
 }
 
-// bindJSON は既定の上限（router.go の defaultMaxBody）のもとで本文を読む。
+// bindJSON は掛かっている上限（既定は router.go の defaultMaxBody、広げた口では
+// widenBody で置いたもの）のもとで本文を読む。
 //
 // **歯止めに当たった失敗も契約の code に写す**（`.claude/rules/api-contract.md`）。
 // 写さないと、同じ「大きすぎる」がボディの大きさしだいで 400 と 413 に割れ、
@@ -542,7 +543,7 @@ func (h *handlers) bindJSON(c *gin.Context, req any) bool {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
 		h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
-			errRequestTooLarge, defaultMaxBody))
+			errRequestTooLarge, tooLarge.Limit))
 		return false
 	}
 

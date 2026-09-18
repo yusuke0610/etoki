@@ -169,8 +169,9 @@ func TestAPIResponses_AreNotCached(t *testing.T) {
 // 400 に落とすと、同じ「大きすぎる」がボディの大きさしだいで 400 と 413 に割れ、
 // 画面が同じ原因を 2 通りに案内することになる。
 //
-// 作成と共有の 2 つは、設定されていないと本文を読む前に 503 で返る。
-// そちらのルーターを持つ create_test.go / member_test.go に置いてある。
+// 共有は、設定されていないと本文を読む前に 503 で返るので、そちらのルーターを
+// 持つ member_test.go に置いてある。作成は既定ではなく項目の上限から導いた
+// 上限で読む（create_test.go）。
 func TestAPIBodies_AreLimitedAtTheEntrance(t *testing.T) {
 	t.Parallel()
 

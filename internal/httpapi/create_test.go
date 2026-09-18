@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +77,17 @@ func (s *stubGitHub) CreateDraftIssue(_ context.Context, _ string, item port.Dra
 
 func (s *stubGitHub) SetItemFieldValue(context.Context, string, string, port.FieldValue) error {
 	return nil
+}
+
+// repeatByte は同じバイトを尽きずに返す。上限を超える本文を、手元に全部は
+// 持たずに作る。
+type repeatByte byte
+
+func (b repeatByte) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(b)
+	}
+	return len(p), nil
 }
 
 // createBody は解釈結果をそのまま送るリクエストボディ。
@@ -280,11 +293,54 @@ func TestCreateItems_ReportsPartialCreation(t *testing.T) {
 	}
 }
 
-// 作成の本文にも `/api` の既定の上限が掛かる（issue #147）。
+// 作成の本文は、既定の上限（64 KiB）ではなく項目の上限から導いた上限で読む
+// （issue #147）。
+//
+// **正本は項目の上限（domain.MaxItems / MaxTitleRunes / MaxBodyRunes）。** 既定の
+// ままだと、数十件の項目が数千字の本文を持つだけで 413 になり、項目の上限の
+// 内側にある解釈が作れない。LLM がそのまま返した解釈でも届く大きさ。
+func TestCreateItems_ReadsBodyWithinTheItemLimits(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{}
+	r, _ := newCreateRouter(t, gh)
+
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	// 既定の上限を超えるが、項目の上限には十分収まる大きさ（約 140 KiB）。
+	// epic 1 件と、その下の issue。
+	const n = 24
+	items := []map[string]any{
+		{"localId": "e1", "kind": "epic", "title": "決済フローの見直し", "body": strings.Repeat("あ", 2000)},
+	}
+	for i := range n - 1 {
+		items = append(items, map[string]any{
+			"localId":       fmt.Sprintf("i%d", i),
+			"kind":          "issue",
+			"title":         fmt.Sprintf("課題 %d", i),
+			"body":          strings.Repeat("あ", 2000),
+			"parentLocalId": "e1",
+		})
+	}
+	body := createBody(currentHash(t, r, id))
+	body["items"] = items
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (%s)", rec.Code, rec.Body)
+	}
+	if gh.seq != n {
+		t.Errorf("作った件数 = %d, want %d", gh.seq, n)
+	}
+}
+
+// 作成の本文にも上限はある（issue #147）。広げるのは項目の上限までで、外すわけ
+// ではない。
 //
 // **未設定の 503 より後に見る。** 設定していない機能は本文を読む前に断るのが
 // 正しいので、GitHub を設定したルーターで確かめる。
-func TestCreateItems_RejectsOversizedBody(t *testing.T) {
+func TestCreateItems_RejectsBodyBeyondTheItemLimits(t *testing.T) {
 	t.Parallel()
 
 	gh := &stubGitHub{}
@@ -293,12 +349,19 @@ func TestCreateItems_RejectsOversizedBody(t *testing.T) {
 	id := createTargetedBoard(t, r, "設計会")
 	saveAnnotatedScene(t, r, id)
 
-	body := createBody(currentHash(t, r, id))
-	// 1 フィールドで超えさせる。項目数で超えさせると、件数の上限
-	// （domain.MaxItems）のほうに先に当たる。
-	body["summary"] = strings.Repeat("あ", 64<<10)
+	// 項目の上限いっぱい（件数 × (title + body) × JSON で 1 文字 6 バイト）を
+	// 確実に超える大きさ。1 フィールドで超えさせ、手元には全部を持たない。
+	size := int64(domain.MaxItems)*int64(domain.MaxTitleRunes+domain.MaxBodyRunes)*6 + 1<<20
+	prefix := `{"contentHash":"` + currentHash(t, r, id) + `","items":[],"summary":"`
+	reader := io.MultiReader(strings.NewReader(prefix),
+		io.LimitReader(repeatByte('x'), size), strings.NewReader(`"}`))
 
-	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, itemsPath(id, "annot-1"), reader)
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = loopbackHost
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want 413 (%s)", rec.Code, rec.Body)
 	}
