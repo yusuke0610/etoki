@@ -179,6 +179,7 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 		{http.MethodPost, "/api/boards/" + id + "/diagram-draft", apitypes.ErrorCodeLlmNotConfigured},
 		{http.MethodGet, "/api/github/repositories", apitypes.ErrorCodeGithubNotConfigured},
 		{http.MethodGet, "/api/boards/" + id + "/members", apitypes.ErrorCodeSharingNotConfigured},
+		{http.MethodGet, "/api/boards/" + id + "/invitee?login=bob", apitypes.ErrorCodeSharingNotConfigured},
 	} {
 		t.Run(tt.path, func(t *testing.T) {
 			rec := do(t, r, tt.method, tt.path, nil)
