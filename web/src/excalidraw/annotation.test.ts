@@ -146,6 +146,40 @@ describe("unmarkAnnotation", () => {
   });
 });
 
+// Excalidraw は要素が変わったかを version で見る。上げないと「元に戻す」に
+// 積まれず、戻すと直前に描いたものが消える（#144）。
+describe("注釈の付け外しは version と versionNonce を変える", () => {
+  const versioned: SceneElement = { ...annotation, version: 3 };
+
+  it("注釈にする", () => {
+    const [el] = markAsAnnotation(
+      [{ ...plainFrame, version: 3, versionNonce: 11 }],
+      "f1",
+      "epic",
+    );
+    expect(el?.version).toBe(4);
+    // 履歴が見ているのはこちら。version だけ上げても積まれない。
+    expect(el?.versionNonce).not.toBe(11);
+  });
+
+  it("注釈を外す", () => {
+    const [el] = unmarkAnnotation([versioned], versioned.id);
+    expect(el?.version).toBe(4);
+  });
+
+  it("種別を変える", () => {
+    const [el] = setAnnotationKind([versioned], versioned.id, "sequence");
+    expect(el?.version).toBe(4);
+  });
+
+  // 触っていない要素まで上げると、関係ない要素が変わったことになる。
+  it("対象でない要素は上げない", () => {
+    const other: SceneElement = { ...text, version: 7 };
+    const [, el] = markAsAnnotation([{ ...plainFrame, version: 3 }, other], "f1", "epic");
+    expect(el).toBe(other);
+  });
+});
+
 describe("granularityOf", () => {
   it("注釈でなければ undefined", () => {
     expect(granularityOf(plainFrame)).toBeUndefined();
