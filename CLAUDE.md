@@ -290,6 +290,20 @@ GitHub の形しか差せなくなる。
 PR を作ったら CodeRabbit のレビューが付く。**作りっぱなしにせず、指摘が
 なくなるまで対応する。** 手順は `/pr-review`（`.claude/skills/pr-review/SKILL.md`）。
 
+### マージの条件
+
+**Claude がマージしてよいのは、最新の head に対する `@coderabbitai full review`
+で指摘が 0 件だった PR だけ。** それ以外はマージできる状態まで仕上げて
+ユーザーに渡し、マージはユーザーが行う。
+
+次のものは条件を満たさない。
+
+- 増分レビュー（`@coderabbitai review` や push 時の自動レビュー）で指摘ゼロ
+- 指摘をスレッド内のやりとりで確かめて解決した
+- full review の後にコミットを積んだ（docs だけでも）
+
+指摘が付いたら直して push し、もう一度 full review を依頼する。
+
 ## スコープ外（このリポジトリに入れない）
 
 - Terraform / OpenTofu などの IaC、IAM ロール設計
