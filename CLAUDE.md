@@ -72,7 +72,7 @@ make dev         # バックエンド(:8080)とフロントエンド(:5173)を�
 make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
 make lint        # Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
-make test        # go test + vitest
+make test        # go test + vitest + bun test
 make test-e2e    # Playwright（test には含まれない）
 make codegen     # api/openapi.yaml から Go / TS の型を再生成する
 make migrate     # etoki migrate サブコマンドを呼ぶ

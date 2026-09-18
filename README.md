@@ -370,6 +370,9 @@ etoki が知っているのは「最後にその login でログインした人�
 変更を送るときの約束（ブランチ・コミット・PR 本文・レビュー対応）は
 [`CONTRIBUTING.md`](CONTRIBUTING.md) にあります。
 
+AI コーディングエージェントに読ませている規約の量と、その測り方は
+[`docs/token-budget.md`](docs/token-budget.md) にあります。
+
 ## ライセンス
 
 [MIT](LICENSE)
