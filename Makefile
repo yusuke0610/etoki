@@ -46,6 +46,9 @@ BINARY  := $(BIN_DIR)/etoki
 WEB_DIR := web
 DB_PATH ?= etoki.db
 
+# make try-fake で偽の GitHub / LLM を立てる先。
+FAKE_ADDR ?= 127.0.0.1:8090
+
 # ローカルで動かすときの鍵の置き場（gitignore 済み）。無くてもよい。
 #
 # make の include ではなく shell の `.` で読む。include すると `$` を含む値が
@@ -58,7 +61,7 @@ DB_PATH ?= etoki.db
 ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
-.PHONY: help setup dev dev-api dev-web build build-api build-web start \
+.PHONY: help setup dev dev-api dev-web build build-api build-web start try-fake \
         test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
         codegen codegen-go codegen-web migrate token-report clean reset-db
@@ -99,6 +102,29 @@ start: build ## ビルド済みの成果物で起動する（dev サーバーを
 	@# ので（ADR 0032）、ここで渡す。ブラウザは :8080 側にいることになるため、
 	@# GitHub App の Callback URL と ETOKI_PUBLIC_URL もそちらに合わせる。
 	$(LOAD_ENV) ETOKI_WEB_DIR=$(WEB_DIR)/dist $(BINARY)
+
+try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki を通しで動かす
+	@# 手元の確認用で、make test にも CI にも入れない（ADR 0050）。
+	@# DB は毎回作り直す。偽物の状態はメモリにしか無いので、DB を使い回すと
+	@# 記録が指す draft issue が偽物の側に無く、更新が必ず失敗する。
+	@# $(LOAD_ENV) は通さず、認証と鍵の変数は外す。.env や direnv の本物の鍵を
+	@# 偽物へ送らないためと、App を設定していると認証の構成に入り、偽物では
+	@# ログインできないため。
+	@go build -o $(BIN_DIR)/etoki-fakeupstream ./cmd/etoki-fakeupstream
+	@# 片付けを kill 0 より先に書く。kill 0 はこのシェル自身も落とす。
+	@tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$tmp"; kill 0' EXIT INT TERM; \
+	ETOKI_DB_PATH="$$tmp/etoki.db" $(BINARY) migrate || exit 1; \
+	FAKE_ADDR="$(FAKE_ADDR)" $(BIN_DIR)/etoki-fakeupstream & \
+	env -u ETOKI_GITHUB_APP_CLIENT_ID -u ETOKI_GITHUB_APP_CLIENT_SECRET \
+		-u ETOKI_TOKEN_ENCRYPTION_KEY -u ETOKI_PUBLIC_URL -u ETOKI_LLM_API_KEY \
+		ETOKI_DB_PATH="$$tmp/etoki.db" \
+		ETOKI_WEB_DIR=$(WEB_DIR)/dist \
+		ETOKI_LLM_BASE_URL="http://$(FAKE_ADDR)" \
+		ETOKI_GITHUB_BASE_URL="http://$(FAKE_ADDR)" \
+		ETOKI_GITHUB_TOKEN=fake \
+		$(BINARY) & \
+	wait
 
 build-api:
 	go build -o $(BINARY) ./cmd/etoki

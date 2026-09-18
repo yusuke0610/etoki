@@ -631,9 +631,86 @@ func TestDoesNotLeakToken(t *testing.T) {
 
 func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("ETOKI_GITHUB_TOKEN", "ghp_from_env")
+	t.Setenv("ETOKI_GITHUB_BASE_URL", "http://127.0.0.1:8090")
 
-	if got := github.ConfigFromEnv(); got.Token != "ghp_from_env" {
+	got := github.ConfigFromEnv()
+	if got.Token != "ghp_from_env" {
 		t.Errorf("Token = %q", got.Token)
+	}
+	if got.BaseURL != "http://127.0.0.1:8090" {
+		t.Errorf("BaseURL = %q", got.BaseURL)
+	}
+}
+
+// 綴り間違いを実行時まで持ち越すと、作成先の一覧や作成の失敗として現れて
+// 切り分けが遠回りになる。
+func TestNew_RejectsInvalidBaseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"スキームが無い":   "api.github.com",
+		"対応しないスキーム": "ftp://example.test",
+		"壊れた URL":   "http://[::1",
+		// スキームは通るがホストが無い。呼び出し時まで失敗が遅れる。
+		"ホストが無い":     "http://",
+		"スラッシュが足りない": "https:api.github.com",
+		// 本物のトークンを平文で外に送る。http で届く GitHub は無い。
+		"ループバックの外への http": "http://api.github.com",
+	}
+
+	for name, base := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := github.New(github.Config{BaseURL: base, Token: testToken}); err == nil {
+				t.Fatalf("New(%q) = nil, want error", base)
+			}
+		})
+	}
+}
+
+// https は向け先を問わず、http はループバックだけを通す（ADR 0050）。この口を
+// 開けたのは手元の偽物に向けるためなので、偽物に届く形は残す。
+func TestNew_AcceptsBaseURL(t *testing.T) {
+	t.Parallel()
+
+	for _, base := range []string{
+		"https://api.github.com",
+		"https://github.example.test",
+		"http://127.0.0.1:8090",
+		"http://localhost:8090",
+		"http://[::1]:8090",
+	} {
+		t.Run(base, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := github.New(github.Config{BaseURL: base, Token: testToken}); err != nil {
+				t.Fatalf("New(%q) = %v, want nil", base, err)
+			}
+		})
+	}
+}
+
+// 末尾の / を落とさないと //graphql に送り、向け先によっては 404 になる。
+func TestNew_TrimsTrailingSlashOfBaseURL(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = io.WriteString(w, `{"data":{"node":{"viewerCanUpdate":true}}}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := github.New(github.Config{BaseURL: srv.URL + "/", Token: testToken})
+	if err != nil {
+		t.Fatalf("New() = %v", err)
+	}
+	if _, err := c.CanWriteProject(context.Background(), "PVT_1"); err != nil {
+		t.Fatalf("CanWriteProject() = %v", err)
+	}
+	if gotPath != "/graphql" {
+		t.Errorf("path = %q, want /graphql", gotPath)
 	}
 }
 
