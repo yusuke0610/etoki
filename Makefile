@@ -61,7 +61,7 @@ LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 .PHONY: help setup dev dev-api dev-web build build-api build-web start \
         test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
-        codegen codegen-go codegen-web migrate token-report clean reset-db
+        codegen codegen-go codegen-web migrate token-report clean reset-db vulncheck
 
 help: ## ターゲット一覧を表示する
 	@echo "使い方: make <target>"
@@ -176,6 +176,14 @@ codegen-go:
 
 codegen-web:
 	cd $(WEB_DIR) && bun run codegen
+
+vulncheck: ## 依存と Go ツールチェーンの既知の脆弱性を調べる（通信する）
+	@# lint / test には入れない。脆弱性のデータベースを取りに行くので、差分と
+	@# 関係なく、外で新しい脆弱性が公開された日に落ちる。CI では別のステップと
+	@# 定期実行で回す（ADR 0035）。
+	@# Go 本体の脆弱性もここで拾う。flake.lock の Go は Dependabot の
+	@# security updates の対象にならない。
+	govulncheck ./...
 
 migrate: ## マイグレーションを適用する
 	ETOKI_DB_PATH="$(DB_PATH)" go run ./cmd/etoki migrate
