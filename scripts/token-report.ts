@@ -10,7 +10,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /**
  * 文字数。バイト数ではなくコードポイントで数える。`wc -m` はロケールに依り、
@@ -34,9 +34,17 @@ export const displayWidth = (s: string): number =>
 export const padRight = (s: string, width: number): string =>
   s + " ".repeat(Math.max(0, width - displayWidth(s)));
 
+/**
+ * 引数で渡されたパスを絶対パスにする。**`~/` は自分で展開する。** Makefile は
+ * `SESSION` をクォートして 1 個の引数として渡すので（空白を含みうるため）、
+ * `~` はシェルでは展開されず、そのままの文字として届く。
+ */
+export const expandPath = (path: string): string =>
+  resolve(path.startsWith("~/") ? join(homedir(), path.slice(2)) : path);
+
 /** transcript の置き場所。ディレクトリ名は作業ディレクトリのパスから作られる。 */
 function findSession(explicit?: string): string {
-  if (explicit) return explicit;
+  if (explicit) return expandPath(explicit);
 
   const root = join(homedir(), ".claude", "projects");
   const dir = join(root, process.cwd().replace(/[^a-zA-Z0-9]/g, "-"));

@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import {
   blockChars,
   callHint,
   countChars,
   displayWidth,
+  expandPath,
   padRight,
   summarize,
 } from "./token-report";
@@ -61,6 +64,23 @@ describe("blockChars", () => {
   test("読めないものは 0 にする", () => {
     expect(blockChars(undefined)).toBe(0);
     expect(blockChars([null, 42])).toBe(0);
+  });
+});
+
+describe("expandPath", () => {
+  test("先頭の ~/ を展開する", () => {
+    // Makefile は SESSION をクォートして渡すので、~ はシェルでは展開されない。
+    expect(expandPath("~/.claude/projects/a b/session.jsonl")).toBe(
+      join(homedir(), ".claude/projects/a b/session.jsonl"),
+    );
+  });
+
+  test("途中の ~ は展開しない", () => {
+    expect(expandPath("/tmp/~/session.jsonl")).toBe("/tmp/~/session.jsonl");
+  });
+
+  test("相対パスは作業ディレクトリから解く", () => {
+    expect(expandPath("./session.jsonl")).toBe(join(process.cwd(), "session.jsonl"));
   });
 });
 
