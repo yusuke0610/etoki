@@ -355,7 +355,13 @@ func TestSaveRun_RejectsMissingOutcome(t *testing.T) {
 // `outcome = 'incomplete'` と書くと、outcome が NULL の行では比較が NULL に
 // 評価されて CHECK をすり抜け、「記録していないのに理由だけある run」が
 // 入ってしまう（ADR 0043）。
-func TestMigration_RejectsErrorWithoutIncomplete(t *testing.T) {
+//
+// **不正な象限は 2 つある。** 0010 の CHECK は片側（理由つきの完走）しか
+// 禁じておらず、裏返しの「途中で失敗したのに理由が無い」を通していた。0011 が
+// 両方を 1 本の式で禁じる（#130）。`SaveRun` も同じ食い違いを弾くが、復元や
+// 保守 SQL はそこを通らないので、行として意味が決まらない組み合わせは DB でも
+// 作らせない。
+func TestMigration_RejectsOutcomeAndErrorDisagreement(t *testing.T) {
 	t.Parallel()
 
 	db := newDB(t)
@@ -372,9 +378,92 @@ func TestMigration_RejectsErrorWithoutIncomplete(t *testing.T) {
 		"記録が無いのに理由つき": `INSERT INTO sync_runs
 			 (board_id, annotation_element_id, content_hash, created_at, error)
 			 VALUES ('board-1', 'annot-1', 'h', ?, 'boom')`,
+		"途中で失敗したのに理由なし": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'incomplete')`,
+		"理由を空文字ではなく NULL で入れた失敗": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome, error)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'incomplete', NULL)`,
 	} {
 		if _, err := db.ExecContext(t.Context(), query, at); err == nil {
 			t.Errorf("%s: CHECK が効いていない", name)
+		}
+	}
+}
+
+// CHECK は UPDATE にも効く。**保守 SQL の脅威モデルは INSERT だけではない。**
+// 正しく入った行を後から不整合に落とせるなら、入口を塞いだ意味がない。
+//
+// **1 件ずつ別の DB で見る。** 同じ行に順に当てると、最初に通ってしまった
+// UPDATE が行を不整合にして、後続が「もう不整合なので通った」のか
+// 「CHECK が効いていない」のかを見分けられなくなる。
+func TestMigration_RejectsUpdateIntoDisagreement(t *testing.T) {
+	t.Parallel()
+
+	for name, query := range map[string]string{
+		"理由だけ消す":     `UPDATE sync_runs SET error = NULL`,
+		"結末だけ完走に変える": `UPDATE sync_runs SET outcome = 'complete'`,
+		"結末だけ消す":     `UPDATE sync_runs SET outcome = NULL`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			db := newDB(t)
+			seedBoard(t, db, "board-1")
+
+			if _, err := sqlite.NewMappingRepository(db).SaveRun(t.Context(), port.SyncRun{
+				BoardID:      "board-1",
+				AnnotationID: "annot-1",
+				ContentHash:  "hash-1",
+				CreatedAt:    baseTime,
+				Outcome:      port.OutcomeIncomplete,
+				Error:        "boom",
+			}); err != nil {
+				t.Fatalf("SaveRun: %v", err)
+			}
+
+			if _, err := db.ExecContext(t.Context(), query); err == nil {
+				t.Error("CHECK が効いていない")
+			}
+
+			// 弾いた UPDATE が書いていないこと。エラーの検査だけだと、
+			// 一部を書いてから弾く実装でも緑になる。
+			var outcome, failure string
+			if err := db.QueryRowContext(t.Context(),
+				`SELECT outcome, error FROM sync_runs`).Scan(&outcome, &failure); err != nil {
+				t.Fatalf("select sync_runs: %v", err)
+			}
+			if outcome != "incomplete" || failure != "boom" {
+				t.Errorf("(outcome, error) = (%q, %q), want (\"incomplete\", \"boom\")",
+					outcome, failure)
+			}
+		})
+	}
+}
+
+// 一致している 3 つの象限は通る。**禁じる側だけを見ると、全部禁じる CHECK でも
+// 緑になる。** とくに「結末も理由も無い」は移行前の run の形で、ここを弾くと
+// 記録していなかった頃の履歴が読めなくなる（ADR 0043）。
+func TestMigration_AllowsAgreeingOutcomeAndError(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	at := baseTime.UTC().Format(time.RFC3339Nano)
+
+	for name, query := range map[string]string{
+		"完走して理由なし": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'complete')`,
+		"途中で失敗して理由あり": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome, error)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'incomplete', 'boom')`,
+		"記録していなかった頃の run": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at)
+			 VALUES ('board-1', 'annot-1', 'h', ?)`,
+	} {
+		if _, err := db.ExecContext(t.Context(), query, at); err != nil {
+			t.Errorf("%s: CHECK が通すべき行を弾いた: %v", name, err)
 		}
 	}
 }
