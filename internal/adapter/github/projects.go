@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -146,6 +147,12 @@ func New(cfg Config) (*Client, error) {
 	// url.Parse は "http://" や "https:api.github.com" も通す。
 	if u.Hostname() == "" {
 		return nil, fmt.Errorf("etoki: invalid github base url %q: host is missing", u.Redacted())
+	}
+	// **http はループバックにだけ許す。** この口を開けたのは手元の偽物に向ける
+	// ため（ADR 0050）で、http で届く GitHub は無い。綴りの誤り 1 つで本物の
+	// トークンを平文で外へ送らない。
+	if u.Scheme == "http" && !isLoopbackHostname(u.Hostname()) {
+		return nil, fmt.Errorf("etoki: invalid github base url %q: http is allowed only for loopback", u.Redacted())
 	}
 
 	c := &Client{
@@ -393,6 +400,18 @@ func (c *Client) rest(ctx context.Context, path string, out any) error {
 	}
 
 	return nil
+}
+
+// isLoopbackHostname はホスト名（ポートを含まない）がループバックを指すかを返す。
+//
+// httpapi の判定（Host ヘッダの host[:port] を読む）は使わない。アダプタが
+// httpapi に依存する向きを作らないため。
+func isLoopbackHostname(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // nextCursor は次のページのカーソルを返す。次が無ければ (nil, nil)。

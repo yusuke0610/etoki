@@ -654,6 +654,8 @@ func TestNew_RejectsInvalidBaseURL(t *testing.T) {
 		// スキームは通るがホストが無い。呼び出し時まで失敗が遅れる。
 		"ホストが無い":     "http://",
 		"スラッシュが足りない": "https:api.github.com",
+		// 本物のトークンを平文で外に送る。http で届く GitHub は無い。
+		"ループバックの外への http": "http://api.github.com",
 	}
 
 	for name, base := range tests {
@@ -662,6 +664,28 @@ func TestNew_RejectsInvalidBaseURL(t *testing.T) {
 
 			if _, err := github.New(github.Config{BaseURL: base, Token: testToken}); err == nil {
 				t.Fatalf("New(%q) = nil, want error", base)
+			}
+		})
+	}
+}
+
+// https は向け先を問わず、http はループバックだけを通す（ADR 0050）。この口を
+// 開けたのは手元の偽物に向けるためなので、偽物に届く形は残す。
+func TestNew_AcceptsBaseURL(t *testing.T) {
+	t.Parallel()
+
+	for _, base := range []string{
+		"https://api.github.com",
+		"https://github.example.test",
+		"http://127.0.0.1:8090",
+		"http://localhost:8090",
+		"http://[::1]:8090",
+	} {
+		t.Run(base, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := github.New(github.Config{BaseURL: base, Token: testToken}); err != nil {
+				t.Fatalf("New(%q) = %v, want nil", base, err)
 			}
 		})
 	}
