@@ -3,12 +3,16 @@ package sqlite_test
 import (
 	"database/sql"
 	"errors"
+	"io/fs"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
 	"github.com/yusuke0610/etoki/internal/secret"
+	"github.com/yusuke0610/etoki/migrations"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -612,6 +616,183 @@ func TestFindUserByLogin(t *testing.T) {
 
 	if got, err = repo.FindUserByLogin(t.Context(), "github", "nobody"); err != nil || got != nil {
 		t.Errorf("FindUserByLogin(未知) = (%+v, %v), want (nil, nil)", got, err)
+	}
+}
+
+// upsertAs は subject を固定して login だけを変えながらログインさせる。
+func upsertAs(
+	t *testing.T, repo *sqlite.SessionRepository, subject, login string, at time.Time,
+) port.User {
+	t.Helper()
+
+	u, err := repo.UpsertUser(t.Context(), port.User{
+		Provider: "github", Subject: subject, Login: login, DisplayName: login,
+		CreatedAt: at, UpdatedAt: at,
+	})
+	if err != nil {
+		t.Fatalf("UpsertUser(%s, %s): %v", subject, login, err)
+	}
+	return u
+}
+
+// 改名で空いた login を別人が取った（#142）。A は bob から改名したが、etoki には
+// 入り直していないので、手元の行は bob のまま残る。**B がログインした時点で
+// bob を引いたら B が返らなければならない。** A が返ると、B のつもりの招待や
+// claim で A に権限が渡る。
+func TestFindUserByLogin_PrefersTheLatestHolderAfterRename(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+	old := upsertAs(t, repo, "1", "bob", baseTime)
+	fresh := upsertAs(t, repo, "2", "bob", baseTime.Add(time.Hour))
+
+	got, err := repo.FindUserByLogin(t.Context(), "github", "bob")
+	if err != nil {
+		t.Fatalf("FindUserByLogin: %v", err)
+	}
+	if got == nil || got.ID != fresh.ID {
+		t.Fatalf("FindUserByLogin(bob) = %+v, want %s（最後にログインした bob）", got, fresh.ID)
+	}
+
+	// 古い行は消さない。ボードの所有者やメンバーが指している（ID は保つ）。
+	// login だけを外すので、A が入り直せば新しい login で引けるようになる。
+	prev, err := repo.FindUser(t.Context(), old.ID)
+	if err != nil {
+		t.Fatalf("FindUser: %v", err)
+	}
+	if prev == nil || prev.Login != "" {
+		t.Errorf("以前の持ち主 = %+v, want login を外した行", prev)
+	}
+	if !prev.UpdatedAt.Equal(baseTime) {
+		t.Errorf("以前の持ち主の UpdatedAt = %v, want %v（最後にログインした時刻は動かさない）",
+			prev.UpdatedAt, baseTime)
+	}
+
+	renamed := upsertAs(t, repo, "1", "bob2", baseTime.Add(2*time.Hour))
+	if got, _ := repo.FindUserByLogin(t.Context(), "github", "bob2"); got == nil || got.ID != renamed.ID {
+		t.Errorf("入り直した A を新しい login で引けない: %+v", got)
+	}
+}
+
+// GitHub の login は大文字小文字を区別しない。区別すると、Alice でログインした
+// 人を alice で招待したときに「まだログインしていない」と断られ、owner は相手に
+// 頼みに行く（#142）。
+func TestFindUserByLogin_IgnoresCase(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+	want := upsertAs(t, repo, "1", "Alice", baseTime)
+
+	got, err := repo.FindUserByLogin(t.Context(), "github", "alice")
+	if err != nil {
+		t.Fatalf("FindUserByLogin: %v", err)
+	}
+	if got == nil || got.ID != want.ID {
+		t.Fatalf("FindUserByLogin(alice) = %+v, want %s", got, want.ID)
+	}
+
+	// 大文字小文字だけ違う login を別人が取っても、同じ規則で最後の 1 人に絞る。
+	other := upsertAs(t, repo, "2", "ALICE", baseTime.Add(time.Hour))
+	if got, _ := repo.FindUserByLogin(t.Context(), "github", "Alice"); got == nil || got.ID != other.ID {
+		t.Errorf("FindUserByLogin(Alice) = %+v, want %s", got, other.ID)
+	}
+}
+
+// 外した login（空文字）で引けてはいけない。空の入力が、login を外した行の
+// どれかに当たる。
+func TestFindUserByLogin_EmptyLoginFindsNobody(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+	upsertAs(t, repo, "1", "bob", baseTime)
+	upsertAs(t, repo, "2", "bob", baseTime.Add(time.Hour))
+
+	got, err := repo.FindUserByLogin(t.Context(), "github", "")
+	if err != nil || got != nil {
+		t.Errorf("FindUserByLogin(\"\") = (%+v, %v), want (nil, nil)", got, err)
+	}
+}
+
+// 0012 より前に、改名で同じ login の行が 2 つ（大文字小文字違いを含む）
+// できていた DB。移行で最後にログインした 1 行だけに login を残し、以後の
+// 一意索引が張れる状態にする。
+func TestMigrate_KeepsLoginOnlyOnTheLatestHolder(t *testing.T) {
+	t.Parallel()
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if _, err := db.ExecContext(t.Context(),
+		`CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`,
+	); err != nil {
+		t.Fatalf("create schema_migrations: %v", err)
+	}
+	names, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if name >= "0012" {
+			break
+		}
+		body, err := migrations.FS.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if _, err := db.ExecContext(t.Context(), string(body)); err != nil {
+			t.Fatalf("apply %s: %v", name, err)
+		}
+		if _, err := db.ExecContext(t.Context(),
+			`INSERT INTO schema_migrations VALUES (?, '2026-01-01T00:00:00Z')`, name,
+		); err != nil {
+			t.Fatalf("record %s: %v", name, err)
+		}
+	}
+
+	for _, row := range [][]string{
+		{"old", "1", "bob", "2026-01-01T00:00:00Z"},
+		{"new", "2", "Bob", "2026-02-01T00:00:00Z"},
+		{"solo", "3", "carol", "2026-01-01T00:00:00Z"},
+		// 同じ秒の中の前後。RFC3339Nano は末尾の 0 を落とすので、文字列で比べると
+		// 00.5Z が 00Z より前に並ぶ。
+		{"sec-old", "4", "dave", "2026-03-01T00:00:00Z"},
+		{"sec-new", "5", "dave", "2026-03-01T00:00:00.5Z"},
+	} {
+		if _, err := db.ExecContext(t.Context(),
+			`INSERT INTO users (id, provider, subject, login, display_name, created_at, updated_at)
+			 VALUES (?, 'github', ?, ?, '', ?, ?)`, row[0], row[1], row[2], row[3], row[3],
+		); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+	}
+
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	repo := newSessions(t, db)
+	for id, want := range map[string]string{
+		"old": "", "new": "Bob", "solo": "carol", "sec-old": "", "sec-new": "dave",
+	} {
+		u, err := repo.FindUser(t.Context(), id)
+		if err != nil || u == nil {
+			t.Fatalf("FindUser(%s) = (%+v, %v)", id, u, err)
+		}
+		if u.Login != want {
+			t.Errorf("%s の login = %q, want %q", id, u.Login, want)
+		}
+	}
+
+	// 以後は同じ login を 2 行に持たせられない。
+	if _, err := db.ExecContext(t.Context(),
+		`INSERT INTO users (id, provider, subject, login, display_name, created_at, updated_at)
+		 VALUES ('dup', 'github', '9', 'CAROL', '', '2026-03-01T00:00:00Z', '2026-03-01T00:00:00Z')`,
+	); err == nil {
+		t.Error("大文字小文字違いの同じ login を直接 INSERT できた")
 	}
 }
 
