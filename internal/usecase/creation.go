@@ -20,6 +20,19 @@ const (
 	DefaultParentFieldName = "Parent"
 )
 
+// saveRunTimeout は run の記録を待つ上限。
+//
+// 記録はリクエストの取り消しから切り離すので、代わりに長さで打ち切る。永続化の
+// 実装が自分でロック待ちを諦める長さより短くすると、書けたはずの記録をこちらが
+// 先に捨てる。ロック待ちの長さは実装が決めるので、余裕を持たせてある。
+const saveRunTimeout = 10 * time.Second
+
+// itemWriteTimeout は 1 件ぶんの書き込み（作成とフィールド設定）を待つ上限。
+//
+// 始めた 1 件はリクエストの取り消しから切り離すので、代わりに長さで打ち切る
+// （`applyItems` を参照）。GitHub の呼び出しは 1 件あたり最大 3 回。
+const itemWriteTimeout = 60 * time.Second
+
 // 作成に固有のエラー。
 var (
 	// ErrProjectFieldMissing は必要なカスタムフィールドが見つからないことを表す。
@@ -227,7 +240,14 @@ func (s *CreationService) Create(
 		run.Outcome = port.OutcomeComplete
 	}
 
-	id, saveErr := s.mappings.SaveRun(ctx, run)
+	// **記録はリクエストの ctx から切り離す。** GitHub に 1 件でも書けたら、
+	// 接続が切れても記録だけは残す。同じ ctx を渡すと、タブを閉じた・
+	// リロードしたという日常の操作で「作ったのに run が無い」に落ちる
+	// （ADR 0051）。切り離すのは取り消しだけで、待つ長さには上限を置く。
+	saveCtx, cancelSave := context.WithTimeout(context.WithoutCancel(ctx), saveRunTimeout)
+	defer cancelSave()
+
+	id, saveErr := s.mappings.SaveRun(saveCtx, run)
 	if saveErr != nil {
 		// 作成には成功したが記録できなかった。ここが一番まずい状態なので、
 		// 作った item ID をエラーに載せて手で追えるようにする。
@@ -282,7 +302,21 @@ func (s *CreationService) applyItems(
 				continue
 			}
 
-			saved, err := s.applyOne(ctx, projectID, item, fields, epicTitles, now)
+			// リクエストが切れたら、次の 1 件には手を付けない（ADR 0051）。
+			// GitHub クライアントも切れた ctx では失敗するはずだが、止めるかどうかを
+			// 差し替え可能な実装（port.GitHubClient）任せにしない。
+			if err := ctx.Err(); err != nil {
+				return created, fmt.Errorf("%w: %w", ErrCreationIncomplete, err)
+			}
+
+			// **始めた 1 件は取り消しから切り離して最後まで待つ**（ADR 0051）。
+			// 書き込みの途中で切ると、GitHub が受理したのに応答だけが失われ、
+			// 作った ID が分からないまま記録できない。応答を失ったあとで Project の
+			// 中から照合して回収する形は採らない。同じタイトルの item を当てにする
+			// ことになり、確実に 1 件に決まらない。
+			writeCtx, cancelWrite := context.WithTimeout(context.WithoutCancel(ctx), itemWriteTimeout)
+			saved, err := s.applyOne(writeCtx, projectID, item, fields, epicTitles, now)
+			cancelWrite()
 			if err != nil {
 				// **済んだところまでは記録する。** draft issue そのものは書けて
 				// いて、あとのフィールド設定で失敗した、という並びがある。捨てると

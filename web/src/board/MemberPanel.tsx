@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { membersApi } from "../api/boards";
+import { ApiError, membersApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
-import type { BoardMember, BoardRole } from "../api/types";
+import type { BoardMember, BoardRole, Invitee } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
 import { ROLE_LABELS } from "./roles";
 
@@ -29,6 +29,8 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
   const [inviteRole, setInviteRole] = useState<BoardRole>("editor");
   const [error, setError] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
+  // 招待する前に見せている相手（ADR 0053）。確かめるまでは招待を送らない。
+  const [invitee, setInvitee] = useState<Invitee | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -45,21 +47,54 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
     void reload();
   }, [reload]);
 
-  const invite = useCallback(async () => {
-    if (!login.trim()) return;
+  /**
+   * login が誰に当たるのかを引いて見せる（ADR 0053）。
+   *
+   * **login だけで招待しない。** etoki が知っているのは「最後にその login で
+   * ログインした人」までで、改名で空いた login を別人が取っているかは
+   * GitHub にしか分からない。表示名と最終ログインを見て owner が決める。
+   */
+  const lookup = useCallback(async () => {
+    const trimmed = login.trim();
+    if (!trimmed) return;
 
     setBusy(true);
     setError(null);
     try {
-      await membersApi.invite(boardId, login.trim(), inviteRole);
+      setInvitee(await membersApi.lookupInvitee(boardId, trimmed));
+    } catch (e) {
+      setInvitee(null);
+      setError(describeFailure("招待する相手を確認できませんでした", e));
+    } finally {
+      setBusy(false);
+    }
+  }, [boardId, login]);
+
+  const invite = useCallback(async () => {
+    if (!invitee) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      await membersApi.invite(boardId, invitee.login, invitee.userId, inviteRole);
       setLogin("");
+      setInvitee(null);
       await reload();
     } catch (e) {
+      // 持ち主が変わった（invitee_changed）か、その login を持つ人がいなくなった
+      // （invalid_input）なら、見せている相手はもう招待できない。残すと、同じ
+      // 確認のまま押し直せるように見え、押すたびに同じ失敗を繰り返す。
+      if (
+        e instanceof ApiError &&
+        (e.code === "invitee_changed" || e.code === "invalid_input")
+      ) {
+        setInvitee(null);
+      }
       setError(describeFailure("招待できませんでした", e));
     } finally {
       setBusy(false);
     }
-  }, [boardId, inviteRole, login, reload]);
+  }, [boardId, invitee, inviteRole, reload]);
 
   const changeRole = useCallback(
     async (userId: string, next: BoardRole) => {
@@ -111,14 +146,18 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
           className="invite-form"
           onSubmit={(e) => {
             e.preventDefault();
-            void invite();
+            void lookup();
           }}
         >
           <input
             aria-label="招待する login"
             placeholder="GitHub の login"
             value={login}
-            onChange={(e) => setLogin(e.target.value)}
+            onChange={(e) => {
+              setLogin(e.target.value);
+              // 打ち直したら、見せている相手は別の login のもの。
+              setInvitee(null);
+            }}
           />
           <select
             aria-label="招待するロール"
@@ -130,7 +169,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
             <option value="owner">{ROLE_LABELS.owner}</option>
           </select>
           <button type="submit" className="primary" disabled={busy || !login.trim()}>
-            招待
+            確認する
           </button>
           {/*
             相手が一度ログインしている必要があることは、失敗してから知らせるの
@@ -140,6 +179,38 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
             {"招待できるのは、一度 etoki にログインしたことがある人だけです。"}
           </p>
         </form>
+      )}
+
+      {isOwner && invitee && (
+        <div className="invitee" role="group" aria-label="招待する相手の確認">
+          <dl>
+            <dt>表示名</dt>
+            <dd>{invitee.displayName || "(表示名なし)"}</dd>
+            <dt>login</dt>
+            <dd>@{invitee.login}</dd>
+            <dt>ID</dt>
+            <dd>{invitee.userId}</dd>
+            <dt>最終ログイン</dt>
+            <dd>{new Date(invitee.lastSignedInAt).toLocaleString("ja-JP")}</dd>
+          </dl>
+          {/*
+            何を確かめればよいかを言う。ID を並べただけでは、見る理由が伝わらない。
+          */}
+          <p className="hint">
+            {"login は最後にログインしたときのものです。"}
+            {
+              "改名で空いた login を別の人が取っていないか、表示名と最終ログインで確かめてください。"
+            }
+          </p>
+          <div className="invitee-actions">
+            <button type="button" disabled={busy} onClick={() => void invite()}>
+              {`@${invitee.login} を招待する`}
+            </button>
+            <button type="button" disabled={busy} onClick={() => setInvitee(null)}>
+              やめる
+            </button>
+          </div>
+        </div>
       )}
 
       {members === null ? (

@@ -436,6 +436,30 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    // 作った項目の説明は、選択の外れた（薄く描く）行の中に出る（ADR 0052）。
+    // **作成が済まないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
+    test("作成が済んだ下書き", async ({ page }) => {
+      await installApi(page, baseMock());
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+
+      const card = annotationCard(page, "ログイン");
+      await card.getByRole("button", { name: "解釈する" }).click();
+      await card.getByRole("button", { name: "GitHub に作成する" }).click();
+      await card.getByText("3 件を作成しました。").waitFor();
+      // 検査したいのは作成済みの印が付いた下書き。完了の文言は作成結果だけで
+      // 出るので、下書きへの反映まで待たないと通常の下書きを検査して通る。
+      await expect(card.locator(".badge-created", { hasText: "作成した" })).toHaveCount(
+        3,
+      );
+      await expect(
+        card.getByText("作成しました。選び直すと、作成した draft issue を書き換えます。"),
+      ).toHaveCount(3);
+
+      await expectNoAxeViolations(page);
+    });
+
     // 削除の確認は etoki が自前で `role` を書いている唯一の場所（ADR 0042）。
     // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
     test("削除の確認を開いた状態", async ({ page }) => {
@@ -483,6 +507,13 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       await page.getByRole("button", { name: "メンバー", exact: true }).click();
       await page.getByText("Bob").waitFor();
+
+      await expectNoAxeViolations(page);
+
+      // 招待する前の確認（ADR 0053）も、確認を押すまで DOM に出ない。
+      await page.getByLabel("招待する login").fill("carol");
+      await page.getByRole("button", { name: "確認する" }).click();
+      await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
 
       await expectNoAxeViolations(page);
     });
