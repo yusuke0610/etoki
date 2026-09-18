@@ -43,6 +43,11 @@ export type SceneElement = {
   text?: string;
   /** Excalidraw が中身を変えるたびに上げる番号。未保存の判定に使う（dirty.ts）。 */
   version?: number;
+  /**
+   * version と一緒に振り直す乱数。Excalidraw の履歴はこちらで変化を見る
+   * （`changed` を参照）。
+   */
+  versionNonce?: number;
   /** 画像の実体を files から引く ID。未保存の判定にも使う（dirty.ts）。 */
   fileId?: string | null;
 };
@@ -92,6 +97,27 @@ export function kindOf(el: SceneElement): DiagramKind | undefined {
 }
 
 /** 要素からメタデータを読む。注釈でなければ undefined。 */
+/**
+ * 中身を変えた要素として返す。
+ *
+ * **version を上げ、versionNonce を振り直す。** Excalidraw の履歴は要素が
+ * 変わったかを versionNonce で見るので、そのまま差し替えると「元に戻す」に
+ * 積まれない（#144）。積まれないまま次の操作と一緒に記録され、戻すとこの
+ * 変更ではなく直前に描いたものが消える。ライブラリ自身の `bumpVersion` と
+ * 同じ組み合わせにしてある。未保存の判定（dirty.ts）は version を見ている。
+ *
+ * `bumpVersion` を import しないのは、このモジュールを Excalidraw の実体に
+ * 依存させないため（純関数として vitest から読む）。
+ */
+function changed(el: SceneElement, next: Partial<SceneElement>): SceneElement {
+  return {
+    ...el,
+    ...next,
+    version: (el.version ?? 0) + 1,
+    versionNonce: Math.floor(Math.random() * 2 ** 31),
+  };
+}
+
 function metaOf(el: SceneElement): AnnotationMeta | undefined {
   if (!isAnnotation(el)) return undefined;
   return el.customData?.[ETOKI_NAMESPACE] as AnnotationMeta;
@@ -120,10 +146,9 @@ export function markAsAnnotation(
   return elements.map((el) => {
     if (el.id !== frameId || el.type !== "frame") return el;
     const meta = metaOf(el);
-    return {
-      ...el,
+    return changed(el, {
       customData: { ...el.customData, [ETOKI_NAMESPACE]: { ...meta, granularity } },
-    };
+    });
   });
 }
 
@@ -153,7 +178,7 @@ export function setAnnotationKind(
     const next: AnnotationMeta = { ...meta, kind };
     if (kind === undefined) delete next.kind;
 
-    return { ...el, customData: { ...el.customData, [ETOKI_NAMESPACE]: next } };
+    return changed(el, { customData: { ...el.customData, [ETOKI_NAMESPACE]: next } });
   });
 }
 
@@ -166,7 +191,7 @@ export function unmarkAnnotation(
     if (el.id !== frameId) return el;
     const rest = { ...el.customData };
     delete rest[ETOKI_NAMESPACE];
-    return { ...el, customData: rest };
+    return changed(el, { customData: rest });
   });
 }
 
