@@ -58,7 +58,8 @@ const shutdownTimeout = 10 * time.Second
 // **猶予が尽きるまで待たせたままにしない。** Shutdown は処理中のハンドラを
 // 待つだけで ctx は切らないので、猶予を超えた作成はプロセスごと終わり、GitHub に
 // 作ったのに run が残らない（#140）。猶予の半分で切れば、作成は次の 1 件に
-// 手を付けずに止まり、残り半分で記録まで終わる（ADR 0051）。
+// 手を付けずに止まり、書き込み中の 1 件が返れば残り半分で記録まで終わる
+// （ADR 0051）。
 const cancelRequestsAfter = shutdownTimeout / 2
 
 // Options は Server の組み立てに必要な設定と依存を束ねる。
