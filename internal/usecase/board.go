@@ -448,7 +448,7 @@ const emptyScene = `{"type":"excalidraw","version":2,"source":"etoki","elements"
 // **超えたぶんを削って保存しない。** 保存はシーン全体を書くので、削れるのは
 // 開発者が描いたものそのものになる（ADR 0038）。
 func validateScene(scene string) error {
-	if len(scene) > MaxSceneBytes {
+	if SceneExceedsLimit(scene) {
 		return fmt.Errorf("%w: scene is %d bytes, limit is %d",
 			ErrSceneTooLarge, len(scene), MaxSceneBytes)
 	}

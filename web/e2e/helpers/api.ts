@@ -209,6 +209,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       projectTitle: target.projectTitle ?? "",
       projectUrl: target.projectUrl ?? "",
       targetLocked: false,
+      sceneOverLimit: false,
     };
   };
 
@@ -421,6 +422,9 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       const next: BoardDetail = {
         ...detail,
         scene: req.scene,
+        // 実 API は上限を超えるシーンの保存を拒むので、保存に通ったシーンは
+        // 上限内。据え置くと、開き直しても警告が消えない食い違いが残る。
+        sceneOverLimit: false,
         updatedAt: new Date(Date.parse(detail.updatedAt) + 1000).toISOString(),
       };
       mock.details[id] = next;

@@ -112,7 +112,7 @@ const DIAGRAM_KEY = "diagram";
  * **画像のエクスポートは閉じない。** 答えている問いが違う（持ち出しではなく、
  * 絵を他所に貼ること）。
  *
- * **テーマの切り替えは開ける**（ADR 0049）。`theme` を渡すとライブラリは既定で
+ * **テーマの切り替えは開ける**（ADR 0055）。`theme` を渡すとライブラリは既定で
  * この項目を隠すので、明示しないと手で切り替える口が消える。
  *
  * **モジュールの定数として持つ。** 描画のたびに作り直すと、Excalidraw には
@@ -180,7 +180,7 @@ type Props = {
    * いるので、止めるかどうかを判断する材料をそこへ渡す必要がある。
    */
   onDirtyChange: (dirty: boolean) => void;
-  /** 画面の配色。持ち主は App（ADR 0049）。 */
+  /** 画面の配色。持ち主は App（ADR 0055）。 */
   theme: Theme;
   /**
    * キャンバスのメニューでテーマが切り替えられた。
@@ -240,6 +240,14 @@ export function BoardPage({
   // **上限は持たない。** 判定はサーバーだけが持つ（ADR 0018 / 0038）ので、
   // ここが出すのは「いまどれくらいか」という状態にとどめる。
   const [sceneSize, setSceneSize] = useState<number | null>(null);
+  // 保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
+  // 状態（issue #103）。`board.sceneOverLimit` を初期値にする。
+  //
+  // **保存が成功したら手元で false に倒す。** 保存が成功した = サーバーの
+  // 上限を満たした、という事実からそう言える。上限の数値をフロントが持って
+  // いなくても、判定結果だけを追随させられる（ADR 0038 は数値の複製を禁じて
+  // いるのであって、この推論を禁じてはいない）。
+  const [overLimit, setOverLimit] = useState(board.sceneOverLimit);
   // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
   // 未保存のまま残すので、dirty とは別に持つ。
   const [conflicted, setConflicted] = useState(false);
@@ -648,7 +656,7 @@ export function BoardPage({
     ) => {
       const els = elements as SceneElement[];
       // キャンバスのメニューで切り替えたテーマは、ここでしか届かない。持ち主の
-      // App に返して、パネルの配色も一緒に変える（ADR 0049）。
+      // App に返して、パネルの配色も一緒に変える（ADR 0055）。
       //
       // **キャンバスが前回と違うテーマを言ってきたときだけ返す。** props と
       // 比べると、OS の設定が変わって props を差し替えた直後に、まだ古い
@@ -1021,6 +1029,8 @@ export function BoardPage({
       // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
       baseUpdatedAt.current = updatedAt;
       setConflicted(false);
+      // 保存が成功した = いまのシーンはサーバーの上限を満たしている。
+      setOverLimit(false);
       savedSignature.current = sent;
       setDirty(latestSignature.current !== sent);
       // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
@@ -1578,6 +1588,21 @@ export function BoardPage({
         <p className="conflict" role="alert">
           {"他の人がこのボードを保存しました。上書きしないよう未保存のまま残しています。"}
           {"いまの内容を控えてから開き直してください。"}
+        </p>
+      )}
+
+      {/*
+        保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
+        状態（issue #103、ADR 0038）。**上限の数値は出さない。** サーバーの
+        判定結果を見せるだけで、フロントは上限を複製しない。開いた時点で
+        分かるよう、キャンバスを描く前から出す（中核思想 3）。
+      */}
+      {overLimit && (
+        <p className="scene-limit-warning" role="alert">
+          {
+            "このボードは保存できる上限を超えています。保存し直すには貼った画像を減らしてください。"
+          }
+          {sceneSize !== null && `（いまの大きさ: ${formatSceneSize(sceneSize)}）`}
         </p>
       )}
 
