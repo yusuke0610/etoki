@@ -137,6 +137,8 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeInvalidInput:
 		return true
+	case ErrorCodeInviteeChanged:
+		return true
 	case ErrorCodeLastOwner:
 		return true
 	case ErrorCodeLlmNotConfigured:
