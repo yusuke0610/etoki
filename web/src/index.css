@@ -550,8 +550,8 @@ body {
  * 描いたものは残っており、保存だけがこのままでは通らない。
  */
 .scene-limit-warning {
-  background: #fdf0d5;
-  color: #8a5a00;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
   padding: 8px 12px;
   margin: 0;
   font-size: 13px;
