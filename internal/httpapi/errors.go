@@ -71,6 +71,7 @@ var errorMappings = []errorMapping{
 	{usecase.ErrContentHashMismatch, http.StatusConflict, apitypes.ErrorCodeContentHashMismatch},
 	{usecase.ErrPreviousItemUnknown, http.StatusConflict, apitypes.ErrorCodePreviousItemUnknown},
 	{usecase.ErrAlreadyMember, http.StatusConflict, apitypes.ErrorCodeAlreadyMember},
+	{usecase.ErrInviteeChanged, http.StatusConflict, apitypes.ErrorCodeInviteeChanged},
 	{usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
 
 	// 既定の上限を超える本文。**scene_too_large に畳まない。** あちらは「貼った

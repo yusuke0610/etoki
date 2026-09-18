@@ -53,4 +53,5 @@
 | [0047](0047-diagram-kind-as-annotation-metadata.md)              | 図の種別は注釈のメタデータに持ち、読み方の規則は実装に書かない         | 採用                 |
 | [0048](0048-show-scene-over-limit-on-open.md)                    | 保存できる上限を超えたボードは、開いた時点で真偽値だけを返して知らせる | 採用                 |
 | [0049](0049-rebuild-parent-tables-outside-the-transaction.md)    | 親テーブルの作り直しは外部キーを切って適用する（印は SQL の先頭行）    | 採用                 |
+| [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる            | 採用                 |
 | [0054](0054-report-repository-list-truncation.md)                | 作成先の候補は打ち切りを添えて返し、絞り込みは手元で行う               | 採用                 |

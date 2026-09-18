@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -124,7 +125,8 @@ func (f *fakeSessions) FindUserByLogin(
 	defer f.mu.Unlock()
 
 	for _, u := range f.users {
-		if u.Provider == provider && u.Login == login {
+		// 実装と同じく大文字小文字を区別せず、外した login（空文字）では引かない。
+		if u.Provider == provider && login != "" && strings.EqualFold(u.Login, login) {
 			return &u, nil
 		}
 	}

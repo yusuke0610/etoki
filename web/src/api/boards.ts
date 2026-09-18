@@ -20,6 +20,8 @@ import type {
   ErrorResponse,
   GenerateDiagramRequest,
   Interpretation,
+  Invitee,
+  InviteMemberRequest,
   Project,
   RenameBoardRequest,
   RepositoryList,
@@ -276,11 +278,21 @@ export const boardsApi = {
 export const membersApi = {
   list: (boardId: string) => request<BoardMember[]>(`/api/boards/${boardId}/members`),
 
-  /** login で指す。相手は一度 etoki にログインしている必要がある。 */
-  invite: (boardId: string, login: string, role: BoardRole) =>
+  /**
+   * 招待の前に、login が誰に当たるのかを引く（ADR 0053）。相手は一度 etoki に
+   * ログインしている必要がある。
+   */
+  lookupInvitee: (boardId: string, login: string) =>
+    request<Invitee>(`/api/boards/${boardId}/invitee?login=${encodeURIComponent(login)}`),
+
+  /**
+   * `lookupInvitee` で確かめた相手を招待する。**userId を必ず送る。** いまその
+   * login を持つ相手と違えば、サーバーが `invitee_changed` で断る。
+   */
+  invite: (boardId: string, login: string, userId: string, role: BoardRole) =>
     request<BoardMember>(`/api/boards/${boardId}/members`, {
       method: "POST",
-      body: JSON.stringify({ login, role }),
+      body: JSON.stringify({ login, userId, role } satisfies InviteMemberRequest),
     }),
 
   setRole: (boardId: string, userId: string, role: BoardRole) =>

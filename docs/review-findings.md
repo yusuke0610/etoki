@@ -37,6 +37,10 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#124](https://github.com/yusuke0610/etoki/pull/124) |        7 |      7 |        0 |      0 | async-ui。ほかは autofix で直った / 既存の規約でカバー済み                                   |
 | [#131](https://github.com/yusuke0610/etoki/pull/131) |        2 |      2 |        0 |      0 | e2e-mocks。ADR 番号の誤記は単発で還さず                                                      |
 | [#134](https://github.com/yusuke0610/etoki/pull/134) |        1 |      1 |        0 |      0 | validation-boundaries / ADR 0049。接続ごとの設定を戻せなかったときの後始末                   |
+| [#135](https://github.com/yusuke0610/etoki/pull/135) |        5 |      5 |        0 |      0 | test-effectiveness。効き目の分母と `~` の非展開は単発で還さず                                |
+| [#163](https://github.com/yusuke0610/etoki/pull/163) |        1 |      1 |        0 |      0 | test-effectiveness                                                                           |
+| [#157](https://github.com/yusuke0610/etoki/pull/157) |        5 |      4 |        1 |      0 | make-targets を新設（引用の指摘が `migrate` で再発）。取り下げは確認と削除の直列化           |
+| [#165](https://github.com/yusuke0610/etoki/pull/165) |        3 |      2 |        1 |      0 | async-ui。取り下げは移行の時刻比較の精度（1 ミリ秒の中の前後は id で決まる）                 |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。

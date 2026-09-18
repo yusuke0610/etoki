@@ -57,6 +57,21 @@ func signInAs(
 	return signIn(t, r)
 }
 
+// inviteBody は、画面と同じく先に引き当ててから招待の本文を組み立てる
+// （ADR 0053）。引き当てが 200 でなければ落とす。
+func inviteBody(
+	t *testing.T, r *gin.Engine, cookie *http.Cookie, boardID, login, role string,
+) map[string]string {
+	t.Helper()
+
+	rec := withCookie(t, r, http.MethodGet, "/api/boards/"+boardID+"/invitee?login="+login, cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lookupInvitee(%s) = %d %s", login, rec.Code, rec.Body)
+	}
+	got := decode[apitypes.Invitee](t, rec)
+	return map[string]string{"login": login, "userId": got.UserID, "role": role}
+}
+
 // createSharedBoard はログイン済みの利用者としてボードを 1 枚作り、ID を返す。
 //
 // cookie を取らない createBoard（router_test.go）とは別に持つ。共有のテストは
@@ -100,7 +115,7 @@ func TestInvitedEditorCanUseBoard(t *testing.T) {
 	}
 
 	rec := doJSON(t, r, http.MethodPost, "/api/boards/"+boardID+"/members", alice,
-		map[string]string{"login": "bob", "role": "editor"})
+		inviteBody(t, r, alice, boardID, "bob", "editor"))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("invite: %d %s", rec.Code, rec.Body)
 	}
@@ -139,7 +154,7 @@ func TestInvitedViewerCannotWrite(t *testing.T) {
 	boardID := createSharedBoard(t, r, alice, "読むだけのボード")
 
 	rec := doJSON(t, r, http.MethodPost, "/api/boards/"+boardID+"/members", alice,
-		map[string]string{"login": "bob", "role": "viewer"})
+		inviteBody(t, r, alice, boardID, "bob", "viewer"))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("invite: %d %s", rec.Code, rec.Body)
 	}
@@ -173,10 +188,99 @@ func TestInvite_UnknownLoginIsBadRequest(t *testing.T) {
 	boardID := createSharedBoard(t, r, alice, "ボード")
 
 	rec := doJSON(t, r, http.MethodPost, "/api/boards/"+boardID+"/members", alice,
-		map[string]string{"login": "carol", "role": "editor"})
+		map[string]string{"login": "carol", "userId": "user-carol", "role": "editor"})
 	// 404 にしない。ボードが無いのか相手が居ないのか区別できなくなる。
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("未知の login = %d %s, want 400", rec.Code, rec.Body)
+	}
+}
+
+// 招待の前に、login が誰に当たるのかを見せる（ADR 0053）。大文字小文字は
+// 区別しない。最終ログインは確認で見せる材料なので、値そのものを見る。
+func TestLookupInvitee_ReturnsTheLastSignedInUser(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	r, _ := newAuthRouter(t, provider)
+
+	signInAs(t, r, provider, "2", "Bob")
+	alice := signInAs(t, r, provider, "1", "alice")
+	boardID := createSharedBoard(t, r, alice, "ボード")
+
+	rec := withCookie(t, r, http.MethodGet, "/api/boards/"+boardID+"/invitee?login=bob", alice)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lookupInvitee = %d %s", rec.Code, rec.Body)
+	}
+	got := decode[apitypes.Invitee](t, rec)
+	if got.Login != "Bob" || got.DisplayName != "Bob" || got.UserID == "" {
+		t.Errorf("Invitee = %+v", got)
+	}
+	if got.LastSignedInAt.IsZero() {
+		t.Errorf("LastSignedInAt が空: %+v", got)
+	}
+
+	if rec := withCookie(t, r, http.MethodGet,
+		"/api/boards/"+boardID+"/invitee?login=carol", alice); rec.Code != http.StatusBadRequest {
+		t.Errorf("未知の login = %d %s, want 400", rec.Code, rec.Body)
+	}
+}
+
+// 引き当ては owner だけ。招待できない人に、誰がログインしたことがあるかを
+// 見せる理由が無い。
+func TestLookupInvitee_RequiresOwner(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	r, _ := newAuthRouter(t, provider)
+
+	bob := signInAs(t, r, provider, "2", "bob")
+	alice := signInAs(t, r, provider, "1", "alice")
+	boardID := createSharedBoard(t, r, alice, "ボード")
+
+	if rec := doJSON(t, r, http.MethodPost, "/api/boards/"+boardID+"/members", alice,
+		inviteBody(t, r, alice, boardID, "bob", "editor")); rec.Code != http.StatusCreated {
+		t.Fatalf("invite: %d %s", rec.Code, rec.Body)
+	}
+
+	rec := withCookie(t, r, http.MethodGet, "/api/boards/"+boardID+"/invitee?login=alice", bob)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("editor の引き当て = %d %s, want 403", rec.Code, rec.Body)
+	}
+}
+
+// 確認してから押すまでのあいだに、改名で空いた login を別人が取った（#142）。
+// 確認で見せた相手と違う人に権限を渡さない。実物の DB で、ログインの時点で
+// 引き当てが新しい持ち主に移ることまで通しで見る。
+func TestInvite_ConflictsWhenLoginChangedHands(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	r, _ := newAuthRouter(t, provider)
+
+	signInAs(t, r, provider, "2", "bob")
+	alice := signInAs(t, r, provider, "1", "alice")
+	boardID := createSharedBoard(t, r, alice, "ボード")
+
+	checked := inviteBody(t, r, alice, boardID, "bob", "editor")
+
+	// 以前の bob は改名し、空いた bob を別人がログインして取った。
+	newcomer := signInAs(t, r, provider, "3", "bob")
+
+	rec := doJSON(t, r, http.MethodPost, "/api/boards/"+boardID+"/members", alice, checked)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("持ち主の変わった招待 = %d %s, want 409", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeInviteeChanged {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeInviteeChanged)
+	}
+
+	// 招待は積まれていない。新しい bob も以前の bob も開けない。
+	if rec := withCookie(t, r, http.MethodGet, "/api/boards/"+boardID, newcomer); rec.Code != http.StatusNotFound {
+		t.Errorf("新しい bob の GET = %d, want 404", rec.Code)
+	}
+	members := withCookie(t, r, http.MethodGet, "/api/boards/"+boardID+"/members", alice)
+	if n := len(decode[[]apitypes.BoardMember](t, members)); n != 1 {
+		t.Errorf("メンバー = %d 人, want 1（owner だけ）", n)
 	}
 }
 
@@ -191,7 +295,7 @@ func TestInvite_DuplicateIsConflict(t *testing.T) {
 	alice := signInAs(t, r, provider, "1", "alice")
 	boardID := createSharedBoard(t, r, alice, "ボード")
 
-	body := map[string]string{"login": "bob", "role": "editor"}
+	body := inviteBody(t, r, alice, boardID, "bob", "editor")
 	if rec := doJSON(t, r, http.MethodPost, "/api/boards/"+boardID+"/members", alice, body); rec.Code != http.StatusCreated {
 		t.Fatalf("1 回目: %d %s", rec.Code, rec.Body)
 	}

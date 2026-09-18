@@ -65,6 +65,27 @@ func (h *handlers) listBoardMembers(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+// lookupInvitee は、招待の前に login が誰に当たるのかを返す（ADR 0053）。
+func (h *handlers) lookupInvitee(c *gin.Context) {
+	if h.members == nil {
+		sharingNotConfigured(c)
+		return
+	}
+
+	u, err := h.members.LookupInvitee(c.Request.Context(), c.Param("id"), c.Query("login"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, apitypes.Invitee{
+		UserID:         u.ID,
+		Login:          u.Login,
+		DisplayName:    u.DisplayName,
+		LastSignedInAt: u.UpdatedAt,
+	})
+}
+
 func (h *handlers) inviteBoardMember(c *gin.Context) {
 	if h.members == nil {
 		sharingNotConfigured(c)
@@ -77,7 +98,7 @@ func (h *handlers) inviteBoardMember(c *gin.Context) {
 	}
 
 	m, err := h.members.Invite(
-		c.Request.Context(), c.Param("id"), req.Login, port.BoardRole(req.Role))
+		c.Request.Context(), c.Param("id"), req.Login, req.UserID, port.BoardRole(req.Role))
 	if err != nil {
 		h.fail(c, err)
 		return

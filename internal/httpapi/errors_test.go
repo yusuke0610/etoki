@@ -63,6 +63,8 @@ var wantMappings = map[string]wantMapping{
 		usecase.ErrPreviousItemUnknown, http.StatusConflict, apitypes.ErrorCodePreviousItemUnknown},
 	"usecase.ErrAlreadyMember": {
 		usecase.ErrAlreadyMember, http.StatusConflict, apitypes.ErrorCodeAlreadyMember},
+	"usecase.ErrInviteeChanged": {
+		usecase.ErrInviteeChanged, http.StatusConflict, apitypes.ErrorCodeInviteeChanged},
 	"usecase.ErrLastOwner": {
 		usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
 
