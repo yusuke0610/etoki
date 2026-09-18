@@ -38,7 +38,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#131](https://github.com/yusuke0610/etoki/pull/131) |        2 |      2 |        0 |      0 | e2e-mocks。ADR 番号の誤記は単発で還さず                                                      |
 | [#134](https://github.com/yusuke0610/etoki/pull/134) |        1 |      1 |        0 |      0 | validation-boundaries / ADR 0049。接続ごとの設定を戻せなかったときの後始末                   |
 | [#135](https://github.com/yusuke0610/etoki/pull/135) |        5 |      5 |        0 |      0 | test-effectiveness。効き目の分母と `~` の非展開は単発で還さず                                |
-| [#157](https://github.com/yusuke0610/etoki/pull/157) |        1 |      1 |        0 |      0 | 還していない。上書きできる make 変数をシェルに渡すときの引用で、rules に該当するテーマが無い |
+| [#157](https://github.com/yusuke0610/etoki/pull/157) |        3 |      3 |        0 |      0 | make-targets を新設。1 回目に還さなかった引用の指摘が `migrate` で再発した                   |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
