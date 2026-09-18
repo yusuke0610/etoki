@@ -193,14 +193,27 @@ clean: ## 生成物を削除する（etoki.db には触らない）
 	@# 消えないよう、消すのは reset-db に分けてある。
 	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
 
-reset-db: ## ボードと作成の記録（etoki.db）を消す。CONFIRM=1 が要る
+reset-db: ## ボードと作成の記録（etoki.db）を消す。etoki を止めて CONFIRM=1 を付ける
 	@# 名前と説明で「データを消す」と分かるだけでは足りない。補完や履歴から
 	@# 呼ばれても消えないよう、明示の変数を要求する。
 	@if [ -z "$(DB_PATH)" ]; then echo "DB_PATH が空です"; exit 1; fi
 	@if [ "$(CONFIRM)" != "1" ]; then \
 		echo "reset-db は $(DB_PATH) を消します。ボード・メンバー・作成の記録を含み、元に戻せません。"; \
 		echo "GitHub に作った draft issue は残りますが、etoki のどこから作ったかは失われます。"; \
-		echo "消すなら: make reset-db CONFIRM=1"; \
+		echo "消すなら、etoki を止めてから: make reset-db CONFIRM=1"; \
+		exit 1; \
+	fi
+	@# 接続が残っているうちは消さない。開いている側は消えたファイルを読み書きし
+	@# 続け、そのあいだの書き込み（作成の記録を含む）は閉じた時点で失われる。
+	@# WAL の接続は DB を一度読むと閉じるまで共有ロックを持ち続けるので、排他で
+	@# 開けるかで残りが分かる（SQLite が最後の接続を閉じるときの判定と同じ）。
+	@# 止めるのはロックで開けないときだけ。壊れた DB で止めると reset-db で
+	@# 消せなくなる。無いファイルを渡すと空の DB ができるので、あるときだけ試す。
+	@if [ -e "$(DB_PATH)" ] && sqlite3 -- "$(DB_PATH)" \
+		'PRAGMA locking_mode=EXCLUSIVE; SELECT count(*) FROM sqlite_master;' 2>&1 >/dev/null \
+		| grep -q 'database is locked'; then \
+		echo "$(DB_PATH) を開いている接続があるので、消さずに止めました。"; \
+		echo "etoki（make dev / make start）や sqlite3 を止めてから、もう一度実行してください。"; \
 		exit 1; \
 	fi
 	@# DB_PATH は上書きできるので、空白や glob を含んでも 1 つのパスとして渡す。
