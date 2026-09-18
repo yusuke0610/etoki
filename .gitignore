@@ -1,7 +1,10 @@
 # build artifacts
 /bin/
 /web/dist/
-/web/node_modules/
+# 先頭に / を付けず、どの階層の node_modules も無視する。依存があるのは
+# web/ だけだが、リポジトリのルートで vitest を叩くと実行キャッシュを持つ
+# node_modules/ ができ、/web/ に絞った書き方では拾えずコミットに混ざる。
+node_modules/
 
 # e2e の実行結果（レポート・トレース・スクリーンショット）
 /web/e2e-output/

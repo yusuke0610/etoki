@@ -61,7 +61,7 @@ const maxDiagramBody = usecase.MaxDiagramChatBytes*6 + 4<<10
 // ようにする**（bindSceneBody と同じ形）。写し替えの表は errors.go にあるので、
 // ここは sentinel を選ぶだけ。
 func (h *handlers) bindDiagramRequest(c *gin.Context) (usecase.DiagramRequest, bool) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDiagramBody)
+	widenBody(c, maxDiagramBody)
 
 	var body apitypes.GenerateDiagramRequest
 	if err := c.ShouldBindJSON(&body); err != nil {

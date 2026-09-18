@@ -13,6 +13,15 @@ import (
 	"github.com/yusuke0610/etoki/port"
 )
 
+// maxCreateBody は作成の本文の読み込みに掛ける上限。
+//
+// **正本は項目の上限（domain.MaxItems / MaxTitleRunes / MaxBodyRunes）で、ここは
+// 歯止め。** 既定の上限（defaultMaxBody）では、数十件の項目が数千字の本文を
+// 持つだけで超え、項目の上限の内側にある解釈が作れない。1 項目は title と body の
+// 上限いっぱい、1 文字は JSON で最大 6 バイト（\uXXXX）として積み、要約と鍵の
+// 名前のぶんに既定の上限を足す。
+const maxCreateBody = domain.MaxItems*(domain.MaxTitleRunes+domain.MaxBodyRunes)*6 + defaultMaxBody
+
 // createItems は解釈結果から draft issue を作る。
 //
 // リクエストボディは解釈のエンドポイントが返したものそのもの。開発者が確認した
@@ -27,9 +36,10 @@ func (h *handlers) createItems(c *gin.Context) {
 		return
 	}
 
+	widenBody(c, maxCreateBody)
+
 	var req apitypes.Interpretation
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindJSON(c, &req) {
 		return
 	}
 

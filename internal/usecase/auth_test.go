@@ -287,6 +287,44 @@ func TestStartAndComplete(t *testing.T) {
 	}
 }
 
+// ログインの開始には回数の上限がある（issue #147）。
+//
+// **ログインしていなくても書き込みが起きる唯一の口。** 1 回ごとに state が
+// 1 つ保存され、掃除は期限切れしか消さないので、上限が無いと窓のあいだ叩かれた
+// 回数だけ表が育つ。
+//
+// **断ったぶんを保存していないことまで見る。** 上限を state の保存より後ろで
+// 見る実装は、エラーの検査だけでは素通りする。守ろうとしている当のものが
+// 増えている。
+func TestStart_LimitsLoginStarts(t *testing.T) {
+	t.Parallel()
+
+	sessions := newFakeSessions()
+	now := authNow
+	svc := usecase.NewAuthService(defaultProvider(), sessions,
+		usecase.WithAuthClock(func() time.Time { return now }))
+
+	for i := range usecase.MaxLoginStarts {
+		if _, err := svc.Start(t.Context(), ""); err != nil {
+			t.Fatalf("%d 回目の Start() = %v", i+1, err)
+		}
+	}
+
+	saved := len(sessions.states)
+	if _, err := svc.Start(t.Context(), ""); !errors.Is(err, usecase.ErrRateLimited) {
+		t.Fatalf("上限を超えた Start() = %v, want ErrRateLimited", err)
+	}
+	if len(sessions.states) != saved {
+		t.Errorf("断ったのに state が増えている: %d -> %d", saved, len(sessions.states))
+	}
+
+	// 窓（StateTTL）を出れば通る。**上限は永久に閉じるものではない。**
+	now = authNow.Add(usecase.StateTTL + time.Second)
+	if _, err := svc.Start(t.Context(), ""); err != nil {
+		t.Errorf("窓を出たあとの Start() = %v, want nil", err)
+	}
+}
+
 // state は単回使用。使い回せると CSRF 対策にならない。
 func TestComplete_RejectsReusedState(t *testing.T) {
 	t.Parallel()

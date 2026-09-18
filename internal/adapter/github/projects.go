@@ -141,7 +141,7 @@ func New(cfg Config) (*Client, error) {
 // 「使える」の定義が Mode で変わる（ADR 0015）。GitHub App では
 // インストールしたリポジトリだけ、PAT では利用者が見えるものすべて。
 // これは実装の都合ではなく、GitHub 側の権限モデルの違いそのもの。
-func (c *Client) ListRepositories(ctx context.Context) ([]port.Repository, error) {
+func (c *Client) ListRepositories(ctx context.Context) (port.RepositoryList, error) {
 	if c.mode == ModeApp {
 		return c.listInstalledRepositories(ctx)
 	}
@@ -154,7 +154,7 @@ func (c *Client) ListRepositories(ctx context.Context) ([]port.Repository, error
 //
 // トークンに repo の read が無いと 0 件になるが、権限不足と「本当に 1 つも
 // 無い」を GraphQL の応答からは区別できない。案内は呼び出し側に任せる。
-func (c *Client) listViewerRepositories(ctx context.Context) ([]port.Repository, error) {
+func (c *Client) listViewerRepositories(ctx context.Context) (port.RepositoryList, error) {
 	var (
 		repos []port.Repository
 		after *string
@@ -164,7 +164,7 @@ func (c *Client) listViewerRepositories(ctx context.Context) ([]port.Repository,
 		var resp repositoriesResponse
 		vars := map[string]any{"first": listPageSize, "after": after}
 		if err := c.do(ctx, queryViewerRepositories, vars, &resp); err != nil {
-			return nil, err
+			return port.RepositoryList{}, err
 		}
 
 		for _, n := range resp.Viewer.Repositories.Nodes {
@@ -176,18 +176,21 @@ func (c *Client) listViewerRepositories(ctx context.Context) ([]port.Repository,
 		}
 
 		// 上限に達したらそこで返す。選択肢として見せるものなので、全件を
-		// 取り切る必要が無い。
+		// 取り切る必要が無い。**打ち切ったことは返り値に載せる**（ADR 0054）。
+		// 黙って切ると、目当てが出ない利用者が権限を疑うことになる。
 		if len(repos) >= maxRepositories {
-			return repos[:maxRepositories], nil
+			return port.RepositoryList{
+				Repositories: repos[:maxRepositories], Truncated: true,
+			}, nil
 		}
 
 		page := resp.Viewer.Repositories.PageInfo
 		next, err := nextCursor("repositories", page.HasNextPage, page.EndCursor, after)
 		if err != nil {
-			return nil, err
+			return port.RepositoryList{}, err
 		}
 		if next == nil {
-			return repos, nil
+			return port.RepositoryList{Repositories: repos}, nil
 		}
 		after = next
 	}
@@ -245,7 +248,7 @@ func (c *Client) ListRepositoryProjects(
 //
 // 画面の意味も正しくなる。候補が「利用者が etoki に許可したリポジトリ」だけに
 // なり、選んだのに Projects を作れない、が起きない。
-func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Repository, error) {
+func (c *Client) listInstalledRepositories(ctx context.Context) (port.RepositoryList, error) {
 	// インストール一覧もページングする。1 ページ目で打ち切ると、超えた分の
 	// インストールが黙って消え、そのリポジトリが候補に出ない。「インストール
 	// 経由が使えるリポジトリの定義」という前提がそこで崩れる。
@@ -260,7 +263,7 @@ func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Reposito
 
 		path := fmt.Sprintf("/user/installations?per_page=%d&page=%d", listPageSize, page)
 		if err := c.rest(ctx, path, &installations); err != nil {
-			return nil, err
+			return port.RepositoryList{}, err
 		}
 
 		for _, inst := range installations.Installations {
@@ -274,7 +277,12 @@ func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Reposito
 		}
 	}
 
-	var repos []port.Repository
+	var (
+		repos []port.Repository
+		// truncated は候補を取り切らずに辿るのをやめたこと。ページ数の上限で
+		// 止めた場合も含める。**「まだある」ではなく「見るのをやめた」。**
+		truncated bool
+	)
 
 	for _, instID := range installIDs {
 		for page := 1; ; page++ {
@@ -292,7 +300,7 @@ func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Reposito
 			path := fmt.Sprintf("/user/installations/%d/repositories?per_page=%d&page=%d",
 				instID, listPageSize, page)
 			if err := c.rest(ctx, path, &body); err != nil {
-				return nil, err
+				return port.RepositoryList{}, err
 			}
 
 			for _, r := range body.Repositories {
@@ -309,13 +317,18 @@ func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Reposito
 			}
 
 			// 選択肢として見せるものなので、全件を取り切る必要は無い。
+			// **打ち切ったことは返り値に載せる**（ADR 0054）。
 			if len(repos) >= maxRepositories {
-				return repos[:maxRepositories], nil
+				return port.RepositoryList{
+					Repositories: repos[:maxRepositories], Truncated: true,
+				}, nil
 			}
 			// 上の判定は残った件数しか見ない。アーカイブ済みばかりのページが
 			// 続くと repos が増えず、上限に達しないまま辿り続ける。走査した
-			// ページ数にも上限を置く。
+			// ページ数にも上限を置く。**こちらも打ち切り。** インストールの
+			// 途中で止めているので、残りのページに候補があっても出ない。
 			if page >= maxRestPages {
+				truncated = true
 				break
 			}
 			// 埋まっていないページが返ったら終わり。total_count は権限で
@@ -326,7 +339,7 @@ func (c *Client) listInstalledRepositories(ctx context.Context) ([]port.Reposito
 		}
 	}
 
-	return repos, nil
+	return port.RepositoryList{Repositories: repos, Truncated: truncated}, nil
 }
 
 // rest は GitHub の REST を 1 回叩き、JSON を out に詰める。

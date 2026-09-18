@@ -89,6 +89,16 @@ direnv allow
 `ETOKI_ALLOWED_ORIGINS` にそのオリジンを足さないと自分のブラウザからも
 届かなくなります。
 
+**認証を設定しないまま `ETOKI_ADDR` を広げないでください。** 認証なしの構成では
+全ボードが 1 人のもの（[ADR 0016](docs/adr/0016-boards-have-owners.md)）なので、
+そのアドレスに届く人は誰でもログインなしに全ボードを読み書きでき、
+`ETOKI_GITHUB_TOKEN` で draft issue を作り、`ETOKI_LLM_API_KEY` で LLM を
+叩けます。タブレットや別の端末から開きたいなら、先に GitHub App を設定して
+ログインを要求してください（後述）。この組み合わせで起動すると、起動時のログに
+警告（`listening beyond loopback without authentication`）が出ます。**起動は
+止めません。** 広げるのは利用者が明示的に選んだ設定なので、拒むとその選択を
+後から覆すことになります。
+
 ### dev サーバーを使わずに動かす
 
 `make dev` は Vite の開発サーバー（:5173）が画面を配ります。**人に使わせる
@@ -253,7 +263,10 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
    - **Organization permissions**: `Projects: Read and write`
    - Webhook は要りません（Active のチェックを外す）
 2. 使いたいリポジトリにインストールする。**候補に出るのはここで許可した
-   リポジトリだけ**です。
+   リポジトリだけ**です。候補が多いときは途中で一覧を打ち切ります。打ち切った
+   ことは選択の画面に出るので、目当てが出ない理由が「許可していない」のか
+   「打ち切りの外」なのかは画面で分かります
+   （[ADR 0054](docs/adr/0054-report-repository-list-truncation.md)）。
 3. 環境変数を設定する。
 
 ```sh

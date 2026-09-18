@@ -33,6 +33,23 @@ const (
 	//
 	// ちょうどで切ると、更新せずに投げたリクエストが往復のあいだに失効する。
 	refreshMargin = 5 * time.Minute
+
+	// MaxLoginStarts は StateTTL のあいだに始められるログインの回数
+	// （issue #147）。
+	//
+	// **ログインの開始は、唯一「ログインしていなくても書き込みが起きる」口。**
+	// 1 回ごとに oauth_states へ 1 行入り、掃除は期限切れしか消さないので、
+	// 上限が無いと StateTTL のあいだ叩かれた回数だけ表が育つ。
+	//
+	// **数えるのは開始の回数で、いま残っている行数ではない。** 行数を数えると
+	// 口を増やす（port.SessionRepository にメソッドを足す）ことになり、外部
+	// リポジトリの実装が壊れる。開始の回数は残っている行数以上になるので、
+	// 抑えたい方向には安全側に外れる。
+	//
+	// 60 は「認可画面まで行って戻らなかった」を含めても、1 つのインスタンスで
+	// 10 分に起きる現実的な回数の上。**根拠のある値ではない。** 実際に詰まる
+	// なら動かす。
+	MaxLoginStarts = 60
 )
 
 // AuthService はログインとセッションを担う。
@@ -52,6 +69,16 @@ type AuthService struct {
 	// GitHub は使った refresh token を無効にするので、並行する 2 本が同時に
 	// 更新すると片方が無効なトークンを掴む（ADR 0015）。
 	refreshing sync.Map // userID -> *sync.Mutex
+
+	// mu と loginStarts は StateTTL の窓の中で始まったログインの時刻。
+	//
+	// **状態はメモリだけ。再起動で消える。** 依る前提は BoardLocks / LLMLimiter と
+	// 同じで（SQLite を複数プロセスで共有しない）、表は作らない。
+	//
+	// **利用者ごとではなくプロセス全体で数える。** この口は requireAuth の外に
+	// あり、絞る軸にできる「誰であるか」がまだ無い（ADR 0044 の軸は使えない）。
+	mu          sync.Mutex
+	loginStarts []time.Time
 }
 
 var _ port.GitHubTokenSource = (*AuthService)(nil)
@@ -99,11 +126,38 @@ func (s *AuthService) Start(ctx context.Context, redirectURI string) (string, er
 	}
 
 	now := s.now()
+	// **上限は state を書く前に見る。** 後ろに置くと、断ったリクエストも 1 行
+	// 書いてから断ることになり、守ろうとしている当のものが増える。
+	if err := s.admitLoginStart(now); err != nil {
+		return "", err
+	}
+
 	if err := s.sessions.SaveState(ctx, state, now, now.Add(StateTTL)); err != nil {
 		return "", err
 	}
 
 	return s.provider.AuthorizeURL(state, redirectURI), nil
+}
+
+// admitLoginStart は窓の中の開始回数を見て、1 回ぶんを数える。
+//
+// 上限に当たったら ErrRateLimited（429）で断る。**待たせない。** ブラウザ側で
+// 「止まった」のか「並んでいる」のかが見えなくなる（LLMLimiter と同じ判断）。
+//
+// **窓は StateTTL と同じにする。** 数えているのは「この瞬間 oauth_states に
+// 残りうる行」なので、窓を別に持つと 2 つの値がずれる。
+func (s *AuthService) admitLoginStart(now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.loginStarts = withinWindow(s.loginStarts, now.Add(-StateTTL))
+	if len(s.loginStarts) >= MaxLoginStarts {
+		return fmt.Errorf("%w: %d logins started within %s, limit is %d",
+			ErrRateLimited, len(s.loginStarts), StateTTL, MaxLoginStarts)
+	}
+	s.loginStarts = append(s.loginStarts, now)
+
+	return nil
 }
 
 // Complete はコールバックを処理し、セッション token を返す。

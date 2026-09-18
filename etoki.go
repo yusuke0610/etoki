@@ -247,12 +247,49 @@ func New(opts Options) (*Server, error) {
 
 	handler := httpapi.NewRouter(deps)
 
+	warnIfExposedWithoutAuth(addr, opts.Auth != nil, opts.Logger)
+
 	return &Server{
 		addr:                addr,
 		handler:             handler,
 		shutdownTimeout:     shutdownTimeout,
 		cancelRequestsAfter: cancelRequestsAfter,
 	}, nil
+}
+
+// warnIfExposedWithoutAuth は認証なしで公開インターフェースにバインドしたことを
+// 知らせる（issue #148）。
+//
+// **止めずに知らせる。** 既定のアドレス（DefaultAddr）はループバックのままで、
+// 広げるのは利用者が明示的に選んだ設定（ADR 0016）。拒むと、その選択を後から
+// 覆すことになる。代わりに、何が起きる構成なのかを起動時に見せる（中核思想 3）。
+//
+// この組み合わせでは全ボードが「空文字の所有者」1 人のものになり（ADR 0016）、
+// 届く範囲の誰もがログインなしで読み書きでき、PAT と LLM の鍵もそのまま使える。
+//
+// **判定は httpapi.IsLoopbackHost に預ける。** Origin 検証が「守っている側」で、
+// ここは「知らせる側」。同じ問いに 2 つの答えを持たせない。
+//
+// **New に置くのは Run より前に見えるため。** Run は起動に成功した後でしか
+// 呼ばれず、バインドに失敗した構成では出ない。危ういのは設定の組み合わせの
+// ほうなので、組み立てた時点で言う。
+func warnIfExposedWithoutAuth(addr string, authConfigured bool, logger *slog.Logger) {
+	if authConfigured || httpapi.IsLoopbackHost(addr) {
+		return
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	logger.Warn("listening beyond loopback without authentication",
+		slog.String("addr", addr),
+		slog.String("detail",
+			"anyone who can reach this address can read and write every board, "+
+				"and can use the configured GitHub token and LLM key"),
+		slog.String("hint",
+			"configure ETOKI_GITHUB_APP_CLIENT_ID / ETOKI_GITHUB_APP_CLIENT_SECRET "+
+				"to require sign-in, or bind to "+DefaultAddr),
+	)
 }
 
 // validateLLMLimits は実行の上限の設定を見る。

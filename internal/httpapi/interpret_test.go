@@ -236,6 +236,10 @@ func TestInterpretAnnotation_RejectsBadImage(t *testing.T) {
 
 // 画像の上限はユースケース層が持つが、その判定はボディを全部メモリに載せた
 // あとにしかできない。読み込み自体にも歯止めを置いてある。
+//
+// **歯止めに当たった失敗も契約の code に写す**（`.claude/rules/api-contract.md`、
+// issue #147）。400 に落とすと、同じ「大きすぎる」がボディの大きさしだいで
+// 400 と 413 に割れる。
 func TestInterpretAnnotation_RejectsOversizedBody(t *testing.T) {
 	t.Parallel()
 
@@ -249,8 +253,11 @@ func TestInterpretAnnotation_RejectsOversizedBody(t *testing.T) {
 	body := imageBody("image/png", usecase.MaxImageBytes*2)
 
 	rec := do(t, r, http.MethodPost, interpretPath(id, "annot-1"), body)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (%s)", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeRequestTooLarge {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeRequestTooLarge)
 	}
 	if llm.calls != 0 {
 		t.Errorf("弾いたのに LLM を呼んでいる: %d 回", llm.calls)

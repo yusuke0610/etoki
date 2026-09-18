@@ -125,6 +125,7 @@ type RuleID string
 const (
 	RuleSummary          RuleID = "summary"
 	RuleItemsPresent     RuleID = "itemsPresent"
+	RuleItemsCount       RuleID = "itemsCount"
 	RuleKind             RuleID = "kind"
 	RuleTitle            RuleID = "title"
 	RuleTitleSingleLine  RuleID = "titleSingleLine"
@@ -161,6 +162,21 @@ const (
 	MaxTitleRunes = 256
 	MaxBodyRunes  = 65536
 )
+
+// MaxItems は 1 回の解釈・作成で扱える項目数の上限（issue #147）。
+//
+// **GitHub が課す制約ではなく etoki の都合。** 作成はボード単位の排他
+// （usecase.BoardLocks）を取ったまま進み、1 項目につき GitHub への書き込みが
+// 最大 3 回走る。上限が無いと、1 回のリクエストでそのボードの作成と作成先の
+// 変更を任意の長さ止められる。
+//
+// **切り詰めない。弾く**（MaxTitleRunes と同じ理由）。切り詰めると、作られな
+// かった項目が「作った」と記録されないまま消える。
+//
+// 200 は、囲み 1 つから出てくる現実的な件数（数件〜数十件）に対して十分な
+// 余裕がある一方、排他を握る時間には上限が付く、という線で選んでいる。
+// **根拠のある値ではない。** 実際に詰まるなら動かす。
+const MaxItems = 200
 
 // Rule は制約 1 つと、それを LLM に伝える文。
 type Rule struct {
@@ -204,6 +220,8 @@ var Rules = []Rule{
 		"issue の title は重複していても構いません。"},
 	{RuleItemsPresent, "items は少なくとも 1 件必要です。囲んだ範囲から作るものが 1 つも" +
 		"無い、という出力はしないでください。"},
+	{RuleItemsCount, fmt.Sprintf("items は %d 件までです。これを超えるなら、囲む範囲を"+
+		"分けてもらう前提で、いまの範囲から読み取れるぶんだけを出してください。", MaxItems)},
 	{RuleSummary, "summary は GitHub には作りません。解釈が意図どおりかを開発者が確かめる" +
 		"ためのものなので、何をどうまとめたのかが分かる文にしてください。空にはできません。"},
 	{RulePreviousRef, "previousRef は、前回までに作ったものを書き換える場合にだけ、その ID" +
@@ -388,6 +406,10 @@ func (in Interpretation) Validate(g Granularity) error {
 	if len(in.Items) == 0 {
 		errs = append(errs, newValidationError(RuleItemsPresent, "items",
 			"少なくとも 1 件の項目が必要です"))
+	}
+	if len(in.Items) > MaxItems {
+		errs = append(errs, newValidationError(RuleItemsCount, "items",
+			fmt.Sprintf("項目は %d 件までです（%d 件ありました）", MaxItems, len(in.Items))))
 	}
 
 	errs = append(errs, validateItems(in.Items)...)

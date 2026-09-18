@@ -24,6 +24,7 @@ import {
   matchedInterpretationMock,
   mixedFramesMock,
   multiFrameMock,
+  repositories,
   signedIn,
   unselectedBoard,
 } from "./helpers/fixtures";
@@ -201,6 +202,25 @@ test.describe("スクリーンショット", () => {
     await page.locator(".excalidraw canvas").first().waitFor();
     await page.getByRole("heading", { name: "注釈", level: 2 }).waitFor();
     await shot(page, "07-target-selected");
+  });
+
+  // 候補を取り切っていない状態（ADR 0054）。打ち切りの知らせと絞り込みが
+  // どちらも見えていることを、画像としても残す。
+  test("打ち切った作成先の一覧を撮る", async ({ page }) => {
+    const mock = baseMock();
+    const target = unselectedBoard();
+    mock.boards = [summarize(target)];
+    mock.details = { [target.id]: target };
+    mock.annotations = { [target.id]: [] };
+    mock.repositories = { status: 200, body: { ...repositories(), truncated: true } };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+    await page.getByText("一覧を打ち切っています").waitFor();
+    await shot(page, "20-target-truncated");
   });
 
   // 固定済みでも表示名は取り直せる（ADR 0037）。確定していることと、名前だけは

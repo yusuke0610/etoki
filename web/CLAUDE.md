@@ -406,6 +406,12 @@ cd web && bunx playwright test --ui
 これらは `make` を通らないので **devShell の中で実行する**。`make` のように
 `nix develop` へ包み直されない。
 
+**`cd web` も省かない。** リポジトリのルートで `bunx vitest` を叩くと、vitest は
+そこを基準に実行キャッシュを置くので、ルートに `node_modules/` ができる。
+`.gitignore` には入れてあるが、ルートの `node_modules` は
+`go.mod` の `ignore ./web` や `.golangci.yml` の除外が前提にしている場所の外に
+あり（ルートの `CLAUDE.md`）、道具ごとに拾われ方が変わる。
+
 ## ツールチェーン上の非自明な設定
 
 触る前に理由を把握しておくべきもの。消すと壊れる。
