@@ -28,9 +28,7 @@ make help        # ターゲット一覧
 **ターゲットの一覧は `make help` が出します。** ここに書き写すと、Makefile に
 足したものが漏れたまま残ります。
 
-`nix develop` に入り忘れても構いません。`make` は開発用シェルの外から呼ばれた
-ことを見て、`nix develop --command` で自分をやり直します。入っていれば包み直しは
-起きないので、シェルの中と外で結果は変わりません。
+`make` は `nix develop` に入り忘れても、自分で開発用シェルに入り直して動きます。
 
 HTTP API の仕様は [`api/openapi.yaml`](api/openapi.yaml) にあります。これが
 契約の正本で、Go と TypeScript の型はここから生成しています。仕様を変えたら
@@ -118,9 +116,9 @@ GitHub App を設定しているなら、Callback URL と `ETOKI_PUBLIC_URL` も
 `ETOKI_WEB_DIR` を渡さなければ画面は配りません。`make dev` では Vite が同じものを
 持っているので、両方が配ると画面の出どころが構成によって変わるためです
 （[ADR 0032](docs/adr/0032-serve-the-built-frontend.md)）。渡したのに `index.html`
-が無い場合は起動時に落ちます。**`ETOKI_ADDR` で公開インターフェースにバインド
-するなら、`ETOKI_ALLOWED_ORIGINS` にそのオリジンを足してください。** 足さないと
-API だけでなく画面も開けません。
+が無い場合は起動時に落ちます。公開インターフェースにバインドするときの
+`ETOKI_ALLOWED_ORIGINS` は[上に書いたとおり](#設定)で、足さないと API だけでなく
+画面も開けません。
 
 ### データを残す
 
@@ -246,9 +244,8 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
 アカウントの Project は GitHub App からは触れません（後述）。
 
 1. [GitHub App を作る](https://github.com/settings/apps/new)
-   - **Callback URL**: `http://127.0.0.1:5173/api/auth/callback`
-     （`make dev` の場合。ブラウザがいるポートに合わせる。`make start` なら
-     `http://127.0.0.1:8080/api/auth/callback`）
+   - **Callback URL**: ブラウザがいるポートに合わせる。`make dev` と
+     `make start` での値は[上の表](#dev-サーバーを使わずに動かす)
    - **Repository permissions**: `Metadata: Read-only`
    - **Organization permissions**: `Projects: Read and write`
    - Webhook は要りません（Active のチェックを外す）
@@ -260,7 +257,7 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
 export ETOKI_GITHUB_APP_CLIENT_ID=Iv23li...
 export ETOKI_GITHUB_APP_CLIENT_SECRET=...
 export ETOKI_TOKEN_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
-export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき
+export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき（上の表）
 ```
 
 鍵は保存するトークンの暗号化に使います。**未設定だと起動時に落ちます。**

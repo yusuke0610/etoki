@@ -4,23 +4,23 @@ HTTP 契約を触るときの約束。全体の規約はリポジトリルート
 
 ## OpenAPI が正本
 
-**`api/openapi.yaml` が境界の DTO の唯一の定義。Go も TypeScript も生成物。**
-手で型を足すと、そこだけ二重定義に戻る（ADR 0011）。
+正本であること、契約を変えたら `make codegen` の生成物を同じコミットに含める
+こと、生成物を手で編集しないことは、ルートの `CLAUDE.md`「HTTP 契約は OpenAPI が
+正本」（ADR 0011）。ここに置くのは、生成物がどこに出てどう使われるかと、生成器の
+扱い。
 
 | 生成物                                   | 生成元               | 使う側                                    |
 | ---------------------------------------- | -------------------- | ----------------------------------------- |
 | `internal/httpapi/apitypes/types.gen.go` | `oapi-codegen`       | Gin ハンドラ                              |
 | `web/src/api/generated.ts`               | `openapi-typescript` | `web/src/api/types.ts` 経由でフロント全体 |
 
-- **契約を変えたら `make codegen` を実行し、生成物を同じコミットに含める。**
-  忘れると CI の codegen drift で落ちる。
-- 生成物は手で編集しない。次の生成で消える。
-- エラー本文も `ErrorResponse` に揃える。ハンドラに `gin.H{"error": ...}` を
-  直に書かない。
-- フロントは `web/src/api/types.ts` の名前を import する。**独自の別名を
-  付けない。** 名前が食い違うと、契約を直したときに追随先を機械的に辿れなくなる。
-- E2E のモック応答も生成型で縛ってある（`web/e2e/helpers/api.ts`）。
-  モックだけが古い契約のまま緑になるのを防ぐため。
+生成型の使い方の約束は、使う側を触るときに読まれる場所にある。
+
+- Go のハンドラ（`ErrorResponse` に揃える、`gin.H` を書かない）:
+  `.claude/rules/http-handlers.md`
+- フロント（`web/src/api/types.ts` の名前を import する）と E2E のモック
+  （`Reply<T>`）: `web/CLAUDE.md`
+- 契約の面をまたいで追いつかない形: `.claude/rules/api-contract.md`
 
 ## 生成器のバージョン
 
