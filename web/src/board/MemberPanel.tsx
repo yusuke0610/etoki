@@ -4,7 +4,7 @@ import { ApiError, membersApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
 import type { BoardMember, BoardRole, Invitee } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
-import { ROLE_LABELS } from "./roles";
+import { isOwner, ROLE_LABELS, roleOptions } from "./roles";
 
 type Props = {
   boardId: string;
@@ -128,7 +128,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
     [boardId, reload],
   );
 
-  const isOwner = role === "owner";
+  const owner = isOwner(role);
 
   return (
     <section className="member-panel" aria-label="メンバー">
@@ -141,7 +141,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
 
       {error && <ErrorNotice failure={error} />}
 
-      {isOwner && (
+      {owner && (
         <form
           className="invite-form"
           onSubmit={(e) => {
@@ -164,9 +164,11 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
             value={inviteRole}
             onChange={(e) => setInviteRole(e.target.value as BoardRole)}
           >
-            <option value="editor">{ROLE_LABELS.editor}</option>
-            <option value="viewer">{ROLE_LABELS.viewer}</option>
-            <option value="owner">{ROLE_LABELS.owner}</option>
+            {roleOptions().map((r) => (
+              <option key={r} value={r}>
+                {ROLE_LABELS[r]}
+              </option>
+            ))}
           </select>
           <button type="submit" disabled={busy || !login.trim()}>
             確認する
@@ -181,7 +183,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
         </form>
       )}
 
-      {isOwner && invitee && (
+      {owner && invitee && (
         <div className="invitee" role="group" aria-label="招待する相手の確認">
           <dl>
             <dt>表示名</dt>
@@ -224,7 +226,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
                 {m.login && <span className="kind">@{m.login}</span>}
               </span>
 
-              {isOwner ? (
+              {owner ? (
                 <>
                   <select
                     aria-label={`${m.login || m.userId} のロール`}
@@ -234,9 +236,11 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
                       void changeRole(m.userId, e.target.value as BoardRole)
                     }
                   >
-                    <option value="owner">{ROLE_LABELS.owner}</option>
-                    <option value="editor">{ROLE_LABELS.editor}</option>
-                    <option value="viewer">{ROLE_LABELS.viewer}</option>
+                    {roleOptions().map((r) => (
+                      <option key={r} value={r}>
+                        {ROLE_LABELS[r]}
+                      </option>
+                    ))}
                   </select>
                   <button
                     type="button"

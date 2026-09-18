@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { annotationCard, openBoard } from "./helpers/board";
+import { annotationCard, openBoardWithMock } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -13,8 +12,6 @@ import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
  *
  * 押した後の 503 と同じ文言が出ることまで見る。別々に持つと片方だけ古くなる。
  */
-
-const BOARD_NAME = "認証まわりのブレスト";
 
 test.describe("設定していない機能", () => {
   test("LLM が未設定なら、押す前に解釈できないことと理由を出す", async ({ page }) => {
@@ -31,10 +28,7 @@ test.describe("設定していない機能", () => {
         error: "llm is not configured: set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL",
       },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     const interpret = card.getByRole("button", { name: "解釈する" });
@@ -61,10 +55,7 @@ test.describe("設定していない機能", () => {
       status: 200,
       body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -87,10 +78,7 @@ test.describe("設定していない機能", () => {
       status: 200,
       body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expect(
       page.getByRole("button", { name: "作成先の名前を取り直す" }),
@@ -106,10 +94,7 @@ test.describe("設定していない機能", () => {
       status: 200,
       body: { interpretation: true, diagramDraft: true, creation: true, sharing: false },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expect(page.getByRole("button", { name: "メンバー", exact: true })).toHaveCount(
       0,
@@ -122,10 +107,7 @@ test.describe("設定していない機能", () => {
   test("使える機能を引けなくても、操作は止めない", async ({ page }) => {
     const mock = baseMock();
     mock.capabilities = { status: 500, body: { code: "internal", error: "boom" } };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await expect(card.getByRole("button", { name: "解釈する" })).toBeEnabled();

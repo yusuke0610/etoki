@@ -3,8 +3,13 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 import { holdCreate, installApi } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
-import { ANNOTATION_IDS, BOARD_ID, baseMock } from "./helpers/fixtures";
+import {
+  annotationCard,
+  drawRectangle,
+  openBoard,
+  openBoardWithMock,
+} from "./helpers/board";
+import { ANNOTATION_IDS, BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
 
 /**
  * ボードの持ち出しと取り込み（#42、ADR 0045）。
@@ -14,8 +19,6 @@ import { ANNOTATION_IDS, BOARD_ID, baseMock } from "./helpers/fixtures";
  * 動かないので、vitest（`src/excalidraw/transfer.test.ts`）が見ているのは
  * ファイル名の作り方と、返ってきたものの詰め替えまで。
  */
-
-const BOARD_NAME = "認証まわりのブレスト";
 
 /** 貼ってある画像の ID。要素と `files` の対応が保たれることを見るのに使う。 */
 const IMAGE_FILE_ID = "file-imported";
@@ -135,9 +138,7 @@ function annotationFrames(page: Page) {
 
 test.describe("書き出し", () => {
   test("ボード名のファイルに、注釈つきのシーンが出る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
@@ -169,9 +170,7 @@ test.describe("書き出し", () => {
   // **保存済みシーンではなくキャンバスから出す**（ADR 0045）。保存済みから
   // 出すと、未保存の描き足しが黙って落ちる。
   test("未保存の描き足しも出る", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const savedScene = mock.details[BOARD_ID]?.scene ?? "{}";
     const saved = (JSON.parse(savedScene) as { elements: [] }).elements.length;
@@ -228,9 +227,7 @@ test.describe("取り込み", () => {
   test("キャンバスが置き換わり、未保存になる（サーバーには送らない）", async ({
     page,
   }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const before = mock.details[BOARD_ID]?.updatedAt;
     const size = await page.locator(".badge-size").innerText();
@@ -293,9 +290,7 @@ test.describe("取り込み", () => {
     const detail = mock.details[BOARD_ID];
     if (detail === undefined) throw new Error("テスト用のボードが無い");
     mock.details[BOARD_ID] = { ...detail, scene: rectangleFile(20) };
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
     await chooseFile(page, rectangleFile(120));
@@ -307,9 +302,7 @@ test.describe("取り込み", () => {
   // 変わってしまうものがあれば持ち出す意味が薄い。背景色は `appState` に
   // あって要素には無いので、ここを落としても要素の検査は素通りする。
   test("取り込んで書き出すと、要素も背景色も戻る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await chooseFile(page, importedFile("#ffeb3b"));
     await expect(annotationFrames(page)).toHaveCount(1);
@@ -353,9 +346,7 @@ test.describe("取り込み", () => {
       ...detail,
       scene: importedFile("#ffffff", EXISTING_IMAGE_DATA_URL),
     };
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await chooseFile(page, importedFile());
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
@@ -377,9 +368,7 @@ test.describe("取り込み", () => {
   test("同じボードで作成済みの注釈 ID を取り込んでも新しい注釈として保存する", async ({
     page,
   }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     await chooseFile(
       page,
@@ -408,9 +397,7 @@ test.describe("取り込み", () => {
 
   // 未保存の内容を黙って捨てない（ADR 0021 と同じ形）。
   test("未保存のときは確認を出し、断れば取り込まない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
     // **待ってから読む。** `setInputFiles` はファイルを差し込むだけで、取り込み
@@ -427,9 +414,7 @@ test.describe("取り込み", () => {
   });
 
   test("未保存でも、承諾すれば取り込む", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
     page.once("dialog", (dialog) => void dialog.accept());
@@ -441,9 +426,7 @@ test.describe("取り込み", () => {
   // 未保存でなければ失うものが無いので訊かない。訊くと、開いた直後の取り込みが
   // 毎回 1 手増える。
   test("未保存でなければ確認しない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     let asked = false;
     page.on("dialog", (dialog) => {
@@ -459,9 +442,7 @@ test.describe("取り込み", () => {
 
   // 読めないものをキャンバスに渡すと、そのボードが開けなくなる（#42）。
   test("読めないファイルは断り、キャンバスを変えない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await chooseFile(page, "これは Excalidraw のシーンではない");
 
@@ -478,9 +459,7 @@ test.describe("取り込み", () => {
   // 読み込みの入口を 1 つに保つ（ADR 0045）。**ライブラリのメニューに残っている
   // と、同じ画面に意味の違う「保存」が 2 つ並ぶ。**
   test("ライブラリのメニューに開く・名前を付けて保存が無い", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     // ハンバーガーは `.dropdown-menu-button` を名乗る 2 つのうちの 1 つ
     // （もう 1 つはツールバーの「その他のツール」）。取り違えると、閉じたか
