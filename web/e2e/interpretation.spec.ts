@@ -408,6 +408,66 @@ test.describe("解釈と作成", () => {
     await expect(result.getByText("ログイン失敗を数える")).toHaveCount(0);
   });
 
+  // GitHub が受理したあとで応答だけを失うと、作った ID が分からない（ADR 0056、
+  // #170）。**「失敗した」とは出さない。** 作られているかもしれないので、もう一度
+  // 押させるほうが危ない。
+  test("届いたか分からない項目は、作れた件数に数えず、押し直させない", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    // 1 件目は確定、2 件目は応答を失った（item ID が無い）。
+    const [confirmed, lost] = createdRun().items.slice(0, 2);
+    if (confirmed === undefined || lost === undefined) throw new Error("fixture");
+    mock.createItems = {
+      status: 201,
+      body: {
+        ...createdRun(),
+        items: [confirmed, { ...lost, itemId: "", confirmed: false }],
+        incomplete: true,
+        error: "Post ...: EOF",
+      },
+    };
+    const installed = await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const result = card.locator(".creation-result");
+    // **件数には数えない。** 数えると「2 件は作成済み」が嘘になる。
+    await expect(result.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
+
+    // 畳まずに出す。開かないと気づけない場所に置くと、確かめないまま押し直す。
+    const unconfirmed = result.locator(".unconfirmed-items");
+    await expect(
+      unconfirmed.getByText("1 件は、GitHub に届いたか確認できていません", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(unconfirmed.getByText("メールとパスワードでログインする")).toBeVisible();
+
+    // 下書き側でも、その項目は選び直せない。送り先の ID が分からないので、
+    // もう一度送ると重複する。
+    const checkbox = card.getByLabel("i1 を作成する");
+    await expect(checkbox).not.toBeChecked();
+    await expect(checkbox).toBeDisabled();
+    // 押せない理由は本文に出す（ADR 0039）。title に隠さない。
+    await expect(
+      card.getByText("この下書きからは送り直せません", { exact: false }),
+    ).toBeVisible();
+
+    // 確定した 1 件のほうは、これまでどおり「作成した」。バッジで引く。同じ
+    // 語が案内の本文にも出るので、文字だけで引くと 2 つに当たる。
+    await expect(card.locator(".badge-created")).toHaveText("作成した");
+
+    // 送り直していないことまで見る。画面の文言だけでは、押せてしまう実装でも
+    // 「押していない」ことを確かめられない。
+    expect(installed.createRequests).toHaveLength(1);
+  });
+
   // draft issue は削除できない（ADR 0009）。作ったあとも同じ解釈のまま押せると、
   // 「反応が無かった気がする」もう 1 回で重複する（ADR 0052、#139）。
   test("作成が済んだら、同じ解釈から押し直しても作らない", async ({ page }) => {

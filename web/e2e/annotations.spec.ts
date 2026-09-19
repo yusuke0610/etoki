@@ -372,6 +372,49 @@ test.describe("実行の履歴", () => {
     await expect(history.locator(".error")).toHaveCount(1);
   });
 
+  // 届いたか分からない書き込みは、開き直したあとも出し続ける（ADR 0056、#170）。
+  //
+  // **打ち手は「GitHub を見る」しかない。** 確かめるまで消えないので、開かないと
+  // 気づけない場所（details）には入れない。
+  test("届いたか分からない書き込みは、開き直しても畳まずに出る", async ({ page }) => {
+    const mock = withRuns();
+    mock.annotations[BOARD_ID] = annotations().map((a) =>
+      a.id === ANNOTATION_IDS.created
+        ? {
+            ...a,
+            unconfirmedItems: [
+              {
+                // 応答を失った作成なので item ID は無い。
+                itemId: "",
+                kind: "issue" as const,
+                title: "確認できていないほう",
+                body: "",
+                localId: "i9",
+                action: "created" as const,
+                confirmed: false,
+              },
+            ],
+          }
+        : a,
+    );
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    const unconfirmed = card.locator(".unconfirmed-items");
+
+    // 畳まれていない。開く操作をしないまま読める。
+    await expect(unconfirmed.getByText("確認できていないほう")).toBeVisible();
+    await expect(
+      unconfirmed.getByText("GitHub に届いたか確認できていません", { exact: false }),
+    ).toBeVisible();
+
+    // **「GitHub にある N 件」には数えない。** 畳み込み（ADR 0026）の 2 件のまま
+    // で、3 件にはならない。数えると在る件数が嘘になる。
+    await expect(card.getByText("GitHub にある 2 件")).toBeVisible();
+  });
+
   // 一度も実行していない注釈に履歴の枠を出さない。常に出すと、空の枠が
   // 注釈の数だけ並ぶ。
   test("未実行の注釈には履歴を出さない", async ({ page }) => {
