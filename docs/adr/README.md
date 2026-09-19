@@ -56,3 +56,4 @@
 | [0051](0051-stop-creation-on-disconnect-and-record.md)           | 接続が切れたら作成を止め、作れたぶんは切れない文脈で記録する           | 採用                 |
 | [0052](0052-do-not-recreate-from-the-same-draft.md)              | 作った項目は同じ下書きから新規に作らせない                             | 採用                 |
 | [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる            | 採用                 |
+| [0056](0056-one-table-for-mutual-exclusion.md)                   | 操作どうしの排他は 1 つの表に集め、UI はそれを読むだけにする           | 採用                 |

@@ -125,10 +125,23 @@ type Props = {
   onLoadRuns: (annotationId: string) => void;
   /** 注釈 ID をキーにした作成の状態。未実行の注釈は入っていない。 */
   creations: Record<string, CreationState>;
-  /** 保存中は作成させない。保存が作成の結果を捨てるため。 */
+  /**
+   * 保存中は下書きの編集も止める。保存が解釈ごと捨てるため。
+   *
+   * **`creationBlocked` とは別物。** あちらは「押せない理由」で、こちらは
+   * 「入力を凍らせるかどうか」。作成を止める条件は保存だけではないので、
+   * 一方をもう一方から導かない。
+   */
   saving: boolean;
-  /** 取り込み中は作成させない。キャンバスの置き換えと並走させないため。 */
-  importing: boolean;
+  /**
+   * いま作成を始められない理由。押せるなら null。
+   *
+   * **文言はここで組まない。** 何が走っているとどう言うかは
+   * `web/src/board/exclusion.ts` の表が持ち、`BoardPage` が引いて渡す
+   * （#146）。パネルが `saving` / `importing` から組み直していたころは、
+   * 同じ判定がヘッダーとここの 2 箇所にあった。
+   */
+  creationBlocked: string | null;
   /**
    * `interpretationId` は下書きの元になった解釈。作ったものをその解釈に
    * 結びつけて持つために渡す（ADR 0052）。
@@ -197,7 +210,7 @@ export function AnnotationPanel({
   onLoadRuns,
   creations,
   saving,
-  importing,
+  creationBlocked,
   onCreate,
   canEdit,
   projectAccess,
@@ -447,7 +460,7 @@ export function AnnotationPanel({
                       creation={creations[a.id]}
                       stale={stale}
                       saving={saving}
-                      importing={importing}
+                      creationBlocked={creationBlocked}
                       projectAccess={projectAccess}
                       interpretationUnavailable={interpretationUnavailable}
                       creationUnavailable={creationUnavailable}
@@ -560,8 +573,10 @@ type InterpretationSectionProps = {
   creation?: CreationState;
   /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
   stale: boolean;
+  /** 保存中は下書きの編集も止める。 */
   saving: boolean;
-  importing: boolean;
+  /** いま作成を始められない理由。押せるなら null（表は `exclusion.ts`）。 */
+  creationBlocked: string | null;
   projectAccess: ProjectAccess;
   /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
   interpretationUnavailable: string | null;
@@ -589,7 +604,7 @@ function InterpretationSection({
   creation,
   stale,
   saving,
-  importing,
+  creationBlocked,
   projectAccess,
   interpretationUnavailable,
   creationUnavailable,
@@ -670,7 +685,7 @@ function InterpretationSection({
           created={selected.created ?? []}
           creation={creation}
           saving={saving}
-          importing={importing}
+          creationBlocked={creationBlocked}
           projectAccess={projectAccess}
           creationUnavailable={creationUnavailable}
           previous={previous}
@@ -856,8 +871,7 @@ function formatRunTime(at: string): string {
 function CreationSection({
   annotationId,
   state,
-  saving,
-  importing,
+  creationBlocked,
   reasons,
   projectAccess,
   creationUnavailable,
@@ -866,8 +880,14 @@ function CreationSection({
 }: {
   annotationId: string;
   state?: CreationState;
-  saving: boolean;
-  importing: boolean;
+  /**
+   * いま作成を始められない理由。始められるなら null。
+   *
+   * **`BoardPage` が `exclusion.ts` の表から引いて渡す。** ここで
+   * `saving` / `importing` から組み直すと、同じ判定がヘッダーと 2 箇所に
+   * なる（#146）。
+   */
+  creationBlocked: string | null;
   /** このまま作らせない理由。空なら押させる。 */
   reasons: string[];
   projectAccess: ProjectAccess;
@@ -892,14 +912,7 @@ function CreationSection({
   // 1 つ」と揃えない）。あちらは全注釈で同じことを恒常的に言うが、こちらは
   // 出ている時間が保存の 1 往復ぶんしかない。パネルに上げると、作成ボタンが
   // 1 つも無い注釈しか無いときにも出る。
-  const blocked =
-    reasons.length > 0
-      ? reasons.join(" ")
-      : saving
-        ? "保存が終わるまで作成できません。"
-        : importing
-          ? "取り込みが終わるまで作成できません。"
-          : null;
+  const blocked = reasons.length > 0 ? reasons.join(" ") : creationBlocked;
 
   // **GitHub が未設定なら、権限より先にこちら。** 未設定の構成では
   // projectAccess は unknown にしかならないので、下の denied では拾えない。
@@ -1011,7 +1024,7 @@ function InterpretationDraft({
   created,
   creation,
   saving,
-  importing,
+  creationBlocked,
   projectAccess,
   creationUnavailable,
   previous,
@@ -1024,8 +1037,10 @@ function InterpretationDraft({
   /** この解釈から作ったもの。作成の 1 回ごとに 1 要素（ADR 0052）。 */
   created: SyncItem[][];
   creation?: CreationState;
+  /** 保存中は入力も止める。保存が解釈ごと捨てるため。 */
   saving: boolean;
-  importing: boolean;
+  /** いま作成を始められない理由。押せるなら null（表は `exclusion.ts`）。 */
+  creationBlocked: string | null;
   projectAccess: ProjectAccess;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
   creationUnavailable: string | null;
@@ -1131,8 +1146,7 @@ function InterpretationDraft({
       <CreationSection
         annotationId={annotationId}
         state={creation}
-        saving={saving}
-        importing={importing}
+        creationBlocked={creationBlocked}
         reasons={reasons}
         projectAccess={projectAccess}
         creationUnavailable={creationUnavailable}
