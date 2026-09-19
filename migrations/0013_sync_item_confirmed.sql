@@ -8,9 +8,16 @@
 -- **既定値 1 は移行のためだけにある。** この列を足す前の行はすべて確定済みで、
 -- 未確定の行は書けなかった。SaveRun は常に明示的に書く。
 --
--- CHECK は「確定しているなら item ID がある」を固定する。未確定の作成は ID を
--- 知らないので空文字で入る。確定しているのに ID が無い行は、畳み込み
--- （ADR 0026）のグループを空文字で作ってしまい、別々の item が 1 つに混ざる。
+-- CHECK は「確定しているなら item ID がある」を固定する。**象限は 4 つとも
+-- 埋まっている:**
+--
+--   confirmed = 1 / item_id あり → 許す（これまでどおりの行）
+--   confirmed = 0 / item_id なし → 許す（応答を失った作成）
+--   confirmed = 0 / item_id あり → 許す（届いたか分からない更新）
+--   confirmed = 1 / item_id なし → 禁じる
+--
+-- 禁じる 1 つだけが、行として意味の決まらない組み合わせ。通すと畳み込み
+-- （ADR 0026）のグループを空文字で作り、別々の item が 1 つに混ざる。
 ALTER TABLE sync_items
   ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 1
   CHECK (confirmed IN (0, 1) AND (confirmed = 0 OR item_id <> ''));

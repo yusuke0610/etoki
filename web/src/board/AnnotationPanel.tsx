@@ -1112,6 +1112,7 @@ function InterpretationDraft({
   const fields = (item: InterpretedItem) => (
     <DraftItemFields
       item={item}
+      annotationId={annotationId}
       selected={selected.get(item.localId) ?? false}
       createdItem={createdItems.has(item.localId)}
       unconfirmed={unconfirmedItems.has(item.localId)}
@@ -1185,6 +1186,7 @@ function InterpretationDraft({
  */
 function DraftItemFields({
   item,
+  annotationId,
   selected,
   createdItem,
   unconfirmed,
@@ -1200,6 +1202,14 @@ function DraftItemFields({
   onUpdatesPrevious,
 }: {
   item: InterpretedItem;
+  /**
+   * 説明文の id を注釈ごとに分けるために持つ。
+   *
+   * **`localId` だけでは足りない。** 解釈の中でしか一意でないので、注釈が
+   * 並ぶ一覧では別のカードの `i1` と同じ id になる。同じ id が 2 つあると、
+   * 読み上げはどちらを読むか決められない（`web/CLAUDE.md`）。
+   */
+  annotationId: string;
   selected: boolean;
   /**
    * この解釈から作った項目かどうか（ADR 0052）。
@@ -1244,6 +1254,8 @@ function DraftItemFields({
   onBody: (body: string) => void;
   onUpdatesPrevious: (updatesPrevious: boolean) => void;
 }) {
+  const unconfirmedId = `draft-unconfirmed-${annotationId}-${item.localId}`;
+
   return (
     <div className={`draft-item${selected ? "" : " unselected"}`}>
       <div className="draft-head">
@@ -1255,7 +1267,7 @@ function DraftItemFields({
           disabled={frozen || locked}
           onChange={onToggle}
           aria-label={`${item.localId} を作成する`}
-          aria-describedby={locked ? `${item.localId}-unconfirmed` : undefined}
+          aria-describedby={locked ? unconfirmedId : undefined}
         />
 
         {editableKind ? (
@@ -1308,7 +1320,7 @@ function DraftItemFields({
         返した場合も、etoki からは区別できない。
       */}
       {unconfirmed && (
-        <p className="hint" id={`${item.localId}-unconfirmed`}>
+        <p className="hint" id={unconfirmedId}>
           {locked
             ? "GitHub に届いたか確認できていません。作られているかもしれないので、この下書きからは送り直せません。GitHub を見て確かめてください。"
             : "GitHub に届いたか確認できていません。選び直すと、同じ draft issue に書き直します。"}
@@ -1339,8 +1351,12 @@ function DraftItemFields({
       {/*
         作った項目には出さない。作った ID の書き換えにしか送れないので
         （`markCreated`）、選ばせるものが無い。
+
+        **送り直せない項目にも出さない**（ADR 0056）。選択そのものを止めて
+        いるので、切り替えても送るものが変わらない。効かない選択肢を並べるのは
+        状態を見せることにならない（中核思想 3）。
       */}
-      {item.previousItemId && !createdItem && (
+      {item.previousItemId && !createdItem && !locked && (
         <div className="draft-previous">
           <select
             value={updatesPrevious ? "update" : "create"}
