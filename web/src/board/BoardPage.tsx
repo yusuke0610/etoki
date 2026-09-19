@@ -54,11 +54,7 @@ import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { log } from "../logger";
 import { AnnotationOverlay } from "./AnnotationOverlay";
-import {
-  AnnotationPanel,
-  type CreationState,
-  type RunHistoryState,
-} from "./AnnotationPanel";
+import { AnnotationPanel } from "./AnnotationPanel";
 import { DiagramChatPanel } from "./DiagramChatPanel";
 import {
   beginTurn,
@@ -81,6 +77,7 @@ import {
   type InterpretationState,
 } from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
+import type { CreationState, RunHistoryState } from "./panelShared";
 import { projectLink } from "./projectLink";
 import { ROLE_LABELS } from "./roles";
 
