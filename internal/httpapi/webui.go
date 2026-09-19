@@ -40,10 +40,12 @@ func CheckWebDir(dir string) error {
 // dir が空なら何も配らず、すべて 404 になる。
 //
 // **未知のパスに index.html を返す SPA の fallback は持たない**（ADR 0032）。
-// フロントエンドに client-side routing が無く、ログイン後の戻り先も "/" なので、
-// 配る必要があるのは "/" と実在するファイルだけ。先回りして fallback を置くと、
-// 打ち間違えた URL が 404 ではなく 200 + HTML で返る。ルーティングを入れる
-// ときに一緒に足す。
+// フロントエンドに client-side routing が無く、配る必要があるのは "/" と実在
+// するファイルだけ。先回りして fallback を置くと、打ち間違えた URL が 404 では
+// なく 200 + HTML で返る。ルーティングを入れるときに一緒に足す。
+//
+// **開いているボードとログイン後の戻り先はクエリで表す**（ADR 0056）。
+// `/?board={id}` はパスとしては "/" なので、ここは 1 行も変わらない。
 func newWebUI(dir string) gin.HandlerFunc {
 	root := http.Dir(dir)
 
