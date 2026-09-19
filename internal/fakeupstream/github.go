@@ -70,7 +70,7 @@ func (g *github) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(q, "viewerCanUpdate"):
 		data = map[string]any{"node": map[string]any{"viewerCanUpdate": v["projectId"] == ProjectID}}
 	case strings.Contains(q, "fields("):
-		data = fieldsData()
+		data, err = fieldsData(v)
 	case strings.Contains(q, "content {"):
 		data = g.content(v)
 	case strings.Contains(q, "projectsV2("):
@@ -121,7 +121,15 @@ func projectsData(v map[string]any) map[string]any {
 	}}}
 }
 
-func fieldsData() map[string]any {
+// fieldsData は Project のフィールド一覧を返す。
+//
+// projectId を見るのは、本物では node(id:) が知らない ID から Project を
+// 解決できないため。見ないと、向き先を取り違えたアダプタにも一覧が返り、
+// 作成まで進んでから初めて落ちる。
+func fieldsData(v map[string]any) (any, error) {
+	if err := checkProject(v); err != nil {
+		return nil, err
+	}
 	return map[string]any{"node": map[string]any{"fields": map[string]any{
 		"pageInfo": noMorePages(),
 		"nodes": []map[string]any{
@@ -135,12 +143,23 @@ func fieldsData() map[string]any {
 			},
 			{"id": parentFieldID, "name": parentFieldName, "dataType": "TEXT"},
 		},
-	}}}
+	}}}, nil
+}
+
+// checkProject は projectId が偽の GitHub が持つ 1 つの Project かを見る。
+//
+// projectId を運ぶ操作すべてで同じ判定にする。片方だけ通すと、向き先が
+// 違ったままフィールドの更新が成功扱いになり、偽物が本物より甘くなる。
+func checkProject(v map[string]any) error {
+	if v["projectId"] != ProjectID {
+		return fmt.Errorf("fakeupstream: unknown project %v", v["projectId"])
+	}
+	return nil
 }
 
 func (g *github) create(v map[string]any) (any, error) {
-	if v["projectId"] != ProjectID {
-		return nil, fmt.Errorf("fakeupstream: unknown project %v", v["projectId"])
+	if err := checkProject(v); err != nil {
+		return nil, err
 	}
 	title, _ := v["title"].(string)
 	body, _ := v["body"].(string)
@@ -207,6 +226,9 @@ func (g *github) update(v map[string]any) (any, error) {
 }
 
 func (g *github) setField(v map[string]any) (any, error) {
+	if err := checkProject(v); err != nil {
+		return nil, err
+	}
 	id, _ := v["itemId"].(string)
 	value, _ := v["value"].(map[string]any)
 

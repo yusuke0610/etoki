@@ -157,6 +157,38 @@ func TestGitHub_UpdateRejectsUnknownItem(t *testing.T) {
 	}
 }
 
+// projectId を運ぶ操作は、どれも同じ Project だけを通す。片方だけ甘いと、
+// 向き先を取り違えたアダプタにフィールド一覧が返り、フィールドの更新も
+// 成功扱いになって、偽物が本物より甘くなる。
+func TestGitHub_RejectsUnknownProject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c, fake, _ := newGitHub(t)
+
+	if _, err := c.ListProjectFields(ctx, "PVT_missing"); err == nil {
+		t.Error("ListProjectFields(存在しない project) = nil, want error")
+	}
+
+	// フィールドの更新は item が実在していても、Project が違えば通さない。
+	itemID, err := c.CreateDraftIssue(ctx, fakeupstream.ProjectID, port.DraftIssue{Title: "t", Body: "b"})
+	if err != nil {
+		t.Fatalf("CreateDraftIssue() = %v", err)
+	}
+	fields, err := c.ListProjectFields(ctx, fakeupstream.ProjectID)
+	if err != nil {
+		t.Fatalf("ListProjectFields() = %v", err)
+	}
+	kind := fieldByName(t, fields, "Kind")
+	optionID := kind.Options[0].ID
+	if err := c.SetItemFieldValue(ctx, "PVT_missing", itemID,
+		port.FieldValue{FieldID: kind.ID, OptionID: &optionID}); err == nil {
+		t.Error("SetItemFieldValue(存在しない project) = nil, want error")
+	}
+	if items := fake.Items(); len(items) != 1 || items[0].Kind != "" {
+		t.Errorf("items = %+v, want Kind 未設定の 1 件", items)
+	}
+}
+
 // 知らないクエリを空の data で返すと、アダプタ側で「0 件」に化けて原因が
 // 見えなくなる。errors で返すことを固定する。
 func TestGitHub_UnknownQueryIsError(t *testing.T) {
