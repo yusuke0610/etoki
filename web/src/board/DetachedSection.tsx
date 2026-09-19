@@ -1,6 +1,6 @@
 import type { DetachedAnnotation } from "../api/types";
 import { ItemBody, ProjectLinkLine } from "./panelParts";
-import type { RunHistoryState } from "./panelShared";
+import type { RunsProps } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 import { RunHistory, formatRunTimestamp } from "./RunHistory";
 
@@ -20,13 +20,11 @@ import { RunHistory, formatRunTimestamp } from "./RunHistory";
  */
 export function DetachedSection({
   annotations,
-  runHistories,
-  onLoadRuns,
+  runs,
   projectLink,
 }: {
   annotations: DetachedAnnotation[];
-  runHistories: Record<string, RunHistoryState>;
-  onLoadRuns: (annotationId: string) => void;
+  runs: RunsProps;
   projectLink: ProjectLink | null;
 }) {
   if (annotations.length === 0) return null;
@@ -67,7 +65,7 @@ export function DetachedSection({
             {/* 履歴の口はシーンに注釈が残っているかを見ない（ADR 0007）。 */}
             <details className="run-history">
               <summary>実行の履歴</summary>
-              <RunHistory state={runHistories[a.id]} onLoad={() => onLoadRuns(a.id)} />
+              <RunHistory state={runs.states[a.id]} onLoad={() => runs.onLoad(a.id)} />
             </details>
           </li>
         ))}

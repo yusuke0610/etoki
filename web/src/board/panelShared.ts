@@ -33,3 +33,14 @@ export type RunHistoryState =
  * パネルに 1 つしか出さないので固定でよい。各注釈の「解釈する」がここを指す。
  */
 export const INTERPRETATION_UNAVAILABLE_ID = "interpretation-unavailable";
+
+/** 実行の履歴（ADR 0007）。 */
+export type RunsProps = {
+  /**
+   * 注釈 ID をキーにした実行履歴。**まだ押していない注釈は入っていない。**
+   *
+   * 開いただけで全注釈ぶん引かない（中核思想 3）。
+   */
+  states: Record<string, RunHistoryState>;
+  onLoad: (annotationId: string) => void;
+};

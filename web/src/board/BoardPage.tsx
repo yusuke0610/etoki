@@ -1655,31 +1655,35 @@ export function BoardPage({
           <AnnotationPanel
             annotations={annotations}
             detached={detached}
-            markableFrames={markable}
-            unmarkableFrames={unmarkable}
-            canvasFrameIds={canvasFrameIds}
-            selectedFrameIds={selectedFrames.map((f) => f.id)}
-            onFocusFrame={focusFrame}
-            onMark={handleMark}
-            onUnmark={handleUnmark}
-            onChangeGranularity={(id, g) => handleMark(id, g)}
-            onChangeKind={handleChangeAnnotationKind}
+            frames={{
+              markable,
+              unmarkable,
+              canvasIds: canvasFrameIds,
+              selectedIds: selectedFrames.map((f) => f.id),
+              onFocus: focusFrame,
+              onMark: handleMark,
+              onUnmark: handleUnmark,
+              onChangeGranularity: handleMark,
+              onChangeKind: handleChangeAnnotationKind,
+            }}
+            interpretation={{
+              states: interpretations,
+              onInterpret: (id) => void interpret(id),
+              onSelect: showInterpretation,
+              unavailable: interpretationUnavailable,
+            }}
+            creation={{
+              states: creations,
+              saving,
+              blocked: exclusive.reasonFor("creating"),
+              onCreate: (id, interpretationId, result) =>
+                void create(id, interpretationId, result),
+              projectAccess,
+              unavailable: creationUnavailable,
+            }}
+            runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
             stale={dirty}
-            interpretations={interpretations}
-            onInterpret={(id) => void interpret(id)}
-            onSelectInterpretation={showInterpretation}
-            runHistories={runHistories}
-            onLoadRuns={(id) => void loadRuns(id)}
-            creations={creations}
-            saving={saving}
-            creationBlocked={exclusive.reasonFor("creating")}
-            onCreate={(id, interpretationId, interpretation) =>
-              void create(id, interpretationId, interpretation)
-            }
             canEdit={canEdit}
-            projectAccess={projectAccess}
-            interpretationUnavailable={interpretationUnavailable}
-            creationUnavailable={creationUnavailable}
             projectLink={link}
           />
         </ErrorBoundary>

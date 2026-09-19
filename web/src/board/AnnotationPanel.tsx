@@ -19,7 +19,7 @@ import { ItemBody, ProjectLinkLine } from "./panelParts";
 import {
   INTERPRETATION_UNAVAILABLE_ID,
   type CreationState,
-  type RunHistoryState,
+  type RunsProps,
 } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 import { RunHistory } from "./RunHistory";
@@ -30,19 +30,17 @@ const STATE_LABEL: Record<SyncState, string> = {
   changed: "変更あり",
 };
 
-type Props = {
-  annotations: AnnotationStatus[];
-  /**
-   * シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
-   *
-   * **`annotations` と混ぜて渡さない。** 3 状態も名前も無いので、注釈の
-   * カードと同じ形では出せない。
-   */
-  detached: DetachedAnnotation[];
+/**
+ * キャンバスの frame とのやりとり。
+ *
+ * **ひとまとまりで渡す。** どれも「いまキャンバスで何が選ばれ、どの frame が
+ * 在るか」を答えるもので、1 つだけ差し替わることが無い（#146）。
+ */
+type FramesProps = {
   /** 選択中の frame のうち、まだ注釈になっていないもの。 */
-  markableFrames: SelectableFrame[];
+  markable: SelectableFrame[];
   /** 選択中の frame のうち、すでに注釈になっているもの。 */
-  unmarkableFrames: SelectableFrame[];
+  unmarkable: SelectableFrame[];
   /**
    * キャンバスにいま在る frame の ID。まだ分からなければ null。
    *
@@ -51,22 +49,22 @@ type Props = {
    * 無いことにしない。** 空配列と同じ扱いにすると、マウント直後の一瞬だけ
    * 全部のカードが「キャンバスにありません」になる。
    */
-  canvasFrameIds: string[] | null;
-  /**
-   * キャンバスで選択中の frame の ID。対応するカードを強調するために使う。
-   */
-  selectedFrameIds: string[];
+  canvasIds: string[] | null;
+  /** キャンバスで選択中の frame の ID。対応するカードを強調するために使う。 */
+  selectedIds: string[];
   /** カードを押したとき、キャンバスをそのフレームへ寄せて選択する。 */
-  onFocusFrame: (frameId: string) => void;
+  onFocus: (frameId: string) => void;
   onMark: (frameId: string, granularity: Granularity) => void;
   onUnmark: (frameId: string) => void;
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
   /** 図の種別を差し替える。`undefined` は「指定なし」に戻す。 */
   onChangeKind: (frameId: string, kind: DiagramKind | undefined) => void;
-  /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
-  stale: boolean;
+};
+
+/** 解釈の実行と、引いた結果の選び直し。 */
+type InterpretationProps = {
   /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
-  interpretations: Record<string, InterpretationState>;
+  states: Record<string, InterpretationState>;
   onInterpret: (annotationId: string) => void;
   /**
    * 見る解釈を選び直す。
@@ -74,22 +72,26 @@ type Props = {
    * 解釈は引き直すたびに揺れるので、前のほうが良いことがある。選び直せないと、
    * 引き直しは「戻せない操作」になる。
    */
-  onSelectInterpretation: (annotationId: string, runId: number) => void;
+  onSelect: (annotationId: string, runId: number) => void;
   /**
-   * 注釈 ID をキーにした実行履歴。**まだ押していない注釈は入っていない。**
+   * LLM が未設定なら理由。使えるなら null（ADR 0030）。
    *
-   * 開いただけで全注釈ぶん引かない（中核思想 3）。
+   * `creation.projectAccess` とは別物。あちらはこのボードの Project に
+   * 書けるか、こちらは etoki に LLM が設定されているか。**混ぜない。**
    */
-  runHistories: Record<string, RunHistoryState>;
-  onLoadRuns: (annotationId: string) => void;
+  unavailable: string | null;
+};
+
+/** 作成の実行と、その可否。 */
+type CreationProps = {
   /** 注釈 ID をキーにした作成の状態。未実行の注釈は入っていない。 */
-  creations: Record<string, CreationState>;
+  states: Record<string, CreationState>;
   /**
    * 保存中は下書きの編集も止める。保存が解釈ごと捨てるため。
    *
-   * **`creationBlocked` とは別物。** あちらは「押せない理由」で、こちらは
-   * 「入力を凍らせるかどうか」。作成を止める条件は保存だけではないので、
-   * 一方をもう一方から導かない。
+   * **`blocked` とは別物。** あちらは「押せない理由」で、こちらは「入力を
+   * 凍らせるかどうか」。作成を止める条件は保存だけではないので、一方を
+   * もう一方から導かない。
    */
   saving: boolean;
   /**
@@ -97,10 +99,10 @@ type Props = {
    *
    * **文言はここで組まない。** 何が走っているとどう言うかは
    * `web/src/board/exclusion.ts` の表が持ち、`BoardPage` が引いて渡す
-   * （#146）。パネルが `saving` / `importing` から組み直していたころは、
+   * （ADR 0056）。パネルが `saving` / `importing` から組み直していたころは、
    * 同じ判定がヘッダーとここの 2 箇所にあった。
    */
-  creationBlocked: string | null;
+  blocked: string | null;
   /**
    * `interpretationId` は下書きの元になった解釈。作ったものをその解釈に
    * 結びつけて持つために渡す（ADR 0052）。
@@ -111,13 +113,6 @@ type Props = {
     interpretation: Interpretation,
   ) => void;
   /**
-   * 編集できるか。viewer は false（ADR 0017）。
-   *
-   * 解釈も含めて出さない。解釈は LLM を叩く外部呼び出しであり、閲覧者に
-   * 許すのは「閲覧」ではない。
-   */
-  canEdit: boolean;
-  /**
    * 作成先の Project に書けるかどうかの、いまの状態。
    *
    * `denied` でもボタンを黙って消さず、理由を出す。ブレストには参加できて
@@ -125,17 +120,43 @@ type Props = {
    * 「なぜできないか」が見えていないと使えない（中核思想 3）。
    */
   projectAccess: ProjectAccess;
-  /**
-   * LLM が未設定なら理由。使えるなら null（ADR 0030）。
-   *
-   * `projectAccess` とは別物。あちらはこのボードの Project に書けるか、
-   * こちらは etoki に LLM が設定されているか。**混ぜない。**
-   */
-  interpretationUnavailable: string | null;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
-  creationUnavailable: string | null;
+  unavailable: string | null;
+};
+
+/**
+ * **関心ごとに束ねて受け取る**（#146）。
+ *
+ * 平たく並べていたころは 26 個あり、どれとどれが一緒に動くのかがここからは
+ * 読めなかった。束は `BoardPage` が持つ関心の単位でもあるので、そのまま渡せる。
+ */
+type Props = {
+  annotations: AnnotationStatus[];
+  /**
+   * シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
+   *
+   * **`annotations` と混ぜて渡さない。** 3 状態も名前も無いので、注釈の
+   * カードと同じ形では出せない。
+   */
+  detached: DetachedAnnotation[];
+  frames: FramesProps;
+  interpretation: InterpretationProps;
+  creation: CreationProps;
+  runs: RunsProps;
+  /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
+  stale: boolean;
+  /**
+   * 編集できるか。viewer は false（ADR 0017）。
+   *
+   * 解釈も含めて出さない。解釈は LLM を叩く外部呼び出しであり、閲覧者に
+   * 許すのは「閲覧」ではない。
+   */
+  canEdit: boolean;
   /**
    * 作成先へのリンク。組めなければ null（ADR 0025）。
+   *
+   * **束の中に入れない。** 作ったものを確かめにいく先は、解釈にも作成にも
+   * シーンから消えた注釈にも同じものが出る。
    *
    * draft issue 個別の URL は組めないので、飛び先は注釈ごとではなく
    * ボードごとに 1 つ。**行ごとにリンクを置かない。** 置くと、行ごとに
@@ -152,29 +173,12 @@ type PendingKind = {
 export function AnnotationPanel({
   annotations,
   detached,
-  markableFrames,
-  unmarkableFrames,
-  canvasFrameIds,
-  selectedFrameIds,
-  onFocusFrame,
-  onMark,
-  onUnmark,
-  onChangeGranularity,
-  onChangeKind,
+  frames,
+  interpretation,
+  creation,
+  runs,
   stale,
-  interpretations,
-  onInterpret,
-  onSelectInterpretation,
-  runHistories,
-  onLoadRuns,
-  creations,
-  saving,
-  creationBlocked,
-  onCreate,
   canEdit,
-  projectAccess,
-  interpretationUnavailable,
-  creationUnavailable,
   projectLink,
 }: Props) {
   // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
@@ -215,9 +219,9 @@ export function AnnotationPanel({
         viewer には出さない。どのみち解釈できないことは上の 1 行が言っており、
         設定の話を重ねても打てる手は増えない（ADR 0017）。
       */}
-      {canEdit && interpretationUnavailable !== null && (
+      {canEdit && interpretation.unavailable !== null && (
         <p className="hint" role="status" id={INTERPRETATION_UNAVAILABLE_ID}>
-          {interpretationUnavailable}
+          {interpretation.unavailable}
         </p>
       )}
 
@@ -225,7 +229,7 @@ export function AnnotationPanel({
         <h3>選択中のフレーム</h3>
         {!canEdit ? (
           <p className="hint">注釈を付け外しできるのは編集できる人だけです。</p>
-        ) : markableFrames.length === 0 && unmarkableFrames.length === 0 ? (
+        ) : frames.markable.length === 0 && frames.unmarkable.length === 0 ? (
           <p className="hint">
             フレームツール（F）で囲んでから、そのフレームを選択してください。
           </p>
@@ -235,17 +239,17 @@ export function AnnotationPanel({
               どのフレームに対する操作なのかを項目ごとに出す。複数を選んだとき、
               ボタンの文言だけでは項目が区別できない（ADR 0022）。
             */}
-            {markableFrames.map((frame) => (
+            {frames.markable.map((frame) => (
               <li key={frame.id}>
-                <button type="button" onClick={() => onMark(frame.id, "")}>
+                <button type="button" onClick={() => frames.onMark(frame.id, "")}>
                   {frameLabel(frame.name)}
                   <span className="kind">を注釈にする</span>
                 </button>
               </li>
             ))}
-            {unmarkableFrames.map((frame) => (
+            {frames.unmarkable.map((frame) => (
               <li key={frame.id}>
-                <button type="button" onClick={() => onUnmark(frame.id)}>
+                <button type="button" onClick={() => frames.onUnmark(frame.id)}>
                   {labels.get(frame.id) ?? frameLabel(frame.name)}
                   <span className="kind">の注釈を外す</span>
                 </button>
@@ -266,8 +270,9 @@ export function AnnotationPanel({
         ) : (
           <ul className="annotation-list">
             {annotations.map((a) => {
-              const onCanvas = canvasFrameIds === null || canvasFrameIds.includes(a.id);
-              const selected = selectedFrameIds.includes(a.id);
+              const onCanvas =
+                frames.canvasIds === null || frames.canvasIds.includes(a.id);
+              const selected = frames.selectedIds.includes(a.id);
               const missingId = `annotation-missing-${a.id}`;
               const pendingKind = pendingKinds[a.id];
               const kind =
@@ -290,7 +295,7 @@ export function AnnotationPanel({
                     <button
                       type="button"
                       className="annotation-name"
-                      onClick={() => onFocusFrame(a.id)}
+                      onClick={() => frames.onFocus(a.id)}
                       disabled={!onCanvas}
                       aria-describedby={onCanvas ? undefined : missingId}
                     >
@@ -317,7 +322,7 @@ export function AnnotationPanel({
                       value={a.granularity}
                       disabled={!canEdit}
                       onChange={(e) =>
-                        onChangeGranularity(a.id, e.target.value as Granularity)
+                        frames.onChangeGranularity(a.id, e.target.value as Granularity)
                       }
                     >
                       {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
@@ -349,7 +354,7 @@ export function AnnotationPanel({
                           ...current,
                           [a.id]: { value: nextKind },
                         }));
-                        onChangeKind(a.id, nextKind);
+                        frames.onChangeKind(a.id, nextKind);
                       }}
                     >
                       {/*
@@ -405,8 +410,8 @@ export function AnnotationPanel({
                     <details className="run-history">
                       <summary>実行の履歴</summary>
                       <RunHistory
-                        state={runHistories[a.id]}
-                        onLoad={() => onLoadRuns(a.id)}
+                        state={runs.states[a.id]}
+                        onLoad={() => runs.onLoad(a.id)}
                       />
                     </details>
                   )}
@@ -415,22 +420,24 @@ export function AnnotationPanel({
                     <InterpretationSection
                       annotationId={a.id}
                       granularity={a.granularity}
-                      state={interpretations[a.id]}
-                      creation={creations[a.id]}
+                      state={interpretation.states[a.id]}
+                      creation={creation.states[a.id]}
                       stale={stale}
-                      saving={saving}
-                      creationBlocked={creationBlocked}
-                      projectAccess={projectAccess}
-                      interpretationUnavailable={interpretationUnavailable}
-                      creationUnavailable={creationUnavailable}
+                      saving={creation.saving}
+                      creationBlocked={creation.blocked}
+                      projectAccess={creation.projectAccess}
+                      interpretationUnavailable={interpretation.unavailable}
+                      creationUnavailable={creation.unavailable}
                       previous={a.items ?? []}
                       projectLink={projectLink}
-                      onInterpret={() => onInterpret(a.id)}
+                      onInterpret={() => interpretation.onInterpret(a.id)}
                       onSelectInterpretation={(runId) =>
-                        onSelectInterpretation(a.id, runId)
+                        interpretation.onSelect(a.id, runId)
                       }
-                      onCreate={(interpretationId, interpretation) =>
-                        onCreate(a.id, interpretationId, interpretation)
+                      // 束の `interpretation` と名前がぶつかるので、引数は
+                      // 解釈結果そのものを指す名前にする。
+                      onCreate={(interpretationId, result) =>
+                        creation.onCreate(a.id, interpretationId, result)
                       }
                     />
                   )}
@@ -441,12 +448,7 @@ export function AnnotationPanel({
         )}
       </section>
 
-      <DetachedSection
-        annotations={detached}
-        runHistories={runHistories}
-        onLoadRuns={onLoadRuns}
-        projectLink={projectLink}
-      />
+      <DetachedSection annotations={detached} runs={runs} projectLink={projectLink} />
     </aside>
   );
 }

@@ -10,30 +10,35 @@ function props(): ComponentProps<typeof AnnotationPanel> {
       { id: "frame-1", name: "ログイン", granularity: "", state: "uncreated" },
     ],
     detached: [],
-    markableFrames: [],
-    unmarkableFrames: [],
-    canvasFrameIds: ["frame-1"],
-    selectedFrameIds: [],
-    onFocusFrame: vi.fn(),
-    onMark: vi.fn(),
-    onUnmark: vi.fn(),
-    onChangeGranularity: vi.fn(),
-    onChangeKind: vi.fn(),
+    frames: {
+      markable: [],
+      unmarkable: [],
+      canvasIds: ["frame-1"],
+      selectedIds: [],
+      onFocus: vi.fn(),
+      onMark: vi.fn(),
+      onUnmark: vi.fn(),
+      onChangeGranularity: vi.fn(),
+      onChangeKind: vi.fn(),
+    },
+    interpretation: {
+      states: {},
+      onInterpret: vi.fn(),
+      onSelect: vi.fn(),
+      unavailable: null,
+    },
+    creation: {
+      states: {},
+      saving: false,
+      blocked: null,
+      onCreate: vi.fn(),
+      projectAccess: "allowed",
+      unavailable: null,
+    },
+    runs: { states: {}, onLoad: vi.fn() },
     stale: false,
-    interpretations: {},
-    onInterpret: vi.fn(),
-    onSelectInterpretation: vi.fn(),
-    runHistories: {},
-    onLoadRuns: vi.fn(),
-    creations: {},
-    saving: false,
-    onCreate: vi.fn(),
     canEdit: true,
-    projectAccess: "allowed",
-    interpretationUnavailable: null,
-    creationUnavailable: null,
     projectLink: null,
-    creationBlocked: null,
   };
 }
 
@@ -47,7 +52,7 @@ describe("AnnotationPanel", () => {
     const select = screen.getByLabelText("種別");
     fireEvent.change(select, { target: { value: "sequence" } });
 
-    expect(panelProps.onChangeKind).toHaveBeenCalledWith("frame-1", "sequence");
+    expect(panelProps.frames.onChangeKind).toHaveBeenCalledWith("frame-1", "sequence");
     expect(select).toHaveValue("sequence");
   });
 
@@ -62,7 +67,7 @@ describe("AnnotationPanel", () => {
     fireEvent.change(select, { target: { value: "sequence" } });
     fireEvent.change(select, { target: { value: "er" } });
 
-    expect(panelProps.onChangeKind).toHaveBeenLastCalledWith("frame-1", "er");
+    expect(panelProps.frames.onChangeKind).toHaveBeenLastCalledWith("frame-1", "er");
     expect(select).toHaveValue("er");
 
     // 1 回目の選択（sequence）の保存だけが先に追いつく。2 回目（er）はまだ未保存。
