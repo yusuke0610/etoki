@@ -111,11 +111,23 @@ try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki �
 	@# 偽物へ送らないためと、App を設定していると認証の構成に入り、偽物では
 	@# ログインできないため。
 	@go build -o $(BIN_DIR)/etoki-fakeupstream ./cmd/etoki-fakeupstream
-	@# 片付けを kill 0 より先に書く。kill 0 はこのシェル自身も落とす。
+	@# **どちらかが落ちたら両方止める。** 素の wait は全部の終了を待つので、
+	@# 偽物が FAKE_ADDR の使用中で起動に失敗しても etoki だけが残って待ち
+	@# 続け、EXIT の trap も走らない。wait -n で先に落ちたほうを拾い、その
+	@# 終了状態で抜ける。片付けを kill より先に書くのは、kill 0 がこの
+	@# シェル自身も落とすため。
 	@tmp=$$(mktemp -d); \
-	trap 'rm -rf "$$tmp"; kill 0' EXIT INT TERM; \
+	cleanup() { \
+		status=$$?; \
+		trap - EXIT INT TERM; \
+		kill $${fake_pid:-} $${etoki_pid:-} 2>/dev/null || :; \
+		wait $${fake_pid:-} $${etoki_pid:-} 2>/dev/null || :; \
+		rm -rf "$$tmp"; \
+		exit "$$status"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
 	ETOKI_DB_PATH="$$tmp/etoki.db" $(BINARY) migrate || exit 1; \
-	FAKE_ADDR="$(FAKE_ADDR)" $(BIN_DIR)/etoki-fakeupstream & \
+	FAKE_ADDR="$(FAKE_ADDR)" $(BIN_DIR)/etoki-fakeupstream & fake_pid=$$!; \
 	env -u ETOKI_GITHUB_APP_CLIENT_ID -u ETOKI_GITHUB_APP_CLIENT_SECRET \
 		-u ETOKI_TOKEN_ENCRYPTION_KEY -u ETOKI_PUBLIC_URL -u ETOKI_LLM_API_KEY \
 		ETOKI_DB_PATH="$$tmp/etoki.db" \
@@ -123,8 +135,8 @@ try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki �
 		ETOKI_LLM_BASE_URL="http://$(FAKE_ADDR)" \
 		ETOKI_GITHUB_BASE_URL="http://$(FAKE_ADDR)" \
 		ETOKI_GITHUB_TOKEN=fake \
-		$(BINARY) & \
-	wait
+		$(BINARY) & etoki_pid=$$!; \
+	wait -n
 
 build-api:
 	go build -o $(BINARY) ./cmd/etoki
