@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,40 +94,119 @@ func (s *AuthService) Provider() string { return s.provider.Name() }
 //
 // state はサーバーが作って保存し、コールバックで照合してから捨てる。OAuth の
 // CSRF 対策であり、Origin ガード（ADR 0013）とは別物。
-func (s *AuthService) Start(ctx context.Context, redirectURI string) (string, error) {
+//
+// returnTo はログイン後に戻す先。空文字なら「指定なし」で、コールバックは "/"
+// に戻す。**戻り先を state と一緒に保存する**ので、コールバックの URL には
+// 載らない（ADR 0056）。
+func (s *AuthService) Start(ctx context.Context, redirectURI, returnTo string) (string, error) {
+	returnTo, err := SanitizeReturnTo(returnTo)
+	if err != nil {
+		return "", err
+	}
+
 	state, err := s.newToken()
 	if err != nil {
 		return "", err
 	}
 
 	now := s.now()
-	if err := s.sessions.SaveState(ctx, state, now, now.Add(StateTTL)); err != nil {
+	if err := s.sessions.SaveState(ctx, port.OAuthState{
+		State:     state,
+		ReturnTo:  returnTo,
+		CreatedAt: now,
+		ExpiresAt: now.Add(StateTTL),
+	}); err != nil {
 		return "", err
 	}
 
 	return s.provider.AuthorizeURL(state, redirectURI), nil
 }
 
-// Complete はコールバックを処理し、セッション token を返す。
+// SanitizeReturnTo はログイン後の戻り先を検証して整える。
 //
-// 返る token は cookie に載せる値そのもの。保存されるのはそのハッシュだけ。
+// **通すのは自オリジンの相対パスだけ。** 戻り先はブラウザのトップレベル遷移に
+// なるので、絶対 URL や `//host` を通すとオープンリダイレクトになる。空文字は
+// 「指定なし」としてそのまま通し、コールバックが "/" に落とす。
+//
+// **不正値を黙って空に落とさない。** 落とすと、渡した値が消えたことに呼び出し
+// 側が気づけないまま、思っていない場所に着地する（.claude/rules/
+// validation-boundaries.md）。
+//
+// **検証はここだけに置く。** ハンドラにも永続化層にも同じ判定を書かない。
+// 公開しているのは、コールバックの側が「保存済みの値は検証済み」と言い切れる
+// 根拠をテストで固定するため。
+func SanitizeReturnTo(returnTo string) (string, error) {
+	if returnTo == "" {
+		return "", nil
+	}
+
+	u, err := url.Parse(returnTo)
+	if err != nil {
+		return "", fmt.Errorf("%w: returnTo is not a valid URL", ErrInvalidInput)
+	}
+	// スキームとホストを持つものは他所を指しうる。Opaque は "mailto:..." の形。
+	if u.Scheme != "" || u.Host != "" || u.Opaque != "" {
+		return "", fmt.Errorf("%w: returnTo must be a relative path", ErrInvalidInput)
+	}
+
+	// **受け取った文字列のまま見る。** "/\\evil.example" はブラウザが "//" と
+	// 同じに読むが、url.Parse を通すとバックスラッシュが %5C に化けるので、
+	// 組み直したあとの文字列を見る検査では通り抜ける。**通り抜けたほうは
+	// 同一オリジンの安全なパスだが、書き換えて通すことになる。** 送ろうとした
+	// 先と着地する先が変わるので、直して通さず弾く。
+	if !strings.HasPrefix(returnTo, "/") ||
+		strings.HasPrefix(returnTo, "//") ||
+		strings.HasPrefix(returnTo, "/\\") {
+		return "", fmt.Errorf("%w: returnTo must be a same-origin path", ErrInvalidInput)
+	}
+
+	// フラグメントは捨てる。ブラウザは Location のフラグメントを送ってくれない
+	// ので持ち回っても届かず、持っているふりだけが残る。
+	sanitized := (&url.URL{Path: u.Path, RawQuery: u.RawQuery}).String()
+
+	// 組み直した結果をもう一度見る。url.URL{Path: "//evil.example"} は
+	// "//evil.example" を返すので、入力を見た上の検査だけでは足りない。
+	if !strings.HasPrefix(sanitized, "/") || strings.HasPrefix(sanitized, "//") {
+		return "", fmt.Errorf("%w: returnTo must be a same-origin path", ErrInvalidInput)
+	}
+
+	return sanitized, nil
+}
+
+// LoginResult は 1 回のログインで決まったもの。
+//
+// **戻り値を並べずに束ねる。** token / 利用者 / 戻り先の 3 つを返す形にすると、
+// 呼び出し側が位置で受けることになり、足したときに取り違えても型が合う。
+type LoginResult struct {
+	// Token は cookie に載せる値そのもの。保存されるのはそのハッシュだけ。
+	Token string
+	// User はログインした利用者。
+	User port.User
+	// ReturnTo は Start に渡された戻り先。空文字は「指定なし」。
+	//
+	// **検証済みの値しか入らない。** 保存したのは Start（SanitizeReturnTo を
+	// 通した後）だけなので、ここで検証し直さない。
+	ReturnTo string
+}
+
+// Complete はコールバックを処理し、セッション token と戻り先を返す。
 func (s *AuthService) Complete(
 	ctx context.Context, code, state, redirectURI string,
-) (string, port.User, error) {
+) (LoginResult, error) {
 	now := s.now()
 
 	// 照合は引き換えより先。state が通らないリクエストで GitHub を叩かせない。
-	ok, err := s.sessions.ConsumeState(ctx, state, now)
+	saved, err := s.sessions.ConsumeState(ctx, state, now)
 	if err != nil {
-		return "", port.User{}, err
+		return LoginResult{}, err
 	}
-	if !ok {
-		return "", port.User{}, fmt.Errorf("%w: state is unknown or expired", ErrInvalidInput)
+	if saved == nil {
+		return LoginResult{}, fmt.Errorf("%w: state is unknown or expired", ErrInvalidInput)
 	}
 
 	identity, creds, err := s.provider.Exchange(ctx, code, redirectURI)
 	if err != nil {
-		return "", port.User{}, err
+		return LoginResult{}, err
 	}
 
 	user, err := s.sessions.UpsertUser(ctx, port.User{
@@ -137,16 +218,16 @@ func (s *AuthService) Complete(
 		UpdatedAt:   now,
 	})
 	if err != nil {
-		return "", port.User{}, err
+		return LoginResult{}, err
 	}
 
 	if err := s.sessions.SaveCredentials(ctx, user.ID, creds, now); err != nil {
-		return "", port.User{}, err
+		return LoginResult{}, err
 	}
 
 	token, err := s.newToken()
 	if err != nil {
-		return "", port.User{}, err
+		return LoginResult{}, err
 	}
 	if err := s.sessions.CreateSession(ctx, port.Session{
 		TokenHash: HashSessionToken(token),
@@ -154,10 +235,10 @@ func (s *AuthService) Complete(
 		CreatedAt: now,
 		ExpiresAt: now.Add(SessionTTL),
 	}); err != nil {
-		return "", port.User{}, err
+		return LoginResult{}, err
 	}
 
-	return token, user, nil
+	return LoginResult{Token: token, User: user, ReturnTo: saved.ReturnTo}, nil
 }
 
 // Resolve はセッション token から利用者を引く。

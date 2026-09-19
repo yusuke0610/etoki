@@ -689,6 +689,18 @@ type Invitee struct {
 // （ADR 0006）。
 type ItemKind string
 
+// LoginRequest ログイン開始のリクエストボディ。**省略できる。**
+//
+// 戻り先は state と一緒にサーバーが持ち、コールバックの URL には載せない
+// （ADR 0056）。載せると、認可基盤から戻ってきた URL の中身が戻り先を
+// 決めることになり、オープンリダイレクトを塞ぐ責任が毎回の照合に移る。
+type LoginRequest struct {
+	// ReturnTo ログイン後に戻す先。**自オリジンの相対パスだけ**（`/` で始まり
+	// `//` では始まらない）。それ以外は 400 で弾く。省略と空文字は
+	// 「`/` に戻す」。
+	ReturnTo *string `json:"returnTo,omitempty"`
+}
+
 // LoginResponse 認可画面へ送り出すための URL
 type LoginResponse struct {
 	AuthorizeURL string `json:"authorizeUrl"`
@@ -901,6 +913,9 @@ type LookupInviteeParams struct {
 	// Login 招待する相手の login。大文字小文字は区別しない
 	Login string `form:"login" json:"login"`
 }
+
+// StartLoginJSONRequestBody defines body for StartLogin for application/json ContentType.
+type StartLoginJSONRequestBody = LoginRequest
 
 // CreateBoardJSONRequestBody defines body for CreateBoard for application/json ContentType.
 type CreateBoardJSONRequestBody = CreateBoardRequest

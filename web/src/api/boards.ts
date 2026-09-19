@@ -4,6 +4,7 @@ import type {
   BoardDeletion,
   Capabilities,
   InterpretRequest,
+  LoginRequest,
   LoginResponse,
   SessionStatus,
   BoardAccess,
@@ -321,8 +322,18 @@ export const authApi = {
    *
    * POST なのは state の発行が書き込みだから。GET にすると外部ページから
    * 叩けてしまう。
+   *
+   * `returnTo` はログイン後に戻る先。**サーバーが state と一緒に持つので、
+   * 認可の往復の URL には載らない**（ADR 0056）。自オリジンの相対パス以外は
+   * サーバーが 400 で弾く。
    */
-  start: () => request<LoginResponse>("/api/auth/login", { method: "POST" }),
+  start: (returnTo?: string) =>
+    request<LoginResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        ...(returnTo === undefined ? {} : { returnTo }),
+      } as LoginRequest),
+    }),
 
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
 };

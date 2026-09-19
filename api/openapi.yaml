@@ -128,6 +128,12 @@ paths:
 
         遷移そのものはフロントが行う。サーバーからリダイレクトしないのは、
         fetch でのリダイレクト追跡が cross-origin で扱いにくいため。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
           description: 送り出す先
@@ -135,6 +141,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
         "500":
@@ -1290,6 +1298,22 @@ components:
           type: boolean
         user:
           $ref: "#/components/schemas/AuthUser"
+
+    LoginRequest:
+      type: object
+      description: |
+        ログイン開始のリクエストボディ。**省略できる。**
+
+        戻り先は state と一緒にサーバーが持ち、コールバックの URL には載せない
+        （ADR 0056）。載せると、認可基盤から戻ってきた URL の中身が戻り先を
+        決めることになり、オープンリダイレクトを塞ぐ責任が毎回の照合に移る。
+      properties:
+        returnTo:
+          type: string
+          description: |
+            ログイン後に戻す先。**自オリジンの相対パスだけ**（`/` で始まり
+            `//` では始まらない）。それ以外は 400 で弾く。省略と空文字は
+            「`/` に戻す」。
 
     LoginResponse:
       type: object

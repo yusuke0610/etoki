@@ -114,6 +114,28 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
+// OAuthState は発行した OAuth の state 1 つ。
+//
+// **戻り先を一緒に持つ。** 認可のコールバックの URL に載せると、戻ってきた
+// URL の中身が戻り先を決めることになり、オープンリダイレクトを塞ぐ責任が
+// 毎回の照合に移る。state はサーバー発行・単回使用・期限つきなので、同じ
+// 寿命のものを 1 つ増やすだけで済む（ADR 0056）。
+type OAuthState struct {
+	// State は照合に使う値そのもの。
+	State string
+	// ReturnTo はログイン後に戻す先。空文字は「知らない」。
+	//
+	// **自オリジンの相対パスだけが入る。** 検証はユースケース層が行い、
+	// 永続化層は受け取った値をそのまま書く（検証を 2 箇所に置かない）。
+	ReturnTo string
+	// CreatedAt は発行時刻。**SaveState への入力。**
+	CreatedAt time.Time
+	// ExpiresAt は受け付けを打ち切る時刻。**SaveState への入力。**
+	//
+	// ConsumeState は照合を済ませて返すので、この 2 つを埋めない（下記）。
+	ExpiresAt time.Time
+}
+
 // User は etoki 側に記録した利用者。
 type User struct {
 	// ID は etoki が発番する ID。
@@ -167,12 +189,15 @@ type SessionRepository interface {
 	// FindCredentials は利用者の資格情報を返す。無ければ (nil, nil)。
 	FindCredentials(ctx context.Context, userID string) (*Credentials, error)
 
-	// ConsumeState は state を照合して削除する。
+	// ConsumeState は state を照合して削除し、保存してあった内容を返す。
 	//
-	// 単回使用。一度使った state で 2 回目は false を返す。期限切れも false。
-	ConsumeState(ctx context.Context, state string, now time.Time) (bool, error)
+	// 単回使用。一度使った state で 2 回目は (nil, nil) を返す。期限切れも同じ。
+	//
+	// **埋めるのは State と ReturnTo だけでよい。** 時刻を読む呼び出し側が無い。
+	// 読まれない値のために解析を増やすと、その失敗が通った state を誤りに変える。
+	ConsumeState(ctx context.Context, state string, now time.Time) (*OAuthState, error)
 	// SaveState は発行した state を保存する。
-	SaveState(ctx context.Context, state string, createdAt, expiresAt time.Time) error
+	SaveState(ctx context.Context, s OAuthState) error
 }
 
 // userIDKey は etoki 側の利用者 ID を context に載せるための鍵。

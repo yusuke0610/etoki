@@ -326,17 +326,15 @@ func (r *SessionRepository) FindCredentials(
 // CreateSession と同じく、書き込むついでに期限切れを掃除する。ConsumeState
 // だけに任せると、認可画面から戻らなかった分が残り続ける。**ログインを始めて
 // やめるのは異常ではない**ので、掃除を戻ってきた場合だけに置くと表が育つ。
-func (r *SessionRepository) SaveState(
-	ctx context.Context, state string, createdAt, expiresAt time.Time,
-) error {
+func (r *SessionRepository) SaveState(ctx context.Context, st port.OAuthState) error {
 	if _, err := r.db.ExecContext(ctx,
-		`DELETE FROM oauth_states WHERE expires_at <= ?`, formatTime(createdAt)); err != nil {
+		`DELETE FROM oauth_states WHERE expires_at <= ?`, formatTime(st.CreatedAt)); err != nil {
 		return fmt.Errorf("prune oauth states: %w", err)
 	}
 
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO oauth_states (state, created_at, expires_at) VALUES (?, ?, ?)`,
-		state, formatTime(createdAt), formatTime(expiresAt),
+		`INSERT INTO oauth_states (state, return_to, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+		st.State, st.ReturnTo, formatTime(st.CreatedAt), formatTime(st.ExpiresAt),
 	)
 	if err != nil {
 		return fmt.Errorf("insert oauth state: %w", err)
@@ -344,31 +342,37 @@ func (r *SessionRepository) SaveState(
 	return nil
 }
 
-// ConsumeState は state を照合して削除する。
+// ConsumeState は state を照合して削除し、保存してあった内容を返す。
 //
-// DELETE の影響行数で判定する。SELECT してから DELETE すると、同じ state で
-// 2 本同時に来たときに両方通る。
+// 消した行をそのまま受け取る（RETURNING）。SELECT してから DELETE すると、
+// 同じ state で 2 本同時に来たときに両方通る。照合・削除・読み出しを 1 文に
+// 置くことで、返した戻り先が「その 1 本だけが消した行のもの」であることが
+// 文の側で決まる。
 func (r *SessionRepository) ConsumeState(
 	ctx context.Context, state string, now time.Time,
-) (bool, error) {
+) (*port.OAuthState, error) {
 	if _, err := r.db.ExecContext(ctx,
 		`DELETE FROM oauth_states WHERE expires_at <= ?`, formatTime(now)); err != nil {
-		return false, fmt.Errorf("prune oauth states: %w", err)
+		return nil, fmt.Errorf("prune oauth states: %w", err)
 	}
 
-	res, err := r.db.ExecContext(ctx,
-		`DELETE FROM oauth_states WHERE state = ? AND expires_at > ?`,
-		state, formatTime(now))
+	// **読まれるものだけ返す。** 時刻まで RETURNING して詰めることもできるが、
+	// 誰も読まないうえ、その解析の失敗が通った state を 500 に変える。
+	var returnTo string
+	err := r.db.QueryRowContext(ctx,
+		`DELETE FROM oauth_states WHERE state = ? AND expires_at > ?
+		 RETURNING return_to`,
+		state, formatTime(now),
+	).Scan(&returnTo)
+	if errors.Is(err, sql.ErrNoRows) {
+		// 未知・使用済み・期限切れ。どれも「通らなかった」で同じ扱い。
+		return nil, nil
+	}
 	if err != nil {
-		return false, fmt.Errorf("consume oauth state: %w", err)
+		return nil, fmt.Errorf("consume oauth state: %w", err)
 	}
 
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("rows affected for oauth state: %w", err)
-	}
-
-	return n == 1, nil
+	return &port.OAuthState{State: state, ReturnTo: returnTo}, nil
 }
 
 // formatOptionalTime はゼロ値を空文字にする。

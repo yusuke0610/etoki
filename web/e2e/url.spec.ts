@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { holdBoardDetail, installApi, summarize, type ApiMock } from "./helpers/api";
 import { drawRectangle, openBoard } from "./helpers/board";
-import { baseMock, board, BOARD_ID } from "./helpers/fixtures";
+import { baseMock, board, BOARD_ID, signedIn } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 const OTHER_ID = "board-other";
@@ -229,6 +229,50 @@ test.describe("ボードの URL", () => {
       ).toBeVisible();
       await expect(page.locator(".picker")).toHaveCount(0);
       expect(search(page)).toBe(`?board=${BOARD_ID}`);
+    });
+  });
+
+  test.describe("ログイン", () => {
+    // セッションが切れて入り直した人を、開いていたボードへ戻す（ADR 0056）。
+    // **戻り先はサーバーが state と一緒に持つ**ので、ここで確かめられるのは
+    // 「開始のリクエストに載ったこと」まで。
+    test("ログインの開始に、開いていたボードの URL が載る", async ({ page }) => {
+      const mock = baseMock();
+      mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+      await installApi(page, mock);
+
+      await page.route(
+        (url) => url.host === "github.test",
+        (route) =>
+          route.fulfill({ status: 200, contentType: "text/html", body: "<html></html>" }),
+      );
+
+      const started = page.waitForRequest(
+        (req) =>
+          req.method() === "POST" && new URL(req.url()).pathname === "/api/auth/login",
+      );
+
+      await page.goto(`/?board=${BOARD_ID}`);
+      await page.getByRole("button", { name: "GitHub でログイン" }).click();
+
+      expect((await started).postDataJSON()).toEqual({ returnTo: `/?board=${BOARD_ID}` });
+    });
+
+    // ログアウトはキャンバスを外すので、URL も戻す。残すと、ログイン画面の
+    // アドレスバーだけがボードを指したまま残る。
+    test("ログアウトすると URL からボードが消える", async ({ page }) => {
+      const mock = baseMock();
+      mock.session = { status: 200, body: signedIn() };
+
+      await installApi(page, mock);
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+
+      mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+      await page.getByRole("button", { name: "ログアウト" }).click();
+
+      await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
+      expect(search(page)).toBe("");
     });
   });
 });
