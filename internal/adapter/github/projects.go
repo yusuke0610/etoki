@@ -154,6 +154,14 @@ func New(cfg Config) (*Client, error) {
 	if u.Scheme == "http" && !isLoopbackHostname(u.Hostname()) {
 		return nil, fmt.Errorf("etoki: invalid github base url %q: http is allowed only for loopback", u.Redacted())
 	}
+	// クエリと fragment は弾く。送り先は base に "/graphql" を足した文字列
+	// なので、"?x=1" が付いていると "...?x=1/graphql" になり、足したぶんが
+	// path ではなくクエリの一部として飛ぶ。黙って別の URL を叩くより、
+	// 起動時に落とす。
+	if u.RawQuery != "" || u.ForceQuery || strings.Contains(base, "#") {
+		return nil, fmt.Errorf(
+			"etoki: invalid github base url %q: query and fragment are not allowed", u.Redacted())
+	}
 
 	c := &Client{
 		base:   strings.TrimRight(base, "/"),

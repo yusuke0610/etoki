@@ -656,6 +656,13 @@ func TestNew_RejectsInvalidBaseURL(t *testing.T) {
 		"スラッシュが足りない": "https:api.github.com",
 		// 本物のトークンを平文で外に送る。http で届く GitHub は無い。
 		"ループバックの外への http": "http://api.github.com",
+		// 送り先は base に "/graphql" を足した文字列なので、クエリや
+		// fragment が付いていると足したぶんが path に入らない。
+		"クエリつき":       "https://api.github.com?x=1",
+		"空のクエリ":       "https://api.github.com?",
+		"fragment つき": "https://api.github.com#x",
+		"空の fragment": "https://api.github.com#",
+		"パスのあとのクエリ":   "https://api.github.com/api/v3?x=1",
 	}
 
 	for name, base := range tests {
