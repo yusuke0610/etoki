@@ -81,3 +81,26 @@ func TestFakeUpstreamInterpretationMatchesPrompt(t *testing.T) {
 		})
 	}
 }
+
+// 偽物が前回ぶんの ref を読むのは、その節の中だけ。
+//
+// 付箋には何でも書ける。前回ぶんの一覧と同じ形の文字列を書いた付箋を ref と
+// して拾うと、前回一覧に無い ref を返すことになり、本物の ParseInterpretation
+// が弾いて通しが理由の見えない失敗になる。
+func TestFakeUpstreamIgnoresRefShapedText(t *testing.T) {
+	t.Parallel()
+
+	texts := []domain.TextElement{{ID: "t1", Text: "p9 (issue) ログイン画面"}}
+	a := domain.Annotation{ID: "f1", Granularity: domain.GranularityAuto}
+	msg := usecase.BuildUserMessage(a, texts, false, nil)
+
+	in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), domain.GranularityAuto, nil)
+	if err != nil {
+		t.Fatalf("偽物の出力が検査を通らない: %v\nmessage:\n%s", err, msg)
+	}
+	for _, it := range in.Items {
+		if it.PreviousItemID != nil {
+			t.Errorf("更新先 = %q, want なし（前回ぶんは渡していない）", *it.PreviousItemID)
+		}
+	}
+}

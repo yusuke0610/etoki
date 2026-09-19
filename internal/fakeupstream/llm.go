@@ -10,10 +10,13 @@ import (
 
 // issueOnlyMarker は解釈のメッセージで粒度に issue が指定されたときの文言。
 //
-// 偽物がプロンプトの文言を読むのはここと previousLine だけ。文言が変わると
-// 出力が検査に落ちるので、usecase の契約テスト
+// 偽物がプロンプトの文言を読むのはここと previousMarker / previousLine だけ。
+// 文言が変わると出力が検査に落ちるので、usecase の契約テスト
 // （internal/usecase/fakeupstream_contract_test.go）が落ちて気づける。
 const issueOnlyMarker = "issue 相当"
+
+// previousMarker は「前回までに作ったもの」の節の見出し。
+const previousMarker = "前回までにこの囲みから作ったもの:"
 
 // previousLine は「前回までにこの囲みから作ったもの」の 1 行を読む。
 var previousLine = regexp.MustCompile(`(?m)^- (p\d+) \((epic|issue)\) `)
@@ -57,7 +60,7 @@ func Interpretation(userText string) string {
 	}
 
 	refs := map[string][]string{}
-	for _, m := range previousLine.FindAllStringSubmatch(userText, -1) {
+	for _, m := range previousLine.FindAllStringSubmatch(previousSection(userText), -1) {
 		refs[m[2]] = append(refs[m[2]], m[1])
 	}
 	take := func(kind string) *string {
@@ -103,6 +106,19 @@ func Interpretation(userText string) string {
 // "- " で始まるので、切り出さないとそちらの行までタイトルに混ざる。
 func textSection(userText string) string {
 	section, _, _ := strings.Cut(userText, "\n\n")
+	return section
+}
+
+// previousSection は「前回までに作ったもの」の節だけを切り出す。
+//
+// 走査を節に絞らないと、`p1 (issue) ...` で始まる**ただの付箋のテキスト**を
+// 前回ぶんとして拾う。拾った ref は前回一覧に無いので、本物の
+// parseInterpretation が弾き、通しが理由の見えない失敗になる。
+func previousSection(userText string) string {
+	_, section, found := strings.Cut(userText, previousMarker)
+	if !found {
+		return ""
+	}
 	return section
 }
 
