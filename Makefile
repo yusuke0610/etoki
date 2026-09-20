@@ -110,6 +110,9 @@ try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki �
 	@# $(LOAD_ENV) は通さず、認証と鍵の変数は外す。.env や direnv の本物の鍵を
 	@# 偽物へ送らないためと、App を設定していると認証の構成に入り、偽物では
 	@# ログインできないため。
+	@# フィールド名の 2 つも外す。偽の GitHub は Kind / Parent 固定なので、
+	@# 手元で別名に設定している人は継いだ名前で引いて見つからず、作成が
+	@# ErrProjectFieldMissing で止まる。
 	@go build -o $(BIN_DIR)/etoki-fakeupstream ./cmd/etoki-fakeupstream
 	@# **どちらかが落ちたら両方止める。** 素の wait は全部の終了を待つので、
 	@# 偽物が FAKE_ADDR の使用中で起動に失敗しても etoki だけが残って待ち
@@ -130,6 +133,7 @@ try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki �
 	FAKE_ADDR="$(FAKE_ADDR)" $(BIN_DIR)/etoki-fakeupstream & fake_pid=$$!; \
 	env -u ETOKI_GITHUB_APP_CLIENT_ID -u ETOKI_GITHUB_APP_CLIENT_SECRET \
 		-u ETOKI_TOKEN_ENCRYPTION_KEY -u ETOKI_PUBLIC_URL -u ETOKI_LLM_API_KEY \
+		-u ETOKI_GITHUB_KIND_FIELD -u ETOKI_GITHUB_PARENT_FIELD \
 		ETOKI_DB_PATH="$$tmp/etoki.db" \
 		ETOKI_WEB_DIR=$(WEB_DIR)/dist \
 		ETOKI_LLM_BASE_URL="http://$(FAKE_ADDR)" \
