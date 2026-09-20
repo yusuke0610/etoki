@@ -18,6 +18,11 @@ const issueOnlyMarker = "issue 相当"
 // previousMarker は「前回までに作ったもの」の節の見出し。
 const previousMarker = "前回までにこの囲みから作ったもの:"
 
+// 空行は「囲みに含まれるテキスト」の節と、その後ろに buildUserMessage が
+// 組み立てた指示の境目。テキストの改行は空白に潰されるので、付箋の中には
+// 現れない。
+const sectionSeparator = "\n\n"
+
 // previousLine は「前回までにこの囲みから作ったもの」の 1 行を読む。
 var previousLine = regexp.MustCompile(`(?m)^- (p\d+) \((epic|issue)\) `)
 
@@ -59,8 +64,13 @@ func Interpretation(userText string) string {
 		head = truncateRunes(strings.Join(lines, " / "), 40)
 	}
 
+	// **マーカーは指示の節でだけ探す。** 付箋には何でも書けるので、
+	// 「issue 相当」や前回一覧の見出しをそのまま書いた付箋がありうる。
+	// 全文を見ると、それだけで粒度の判断と前回ぶんの解決が変わる。
+	control := controlSection(userText)
+
 	refs := map[string][]string{}
-	for _, m := range previousLine.FindAllStringSubmatch(previousSection(userText), -1) {
+	for _, m := range previousLine.FindAllStringSubmatch(previousSection(control), -1) {
 		refs[m[2]] = append(refs[m[2]], m[1])
 	}
 	take := func(kind string) *string {
@@ -74,7 +84,7 @@ func Interpretation(userText string) string {
 
 	var items []wireItem
 	var parent *string
-	if !strings.Contains(userText, issueOnlyMarker) {
+	if !strings.Contains(control, issueOnlyMarker) {
 		epicID := "e1"
 		parent = &epicID
 		items = append(items, wireItem{
@@ -105,17 +115,25 @@ func Interpretation(userText string) string {
 // textSection は「囲みに含まれるテキスト」の節だけを切り出す。前回ぶんの一覧も
 // "- " で始まるので、切り出さないとそちらの行までタイトルに混ざる。
 func textSection(userText string) string {
-	section, _, _ := strings.Cut(userText, "\n\n")
+	section, _, _ := strings.Cut(userText, sectionSeparator)
 	return section
 }
 
-// previousSection は「前回までに作ったもの」の節だけを切り出す。
+// controlSection は buildUserMessage が組み立てた指示だけを切り出す。
+// textSection の裏返しで、**利用者が書いた文字列が入らない側**。
 //
-// 走査を節に絞らないと、`p1 (issue) ...` で始まる**ただの付箋のテキスト**を
-// 前回ぶんとして拾う。拾った ref は前回一覧に無いので、本物の
-// parseInterpretation が弾き、通しが理由の見えない失敗になる。
-func previousSection(userText string) string {
-	_, section, found := strings.Cut(userText, previousMarker)
+// 偽物が読むマーカーはすべてここで探す。全文を見ると、付箋に書いた
+// 「issue 相当」で epic が消え、付箋に書いた前回一覧の見出しで存在しない ref が
+// 出る。どちらも本物の検査に落ちて、通しが理由の見えない失敗になる。
+func controlSection(userText string) string {
+	_, section, _ := strings.Cut(userText, sectionSeparator)
+	return section
+}
+
+// previousSection は controlSection のうち「前回までに作ったもの」から後ろを返す。
+// 節が無ければ空文字。
+func previousSection(control string) string {
+	_, section, found := strings.Cut(control, previousMarker)
 	if !found {
 		return ""
 	}

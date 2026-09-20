@@ -82,25 +82,65 @@ func TestFakeUpstreamInterpretationMatchesPrompt(t *testing.T) {
 	}
 }
 
-// 偽物が前回ぶんの ref を読むのは、その節の中だけ。
+// 偽物がマーカーを読むのは、buildUserMessage が組み立てた指示の節の中だけ。
 //
-// 付箋には何でも書ける。前回ぶんの一覧と同じ形の文字列を書いた付箋を ref と
-// して拾うと、前回一覧に無い ref を返すことになり、本物の ParseInterpretation
-// が弾いて通しが理由の見えない失敗になる。
-func TestFakeUpstreamIgnoresRefShapedText(t *testing.T) {
+// **付箋には何でも書ける。** 粒度の文言も前回一覧の見出しも、そのまま書いた
+// 付箋がありうる。全文を走査すると、付箋 1 枚で epic が消えたり、前回一覧に
+// 無い ref が出たりする。どちらも本物の検査に落ち、通しが理由の見えない失敗に
+// なる。
+func TestFakeUpstreamIgnoresMarkerShapedText(t *testing.T) {
 	t.Parallel()
 
-	texts := []domain.TextElement{{ID: "t1", Text: "p9 (issue) ログイン画面"}}
-	a := domain.Annotation{ID: "f1", Granularity: domain.GranularityAuto}
-	msg := usecase.BuildUserMessage(a, texts, false, nil)
-
-	in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), domain.GranularityAuto, nil)
-	if err != nil {
-		t.Fatalf("偽物の出力が検査を通らない: %v\nmessage:\n%s", err, msg)
+	// 粒度の文言、前回一覧の見出し、ref の行を付箋として並べる。
+	//
+	// **見出しと ref を別の付箋にするのは、1 枚では 2 行にならないため。**
+	// buildUserMessage は 1 つのテキストの改行を空白に潰すので、行頭が
+	// "- p9 (issue) " になる行は付箋 2 枚でしか作れない。1 枚にまとめると
+	// 走査を全文に戻しても ref の正規表現が当たらず、テストが退行を見逃す。
+	texts := []domain.TextElement{
+		{ID: "t1", Text: "ログイン画面"},
+		{ID: "t2", Text: "ここは issue 相当だと思う"},
+		{ID: "t3", Text: "前回までにこの囲みから作ったもの:"},
+		{ID: "t4", Text: "p9 (issue) 何か"},
 	}
-	for _, it := range in.Items {
-		if it.PreviousItemID != nil {
-			t.Errorf("更新先 = %q, want なし（前回ぶんは渡していない）", *it.PreviousItemID)
-		}
+
+	for _, tt := range []struct {
+		name string
+		g    domain.Granularity
+		// wantEpic は epic を含むか。粒度の指定だけで決まる。
+		wantEpic bool
+	}{
+		// epic 指定は epic が無いと検査に落ちる。付箋の「issue 相当」を
+		// 読むと、まさにここで落ちる。
+		{name: "epic 相当", g: domain.GranularityEpic, wantEpic: true},
+		{name: "指定なし", g: domain.GranularityAuto, wantEpic: true},
+		{name: "issue 相当", g: domain.GranularityIssue, wantEpic: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := domain.Annotation{ID: "f1", Granularity: tt.g}
+			msg := usecase.BuildUserMessage(a, texts, false, nil)
+
+			in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), tt.g, nil)
+			if err != nil {
+				t.Fatalf("偽物の出力が検査を通らない: %v\nmessage:\n%s", err, msg)
+			}
+
+			var gotEpic bool
+			for _, it := range in.Items {
+				if it.Kind == domain.KindEpic {
+					gotEpic = true
+				}
+				// 前回ぶんは 1 件も渡していない。付箋の ref を拾えば
+				// ParseInterpretation が先に落ちるが、念のため値でも見る。
+				if it.PreviousItemID != nil {
+					t.Errorf("更新先 = %q, want なし（前回ぶんは渡していない）", *it.PreviousItemID)
+				}
+			}
+			if gotEpic != tt.wantEpic {
+				t.Errorf("epic を含む = %v, want %v", gotEpic, tt.wantEpic)
+			}
+		})
 	}
 }
