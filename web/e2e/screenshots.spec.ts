@@ -81,6 +81,12 @@ test.describe("スクリーンショット", () => {
     // GitHub へ辿るリンク（ADR 0025）が画面の外に残る。
     await card.locator(".creation-result").scrollIntoViewIfNeeded();
     await shot(page, "04-created");
+
+    // 作れた項目は選択が外れ、同じ解釈からは新規に作れない（ADR 0052）。
+    // 選び直すと書き換えになることを、下書きの側で読める画面を撮る。
+    await card.getByLabel("e1 を作成する").check();
+    await card.getByLabel("e1 を作成する").scrollIntoViewIfNeeded();
+    await shot(page, "04-created-draft");
   });
 
   // changed の注釈に更新の出口ができた（ADR 0026）。何が書き換わり、何が
@@ -282,6 +288,21 @@ test.describe("スクリーンショット", () => {
     await shot(page, "22-scene-too-large");
   });
 
+  // 上限を導入する前に保存されたボードは、開いた時点で保存できないと分かる
+  // (issue #103)。押してから 413 で気づくのではなく、開いた瞬間に見える形に
+  // なっているかを画像で見る。
+  test("上限を超えたまま保存されているボードを開いた状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), sceneOverLimit: true };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await page.getByText("このボードは保存できる上限を超えています").waitFor();
+    await shot(page, "31-scene-over-limit");
+  });
+
   // 設定していない機能の見せ方（ADR 0030）。LLM を設定しない構成は README が
   // 想定している使い方なので、その画面が行き止まりに見えないかを画像で見る。
   test("設定していない機能の見せ方を撮る", async ({ page }) => {
@@ -375,6 +396,12 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "メンバー", exact: true }).click();
     await page.getByText("Carol").waitFor();
     await shot(page, "11-members");
+
+    // 招待する前に、login が当たった相手を見せる（ADR 0053）。
+    await page.getByLabel("招待する login").fill("dave");
+    await page.getByRole("button", { name: "確認する" }).click();
+    await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
+    await shot(page, "11-members-invitee");
   });
 
   // 招待された側にリポジトリのアクセス権は要らない。ブレストと解釈まではでき、
@@ -849,5 +876,22 @@ test.describe("スクリーンショット", () => {
       const release = Reflect.get(window, "releaseImport") as unknown;
       if (typeof release === "function") release();
     });
+  });
+  // ダーク（ADR 0055）。変数を差し替えるだけなので、画面ごとに撮り分ける
+  // 価値があるのは、色の種類がいちばん多く並ぶところ（3 状態・解釈結果・
+  // 更新と取り残し）。
+  test("ダークで主要な画面を撮る", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await installApi(page, matchedInterpretationMock());
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await shot(page, "34-dark-board-states");
+
+    const card = annotationCard(page, "セッション管理");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.locator(".left-behind").scrollIntoViewIfNeeded();
+    await shot(page, "35-dark-update-and-left-behind");
   });
 });

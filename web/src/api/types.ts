@@ -124,6 +124,9 @@ export type BoardRole = Schemas["BoardRole"];
 /** ボードのメンバー 1 人。 */
 export type BoardMember = Schemas["BoardMember"];
 
+/** 招待する前に見せる、login が当たった利用者（ADR 0053）。 */
+export type Invitee = Schemas["Invitee"];
+
 /** 招待のリクエストボディ。 */
 export type InviteMemberRequest = Schemas["InviteMemberRequest"];
 

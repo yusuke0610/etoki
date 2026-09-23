@@ -1,4 +1,4 @@
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -53,6 +53,7 @@ import {
 import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { log } from "../logger";
+import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
 import {
   AnnotationPanel,
@@ -74,6 +75,7 @@ import { createGenerations } from "./generation";
 import {
   addInterpretation,
   failInterpretation,
+  recordCreated,
   selectInterpretation,
   startInterpretation,
   type InterpretationState,
@@ -111,11 +113,19 @@ const DIAGRAM_KEY = "diagram";
  * **画像のエクスポートは閉じない。** 答えている問いが違う（持ち出しではなく、
  * 絵を他所に貼ること）。
  *
+ * **テーマの切り替えは開ける**（ADR 0055）。`theme` を渡すとライブラリは既定で
+ * この項目を隠すので、明示しないと手で切り替える口が消える。
+ *
  * **モジュールの定数として持つ。** 描画のたびに作り直すと、Excalidraw には
  * 毎回違うオブジェクトが渡る。
  */
 const UI_OPTIONS = {
-  canvasActions: { loadScene: false, export: false, saveToActiveFile: false },
+  canvasActions: {
+    loadScene: false,
+    export: false,
+    saveToActiveFile: false,
+    toggleTheme: true,
+  },
 } as const;
 
 /**
@@ -171,6 +181,15 @@ type Props = {
    * いるので、止めるかどうかを判断する材料をそこへ渡す必要がある。
    */
   onDirtyChange: (dirty: boolean) => void;
+  /** 画面の配色。持ち主は App（ADR 0055）。 */
+  theme: Theme;
+  /**
+   * キャンバスのメニューでテーマが切り替えられた。
+   *
+   * **ここで持ち直さない。** etoki のパネルとキャンバスで値が 2 つになり、
+   * 片方だけが暗い画面が起きる。
+   */
+  onThemeChange: (theme: Theme) => void;
 };
 
 export function BoardPage({
@@ -182,6 +201,8 @@ export function BoardPage({
   onRenamed,
   onDeleted,
   onDirtyChange,
+  theme,
+  onThemeChange,
 }: Props) {
   // viewer は読むだけ。解釈も許さない（ADR 0017）。
   const canEdit = board.role !== "viewer";
@@ -220,6 +241,14 @@ export function BoardPage({
   // **上限は持たない。** 判定はサーバーだけが持つ（ADR 0018 / 0038）ので、
   // ここが出すのは「いまどれくらいか」という状態にとどめる。
   const [sceneSize, setSceneSize] = useState<number | null>(null);
+  // 保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
+  // 状態（issue #103）。`board.sceneOverLimit` を初期値にする。
+  //
+  // **保存が成功したら手元で false に倒す。** 保存が成功した = サーバーの
+  // 上限を満たした、という事実からそう言える。上限の数値をフロントが持って
+  // いなくても、判定結果だけを追随させられる（ADR 0038 は数値の複製を禁じて
+  // いるのであって、この推論を禁じてはいない）。
+  const [overLimit, setOverLimit] = useState(board.sceneOverLimit);
   // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
   // 未保存のまま残すので、dirty とは別に持つ。
   const [conflicted, setConflicted] = useState(false);
@@ -527,24 +556,6 @@ export function BoardPage({
   // 外れるときは未保存を下ろす。残すと、キャンバスがもう無いのに親が止め続ける。
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
 
-  // 未保存のあいだだけ離脱を確認する。ブレストは etoki の最初のフェーズなので、
-  // ここで失うと後段（注釈・解釈・作成）が全部やり直しになる。保存は明示操作で
-  // ある以上（中核思想 3）押し忘れは構造的に起きるので、**自動で保存しないなら
-  // 失う直前に知らせる責任が対になる。**
-  useEffect(() => {
-    if (!dirty) return;
-
-    const confirmLeave = (e: BeforeUnloadEvent) => {
-      // 文面はブラウザが決める。ここで渡した文字列は表示されない。
-      e.preventDefault();
-      // preventDefault だけを見ないブラウザが残っているので両方立てる。
-      e.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", confirmLeave);
-    return () => window.removeEventListener("beforeunload", confirmLeave);
-  }, [dirty]);
-
   /**
    * シーンの大きさを数え直す。
    *
@@ -595,6 +606,9 @@ export function BoardPage({
   // いまのキャンバスの見え方。**state ではなく ref に持つ。** 重ねる枠の
   // 引き直しにしか使わないので、スクロールのたびに再描画を増やす理由が無い。
   const viewport = useRef<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1 });
+  // キャンバスが最後に言ってきたテーマ。マウント時は props のテーマで描かれる。
+  // 選び直したかどうかをこれとの差で見る（`handleChange`）。
+  const canvasTheme = useRef<Theme>(theme);
 
   /**
    * いまキャンバスに出ている背景色。
@@ -620,9 +634,24 @@ export function BoardPage({
         scrollY: number;
         zoom: { value: number };
         viewBackgroundColor: string;
+        theme: Theme;
       },
     ) => {
       const els = elements as SceneElement[];
+      // キャンバスのメニューで切り替えたテーマは、ここでしか届かない。持ち主の
+      // App に返して、パネルの配色も一緒に変える（ADR 0055）。
+      //
+      // **キャンバスが前回と違うテーマを言ってきたときだけ返す。** props と
+      // 比べると、OS の設定が変わって props を差し替えた直後に、まだ古い
+      // テーマのまま届く onChange を「選び直した」と取り違え、OS に従うのを
+      // やめてしまう。
+      //
+      // **署名には入れない。** テーマは保存が書かない（`sceneJSON` の直列化が
+      // 落とす）ので、入れると切り替えただけで未保存になる。
+      if (appState.theme !== canvasTheme.current) {
+        canvasTheme.current = appState.theme;
+        if (appState.theme !== theme) onThemeChange(appState.theme);
+      }
       applySignature(sceneSignature(els, appState.viewBackgroundColor));
       scheduleMeasure();
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
@@ -637,7 +666,7 @@ export function BoardPage({
       };
       setOverlayBoxes(annotationBoxes(els, viewport.current));
     },
-    [applySignature, scheduleMeasure],
+    [applySignature, scheduleMeasure, theme, onThemeChange],
   );
 
   /**
@@ -645,6 +674,11 @@ export function BoardPage({
    *
    * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0045）。
    * 表示状態そのものはここで触らない。
+   *
+   * **ここを通る変更は、人の操作として「元に戻す」に積む**（#144）。付箋・図の
+   * ドラフト・注釈の付け外しと種別・取り込みが通る。どれも開発者が押して
+   * 起こした変更で、置き間違いを戻す手段が要る。取り込みは確認を経た置き換え
+   * だが、戻せるほうが失うものが少ない。
    */
   const updateElements = useCallback(
     (next: SceneElement[], appState?: Record<string, unknown>) => {
@@ -654,7 +688,14 @@ export function BoardPage({
       const background =
         (appState?.viewBackgroundColor as string | undefined) ?? currentBackground();
 
-      api?.updateScene({ elements: next as never, appState: appState as never });
+      // `captureUpdate` の既定（EVENTUALLY）はすぐには履歴に積まない。積まれない
+      // まま次の操作と一緒に記録されるので、戻すとこの変更ではなく直前に描いた
+      // ものが消える。
+      api?.updateScene({
+        elements: next as never,
+        appState: appState as never,
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
       // onChange の発火を待たずにここでも判定する。注釈の付け外しが未保存として
       // 出るかどうかを、updateScene が onChange を呼ぶかに依存させない。
       applySignature(sceneSignature(next, background));
@@ -983,6 +1024,8 @@ export function BoardPage({
       // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
       baseUpdatedAt.current = updatedAt;
       setConflicted(false);
+      // 保存が成功した = いまのシーンはサーバーの上限を満たしている。
+      setOverLimit(false);
       savedSignature.current = sent;
       setDirty(latestSignature.current !== sent);
       // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
@@ -1092,7 +1135,11 @@ export function BoardPage({
    * 作成後は状態が created に変わるので、注釈の状態を取り直す。
    */
   const create = useCallback(
-    async (annotationId: string, interpretation: Interpretation) => {
+    async (
+      annotationId: string,
+      interpretationId: number,
+      interpretation: Interpretation,
+    ) => {
       // disabled は表示の約束。取り込み中、または別の注釈を作成中に直接呼ばれても
       // 取り消せない GitHub への作成を並走させない。
       if (exclusiveOperation.current !== null) return;
@@ -1106,10 +1153,17 @@ export function BoardPage({
         // 保存が挟まっていたら、この結果は保存前の解釈に対するもの。表示すると
         // いまの内容に対して作られたと誤読される。
         if (!creationGenerations.isCurrent(annotationId, generation)) return;
-        setCreations((prev) => ({
-          ...prev,
-          [annotationId]: { status: "done", run },
-        }));
+        // 作ったものを解釈に結びつける。下書きはこれを見て、作れた項目を
+        // 同じ下書きから新規に作らせない（ADR 0052）。応答を受けた時点で
+        // 入れる。実行中は下書きが止まっているので、ここで外れても押せない。
+        setInterpretations((prev) => {
+          const state = prev[annotationId];
+          if (!state) return prev;
+          return {
+            ...prev,
+            [annotationId]: recordCreated(state, interpretationId, run.items),
+          };
+        });
         // 履歴は 1 件増えたので、引いてあるものは捨てる。**黙って古いまま
         // 出さない。** 読み直すかどうかは、これまでどおり押した人が決める。
         // 走っている読み込みも無効にする。捨てた直後に古い応答が入ると、
@@ -1122,6 +1176,15 @@ export function BoardPage({
           return next;
         });
         await refreshAnnotations();
+        // **状態を取り直してから done にする。** 先に done にすると、作ったばかりの
+        // item が畳み込みに入る前の隙間で、保存や押し直しと競合する
+        // （.claude/rules/async-ui.md）。取り直しの失敗は refreshAnnotations が
+        // 自分で出すので、ここでは待つだけ。
+        if (!creationGenerations.isCurrent(annotationId, generation)) return;
+        setCreations((prev) => ({
+          ...prev,
+          [annotationId]: { status: "done", run },
+        }));
       } catch (e) {
         if (!creationGenerations.isCurrent(annotationId, generation)) return;
         setCreations((prev) => ({
@@ -1144,6 +1207,29 @@ export function BoardPage({
   // GitHub には残ったまま結果だけ消え、作られていないと思って再実行した開発者が
   // draft issue を重複させる。保存側は creating で、作成側は saving を渡して止める。
   const creating = Object.values(creations).some((c) => c.status === "running");
+
+  // 未保存のあいだと、作成の実行中は離脱を確認する。ブレストは etoki の最初のフェーズなので、
+  // ここで失うと後段（注釈・解釈・作成）が全部やり直しになる。保存は明示操作で
+  // ある以上（中核思想 3）押し忘れは構造的に起きるので、**自動で保存しないなら
+  // 失う直前に知らせる責任が対になる。**
+  //
+  // **作成中も確認する**（ADR 0051）。解釈が保存を要求するので、作成を押す時点では
+  // ふつう保存済みで、未保存だけを見ていると何も訊かれない。閉じれば作成は
+  // 止まり、残りは作られない。作れたぶんは記録されるが、閉じた人は結果を
+  // 見られない。
+  useEffect(() => {
+    if (!dirty && !creating) return;
+
+    const confirmLeave = (e: BeforeUnloadEvent) => {
+      // 文面はブラウザが決める。ここで渡した文字列は表示されない。
+      e.preventDefault();
+      // preventDefault だけを見ないブラウザが残っているので両方立てる。
+      e.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", confirmLeave);
+    return () => window.removeEventListener("beforeunload", confirmLeave);
+  }, [dirty, creating]);
 
   const importBlocked = saving
     ? "保存が終わるまで取り込めません"
@@ -1543,6 +1629,21 @@ export function BoardPage({
       )}
 
       {/*
+        保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
+        状態（issue #103、ADR 0038）。**上限の数値は出さない。** サーバーの
+        判定結果を見せるだけで、フロントは上限を複製しない。開いた時点で
+        分かるよう、キャンバスを描く前から出す（中核思想 3）。
+      */}
+      {overLimit && (
+        <p className="scene-limit-warning" role="alert">
+          {
+            "このボードは保存できる上限を超えています。保存し直すには貼った画像を減らしてください。"
+          }
+          {sceneSize !== null && `（いまの大きさ: ${formatSceneSize(sceneSize)}）`}
+        </p>
+      )}
+
+      {/*
         パネルは境界で包み、キャンバスを巻き込ませない。落ちたのがパネルでも、
         外側の 1 枚だけで受けるとツリーごと外れ、保存していないブレストが
         その場で消える（ADR 0027）。
@@ -1585,6 +1686,7 @@ export function BoardPage({
             initialData={initialData as never}
             onChange={handleChange as never}
             langCode="ja-JP"
+            theme={theme}
             // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0045）。
             UIOptions={UI_OPTIONS}
             // viewer には描かせない。描けるのに保存できないと、描いた内容を
@@ -1625,7 +1727,9 @@ export function BoardPage({
             creations={creations}
             saving={saving}
             importing={importing}
-            onCreate={(id, interpretation) => void create(id, interpretation)}
+            onCreate={(id, interpretationId, interpretation) =>
+              void create(id, interpretationId, interpretation)
+            }
             canEdit={canEdit}
             projectAccess={projectAccess}
             interpretationUnavailable={interpretationUnavailable}
