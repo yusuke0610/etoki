@@ -101,7 +101,7 @@ CodeRabbit に最も多く指摘されたのは「テストはあるが、守り
   レビュアーはヘルパーの中を追わないので「明示されていない」と言って
   くるが、足すと同じ値が呼び出しの数だけ増える。返事はヘルパーの場所と
   行番号で返す。ハンドラのテストの `Host` がこれで、**入れる場所の正本は
-  `internal/CLAUDE.md`**（#104）。
+  `.claude/rules/http-handlers.md`**（#104）。
 
 - **docstring の網羅率を満たすために、テストの無名関数へ docstring を
   足さない。** CodeRabbit の pre-merge check は `test(...)` のコールバックや

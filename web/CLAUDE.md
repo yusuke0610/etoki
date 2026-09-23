@@ -6,7 +6,10 @@
 
 ## バックエンドと揃える必要がある約束
 
-片方だけ変えると壊れるもの。理由の全体は `internal/CLAUDE.md` にある。
+片方だけ変えると壊れるもの。注釈の判定規則とメタデータの形の理由はルートの
+`CLAUDE.md`（「フロントとバックで一致させる必要がある定義」）、未保存の判定・
+保存の照合・シーンの上限・解釈の入力のバックエンド側は `internal/CLAUDE.md` に
+ある。
 
 - **注釈の判定規則は Go 側と同じにする。** `web/src/excalidraw/annotation.ts` の
   `isAnnotation` と `internal/domain/scene.go` の `Element.isAnnotation`。規則は
