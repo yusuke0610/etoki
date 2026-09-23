@@ -38,7 +38,7 @@ func readmeEnvRows(t *testing.T) []readmeEnvRow {
 	}
 
 	header := regexp.MustCompile(`^\|\s*変数\s*\|`)
-	row := regexp.MustCompile("^\\|\\s*`(ETOKI_[A-Z_]+)`\\s*\\|\\s*([^|]*?)\\s*\\|")
+	row := regexp.MustCompile("^\\|\\s*`(ETOKI_[A-Z0-9_]+)`\\s*\\|\\s*([^|]*?)\\s*\\|")
 	var rows []readmeEnvRow
 	inTable := false
 	for _, line := range strings.Split(string(b), "\n") {
@@ -114,7 +114,7 @@ func TestREADME_EnvNamesMatchUsage(t *testing.T) {
 		readme = append(readme, r.name)
 	}
 
-	env := regexp.MustCompile(`(?m)^\s+(ETOKI_[A-Z_]+)\s`)
+	env := regexp.MustCompile(`(?m)^\s+(ETOKI_[A-Z0-9_]+)\s`)
 	var fromUsage []string
 	for _, m := range env.FindAllStringSubmatch(usage, -1) {
 		fromUsage = append(fromUsage, m[1])
