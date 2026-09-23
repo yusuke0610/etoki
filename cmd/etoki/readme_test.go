@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yusuke0610/etoki"
+	"github.com/yusuke0610/etoki/internal/adapter/github"
 	"github.com/yusuke0610/etoki/internal/adapter/llm"
 )
 
@@ -85,6 +86,7 @@ func TestREADME_EnvDefaultsMatchConstants(t *testing.T) {
 		"ETOKI_LLM_RATE_WINDOW":     etoki.DefaultLLMRateWindow.String(),
 		"ETOKI_GITHUB_KIND_FIELD":   etoki.DefaultKindFieldName,
 		"ETOKI_GITHUB_PARENT_FIELD": etoki.DefaultParentFieldName,
+		"ETOKI_GITHUB_BASE_URL":     github.DefaultBaseURL,
 	}
 
 	for _, r := range readmeEnvRows(t) {

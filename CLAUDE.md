@@ -38,7 +38,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `CONTRIBUTING.md`                  | ブランチ・コミット・PR 本文・レビュー対応・CI                          |
 | `.github/pull_request_template.md` | PR 本文の雛形                                                          |
 | `internal/CLAUDE.md`               | 3 状態判定のデータフロー、メンバーと権限                               |
-| `web/CLAUDE.md`                    | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
+| `web/CLAUDE.md`                    | E2E テスト、報告にブラウザの実行結果を添える、vite / playwright の設定 |
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
 | `.claude/rules/`                   | レビュー由来の落とし穴集（テーマ別。対象ファイルを読むと読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
@@ -70,6 +70,7 @@ make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
 make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
+make try-fake    # 偽の GitHub / LLM に向けて通しで動かす（CI には入れない）
 make lint        # Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest + bun test

@@ -53,6 +53,8 @@
 | [0047](0047-diagram-kind-as-annotation-metadata.md)              | 図の種別は注釈のメタデータに持ち、読み方の規則は実装に書かない         | 採用                 |
 | [0048](0048-show-scene-over-limit-on-open.md)                    | 保存できる上限を超えたボードは、開いた時点で真偽値だけを返して知らせる | 採用                 |
 | [0049](0049-rebuild-parent-tables-outside-the-transaction.md)    | 親テーブルの作り直しは外部キーを切って適用する（印は SQL の先頭行）    | 採用                 |
+| [0050](0050-walk-through-against-fake-upstream.md)               | 通しの確認は偽の上流で手元から行い、偽物はアダプタとの往復で守る       | 採用                 |
 | [0051](0051-stop-creation-on-disconnect-and-record.md)           | 接続が切れたら作成を止め、作れたぶんは切れない文脈で記録する           | 採用                 |
 | [0052](0052-do-not-recreate-from-the-same-draft.md)              | 作った項目は同じ下書きから新規に作らせない                             | 採用                 |
 | [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる            | 採用                 |
+| [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない    | 採用                 |
