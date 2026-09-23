@@ -59,3 +59,4 @@
 | [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる            | 採用                 |
 | [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない    | 採用                 |
 | [0057](0057-link-to-each-draft-issue.md)                         | 作った draft issue へは Project の URL に識別子を添えて辿らせる        | 採用                 |
+| [0058](0058-notifications-for-passing-failures.md)               | 通知は過ぎ去ってよい失敗のためのもので、状態は通知にしない             | 採用                 |

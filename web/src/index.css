@@ -530,6 +530,88 @@ body {
 }
 
 /*
+ * 画面全体に出す失敗の通知（ADR 0058）。
+ *
+ * **フローの外に出す。** 帯としてフローに入れると、出た瞬間にキャンバスの
+ * 高さが削られて Excalidraw が描き直され、描いている最中に描画位置が動く。
+ * 右上に置くのは、Excalidraw 自身の UI（左下のズームと取り消し、右下の
+ * ヘルプ、上中央のツールバー）と重ならない位置だから。
+ *
+ * 入れ物は 0 件でも DOM に残る（読み上げのため）。何も無いときにクリックを
+ * 奪わないよう、入れ物は pointer-events を切り、通知だけが受ける。
+ */
+.notifications {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.notification {
+  pointer-events: auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+}
+
+.notification-error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+.notification-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.notification-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.notification-message {
+  margin: 0;
+}
+
+/* 色だけで種別を伝えない（#62）。本文の前に文字で添える。 */
+.notification-kind {
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.notification-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* 位置は動かさない。フェードだけにし、動きを減らす設定では何もしない。 */
+@media (prefers-reduced-motion: no-preference) {
+  .notification {
+    animation: notification-in 150ms ease-out;
+  }
+}
+
+@keyframes notification-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
  * 他の人が先に保存していて、こちらの保存を拒んだ状態（ADR 0020）。
  *
  * ヘッダーのバッジではなく帯で出す。上書きしていないことと、この後どうすれば
