@@ -33,6 +33,20 @@ type DraftIssue struct {
 	Body string
 }
 
+// ProjectItemRef は作成・更新した ProjectV2Item を指す手掛かり。
+type ProjectItemRef struct {
+	// ItemID は ProjectV2Item の node ID。以後の操作はこれで指す。
+	ItemID string
+	// DatabaseID は ProjectV2Item の数値の識別子（GraphQL の fullDatabaseId）。
+	// 0 は「知らない」。
+	//
+	// **URL の `itemId` に使うためだけに持つ**（ADR 0057）。draft issue には固有の
+	// URL が無いので、Project の URL にこれを添えて item のペインを開かせる。
+	// GitHub は BigInt を文字列で返すが、**境界の内側では整数で持つ。** 文字列の
+	// まま運ぶと、URL に差し込む値の検査がもう 1 つ要る。
+	DatabaseID int64
+}
+
 // FieldValue は 1 つのカスタムフィールドに設定する値。
 // Text と OptionID はどちらか一方だけを設定する。
 type FieldValue struct {
@@ -95,11 +109,14 @@ type GitHubClient interface {
 	// 決めるのは作成時の GitHub の応答であり、ここではない。
 	CanWriteProject(ctx context.Context, projectID string) (bool, error)
 
-	// CreateDraftIssue は draft issue を作成し、その ProjectV2Item ID を返す。
+	// CreateDraftIssue は draft issue を作成し、その ProjectV2Item を指す手掛かりを返す。
 	//
-	// 返すのは ProjectV2Item の ID であり、DraftIssue content の ID ではない。
+	// ItemID は ProjectV2Item の ID であり、DraftIssue content の ID ではない。
 	// 後続の SetItemFieldValue が前者を要求するため。
-	CreateDraftIssue(ctx context.Context, projectID string, item DraftIssue) (itemID string, err error)
+	//
+	// DatabaseID は取れなければ 0 でよい。**取れないことを理由に失敗させない。**
+	// item ごとのリンクを組めなくなるだけで、作成は取り消せない（ADR 0057）。
+	CreateDraftIssue(ctx context.Context, projectID string, item DraftIssue) (ProjectItemRef, error)
 
 	// UpdateDraftIssue は既存の draft issue の title と body を書き換える。
 	//
@@ -111,7 +128,11 @@ type GitHubClient interface {
 	//
 	// item が draft issue でなくなっていたら（Project に本物の issue が
 	// 紐づけられた等）、何も書き換えずにエラーを返す。
-	UpdateDraftIssue(ctx context.Context, itemID string, item DraftIssue) error
+	//
+	// 返す ProjectItemRef の ItemID は引数と同じ。DatabaseID は CreateDraftIssue と
+	// 同じく取れなければ 0 でよい。**更新のついでに返させているのは、列を足す前に
+	// 作った item の手掛かりを、更新した時点で埋めるため**（ADR 0057）。
+	UpdateDraftIssue(ctx context.Context, itemID string, item DraftIssue) (ProjectItemRef, error)
 
 	// SetItemFieldValue はアイテムのカスタムフィールドに値を設定する。
 	SetItemFieldValue(ctx context.Context, projectID, itemID string, v FieldValue) error

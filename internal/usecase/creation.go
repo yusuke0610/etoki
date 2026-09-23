@@ -351,10 +351,11 @@ func (s *CreationService) applyOne(
 	epicTitles map[string]string,
 	now time.Time,
 ) (port.SyncItem, error) {
-	itemID, action, err := s.writeDraftIssue(ctx, projectID, item)
+	ref, action, err := s.writeDraftIssue(ctx, projectID, item)
 	if err != nil {
 		return port.SyncItem{}, err
 	}
+	itemID := ref.ItemID
 
 	// GitHub に送ったものをそのまま控える。逆方向同期を実装しない以上、
 	// ここで取らなければ何を作ったのか二度と分からない（ADR 0023）。
@@ -363,14 +364,15 @@ func (s *CreationService) applyOne(
 	// しても、draft issue そのものはもう変わっている。呼び出し側が記録できる
 	// よう、エラーと一緒にこれを返す（ADR 0009 / 0026）。
 	saved := port.SyncItem{
-		ItemID:        itemID,
-		Kind:          toPortKind(item.Kind),
-		Title:         item.Title,
-		Body:          item.Body,
-		LocalID:       item.LocalID,
-		ParentLocalID: item.ParentLocalID,
-		Action:        action,
-		CreatedAt:     now,
+		ItemID:         itemID,
+		ItemDatabaseID: ref.DatabaseID,
+		Kind:           toPortKind(item.Kind),
+		Title:          item.Title,
+		Body:           item.Body,
+		LocalID:        item.LocalID,
+		ParentLocalID:  item.ParentLocalID,
+		Action:         action,
+		CreatedAt:      now,
 	}
 
 	optionID := fields.epicOptionID
@@ -413,29 +415,33 @@ func (s *CreationService) applyOne(
 	return saved, nil
 }
 
-// writeDraftIssue は draft issue を作るか書き換え、その item ID を返す。
+// writeDraftIssue は draft issue を作るか書き換え、その item を指す手掛かりを返す。
 //
 // 分岐はここだけ。呼び出し側は「作った」か「書き換えた」かを Action で受け取る。
 func (s *CreationService) writeDraftIssue(
 	ctx context.Context, projectID string, item domain.InterpretedItem,
-) (string, port.SyncAction, error) {
+) (port.ProjectItemRef, port.SyncAction, error) {
 	draft := port.DraftIssue{Title: item.Title, Body: item.Body}
 
 	if item.PreviousItemID == nil {
-		itemID, err := s.github.CreateDraftIssue(ctx, projectID, draft)
+		ref, err := s.github.CreateDraftIssue(ctx, projectID, draft)
 		if err != nil {
-			return "", "", fmt.Errorf("create %q: %w", item.Title, err)
+			return port.ProjectItemRef{}, "", fmt.Errorf("create %q: %w", item.Title, err)
 		}
-		return itemID, port.ActionCreated, nil
+		return ref, port.ActionCreated, nil
 	}
 
 	// 更新先が本当にこの注釈のものかは Create の入口で確かめてある。
 	itemID := *item.PreviousItemID
-	if err := s.github.UpdateDraftIssue(ctx, itemID, draft); err != nil {
-		return "", "", fmt.Errorf("update %q: %w", item.Title, err)
+	ref, err := s.github.UpdateDraftIssue(ctx, itemID, draft)
+	if err != nil {
+		return port.ProjectItemRef{}, "", fmt.Errorf("update %q: %w", item.Title, err)
 	}
+	// 以後の操作に使う ID は、実装が返したものではなく更新先として確かめた
+	// もの。実装が別の ID を返しても、畳み込み集合の外の item には触らない。
+	ref.ItemID = itemID
 
-	return itemID, port.ActionUpdated, nil
+	return ref, port.ActionUpdated, nil
 }
 
 // projectFields は作成に必要なカスタムフィールドの ID。

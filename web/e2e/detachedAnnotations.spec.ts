@@ -23,6 +23,7 @@ function withDetached(): ApiMock {
       items: [
         {
           itemId: "PVTI_gone",
+          itemDatabaseId: 301,
           kind: "epic",
           title: "消した囲みで作った epic",
           body: "囲みは消えているが GitHub には残っている",
@@ -49,6 +50,14 @@ test.describe("キャンバスに無い注釈", () => {
 
     await expect(section.getByText("GitHub にある 1 件")).toBeVisible();
     await expect(section.getByText("消した囲みで作った epic")).toBeVisible();
+
+    // 囲みが消えていても、作った item へは 1 件ずつ辿れる（ADR 0057）。
+    await expect(
+      section.getByRole("link", { name: "「消した囲みで作った epic」を GitHub で開く" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/orgs/acme/projects/1?pane=issue&itemId=301",
+    );
 
     // **引き直しても繋がらない。** frame を引き直すと要素の ID が変わるので、
     // 以後は別の注釈として扱われる。書かないと「引き直せば戻る」と読める。

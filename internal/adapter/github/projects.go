@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -497,27 +498,52 @@ func (c *Client) ListProjectFields(ctx context.Context, projectID string) ([]por
 	}
 }
 
-// CreateDraftIssue は draft issue を作成し、その ProjectV2Item ID を返す。
+// CreateDraftIssue は draft issue を作成し、その ProjectV2Item を指す手掛かりを返す。
 //
-// 返すのは ProjectV2Item の ID であって DraftIssue content の ID ではない。
+// 返す ItemID は ProjectV2Item の ID であって DraftIssue content の ID ではない。
 // 後続の SetItemFieldValue が前者を要求する。
-func (c *Client) CreateDraftIssue(ctx context.Context, projectID string, item port.DraftIssue) (string, error) {
+func (c *Client) CreateDraftIssue(
+	ctx context.Context, projectID string, item port.DraftIssue,
+) (port.ProjectItemRef, error) {
 	if item.Title == "" {
-		return "", errors.New("github: draft issue title is required")
+		return port.ProjectItemRef{}, errors.New("github: draft issue title is required")
 	}
 
 	var resp createDraftIssueResponse
 	vars := map[string]any{"projectId": projectID, "title": item.Title, "body": item.Body}
 	if err := c.do(ctx, mutationCreateDraftIssue, vars, &resp); err != nil {
-		return "", err
+		return port.ProjectItemRef{}, err
 	}
 
-	id := resp.AddProjectV2DraftIssue.ProjectItem.ID
-	if id == "" {
-		return "", errors.New("github: draft issue created but no item id returned")
+	projectItem := resp.AddProjectV2DraftIssue.ProjectItem
+	if projectItem.ID == "" {
+		return port.ProjectItemRef{}, errors.New("github: draft issue created but no item id returned")
 	}
 
-	return id, nil
+	return port.ProjectItemRef{
+		ItemID:     projectItem.ID,
+		DatabaseID: parseDatabaseID(projectItem.FullDatabaseID),
+	}, nil
+}
+
+// parseDatabaseID は GraphQL の BigInt を読む。読めなければ 0（知らない）。
+//
+// **BigInt は文字列で届く**（スキーマの定義にそう書いてある）。ここで整数に
+// してしまえば、URL に差し込む側で値を検査し直さずに済む（ADR 0057）。
+//
+// **読めなくてもエラーにしない。** 呼ぶのは取り消せない書き込みの直後で、
+// 確認のためのリンクが組めないことを理由に作成を失敗扱いにしない。負の値や 0 も
+// 「知らない」に倒す。識別子として意味を持たないので、リンクにしても開けない。
+func parseDatabaseID(raw json.RawMessage) int64 {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return 0
+	}
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || id <= 0 {
+		return 0
+	}
+	return id
 }
 
 // UpdateDraftIssue は既存の draft issue の title と body を書き換える。
@@ -528,34 +554,44 @@ func (c *Client) CreateDraftIssue(ctx context.Context, projectID string, item po
 //
 // 控える側を content の ID に変える手もあるが、そうすると列を足す前に作った
 // run だけが更新できないまま残る。引き直せば古い run も救える。
-func (c *Client) UpdateDraftIssue(ctx context.Context, itemID string, item port.DraftIssue) error {
+//
+// item の数値の識別子もこの引き直しで取る。更新の mutation が返すのは
+// DraftIssue で item ではないため（ADR 0057）。往復は増やさない。
+func (c *Client) UpdateDraftIssue(
+	ctx context.Context, itemID string, item port.DraftIssue,
+) (port.ProjectItemRef, error) {
 	if itemID == "" {
-		return errors.New("github: item id is required")
+		return port.ProjectItemRef{}, errors.New("github: item id is required")
 	}
 	if item.Title == "" {
-		return errors.New("github: draft issue title is required")
+		return port.ProjectItemRef{}, errors.New("github: draft issue title is required")
 	}
 
-	draftID, err := c.draftIssueContentID(ctx, itemID)
+	draftID, databaseID, err := c.draftIssueContentID(ctx, itemID)
 	if err != nil {
-		return err
+		return port.ProjectItemRef{}, err
 	}
 
 	var resp updateDraftIssueResponse
 	vars := map[string]any{"draftIssueId": draftID, "title": item.Title, "body": item.Body}
 
-	return c.do(ctx, mutationUpdateDraftIssue, vars, &resp)
+	if err := c.do(ctx, mutationUpdateDraftIssue, vars, &resp); err != nil {
+		return port.ProjectItemRef{}, err
+	}
+
+	return port.ProjectItemRef{ItemID: itemID, DatabaseID: databaseID}, nil
 }
 
-// draftIssueContentID は ProjectV2Item の ID から DraftIssue content の ID を引く。
+// draftIssueContentID は ProjectV2Item の ID から DraftIssue content の ID と、
+// item の数値の識別子を引く。識別子は読めなければ 0。
 //
 // **draft issue でなければ書き換えない。** Project には本物の issue や PR も
 // 並ぶ。etoki が作った item が誰かの手で置き換わっている可能性もあるので、
 // 中身を確かめずに更新を投げると、他人の issue を書き換えうる。
-func (c *Client) draftIssueContentID(ctx context.Context, itemID string) (string, error) {
+func (c *Client) draftIssueContentID(ctx context.Context, itemID string) (string, int64, error) {
 	var resp itemContentResponse
 	if err := c.do(ctx, queryItemContent, map[string]any{"itemId": itemID}, &resp); err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	content := resp.Node.Content
@@ -566,10 +602,10 @@ func (c *Client) draftIssueContentID(ctx context.Context, itemID string) (string
 		if kind == "" {
 			kind = "not found"
 		}
-		return "", fmt.Errorf("github: item %s is not a draft issue (%s)", itemID, kind)
+		return "", 0, fmt.Errorf("github: item %s is not a draft issue (%s)", itemID, kind)
 	}
 
-	return content.ID, nil
+	return content.ID, parseDatabaseID(resp.Node.FullDatabaseID), nil
 }
 
 // SetItemFieldValue はアイテムのカスタムフィールドに値を設定する。
@@ -908,9 +944,12 @@ type projectPermissionResponse struct {
 }
 
 // mutationCreateDraftIssue は draft issue を作る。
+//
+// **識別子は `databaseId` ではなく `fullDatabaseId` を取る。** 前者は 64 ビットに
+// 収まらないとして削除が告知されている（ADR 0057）。
 const mutationCreateDraftIssue = `mutation($projectId: ID!, $title: String!, $body: String) {
   addProjectV2DraftIssue(input: {projectId: $projectId, title: $title, body: $body}) {
-    projectItem { id }
+    projectItem { id fullDatabaseId }
   }
 }`
 
@@ -918,6 +957,9 @@ type createDraftIssueResponse struct {
 	AddProjectV2DraftIssue struct {
 		ProjectItem struct {
 			ID string `json:"id"`
+			// FullDatabaseID は BigInt で、文字列で届く。形が違っても作成を
+			// 失敗させないよう、生のまま受けて parseDatabaseID で読む。
+			FullDatabaseID json.RawMessage `json:"fullDatabaseId"`
 		} `json:"projectItem"`
 	} `json:"addProjectV2DraftIssue"`
 }
@@ -930,6 +972,7 @@ type createDraftIssueResponse struct {
 const queryItemContent = `query($itemId: ID!) {
   node(id: $itemId) {
     ... on ProjectV2Item {
+      fullDatabaseId
       content {
         __typename
         ... on DraftIssue { id }
@@ -940,7 +983,9 @@ const queryItemContent = `query($itemId: ID!) {
 
 type itemContentResponse struct {
 	Node struct {
-		Content struct {
+		// FullDatabaseID は createDraftIssueResponse と同じく生のまま受ける。
+		FullDatabaseID json.RawMessage `json:"fullDatabaseId"`
+		Content        struct {
 			Typename string `json:"__typename"`
 			ID       string `json:"id"`
 		} `json:"content"`

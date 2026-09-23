@@ -39,7 +39,7 @@ import {
   setUpdatesPrevious,
   toggleItem,
 } from "./interpretationDraft";
-import type { ProjectLink } from "./projectLink";
+import { projectItemLink, type ProjectLink } from "./projectLink";
 
 /** 注釈 1 つぶんの作成の進み具合。 */
 export type CreationState =
@@ -371,8 +371,7 @@ export function AnnotationPanel({
                       disabled={!canEdit}
                       onChange={(e) => {
                         const nextKind = (e.target.value || undefined) as
-                          | DiagramKind
-                          | undefined;
+                          DiagramKind | undefined;
                         setPendingKinds((current) => ({
                           ...current,
                           [a.id]: { value: nextKind },
@@ -401,6 +400,7 @@ export function AnnotationPanel({
                         {a.items.map((it) => (
                           <li key={it.itemId}>
                             <span className="kind">{it.kind}</span> {it.title}
+                            <ItemLink link={projectLink} item={it} />
                             <ItemBody body={it.body} />
                           </li>
                         ))}
@@ -532,6 +532,7 @@ function DetachedSection({
                 {a.items.map((it) => (
                   <li key={it.itemId}>
                     <span className="kind">{it.kind}</span> {it.title}
+                    <ItemLink link={projectLink} item={it} />
                     <ItemBody body={it.body} />
                   </li>
                 ))}
@@ -979,6 +980,7 @@ function CreationSection({
                 {it.action === "updated" && (
                   <span className="badge badge-updated">更新</span>
                 )}
+                <ItemLink link={projectLink} item={it} />
                 <ItemBody body={it.body} />
               </li>
             ))}
@@ -1126,7 +1128,10 @@ function InterpretationDraft({
         )}
       </div>
 
-      <LeftBehind items={previous.filter((it) => leftBehind.has(it.itemId))} />
+      <LeftBehind
+        items={previous.filter((it) => leftBehind.has(it.itemId))}
+        projectLink={projectLink}
+      />
 
       <CreationSection
         annotationId={annotationId}
@@ -1382,7 +1387,13 @@ function countByAction(items: SyncItem[]): { created: number; updated: number } 
  * 0 件なら何も出さない。常に枠を出すと、取り残しが無いことと 0 件であることの
  * 区別に注意を割かせる。
  */
-function LeftBehind({ items }: { items: SyncItem[] }) {
+function LeftBehind({
+  items,
+  projectLink,
+}: {
+  items: SyncItem[];
+  projectLink: ProjectLink | null;
+}) {
   if (items.length === 0) return null;
 
   return (
@@ -1395,6 +1406,7 @@ function LeftBehind({ items }: { items: SyncItem[] }) {
         {items.map((it) => (
           <li key={it.itemId}>
             <span className="kind">{it.kind}</span> {it.title}
+            <ItemLink link={projectLink} item={it} />
           </li>
         ))}
       </ul>
@@ -1405,9 +1417,9 @@ function LeftBehind({ items }: { items: SyncItem[] }) {
 /**
  * 作成した draft issue を確かめにいくリンク 1 行（ADR 0025）。
  *
- * **リストごとに 1 本で、行ごとには置かない。** draft issue には個別の URL が
- * 無く、飛び先はどの行でも同じ Project になる。行ごとに並べると、行ごとに
- * 違う場所へ飛ぶように読めてしまう。
+ * **行ごとのリンク（`ItemLink`）とは別に、リストごとに 1 本残す**（ADR 0057）。
+ * Project 全体を見にいくのは、item を 1 件見にいくのとは別の用事で、消すと
+ * 作ったものの全体像への導線が無くなる。
  *
  * Project そのものに着地しないときは、そう書く。リポジトリの Projects まで
  * しか辿れないのに「Project を開く」と言うと、リンクの約束が崩れる。
@@ -1424,6 +1436,43 @@ function ProjectLinkLine({ link }: { link: ProjectLink | null }) {
           : "GitHub でリポジトリの Projects を開く"}
       </a>
     </p>
+  );
+}
+
+/**
+ * 作成した draft issue 1 件を開くリンク（ADR 0057）。
+ *
+ * 組めない行では何も出さない。識別子を控えていなかった頃の run が該当し、
+ * 更新すれば埋まる。**注記は足さない。** 行の下にリストごとのリンクが
+ * 必ずあり、そこから辿れることは今日と変わらないため。
+ *
+ * 同じ文言のリンクが行の数だけ並ぶので、読み上げのリンク一覧で見分けられる
+ * よう、アクセシブルな名前にタイトルを含める。見える文言も名前に含めておく
+ * （見えている語で音声操作できるように）。
+ */
+function ItemLink({
+  link,
+  item,
+}: {
+  link: ProjectLink | null;
+  item: Pick<SyncItem, "itemDatabaseId" | "title">;
+}) {
+  const href = projectItemLink(link, item);
+  if (href === null) return null;
+
+  return (
+    <>
+      {" "}
+      <a
+        className="item-link"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`「${item.title}」を GitHub で開く`}
+      >
+        GitHub で開く
+      </a>
+    </>
   );
 }
 

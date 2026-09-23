@@ -81,13 +81,20 @@ func TestGitHubAdapterRoundTrip(t *testing.T) {
 		optionID[o.Name] = o.ID
 	}
 
-	epicID, err := c.CreateDraftIssue(ctx, fakeupstream.ProjectID, port.DraftIssue{Title: "epic", Body: "e"})
+	epic, err := c.CreateDraftIssue(ctx, fakeupstream.ProjectID, port.DraftIssue{Title: "epic", Body: "e"})
 	if err != nil {
 		t.Fatalf("CreateDraftIssue(epic) = %v", err)
 	}
-	issueID, err := c.CreateDraftIssue(ctx, fakeupstream.ProjectID, port.DraftIssue{Title: "issue", Body: "i"})
+	issue, err := c.CreateDraftIssue(ctx, fakeupstream.ProjectID, port.DraftIssue{Title: "issue", Body: "i"})
 	if err != nil {
 		t.Fatalf("CreateDraftIssue(issue) = %v", err)
+	}
+	epicID, issueID := epic.ItemID, issue.ItemID
+
+	// 識別子は本物と同じく文字列で返り、アダプタが整数に読めること。item ごとに
+	// 違う値であること（全部に同じ値を返す偽物だと、取り違えても通る）。
+	if epic.DatabaseID <= 0 || issue.DatabaseID <= 0 || epic.DatabaseID == issue.DatabaseID {
+		t.Fatalf("DatabaseID = %d, %d, want distinct positive", epic.DatabaseID, issue.DatabaseID)
 	}
 
 	set := func(itemID string, v port.FieldValue) {
@@ -101,8 +108,13 @@ func TestGitHubAdapterRoundTrip(t *testing.T) {
 	set(issueID, port.FieldValue{FieldID: kind.ID, OptionID: &issueOpt})
 	set(issueID, port.FieldValue{FieldID: parent.ID, Text: &parentTitle})
 
-	if err := c.UpdateDraftIssue(ctx, issueID, port.DraftIssue{Title: "issue v2", Body: "i2"}); err != nil {
+	updated, err := c.UpdateDraftIssue(ctx, issueID, port.DraftIssue{Title: "issue v2", Body: "i2"})
+	if err != nil {
 		t.Fatalf("UpdateDraftIssue() = %v", err)
+	}
+	// 更新でも同じ item の識別子が引ける。古い記録を更新で埋める経路（ADR 0057）。
+	if updated != issue {
+		t.Errorf("UpdateDraftIssue() = %+v, want %+v", updated, issue)
 	}
 
 	want := []fakeupstream.Item{
@@ -149,7 +161,7 @@ func TestGitHub_UpdateRejectsUnknownItem(t *testing.T) {
 	t.Parallel()
 	c, fake, _ := newGitHub(t)
 
-	if err := c.UpdateDraftIssue(context.Background(), "PVTI_missing", port.DraftIssue{Title: "x"}); err == nil {
+	if _, err := c.UpdateDraftIssue(context.Background(), "PVTI_missing", port.DraftIssue{Title: "x"}); err == nil {
 		t.Fatal("UpdateDraftIssue(存在しない item) = nil, want error")
 	}
 	if n := len(fake.Items()); n != 0 {
@@ -170,10 +182,11 @@ func TestGitHub_RejectsUnknownProject(t *testing.T) {
 	}
 
 	// フィールドの更新は item が実在していても、Project が違えば通さない。
-	itemID, err := c.CreateDraftIssue(ctx, fakeupstream.ProjectID, port.DraftIssue{Title: "t", Body: "b"})
+	ref, err := c.CreateDraftIssue(ctx, fakeupstream.ProjectID, port.DraftIssue{Title: "t", Body: "b"})
 	if err != nil {
 		t.Fatalf("CreateDraftIssue() = %v", err)
 	}
+	itemID := ref.ItemID
 	fields, err := c.ListProjectFields(ctx, fakeupstream.ProjectID)
 	if err != nil {
 		t.Fatalf("ListProjectFields() = %v", err)

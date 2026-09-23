@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BoardSummary } from "../api/types";
-import { projectLink } from "./projectLink";
+import { projectItemLink, projectLink } from "./projectLink";
 
 function target(over: Partial<BoardSummary> = {}): BoardSummary {
   return {
@@ -79,5 +79,71 @@ describe("projectLink", () => {
       target({ repositoryOwner: "a/b", repositoryName: "c d", projectUrl: "" }),
     );
     expect(link?.href).toBe("https://github.com/a%2Fb/c%20d/projects");
+  });
+});
+
+describe("projectItemLink", () => {
+  const exact = { href: "https://github.com/orgs/acme/projects/1", exact: true };
+
+  it("Project の URL に item のペインを開くクエリを足す", () => {
+    expect(projectItemLink(exact, { itemDatabaseId: 123456789 })).toBe(
+      "https://github.com/orgs/acme/projects/1?pane=issue&itemId=123456789",
+    );
+  });
+
+  // 識別子を知らない item（移行前の run、GitHub が返さなかった run）。
+  it("識別子が 0 か省略ならリンクを出さない", () => {
+    expect(projectItemLink(exact, { itemDatabaseId: 0 })).toBeNull();
+    expect(projectItemLink(exact, {})).toBeNull();
+  });
+
+  // 丸められた値は別の item を指しうる。リンクが無いより悪い。
+  it("数値として正確に表せない識別子ならリンクを出さない", () => {
+    expect(
+      projectItemLink(exact, { itemDatabaseId: Number.MAX_SAFE_INTEGER + 2 }),
+    ).toBeNull();
+    expect(projectItemLink(exact, { itemDatabaseId: 1.5 })).toBeNull();
+    expect(projectItemLink(exact, { itemDatabaseId: -3 })).toBeNull();
+  });
+
+  // Project の URL を知らない（リポジトリの Projects タブに落ちている）なら、
+  // 土台を組み立て直さない（ADR 0025）。タブに itemId を足しても item は開かない。
+  it("Project そのものの URL でなければリンクを出さない", () => {
+    expect(
+      projectItemLink(
+        { href: "https://github.com/acme/web/projects", exact: false },
+        { itemDatabaseId: 1 },
+      ),
+    ).toBeNull();
+    expect(projectItemLink(null, { itemDatabaseId: 1 })).toBeNull();
+  });
+
+  // 保存された URL に既にクエリや fragment があっても、文字列連結で壊さない。
+  it("既存のクエリと fragment を保つ", () => {
+    const href = projectItemLink(
+      {
+        href: "https://github.com/users/u/projects/4/views/2?layout=board#top",
+        exact: true,
+      },
+      { itemDatabaseId: 9 },
+    );
+    const url = new URL(href ?? "");
+    expect(url.pathname).toBe("/users/u/projects/4/views/2");
+    expect(url.searchParams.get("layout")).toBe("board");
+    expect(url.searchParams.get("pane")).toBe("issue");
+    expect(url.searchParams.get("itemId")).toBe("9");
+    expect(url.hash).toBe("#top");
+  });
+
+  // 既に pane や itemId が付いた URL を控えていても、別の item を指さない。
+  it("既存の itemId は上書きする", () => {
+    const href = projectItemLink(
+      {
+        href: "https://github.com/orgs/acme/projects/1?pane=issue&itemId=5",
+        exact: true,
+      },
+      { itemDatabaseId: 7 },
+    );
+    expect(new URL(href ?? "").searchParams.getAll("itemId")).toEqual(["7"]);
   });
 });

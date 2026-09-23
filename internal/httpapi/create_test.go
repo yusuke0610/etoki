@@ -54,19 +54,26 @@ func (s *stubGitHub) ListProjectFields(context.Context, string) ([]port.ProjectF
 	}, nil
 }
 
-func (s *stubGitHub) UpdateDraftIssue(_ context.Context, _ string, item port.DraftIssue) error {
+func (s *stubGitHub) UpdateDraftIssue(
+	_ context.Context, itemID string, item port.DraftIssue,
+) (port.ProjectItemRef, error) {
 	if item.Title == s.failOnTitle {
-		return errors.New("github: boom")
+		return port.ProjectItemRef{}, errors.New("github: boom")
 	}
-	return nil
+	return port.ProjectItemRef{ItemID: itemID}, nil
 }
 
-func (s *stubGitHub) CreateDraftIssue(_ context.Context, _ string, item port.DraftIssue) (string, error) {
+func (s *stubGitHub) CreateDraftIssue(
+	_ context.Context, _ string, item port.DraftIssue,
+) (port.ProjectItemRef, error) {
 	if item.Title == s.failOnTitle {
-		return "", errors.New("github: boom")
+		return port.ProjectItemRef{}, errors.New("github: boom")
 	}
 	s.seq++
-	return "PVTI_" + string(rune('a'+s.seq-1)), nil
+	return port.ProjectItemRef{
+		ItemID:     "PVTI_" + string(rune('a'+s.seq-1)),
+		DatabaseID: int64(500 + s.seq),
+	}, nil
 }
 
 func (s *stubGitHub) SetItemFieldValue(context.Context, string, string, port.FieldValue) error {
@@ -191,6 +198,16 @@ func TestCreateItems(t *testing.T) {
 		t.Errorf("incomplete = %v, want 未設定", got["incomplete"])
 	}
 
+	// item の数値の識別子が境界まで届く（ADR 0057）。toSyncItem で写し忘れると、
+	// 記録には在るのに画面が item ごとのリンクを組めない。
+	for i, raw := range items {
+		item, _ := raw.(map[string]any)
+		want := float64(500 + i + 1)
+		if item["itemDatabaseId"] != want {
+			t.Errorf("items[%d].itemDatabaseId = %v, want %v", i, item["itemDatabaseId"], want)
+		}
+	}
+
 	// run が記録され、状態が created に変わる。ここが繋がって初めて
 	// 3 状態判定が uncreated 以外に遷移する。
 	run, err := mappings.FindLatestRun(t.Context(), id, "annot-1")
@@ -283,14 +300,16 @@ type cancelingGitHub struct {
 	cancel context.CancelFunc
 }
 
-func (g *cancelingGitHub) CreateDraftIssue(ctx context.Context, p string, item port.DraftIssue) (string, error) {
+func (g *cancelingGitHub) CreateDraftIssue(
+	ctx context.Context, p string, item port.DraftIssue,
+) (port.ProjectItemRef, error) {
 	// 実物の HTTP クライアントも、切れた ctx では失敗する。
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return port.ProjectItemRef{}, err
 	}
-	id, err := g.stubGitHub.CreateDraftIssue(ctx, p, item)
+	ref, err := g.stubGitHub.CreateDraftIssue(ctx, p, item)
 	g.cancel()
-	return id, err
+	return ref, err
 }
 
 func (g *cancelingGitHub) SetItemFieldValue(ctx context.Context, p, id string, v port.FieldValue) error {

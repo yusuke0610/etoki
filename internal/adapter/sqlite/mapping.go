@@ -85,10 +85,11 @@ func (r *MappingRepository) SaveRun(ctx context.Context, run port.SyncRun) (int6
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO sync_items
 			   (run_id, item_id, kind, title, body, local_id, parent_local_id,
-			    action, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			    action, created_at, item_database_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			runID, it.ItemID, string(it.Kind), it.Title, it.Body,
 			it.LocalID, it.ParentLocalID, string(it.Action), formatTime(it.CreatedAt),
+			it.ItemDatabaseID,
 		); err != nil {
 			return 0, fmt.Errorf("insert sync_item %q: %w", it.LocalID, err)
 		}
@@ -338,8 +339,16 @@ func (r *MappingRepository) ListItemsByBoard(
 
 // itemColumns は scanItem が読む列。並び順に依存するので、片方だけ足すと
 // 取り違える。
-const itemColumns = `i.id, i.run_id, i.item_id, i.kind, i.title, i.body,
-	i.local_id, i.parent_local_id, i.action, i.created_at`
+var itemColumns = itemColumnsWith("i.item_database_id")
+
+// itemColumnsWith は item_database_id の出どころだけを差し替えた itemColumns。
+//
+// 畳み込みでこの列だけ別の行から採るためにある（foldedItemsQuery）。並びを
+// 2 通り書くと片方だけ足すことになるので、差し替えられるのはこの 1 列に限る。
+func itemColumnsWith(databaseID string) string {
+	return `i.id, i.run_id, i.item_id, i.kind, i.title, i.body,
+	i.local_id, i.parent_local_id, i.action, i.created_at, ` + databaseID
+}
 
 // foldedItemsQuery は run 履歴を item_id で畳んで読む問い合わせ。
 // where は sync_runs（別名 r2）への絞り込みで、呼び出し側が与える。
@@ -360,15 +369,22 @@ const itemColumns = `i.id, i.run_id, i.item_id, i.kind, i.title, i.body,
 // ADR 0026 を見直したときに片方だけ直せてしまい、「注釈を開くと出るがボード
 // 一覧には出ない」が起きる。**食い違いに気づくのは開発者ではなく利用者になる。**
 //
+// **item_database_id だけは最新の行から読まず、グループ全体の MAX を採る**
+// （ADR 0057）。title / body は「そのとき書いたものの写し」なので最新の行が
+// 正しいが、これは item の不変の属性で、どの行が持っていても同じ値になる。
+// 最新の行だけを読むと、後の run が値を取り損ねたときに前に知った値を失う。
+// MAX にしておけば、列を足す前の item も後で更新した時点で埋まる。
+//
 // 注釈の列を itemColumns の後ろに置くのは、scanItem の並びを崩さないため。
 func foldedItemsQuery(where string) string {
-	return `SELECT ` + itemColumns + `, folded.annot
+	return `SELECT ` + itemColumnsWith("folded.item_database_id") + `, folded.annot
 		   FROM sync_items i
 		   JOIN (
 		     SELECT r2.annotation_element_id AS annot,
 		            i2.item_id,
 		            MIN(i2.id) AS first_id,
-		            MAX(i2.id) AS last_id
+		            MAX(i2.id) AS last_id,
+		            MAX(i2.item_database_id) AS item_database_id
 		       FROM sync_items i2
 		       JOIN sync_runs r2 ON r2.id = i2.run_id
 		      WHERE ` + where + `
@@ -420,7 +436,7 @@ func scanItem(s rowScanner, extra ...any) (port.SyncItem, error) {
 	)
 	dest := append([]any{
 		&it.ID, &it.RunID, &it.ItemID, &kind, &it.Title, &it.Body,
-		&it.LocalID, &it.ParentLocalID, &action, &createdAt,
+		&it.LocalID, &it.ParentLocalID, &action, &createdAt, &it.ItemDatabaseID,
 	}, extra...)
 	if err := s.Scan(dest...); err != nil {
 		return port.SyncItem{}, fmt.Errorf("scan sync_item: %w", err)

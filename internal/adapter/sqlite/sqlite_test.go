@@ -185,7 +185,7 @@ func TestSaveRun_RoundTrip(t *testing.T) {
 		CreatedAt:    baseTime,
 		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{
-			item("e1", "PVTI_epic", port.KindEpic, nil),
+			withDatabaseID(item("e1", "PVTI_epic", port.KindEpic, nil), 101),
 			item("i1", "PVTI_i1", port.KindIssue, ptr("e1")),
 		},
 	})
@@ -226,8 +226,16 @@ func TestSaveRun_RoundTrip(t *testing.T) {
 	if epic.ParentLocalID != nil {
 		t.Errorf("epic.ParentLocalID = %v, want nil", *epic.ParentLocalID)
 	}
+	// 識別子も作成時にしか取れない（ADR 0057）。0（知らない）と実値の両方が
+	// 往復すること。
+	if epic.ItemDatabaseID != 101 {
+		t.Errorf("epic.ItemDatabaseID = %d, want 101", epic.ItemDatabaseID)
+	}
 
 	issue := got.Items[1]
+	if issue.ItemDatabaseID != 0 {
+		t.Errorf("issue.ItemDatabaseID = %d, want 0", issue.ItemDatabaseID)
+	}
 	if issue.ParentLocalID == nil || *issue.ParentLocalID != "e1" {
 		t.Errorf("issue.ParentLocalID = %v, want \"e1\"", issue.ParentLocalID)
 	}
@@ -615,6 +623,105 @@ func TestListItemsByAnnotation_FoldsHistory(t *testing.T) {
 	if items[1].Action != port.ActionCreated {
 		t.Errorf("B の action = %q, want %q", items[1].Action, port.ActionCreated)
 	}
+}
+
+// 畳み込みで item_database_id だけは最新の行ではなくグループの MAX を採る
+// （ADR 0057）。title / body と同じく MAX(id) の行から読む実装に戻すと落ちる。
+//
+//   - A: 列を足す前の run（0）を、後の run が実値で更新した → 実値が出る
+//   - B: 実値を持つ run のあと、後の run が値を取り損ねた（0）→ 前の実値が残る
+func TestListItemsByAnnotation_FoldsDatabaseIDByMax(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
+		Items: []port.SyncItem{
+			item("e1", "PVTI_a", port.KindEpic, nil),
+			withDatabaseID(item("i1", "PVTI_b", port.KindIssue, ptr("e1")), 202),
+		},
+	}); err != nil {
+		t.Fatalf("run1: %v", err)
+	}
+
+	updatedA := withDatabaseID(item("x1", "PVTI_a", port.KindEpic, nil), 101)
+	updatedA.Action = port.ActionUpdated
+	updatedB := item("x2", "PVTI_b", port.KindIssue, ptr("x1"))
+	updatedB.Title = "書き直した B"
+	updatedB.Action = port.ActionUpdated
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-2", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
+		Items: []port.SyncItem{updatedA, updatedB},
+	}); err != nil {
+		t.Fatalf("run2: %v", err)
+	}
+
+	byAnnotation, err := repo.ListItemsByBoard(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("ListItemsByBoard: %v", err)
+	}
+	folded := byAnnotation["annot-1"]
+	if len(folded) != 2 {
+		t.Fatalf("items = %+v, want 2 件", folded)
+	}
+	if folded[0].ItemDatabaseID != 101 {
+		t.Errorf("A = %d, want 101（後の run で埋まる）", folded[0].ItemDatabaseID)
+	}
+	// B は最新の行（title は書き直した B）から読みつつ、識別子は前の値を保つ。
+	if folded[1].Title != "書き直した B" || folded[1].ItemDatabaseID != 202 {
+		t.Errorf("B = %q/%d, want 書き直した B/202", folded[1].Title, folded[1].ItemDatabaseID)
+	}
+
+	// 注釈 1 件に絞る口も同じ畳み方をする。
+	items, err := repo.ListItemsByAnnotation(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("ListItemsByAnnotation: %v", err)
+	}
+	if len(items) != 2 || items[0].ItemDatabaseID != 101 || items[1].ItemDatabaseID != 202 {
+		t.Errorf("ListItemsByAnnotation = %+v, want 101 と 202", items)
+	}
+}
+
+// 負の識別子は行として意味を持たないので DB でも作らせない。SaveRun を通らない
+// 保守 SQL にも効くことを見る（.claude/rules/validation-boundaries.md）。
+func TestSyncItems_RejectsNegativeDatabaseID(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
+		Items: []port.SyncItem{withDatabaseID(item("e1", "PVTI_a", port.KindEpic, nil), -1)},
+	}); err == nil {
+		t.Fatal("SaveRun(負の識別子) = nil, want error")
+	}
+
+	if _, err := db.ExecContext(t.Context(),
+		`UPDATE sync_items SET item_database_id = -1`); err != nil {
+		t.Fatalf("UPDATE（0 行）: %v", err)
+	}
+	var n int
+	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sync_items`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	// 弾かれた run の item は 1 件も残らない。
+	if n != 0 {
+		t.Errorf("sync_items = %d 件, want 0", n)
+	}
+}
+
+func withDatabaseID(it port.SyncItem, id int64) port.SyncItem {
+	it.ItemDatabaseID = id
+	return it
 }
 
 // 一度も実行していない注釈では空。nil ではなく空スライスを返す。

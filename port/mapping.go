@@ -206,6 +206,12 @@ type SyncItem struct {
 	RunID int64
 	// ItemID は GitHub の ProjectV2Item node ID。
 	ItemID string
+	// ItemDatabaseID は ProjectV2Item の数値の識別子。0 は「知らない」。
+	//
+	// Title / Body と同じく作成時に控えるが、**意味は違う。** あちらは「その
+	// とき書いたものの写し」で、これは item の不変の属性。畳み込みで採る行が
+	// 違うのはそのため（ADR 0057）。記録していなかった頃の run では 0。
+	ItemDatabaseID int64
 	// Kind は epic か issue。
 	Kind ItemKind
 	// Title は作成時のタイトル。

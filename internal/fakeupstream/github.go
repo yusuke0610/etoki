@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -170,8 +171,14 @@ func (g *github) create(v map[string]any) (any, error) {
 	g.items = append(g.items, item)
 
 	return map[string]any{"addProjectV2DraftIssue": map[string]any{
-		"projectItem": map[string]string{"id": item.ID},
+		"projectItem": map[string]string{"id": item.ID, "fullDatabaseId": databaseID(len(g.items))},
 	}}, nil
+}
+
+// databaseID は n 件目の item の fullDatabaseId。本物と同じく BigInt を
+// 文字列で返す。数値で返すと、文字列を読めないアダプタが通しでだけ緑になる。
+func databaseID(n int) string {
+	return strconv.Itoa(1000 + n)
 }
 
 // draftIssueID は item ID から DraftIssue content の ID を作る。本物と同じく
@@ -194,12 +201,17 @@ func (g *github) content(v map[string]any) map[string]any {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.find(id) == nil {
-		return map[string]any{"node": nil}
+	for i, it := range g.items {
+		if it.ID == id {
+			return map[string]any{"node": map[string]any{
+				"fullDatabaseId": databaseID(i + 1),
+				"content": map[string]string{
+					"__typename": "DraftIssue", "id": draftIssueID(id),
+				},
+			}}
+		}
 	}
-	return map[string]any{"node": map[string]any{"content": map[string]string{
-		"__typename": "DraftIssue", "id": draftIssueID(id),
-	}}}
+	return map[string]any{"node": nil}
 }
 
 func (g *github) update(v map[string]any) (any, error) {
