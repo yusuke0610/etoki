@@ -32,6 +32,7 @@ import {
   buildInterpretation,
   createDraft,
   leftBehindItemIds,
+  type Draft,
   markCreated,
   orphanedLocalIds,
   setBody,
@@ -221,6 +222,19 @@ export function AnnotationPanel({
   // （`App`）ので、残る量は開いているボードで選び直した種別の数に留まり、
   // 実害の無い範囲。
   const [pendingKinds, setPendingKinds] = useState<Record<string, PendingKind>>({});
+  // 注釈ごとの下書きの手直し。**カードの外に預ける。** カードは状態の組ごとに
+  // 別の一覧へ並ぶので、作成で「作成済み」の組へ移ると作り直され、中で持って
+  // いた手直し（今回送らなかった項目の選択・種別・タイトル・本文）が黙って
+  // 消える（#162）。残る量と掃除しない理由は pendingKinds と同じ。
+  const [keptDrafts, setKeptDrafts] = useState<Record<string, KeptDraft>>({});
+  // 解釈を選び直す・解釈し直すときは預けた手直しを捨てる。別の解釈に対する
+  // 編集は引き継がない（`InterpretationDraft` の key と同じ約束）。
+  const dropKeptDraft = (annotationId: string) =>
+    setKeptDrafts((prev) => {
+      const next = { ...prev };
+      delete next[annotationId];
+      return next;
+    });
 
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
   // 出ると、同じものが 2 つあるように見える。
@@ -390,8 +404,7 @@ export function AnnotationPanel({
                             disabled={!canEdit}
                             onChange={(e) => {
                               const nextKind = (e.target.value || undefined) as
-                                | DiagramKind
-                                | undefined;
+                                DiagramKind | undefined;
                               setPendingKinds((current) => ({
                                 ...current,
                                 [a.id]: { value: nextKind },
@@ -472,10 +485,18 @@ export function AnnotationPanel({
                             creationUnavailable={creationUnavailable}
                             previous={a.items ?? []}
                             projectLink={projectLink}
-                            onInterpret={() => onInterpret(a.id)}
-                            onSelectInterpretation={(runId) =>
-                              onSelectInterpretation(a.id, runId)
+                            kept={keptDrafts[a.id]}
+                            onKeepDraft={(kept) =>
+                              setKeptDrafts((prev) => ({ ...prev, [a.id]: kept }))
                             }
+                            onInterpret={() => {
+                              dropKeptDraft(a.id);
+                              onInterpret(a.id);
+                            }}
+                            onSelectInterpretation={(runId) => {
+                              dropKeptDraft(a.id);
+                              onSelectInterpretation(a.id, runId);
+                            }}
                             onCreate={(interpretationId, interpretation) =>
                               onCreate(a.id, interpretationId, interpretation)
                             }
@@ -593,6 +614,9 @@ type InterpretationSectionProps = {
   previous: SyncItem[];
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
   projectLink: ProjectLink | null;
+  /** カードの外に預けてある下書きの手直し（#162）。 */
+  kept?: KeptDraft;
+  onKeepDraft: (kept: KeptDraft) => void;
   onInterpret: () => void;
   onSelectInterpretation: (runId: number) => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
@@ -617,6 +641,8 @@ function InterpretationSection({
   creationUnavailable,
   previous,
   projectLink,
+  kept,
+  onKeepDraft,
   onInterpret,
   onSelectInterpretation,
   onCreate,
@@ -686,6 +712,9 @@ function InterpretationSection({
           // 選び直したら手直しは引き継がない。別の解釈に対する編集が
           // 混ざると、何を作るのかが読めなくなる（解釈し直したときと同じ）。
           key={selected.id}
+          runId={selected.id}
+          kept={kept}
+          onKeep={onKeepDraft}
           annotationId={annotationId}
           granularity={granularity}
           result={selected.result}
@@ -1027,7 +1056,22 @@ function CreationSection({
  * 捨てられる。上げると `save` と `interpret` の両方に破棄を書き足すことになり、
  * 片方を忘れると保存したあとに古い編集が残る。
  */
+/**
+ * カードの外に預ける下書き（#162）。状態の組を移ってカードが作り直されても、
+ * 同じ解釈に対する手直しならここから引き継ぐ。
+ */
+type KeptDraft = {
+  /** どの解釈に対する下書きか。違う解釈のものは引き継がない。 */
+  runId: number;
+  draft: Draft;
+  /** `draft` に反映済みの作成の回数。引き継ぐときは増えたぶんだけ反映する。 */
+  appliedCreations: number;
+};
+
 function InterpretationDraft({
+  runId,
+  kept,
+  onKeep,
   annotationId,
   granularity,
   result,
@@ -1041,6 +1085,9 @@ function InterpretationDraft({
   projectLink,
   onCreate,
 }: {
+  runId: number;
+  kept?: KeptDraft;
+  onKeep: (kept: KeptDraft) => void;
   annotationId: string;
   granularity: Granularity;
   result: Interpretation;
@@ -1060,8 +1107,13 @@ function InterpretationDraft({
   // 作ったものは作り直した下書きにも反映する。解釈を選び直して戻ってきた
   // ときに、作成済みの項目が全部選ばれた状態に戻ると押し直しで重複する
   // （ADR 0052）。
+  //
+  // 預けた手直しが同じ解釈のものなら引き継ぐ。作成で状態の組を移ると、この
+  // 下書きは作り直される（#162）。
   const [draft, setDraft] = useState(() =>
-    created.reduce(markCreated, createDraft(result)),
+    kept?.runId === runId
+      ? created.slice(kept.appliedCreations).reduce(markCreated, kept.draft)
+      : created.reduce(markCreated, createDraft(result)),
   );
   // 下書きに反映した作成の回数。**増えたぶんだけを反映する。** 前に作った
   // 項目を選び直していたのに、今回の作成に載らなかったものまで外すと、選んだ
@@ -1073,6 +1125,14 @@ function InterpretationDraft({
     setAppliedCreations(created.length);
     setDraft((d) => created.slice(appliedCreations).reduce(markCreated, d));
   }
+
+  // 手直しは預け先にも写す。写すのは操作のときだけで、描画中の揃え（上の
+  // markCreated）は写さない。引き継ぐ側が回数の差から同じものを反映する。
+  const edit = (change: (d: Draft) => Draft) => {
+    const next = change(draft);
+    setDraft(next);
+    onKeep({ runId, draft: next, appliedCreations });
+  };
 
   // 編集後の kind で組み直す。構造を変えたことがその場で見えるようにする。
   const groups = groupByEpic(draft.items.map((d) => d.item));
@@ -1109,12 +1169,12 @@ function InterpretationDraft({
       orphan={orphans.has(item.localId)}
       frozen={frozen}
       editableKind={editableKind}
-      onToggle={() => setDraft((d) => toggleItem(d, item.localId))}
-      onKind={(kind) => setDraft((d) => setKind(d, item.localId, kind))}
-      onTitle={(title) => setDraft((d) => setTitle(d, item.localId, title))}
-      onBody={(body) => setDraft((d) => setBody(d, item.localId, body))}
+      onToggle={() => edit((d) => toggleItem(d, item.localId))}
+      onKind={(kind) => edit((d) => setKind(d, item.localId, kind))}
+      onTitle={(title) => edit((d) => setTitle(d, item.localId, title))}
+      onBody={(body) => edit((d) => setBody(d, item.localId, body))}
       onUpdatesPrevious={(updates) =>
-        setDraft((d) => setUpdatesPrevious(d, item.localId, updates))
+        edit((d) => setUpdatesPrevious(d, item.localId, updates))
       }
     />
   );

@@ -339,6 +339,9 @@ button.primary:disabled {
 }
 
 .board-status {
+  /* 縮めるのはボード名の側（.board-name）。こちらが縮むと、大きさ・未保存・
+     保存が縦に積まれて上段が伸びる。 */
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -963,10 +966,12 @@ a.badge-target:hover {
   max-width: 880px;
 }
 
-/* リポジトリ → プロジェクトを左右に並べる。狭いときは縦に積む。 */
+/* リポジトリ → プロジェクトを左右に並べる。狭いときは縦に積む。
+   列の最小幅は使える幅で頭打ちにする。280px を下回る幅で 280px の列を
+   作ると、縦に積んだあとも列そのものがはみ出す。 */
 .picker-steps {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 0 24px;
 }
 
