@@ -432,174 +432,183 @@ test.describe("押せない理由が本文として読める", () => {
  * **jsx-a11y と重ならない。** あちらは JSX の属性しか見ないので、実際に描いた
  * 色のコントラストは見えない。入れた時点で `.hint` が 4.48:1（AA は 4.5:1）で
  * 落ちていた。**押せない理由を出しているのが、その `.hint` だった。**
+ *
+ * **ライトとダークの両方で掛ける**（ADR 0055）。色は変数を差し替えるだけなので、
+ * 片方で通っても、もう片方の文字色が AA を切っていることは見えない。
  */
-test.describe("axe（etoki が書いた DOM）", () => {
-  test("ボードの一覧", async ({ page }) => {
-    await installApi(page, baseMock());
+for (const colorScheme of ["light", "dark"] as const) {
+  test.describe(`axe（etoki が書いた DOM・${colorScheme}）`, () => {
+    test.use({ colorScheme });
 
-    await page.goto("/");
-    await page.locator(".board-list").waitFor();
+    test("ボードの一覧", async ({ page }) => {
+      await installApi(page, baseMock());
 
-    await expectNoAxeViolations(page);
+      await page.goto("/");
+      await page.locator(".board-list").waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    test("ボードを開いた状態", async ({ page }) => {
+      await installApi(page, baseMock());
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 図のドラフトのチャットは、キャンバスの左に開く独立した領域（ADR 0041）。
+    // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
+    // 生成結果を出したところまで開けて、`.diagram-mermaid` と
+    // 「ここまでのやりとり」まで含めて見る。
+    test("図のドラフトを生成した状態", async ({ page }) => {
+      await installApi(page, baseMock());
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+
+      await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+      await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+      await page.getByRole("button", { name: "生成", exact: true }).click();
+      await page.locator(".diagram-mermaid").waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 作った項目の説明は、選択の外れた（薄く描く）行の中に出る（ADR 0052）。
+    // **作成が済まないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
+    test("作成が済んだ下書き", async ({ page }) => {
+      await installApi(page, baseMock());
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+
+      const card = annotationCard(page, "ログイン");
+      await card.getByRole("button", { name: "解釈する" }).click();
+      await card.getByRole("button", { name: "GitHub に作成する" }).click();
+      await card.getByText("3 件を作成しました。").waitFor();
+      // 検査したいのは作成済みの印が付いた下書き。完了の文言は作成結果だけで
+      // 出るので、下書きへの反映まで待たないと通常の下書きを検査して通る。
+      await expect(card.locator(".badge-created", { hasText: "作成した" })).toHaveCount(
+        3,
+      );
+      await expect(
+        card.getByText("作成しました。選び直すと、作成した draft issue を書き換えます。"),
+      ).toHaveCount(3);
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 届いたか分からない書き込みの帯（ADR 0056）。**「作れた」とも「失敗した」とも
+    // 見えない色**に寄せてあるので、コントラストは描いて測るしかない。
+    // **作成がこけないと DOM に出ない**ので、上の検査では一度も掛かっていない。
+    test("届いたか分からない書き込みが出ている状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.annotations[BOARD_ID] = annotations().map((a) =>
+        a.id === ANNOTATION_IDS.created
+          ? {
+              ...a,
+              unconfirmedItems: [
+                {
+                  itemId: "",
+                  kind: "issue" as const,
+                  title: "確認できていないほう",
+                  body: "本文",
+                  localId: "i9",
+                  action: "created" as const,
+                  confirmed: false,
+                },
+              ],
+            }
+          : a,
+      );
+      await installApi(page, mock);
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+      await annotationCard(page, "パスワード再設定")
+        .locator(".unconfirmed-items")
+        .waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 削除の確認は etoki が自前で `role` を書いている唯一の場所（ADR 0042）。
+    // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
+    test("削除の確認を開いた状態", async ({ page }) => {
+      const mock = baseMock();
+      // 件数は文言そのもの。0 件だと分岐の片方しか描かれない。
+      mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+      await installApi(page, mock);
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+
+      await page.getByRole("button", { name: "ボードを削除" }).click();
+      await page.getByRole("alertdialog").waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    // メンバーのパネルも独立した領域で、開くまで DOM に出ない。行ごとのボタンが
+    // 並ぶ唯一の画面でもある（`.claude/rules/async-ui.md` の「行固有の
+    // accessible name」）。
+    test("メンバーを開いた状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.members = {
+        [BOARD_ID]: [
+          {
+            userId: "user-alice",
+            login: "alice",
+            displayName: "Alice",
+            role: "owner",
+            createdAt: "2026-08-01T09:00:00Z",
+          },
+          {
+            userId: "user-bob",
+            login: "bob",
+            displayName: "Bob",
+            role: "editor",
+            createdAt: "2026-08-03T09:00:00Z",
+          },
+        ],
+      };
+      await installApi(page, mock);
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+
+      await page.getByRole("button", { name: "メンバー", exact: true }).click();
+      await page.getByText("Bob").waitFor();
+
+      await expectNoAxeViolations(page);
+
+      // 招待する前の確認（ADR 0053）も、確認を押すまで DOM に出ない。
+      await page.getByLabel("招待する login").fill("carol");
+      await page.getByRole("button", { name: "確認する" }).click();
+      await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 解釈結果は画面の中でいちばん要素が多い。作る前に読ませる場所なので
+    // （ADR 0024）、読めないものが混じっていないかをここで見る。
+    test("解釈結果を出した状態", async ({ page }) => {
+      await installApi(page, baseMock());
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+
+      const card = annotationCard(page, "ログイン");
+      await card.getByRole("button", { name: "解釈する" }).click();
+      await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+      // 畳んだままでは中を見られない。作成前に読ませる本文まで含めて掛ける。
+      for (const summary of await card.getByText("本文", { exact: true }).all()) {
+        await summary.click();
+      }
+
+      await expectNoAxeViolations(page);
+    });
   });
-
-  test("ボードを開いた状態", async ({ page }) => {
-    await installApi(page, baseMock());
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    await expectNoAxeViolations(page);
-  });
-
-  // 図のドラフトのチャットは、キャンバスの左に開く独立した領域（ADR 0041）。
-  // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
-  // 生成結果を出したところまで開けて、`.diagram-mermaid` と
-  // 「ここまでのやりとり」まで含めて見る。
-  test("図のドラフトを生成した状態", async ({ page }) => {
-    await installApi(page, baseMock());
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
-    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
-    await page.getByRole("button", { name: "生成", exact: true }).click();
-    await page.locator(".diagram-mermaid").waitFor();
-
-    await expectNoAxeViolations(page);
-  });
-
-  // 作った項目の説明は、選択の外れた（薄く描く）行の中に出る（ADR 0052）。
-  // **作成が済まないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
-  test("作成が済んだ下書き", async ({ page }) => {
-    await installApi(page, baseMock());
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await card.getByText("3 件を作成しました。").waitFor();
-    // 検査したいのは作成済みの印が付いた下書き。完了の文言は作成結果だけで
-    // 出るので、下書きへの反映まで待たないと通常の下書きを検査して通る。
-    await expect(card.locator(".badge-created", { hasText: "作成した" })).toHaveCount(3);
-    await expect(
-      card.getByText("作成しました。選び直すと、作成した draft issue を書き換えます。"),
-    ).toHaveCount(3);
-
-    await expectNoAxeViolations(page);
-  });
-
-  // 届いたか分からない書き込みの帯（ADR 0056）。**「作れた」とも「失敗した」とも
-  // 見えない色**に寄せてあるので、コントラストは描いて測るしかない。
-  // **作成がこけないと DOM に出ない**ので、上の検査では一度も掛かっていない。
-  test("届いたか分からない書き込みが出ている状態", async ({ page }) => {
-    const mock = baseMock();
-    mock.annotations[BOARD_ID] = annotations().map((a) =>
-      a.id === ANNOTATION_IDS.created
-        ? {
-            ...a,
-            unconfirmedItems: [
-              {
-                itemId: "",
-                kind: "issue" as const,
-                title: "確認できていないほう",
-                body: "本文",
-                localId: "i9",
-                action: "created" as const,
-                confirmed: false,
-              },
-            ],
-          }
-        : a,
-    );
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-    await annotationCard(page, "パスワード再設定")
-      .locator(".unconfirmed-items")
-      .waitFor();
-
-    await expectNoAxeViolations(page);
-  });
-
-  // 削除の確認は etoki が自前で `role` を書いている唯一の場所（ADR 0042）。
-  // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
-  test("削除の確認を開いた状態", async ({ page }) => {
-    const mock = baseMock();
-    // 件数は文言そのもの。0 件だと分岐の片方しか描かれない。
-    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    await page.getByRole("button", { name: "ボードを削除" }).click();
-    await page.getByRole("alertdialog").waitFor();
-
-    await expectNoAxeViolations(page);
-  });
-
-  // メンバーのパネルも独立した領域で、開くまで DOM に出ない。行ごとのボタンが
-  // 並ぶ唯一の画面でもある（`.claude/rules/async-ui.md` の「行固有の
-  // accessible name」）。
-  test("メンバーを開いた状態", async ({ page }) => {
-    const mock = baseMock();
-    mock.members = {
-      [BOARD_ID]: [
-        {
-          userId: "user-alice",
-          login: "alice",
-          displayName: "Alice",
-          role: "owner",
-          createdAt: "2026-08-01T09:00:00Z",
-        },
-        {
-          userId: "user-bob",
-          login: "bob",
-          displayName: "Bob",
-          role: "editor",
-          createdAt: "2026-08-03T09:00:00Z",
-        },
-      ],
-    };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    await page.getByRole("button", { name: "メンバー", exact: true }).click();
-    await page.getByText("Bob").waitFor();
-
-    await expectNoAxeViolations(page);
-
-    // 招待する前の確認（ADR 0053）も、確認を押すまで DOM に出ない。
-    await page.getByLabel("招待する login").fill("carol");
-    await page.getByRole("button", { name: "確認する" }).click();
-    await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
-
-    await expectNoAxeViolations(page);
-  });
-
-  // 解釈結果は画面の中でいちばん要素が多い。作る前に読ませる場所なので
-  // （ADR 0024）、読めないものが混じっていないかをここで見る。
-  test("解釈結果を出した状態", async ({ page }) => {
-    await installApi(page, baseMock());
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
-    // 畳んだままでは中を見られない。作成前に読ませる本文まで含めて掛ける。
-    for (const summary of await card.getByText("本文", { exact: true }).all()) {
-      await summary.click();
-    }
-
-    await expectNoAxeViolations(page);
-  });
-});
+}

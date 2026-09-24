@@ -46,6 +46,9 @@ BINARY  := $(BIN_DIR)/etoki
 WEB_DIR := web
 DB_PATH ?= etoki.db
 
+# make try-fake で偽の GitHub / LLM を立てる先。
+FAKE_ADDR ?= 127.0.0.1:8090
+
 # ローカルで動かすときの鍵の置き場（gitignore 済み）。無くてもよい。
 #
 # make の include ではなく shell の `.` で読む。include すると `$` を含む値が
@@ -58,7 +61,7 @@ DB_PATH ?= etoki.db
 ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
-.PHONY: help setup dev dev-api dev-web build build-api build-web start \
+.PHONY: help setup dev dev-api dev-web build build-api build-web start try-fake \
         test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
         codegen codegen-go codegen-web migrate token-report clean reset-db
@@ -100,6 +103,45 @@ start: build ## ビルド済みの成果物で起動する（dev サーバーを
 	@# GitHub App の Callback URL と ETOKI_PUBLIC_URL もそちらに合わせる。
 	$(LOAD_ENV) ETOKI_WEB_DIR=$(WEB_DIR)/dist $(BINARY)
 
+try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki を通しで動かす
+	@# 手元の確認用で、make test にも CI にも入れない（ADR 0050）。
+	@# DB は毎回作り直す。偽物の状態はメモリにしか無いので、DB を使い回すと
+	@# 記録が指す draft issue が偽物の側に無く、更新が必ず失敗する。
+	@# $(LOAD_ENV) は通さず、認証と鍵の変数は外す。.env や direnv の本物の鍵を
+	@# 偽物へ送らないためと、App を設定していると認証の構成に入り、偽物では
+	@# ログインできないため。
+	@# フィールド名の 2 つも外す。偽の GitHub は Kind / Parent 固定なので、
+	@# 手元で別名に設定している人は継いだ名前で引いて見つからず、作成が
+	@# ErrProjectFieldMissing で止まる。
+	@go build -o $(BIN_DIR)/etoki-fakeupstream ./cmd/etoki-fakeupstream
+	@# **どちらかが落ちたら両方止める。** 素の wait は全部の終了を待つので、
+	@# 偽物が FAKE_ADDR の使用中で起動に失敗しても etoki だけが残って待ち
+	@# 続け、EXIT の trap も走らない。wait -n で先に落ちたほうを拾い、その
+	@# 終了状態で抜ける。片付けを kill より先に書くのは、kill 0 がこの
+	@# シェル自身も落とすため。
+	@tmp=$$(mktemp -d); \
+	cleanup() { \
+		status=$$?; \
+		trap - EXIT INT TERM; \
+		kill $${fake_pid:-} $${etoki_pid:-} 2>/dev/null || :; \
+		wait $${fake_pid:-} $${etoki_pid:-} 2>/dev/null || :; \
+		rm -rf "$$tmp"; \
+		exit "$$status"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	ETOKI_DB_PATH="$$tmp/etoki.db" $(BINARY) migrate || exit 1; \
+	FAKE_ADDR="$(FAKE_ADDR)" $(BIN_DIR)/etoki-fakeupstream & fake_pid=$$!; \
+	env -u ETOKI_GITHUB_APP_CLIENT_ID -u ETOKI_GITHUB_APP_CLIENT_SECRET \
+		-u ETOKI_TOKEN_ENCRYPTION_KEY -u ETOKI_PUBLIC_URL -u ETOKI_LLM_API_KEY \
+		-u ETOKI_GITHUB_KIND_FIELD -u ETOKI_GITHUB_PARENT_FIELD \
+		ETOKI_DB_PATH="$$tmp/etoki.db" \
+		ETOKI_WEB_DIR=$(WEB_DIR)/dist \
+		ETOKI_LLM_BASE_URL="http://$(FAKE_ADDR)" \
+		ETOKI_GITHUB_BASE_URL="http://$(FAKE_ADDR)" \
+		ETOKI_GITHUB_TOKEN=fake \
+		$(BINARY) & etoki_pid=$$!; \
+	wait -n
+
 build-api:
 	go build -o $(BINARY) ./cmd/etoki
 
@@ -121,7 +163,7 @@ test-scripts: ## scripts/ のテストのみ実行する
 
 test-e2e: ## Playwright で E2E テストを実行する（test には含めない）
 	@# 実行のたびに web/e2e-output/screenshots/ が作り直される。UI を変えたときは
-	@# ここの画像を報告に添える（CLAUDE.md の「報告にスクリーンショットを添える」）。
+	@# ここの画像を報告に添える（web/CLAUDE.md の「報告にブラウザの実行結果を添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
 
 lint: lint-go lint-web lint-docs lint-fmt lint-nix lint-actions lint-sh ## Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する

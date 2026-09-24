@@ -58,27 +58,25 @@ updates:
       prefix: "build"
       include: "scope"
     open-pull-requests-limit: 2
-    # 固定してあるものは外す。**外す理由は web/CLAUDE.md にあり、ここには
-    # 書き写さない。** 同じ知識を 2 箇所に置くと、片方だけ変わる。
+    # 固定してあるものは外す。**なぜ固定しているかは web/CLAUDE.md の
+    # 「ツールチェーン上の非自明な設定」にあり、ここには書き写さない。** 同じ
+    # 知識を 2 箇所に置くと、片方だけ変わる。ここに書くのは、どの更新を外すかの
+    # 決め方だけ。
+    #
+    # **外すのは version updates だけ。** `update-types` を書かずに依存名だけで
+    # 外すと security updates も止まり、脆弱性の知らせごと消える。exact 指定の
+    # ものはパッチまで、メジャーを固定しているものはメジャーだけを外す。
     ignore:
-      # devShell の playwright-driver.browsers と対で決まる。Dependabot は
-      # nixpkgs 側を動かせないので、ここだけ上げると E2E が起動しなくなる。
-      # **外すのは version updates だけ。** `update-types` を書かずに依存名だけで
-      # 外すと security updates も止まり、脆弱性の知らせごと消える。
       - dependency-name: "@playwright/test"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
-      # mermaid の変換器は @excalidraw/excalidraw が依存している版と対で決まる。
-      # ここだけ上がると同じ変換器が 2 つ入るので、excalidraw を上げるときに
-      # 手で揃える。**外すのは version updates だけ**（上の理由と同じ）。
       - dependency-name: "@excalidraw/mermaid-to-excalidraw"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
-      # React は 18 系に固定。マイナーとパッチは受ける。
       - dependency-name: "react"
         update-types: ["version-update:semver-major"]
       - dependency-name: "react-dom"
@@ -87,6 +85,5 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/react-dom"
         update-types: ["version-update:semver-major"]
-      # typescript は 6 系に固定。マイナーとパッチは受ける。
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
