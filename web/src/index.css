@@ -18,6 +18,9 @@
   --color-text-subtle: #465264;
   --color-border: #d8dde4;
   --color-border-subtle: #e3e7ed;
+  /* 入力欄の枠。**地（surface / surface-sunken）に対して 3:1 を切らせない**
+     （WCAG 1.4.11）。空の入力欄は枠だけが境界で、border だと約 1.2:1 しか無い。 */
+  --color-input-border: #7d8898;
   --color-surface-muted: #f3f5f8;
   --color-surface-sunken: #eef1f5;
   --color-surface-cool: #e2e7ee;
@@ -66,6 +69,7 @@
   --color-text-subtle: #b4c0ce;
   --color-border: #2a3644;
   --color-border-subtle: #243040;
+  --color-input-border: #6b7b8f;
   --color-surface-muted: #1a2430;
   --color-surface-sunken: #1d2835;
   --color-surface-cool: #223040;
@@ -149,7 +153,7 @@ body {
 :where(input:not(.excalidraw *), select:not(.excalidraw *), textarea:not(.excalidraw *)) {
   min-height: 30px;
   padding: 4px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-input-border);
   border-radius: 6px;
   background: var(--color-surface);
   box-sizing: border-box;
@@ -327,12 +331,24 @@ button.primary:disabled {
   font-size: 16px;
   margin: 0;
   white-space: nowrap;
-  /* 見出しは縮めない。縮めると操作の列が名前の上にかぶり、「名前を変更」が
-     押せなくなる。詰まったら操作の列のほうが折り返す。 */
-  flex-shrink: 0;
+  /* 縮めてよいのはボード名だけ（.board-title が省略する）。見出しごと縮めない
+     ようにすると、長い名前で操作の列が画面の外に押し出され、保存が押せなくなる。
+     「名前を変更」は縮めない。縮めると操作の列が名前の上にかぶり、押せなくなる。
+     見出しは中身の幅を取り、半分を超えたぶんだけ名前を省略する。残りを操作の列が
+     使い、詰まったらそちらが折り返す。 */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+}
+
+.board-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .board-actions {
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -557,7 +573,7 @@ button.primary:disabled {
   margin: 4px 0 8px;
   padding: 6px 8px;
   background: var(--color-surface-sunken);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-input-border);
   border-radius: 4px;
   font-family: inherit;
   font-size: 12px;
@@ -595,10 +611,10 @@ button.primary:disabled {
  *
  * **入力欄も `opacity` では薄くしない。** 中の文字ごと透けて、選び直す前に
  * 読む種別やタイトルが 4.5:1 を切る。薄さは AA を満たす灰色の文字で出す。
+ * **枠も薄くしない。** 空の本文欄は枠だけが境界で、落とすと 3:1 を切る（#161）。
  */
 .draft-item.unselected :is(select, input:not([type="checkbox"]), textarea) {
   color: var(--color-text-muted);
-  border-color: var(--color-border);
 }
 
 .draft-kind,
@@ -1024,6 +1040,7 @@ a.badge-target:hover {
 }
 
 .board-header h1 .rename {
+  flex-shrink: 0;
   min-height: 24px;
   padding: 0 6px;
   font-size: 11px;
