@@ -404,7 +404,8 @@ export function AnnotationPanel({
                             disabled={!canEdit}
                             onChange={(e) => {
                               const nextKind = (e.target.value || undefined) as
-                                DiagramKind | undefined;
+                                | DiagramKind
+                                | undefined;
                               setPendingKinds((current) => ({
                                 ...current,
                                 [a.id]: { value: nextKind },
