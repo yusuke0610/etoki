@@ -42,6 +42,9 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#157](https://github.com/yusuke0610/etoki/pull/157) |        5 |      4 |        1 |      0 | make-targets を新設（引用の指摘が `migrate` で再発）。取り下げは確認と削除の直列化            |
 | [#165](https://github.com/yusuke0610/etoki/pull/165) |        3 |      2 |        1 |      0 | async-ui。取り下げは移行の時刻比較の精度（1 ミリ秒の中の前後は id で決まる）                  |
 | [#160](https://github.com/yusuke0610/etoki/pull/160) |        3 |      2 |        0 |      1 | test-effectiveness / validation-boundaries / pr-review スキル。未決着は #170 へ               |
+| [#138](https://github.com/yusuke0610/etoki/pull/138) |        6 |      6 |        0 |      0 | e2e-mocks に偽の上流の節 / make-targets / validation-boundaries / test-effectiveness          |
+| [#158](https://github.com/yusuke0610/etoki/pull/158) |        1 |      0 |        1 |      0 | docs-consistency の「やらないこと」（見出しの参照に地の文まで寄せない）                       |
+| [#159](https://github.com/yusuke0610/etoki/pull/159) |        3 |      3 |        0 |      0 | test-effectiveness（写しの照合は両側から）。変数名の文字クラスと rv の例は単発で還さず        |
 | [#167](https://github.com/yusuke0610/etoki/pull/167) |        1 |      1 |        0 |      0 | 還していない。CI の最後に置く検査へ `if: !cancelled()` を付ける話で、rules に該当テーマが無い |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、

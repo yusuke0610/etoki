@@ -74,6 +74,12 @@ func TestNew_RejectsInvalidBaseURL(t *testing.T) {
 		// スキームは通るがホストが無い。呼び出し時まで失敗が遅れる。
 		"ホストが無い":     "http://",
 		"スラッシュが足りない": "https:gateway.example",
+		// 送り先は base に "/v1/messages" を足した文字列なので、クエリや
+		// fragment が付いていると足したぶんが path に入らない。
+		"クエリつき":       "https://gateway.example?x=1",
+		"空のクエリ":       "https://gateway.example?",
+		"fragment つき": "https://gateway.example#x",
+		"空の fragment": "https://gateway.example#",
 	}
 
 	for name, base := range tests {

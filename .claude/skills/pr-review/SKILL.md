@@ -82,10 +82,10 @@ gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$
 ## 決着した指摘を規約に還す
 
 全件の決着が付いたら、**一般化できる指摘を `.claude/rules/` の該当テーマに
-追記する**（e2e-mocks / test-effectiveness / validation-boundaries /
-async-ui / github-adapter / docs-consistency）。**その PR を離れる前に
-書き切る。** 後回しにすると、ADR 0033 でやった棚卸しをもう一度やることに
-なる。
+追記する。** テーマは `ls .claude/rules` で見る。**ここに列挙しない。** 写すと
+rules を足した日にここだけが古くなり、足したテーマに指摘が還らない（#154）。
+**その PR を離れる前に書き切る。** 後回しにすると、ADR 0033 でやった棚卸しを
+もう一度やることになる。
 
 入れる基準は 3 つ。全部満たすものだけ入れる。
 
