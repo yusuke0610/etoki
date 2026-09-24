@@ -611,10 +611,17 @@ button.primary:disabled {
  *
  * **入力欄も `opacity` では薄くしない。** 中の文字ごと透けて、選び直す前に
  * 読む種別やタイトルが 4.5:1 を切る。薄さは AA を満たす灰色の文字で出す。
- * **枠も薄くしない。** 空の本文欄は枠だけが境界で、落とすと 3:1 を切る（#161）。
+ *
+ * **地もブラウザに任せない**（web/CLAUDE.md の「配色」）。select の既定の地は
+ * プラットフォームで違い、Linux の Chromium はボタン地を敷く。ダークでは中間の
+ * 灰色になり、その上で薄い文字が 4.5:1 を切る。地は本文
+ * （`.item-body > textarea`）と同じにして、行の中で揃える。
+ *
+ * **枠は薄くしない。** 空の本文欄は枠だけが境界で、落とすと 3:1 を切る（#161）。
  */
 .draft-item.unselected :is(select, input:not([type="checkbox"]), textarea) {
   color: var(--color-text-muted);
+  background: var(--color-surface-sunken);
 }
 
 .draft-kind,
@@ -711,8 +718,8 @@ button.primary:disabled {
  * 描いたものは残っており、保存だけがこのままでは通らない。
  */
 .scene-limit-warning {
-  background: #fdf0d5;
-  color: #8a5a00;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
   padding: 8px 12px;
   margin: 0;
   font-size: 13px;
