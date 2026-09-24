@@ -97,7 +97,7 @@ func (s *AuthService) Provider() string { return s.provider.Name() }
 //
 // returnTo はログイン後に戻す先。空文字なら「指定なし」で、コールバックは "/"
 // に戻す。**戻り先を state と一緒に保存する**ので、コールバックの URL には
-// 載らない（ADR 0056）。
+// 載らない（ADR 0059）。
 func (s *AuthService) Start(ctx context.Context, redirectURI, returnTo string) (string, error) {
 	returnTo, err := SanitizeReturnTo(returnTo)
 	if err != nil {

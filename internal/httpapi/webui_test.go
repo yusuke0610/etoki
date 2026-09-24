@@ -138,7 +138,7 @@ func TestWebUI_KeepsHealthz(t *testing.T) {
 	}
 }
 
-// 開いているボードはクエリで表す（ADR 0056）。パスとしては "/" なので、
+// 開いているボードはクエリで表す（ADR 0059）。パスとしては "/" なので、
 // fallback を持たないまま配れる。**ここが切れると、ボードの URL を直接開いた
 // 人に画面が出ない。** ADR 0032 の判断をそのままにできる根拠がこれ。
 func TestWebUI_ServesIndexForBoardQuery(t *testing.T) {

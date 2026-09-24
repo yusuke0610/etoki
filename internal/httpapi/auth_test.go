@@ -553,7 +553,7 @@ func doWithCookie(
 	return rec
 }
 
-// ログイン後の戻り先は state と一緒に保存したもの（ADR 0056）。ここが "/" に
+// ログイン後の戻り先は state と一緒に保存したもの（ADR 0059）。ここが "/" に
 // 固定されると、セッションが切れて入り直した人は開いていたボードを探し直す。
 func TestCallback_RedirectsToSavedReturnTo(t *testing.T) {
 	t.Parallel()

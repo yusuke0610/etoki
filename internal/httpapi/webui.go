@@ -44,7 +44,7 @@ func CheckWebDir(dir string) error {
 // するファイルだけ。先回りして fallback を置くと、打ち間違えた URL が 404 では
 // なく 200 + HTML で返る。ルーティングを入れるときに一緒に足す。
 //
-// **開いているボードとログイン後の戻り先はクエリで表す**（ADR 0056）。
+// **開いているボードとログイン後の戻り先はクエリで表す**（ADR 0059）。
 // `/?board={id}` はパスとしては "/" なので、ここは 1 行も変わらない。
 func newWebUI(dir string) gin.HandlerFunc {
 	root := http.Dir(dir)

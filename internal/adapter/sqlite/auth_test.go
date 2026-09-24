@@ -322,7 +322,7 @@ func TestConsumeState_IsSingleUse(t *testing.T) {
 	}
 }
 
-// ログイン後の戻り先は state と一緒に往復する（ADR 0056）。ここが切れると
+// ログイン後の戻り先は state と一緒に往復する（ADR 0059）。ここが切れると
 // 入り直した人は開いていたボードへ戻れない。
 func TestConsumeState_ReturnsSavedReturnTo(t *testing.T) {
 	t.Parallel()

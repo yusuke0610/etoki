@@ -580,7 +580,7 @@ func TestStaticTokenSource(t *testing.T) {
 	}
 }
 
-// ログイン後の戻り先は自オリジンの相対パスだけ（ADR 0056）。ここが緩むと、
+// ログイン後の戻り先は自オリジンの相対パスだけ（ADR 0059）。ここが緩むと、
 // ログインさせた相手を任意の URL へ送り出せる。
 func TestSanitizeReturnTo(t *testing.T) {
 	t.Parallel()

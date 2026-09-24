@@ -29,6 +29,7 @@ import {
   parseBoardLocation,
   type BoardLocation,
 } from "./location";
+import { useTheme } from "./theme";
 
 /**
  * ボードを開く要求の世代のキー。
@@ -90,7 +91,7 @@ export function App() {
   // **state ではなく ref で持つ。** 描くたびに再描画する必要が無いのに加えて、
   // state だと通信の待ちを挟んだ判定が、待ち始めた時点の値を見てしまう。
   const unsaved = useRef(false);
-  // URL に書いてあったボードを開きにいったかどうか（ADR 0056）。
+  // URL に書いてあったボードを開きにいったかどうか（ADR 0059）。
   //
   // **1 度きり。** ログイン直後に 1 回だけ読み、以後は URL を書く側に回る。
   // 毎回読み直すと、切り替えたあとの `boards` の取り直しで URL のボードへ
@@ -112,6 +113,10 @@ export function App() {
   //
   // 初期化関数で 1 度だけ作る（`BoardPage` の世代と同じ形）。
   const [openings] = useState(createGenerations);
+  // 配色。**持つのはここだけ**で、キャンバスのメニューで切り替えても BoardPage
+  // から戻ってくる（ADR 0055）。ログインや作成先の選択の画面にも効かせるため、
+  // ボードより上に置く。
+  const [theme, setTheme] = useTheme();
 
   useEffect(() => {
     void (async () => {
@@ -200,7 +205,7 @@ export function App() {
   }, []);
 
   /**
-   * URL を画面に合わせて書き換える（ADR 0056）。
+   * URL を画面に合わせて書き換える（ADR 0059）。
    *
    * **state から URL を導く effect は置かない。** effect では「積むのか置き換え
    * るのか」を区別できないうえ、戻る / 進むで URL が先に動いたときに書き戻しと
@@ -405,7 +410,7 @@ export function App() {
   );
 
   /**
-   * URL に書いてあったボードを開く（ADR 0056）。ログインが済んでから 1 度だけ。
+   * URL に書いてあったボードを開く（ADR 0059）。ログインが済んでから 1 度だけ。
    *
    * **履歴は積まない。** 起動時に積むと、最初の「戻る」が etoki の中に留まり、
    * 来た場所へ戻れない。
@@ -430,7 +435,7 @@ export function App() {
   }, [open, showLocation, signedIn]);
 
   /**
-   * 戻る / 進むに追随する（ADR 0056）。
+   * 戻る / 進むに追随する（ADR 0059）。
    *
    * **未保存の確認をここでも通す。** キャンバスが外れる導線が 1 つ増えたので、
    * `web/CLAUDE.md` の約束をそのまま掛ける。
@@ -583,7 +588,7 @@ export function App() {
             board={current}
             capabilities={capabilities}
             onError={setError}
-            // **選び直しは URL に載せるが、履歴には積まない**（ADR 0056）。
+            // **選び直しは URL に載せるが、履歴には積まない**（ADR 0059）。
             // 同じボードの中のモードなので、読み込み直しで戻せれば足りる。
             // 積むと、選び終えた後の「戻る」が選択画面に引き返す。
             onChangeTarget={() => {
@@ -596,6 +601,8 @@ export function App() {
             onRenamed={replaceBoard}
             onDeleted={handleDeleted}
             onDirtyChange={handleDirtyChange}
+            theme={theme}
+            onThemeChange={setTheme}
           />
         )}
       </main>

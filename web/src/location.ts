@@ -1,5 +1,5 @@
 /**
- * 開いているボードと URL を対応づける（ADR 0056、#149）。
+ * 開いているボードと URL を対応づける（ADR 0059、#149）。
  *
  * **URL を組み立てる規則はここだけに置く。** 散らすと、読む側と書く側で
  * 別の形を持ってしまい、自分で書いた URL を自分で開けなくなる
@@ -51,7 +51,7 @@ export function parseBoardLocation(search: string): BoardLocation {
  * 画面の状態から URL を組む。
  *
  * 返すのは同一オリジンの相対パス。**そのままログイン後の戻り先としても送れる**
- * 形にしてある（サーバーは自オリジンの相対パスだけを受け付ける、ADR 0056）。
+ * 形にしてある（サーバーは自オリジンの相対パスだけを受け付ける、ADR 0059）。
  */
 export function boardLocationUrl({ boardId, picking }: BoardLocation): string {
   if (boardId === null || boardId === "") return "/";
