@@ -99,7 +99,7 @@ type CreationProps = {
    *
    * **文言はここで組まない。** 何が走っているとどう言うかは
    * `web/src/board/exclusion.ts` の表が持ち、`BoardPage` が引いて渡す
-   * （ADR 0056）。パネルが `saving` / `importing` から組み直していたころは、
+   * （ADR 0060）。パネルが `saving` / `importing` から組み直していたころは、
    * 同じ判定がヘッダーとここの 2 箇所にあった。
    */
   blocked: string | null;

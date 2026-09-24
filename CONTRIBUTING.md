@@ -19,11 +19,8 @@ ADR があるかは、先に索引（[`docs/adr/README.md`](docs/adr/README.md)�
 ## 開発環境
 
 [Nix](https://nixos.org/) 以外はインストール不要。手順は
-[README の「開発」](README.md#開発)。
-
-**`make` を通す限り devShell に入り忘れても構わない**（自分をやり直す）が、
-**`go test` や `bunx vitest` を直に叩く経路は包まれない。** そちらは
-`nix develop` の中で実行する。
+[README の「開発」](README.md#開発)。`make` を通さずに `go test` や
+`bunx vitest` を叩くときの注意は [`CLAUDE.md` の「開発コマンド」](CLAUDE.md#開発コマンド)。
 
 ## ブランチ運用
 
@@ -51,9 +48,9 @@ git switch -c <prefix>/<短い説明>
 （`make test` には含まれない）。**各ターゲットが何をするかは `make help`。**
 一覧を書き写した場所を作ると、Makefile に足したものが漏れたまま残る。
 
-**`api/openapi.yaml` を変えたら `make codegen` を実行し、生成物を同じコミットに
-含める。** 生成物は手で編集しない。CI の codegen drift ジョブが、再生成していない
-状態とコミットし忘れの両方を落とす（[ADR 0011](docs/adr/0011-openapi-as-contract-ssot.md)）。
+**`api/openapi.yaml` を変えたら `make codegen` の生成物を同じコミットに含める**
+（[`CLAUDE.md`](CLAUDE.md#http-契約は-openapi-が正本)）。忘れると CI の codegen
+drift で落ちる（下の「CI」）。
 
 ## 実装後のセルフレビュー
 

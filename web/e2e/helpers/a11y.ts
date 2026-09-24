@@ -20,7 +20,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
  * ボタンから `aria-describedby` で指す形に揃えてある（`BoardPage` と
  * `web/src/board/` の注釈パネルの各ファイルに、理由つきのコメントで残っている）。
  * **操作どうしの排他で出る理由だけは `web/src/board/exclusion.ts` の表**
- * （ADR 0056）。
+ * （ADR 0060）。
  *
  * **回帰止め。切れると何が起きるか。** 理由を `title` に移す、`aria-describedby`
  * を落とす、指す先の `id` を注釈ごとに分け忘れる、理由の要素を出さないまま

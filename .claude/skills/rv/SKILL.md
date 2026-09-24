@@ -29,14 +29,15 @@ git diff --cached
 2. 下の「観点を集める」で読むものを決め、1 項目ずつ照らす。
 3. 見つけたものを分類する（後述）。
 4. 「直す」に分類したものを直す。
-5. `make lint` と `make test` を通す。UI かハンドラを触っているなら
-   `make test-e2e` も通す（`make` は devShell の外からでも自分を包み直す）。
-   **出力はログに落とし、終了コードだけ見る。**
+5. `CONTRIBUTING.md` の「コミット前に通すもの」を通す。**出力はログに落とし、
+   終了コードだけ見る。**
 
    ```sh
    mkdir -p tmp
    make lint >tmp/lint.log 2>&1; echo "lint=$?"
    make test >tmp/test.log 2>&1; echo "test=$?"
+   # 要るとき（条件は CONTRIBUTING.md）だけ
+   make test-e2e >tmp/e2e.log 2>&1; echo "e2e=$?"
    ```
 
    0 ならログを開かない。0 でなければ `tmp/*.log` の落ちた箇所だけ読む。
