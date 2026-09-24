@@ -28,9 +28,7 @@ make help        # ターゲット一覧
 **ターゲットの一覧は `make help` が出します。** ここに書き写すと、Makefile に
 足したものが漏れたまま残ります。
 
-`nix develop` に入り忘れても構いません。`make` は開発用シェルの外から呼ばれた
-ことを見て、`nix develop --command` で自分をやり直します。入っていれば包み直しは
-起きないので、シェルの中と外で結果は変わりません。
+`make` は `nix develop` に入り忘れても、自分で開発用シェルに入り直して動きます。
 
 HTTP API の仕様は [`api/openapi.yaml`](api/openapi.yaml) にあります。これが
 契約の正本で、Go と TypeScript の型はここから生成しています。仕様を変えたら
@@ -68,6 +66,7 @@ direnv allow
 | `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい |
 | `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）         |
 | `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                  |
+| `ETOKI_GITHUB_BASE_URL`          | `https://api.github.com`    | GitHub API のルート。http はループバックだけ。GHES は未確認      |
 | `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する            |
 | `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                 |
 | `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                |
@@ -128,9 +127,9 @@ GitHub App を設定しているなら、Callback URL と `ETOKI_PUBLIC_URL` も
 `ETOKI_WEB_DIR` を渡さなければ画面は配りません。`make dev` では Vite が同じものを
 持っているので、両方が配ると画面の出どころが構成によって変わるためです
 （[ADR 0032](docs/adr/0032-serve-the-built-frontend.md)）。渡したのに `index.html`
-が無い場合は起動時に落ちます。**`ETOKI_ADDR` で公開インターフェースにバインド
-するなら、`ETOKI_ALLOWED_ORIGINS` にそのオリジンを足してください。** 足さないと
-API だけでなく画面も開けません。
+が無い場合は起動時に落ちます。公開インターフェースにバインドするときの
+`ETOKI_ALLOWED_ORIGINS` は[上に書いたとおり](#設定)で、足さないと API だけでなく
+画面も開けません。
 
 ### データを残す
 
@@ -159,6 +158,44 @@ sqlite3 "${ETOKI_DB_PATH:-etoki.db}" ".backup 'etoki-backup.db'"
 まだ本体に書き戻されていない書き込みが `etoki.db-wal` に残っています。
 戻すときは etoki を止め、残っている `-wal` / `-shm` を消してから、取ったファイルを
 `ETOKI_DB_PATH` に置きます。
+
+### 偽の GitHub / LLM で通しを確かめる
+
+鍵もネットワークも無しで、画面から GitHub への書き込みまでを 1 本通せます。
+各層の単体テストと E2E（バックエンドを起動しない）では、この並び全体を
+通していないためです（[ADR 0050](docs/adr/0050-walk-through-against-fake-upstream.md)）。
+
+```sh
+make try-fake   # 偽の上流（:8090）と、それに向けた etoki（:8080）を起動する
+```
+
+`.env` は読まず、DB は起動のたびに一時ディレクトリへ作り直します。止めると
+消えます。ポートは `ETOKI_ADDR` と `FAKE_ADDR=127.0.0.1:18090` のように変え
+られます。
+
+通す筋道:
+
+1. <http://127.0.0.1:8080> を開き、作成先に `fake-owner/fake-repo` の
+   `#1 Fake Project` を選んでボードを作る
+2. 文字を書き、フレームツール（F）で囲み、そのフレームを選んで注釈にする
+3. 保存して「解釈する」→「GitHub に作成する」。状態が「作成済み」になる
+4. 偽の GitHub に積まれたものを見る。epic と issue、`Kind` と `Parent` が入る
+
+   ```sh
+   curl -s http://127.0.0.1:8090/_fake/items
+   ```
+
+5. 囲みの文字を書き換えて保存する。状態が「変更あり」になる
+6. もう一度解釈すると、項目に「更新」が付く。作成すると 4 の item の
+   `title` が変わり、`updates` が増える
+
+対象外のもの:
+
+- **図のドラフト生成。** 偽の LLM は解釈と同じ JSON を返すので、画面では
+  失敗します。
+- **GitHub App の構成。** 認証の変数は外して起動します。
+- **本物の GitHub と一致していること。** 偽物が合わせているのは etoki の
+  アダプタが送るリクエストだけです。
 
 ### 鍵を `.env` に置く
 
@@ -256,9 +293,8 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
 アカウントの Project は GitHub App からは触れません（後述）。
 
 1. [GitHub App を作る](https://github.com/settings/apps/new)
-   - **Callback URL**: `http://127.0.0.1:5173/api/auth/callback`
-     （`make dev` の場合。ブラウザがいるポートに合わせる。`make start` なら
-     `http://127.0.0.1:8080/api/auth/callback`）
+   - **Callback URL**: ブラウザがいるポートに合わせる。`make dev` と
+     `make start` での値は[上の表](#dev-サーバーを使わずに動かす)
    - **Repository permissions**: `Metadata: Read-only`
    - **Organization permissions**: `Projects: Read and write`
    - Webhook は要りません（Active のチェックを外す）
@@ -273,7 +309,7 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
 export ETOKI_GITHUB_APP_CLIENT_ID=Iv23li...
 export ETOKI_GITHUB_APP_CLIENT_SECRET=...
 export ETOKI_TOKEN_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
-export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき
+export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき（上の表）
 ```
 
 鍵は保存するトークンの暗号化に使います。**未設定だと起動時に落ちます。**
