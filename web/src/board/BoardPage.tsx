@@ -1315,7 +1315,10 @@ export function BoardPage({
             )}
             {nameDraft === null ? (
               <h1>
-                {board.name}
+                {/* 長い名前は省略して出すので、全体はホバーで読めるようにする。 */}
+                <span className="board-name" title={board.name}>
+                  {board.name}
+                </span>
                 {/*
                   名前はブレストの中身に属する表示物なので、editor にも直させる
                   （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。

@@ -18,6 +18,9 @@
   --color-text-subtle: #465264;
   --color-border: #d8dde4;
   --color-border-subtle: #e3e7ed;
+  /* 入力欄の枠。**地（surface / surface-sunken）に対して 3:1 を切らせない**
+     （WCAG 1.4.11）。空の入力欄は枠だけが境界で、border だと約 1.2:1 しか無い。 */
+  --color-input-border: #7d8898;
   --color-surface-muted: #f3f5f8;
   --color-surface-sunken: #eef1f5;
   --color-surface-cool: #e2e7ee;
@@ -66,6 +69,7 @@
   --color-text-subtle: #b4c0ce;
   --color-border: #2a3644;
   --color-border-subtle: #243040;
+  --color-input-border: #6b7b8f;
   --color-surface-muted: #1a2430;
   --color-surface-sunken: #1d2835;
   --color-surface-cool: #223040;
@@ -149,7 +153,7 @@ body {
 :where(input:not(.excalidraw *), select:not(.excalidraw *), textarea:not(.excalidraw *)) {
   min-height: 30px;
   padding: 4px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-input-border);
   border-radius: 6px;
   background: var(--color-surface);
   box-sizing: border-box;
@@ -346,6 +350,20 @@ button.primary:disabled {
   font-size: 16px;
   margin: 0;
   white-space: nowrap;
+  /* 縮めてよいのはボード名だけ（.board-name が省略する）。見出しごと縮めない
+     ようにすると、長い名前で保存が画面の外に押し出され、押せなくなる（#161）。
+     「名前を変更」と前後のバッジは縮めない。縮めると名前の上にかぶる。 */
+  min-width: 0;
+}
+
+.board-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-title > .badge {
+  flex-shrink: 0;
 }
 
 /*
@@ -667,7 +685,7 @@ button.primary:disabled {
   margin: 4px 0 8px;
   padding: 6px 8px;
   background: var(--color-surface-sunken);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-input-border);
   border-radius: 4px;
   font-family: inherit;
   font-size: 12px;
@@ -705,10 +723,10 @@ button.primary:disabled {
  *
  * **入力欄も `opacity` では薄くしない。** 中の文字ごと透けて、選び直す前に
  * 読む種別やタイトルが 4.5:1 を切る。薄さは AA を満たす灰色の文字で出す。
+ * **枠も薄くしない。** 空の本文欄は枠だけが境界で、落とすと 3:1 を切る（#161）。
  */
 .draft-item.unselected :is(select, input:not([type="checkbox"]), textarea) {
   color: var(--color-text-muted);
-  border-color: var(--color-border);
 }
 
 .draft-kind,
@@ -1142,6 +1160,7 @@ a.badge-target:hover {
 }
 
 .board-header h1 .rename {
+  flex-shrink: 0;
   min-height: 24px;
   padding: 0 6px;
   font-size: 11px;

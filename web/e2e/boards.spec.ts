@@ -218,6 +218,31 @@ test.describe("ボード", () => {
     expect(saved.elements.filter((el) => el.type === "rectangle")).toHaveLength(1);
   });
 
+  // **長い名前でもヘッダーの操作は押せる。** 見出しを縮めないと操作の列が
+  // 画面の外に押し出され、縮めすぎると「名前を変更」が名前にかぶる（#161）。
+  // どちらでも押せなくなるので、名前だけを省略させる。
+  test("長い名前でも、保存と名前の変更が押せる", async ({ page }) => {
+    const longName = "認証まわりのブレスト".repeat(12);
+    const mock = baseMock();
+    const detail = { ...board(), name: longName };
+    mock.boards = [summarize(detail)];
+    mock.details = { [detail.id]: detail };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    await openBoard(page, longName);
+
+    await drawRectangle(page);
+    const save = page.getByRole("button", { name: "保存", exact: true });
+    await expect(save).toBeInViewport({ ratio: 1 });
+    // trial は押さずに、押せる位置に他の要素がかぶっていないかまで確かめる。
+    await save.click({ trial: true });
+
+    const rename = page.getByRole("button", { name: "名前を変更" });
+    await expect(rename).toBeInViewport({ ratio: 1 });
+    await rename.click({ trial: true });
+  });
+
   test("名前を空にしたままでは保存できない", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
