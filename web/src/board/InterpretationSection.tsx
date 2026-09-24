@@ -1,7 +1,7 @@
 import type { Granularity, Interpretation, ProjectAccess, SyncItem } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
 import { GRANULARITY_LABEL } from "./annotationLabel";
-import { InterpretationDraft } from "./InterpretationDraft";
+import { DraftEditor } from "./DraftEditor";
 import {
   interpretationOrderLabel,
   selectedInterpretation,
@@ -122,7 +122,7 @@ export function InterpretationSection({
       )}
 
       {selected && (
-        <InterpretationDraft
+        <DraftEditor
           // 選び直したら手直しは引き継がない。別の解釈に対する編集が
           // 混ざると、何を作るのかが読めなくなる（解釈し直したときと同じ）。
           key={selected.id}

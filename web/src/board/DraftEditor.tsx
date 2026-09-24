@@ -40,7 +40,7 @@ import type { ProjectLink } from "./projectLink";
  * 捨てられる。上げると `save` と `interpret` の両方に破棄を書き足すことになり、
  * 片方を忘れると保存したあとに古い編集が残る。
  */
-export function InterpretationDraft({
+export function DraftEditor({
   annotationId,
   granularity,
   result,
