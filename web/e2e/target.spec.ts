@@ -44,6 +44,34 @@ test.describe("作成先の選択", () => {
     await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
   });
 
+  // ボタンの共通の見た目は文字の途中で折り返さない（nowrap）。一覧のボタンは
+  // 名前をそのまま並べるので、長い名前や説明がボタンの外にはみ出す（#161）。
+  test("長いリポジトリ名と説明も、一覧のボタンの中に収まる", async ({ page }) => {
+    const mock = withUnselected();
+    mock.repositories = {
+      status: 200,
+      body: [
+        {
+          owner: "acme",
+          name: "a-very-long-repository-name-for-the-frontend-of-the-ordering-system",
+          description:
+            "注文から出荷までの画面をまとめて持つフロントエンドのリポジトリです。".repeat(
+              3,
+            ),
+        },
+      ],
+    };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    await openUnselected(page);
+
+    const button = picker(page).getByRole("button", { name: /a-very-long-repository/ });
+    await expect(button).toBeVisible();
+    const overflow = await button.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
   // 利用者が選ぶのはリポジトリだが、保存するのはそこに紐づく Project。
   // draft issue はリポジトリではなく Project に属するため 2 段になる。
   test("リポジトリを選ぶと、そのリポジトリのプロジェクトが出る", async ({ page }) => {

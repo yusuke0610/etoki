@@ -879,6 +879,11 @@ a.badge-target:hover {
   gap: 8px;
   width: 100%;
   text-align: left;
+  /* 共通の見た目は文字の途中で折り返さない（nowrap）が、一覧のボタンは名前や
+     説明をそのまま並べる。長いとボタンの外にはみ出すので、ここでは折り返す。
+     リポジトリ名のように空白の無い名前もあるので、どこでも折れるようにする。 */
+  white-space: normal;
+  overflow-wrap: anywhere;
   padding: 6px 8px;
   border: 1px solid var(--color-border-subtle);
   border-radius: 4px;
