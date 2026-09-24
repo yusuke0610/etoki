@@ -38,7 +38,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `CONTRIBUTING.md`                  | ブランチ・コミット・PR 本文・レビュー対応・CI                          |
 | `.github/pull_request_template.md` | PR 本文の雛形                                                          |
 | `internal/CLAUDE.md`               | 3 状態判定のデータフロー、メンバーと権限                               |
-| `web/CLAUDE.md`                    | E2E テスト、報告にスクリーンショットを添える、vite / playwright の設定 |
+| `web/CLAUDE.md`                    | E2E テスト、報告にブラウザの実行結果を添える、vite / playwright の設定 |
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
 | `.claude/rules/`                   | レビュー由来の落とし穴集（テーマ別。対象ファイルを読むと読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
@@ -70,6 +70,7 @@ make help        # ターゲット一覧
 make setup       # 依存取得と DB 初期化（migrate を含む）
 make dev         # バックエンド(:8080)とフロントエンド(:5173)を同時起動
 make start       # ビルド済みの成果物で起動する（dev サーバーを使わない）
+make try-fake    # 偽の GitHub / LLM に向けて通しで動かす（CI には入れない）
 make lint        # Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest + bun test
@@ -78,8 +79,8 @@ make codegen     # api/openapi.yaml から Go / TS の型を再生成する
 make migrate     # etoki migrate サブコマンドを呼ぶ
 ```
 
-コミット前に `make lint` と `make test` を通す。UI かハンドラを触ったなら
-`make test-e2e` も通す。
+コミット前に通す検査と、`make test-e2e` を回す条件は `CONTRIBUTING.md` の
+「コミット前に通すもの」。
 
 Go の単体テストはパッケージとテスト名で絞る。フロントエンドと E2E の絞り方は
 `web/CLAUDE.md`。
@@ -213,37 +214,25 @@ GitHub の形しか差せなくなる。
 
 ## ツールチェーン上の非自明な設定
 
-触る前に理由を把握しておくべきもの。消すと壊れる。フロントエンド側は
-`web/CLAUDE.md`、生成器は `api/CLAUDE.md`。
+触る前に理由を把握しておくべきもの。消すと壊れる。**理由は設定の隣の
+コメントが正本で、ここには「どこにあるか」だけを置く。** コメントを書けない
+ものと、置き場所になる設定が無いものだけは、ここに理由を書く。フロント
+エンド側は `web/CLAUDE.md`、生成器は `api/CLAUDE.md`。
 
-- **`go.mod` の `ignore ./web`** と **`.golangci.yml` の `exclusions.paths: ^web/`**
-  — `web/node_modules` に Go ファイルを同梱した npm パッケージ（`flatted`）が
-  あり、`go ./...` と golangci-lint が拾ってしまう。`bun install` 後にしか
-  再現しない。
-- **`.markdownlint-cli2.yaml` の `gitignore: true`** — Markdown の検査対象は
-  `**/*.md` なので、`bun install` 後は `web/node_modules` の README まで拾う。
-  除外を自前で列挙せず `.gitignore` を見ているのは、上の 2 つと同じ知識を
-  3 箇所目に増やさないため。こちらも `bun install` 後にしか再現しない。
-- **`.prettierignore` の `web/bun.lock`** — prettier は bun のロックファイルを
-  解析できず、対象に入ると落ちる。`web/node_modules` や `web/dist` を書いて
-  いないのは、prettier が `.gitignore` も既定で見るため。整形の対象は
-  リポジトリ全体で、`web/` の中から呼ぶと `docs/adr` とルートの Markdown が
-  外れる。
-- **Makefile の `ifndef ETOKI_DEVSHELL` による包み直し** — devShell の外から
-  呼ばれたら `nix develop --command make` で全ターゲットをやり直す。判定に
-  `IN_NIX_SHELL` を使わないのは、あれが「何かの nix shell の中」としか言わず、
-  別プロジェクトの shell から呼ぶと包み直しを飛ばすため。印は `flake.nix` の
-  `ETOKI_DEVSHELL` で、`shellHook` ではなく derivation の環境に置いてある
-  （`shellHook` が走るかは経路によって変わる）。包み直しの中で `$(MAKE)` では
-  なく `make` と書くのは、`$(MAKE)` だと外側の make（macOS なら 3.81）を
-  呼び直してしまい、devShell が固定している gnumake が使われないため。
-- **devShell の `GOTOOLCHAIN=local`** — `go.mod` の go ディレクティブが nixpkgs の
-  Go より新しいと Go がツールチェーンを自動ダウンロードし、Nix による固定が
-  無意味になる。
-- **`nix flake check` は Nix コードのフォーマット検査のみ。** Go とフロント
-  エンドのビルドは Makefile と CI に任せる（ADR 0002）。同じ検査は
-  `make lint`（`lint-nix`）にもある。重複しているのは、`nix flake check` が
-  CI でしか回らず、手元で `make lint` だけ通すと整形崩れを見落とすため。
+- **`web/node_modules` を拾わないための除外 3 つ** — `go.mod` の `ignore ./web`、
+  `.golangci.yml` の `exclusions.paths: ^web/`、`.markdownlint-cli2.yaml` の
+  `gitignore: true`。**どれも `bun install` 後にしか再現しない**ので、
+  `bun install` する前の作業ツリーでは消しても緑のまま通る。理由は各ファイルの
+  コメント。
+- **`.prettierignore`** と、**整形を必ずリポジトリのルートから呼ぶこと** —
+  理由は `.prettierignore` と Makefile の `lint-fmt` のコメント。
+- **Makefile の `ifndef ETOKI_DEVSHELL` による包み直し** — 判定の印と、包み
+  直しの中で `$(MAKE)` と書かない理由は Makefile の冒頭と `nix-develop` の
+  コメント。印（`ETOKI_DEVSHELL`）を `shellHook` ではなく derivation の環境に
+  置く理由は `flake.nix` のコメント。
+- **devShell の `GOTOOLCHAIN=local`** — 理由は `flake.nix` のコメント。
+- **`nix flake check` は Nix コードのフォーマット検査のみ**（ADR 0002）。同じ
+  検査を `make lint`（`lint-nix`）にも重ねている理由は Makefile のコメント。
 - **YAML を見ているのは prettier と actionlint。yamllint は入れていない。**
   構文エラーと重複キーは prettier がパースに失敗して落とす。yamllint を足して
   増えるのは `document-start` のような様式の指摘だけで、`line-length` は
