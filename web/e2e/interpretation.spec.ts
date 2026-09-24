@@ -437,6 +437,51 @@ test.describe("解釈と作成", () => {
     await expect(card.getByLabel("i2 のタイトル")).toHaveValue("あとで作る");
   });
 
+  // 解釈し直しに失敗しても、前の解釈と手直しは画面に残る（失敗しても過去の結果は
+  // 消さない）。預けた手直しまで押した時点で捨てると、画面には残っているのに
+  // 作成で組を移った先で消える（#162）。
+  test("解釈し直しに失敗してから作成しても、送らなかった項目の手直しは残る", async ({
+    page,
+  }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByLabel("i2 を作成する").uncheck();
+    await card.getByLabel("i2 のタイトル").fill("あとで作る");
+
+    mock.interpret = {
+      status: 503,
+      body: {
+        code: "llm_not_configured",
+        error: "llm is not configured: set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL",
+      },
+    };
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(card.getByText("LLM が未設定です", { exact: false })).toBeVisible();
+    await expect(card.getByLabel("i2 のタイトル")).toHaveValue("あとで作る");
+
+    mock.annotations[BOARD_ID] = [
+      {
+        id: "frame-uncreated",
+        name: "ログイン",
+        granularity: "",
+        state: "created",
+        lastSyncedAt: "2026-08-05T10:00:00Z",
+        items: createdRun().items,
+      },
+    ];
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const created = page.locator(".state-group-created");
+    await expect(created.locator("li.annotation", { hasText: "ログイン" })).toBeVisible();
+    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+
+    await expect(card.getByLabel("i2 のタイトル")).toHaveValue("あとで作る");
+  });
+
   test("途中で失敗した run は、作れた件数と理由を両方出す", async ({ page }) => {
     const mock = baseMock();
     mock.createItems = {

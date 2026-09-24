@@ -227,8 +227,9 @@ export function AnnotationPanel({
   // いた手直し（今回送らなかった項目の選択・種別・タイトル・本文）が黙って
   // 消える（#162）。残る量と掃除しない理由は pendingKinds と同じ。
   const [keptDrafts, setKeptDrafts] = useState<Record<string, KeptDraft>>({});
-  // 解釈を選び直す・解釈し直すときは預けた手直しを捨てる。別の解釈に対する
-  // 編集は引き継がない（`InterpretationDraft` の key と同じ約束）。
+  // 解釈を選び直すときは預けた手直しを捨てる。別の解釈に対する編集は
+  // 引き継がない（`InterpretationDraft` の key と同じ約束）。解釈し直しは
+  // 解釈の ID が変わるので、捨てなくても照合で使われない。
   const dropKeptDraft = (annotationId: string) =>
     setKeptDrafts((prev) => {
       const next = { ...prev };
@@ -490,10 +491,10 @@ export function AnnotationPanel({
                             onKeepDraft={(kept) =>
                               setKeptDrafts((prev) => ({ ...prev, [a.id]: kept }))
                             }
-                            onInterpret={() => {
-                              dropKeptDraft(a.id);
-                              onInterpret(a.id);
-                            }}
+                            // 解釈し直しでは捨てない。失敗すると同じ解釈と手直しが画面に
+                            // 残るのに、預け先だけが空になる。成功すれば解釈の ID が
+                            // 変わるので、古い手直しは照合で使われない。
+                            onInterpret={() => onInterpret(a.id)}
                             onSelectInterpretation={(runId) => {
                               dropKeptDraft(a.id);
                               onSelectInterpretation(a.id, runId);
