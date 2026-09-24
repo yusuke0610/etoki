@@ -89,7 +89,17 @@ func TestREADME_EnvDefaultsMatchConstants(t *testing.T) {
 		"ETOKI_GITHUB_BASE_URL":     github.DefaultBaseURL,
 	}
 
-	for _, r := range readmeEnvRows(t) {
+	rows := readmeEnvRows(t)
+
+	// 行の側からだけ照合すると、README と usage の両方から同時に消したときに
+	// 気づけない。定数を持つ変数が表に残っていることも確かめる。
+	for name := range want {
+		if !slices.ContainsFunc(rows, func(r readmeEnvRow) bool { return r.name == name }) {
+			t.Errorf("%s: 既定値の定数があるのに README の表に無い", name)
+		}
+	}
+
+	for _, r := range rows {
 		expected := want[r.name]
 
 		// 期間は書き方が揃わない（README は 1h、Duration.String は 1h0m0s）

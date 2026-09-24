@@ -36,6 +36,8 @@ git diff --cached
    mkdir -p tmp
    make lint >tmp/lint.log 2>&1; echo "lint=$?"
    make test >tmp/test.log 2>&1; echo "test=$?"
+   # 要るとき（条件は CONTRIBUTING.md）だけ
+   make test-e2e >tmp/e2e.log 2>&1; echo "e2e=$?"
    ```
 
    0 ならログを開かない。0 でなければ `tmp/*.log` の落ちた箇所だけ読む。
