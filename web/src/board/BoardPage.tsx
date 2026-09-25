@@ -1281,7 +1281,10 @@ export function BoardPage({
       <header className="board-header">
         {nameDraft === null ? (
           <h1>
-            {board.name}
+            {/* 長い名前は省略して出すので、全体はホバーで読めるようにする。 */}
+            <span className="board-title" title={board.name}>
+              {board.name}
+            </span>
             {/*
               名前はブレストの中身に属する表示物なので、editor にも直させる
               （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
@@ -1528,6 +1531,7 @@ export function BoardPage({
               */}
               <button
                 type="button"
+                className="primary"
                 onClick={() => void save()}
                 disabled={saving || creating || importing || !api}
                 aria-describedby={saveBlocked !== null ? "save-blocked" : undefined}

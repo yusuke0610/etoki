@@ -168,7 +168,7 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
             <option value="viewer">{ROLE_LABELS.viewer}</option>
             <option value="owner">{ROLE_LABELS.owner}</option>
           </select>
-          <button type="submit" disabled={busy || !login.trim()}>
+          <button type="submit" className="primary" disabled={busy || !login.trim()}>
             確認する
           </button>
           {/*

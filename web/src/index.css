@@ -9,32 +9,41 @@
  * （web/CLAUDE.md の「アクセシビリティ」）。
  */
 :root {
-  --color-bg: #fff;
-  --color-text: #1e1e1e;
-  --color-text-muted: #6b6b6b;
-  --color-text-subtle: #555;
-  --color-border: #ddd;
-  --color-border-subtle: #e0e0e0;
-  --color-surface-muted: #fafafa;
-  --color-surface-sunken: #f7f7f7;
-  --color-surface-cool: #eef1f4;
-  --color-hover: #f5f5f5;
-  --color-neutral-bg: #eee;
-  --color-selected-bg: #eef2f7;
-  --color-selected-fg: #3a4a5c;
-  --color-active-bg: #e7f0ff;
-  --color-accent-bg: #eef2ff;
-  --color-link: #3b4a9c;
-  --color-success: #1f7a34;
-  --color-success-bg: #e3f5e6;
-  --color-warning: #8a5a00;
-  --color-warning-bg: #fdf0d5;
-  --color-danger: #8a1c12;
+  --color-bg: #f5f7fa;
+  /* カード・ヘッダー・入力欄など、地の上に載る面。 */
+  --color-surface: #fff;
+  --color-sidebar: #eef1f5;
+  --color-text: #16202b;
+  --color-text-muted: #556173;
+  --color-text-subtle: #465264;
+  --color-border: #d8dde4;
+  --color-border-subtle: #e3e7ed;
+  /* 入力欄の枠。**地（surface / surface-sunken）に対して 3:1 を切らせない**
+     （WCAG 1.4.11）。空の入力欄は枠だけが境界で、border だと約 1.2:1 しか無い。 */
+  --color-input-border: #7d8898;
+  --color-surface-muted: #f3f5f8;
+  --color-surface-sunken: #eef1f5;
+  --color-surface-cool: #e2e7ee;
+  --color-hover: #e9edf2;
+  --color-neutral-bg: #e2e7ee;
+  --color-selected-bg: #e6eefc;
+  --color-selected-fg: #1f4bb0;
+  --color-active-bg: #e6eefc;
+  --color-accent-bg: #e6eefc;
+  --color-link: #1f4bb0;
+  /* 主な操作（保存・作成など）の地と、その上の文字。 */
+  --color-accent: #2f5fd0;
+  --color-on-accent: #fff;
+  --color-focus: #2f5fd0;
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 6%);
+  --color-success: #166b43;
+  --color-success-bg: #d4f1e0;
+  --color-warning: #8a4a00;
+  --color-warning-bg: #ffe6c2;
+  --color-danger: #b42318;
   --color-danger-bg: #fdecea;
-  --color-danger-border: #f3c5c0;
-  --color-danger-border-strong: #d9a7a1;
-  /* ライトはブラウザ既定のボタン地のまま。他のボタンと形を揃える。 */
-  --color-danger-button-bg: buttonface;
+  --color-danger-border: #f0b9b3;
+  --color-danger-border-strong: #e3a19a;
   /* 注釈の印。Excalidraw の選択色に合わせてある。 */
   --color-annotation: #6965db;
   --color-annotation-bg: rgb(105 101 219 / 6%);
@@ -52,31 +61,37 @@
  * 規則を足した日にダークだけ抜ける。
  */
 :root[data-theme="dark"] {
-  --color-bg: #14171b;
-  --color-text: #e3e7ec;
-  --color-text-muted: #a3abb6;
-  --color-text-subtle: #b7bec8;
-  --color-border: #343a42;
-  --color-border-subtle: #2c3138;
-  --color-surface-muted: #1a1e23;
-  --color-surface-sunken: #1e2227;
-  --color-surface-cool: #232830;
-  --color-hover: #22272e;
-  --color-neutral-bg: #2a2f37;
-  --color-selected-bg: #1e2b40;
-  --color-selected-fg: #a9c1ec;
+  --color-bg: #0e131a;
+  --color-surface: #17202b;
+  --color-sidebar: #121922;
+  --color-text: #e3e9f1;
+  --color-text-muted: #9aa8b9;
+  --color-text-subtle: #b4c0ce;
+  --color-border: #2a3644;
+  --color-border-subtle: #243040;
+  --color-input-border: #6b7b8f;
+  --color-surface-muted: #1a2430;
+  --color-surface-sunken: #1d2835;
+  --color-surface-cool: #223040;
+  --color-hover: #223040;
+  --color-neutral-bg: #253140;
+  --color-selected-bg: #1f2d4a;
+  --color-selected-fg: #b3c8ff;
   --color-active-bg: #1f2d4a;
-  --color-accent-bg: #232a4a;
-  --color-link: #aab6ff;
+  --color-accent-bg: #1f2d4a;
+  --color-link: #b3c8ff;
+  --color-accent: #7ea3ff;
+  --color-on-accent: #0b1530;
+  --color-focus: #7ea3ff;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 40%);
   --color-success: #7fd8a6;
   --color-success-bg: #133324;
   --color-warning: #ffbe6b;
   --color-warning-bg: #3b2a12;
-  --color-danger: #ff9a90;
+  --color-danger: #ff8a80;
   --color-danger-bg: #3a1a17;
   --color-danger-border: #6b2c27;
   --color-danger-border-strong: #8a3a33;
-  --color-danger-button-bg: #2a1614;
   --color-annotation: #8f8cf0;
   --color-annotation-bg: rgb(143 140 240 / 8%);
   --color-on-annotation: #15142b;
@@ -90,6 +105,105 @@ body {
   background: var(--color-bg);
 }
 
+/*
+ * 部品の共通の見た目。
+ *
+ * **`.excalidraw` の中には掛けない。** ライブラリのツールバーやメニューも
+ * 素の `button` / `input` なので、掛けるとキャンバスの UI まで etoki の形になる。
+ * `:where()` で包んで詳細度を 0 にしてあるので、`.board-list button` のような
+ * 用途ごとの規則が常に勝つ。
+ */
+:where(
+  button:not(.excalidraw *),
+  input:not(.excalidraw *),
+  select:not(.excalidraw *),
+  textarea:not(.excalidraw *)
+) {
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+:where(button:not(.excalidraw *)) {
+  min-height: 30px;
+  padding: 0 10px;
+  /* 文字の途中で折り返すと「保／存」のように読めなくなる。詰まったら並びの側で
+     折り返す（.board-actions）。 */
+  white-space: nowrap;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+:where(button:not(.excalidraw *):hover:not(:disabled)) {
+  background: var(--color-hover);
+}
+
+/*
+ * 押せないボタンは色を落とすだけで、形は変えない。**理由は必ず本文で隣に出す**
+ * （web/CLAUDE.md の「アクセシビリティ」）ので、見た目だけで伝える必要は無い。
+ */
+:where(button:not(.excalidraw *):disabled) {
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  cursor: not-allowed;
+}
+
+:where(input:not(.excalidraw *), select:not(.excalidraw *), textarea:not(.excalidraw *)) {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  box-sizing: border-box;
+}
+
+:where(input[type="checkbox"]:not(.excalidraw *)) {
+  min-height: 0;
+  accent-color: var(--color-accent);
+}
+
+/* キーボードで辿ったときだけ輪郭を出す。クリックのたびに出すと、押した跡に見える。 */
+:where(
+  button:not(.excalidraw *):focus-visible,
+  input:not(.excalidraw *):focus-visible,
+  select:not(.excalidraw *):focus-visible,
+  textarea:not(.excalidraw *):focus-visible,
+  a:not(.excalidraw *):focus-visible,
+  summary:not(.excalidraw *):focus-visible
+) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+:where(summary:not(.excalidraw *)) {
+  cursor: pointer;
+}
+
+/*
+ * 主な操作。**1 つの領域に 1 つだけ置く**（ヘッダーの保存、作成、招待など）。
+ * 並べると、どれが次に押すものかが読めなくなる。
+ */
+button.primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--color-accent);
+  filter: brightness(1.08);
+}
+
+button.primary:disabled {
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-weight: normal;
+}
+
 .app {
   display: flex;
   height: 100vh;
@@ -99,6 +213,7 @@ body {
   /* 入れ子のぶん字下げが要るので、平坦な一覧だったときより広い（ADR 0019）。 */
   width: 240px;
   flex-shrink: 0;
+  background: var(--color-sidebar);
   border-right: 1px solid var(--color-border);
   padding: 12px;
   overflow-y: auto;
@@ -106,6 +221,8 @@ body {
 
 .brand {
   font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   margin: 0 0 12px;
 }
 
@@ -145,16 +262,22 @@ body {
 
 .board-list button {
   width: 100%;
+  min-height: 30px;
   text-align: left;
   border: none;
   background: none;
-  padding: 6px;
+  padding: 6px 8px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
+}
+
+.board-list button:hover:not(.active) {
+  background: var(--color-hover);
 }
 
 .board-list button.active {
   background: var(--color-active-bg);
+  color: var(--color-selected-fg);
   font-weight: 600;
 }
 
@@ -198,19 +321,40 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 8px 12px;
+  background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
 }
 
 .board-header h1 {
   font-size: 16px;
   margin: 0;
+  white-space: nowrap;
+  /* 縮めてよいのはボード名だけ（.board-title が省略する）。見出しごと縮めない
+     ようにすると、長い名前で操作の列が画面の外に押し出され、保存が押せなくなる。
+     「名前を変更」は縮めない。縮めると操作の列が名前の上にかぶり、押せなくなる。
+     見出しは中身の幅を取り、半分を超えたぶんだけ名前を省略する。残りを操作の列が
+     使い、詰まったらそちらが折り返す。 */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+}
+
+.board-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .board-actions {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .board-body {
@@ -291,16 +435,21 @@ body {
 }
 
 .annotation {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
-  padding: 8px;
-  margin-bottom: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
 }
 
-/* キャンバスで選択中のフレームに対応するカード。作成先の選択と同じ色を使う。 */
+/*
+ * キャンバスで選択中のフレームに対応するカード。**地は塗らず、枠だけを強める。**
+ * カードの中に入力欄や解釈結果が並ぶので、地を塗るとその上の面との差が消える。
+ */
 .annotation.selected {
-  border-color: var(--color-selected-fg);
-  background: var(--color-selected-bg);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
 
 .annotation-head {
@@ -337,9 +486,27 @@ body {
 .badge {
   flex-shrink: 0;
   font-size: 11px;
-  padding: 2px 6px;
+  font-weight: 600;
+  padding: 2px 8px;
   border-radius: 10px;
   white-space: nowrap;
+}
+
+/*
+ * 3 状態の印。**文字は残したまま点を足す。** 色だけで区別させると、色が読めない
+ * 環境で状態が消える（#62）。点の色は文字と同じ変数から取る。
+ */
+.badge-uncreated::before,
+.badge-created::before,
+.badge-changed::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: currentcolor;
+  vertical-align: 1px;
 }
 
 .badge-uncreated {
@@ -406,7 +573,7 @@ body {
   margin: 4px 0 8px;
   padding: 6px 8px;
   background: var(--color-surface-sunken);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-input-border);
   border-radius: 4px;
   font-family: inherit;
   font-size: 12px;
@@ -449,10 +616,11 @@ body {
  * プラットフォームで違い、Linux の Chromium はボタン地を敷く。ダークでは中間の
  * 灰色になり、その上で薄い文字が 4.5:1 を切る。地は本文
  * （`.item-body > textarea`）と同じにして、行の中で揃える。
+ *
+ * **枠は薄くしない。** 空の本文欄は枠だけが境界で、落とすと 3:1 を切る（#161）。
  */
 .draft-item.unselected :is(select, input:not([type="checkbox"]), textarea) {
   color: var(--color-text-muted);
-  border-color: var(--color-border);
   background: var(--color-surface-sunken);
 }
 
@@ -565,10 +733,14 @@ body {
 */
 button.danger {
   border-color: var(--color-danger-border-strong);
-  /* 地も変数で持つ。ブラウザ既定のボタン地はダークでは中間の灰色になり、
-     明るい赤の文字が AA を切る。 */
-  background: var(--color-danger-button-bg);
+  /* 地は他のボタンと同じ面にする。ブラウザ既定のボタン地に任せると、ダークでは
+     中間の灰色になり、明るい赤の文字が AA を切る。 */
+  background: var(--color-surface);
   color: var(--color-danger);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--color-danger-bg);
 }
 
 /*
@@ -707,6 +879,11 @@ a.badge-target:hover {
   gap: 8px;
   width: 100%;
   text-align: left;
+  /* 共通の見た目は文字の途中で折り返さない（nowrap）が、一覧のボタンは名前や
+     説明をそのまま並べる。長いとボタンの外にはみ出すので、ここでは折り返す。
+     リポジトリ名のように空白の無い名前もあるので、どこでも折れるようにする。 */
+  white-space: normal;
+  overflow-wrap: anywhere;
   padding: 6px 8px;
   border: 1px solid var(--color-border-subtle);
   border-radius: 4px;
@@ -743,12 +920,16 @@ a.badge-target:hover {
  */
 .login {
   margin: auto;
-  padding: 24px;
+  padding: 32px;
   max-width: 420px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
 }
 
 .login h1 {
@@ -871,6 +1052,9 @@ a.badge-target:hover {
 }
 
 .board-header h1 .rename {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 6px;
   font-size: 11px;
   font-weight: normal;
 }
