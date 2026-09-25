@@ -416,6 +416,12 @@ test.describe("解釈と作成", () => {
     await card.getByLabel("i2 を作成する").uncheck();
     await card.getByLabel("i2 のタイトル").fill("あとで作る");
 
+    // i2 は送らないので、作成応答と再取得結果も e1 と i1 の 2 件に合わせる。
+    // i2 まで含めると、選択解除が消えて全部選ばれた状態に戻る回帰を検知できない。
+    mock.createItems = {
+      status: 201,
+      body: { ...createdRun(), items: createdRun().items.slice(0, 2) },
+    };
     mock.annotations[BOARD_ID] = [
       {
         id: "frame-uncreated",
@@ -423,7 +429,7 @@ test.describe("解釈と作成", () => {
         granularity: "",
         state: "created",
         lastSyncedAt: "2026-08-05T10:00:00Z",
-        items: createdRun().items,
+        items: createdRun().items.slice(0, 2),
       },
     ];
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
@@ -431,7 +437,7 @@ test.describe("解釈と作成", () => {
     // 組を移ったことを待ってから見る。移る前に見ると、作り直す実装でも通る。
     const created = page.locator(".state-group-created");
     await expect(created.locator("li.annotation", { hasText: "ログイン" })).toBeVisible();
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await expect(card.getByText("2 件を作成しました。")).toBeVisible();
 
     await expect(card.getByLabel("i2 を作成する")).not.toBeChecked();
     await expect(card.getByLabel("i2 のタイトル")).toHaveValue("あとで作る");
@@ -463,6 +469,11 @@ test.describe("解釈と作成", () => {
     await expect(card.getByText("LLM が未設定です", { exact: false })).toBeVisible();
     await expect(card.getByLabel("i2 のタイトル")).toHaveValue("あとで作る");
 
+    // i2 は送らないので、作成応答と再取得結果も e1 と i1 の 2 件に合わせる。
+    mock.createItems = {
+      status: 201,
+      body: { ...createdRun(), items: createdRun().items.slice(0, 2) },
+    };
     mock.annotations[BOARD_ID] = [
       {
         id: "frame-uncreated",
@@ -470,15 +481,16 @@ test.describe("解釈と作成", () => {
         granularity: "",
         state: "created",
         lastSyncedAt: "2026-08-05T10:00:00Z",
-        items: createdRun().items,
+        items: createdRun().items.slice(0, 2),
       },
     ];
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
 
     const created = page.locator(".state-group-created");
     await expect(created.locator("li.annotation", { hasText: "ログイン" })).toBeVisible();
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await expect(card.getByText("2 件を作成しました。")).toBeVisible();
 
+    await expect(card.getByLabel("i2 を作成する")).not.toBeChecked();
     await expect(card.getByLabel("i2 のタイトル")).toHaveValue("あとで作る");
   });
 
