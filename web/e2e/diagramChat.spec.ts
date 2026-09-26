@@ -211,6 +211,62 @@ test.describe("図のドラフト", () => {
     await expect(send).toHaveAttribute("aria-describedby", "diagram-unavailable");
   });
 
+  // **変換器と mermaid は本物を通す。** 種類ごとに図形になるかはブラウザでしか
+  // 分からない（`web/CLAUDE.md` の「mermaid の変換は vitest では図の種類ごとに
+  // 確かめられない」）。mermaid 11.14 以降では ER 図と subgraph が画像に落ち、
+  // 図のドラフトが「置けない」で終わっていた（#180）。**間接依存なので
+  // 更新で黙って壊れる。** mermaid の固定（ADR 0061）を外すときの判定もここ。
+  //
+  // 入力はサーバーが書かせる記法に合わせる。ER 図は `erDiagram`、構成図は
+  // subgraph 付きの `flowchart`（ADR 0041）。
+  //
+  // **要素の個数は完全一致で見ない。** ER の属性の罫線のように、変換器の描き方で
+  // 変わる。見るのは入力に書いたノードと線が 1 つも落ちていないこと。
+  for (const { kind, mermaid, labels } of [
+    {
+      kind: "er" as const,
+      mermaid: "erDiagram\n  CUSTOMER ||--o{ ORDER : places",
+      labels: ["CUSTOMER", "ORDER", "places"],
+    },
+    {
+      kind: "architecture" as const,
+      mermaid: "flowchart TD\n  subgraph web\n    a1[画面] --> a2[API]\n  end",
+      labels: ["web", "画面", "API"],
+    },
+  ]) {
+    test(`${kind} の図が画像に落ちず、図形として置ける`, async ({ page }) => {
+      const mock = baseMock();
+      mock.diagramDraft = { status: 200, body: { kind, mermaid, turnsRemaining: 9 } };
+      await openBoardWithMock(page, mock);
+      await openChat(page);
+
+      await page.getByLabel("図の種類").selectOption(kind);
+      await page.getByLabel("図への指示").fill("いまの構成");
+      await page.getByRole("button", { name: "生成", exact: true }).click();
+      await page.getByRole("button", { name: "キャンバスに置く" }).click();
+
+      await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+      await expect(page.getByText("置ける形になりませんでした")).toHaveCount(0);
+
+      await page.getByRole("button", { name: "保存", exact: true }).click();
+      await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+      const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
+        elements: { type: string; text?: string }[];
+      };
+      const kinds = saved.elements.map((el) => el.type);
+      // 画像 1 枚ではなく、手で直せる図形とテキストに分かれている。
+      expect(kinds).not.toContain("image");
+      expect(kinds.filter((t) => t === "rectangle").length).toBeGreaterThan(0);
+      // 書いたノード（と関連・境界の名前）が文字として残り、線も落ちていない。
+      const texts = saved.elements.flatMap((el) =>
+        el.type === "text" && el.text ? [el.text] : [],
+      );
+      for (const label of labels) expect(texts).toContain(label);
+      expect(kinds.filter((t) => t === "arrow").length).toBeGreaterThan(0);
+    });
+  }
+
   // 生成は LLM を叩く外部呼び出しで課金も伴う。**viewer には出さない**
   // （ADR 0017、解釈と同じ理由）。
   test("viewer には出さない", async ({ page }) => {

@@ -60,3 +60,4 @@
 | [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない    | 採用                 |
 | [0057](0057-link-to-each-draft-issue.md)                         | 作った draft issue へは Project の URL に識別子を添えて辿らせる        | 採用                 |
 | [0058](0058-notifications-for-passing-failures.md)               | 通知は過ぎ去ってよい失敗のためのもので、状態は通知にしない             | 採用                 |
+| [0061](0061-pin-mermaid-until-converter-catches-up.md)           | mermaid を 11.13.0 に固定し、既知の脆弱性を受け入れる                  | 採用                 |
