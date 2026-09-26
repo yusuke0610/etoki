@@ -1,10 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { holdCreate, installApi, summarize, type ApiMock } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
+import {
+  annotationCard,
+  drawRectangle,
+  openBoard,
+  openBoardWithMock,
+} from "./helpers/board";
+import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
-const BOARD_NAME = "認証まわりのブレスト";
 const OTHER_NAME = "課金まわりのブレスト";
 const OTHER_ID = "board-other";
 
@@ -24,9 +28,7 @@ test.describe("シーンの保存", () => {
   // Excalidraw はマウント時にも onChange を発火する。それを編集として扱うと、
   // 開いただけで未保存になり、表示が信用できなくなる。
   test("開いた直後は未保存にならない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     await expect(page.getByText("未保存の変更あり")).toBeHidden();
@@ -34,9 +36,7 @@ test.describe("シーンの保存", () => {
 
   // 選択やスクロールでも onChange は発火する。見ただけで未保存になってはならない。
   test("キャンバスを触っただけでは未保存にならない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const canvas = page.locator(".excalidraw canvas").first();
     const box = await canvas.boundingBox();
@@ -57,9 +57,7 @@ test.describe("シーンの保存", () => {
   // キャンバスが「未保存ではない」と出て、確認も出ないまま離れられる。
   // ここは要素が 1 つも変わらない編集なので、`drawRectangle` では代われない。
   test("キャンバスの背景色を変えると未保存になる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
@@ -73,9 +71,7 @@ test.describe("シーンの保存", () => {
   });
 
   test("編集すると未保存が出て、保存すると消える", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
@@ -95,9 +91,7 @@ test.describe("シーンの保存", () => {
   // ブレストは最初のフェーズなので、ここで失うと後段が全部やり直しになる。
   // 保存が明示操作である以上、押し忘れは構造的に起きる。
   test("未保存のままボードを切り替えようとすると、確認が出て残る", async ({ page }) => {
-    await installApi(page, twoBoards());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, twoBoards());
     await drawRectangle(page);
 
     const messages: string[] = [];
@@ -162,9 +156,7 @@ test.describe("シーンの保存", () => {
   // リロードとタブを閉じる操作はアプリ側で止められない。beforeunload を登録して
   // ブラウザに確認させる。**登録漏れは画面の見た目に出ない**ので、ここで固定する。
   test("未保存のままタブを閉じようとすると、ブラウザの確認が出る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
     const types: string[] = [];
@@ -213,9 +205,7 @@ test.describe("シーンの保存", () => {
 
   // 止めるのは「知らせずに捨てる」ことだけ。捨てると決めたなら通す（中核思想 3）。
   test("確認を承諾すれば、ボードは切り替わる", async ({ page }) => {
-    await installApi(page, twoBoards());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, twoBoards());
     await drawRectangle(page);
 
     page.on("dialog", (dialog) => void dialog.accept());
@@ -228,9 +218,7 @@ test.describe("シーンの保存", () => {
 
   // 保存済みなら黙って切り替わる。毎回確認を出すと、確認そのものが読まれなくなる。
   test("保存してあれば、確認なしで切り替わる", async ({ page }) => {
-    await installApi(page, twoBoards());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, twoBoards());
     await drawRectangle(page);
     await page.getByRole("button", { name: "保存" }).click();
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
@@ -251,9 +239,7 @@ test.describe("シーンの保存", () => {
   // 保存のたびに基準の版を取り直す。取りこぼすと 2 回目が必ず衝突する
   // （ADR 0020）。モックが版を照合しているので、ここが落ちれば基準の更新漏れ。
   test("続けて 2 回保存できる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     for (let i = 0; i < 2; i++) {
       await drawRectangle(page);
@@ -268,9 +254,7 @@ test.describe("シーンの保存", () => {
   // 共有ボードでは 2 人が同時に描くのが普通に起きる（ADR 0017）。後勝ちで
   // 上書きすると、消えるのは相手の作業すべてになる（ADR 0020）。
   test("他の人が先に保存していると、上書きせずに知らせる", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     // こちらが開いた後に、他の人が保存した状況。版が進むので基準は古くなる。
     mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
@@ -295,10 +279,7 @@ test.describe("シーンの保存", () => {
       status: 413,
       body: { code: "scene_too_large", error: "etoki: board scene is too large" },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await drawRectangle(page);
     await page.getByRole("button", { name: "保存" }).click();
 
@@ -352,9 +333,7 @@ test.describe("シーンの保存", () => {
   // 付箋は描いている最中に置くもの。**置くだけで保存はしない**（確定させる
   // のは人間の保存操作だけ）。
   test("付箋を置くと未保存になり、保存するとシーンに載る", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     await page.getByRole("button", { name: "付箋" }).click();
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
@@ -377,17 +356,13 @@ test.describe("シーンの保存", () => {
   // 押す前に、いまどれくらいの大きさかが見えている（中核思想 3）。
   // **上限との比は出さない**（ADR 0018 / 0038）ので、ここで見るのは大きさだけ。
   test("保存する前にシーンの大きさが出る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await expect(page.locator(".badge-size")).toHaveText(/^[\d.]+ (B|KiB|MiB)$/);
   });
 
   test("未保存のまま解釈しようとすると、保存を促す", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await drawRectangle(page);
 
@@ -397,9 +372,7 @@ test.describe("シーンの保存", () => {
   });
 
   test("保存すると、それまでの解釈結果は捨てられる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = page.locator("li.annotation").filter({ hasText: "ログイン" });
     await card.getByRole("button", { name: "解釈する" }).click();

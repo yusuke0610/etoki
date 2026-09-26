@@ -17,7 +17,13 @@ import type {
 } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
-import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import {
+  GRANULARITY_LABEL,
+  ITEM_KIND_LABEL,
+  annotationLabels,
+  frameLabel,
+  itemKinds,
+} from "./annotationLabel";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { groupByEpic } from "./interpretation";
 import {
@@ -1212,11 +1218,14 @@ function DraftItemFields({
             onChange={(e) => onKind(e.target.value as ItemKind)}
             aria-label={`${item.localId} の種別`}
           >
-            <option value="epic">epic</option>
-            <option value="issue">issue</option>
+            {itemKinds().map((k) => (
+              <option key={k} value={k}>
+                {ITEM_KIND_LABEL[k]}
+              </option>
+            ))}
           </select>
         ) : (
-          <span className="kind">{item.kind}</span>
+          <span className="kind">{ITEM_KIND_LABEL[item.kind]}</span>
         )}
 
         <input

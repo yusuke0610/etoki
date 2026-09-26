@@ -1,18 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { annotationCard, openBoard } from "./helpers/board";
+import { annotationCard, openBoardWithMock } from "./helpers/board";
 import { matchedInterpretationMock } from "./helpers/fixtures";
-
-const BOARD_NAME = "認証まわりのブレスト";
 
 // 3 状態判定の changed には、これまで「重複を作るか、何もしないか」しか出口が
 // 無かった（ADR 0026）。作る前に何が起きるのかを見せる。
 test.describe("changed の注釈を更新する", () => {
   test("書き換える項目には更新の印が付く", async ({ page }) => {
-    await installApi(page, matchedInterpretationMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -34,9 +29,7 @@ test.describe("changed の注釈を更新する", () => {
 
   // draft issue は削除できない。etoki にできるのは「残ります」と見せるところまで。
   test("今回書き換わらないものを取り残しとして出す", async ({ page }) => {
-    await installApi(page, matchedInterpretationMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -50,9 +43,7 @@ test.describe("changed の注釈を更新する", () => {
 
   // 外した項目は作られないので、その更新先は取り残しに戻る。押す前に見せる。
   test("更新する項目を外すと取り残しが増える", async ({ page }) => {
-    await installApi(page, matchedInterpretationMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -69,9 +60,7 @@ test.describe("changed の注釈を更新する", () => {
   // やり直しても同じところで止まりうる。ここが無いと出口が項目ごと外すことしか
   // 無くなる。
   test("更新をやめて新しく作るに切り替えられる", async ({ page }) => {
-    const mock = await installApi(page, matchedInterpretationMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -109,9 +98,7 @@ test.describe("changed の注釈を更新する", () => {
 
   // LLM が「新しく作る」と答えた項目には指す先が無い。選ばせるものが無い。
   test("新規の項目には切り替えを出さない", async ({ page }) => {
-    await installApi(page, matchedInterpretationMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -149,9 +136,7 @@ test.describe("changed の注釈を更新する", () => {
       },
     };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -169,9 +154,7 @@ test.describe("changed の注釈を更新する", () => {
   });
 
   test("対応づけは作成リクエストにそのまま載る", async ({ page }) => {
-    const mock = await installApi(page, matchedInterpretationMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
