@@ -33,6 +33,17 @@ const saveRunTimeout = 10 * time.Second
 // （`applyItems` を参照）。GitHub の呼び出しは 1 件あたり最大 3 回。
 const itemWriteTimeout = 60 * time.Second
 
+// MaxCreationDrain は、リクエストが切れてから作成が記録を終えるまでの最長。
+//
+// **停止の猶予はこれを下回ってはいけない**（ADR 0056）。下回ると、書き込み中の
+// 1 件が返る前にプロセスが終わり、その run で先に作れていた項目まで記録されない。
+// `etoki.go` の `shutdownTimeout` がここから導かれるので、片方だけ動かして
+// 食い違わせることができない。
+//
+// 足すのは 2 つだけ。切れたあとに残るのは「始めた 1 件を待ち切る」ことと
+// 「run を記録する」ことで、次の 1 件には手を付けない（ADR 0051）。
+const MaxCreationDrain = itemWriteTimeout + saveRunTimeout
+
 // 作成に固有のエラー。
 var (
 	// ErrProjectFieldMissing は必要なカスタムフィールドが見つからないことを表す。
@@ -218,8 +229,10 @@ func (s *CreationService) Create(
 	items, createErr := s.applyItems(ctx, projectID, in, fields, run.CreatedAt)
 	run.Items = items
 
-	// 1 件も作れていないなら記録するものが無い。空の run を残すと、状態が
-	// created に変わって「作成済み」に見えてしまう。
+	// 1 件も手を付けていないなら記録するものが無い。**「作れなかった」ではなく
+	// 「触っていない」。** 手を付けた 1 件は、結果が分からなくても items に入る
+	// （ADR 0056）ので、ここに来るのは解釈が空だったときと、最初の 1 件の手前で
+	// リクエストが切れていたとき（ADR 0051）だけ。
 	if len(items) == 0 {
 		if createErr != nil {
 			return nil, createErr
@@ -318,13 +331,13 @@ func (s *CreationService) applyItems(
 			saved, err := s.applyOne(writeCtx, projectID, item, fields, epicTitles, now)
 			cancelWrite()
 			if err != nil {
-				// **済んだところまでは記録する。** draft issue そのものは書けて
-				// いて、あとのフィールド設定で失敗した、という並びがある。捨てると
-				// GitHub 側は変わったのに履歴は古いままになり、次の 3 状態判定が
-				// 実物と食い違う（ADR 0009 / 0026）。
-				if saved.ItemID != "" {
-					created = append(created, saved)
-				}
+				// **手を付けた 1 件は、結果が分からなくても記録する**（ADR 0056）。
+				// draft issue そのものは書けていてフィールド設定で失敗した、という
+				// 並びもあれば、GitHub が受理したのに応答だけを失った並びもある。
+				// 捨てると GitHub 側は変わったのに履歴は古いままになり、次の
+				// 3 状態判定が実物と食い違う（ADR 0009 / 0026）。**最初の 1 件で
+				// これが起きると、捨てた場合は run ごと残らない。**
+				created = append(created, saved)
 				return created, fmt.Errorf("%w: %w", ErrCreationIncomplete, err)
 			}
 
@@ -351,27 +364,38 @@ func (s *CreationService) applyOne(
 	epicTitles map[string]string,
 	now time.Time,
 ) (port.SyncItem, error) {
-	itemID, action, err := s.writeDraftIssue(ctx, projectID, item)
-	if err != nil {
-		return port.SyncItem{}, err
-	}
-
 	// GitHub に送ったものをそのまま控える。逆方向同期を実装しない以上、
 	// ここで取らなければ何を作ったのか二度と分からない（ADR 0023）。
 	//
-	// **書き込みが済んだ直後に組み立てる。** このあとのフィールド設定で失敗
-	// しても、draft issue そのものはもう変わっている。呼び出し側が記録できる
-	// よう、エラーと一緒にこれを返す（ADR 0009 / 0026）。
+	// **書き込みの前に組み立てる。** 失敗しても、手を付けたこと自体は記録に
+	// 載せる（ADR 0056）。GitHub が受理したあとで応答だけを失うと ItemID は
+	// 空のままになるが、捨てるとその draft issue は etoki から二度と辿れない。
 	saved := port.SyncItem{
-		ItemID:        itemID,
 		Kind:          toPortKind(item.Kind),
 		Title:         item.Title,
 		Body:          item.Body,
 		LocalID:       item.LocalID,
 		ParentLocalID: item.ParentLocalID,
-		Action:        action,
 		CreatedAt:     now,
 	}
+
+	itemID, action, err := s.writeDraftIssue(ctx, projectID, item)
+	saved.ItemID = itemID
+	saved.Action = action
+	if err != nil {
+		// **届いたかどうかを etoki は知らない。** 応答が返らなかったのか、GitHub が
+		// 受理せずに返したのかは、ここからは区別できない。区別を
+		// `port.GitHubClient` の実装に預けると、差し替えた実装しだいで守りが
+		// 変わる（ADR 0051 が停止の判断を実装に預けなかったのと同じ）。
+		// **分からない側に倒す。** 余分な記録は開発者が run を見れば分かるが、
+		// 記録の無い draft issue は GitHub を直接見るしかない（ADR 0009）。
+		return saved, err
+	}
+
+	// ここから先は draft issue そのものがもう変わっている。あとのフィールド
+	// 設定で失敗しても、書けたことは確かなので確定として記録する
+	// （ADR 0009 / 0026）。
+	saved.Confirmed = true
 
 	optionID := fields.epicOptionID
 	if item.Kind == domain.KindIssue {
@@ -424,7 +448,10 @@ func (s *CreationService) writeDraftIssue(
 	if item.PreviousItemID == nil {
 		itemID, err := s.github.CreateDraftIssue(ctx, projectID, draft)
 		if err != nil {
-			return "", "", fmt.Errorf("create %q: %w", item.Title, err)
+			// **失敗しても Action は返す。** 何をしようとしたのかは分かって
+			// いて、それが記録の読み手にとっての手掛かりになる（ADR 0056）。
+			// ID のほうは本当に分からないので空のまま。
+			return "", port.ActionCreated, fmt.Errorf("create %q: %w", item.Title, err)
 		}
 		return itemID, port.ActionCreated, nil
 	}
@@ -432,7 +459,10 @@ func (s *CreationService) writeDraftIssue(
 	// 更新先が本当にこの注釈のものかは Create の入口で確かめてある。
 	itemID := *item.PreviousItemID
 	if err := s.github.UpdateDraftIssue(ctx, itemID, draft); err != nil {
-		return "", "", fmt.Errorf("update %q: %w", item.Title, err)
+		// **更新では相手の ID が分かっている。** 分からないのは書き換えが届いた
+		// かどうかだけなので、ID は載せる。畳み込み（ADR 0026）には入らないので、
+		// これが最新の中身として読まれることはない。
+		return itemID, port.ActionUpdated, fmt.Errorf("update %q: %w", item.Title, err)
 	}
 
 	return itemID, port.ActionUpdated, nil

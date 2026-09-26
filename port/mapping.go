@@ -225,6 +225,20 @@ type SyncItem struct {
 	// 記録していなかった頃の run では ActionCreated。当時は更新の経路が
 	// 無かったので、すべて新規作成だった。
 	Action SyncAction
+	// Confirmed は書き込みが GitHub に届いたことを確かめられたかどうか。
+	//
+	// **ゼロ値は false、つまり「分からない」。** 確定を既定にすると、詰め替えの
+	// 経路で 1 つ写し忘れただけの行が「確かに作った」として並ぶ。分からない側に
+	// 倒れるほうが、読む側の打ち手（GitHub を見にいく）を間違えさせない
+	// （ADR 0043 が結末のゼロ値を成功に倒さないのと同じ）。
+	//
+	// false になるのは、GitHub が受理したかどうかを etoki が知りえないとき。
+	// 作成では ItemID が空になり（ID が返ってこなかった）、更新では相手の
+	// ItemID は分かるが、書き換えが届いたかが分からない（ADR 0056）。
+	//
+	// **畳み込み（ADR 0026）には入らない。** 在るかどうかが分からないものを
+	// 「いま GitHub に在るもの」に混ぜない。
+	Confirmed bool
 	// CreatedAt は作成時刻。更新のときは書き換えた時刻。
 	CreatedAt time.Time
 }
@@ -434,4 +448,19 @@ type MappingRepository interface {
 	// 注釈ごとに ListItemsByAnnotation を呼ぶと、注釈の数だけ問い合わせが増える。
 	// 一覧は全注釈を一度に描くので、まとめて引く経路を分けてある。
 	ListItemsByBoard(ctx context.Context, boardID string) (map[string][]SyncItem, error)
+
+	// ListUnconfirmedItemsByBoard は届いたか分からない書き込みを注釈ごとに返す
+	// （ADR 0056）。
+	//
+	// **畳み込まない。** 未確定の作成は ItemID を持たないので、畳む鍵が無い。
+	// 1 回ずつが別々の「届いたかもしれない書き込み」であり、まとめる根拠も無い。
+	//
+	// **あとで同じ item に確定の記録が付いたものは返さない。** 未確定の更新の
+	// あとにその item へ書けたなら、いま GitHub に何があるかは分かっている。
+	// 解けた不確かさを残すと、打ち手の無い警告が積み上がる。ItemID を持たない
+	// 未確定の作成は、後から確定させる手段が無いので残り続ける。
+	//
+	// **自動では消さない**（中核思想 3）。GitHub を見て確かめるのは開発者。
+	// 並びは記録された順。
+	ListUnconfirmedItemsByBoard(ctx context.Context, boardID string) (map[string][]SyncItem, error)
 }

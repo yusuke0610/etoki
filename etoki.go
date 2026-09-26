@@ -50,17 +50,32 @@ const (
 // バインドしたい場合は利用者が明示的に Addr を指定する必要がある。
 const DefaultAddr = "127.0.0.1:8080"
 
-// shutdownTimeout は graceful shutdown で処理中のリクエストを待つ上限。
-const shutdownTimeout = 10 * time.Second
-
 // cancelRequestsAfter は停止を始めてから、処理中のリクエストの ctx を切るまでの長さ。
 //
 // **猶予が尽きるまで待たせたままにしない。** Shutdown は処理中のハンドラを
-// 待つだけで ctx は切らないので、猶予を超えた作成はプロセスごと終わり、GitHub に
-// 作ったのに run が残らない（#140）。猶予の半分で切れば、作成は次の 1 件に
-// 手を付けずに止まり、書き込み中の 1 件が返れば残り半分で記録まで終わる
-// （ADR 0051）。
-const cancelRequestsAfter = shutdownTimeout / 2
+// 待つだけで ctx は切らないので、切らなければ作成は次の 1 件に手を付け続ける
+// （#140、ADR 0051）。切れば、作成は手前で止まって記録に入る。
+//
+// 停止を始めた瞬間には切らない。保存のような短い処理まで巻き込むため。
+const cancelRequestsAfter = 5 * time.Second
+
+// shutdownTimeout は graceful shutdown で処理中のリクエストを待つ上限。
+//
+// **作成が記録を終えるまでの最長から導く**（ADR 0056）。固定値にすると、
+// `usecase` 側の上限を動かした日に猶予だけが取り残され、書き込み中の 1 件が
+// 返る前にプロセスが終わる。そのとき失われるのは、その 1 件ではなく **run
+// ごと**――先に作れていた項目の記録も消える（#170）。
+//
+// **止まるのが遅いことは受け入れる。** ここまで待つのは作成の最中に止めたときだけで、
+// 何も作っていなければ Shutdown はハンドラが返り次第すぐ戻る。作成中に待たされる
+// のが困るときは、もう一度 Ctrl-C を押せば即座に終われる。**そのとき記録が
+// 失われることは、待っていると知らせたうえで人に選ばせる**（中核思想 3）。
+//
+// **2 回目が効くのは、最初のシグナルで `signal.NotifyContext` の stop を呼んで
+// いるから**（`cmd/etoki` の `run`）。`defer stop()` だけでは `run` が返るまで
+// 捕まえ続けるので、下の「press Ctrl-C again」の案内が嘘になる。**この案内を
+// 動かすなら、あちらも一緒に見る。**
+const shutdownTimeout = cancelRequestsAfter + usecase.MaxCreationDrain
 
 // Options は Server の組み立てに必要な設定と依存を束ねる。
 //
@@ -165,10 +180,19 @@ func NewAuthenticator(
 type Server struct {
 	addr    string
 	handler http.Handler
+	logger  *slog.Logger
 
 	// 停止の猶予。テストで短くするためにフィールドで持つ。
 	shutdownTimeout     time.Duration
 	cancelRequestsAfter time.Duration
+}
+
+// log は記録先を返す。未設定なら slog の既定（Options.Logger と同じ扱い）。
+func (s *Server) log() *slog.Logger {
+	if s.logger == nil {
+		return slog.Default()
+	}
+	return s.logger
 }
 
 // New は Options を検証し Server を組み立てる。
@@ -250,6 +274,7 @@ func New(opts Options) (*Server, error) {
 	return &Server{
 		addr:                addr,
 		handler:             handler,
+		logger:              opts.Logger,
 		shutdownTimeout:     shutdownTimeout,
 		cancelRequestsAfter: cancelRequestsAfter,
 	}, nil
@@ -326,6 +351,17 @@ func (s *Server) Run(ctx context.Context) error {
 
 		stop := time.AfterFunc(s.cancelRequestsAfter, cancelRequests)
 		defer stop.Stop()
+
+		// **待っていることを知らせる。** 何も作っていなければ Shutdown はすぐ
+		// 返るので、ここまで来るのは取り消せない書き込みの最中に止めたときだけ。
+		// 黙って数十秒固まると、人は 2 回目の Ctrl-C を「効かないから」押す。
+		// 何を待っているかと、押せば終われることを先に出す（ADR 0056）。
+		notify := time.AfterFunc(s.cancelRequestsAfter, func() {
+			s.log().Info("waiting for an in-flight draft issue creation to be recorded",
+				"timeout", s.shutdownTimeout,
+				"hint", "press Ctrl-C again to stop now (the run may go unrecorded)")
+		})
+		defer notify.Stop()
 
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown: %w", err)

@@ -58,4 +58,5 @@
 | [0052](0052-do-not-recreate-from-the-same-draft.md)              | 作った項目は同じ下書きから新規に作らせない                             | 採用                 |
 | [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる            | 採用                 |
 | [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない    | 採用                 |
+| [0056](0056-record-writes-with-unknown-delivery.md)              | 届いたか分からない書き込みも記録し、停止の猶予をその後始末から導く     | 採用                 |
 | [0061](0061-pin-mermaid-until-converter-catches-up.md)           | mermaid を 11.13.0 に固定し、既知の脆弱性を受け入れる                  | 採用                 |

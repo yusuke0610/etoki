@@ -50,6 +50,12 @@ func (r *MappingRepository) SaveRun(ctx context.Context, run port.SyncRun) (int6
 		if !it.Action.Valid() {
 			return 0, fmt.Errorf("invalid action %q for local_id %q", it.Action, it.LocalID)
 		}
+		// 確定しているなら相手の item ID が分かっているはず。空のまま確定させると
+		// 畳み込み（ADR 0026）が空文字でグループを作り、別々の item が 1 つに
+		// 混ざる。CHECK 制約でも弾くが、どの item かを言えるのはこちら。
+		if it.Confirmed && it.ItemID == "" {
+			return 0, fmt.Errorf("confirmed item %q has no item id", it.LocalID)
+		}
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -85,10 +91,11 @@ func (r *MappingRepository) SaveRun(ctx context.Context, run port.SyncRun) (int6
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO sync_items
 			   (run_id, item_id, kind, title, body, local_id, parent_local_id,
-			    action, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			    action, created_at, confirmed)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			runID, it.ItemID, string(it.Kind), it.Title, it.Body,
 			it.LocalID, it.ParentLocalID, string(it.Action), formatTime(it.CreatedAt),
+			it.Confirmed,
 		); err != nil {
 			return 0, fmt.Errorf("insert sync_item %q: %w", it.LocalID, err)
 		}
@@ -339,7 +346,7 @@ func (r *MappingRepository) ListItemsByBoard(
 // itemColumns は scanItem が読む列。並び順に依存するので、片方だけ足すと
 // 取り違える。
 const itemColumns = `i.id, i.run_id, i.item_id, i.kind, i.title, i.body,
-	i.local_id, i.parent_local_id, i.action, i.created_at`
+	i.local_id, i.parent_local_id, i.action, i.created_at, i.confirmed`
 
 // foldedItemsQuery は run 履歴を item_id で畳んで読む問い合わせ。
 // where は sync_runs（別名 r2）への絞り込みで、呼び出し側が与える。
@@ -360,6 +367,11 @@ const itemColumns = `i.id, i.run_id, i.item_id, i.kind, i.title, i.body,
 // ADR 0026 を見直したときに片方だけ直せてしまい、「注釈を開くと出るがボード
 // 一覧には出ない」が起きる。**食い違いに気づくのは開発者ではなく利用者になる。**
 //
+// **届いたか分からない書き込みは入れない**（ADR 0056）。ここが返すのは「いま
+// GitHub に在るもの」で、在るかどうかが分からないものは別の口が返す
+// （ListUnconfirmedItemsByBoard）。未確定の作成は item_id を持たないので、
+// 混ぜると空文字が 1 つのグループになり、別々の書き込みが 1 件に見える。
+//
 // 注釈の列を itemColumns の後ろに置くのは、scanItem の並びを崩さないため。
 func foldedItemsQuery(where string) string {
 	return `SELECT ` + itemColumns + `, folded.annot
@@ -371,10 +383,72 @@ func foldedItemsQuery(where string) string {
 		            MAX(i2.id) AS last_id
 		       FROM sync_items i2
 		       JOIN sync_runs r2 ON r2.id = i2.run_id
-		      WHERE ` + where + `
+		      WHERE i2.confirmed = 1 AND ` + where + `
 		      GROUP BY r2.annotation_element_id, i2.item_id
 		   ) folded ON folded.last_id = i.id
 		  ORDER BY folded.annot, folded.first_id`
+}
+
+// ListUnconfirmedItemsByBoard は届いたか分からない書き込みを注釈ごとに返す
+// （ADR 0056）。
+//
+// **畳まない。** 未確定の作成は item_id を持たないので、畳む鍵が無い。1 回ずつが
+// 別々の「届いたかもしれない書き込み」であり、まとめる根拠も無い。
+//
+// `NOT EXISTS` が外すのは、あとで同じ item に確定の記録が付いたもの。未確定の
+// 更新のあとにその item へ書けたなら、いま GitHub に何があるかは分かっている。
+// **比べるのは id の前後。** 順序を見ないと、先に書けていてあとで分からなく
+// なった並びまで解けたことにしてしまう。
+//
+// item_id が空の行（未確定の作成）は `i2.item_id = i.item_id` が空文字どうしで
+// 一致しうるので、`i.item_id <> ”` で先に外す。**解ける不確かさと、解けない
+// 不確かさを取り違えない。**
+func (r *MappingRepository) ListUnconfirmedItemsByBoard(
+	ctx context.Context, boardID string,
+) (map[string][]port.SyncItem, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+itemColumns+`, run.annotation_element_id
+		   FROM sync_items i
+		   JOIN sync_runs run ON run.id = i.run_id
+		  WHERE run.board_id = ?
+		    AND i.confirmed = 0
+		    AND NOT (
+		      i.item_id <> '' AND EXISTS (
+		        SELECT 1
+		          FROM sync_items i2
+		          JOIN sync_runs r2 ON r2.id = i2.run_id
+		         WHERE r2.board_id = run.board_id
+		           AND r2.annotation_element_id = run.annotation_element_id
+		           AND i2.item_id = i.item_id
+		           AND i2.confirmed = 1
+		           AND i2.id > i.id
+		      )
+		    )
+		  ORDER BY i.id`,
+		boardID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select unconfirmed sync_items: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	byAnnotation := make(map[string][]port.SyncItem)
+
+	for rows.Next() {
+		var annotationID string
+
+		it, err := scanItem(rows, &annotationID)
+		if err != nil {
+			return nil, err
+		}
+
+		byAnnotation[annotationID] = append(byAnnotation[annotationID], it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate unconfirmed sync_items: %w", err)
+	}
+
+	return byAnnotation, nil
 }
 
 // listFoldedItems は畳み込みの結果を注釈ごとに束ねて返す。
@@ -420,7 +494,7 @@ func scanItem(s rowScanner, extra ...any) (port.SyncItem, error) {
 	)
 	dest := append([]any{
 		&it.ID, &it.RunID, &it.ItemID, &kind, &it.Title, &it.Body,
-		&it.LocalID, &it.ParentLocalID, &action, &createdAt,
+		&it.LocalID, &it.ParentLocalID, &action, &createdAt, &it.Confirmed,
 	}, extra...)
 	if err := s.Scan(dest...); err != nil {
 		return port.SyncItem{}, fmt.Errorf("scan sync_item: %w", err)

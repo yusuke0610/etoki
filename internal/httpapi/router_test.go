@@ -491,7 +491,7 @@ func TestListAnnotationRuns(t *testing.T) {
 			Outcome:   port.OutcomeComplete,
 			Items: []port.SyncItem{{
 				ItemID: "PVTI_" + title, Kind: port.KindEpic, Title: title,
-				LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+				LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 			}},
 		}); err != nil {
 			t.Fatalf("SaveRun: %v", err)
@@ -534,7 +534,7 @@ func TestListAnnotationRuns_ShowsIncomplete(t *testing.T) {
 		Outcome: port.OutcomeIncomplete, Error: "github graphql: rate limited",
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "作れたほう",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -583,7 +583,7 @@ func TestListAnnotationRuns_OmitsOutcomeWhenNotRecorded(t *testing.T) {
 		CreatedAt: fixedTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "古い run",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -861,7 +861,7 @@ func TestListAnnotations_Detached(t *testing.T) {
 		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -977,6 +977,66 @@ func TestListAnnotations_ReturnsKind(t *testing.T) {
 	}
 }
 
+// 届いたか分からない書き込みは、在るものとは別のキーで返る（ADR 0056、#170）。
+//
+// **畳み込みには入らない**ので、`items` に混ざると「いま GitHub に在る N 件」が
+// 嘘になる。ここが繋がっていないと、画面は記録があることに気づけない。
+func TestListAnnotations_SeparatesUnconfirmedItems(t *testing.T) {
+	t.Parallel()
+
+	r, mappings := newRouter(t)
+	id := createBoard(t, r, "ボード")
+	saveAnnotatedScene(t, r, id)
+
+	// 1 件目は書けて、2 件目は応答を失った run。
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID:      id,
+		AnnotationID: "annot-1",
+		ContentHash:  currentHash(t, r, id),
+		CreatedAt:    fixedTime,
+		Outcome:      port.OutcomeIncomplete,
+		Error:        "Post ...: EOF",
+		Items: []port.SyncItem{
+			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime},
+			{ItemID: "", Kind: port.KindIssue, Title: "SDK更新", LocalID: "i1", Action: port.ActionCreated, Confirmed: false, CreatedAt: fixedTime},
+		},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	got := listAnnotations(t, r, id).Annotations
+
+	items, _ := got[0]["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %d 件, want 1（未確定が混ざっている）", len(items))
+	}
+	if it, _ := items[0].(map[string]any); it["confirmed"] != true {
+		t.Errorf("items[0].confirmed = %v, want true", it["confirmed"])
+	}
+
+	unconfirmed, _ := got[0]["unconfirmedItems"].([]any)
+	if len(unconfirmed) != 1 {
+		t.Fatalf("unconfirmedItems = %d 件, want 1", len(unconfirmed))
+	}
+	it, _ := unconfirmed[0].(map[string]any)
+	if it["title"] != "SDK更新" {
+		t.Errorf("unconfirmedItems[0].title = %v, want SDK更新", it["title"])
+	}
+	// **item ID は埋めない。** 埋めると、在りもしない item を更新先として送れる。
+	if it["itemId"] != "" {
+		t.Errorf("unconfirmedItems[0].itemId = %v, want 空文字", it["itemId"])
+	}
+	if it["confirmed"] != false {
+		t.Errorf("unconfirmedItems[0].confirmed = %v, want false", it["confirmed"])
+	}
+
+	// **状態は created のまま。** uncreated に戻すと、作り直しで重複する
+	// （ADR 0009 / 0056）。
+	if got[0]["state"] != "created" {
+		t.Errorf("state = %v, want created", got[0]["state"])
+	}
+}
+
 // 実行記録があってハッシュが一致すれば created、ボードを変えれば changed。
 func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 	t.Parallel()
@@ -1001,8 +1061,8 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		CreatedAt:    fixedTime,
 		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{
-			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime},
-			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, Action: port.ActionCreated, CreatedAt: fixedTime},
+			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime},
+			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime},
 		},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)

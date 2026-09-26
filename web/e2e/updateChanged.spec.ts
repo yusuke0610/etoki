@@ -123,6 +123,7 @@ test.describe("changed の注釈を更新する", () => {
             body: "書き直した本文",
             localId: "i1",
             action: "updated",
+            confirmed: true,
           },
           {
             itemId: "PVTI_new",
@@ -131,6 +132,7 @@ test.describe("changed の注釈を更新する", () => {
             body: "",
             localId: "i2",
             action: "created",
+            confirmed: true,
           },
         ],
       },

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,8 +63,20 @@ func item(localID, itemID string, kind port.ItemKind, parent *string) port.SyncI
 		LocalID:       localID,
 		ParentLocalID: parent,
 		Action:        port.ActionCreated,
+		Confirmed:     true,
 		CreatedAt:     baseTime,
 	}
+}
+
+// unconfirmed は届いたか分からない書き込み 1 件（ADR 0056）。
+//
+// 作成では item ID が分からないので空文字。更新では相手の ID は分かっている
+// ので、呼び出し側が渡す。
+func unconfirmed(localID, itemID string, action port.SyncAction) port.SyncItem {
+	it := item(localID, itemID, port.KindIssue, nil)
+	it.Action = action
+	it.Confirmed = false
+	return it
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -739,6 +752,211 @@ func TestListItemsByBoard_AgreesWithListItemsByAnnotation(t *testing.T) {
 	}
 	if want := []string{"PVTI_a", "PVTI_b", "PVTI_c"}; !slices.Equal(ids, want) {
 		t.Errorf("annot-1 の item = %v, want %v", ids, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C-3d: 届いたか分からない書き込み（ADR 0056）
+// ---------------------------------------------------------------------------
+
+// 確定しているのに item ID が無い行は書かせない。
+//
+// 通すと畳み込み（ADR 0026）が空文字で 1 つのグループを作り、別々の item が
+// 1 件に混ざる。
+//
+// **固定しているのは行の不変条件で、どちらの守りが効いたかではない。** 守りは
+// 2 つあり（SaveRun の検証と CHECK 制約、0013）、どちらか一方を外してもこの
+// テストは緑のまま。復元や保守 SQL は SaveRun を通らないので DB 側が要り、
+// SaveRun 側は 200 件の中のどれが悪いかを言うために要る。片方だけを固定する
+// テストにすると、もう片方を消したときに落ちない側が残る。
+func TestSaveRun_RejectsConfirmedItemWithoutItemID(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	broken := item("e1", "", port.KindEpic, nil)
+
+	_, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
+		Items: []port.SyncItem{broken},
+	})
+	if err == nil {
+		t.Fatal("SaveRun() = nil, want error")
+	}
+	// どの item かを名乗る。手掛かりが無いと、200 件の中のどれが悪いのか
+	// 分からない。
+	if !strings.Contains(err.Error(), "e1") {
+		t.Errorf("SaveRun() = %v, want local_id を名乗る", err)
+	}
+
+	// 弾いたなら run ごと書かれていない。エラーだけ見て通すと、検証の前に
+	// 書いてしまう実装でも緑になる。
+	got, findErr := repo.FindLatestRun(t.Context(), "board-1", "annot-1")
+	if findErr != nil {
+		t.Fatalf("FindLatestRun: %v", findErr)
+	}
+	if got != nil {
+		t.Errorf("run = %+v, want 何も書かれていない", got)
+	}
+}
+
+// 畳み込みは未確定の書き込みを含めない（ADR 0056）。
+//
+// 含めると、在るかどうかが分からないものが「いま GitHub に在るもの」に紛れ、
+// 更新先の照合（ADR 0026）まで通ってしまう。item ID を持たない未確定の作成は
+// 空文字で 1 つのグループになるので、2 件が 1 件に見える形でも壊れる。
+func TestListItemsByAnnotation_SkipsUnconfirmedWrites(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeIncomplete,
+		Error: "boom",
+		Items: []port.SyncItem{
+			item("e1", "PVTI_a", port.KindEpic, nil),
+			// 応答を失った作成が 2 件。どちらも item ID が無い。
+			unconfirmed("i1", "", port.ActionCreated),
+			unconfirmed("i2", "", port.ActionCreated),
+		},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	items, err := repo.ListItemsByAnnotation(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("ListItemsByAnnotation: %v", err)
+	}
+
+	var ids []string
+	for _, it := range items {
+		ids = append(ids, it.ItemID)
+	}
+	if want := []string{"PVTI_a"}; !slices.Equal(ids, want) {
+		t.Fatalf("item = %v, want %v", ids, want)
+	}
+	if !items[0].Confirmed {
+		t.Error("Confirmed = false, want true（往復で落ちている）")
+	}
+}
+
+// 届いたか分からない書き込みは、解けない限り残る（ADR 0056）。
+//
+// **解けるのは、あとで同じ item に確定の記録が付いたときだけ。** そのときは
+// いま GitHub に何があるか分かっているので、打ち手の無い警告を残さない。
+// item ID を持たない未確定の作成は確定させる手段が無いので残り続ける。
+func TestListUnconfirmedItemsByBoard_DropsOnlyResolved(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	seedBoard(t, db, "board-2")
+	repo := sqlite.NewMappingRepository(db)
+
+	save := func(boardID, annotationID, hash string, items ...port.SyncItem) {
+		t.Helper()
+		if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+			BoardID: boardID, AnnotationID: annotationID,
+			ContentHash: hash, CreatedAt: baseTime,
+			Outcome: port.OutcomeIncomplete, Error: "boom",
+			Items: items,
+		}); err != nil {
+			t.Fatalf("SaveRun(%s/%s): %v", boardID, annotationID, err)
+		}
+	}
+
+	// annot-1: 応答を失った作成 1 件と、届いたか分からない更新 1 件。更新のほうは
+	// あとで同じ item に書けているので解ける。
+	save("board-1", "annot-1", "hash-1",
+		unconfirmed("c1", "", port.ActionCreated),
+		unconfirmed("u1", "PVTI_resolved", port.ActionUpdated),
+	)
+	save("board-1", "annot-1", "hash-2", item("u2", "PVTI_resolved", port.KindIssue, nil))
+
+	// annot-2: 届いたか分からない更新のまま。書き直していないので解けない。
+	save("board-1", "annot-2", "hash-3", unconfirmed("u3", "PVTI_open", port.ActionUpdated))
+
+	// 別ボードは混ぜない。
+	save("board-2", "annot-1", "hash-4", unconfirmed("c9", "", port.ActionCreated))
+
+	byAnnotation, err := repo.ListUnconfirmedItemsByBoard(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("ListUnconfirmedItemsByBoard: %v", err)
+	}
+
+	annotations := slices.Sorted(maps.Keys(byAnnotation))
+	if want := []string{"annot-1", "annot-2"}; !slices.Equal(annotations, want) {
+		t.Fatalf("注釈 = %v, want %v", annotations, want)
+	}
+
+	// annot-1 に残るのは、確定させる手段の無い作成だけ。
+	var local1 []string
+	for _, it := range byAnnotation["annot-1"] {
+		local1 = append(local1, it.LocalID)
+	}
+	if want := []string{"c1"}; !slices.Equal(local1, want) {
+		t.Errorf("annot-1 = %v, want %v（解けた更新が残っている）", local1, want)
+	}
+
+	var local2 []string
+	for _, it := range byAnnotation["annot-2"] {
+		local2 = append(local2, it.LocalID)
+	}
+	if want := []string{"u3"}; !slices.Equal(local2, want) {
+		t.Errorf("annot-2 = %v, want %v（解けていない更新が消えている）", local2, want)
+	}
+}
+
+// 同じ item への確定は、あとに来たものだけが不確かさを解く。
+//
+// **順序を見ない実装（同じ item に確定の記録があれば消す）でも、上のテストは
+// 通ってしまう。** 先に書けていて、あとで届いたか分からなくなった、という並びを
+// 別に固定しておく。
+func TestListUnconfirmedItemsByBoard_EarlierConfirmDoesNotResolve(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	repo := sqlite.NewMappingRepository(db)
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-1", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
+		Items: []port.SyncItem{item("e1", "PVTI_a", port.KindEpic, nil)},
+	}); err != nil {
+		t.Fatalf("run1: %v", err)
+	}
+
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1",
+		ContentHash: "hash-2", CreatedAt: baseTime,
+		Outcome: port.OutcomeIncomplete, Error: "boom",
+		Items: []port.SyncItem{unconfirmed("u1", "PVTI_a", port.ActionUpdated)},
+	}); err != nil {
+		t.Fatalf("run2: %v", err)
+	}
+
+	byAnnotation, err := repo.ListUnconfirmedItemsByBoard(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("ListUnconfirmedItemsByBoard: %v", err)
+	}
+	if len(byAnnotation["annot-1"]) != 1 {
+		t.Fatalf("annot-1 = %+v, want 1 件（前の確定で解けている）", byAnnotation["annot-1"])
+	}
+
+	// 畳み込みのほうは、届いたか分からない更新に上書きされず前の中身のまま。
+	items, err := repo.ListItemsByAnnotation(t.Context(), "board-1", "annot-1")
+	if err != nil {
+		t.Fatalf("ListItemsByAnnotation: %v", err)
+	}
+	if len(items) != 1 || items[0].Title != "title-e1" {
+		t.Errorf("畳み込み = %+v, want 確定した run1 の中身", items)
 	}
 }
 

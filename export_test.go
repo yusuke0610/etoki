@@ -18,3 +18,11 @@ func NewServerForTest(addr string, h http.Handler, shutdown, cancelAfter time.Du
 		cancelRequestsAfter: cancelAfter,
 	}
 }
+
+// ShutdownBudgetForTest は停止の猶予と、リクエストを切るまでの長さを返す。
+//
+// 実際に 75 秒待つテストは書けないので、**猶予が作成の後始末を覆っていること**
+// だけを定数どうしの関係として固定する（ADR 0056）。
+func ShutdownBudgetForTest() (shutdown, cancelAfter time.Duration) {
+	return shutdownTimeout, cancelRequestsAfter
+}

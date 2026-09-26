@@ -350,6 +350,19 @@ type AnnotationStatus struct {
 	// State 注釈の 3 状態。保存済みシーンの content_hash と最新 run のそれを
 	// 突き合わせて決まる。
 	State SyncState `json:"state"`
+
+	// UnconfirmedItems GitHub に届いたか分からない書き込み（ADR 0056）。1 件も無ければ
+	// 省略する。
+	//
+	// **`items` とは別のリスト。** あちらは「いま GitHub に在るもの」で、
+	// こちらは在るかどうかが分からないもの。混ぜると件数が嘘になり、
+	// 更新先としても選べてしまう（未確定の作成は `itemId` を持たない）。
+	// 分けているのは `detached` と同じ理由（ADR 0046）。
+	//
+	// **`state` はこれを見ない。** 確定が 1 件も無くても `created` に
+	// なる。押し直しで消せない draft issue が重複するほうを避ける
+	// （ADR 0009 / 0056）
+	UnconfirmedItems []SyncItem `json:"unconfirmedItems,omitempty"`
 }
 
 // AuthUser ログイン中の利用者
@@ -670,11 +683,21 @@ type DetachedAnnotation struct {
 	ID string `json:"id"`
 
 	// Items この注釈が GitHub に在らしめている draft issue。畳み込みは
-	// AnnotationStatus.items と同じ（ADR 0026）
+	// AnnotationStatus.items と同じ（ADR 0026）。
+	//
+	// **空でも省略しない。** 届いたか分からない書き込みだけが残っている
+	// 注釈がありうる（ADR 0056）
 	Items []SyncItem `json:"items"`
 
 	// LastSyncedAt 最後に実行した時刻
 	LastSyncedAt *time.Time `json:"lastSyncedAt,omitempty"`
+
+	// UnconfirmedItems GitHub に届いたか分からない書き込み（ADR 0056）。1 件も無ければ
+	// 省略する。意味は AnnotationStatus.unconfirmedItems と同じ。
+	//
+	// **囲みを消しても落とさない。** 確かめようのない書き込みが画面から
+	// 消えてよい理由にはならない
+	UnconfirmedItems []SyncItem `json:"unconfirmedItems,omitempty"`
 }
 
 // DiagramDraft 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
@@ -979,7 +1002,10 @@ type SetMemberRoleRequest struct {
 // 記録していなかった頃の run はすべて `created`。当時は更新の経路が無かった。
 type SyncAction string
 
-// SyncItem 作成済みの draft issue 1 件
+// SyncItem 1 回の実行がその draft issue に対して行った書き込み 1 件。
+//
+// **「作成済みの 1 件」ではない。** `confirmed` が false なら、GitHub に
+// 届いたかどうかを etoki は知らない（ADR 0056）。
 type SyncItem struct {
 	// Action 1 つの run がその item に対して何をしたか（ADR 0026）。
 	//
@@ -990,7 +1016,21 @@ type SyncItem struct {
 	// Body 作成時の本文。記録していなかった頃の run では空
 	Body string `json:"body"`
 
-	// ItemID GitHub Projects v2 の item ID
+	// Confirmed この書き込みが GitHub に届いたことを確かめられたかどうか
+	// （ADR 0056）。
+	//
+	// false は「失敗した」ではなく「**分からない**」。GitHub が受理した
+	// あとで応答だけを失った場合も、受理せずに返した場合も、etoki からは
+	// 区別できない。**確かめるのは開発者**（中核思想 3）。
+	//
+	// 記録していなかった頃の run では true。当時は確定したものしか
+	// 記録できなかった
+	Confirmed bool `json:"confirmed"`
+
+	// ItemID GitHub Projects v2 の item ID。
+	//
+	// **`confirmed` が false の作成では空文字**（ID が返ってこなかった）。
+	// 更新では相手の ID が分かっているので、未確定でも入る
 	ItemID string `json:"itemId"`
 
 	// Kind GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ

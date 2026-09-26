@@ -100,6 +100,25 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// **最初のシグナルで既定の扱いに戻す。** 止めるまでの猶予は作成の後始末を
+	// 覆うので最長 75 秒あり（ADR 0056）、そのあいだ `Server.Run` は
+	// 「press Ctrl-C again to stop now」と案内する。**`defer stop()` だけだと
+	// その案内が嘘になる。** `run` が返るまで stop が呼ばれず、2 回目の
+	// Ctrl-C もここが捕まえてしまうため（捕まえた先の ctx はもう
+	// キャンセル済みなので、何も起きずに待たされる）。
+	//
+	// stop は ctx をキャンセルしないので、シグナルが来ないまま終わる経路の
+	// ために done で抜ける。
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			stop()
+		case <-done:
+		}
+	}()
+
 	// サブコマンドは 1 つだけなので flag パッケージは使わない。増えたら見直す。
 	args := os.Args[1:]
 	switch {
