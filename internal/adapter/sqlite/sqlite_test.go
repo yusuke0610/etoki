@@ -705,10 +705,6 @@ func TestSyncItems_RejectsNegativeDatabaseID(t *testing.T) {
 		t.Fatal("SaveRun(負の識別子) = nil, want error")
 	}
 
-	if _, err := db.ExecContext(t.Context(),
-		`UPDATE sync_items SET item_database_id = -1`); err != nil {
-		t.Fatalf("UPDATE（0 行）: %v", err)
-	}
 	var n int
 	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sync_items`).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
@@ -716,6 +712,32 @@ func TestSyncItems_RejectsNegativeDatabaseID(t *testing.T) {
 	// 弾かれた run の item は 1 件も残らない。
 	if n != 0 {
 		t.Errorf("sync_items = %d 件, want 0", n)
+	}
+
+	// **保守 SQL に効くことは、行がある状態でしか見られない。** 上の SaveRun は
+	// 正しく弾けるので sync_items は空で、そこへ UPDATE を当てても 0 行で通る。
+	// 通ったことを CHECK が効いた証拠にすると、CHECK を消しても緑のままになる。
+	if _, err := repo.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-2",
+		ContentHash: "hash-2", CreatedAt: baseTime, Outcome: port.OutcomeComplete,
+		Items: []port.SyncItem{withDatabaseID(item("e1", "PVTI_a", port.KindEpic, nil), 1)},
+	}); err != nil {
+		t.Fatalf("SaveRun(正の識別子): %v", err)
+	}
+
+	if _, err := db.ExecContext(t.Context(),
+		`UPDATE sync_items SET item_database_id = -1`); err == nil {
+		t.Error("UPDATE で負の識別子に落とせた: CHECK が効いていない")
+	}
+
+	// 弾いた UPDATE が書いていないこと。
+	var got int64
+	if err := db.QueryRowContext(t.Context(),
+		`SELECT item_database_id FROM sync_items`).Scan(&got); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if got != 1 {
+		t.Errorf("item_database_id = %d, want 1", got)
 	}
 }
 
