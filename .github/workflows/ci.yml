@@ -7,8 +7,11 @@ on:
   # 差分が無くても、新しく公開された脆弱性に気づけるようにする（vulncheck）。
   # flake.lock の Go は Dependabot の security updates の対象にならないので、
   # PR が来ない週はここでしか気づけない（ADR 0035）。
+  # 分を 0 にしない。毎時ちょうどは GitHub Actions の負荷が高く、その時刻の
+  # schedule は取りこぼされうる。週 1 回しか回らないので、落ちた週は脆弱性に
+  # 気づく経路がその週まるごと抜ける。
   schedule:
-    - cron: "0 0 * * 1"
+    - cron: "23 4 * * 1"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
