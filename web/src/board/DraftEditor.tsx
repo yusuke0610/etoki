@@ -8,6 +8,7 @@ import type {
   ProjectAccess,
   SyncItem,
 } from "../api/types";
+import { ITEM_KIND_LABEL, itemKinds } from "./annotationLabel";
 import { CreationSection } from "./CreationSection";
 import { groupByEpic } from "./interpretation";
 import {
@@ -250,11 +251,14 @@ function DraftItemFields({
             onChange={(e) => onKind(e.target.value as ItemKind)}
             aria-label={`${item.localId} の種別`}
           >
-            <option value="epic">epic</option>
-            <option value="issue">issue</option>
+            {itemKinds().map((k) => (
+              <option key={k} value={k}>
+                {ITEM_KIND_LABEL[k]}
+              </option>
+            ))}
           </select>
         ) : (
-          <span className="kind">{item.kind}</span>
+          <span className="kind">{ITEM_KIND_LABEL[item.kind]}</span>
         )}
 
         <input
