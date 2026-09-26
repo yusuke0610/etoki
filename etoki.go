@@ -68,9 +68,13 @@ const cancelRequestsAfter = 5 * time.Second
 //
 // **止まるのが遅いことは受け入れる。** ここまで待つのは作成の最中に止めたときだけで、
 // 何も作っていなければ Shutdown はハンドラが返り次第すぐ戻る。作成中に待たされる
-// のが困るときは、もう一度 Ctrl-C を押せば `signal.NotifyContext` が既定の扱いに
-// 戻して即座に終われる。**そのとき記録が失われることは、待っていると知らせた
-// うえで人に選ばせる**（中核思想 3）。
+// のが困るときは、もう一度 Ctrl-C を押せば即座に終われる。**そのとき記録が
+// 失われることは、待っていると知らせたうえで人に選ばせる**（中核思想 3）。
+//
+// **2 回目が効くのは、最初のシグナルで `signal.NotifyContext` の stop を呼んで
+// いるから**（`cmd/etoki` の `run`）。`defer stop()` だけでは `run` が返るまで
+// 捕まえ続けるので、下の「press Ctrl-C again」の案内が嘘になる。**この案内を
+// 動かすなら、あちらも一緒に見る。**
 const shutdownTimeout = cancelRequestsAfter + usecase.MaxCreationDrain
 
 // Options は Server の組み立てに必要な設定と依存を束ねる。
