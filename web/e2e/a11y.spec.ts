@@ -499,5 +499,22 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       await expectNoAxeViolations(page);
     });
+
+    // 通知は**失敗しないと DOM に出ない**（ADR 0058）。出ている状態で axe を
+    // 通さないと、role や名前が崩れても気づく経路が無い。通知には「再試行」と
+    // 「閉じる」が並ぶので、名前の衝突もここで見る。
+    test("通知が出ている状態で違反が無い", async ({ page }) => {
+      const mock = baseMock();
+      mock.saveSceneError = {
+        status: 500,
+        body: { code: "internal", error: "internal error" },
+      };
+      await openBoardWithMock(page, mock);
+      await drawRectangle(page);
+      await page.getByRole("button", { name: "保存" }).click();
+      await expect(page.getByRole("alert")).toContainText("保存できませんでした");
+
+      await expectNoAxeViolations(page);
+    });
   });
 }
