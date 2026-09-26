@@ -1,10 +1,28 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
+import { installApi, summarize } from "./helpers/api";
+import {
+  annotationCard,
+  drawRectangle,
+  openBoard,
+  openBoardWithMock,
+} from "./helpers/board";
+import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
-const BOARD_NAME = "認証まわりのブレスト";
+const OTHER_NAME = "課金まわりのブレスト";
+const OTHER_ID = "board-other";
+
+/** 切り替え先のあるボード一覧。ボードを跨ぐ通知は 2 枚ないと確かめられない。 */
+function twoBoards() {
+  const mock = baseMock();
+  const other = { ...board(), id: OTHER_ID, name: OTHER_NAME };
+
+  mock.boards = [...mock.boards, summarize(other)];
+  mock.details[other.id] = other;
+  mock.annotations[other.id] = [];
+
+  return mock;
+}
 
 /**
  * 画面全体に出す失敗の通知（ADR 0058、#89）。
@@ -169,5 +187,26 @@ test.describe("通知", () => {
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
 
     expect(await canvas.boundingBox()).toEqual(before);
+  });
+
+  // 切れると: 別のボードの画面に「保存できませんでした」が残る。しかも
+  // 「再試行」が保存するのはいま開いているボードなので、読んでいる文と
+  // 起きることが食い違う。
+  test("ボードを変えたら保存失敗の通知は消える", async ({ page }) => {
+    const mock = twoBoards();
+    mock.saveSceneError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+    await openBoardWithMock(page, mock);
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+    await expect(page.getByRole("alert")).toContainText("保存できませんでした");
+
+    // 未保存のまま離れるので確認が出る。
+    page.on("dialog", (dialog) => void dialog.accept());
+    await openBoard(page, OTHER_NAME);
+
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 });

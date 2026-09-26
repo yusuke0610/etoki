@@ -961,6 +961,9 @@ export function BoardPage({
   // 同じ形）。どちらも非同期なので、state で覚えると同じ tick の次の操作がまだ
   // false を読み、キャンバスの置き換えと GitHub への作成が並走する。
   const exclusiveOperation = useRef<"importing" | "creating" | null>(null);
+  // 走っている保存。`saving` は表示のための state なので、`save` の中から
+  // 読むと古い値を見る。止める判断はこちらで行う。
+  const savingRef = useRef(false);
 
   /**
    * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0045）。
@@ -1035,10 +1038,21 @@ export function BoardPage({
   );
 
   const save = useCallback(async () => {
-    // disabled は表示の約束。ファイルの読み込み中に直接呼ばれても保存しないよう、
-    // 永続化の入口でも同じ排他を確かめる。
-    if (!api || exclusiveOperation.current === "importing") return;
+    // disabled は表示の約束。**ここで確かめ直すのは、ボタン以外から呼ばれる経路が
+    // できたため**（通知の「再試行」）。
+    //
+    // いま踏める穴があるわけではない。作成中は解釈が保存済みシーンを要求するので
+    // 「解釈する」が押せず、通知の「再試行」は押した時点で通知ごと下がるので
+    // 二度押せない。**それでも入口で見るのは、この関数の呼び出し元がボタン 1 つ
+    // だった前提が崩れたから。** 表示側の disabled（`saving || creating ||
+    // importing`）と同じ条件をここでも満たす。
+    //
+    // 揃えないと何が起きるかは下の「保存と作成は互いに排他にする」にある。
+    // 要点は、保存が creations を捨てるので、GitHub に draft issue が残ったまま
+    // 結果だけ消え、作られていないと思った開発者が作り直して重複させること。
+    if (!api || exclusiveOperation.current !== null || savingRef.current) return;
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const elements = api.getSceneElements();
@@ -1094,6 +1108,7 @@ export function BoardPage({
           : undefined,
       });
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }, [
@@ -1114,6 +1129,12 @@ export function BoardPage({
   useEffect(() => {
     saveRef.current = save;
   }, [save]);
+
+  // **ボードを変えたら保存失敗の通知は下げる。** 通知はキャンバスより上に生きて
+  // いるので、残すと別のボードの画面に「保存できませんでした」が並ぶ。しかも
+  // 「再試行」が呼ぶのは押した時点の save、つまり**いま開いているボードの保存**
+  // なので、読んでいる文と起きることが食い違う。
+  useEffect(() => () => dismissKey(SAVE_FAILED), [board.id, dismissKey]);
 
   /**
    * 注釈を解釈させる。
