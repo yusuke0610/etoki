@@ -47,6 +47,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#159](https://github.com/yusuke0610/etoki/pull/159) |        3 |      3 |        0 |      0 | test-effectiveness（写しの照合は両側から）。変数名の文字クラスと rv の例は単発で還さず                              |
 | [#167](https://github.com/yusuke0610/etoki/pull/167) |        1 |      1 |        0 |      0 | 還していない。CI の最後に置く検査へ `if: !cancelled()` を付ける話で、rules に該当テーマが無い                       |
 | [#186](https://github.com/yusuke0610/etoki/pull/186) |        1 |      1 |        0 |      0 | 還さず。E2E が図形の有無しか見ていなかった件で、test-effectiveness の「一番失いたくないものを直接検証する」に当たる |
+| [#168](https://github.com/yusuke0610/etoki/pull/168) |        6 |      6 |        0 |      0 | test-effectiveness（上限は「ちょうどで取り切った」側も見る）。契約と README のずれは docs-consistency に既にある    |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。

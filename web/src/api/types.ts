@@ -61,6 +61,9 @@ export type SaveSceneResponse = Schemas["SaveSceneResponse"];
 /** 作成先を選ぶときに見せるリポジトリ。 */
 export type Repository = Schemas["Repository"];
 
+/** 作成先の候補と、取りきったかどうか（ADR 0054）。 */
+export type RepositoryList = Schemas["RepositoryList"];
+
 /** リポジトリに紐づく Projects v2。 */
 export type Project = Schemas["Project"];
 

@@ -96,6 +96,7 @@ const (
 	ErrorCodePreviousItemUnknown  ErrorCode = "previous_item_unknown"
 	ErrorCodeProjectFieldMissing  ErrorCode = "project_field_missing"
 	ErrorCodeRateLimited          ErrorCode = "rate_limited"
+	ErrorCodeRequestTooLarge      ErrorCode = "request_too_large"
 	ErrorCodeSceneConflict        ErrorCode = "scene_conflict"
 	ErrorCodeSceneTooLarge        ErrorCode = "scene_too_large"
 	ErrorCodeSharingNotConfigured ErrorCode = "sharing_not_configured"
@@ -154,6 +155,8 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeProjectFieldMissing:
 		return true
 	case ErrorCodeRateLimited:
+		return true
+	case ErrorCodeRequestTooLarge:
 		return true
 	case ErrorCodeSceneConflict:
 		return true
@@ -924,6 +927,29 @@ type Repository struct {
 	Owner       string `json:"owner"`
 }
 
+// RepositoryList 作成先の候補と、取りきったかどうか（ADR 0054）。
+//
+// **配列ではなく包んだ形で返す。** 候補は上限で打ち切られうるので、配列
+// だけでは「これで全部」と「ここまでしか見ていない」を画面が区別できない。
+// 区別できないと、目当てが出ないときに権限を疑うのか件数を疑うのかを利用者が
+// 決められない（中核思想 3）。
+//
+// **ヘッダでは返さない。** 契約に現れないものを画面が読むことになり、
+// 生成した型から辿れなくなる（ADR 0011）。
+type RepositoryList struct {
+	// Repositories 候補。0 件でも配列を返す
+	Repositories []Repository `json:"repositories"`
+
+	// Truncated 上限に当たって辿るのをやめた。**「まだある」ではなく「見るのを
+	// やめた」。** 打ち切った先に候補が残っているかどうかは、辿るのを
+	// やめた以上サーバーにも分からない。
+	//
+	// **件数も上限値も返さない。** 画面が出せるのは「ここまでしか見て
+	// いない」までで、数を出すと上限を画面が知ることになる（ADR 0038 が
+	// シーンの上限を返さないのと同じ理由）。
+	Truncated bool `json:"truncated"`
+}
+
 // RunOutcome run が最後まで進んだかどうか（ADR 0043）。
 //
 // **省略は「成功」ではなく「記録していない」。** この項目を足す前の run に
@@ -1070,8 +1096,14 @@ type NotConfigured = ErrorResponse
 // NotFound 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type NotFound = ErrorResponse
 
+// RequestTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type RequestTooLarge = ErrorResponse
+
 // SceneTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type SceneTooLarge = ErrorResponse
+
+// TooManyLoginStarts 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type TooManyLoginStarts = ErrorResponse
 
 // TooManyRequests 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type TooManyRequests = ErrorResponse

@@ -14,6 +14,7 @@ import {
   BOARD_NAME,
   baseMock,
   board,
+  repositories,
   unselectedBoard,
 } from "./helpers/fixtures";
 
@@ -122,13 +123,79 @@ test.describe("作成先の選択", () => {
   // 権限不足と「本当に 1 つも無い」は API からは区別できない。両方書く。
   test("リポジトリが 0 件なら、権限を確かめるよう案内する", async ({ page }) => {
     const mock = withUnselected();
-    mock.repositories = { status: 200, body: [] };
+    mock.repositories = { status: 200, body: { repositories: [], truncated: false } };
 
     await installApi(page, mock);
     await page.goto("/");
     await openUnselected(page);
 
     await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeVisible();
+  });
+
+  // 切れると: 見ていない範囲が残っているのに「権限を確認してください」と案内し、
+  // 確認しても何も出てこないところへ送ることになる（ADR 0054）。打ち切りの空と
+  // 取り切った空は、打ち手が違う。
+  test("打ち切ったうえで 0 件なら、権限ではなく範囲の話にする", async ({ page }) => {
+    const mock = withUnselected();
+    mock.repositories = { status: 200, body: { repositories: [], truncated: true } };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openUnselected(page);
+
+    await expect(
+      page.getByText("見た範囲にはリポジトリがありませんでした"),
+    ).toBeVisible();
+    // 権限の案内は出さない。
+    await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeHidden();
+  });
+
+  // 候補を取り切っていないことを画面に出す（ADR 0054）。黙って切ると、目当てが
+  // 出ない利用者は「権限が無い」「インストールしていない」「見た範囲の外」を
+  // 区別できず、見当違いの設定を疑うことになる（中核思想 3）。
+  test("一覧を打ち切ったら、その旨を出す", async ({ page }) => {
+    const mock = withUnselected();
+    mock.repositories = { status: 200, body: { ...repositories(), truncated: true } };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openUnselected(page);
+
+    await expect(page.getByText("一覧を打ち切っています")).toBeVisible();
+  });
+
+  // 打ち切っていないときに出すと、常に出しているのと変わらない。
+  test("取り切っていれば、打ち切りの知らせは出さない", async ({ page }) => {
+    await installApi(page, withUnselected());
+    await page.goto("/");
+    await openUnselected(page);
+
+    await expect(picker(page).getByRole("button", { name: /acme\/web/ })).toBeVisible();
+    await expect(page.getByText("一覧を打ち切っています")).toBeHidden();
+  });
+
+  // 500 件の平らなリストから目で探すのはつらい（#150）。**絞るのは手元だけ。**
+  // 打ち切りの外は問い合わせ直しても出てこない。
+  //
+  // サイドバーの木にも同じ `acme/web` が出る（ADR 0019）ので、picker の中だけを
+  // 見る。ここを page 直下にすると、絞っても消えない木のほうに当たる。
+  test("名前の一部でリポジトリを絞れる", async ({ page }) => {
+    await installApi(page, withUnselected());
+    await page.goto("/");
+    await openUnselected(page);
+
+    await expect(picker(page).getByRole("button", { name: /acme\/web/ })).toBeVisible();
+    await expect(picker(page).getByRole("button", { name: /acme\/api/ })).toBeVisible();
+
+    await page.getByLabel("名前で絞り込む").fill("api");
+
+    await expect(picker(page).getByRole("button", { name: /acme\/api/ })).toBeVisible();
+    await expect(picker(page).getByRole("button", { name: /acme\/web/ })).toHaveCount(0);
+
+    // 当てはまるものが無いときは、権限の案内と言い分ける。直す場所が違う。
+    await page.getByLabel("名前で絞り込む").fill("存在しない");
+    await expect(page.getByText("に当てはまるリポジトリはありません")).toBeVisible();
+    await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeHidden();
   });
 
   test("リポジトリの取得に失敗したら、選択画面にその旨を出す", async ({ page }) => {

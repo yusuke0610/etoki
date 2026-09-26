@@ -3,13 +3,17 @@ package httpapi_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/internal/httpapi"
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
@@ -24,6 +28,8 @@ type stubGitHub struct {
 	// repos と projects は作成先の候補一覧が返すもの。
 	repos    []port.Repository
 	projects []port.Project
+	// truncated は候補を取り切らずに辿るのをやめたこと（ADR 0054）。
+	truncated bool
 	// listErr が非 nil なら候補一覧が失敗する。
 	listErr error
 	// canWrite は CanWriteProject が返す値。
@@ -34,8 +40,8 @@ func (s *stubGitHub) CanWriteProject(context.Context, string) (bool, error) {
 	return s.canWrite, nil
 }
 
-func (s *stubGitHub) ListRepositories(context.Context) ([]port.Repository, error) {
-	return s.repos, s.listErr
+func (s *stubGitHub) ListRepositories(context.Context) (port.RepositoryList, error) {
+	return port.RepositoryList{Repositories: s.repos, Truncated: s.truncated}, s.listErr
 }
 
 func (s *stubGitHub) ListRepositoryProjects(context.Context, string, string) ([]port.Project, error) {
@@ -71,6 +77,17 @@ func (s *stubGitHub) CreateDraftIssue(_ context.Context, _ string, item port.Dra
 
 func (s *stubGitHub) SetItemFieldValue(context.Context, string, string, port.FieldValue) error {
 	return nil
+}
+
+// repeatByte は同じバイトを尽きずに返す。上限を超える本文を、手元に全部は
+// 持たずに作る。
+type repeatByte byte
+
+func (b repeatByte) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(b)
+	}
+	return len(p), nil
 }
 
 // createBody は解釈結果をそのまま送るリクエストボディ。
@@ -330,6 +347,131 @@ func TestCreateItems_RecordsRunWhenRequestIsCanceled(t *testing.T) {
 	}
 	if len(run.Items) != 1 || run.Items[0].ItemID != "PVTI_a" {
 		t.Errorf("Items = %+v, want PVTI_a の 1 件", run.Items)
+	}
+}
+
+// 作成の本文は、既定の上限（64 KiB）ではなく項目の上限から導いた上限で読む
+// （issue #147）。
+//
+// **正本は項目の上限（domain.MaxItems / MaxTitleRunes / MaxBodyRunes）。** 既定の
+// ままだと、数十件の項目が数千字の本文を持つだけで 413 になり、項目の上限の
+// 内側にある解釈が作れない。LLM がそのまま返した解釈でも届く大きさ。
+func TestCreateItems_ReadsBodyWithinTheItemLimits(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{}
+	r, _ := newCreateRouter(t, gh)
+
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	// 既定の上限を超えるが、項目の上限には十分収まる大きさ（約 140 KiB）。
+	// epic 1 件と、その下の issue。
+	const n = 24
+	items := []map[string]any{
+		{"localId": "e1", "kind": "epic", "title": "決済フローの見直し", "body": strings.Repeat("あ", 2000)},
+	}
+	for i := range n - 1 {
+		items = append(items, map[string]any{
+			"localId":       fmt.Sprintf("i%d", i),
+			"kind":          "issue",
+			"title":         fmt.Sprintf("課題 %d", i),
+			"body":          strings.Repeat("あ", 2000),
+			"parentLocalId": "e1",
+		})
+	}
+	body := createBody(currentHash(t, r, id))
+	body["items"] = items
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (%s)", rec.Code, rec.Body)
+	}
+	if gh.seq != n {
+		t.Errorf("作った件数 = %d, want %d", gh.seq, n)
+	}
+}
+
+// 作成の本文にも上限はある（issue #147）。広げるのは項目の上限までで、外すわけ
+// ではない。
+//
+// **未設定の 503 より後に見る。** 設定していない機能は本文を読む前に断るのが
+// 正しいので、GitHub を設定したルーターで確かめる。
+func TestCreateItems_RejectsBodyBeyondTheItemLimits(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{}
+	r, mappings := newCreateRouter(t, gh)
+
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	// 項目の上限いっぱい（件数 × (title + body) × JSON で 1 文字 6 バイト）を
+	// 確実に超える大きさ。1 フィールドで超えさせ、手元には全部を持たない。
+	size := int64(domain.MaxItems)*int64(domain.MaxTitleRunes+domain.MaxBodyRunes)*6 + 1<<20
+	prefix := `{"contentHash":"` + currentHash(t, r, id) + `","items":[],"summary":"`
+	reader := io.MultiReader(strings.NewReader(prefix),
+		io.LimitReader(repeatByte('x'), size), strings.NewReader(`"}`))
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, itemsPath(id, "annot-1"), reader)
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = loopbackHost
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (%s)", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeRequestTooLarge {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeRequestTooLarge)
+	}
+	// 弾いた操作は「書かれていないこと」も断言する。検証の前に作ってしまう
+	// 実装は、エラーの検査だけでは素通りする。
+	if gh.seq != 0 {
+		t.Errorf("弾いたのに GitHub に作っている: %d 件", gh.seq)
+	}
+	run, err := mappings.FindLatestRun(t.Context(), id, "annot-1")
+	if err != nil {
+		t.Fatalf("FindLatestRun: %v", err)
+	}
+	if run != nil {
+		t.Errorf("弾いたのに run が残っている: %+v", run)
+	}
+}
+
+// 1 回の作成で扱える項目数には上限がある（domain.MaxItems、issue #147）。
+//
+// **作成はボード単位の排他を取ったまま進む。** 上限が無いと、1 回のリクエストで
+// そのボードの作成と作成先の変更を任意の長さ止められる。
+func TestCreateItems_RejectsTooManyItems(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{}
+	r, _ := newCreateRouter(t, gh)
+
+	id := createTargetedBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	items := make([]map[string]any, 0, domain.MaxItems+1)
+	for i := range domain.MaxItems + 1 {
+		items = append(items, map[string]any{
+			"localId": fmt.Sprintf("i%d", i),
+			"kind":    "issue",
+			"title":   fmt.Sprintf("課題 %d", i),
+		})
+	}
+	body := createBody(currentHash(t, r, id))
+	body["items"] = items
+
+	rec := do(t, r, http.MethodPost, itemsPath(id, "annot-1"), body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+	}
+	// **弾いたのに 1 件も作っていないことまで見る。** 途中まで作ってから
+	// 弾く実装は、ステータスの検査だけでは素通りする。draft issue は消せない
+	// （ADR 0009）。
+	if gh.seq != 0 {
+		t.Errorf("弾いたのに GitHub に作っている: %d 件", gh.seq)
 	}
 }
 
@@ -681,24 +823,50 @@ func TestListRepositories(t *testing.T) {
 	gh := &stubGitHub{repos: []port.Repository{{Owner: "acme", Name: "web", Description: "フロント"}}}
 	r, _ := newCreateRouter(t, gh)
 
-	got := decode[[]map[string]any](t, do(t, r, http.MethodGet, "/api/github/repositories", nil))
-	if len(got) != 1 {
-		t.Fatalf("len = %d, want 1 (%+v)", len(got), got)
+	got := decode[apitypes.RepositoryList](t,
+		do(t, r, http.MethodGet, "/api/github/repositories", nil))
+	if len(got.Repositories) != 1 {
+		t.Fatalf("len = %d, want 1 (%+v)", len(got.Repositories), got)
 	}
-	if got[0]["owner"] != "acme" || got[0]["name"] != "web" {
-		t.Errorf("repositories[0] = %+v", got[0])
+	if got.Repositories[0].Owner != "acme" || got.Repositories[0].Name != "web" {
+		t.Errorf("repositories[0] = %+v", got.Repositories[0])
+	}
+	// 取り切ったので打ち切っていない。**ここを見ないと、常に true を返す
+	// 実装でも「打ち切りが出る」側のテストだけで緑になる**（ADR 0054）。
+	if got.Truncated {
+		t.Error("truncated = true, want false")
 	}
 }
 
-// 0 件でも null ではなく配列を返す。
+// 打ち切ったことを画面まで運ぶ（ADR 0054）。黙って切ると、目当てが出ない
+// 利用者は「権限が無いのか」「インストールしていないのか」「上限の外なのか」を
+// 区別できない（中核思想 3）。
+func TestListRepositories_ReportsTruncation(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{
+		repos:     []port.Repository{{Owner: "acme", Name: "web"}},
+		truncated: true,
+	}
+	r, _ := newCreateRouter(t, gh)
+
+	got := decode[apitypes.RepositoryList](t,
+		do(t, r, http.MethodGet, "/api/github/repositories", nil))
+	if !got.Truncated {
+		t.Error("truncated = false, want true")
+	}
+}
+
+// 0 件でも null ではなく配列を返す。**包んだあとも同じ。** repositories が
+// null になると、画面は長さを見る前に落ちる。
 func TestListRepositories_EmptyIsArray(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newCreateRouter(t, &stubGitHub{})
 
 	rec := do(t, r, http.MethodGet, "/api/github/repositories", nil)
-	if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
-		t.Errorf("body = %q, want []", body)
+	if body := strings.TrimSpace(rec.Body.String()); body != `{"repositories":[],"truncated":false}` {
+		t.Errorf("body = %q", body)
 	}
 }
 

@@ -24,7 +24,7 @@ import type {
   InviteMemberRequest,
   Project,
   RenameBoardRequest,
-  Repository,
+  RepositoryList,
   SaveSceneRequest,
   SaveSceneResponse,
   SyncRun,
@@ -329,7 +329,8 @@ export const authApi = {
 
 /** 作成先を選ぶための一覧。ボードには紐づかない。 */
 export const githubApi = {
-  repositories: () => request<Repository[]>("/api/github/repositories"),
+  // **配列ではなく包んだ形で返る**（ADR 0054）。打ち切りを載せる場所が要る。
+  repositories: () => request<RepositoryList>("/api/github/repositories"),
 
   projects: (owner: string, repo: string) =>
     request<Project[]>(

@@ -101,6 +101,37 @@ func TestWebUI_ServesAssets(t *testing.T) {
 	}
 }
 
+// 画面は iframe に埋め込ませない（issue #147）。
+//
+// **認証を設定していない構成では cookie が要らない。** 埋め込まれた時点で
+// etoki の API もそのまま通る（Origin は自分自身になるので ADR 0013 の検証も
+// 素通りする）。クリックを誘導する攻撃の足場になる。
+//
+// **index.html だけでなく asset にも掛かることを見る。** index だけに置く
+// 実装は、ここが 2 件になっていないと素通りする。
+func TestWebUI_ForbidsFraming(t *testing.T) {
+	t.Parallel()
+
+	r := newWebRouter(t, newWebDir(t))
+
+	for _, path := range []string{"/", "/assets/app.js"} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+
+			rec := do(t, r, http.MethodGet, path, nil)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			if got := rec.Header().Get("Content-Security-Policy"); got != "frame-ancestors 'none'" {
+				t.Errorf("Content-Security-Policy = %q, want %q", got, "frame-ancestors 'none'")
+			}
+			if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Errorf("X-Content-Type-Options = %q, want %q", got, "nosniff")
+			}
+		})
+	}
+}
+
 // これが切れると、API の打ち間違いが 404 ではなく 200 + HTML で返る。フロント
 // 側では「JSON のはずが HTML」という読みにくい失敗になる（ADR 0032）。
 func TestWebUI_DoesNotServeHTMLForAPIPaths(t *testing.T) {

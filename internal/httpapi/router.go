@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -103,10 +104,10 @@ func NewRouter(deps Deps) *gin.Engine {
 	// ここでは載せるだけ。/api/auth/session は未ログインでも 200 を返す。
 	r.Use(resolveSession(deps.Auth, logger))
 
-	// キャッシュ禁止は `/api` の入口 1 箇所で掛ける。認証の要否で分かれる
-	// **前**に置くのは、あとから増やしたグループだけが漏れるのを防ぐため
+	// キャッシュ禁止と本文の上限は `/api` の入口 1 箇所で掛ける。認証の要否で
+	// 分かれる **前**に置くのは、あとから増やしたグループだけが漏れるのを防ぐため
 	// （`/api/auth` が実際にそうなっていた）。
-	apiRoot := r.Group("/api", noStore())
+	apiRoot := r.Group("/api", noStore(), limitBody())
 
 	auth := apiRoot.Group("/auth")
 	{
@@ -189,6 +190,51 @@ func noStore() gin.HandlerFunc {
 		c.Header("Cache-Control", "no-store")
 		c.Next()
 	}
+}
+
+// defaultMaxBody は `/api` の入口で本文の読み込みに掛ける既定の上限。
+//
+// ここを通るのは、人が打つ名前・login・ロールのような JSON だけ。64 KiB あれば
+// 足りる。より広い本文を受ける口（シーン・解釈の画像・図のドラフトの会話・作成
+// する項目）は widenBody で自分の上限に置き換える。**足りるかは、その口が受ける
+// 型の正本の上限で見積もる。** 作成は項目の上限（domain.MaxItems など）から
+// 既定を超える。
+const defaultMaxBody = 64 << 10
+
+// rawBodyKey は既定の上限を掛ける前の本文を置く鍵。widenBody だけが読む。
+const rawBodyKey = "etoki/raw-body"
+
+// limitBody は本文の読み込みに既定の上限を掛ける。
+//
+// **上限は入口 1 箇所で置く。** 口ごとに http.MaxBytesReader を書くと、足した
+// 口だけが歯止めの無いまま残る。実際、シーン・解釈・図のドラフトに入れたあとも
+// 改名・作成先・作成・招待の 6 つは素通しのままだった（issue #147）。noStore() を
+// 親グループ 1 箇所に置いたのと同じ理由（#123）。
+//
+// ShouldBindJSON は本文を丸ごと読んでから型に詰めるので、歯止めが無いと
+// 大きい本文がそのままメモリに載る。
+func limitBody() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(rawBodyKey, c.Request.Body)
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, defaultMaxBody)
+		c.Next()
+	}
+}
+
+// widenBody は既定の上限を、その口だけの上限に置き換える。
+//
+// **重ねずに置き換える。** http.MaxBytesReader をもう一度包んでも、内側の既定が
+// 先に切る。重ねる形にすると、広げたつもりの上限が効かないまま緑になる。
+//
+// 置き換えを入口の側（グループより先に走るミドルウェア）で表現できないのは、
+// gin のハンドラ連鎖がグループ → 経路の順に固定されているため。
+func widenBody(c *gin.Context, limit int64) {
+	if raw, ok := c.Get(rawBodyKey); ok {
+		if body, ok := raw.(io.ReadCloser); ok {
+			c.Request.Body = body
+		}
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 }
 
 // handleHealthz はプロセスが生きていることだけを返す。

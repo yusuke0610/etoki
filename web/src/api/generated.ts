@@ -744,7 +744,7 @@ export interface components {
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -979,6 +979,31 @@ export interface components {
             projectNumber?: number;
             projectTitle?: string;
             projectUrl?: string;
+        };
+        /**
+         * @description 作成先の候補と、取りきったかどうか（ADR 0054）。
+         *
+         *     **配列ではなく包んだ形で返す。** 候補は上限で打ち切られうるので、配列
+         *     だけでは「これで全部」と「ここまでしか見ていない」を画面が区別できない。
+         *     区別できないと、目当てが出ないときに権限を疑うのか件数を疑うのかを利用者が
+         *     決められない（中核思想 3）。
+         *
+         *     **ヘッダでは返さない。** 契約に現れないものを画面が読むことになり、
+         *     生成した型から辿れなくなる（ADR 0011）。
+         */
+        RepositoryList: {
+            /** @description 候補。0 件でも配列を返す */
+            repositories: components["schemas"]["Repository"][];
+            /**
+             * @description 上限に当たって辿るのをやめた。**「まだある」ではなく「見るのを
+             *     やめた」。** 打ち切った先に候補が残っているかどうかは、辿るのを
+             *     やめた以上サーバーにも分からない。
+             *
+             *     **件数も上限値も返さない。** 画面が出せるのは「ここまでしか見て
+             *     いない」までで、数を出すと上限を画面が知ることになる（ADR 0038 が
+             *     シーンの上限を返さないのと同じ理由）。
+             */
+            truncated: boolean;
         };
         /** @description 作成先を選ぶときに見せるリポジトリ */
         Repository: {
@@ -1388,6 +1413,33 @@ export interface components {
             };
         };
         /**
+         * @description リクエストボディが `/api` の既定の上限を超えている（issue #147）。
+         *
+         *     **上限は `/api` の入口 1 箇所で掛かる。** 口ごとに置くと、足した口だけが
+         *     歯止めの無いまま残る。より広い本文を受ける口（シーンの保存・解釈の画像・
+         *     図のドラフトの会話）はそれぞれの上限に置き換わる。
+         *
+         *     **置き換わっても code が変わるとは限らない。** 自分の code を持つのは
+         *     シーンの保存（`scene_too_large`）と図のドラフトの会話
+         *     （`diagram_chat_too_long`）だけ。**解釈の画像は上限だけが広く、超えたときは
+         *     この code で返る。** 打ち手が「送っているものを見直す」で同じだから。
+         *
+         *     **`scene_too_large` に畳まない。** あちらの打ち手は「貼った画像を減らす」
+         *     だが、こちらに当たるのは名前・作成先・招待・作成の項目のような、本来は
+         *     既定の上限に収まる本文。打ち手は「送っているものを見直す」になる。
+         *
+         *     **上限の値は返さない。** クライアントが持つと、サーバー側で動かした日に
+         *     そちらだけが古くなる（ADR 0038 がシーンの上限を返さないのと同じ理由）。
+         */
+        RequestTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
          * @description シーンが保存できる大きさを超えている。**縮小も切り捨てもせずに弾く**
          *     （ADR 0018 と同じ扱い）。効いてくるのはキャンバスに貼った画像で、
          *     シーンには base64 で丸ごと乗る。
@@ -1396,6 +1448,27 @@ export interface components {
          *     内容を直す」ではなく「貼った画像を減らす」になる。
          */
         SceneTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description StateTTL（10 分）のあいだに始められるログインの回数が上限に達した
+         *     （issue #147）。
+         *
+         *     **ログインの開始は、ログインしていなくても書き込みが起きる唯一の口。**
+         *     1 回ごとに state が 1 つ保存され、掃除は期限切れしか消さないので、
+         *     上限が無いと窓のあいだ叩かれた回数だけ表が育つ。
+         *
+         *     **絞る軸はプロセス全体。** この口は認証の外にあるので、`rate_limited`
+         *     でも「利用者ごと」（ADR 0044）は使えない。code を分けないのは、画面の
+         *     打ち手が同じ「時間をおく」だからで、分ける基準はステータスではなく
+         *     打ち手（ADR 0034）。
+         */
+        TooManyLoginStarts: {
             headers: {
                 [name: string]: unknown;
             };
@@ -1583,6 +1656,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyLoginStarts"];
             500: components["responses"]["InternalError"];
             /** @description 認証が設定されていない */
             503: {
@@ -1793,6 +1867,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            413: components["responses"]["RequestTooLarge"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -1903,6 +1978,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            413: components["responses"]["RequestTooLarge"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -1944,6 +2020,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            413: components["responses"]["RequestTooLarge"];
             /** @description そのボードには作成先が設定されていない */
             422: {
                 headers: {
@@ -2050,6 +2127,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            413: components["responses"]["RequestTooLarge"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["NotConfigured"];
         };
@@ -2129,6 +2207,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            413: components["responses"]["RequestTooLarge"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["NotConfigured"];
         };
@@ -2182,13 +2261,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description リポジトリの一覧。0 件でも配列を返す */
+            /** @description リポジトリの一覧 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Repository"][];
+                    "application/json": components["schemas"]["RepositoryList"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -2401,6 +2480,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            413: components["responses"]["RequestTooLarge"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
             /** @description LLM の呼び出しに失敗した、または出力がスキーマを満たさなかった */
@@ -2470,6 +2550,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            413: components["responses"]["RequestTooLarge"];
             /**
              * @description ボードに作成先が設定されていない、または Projects v2 側に必要な
              *     フィールドが無い

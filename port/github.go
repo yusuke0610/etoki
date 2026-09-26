@@ -70,13 +70,29 @@ type Project struct {
 	URL string
 }
 
+// RepositoryList は作成先の候補と、取りきったかどうか。
+//
+// **配列ではなく包んだ形で返す**（ADR 0054）。候補は上限で打ち切られうるので、
+// 配列だけでは「これで全部」と「ここまでしか見ていない」を呼び出し側が区別
+// できない。区別できないと、目当てが出ないときに権限を疑うのか件数を疑うのかを
+// 決められない（中核思想 3）。
+type RepositoryList struct {
+	// Repositories は候補。0 件でも nil ではなく空スライスで返してよい。
+	Repositories []Repository
+	// Truncated は上限に当たって辿るのをやめたことを表す。
+	//
+	// **「まだある」ではなく「見るのをやめた」。** 打ち切った位置の先に候補が
+	// 残っているかどうかは、辿るのをやめた以上こちらには分からない。
+	Truncated bool
+}
+
 // GitHubClient は GitHub Projects v2 を操作する。
 type GitHubClient interface {
 	// ListRepositories は利用者が書き込めるリポジトリを返す。
 	//
 	// トークンに repo の read が無いと 0 件になる。権限不足と
 	// 「本当に 1 つも無い」は区別できないため、呼び出し側で案内する。
-	ListRepositories(ctx context.Context) ([]Repository, error)
+	ListRepositories(ctx context.Context) (RepositoryList, error)
 
 	// ListRepositoryProjects はリポジトリに紐づく Projects v2 を返す。
 	//

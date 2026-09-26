@@ -70,13 +70,17 @@ func normalizeOrigin(raw string) string {
 	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host)
 }
 
-// isLoopbackHost は host[:port] がループバックを指すかを返す。
+// IsLoopbackHost は host[:port] がループバックを指すかを返す。
 //
 // ポートは見ない。make dev では Vite の dev サーバー(:5173)が Host と Origin を
 // そのまま転送するため、リッスンポートに絞ると開発時に落ちる。ポートを問わない
 // ことで別のローカルアプリからも叩けるようになるが、利用者の端末で任意の
 // サーバーを立てられる相手には、そもそもこの防御が意味を持たない。
-func isLoopbackHost(host string) bool {
+//
+// **公開しているのは組み立て口（etoki.New）が同じ判定を使うため。** リッスン
+// アドレスがループバックかどうかで起動時の警告を決めるが、判定を書き写すと
+// 「守っている側」と「知らせる側」が別々にずれる。
+func IsLoopbackHost(host string) bool {
 	if host == "" {
 		return false
 	}
@@ -97,7 +101,7 @@ func isLoopbackHost(host string) bool {
 }
 
 func (g originGuard) allowsHost(host string) bool {
-	if isLoopbackHost(host) {
+	if IsLoopbackHost(host) {
 		return true
 	}
 	_, ok := g.hosts[strings.ToLower(host)]
@@ -111,7 +115,7 @@ func (g originGuard) allowsOrigin(origin string) bool {
 	if normalized == "" {
 		return false
 	}
-	if u, err := url.Parse(normalized); err == nil && isLoopbackHost(u.Host) {
+	if u, err := url.Parse(normalized); err == nil && IsLoopbackHost(u.Host) {
 		return true
 	}
 	_, ok := g.origins[normalized]

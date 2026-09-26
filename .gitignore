@@ -1,7 +1,10 @@
 # build artifacts
 /bin/
 /web/dist/
-/web/node_modules/
+# 先頭に / を付けず、どの階層の node_modules も無視する。依存があるのは
+# web/ だけだが、リポジトリのルートで vitest を叩くと実行キャッシュを持つ
+# node_modules/ ができ、/web/ に絞った書き方では拾えずコミットに混ざる。
+node_modules/
 # tsc --noEmit の差分検査用キャッシュ。`make lint` を回すと生成されるので、
 # 無視しないと検査しただけで作業ツリーが汚れ、`git add -A` が関係ないコミットに
 # 混ぜる（worktree の項と同じ形で #164 から main に入った）。

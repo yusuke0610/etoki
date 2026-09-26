@@ -50,6 +50,8 @@ type fakeGitHub struct {
 	// repos と projects は作成先の候補一覧が返すもの。
 	repos    []port.Repository
 	projects []port.Project
+	// truncated は候補を取り切らずに辿るのをやめたこと（ADR 0054）。
+	truncated bool
 	// projectIDs は呼び出しごとに渡された作成先。ボードの Project が
 	// 使われていることを確かめる。
 	projectIDs []string
@@ -61,8 +63,8 @@ func (f *fakeGitHub) CanWriteProject(context.Context, string) (bool, error) {
 	return f.canWrite, nil
 }
 
-func (f *fakeGitHub) ListRepositories(context.Context) ([]port.Repository, error) {
-	return f.repos, nil
+func (f *fakeGitHub) ListRepositories(context.Context) (port.RepositoryList, error) {
+	return port.RepositoryList{Repositories: f.repos, Truncated: f.truncated}, nil
 }
 
 func (f *fakeGitHub) ListRepositoryProjects(context.Context, string, string) ([]port.Project, error) {
