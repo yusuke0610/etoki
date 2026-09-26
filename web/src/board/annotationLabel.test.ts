@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import type { AnnotationStatus } from "../api/types";
-import { annotationLabel, annotationLabels, frameLabel } from "./annotationLabel";
+import {
+  annotationLabel,
+  annotationLabels,
+  frameLabel,
+  ITEM_KIND_LABEL,
+  itemKinds,
+} from "./annotationLabel";
+
+describe("itemKinds", () => {
+  // 作るものの種別の選択肢は表から並べる。手書きの <option> にすると、契約に
+  // 種別を足したときに tsc が気づかない（#156）。
+  it("表の種別を 1 つずつ、表の並びで返す", () => {
+    expect(itemKinds()).toEqual(["epic", "issue"]);
+    expect(itemKinds()).toEqual(Object.keys(ITEM_KIND_LABEL));
+  });
+});
 
 function status(id: string, name: string): AnnotationStatus {
   return { id, name, granularity: "", state: "uncreated" };

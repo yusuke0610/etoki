@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { emptyScene, installApi } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
+import { emptyScene } from "./helpers/api";
+import { annotationCard, drawRectangle, openBoardWithMock } from "./helpers/board";
 import {
   annotatedScene,
   baseMock,
@@ -11,13 +11,9 @@ import {
   interpretation,
 } from "./helpers/fixtures";
 
-const BOARD_NAME = "認証まわりのブレスト";
-
 test.describe("解釈と作成", () => {
   test("解釈するまで作成のボタンは出ない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     // 中核思想 3。開くだけで GitHub に何かが起きる導線があってはならない。
     await expect(page.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(0);
@@ -31,9 +27,7 @@ test.describe("解釈と作成", () => {
   // 解釈はテキストを保存済みシーンから、画像を画面から取る。揃っていないと
   // 1 回の解釈の入力が食い違う（ADR 0018）。
   test("未保存の変更があるあいだは解釈できない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     const button = card.getByRole("button", { name: "解釈する" });
@@ -53,10 +47,7 @@ test.describe("解釈と作成", () => {
     const mock = baseMock();
     // 画像の書き出しには frame の実体が要る。
     mock.details[BOARD_ID] = { ...board(), scene: annotatedScene() };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -76,9 +67,7 @@ test.describe("解釈と作成", () => {
     // 入っているので、ここでは明示的に空のシーンで開く。
     const empty = baseMock();
     empty.details[BOARD_ID] = { ...board(), scene: emptyScene() };
-    const mock = await installApi(page, empty);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, empty);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -90,9 +79,7 @@ test.describe("解釈と作成", () => {
   });
 
   test("解釈すると summary と epic / issue の階層が出る", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -117,9 +104,7 @@ test.describe("解釈と作成", () => {
 
   // 作成は取り消せない（ADR 0009）。押す前に本文が読めていなければならない。
   test("解釈結果の本文は畳まれていて、開くと読める", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -146,9 +131,7 @@ test.describe("解釈と作成", () => {
   // ここから下は「何を作るか」を開発者に選ばせる約束（ADR 0024）。
   // 見せるだけで LLM の決めたとおりに作らせるのは中核思想 3 に反する。
   test("外した項目は作成リクエストに載らない", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -170,9 +153,7 @@ test.describe("解釈と作成", () => {
 
   // 親だけ消えて子が残ると、選んだつもりのない親なしの issue が GitHub にできる。
   test("epic を外すと配下の issue も外れる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -185,9 +166,7 @@ test.describe("解釈と作成", () => {
 
   // 親を失ったことは黙って起こさない。作られるものが変わっている。
   test("epic を外して戻した issue は、親なしで作ると分かる形で送る", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -213,9 +192,7 @@ test.describe("解釈と作成", () => {
   });
 
   test("手直しした title と body が作成リクエストに載る", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -241,9 +218,7 @@ test.describe("解釈と作成", () => {
   });
 
   test("1 件も選ばれていなければ作成させず、理由を出す", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -271,10 +246,7 @@ test.describe("解釈と作成", () => {
         ],
       },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -286,9 +258,7 @@ test.describe("解釈と作成", () => {
   // 解釈をやり直したら、前の結果に対する手直しは捨てる。残すと、いま画面に
   // 出ている解釈とは別のものに対する編集が混ざる。
   test("解釈し直すと手直しは捨てられる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -307,9 +277,7 @@ test.describe("解釈と作成", () => {
   // LLM の出力は同じ入力でも揺れる。引き直した結果が前より悪かったときに
   // 戻せないと、引き直しは「賭け」になる。
   test("解釈し直すと 2 件が並び、前のものを選び直せる", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     const first = "ログインの入口まわりを 1 つの epic として読みました。";
@@ -337,9 +305,7 @@ test.describe("解釈と作成", () => {
   // 1 件しか無いうちは選ばせない。選択肢が 1 つだけ並ぶと、選ぶ余地があるように
   // 見えて読むものが増える。
   test("解釈が 1 件のうちは選択欄を出さない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -349,9 +315,7 @@ test.describe("解釈と作成", () => {
   });
 
   test("作成すると件数が出て、状態が作成済みに変わる", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await expect(card.getByText("未作成")).toBeVisible();
@@ -387,10 +351,7 @@ test.describe("解釈と作成", () => {
         error: "github: rate limited",
       },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -427,10 +388,7 @@ test.describe("解釈と作成", () => {
         error: "Post ...: EOF",
       },
     };
-    const installed = await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const installed = await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -471,9 +429,7 @@ test.describe("解釈と作成", () => {
   // draft issue は削除できない（ADR 0009）。作ったあとも同じ解釈のまま押せると、
   // 「反応が無かった気がする」もう 1 回で重複する（ADR 0052、#139）。
   test("作成が済んだら、同じ解釈から押し直しても作らない", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -492,9 +448,7 @@ test.describe("解釈と作成", () => {
   // 解釈を選び直すと下書きは作り直される。戻ってきたときに作成済みが全部
   // 選ばれていると、押し直しで重複する。
   test("別の解釈を見てから戻っても、作った項目は選ばれていない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -527,9 +481,7 @@ test.describe("解釈と作成", () => {
         error: "github: rate limited",
       },
     };
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -573,10 +525,7 @@ test.describe("解釈と作成", () => {
         error: "llm is not configured: set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL",
       },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -601,10 +550,7 @@ test.describe("解釈と作成", () => {
         error: "etoki: llm call rate limit reached: 5 calls within 1h0m0s, limit is 5",
       },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -623,10 +569,7 @@ test.describe("解釈と作成", () => {
       status: 409,
       body: { code: "content_hash_mismatch", error: "etoki: content hash mismatch" },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();

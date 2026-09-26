@@ -2,10 +2,16 @@ import { expect, test } from "@playwright/test";
 
 import { expectBlockedReason, expectNoAxeViolations } from "./helpers/a11y";
 import { holdCreate, holdSave, installApi } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
+import {
+  annotationCard,
+  drawRectangle,
+  openBoard,
+  openBoardWithMock,
+} from "./helpers/board";
 import {
   ANNOTATION_IDS,
   BOARD_ID,
+  BOARD_NAME,
   annotations,
   baseMock,
   createdRun,
@@ -23,16 +29,11 @@ import {
  * いない。押せないボタンを足したら、ここにも足す。
  */
 
-const BOARD_NAME = "認証まわりのブレスト";
-
 test.describe("押せない理由が本文として読める", () => {
   // 未保存のあいだは解釈させない（ADR 0018）。テキストは保存済みシーンから、
   // 画像は画面から取るので、揃っていないと 1 回の解釈の入力が食い違う。
   test("解釈する：未保存のとき", async ({ page }) => {
-    await installApi(page, baseMock());
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
     await expectBlockedReason(
@@ -50,10 +51,7 @@ test.describe("押せない理由が本文として読める", () => {
       status: 200,
       body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expectBlockedReason(
       annotationCard(page, "ログイン").getByRole("button", { name: "解釈する" }),
@@ -70,10 +68,7 @@ test.describe("押せない理由が本文として読める", () => {
       status: 200,
       body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
 
     await expectBlockedReason(
@@ -85,10 +80,7 @@ test.describe("押せない理由が本文として読める", () => {
   // 作成は取り消せない（ADR 0009）。何が足りなくて押せないのかが読めないと、
   // 開発者は選び直しようがない。
   test("GitHub に作成する：作るものが 1 件も無いとき", async ({ page }) => {
-    await installApi(page, baseMock());
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -105,10 +97,7 @@ test.describe("押せない理由が本文として読める", () => {
 
   // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる（ADR 0021）。
   test("作成先を変更：未保存のとき", async ({ page }) => {
-    await installApi(page, baseMock());
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
     await expectBlockedReason(
@@ -157,10 +146,7 @@ test.describe("押せない理由が本文として読める", () => {
       // シーンにこの ID の frame は無い。保存前に消したフレームの注釈。
       { id: "frame-gone", name: "消したフレーム", granularity: "", state: "uncreated" },
     ];
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expectBlockedReason(
       annotationCard(page, "消したフレーム").getByRole("button", {
@@ -256,9 +242,7 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   test("保存：取り込み中のとき", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     // loadFromBlob が使う FileReader を止め、ファイルを読んでいる状態を作る。
     await page.evaluate(() => {
@@ -295,9 +279,7 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   test("GitHub に作成する：取り込み中のとき", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -408,10 +390,7 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   test("理由の要素が消えたら落ちる", async ({ page }) => {
-    await installApi(page, baseMock());
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
     const button = page.getByRole("button", { name: "作成先を変更" });
@@ -450,10 +429,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
 
     test("ボードを開いた状態", async ({ page }) => {
-      await installApi(page, baseMock());
-
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, baseMock());
 
       await expectNoAxeViolations(page);
     });
@@ -463,10 +439,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     // 生成結果を出したところまで開けて、`.diagram-mermaid` と
     // 「ここまでのやりとり」まで含めて見る。
     test("図のドラフトを生成した状態", async ({ page }) => {
-      await installApi(page, baseMock());
-
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, baseMock());
 
       await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
       await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
@@ -540,10 +513,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       const mock = baseMock();
       // 件数は文言そのもの。0 件だと分岐の片方しか描かれない。
       mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
-      await installApi(page, mock);
-
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, mock);
 
       await page.getByRole("button", { name: "ボードを削除" }).click();
       await page.getByRole("alertdialog").waitFor();
@@ -574,10 +544,7 @@ for (const colorScheme of ["light", "dark"] as const) {
           },
         ],
       };
-      await installApi(page, mock);
-
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, mock);
 
       await page.getByRole("button", { name: "メンバー", exact: true }).click();
       await page.getByText("Bob").waitFor();
@@ -595,10 +562,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     // 解釈結果は画面の中でいちばん要素が多い。作る前に読ませる場所なので
     // （ADR 0024）、読めないものが混じっていないかをここで見る。
     test("解釈結果を出した状態", async ({ page }) => {
-      await installApi(page, baseMock());
-
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, baseMock());
 
       const card = annotationCard(page, "ログイン");
       await card.getByRole("button", { name: "解釈する" }).click();
