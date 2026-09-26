@@ -18,8 +18,15 @@ Bash は読み取りと検査（`git diff` / `git log` / `go vet` / `go test` �
    git status --short
    git diff main...HEAD --stat
    git diff main...HEAD -- '*.go' 'api/openapi.yaml' 'migrations/**'
-   git diff -- '*.go'   # 未コミット分
+   # 未コミット分。**`git diff` だけでは未ステージしか出ない。** HEAD と比べて
+   # ステージ済みも含める。
+   git diff HEAD -- '*.go' 'api/openapi.yaml' 'migrations/**'
+   # 新規ファイルはどちらの diff にも出ない。名前を出して 1 つずつ読む。
+   git ls-files --others --exclude-standard -- '*.go'
    ```
+
+   **`git status --short` は一覧しか返さない。** 新規・ステージ済みの `.go` を
+   読まずに終えると、いちばん新しいコードがレビューされない。
 
 2. 下の表の正本を開き、**1 項目ずつ差分に照らす。**
 3. 必要なら devShell の中で検査を回す（`nix develop --command go vet ./...`、
