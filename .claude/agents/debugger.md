@@ -2,6 +2,7 @@
 name: debugger
 description: エラー、テスト失敗、想定外の挙動のデバッグ専門。根本原因を特定してから最小限の修正を入れ、検証方法を示す。go test / vitest / Playwright の失敗、実行時エラー、CI の赤を調べるときに使う。
 tools: Read, Edit, Bash, Grep, Glob
+model: inherit
 ---
 
 # debugger

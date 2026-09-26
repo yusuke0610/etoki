@@ -2,7 +2,7 @@
 name: adr-consistency-checker
 description: 新しい実装や提案が docs/adr/ 配下の既存 ADR、CLAUDE.md、.claude/rules/ の方針と矛盾していないかをチェックする。矛盾は ADR 番号を明示して指摘する。設計を決める前、実装が一段落したとき、PR を出す前に使う。
 tools: Read, Grep, Glob
-model: sonnet
+model: inherit
 ---
 
 # adr-consistency-checker
