@@ -219,14 +219,19 @@ test.describe("図のドラフト", () => {
   //
   // 入力はサーバーが書かせる記法に合わせる。ER 図は `erDiagram`、構成図は
   // subgraph 付きの `flowchart`（ADR 0041）。
-  for (const { kind, mermaid } of [
+  //
+  // **要素の個数は完全一致で見ない。** ER の属性の罫線のように、変換器の描き方で
+  // 変わる。見るのは入力に書いたノードと線が 1 つも落ちていないこと。
+  for (const { kind, mermaid, labels } of [
     {
       kind: "er" as const,
       mermaid: "erDiagram\n  CUSTOMER ||--o{ ORDER : places",
+      labels: ["CUSTOMER", "ORDER", "places"],
     },
     {
       kind: "architecture" as const,
       mermaid: "flowchart TD\n  subgraph web\n    a1[画面] --> a2[API]\n  end",
+      labels: ["web", "画面", "API"],
     },
   ]) {
     test(`${kind} の図が画像に落ちず、図形として置ける`, async ({ page }) => {
@@ -247,13 +252,18 @@ test.describe("図のドラフト", () => {
       await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
       const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
-        elements: { type: string }[];
+        elements: { type: string; text?: string }[];
       };
       const kinds = saved.elements.map((el) => el.type);
       // 画像 1 枚ではなく、手で直せる図形とテキストに分かれている。
       expect(kinds).not.toContain("image");
       expect(kinds.filter((t) => t === "rectangle").length).toBeGreaterThan(0);
-      expect(kinds.filter((t) => t === "text").length).toBeGreaterThan(0);
+      // 書いたノード（と関連・境界の名前）が文字として残り、線も落ちていない。
+      const texts = saved.elements.flatMap((el) =>
+        el.type === "text" && el.text ? [el.text] : [],
+      );
+      for (const label of labels) expect(texts).toContain(label);
+      expect(kinds.filter((t) => t === "arrow").length).toBeGreaterThan(0);
     });
   }
 
