@@ -478,6 +478,13 @@ cd web && bunx playwright test --ui
   `src/excalidraw/mermaid.test.ts` の `getBBox` スタブがそれを補っているが、
   **返している寸法は本物ではない**ので、そのファイルの中だけに閉じてある。
   種類ごとに要素になるかどうかはブラウザ（E2E）でしか分からない。
+- **`web/package.json` の `overrides` で mermaid を古い版に固定している**
+  （ADR 0061、#180）。変換器が引く間接依存で、新しい mermaid では ER 図と
+  subgraph 付きの flowchart が画像に落ち、図のドラフトが置けない。**外す条件は
+  `web/e2e/diagramChat.spec.ts` の「図形として置ける」が `overrides` なしで
+  通ること。** 変換器を上げたらまず外して回す。固定した版に残る既知の脆弱性を
+  受け入れている理由は ADR にあり、**mermaid の文字列を本人のプロンプト以外から
+  受け取る機能を足すなら、その前に見直す。**
 - **`web/vite.config.ts` の `test.include`** — vitest の既定は `*.spec.ts` も
   拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の
@@ -500,3 +507,5 @@ cd web && bunx playwright test --ui
 `@excalidraw/mermaid-to-excalidraw`、`typescript`）は `.github/dependabot.yml` の
 `ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
 **固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。
+mermaid だけは入れていない。間接依存なので version updates の対象にならず、
+脆弱性の知らせは残しておきたいため（ADR 0061）。

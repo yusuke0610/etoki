@@ -60,6 +60,10 @@
             # あれば自動で拾い、run: の中のシェルまで見るため。
             actionlint
             shellcheck
+            # 依存と Go ツールチェーンの既知の脆弱性を調べる（make vulncheck）。
+            # Go 本体は flake.lock が決めていて Dependabot の security updates の
+            # 対象にならないので、ここで調べないと気づく経路が無い（ADR 0035）。
+            govulncheck
           ];
 
           shellHook = ''
