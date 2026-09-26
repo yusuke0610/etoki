@@ -465,6 +465,11 @@ export function App() {
 
         setCreating(null);
         if (board === null) {
+          // **ここは `loadBoard` を通らないので、世代が進まない。** サイドバーで
+          // 始めた取得が走っていると、遅れて着いた応答が「離れたはずのボード」を
+          // 開き直し、URL まで積む。`logout` と同じ規則で、対象が変わる時点で
+          // 関連する世代を全部無効にする（`.claude/rules/async-ui.md`）。
+          openings.invalidateAll();
           setCurrent(null);
           setPicking(false);
           showLocation(NO_BOARD, "replace");
@@ -482,7 +487,7 @@ export function App() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [confirmDiscard, loadBoard, showLocation, signedIn]);
+  }, [confirmDiscard, loadBoard, openings, showLocation, signedIn]);
 
   // 問い合わせ中は何も出さない。ログイン画面を一瞬見せてから消すと、
   // 認証を設定していない構成でもちらつく。

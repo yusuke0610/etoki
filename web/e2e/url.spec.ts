@@ -171,6 +171,49 @@ test.describe("ボードの URL", () => {
     await expect.poll(() => search(page)).toBe(`?board=${OTHER_ID}`);
   });
 
+  // 切れると: ボードを開かない場所（`/`）へ戻ったときだけ世代が進まないので、
+  // 走っていた取得の応答が離れたはずのボードを開き直し、URL まで積む。
+  // `logout` と同じ規則で、対象が変わる時点で世代を無効にする
+  // （`.claude/rules/async-ui.md`）。
+  test("ボードを開かない場所へ戻ると、走っている取得の応答を捨てる", async ({ page }) => {
+    const mock = twoBoards();
+    await installApi(page, mock);
+
+    await page.goto("/");
+    // 2 枚目を開いて履歴を 1 つ積む。これで「戻る」の行き先が `/` になる。
+    await openBoard(page, OTHER_NAME);
+    await expect.poll(() => search(page)).toBe(`?board=${OTHER_ID}`);
+
+    // 1 枚目の取得を止めたまま押す。止めてあるので URL はまだ動かない。
+    let release = (): void => {};
+    await holdBoardDetail(
+      page,
+      BOARD_ID,
+      new Promise<void>((r) => (release = () => r())),
+    );
+    await page.locator(".board-list").getByRole("button", { name: BOARD_NAME }).click();
+
+    // ボードを開かない場所へ戻る。
+    await page.goBack();
+    await expect.poll(() => search(page)).toBe("");
+
+    // **応答が着くところまで待ってから見る。** 着く前に見ると、反映される前の
+    // 画面を見て通ってしまう（無効化を外しても緑になる）。
+    const responded = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === `/api/boards/${BOARD_ID}`,
+    );
+    release();
+    await responded;
+    // 反映は応答の直後に起きるので、1 拍だけ置いてから確かめる。
+    await page.waitForTimeout(500);
+
+    // 捨てないと 1 枚目が開いて URL が積まれる。
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toHaveCount(
+      0,
+    );
+    expect(search(page)).toBe("");
+  });
+
   test.describe("作成先の選び直し", () => {
     test("選択画面も URL に出て、リロードで戻る", async ({ page }) => {
       await installApi(page, baseMock());
