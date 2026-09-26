@@ -156,6 +156,8 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeRateLimited:
 		return true
+	case ErrorCodeRequestTooLarge:
+		return true
 	case ErrorCodeSceneConflict:
 		return true
 	case ErrorCodeSceneTooLarge:
