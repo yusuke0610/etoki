@@ -3,7 +3,6 @@ package httpapi
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +30,8 @@ func (h *handlers) generateDiagramDraft(c *gin.Context) {
 
 	draft, err := h.diagrams.Generate(c.Request.Context(), c.Param("id"), req)
 	if err != nil {
-		h.failDiagram(c, err)
+		// 出力を弾いたのは、上限まで投げ直しても図が返らなかったとき。
+		h.failLLM(c, err, usecase.ErrDiagramFailed)
 		return
 	}
 
@@ -89,23 +89,4 @@ func (h *handlers) bindDiagramRequest(c *gin.Context) (usecase.DiagramRequest, b
 	}
 
 	return req, true
-}
-
-// failDiagram は生成のエラーを応答にする。
-//
-// 写し替えは errors.go の表が持つ。ここに残すのは記録だけ（failInterpret と
-// 同じ形）。
-func (h *handlers) failDiagram(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, usecase.ErrLLMUnavailable):
-		h.logger.ErrorContext(c.Request.Context(), "llm call failed",
-			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
-
-	case errors.Is(err, usecase.ErrDiagramFailed):
-		// 接続はできたが、上限まで投げ直しても図が返らなかった。
-		h.logger.WarnContext(c.Request.Context(), "llm output rejected",
-			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
-	}
-
-	h.fail(c, err)
 }

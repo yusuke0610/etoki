@@ -370,6 +370,34 @@ func TestGenerateDiagram_NotationPerKind(t *testing.T) {
 	}
 }
 
+// flowchart で書かせる種類は、別名の graph で書かれた出力も受け付ける。
+// mermaid は同じ図に 2 つの名前を持つので、どちらで返っても置ける。
+//
+// **flowchart で書かせる種類をすべて見る。** 記法の定義は 1 つにまとめてある
+// （#156）が、種類ごとに書き写す形に戻すと、1 つだけ graph を足し忘れても
+// 他の種類の検査は緑のまま通る。
+func TestGenerateDiagram_FlowchartAcceptsGraphAlias(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []domain.DiagramKind{
+		domain.DiagramKindTodo,
+		domain.DiagramKindMindmap,
+		domain.DiagramKindArchitecture,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+
+			llm := &fakeLLM{responses: []string{"graph TD\n  A --> B"}}
+			svc, _ := newDiagramService(t, llm)
+
+			if _, err := svc.Generate(t.Context(), "board-1",
+				usecase.DiagramRequest{Kind: kind, Prompt: "描いて"}); err != nil {
+				t.Fatalf("graph で書かれた出力を弾いている: %v", err)
+			}
+		})
+	}
+}
+
 // mermaid には mindmap と architecture-beta の記法があるが、変換器が図形に
 // 分解せず画像 1 枚にして返すため、そのまま頼むと**必ず置けないものが返る**
 // （ADR 0040 / 0041）。記法を選ぶ基準は「mermaid で書けるか」ではなく

@@ -2,16 +2,22 @@ import { expect, test, type Page } from "@playwright/test";
 
 import type { BoardDetail } from "../src/api/types";
 import { installApi, summarize } from "./helpers/api";
-import { chooseTarget, drawRectangle, openBoard, picker } from "./helpers/board";
+import {
+  chooseTarget,
+  drawRectangle,
+  openBoard,
+  openBoardWithMock,
+  picker,
+} from "./helpers/board";
 import {
   BOARD_ID,
+  BOARD_NAME,
   baseMock,
   board,
   repositories,
   unselectedBoard,
 } from "./helpers/fixtures";
 
-const BOARD_NAME = "認証まわりのブレスト";
 const UNSELECTED_NAME = "作成先未選択のブレスト";
 const OTHER_NAME = "決済まわりのブレスト";
 
@@ -192,9 +198,7 @@ test.describe("作成先の選択", () => {
 
   // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。黙って捨てない。
   test("未保存の変更があるうちは作成先を変更できない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const change = page.getByRole("button", { name: "作成先を変更" });
     await expect(change).toBeEnabled();
@@ -235,9 +239,7 @@ test.describe("作成先の選択", () => {
   });
 
   test("固定前は作成先を選び直せる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await page.getByRole("button", { name: "作成先を変更" }).click();
     await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
@@ -258,9 +260,7 @@ test.describe("作成先の選択", () => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
     // 確定していることだけでなく、なぜ確定なのかも本文で読める必要がある。
@@ -284,9 +284,7 @@ test.describe("作成先の選択", () => {
       ],
     };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
 
@@ -372,9 +370,7 @@ test.describe("作成先の選択", () => {
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };
     mock.projects["acme/web"] = { status: 200, body: [] };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
 
@@ -393,9 +389,7 @@ test.describe("作成先の選択", () => {
       body: { code: "target_mismatch", error: "etoki: board target does not match" },
     };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
 

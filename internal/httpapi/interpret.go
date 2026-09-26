@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +31,8 @@ func (h *handlers) interpretAnnotation(c *gin.Context) {
 	in, err := h.interpretations.Interpret(
 		c.Request.Context(), c.Param("id"), c.Param("annotationId"), images)
 	if err != nil {
-		h.failInterpret(c, err)
+		// 出力を弾いたのは、上限まで再送してもスキーマを満たさなかったとき。
+		h.failLLM(c, err, usecase.ErrInterpretationFailed)
 		return
 	}
 
@@ -81,26 +81,6 @@ func (h *handlers) bindInterpretImages(c *gin.Context) ([]port.Image, bool) {
 		MediaType: string(req.Image.MediaType),
 		Data:      req.Image.Data,
 	}}, true
-}
-
-// failInterpret は解釈のエラーを応答にする。
-//
-// 写し替えは errors.go の表が持つ。LLM 側の失敗を 500 に丸めないのはそちらの
-// 責任で、ここに残すのは記録だけ。
-func (h *handlers) failInterpret(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, usecase.ErrLLMUnavailable):
-		// 認証や接続の失敗。API キーはアダプタ側でエラーに載せていない。
-		h.logger.ErrorContext(c.Request.Context(), "llm call failed",
-			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
-
-	case errors.Is(err, usecase.ErrInterpretationFailed):
-		// 接続はできたが、上限まで再送しても出力がスキーマを満たさなかった。
-		h.logger.WarnContext(c.Request.Context(), "llm output rejected",
-			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
-	}
-
-	h.fail(c, err)
 }
 
 // toInterpretationResponse はドメインの解釈結果を境界の DTO に詰め替える。
