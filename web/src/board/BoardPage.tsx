@@ -221,14 +221,32 @@ export function BoardPage({
   // 画面全体に出す失敗は通知へ（ADR 0058）。**保存の衝突・解釈や作成の失敗は
   // ここを通さない。** 消えてよい失敗ではなく、残して読ませる状態だから。
   const { notify, dismissKey } = useNotify();
+  // **画面から外れたあとに返った失敗は通知しない。** 通知はキャンバスより上に
+  // 生きているので、ボードを離れる前に投げた保存が離れたあとで失敗すると、
+  // 別のボードの画面に「保存できませんでした」が出る。その「再試行」が呼ぶのは
+  // 離れたボードの save で、捨てると決めたシーンを前のボードへ保存しにいく。
+  // 離れる時点で出ている通知は下げてある（SAVE_FAILED の effect）ので、ここで
+  // 塞ぐのは離れる時点でまだ応答待ちだったぶん。
+  //
+  // 印は effect で立てる。StrictMode は effect を 2 回走らせ、そのあいだに
+  // cleanup を挟むので、初期値で true にすると 2 回目以降が false のまま残る。
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const onError = useCallback(
-    (failure: Failure, options: Pick<NotifyOptions, "action" | "key"> = {}) =>
+    (failure: Failure, options: Pick<NotifyOptions, "action" | "key"> = {}) => {
+      if (!mounted.current) return;
       notify({
         kind: "error",
         message: failure.message,
         detail: failure.detail,
         ...options,
-      }),
+      });
+    },
     [notify],
   );
 

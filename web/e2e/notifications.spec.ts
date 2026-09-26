@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, summarize } from "./helpers/api";
+import { holdSave, installApi, summarize } from "./helpers/api";
 import {
   annotationCard,
   drawRectangle,
@@ -208,5 +208,44 @@ test.describe("通知", () => {
     await openBoard(page, OTHER_NAME);
 
     await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
+  // 切れると: 離れる前に投げた保存が離れたあとで失敗し、別のボードの画面に
+  // 「保存できませんでした」が出る。その「再試行」は離れたボードの save を
+  // 呼ぶので、捨てると決めたシーンを前のボードへ保存しにいく。
+  // 上のテストと違い、離れる時点ではまだ通知が出ていない（応答待ち）。
+  test("離れたあとに失敗した保存は通知しない", async ({ page }) => {
+    const mock = twoBoards();
+    await openBoardWithMock(page, mock);
+    // installApi より後に登録する（後に登録したルートが先に当たる）。
+    let release = () => {};
+    await holdSave(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+
+    page.on("dialog", (dialog) => void dialog.accept());
+    await openBoard(page, OTHER_NAME);
+
+    // 離れたあとで保存が失敗して返る。
+    mock.saveSceneError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+    const failed = page.waitForResponse(
+      (r) =>
+        r.request().method() === "PUT" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/scene`,
+    );
+    release();
+    expect((await failed).status()).toBe(500);
+
+    // 応答を受けた処理が通知を出すまでの間を置いてから、出ていないことを見る。
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 });
