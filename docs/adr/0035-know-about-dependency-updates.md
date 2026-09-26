@@ -123,3 +123,22 @@ PAT を置けば承認は要らなくなるが、それは長命の資格情報�
 - **`flake.lock` は security updates の対象にならない。** nix のエコシステムを
   有効にしても version updates しか出ないので、そこは有効にするかどうかに
   関わらず手で見るしかない
+
+## 追記: 脆弱性の知らせが実際に届く状態にする（#143）
+
+上の「security updates は version updates とは別に効く」は、**リポジトリ設定で
+Dependabot alerts が無効になっていたので成り立っていなかった**（2026-09 の
+棚卸しで確認）。`ignore` を `update-types` に絞った工夫も、知らせそのものが
+来ない状態では効いていなかった。
+
+- **Dependabot alerts / security updates / secret scanning（push protection を
+  含む）を有効にした。** リポジトリ設定なのでコードの差分には現れない。
+- **`flake.lock` 由来の Go は `make vulncheck`（govulncheck）で拾う。** 上に
+  書いたとおり security updates の対象にならないので、手で見る代わりに CI の
+  最後のステップと週 1 の定期実行で回す。**`make lint` / `make test` には
+  入れない。** 脆弱性のデータベースを取りに行くので、差分と関係なく外で公開
+  された日に落ちる。
+- **フロントの依存は Dependabot alerts に任せ、`bun audit` を CI に入れない。**
+  `@excalidraw/excalidraw` が固定している `nanoid` のように、こちらでは上げられ
+  ない推移的依存があり、CI に入れると赤いまま固まって本当の知らせが埋もれる。
+  範囲の中で上がるものは `bun audit fix` でロックファイルを更新する。
