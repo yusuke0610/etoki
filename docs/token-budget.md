@@ -65,7 +65,8 @@ Claude Code が手元に残す transcript（`~/.claude/projects/<作業ディレ
 | `api/` を触る              | `api/CLAUDE.md`              |
 | `paths` に当たるものを読む | `.claude/rules/*.md`         |
 | `/rv` `/pr-review`         | `.claude/skills/*/SKILL.md`  |
-| サブエージェントを呼ぶ     | `.claude/agents/*.md`        |
+| 常時（`description` だけ） | `.claude/agents/*.md`        |
+| 呼んだエージェントの本文   | `.claude/agents/<名前>.md`   |
 | 手で開いたときだけ         | `docs/adr/*.md`・`README.md` |
 
 **現在値はここに書かない。** 書き写すと、ファイルを直した日にここだけが古くなる
