@@ -237,6 +237,22 @@ export function BoardPage({
       mounted.current = false;
     };
   }, []);
+  // **下げる側も同じ印を見る。** 通知はボードより上（`NotificationProvider`）に
+  // 生きていて key で消すので、**離れたあとに届いた成功で下げると、いま開いて
+  // いるボードに出ている同じ key の通知が消える。** 出す側（`onError`）だけを
+  // 塞いでも、消える側からボードを跨いでしまう。
+  //
+  // **離れる時点で下げるのは別の話**なので、そちらは `dismissKey` を直に呼ぶ
+  // （下の `board.id` の cleanup）。あれは「離れたから下げる」であって、
+  // 「離れたのに下げる」ではない。
+  const dismissHere = useCallback(
+    (key: string) => {
+      if (!mounted.current) return;
+      dismissKey(key);
+    },
+    [dismissKey],
+  );
+
   const onError = useCallback(
     (failure: Failure, options: Pick<NotifyOptions, "action" | "key"> = {}) => {
       if (!mounted.current) return;
@@ -573,14 +589,14 @@ export function BoardPage({
       if (request !== annotationsRequest.current) return;
       setAnnotations(next.annotations);
       setDetached(next.detached);
-      dismissKey(ANNOTATIONS_FAILED);
+      dismissHere(ANNOTATIONS_FAILED);
     } catch (e) {
       if (request !== annotationsRequest.current) return;
       onError(describeFailure("注釈の状態を取得できませんでした", e), {
         key: ANNOTATIONS_FAILED,
       });
     }
-  }, [board.id, dismissKey, onError]);
+  }, [board.id, dismissHere, onError]);
 
   useEffect(() => {
     void refreshAnnotations();
@@ -1093,7 +1109,7 @@ export function BoardPage({
       setConflicted(false);
       // 前の保存の失敗はもう当てはまらない。残すと、保存できているのに
       // 「保存できませんでした」が読める。
-      dismissKey(SAVE_FAILED);
+      dismissHere(SAVE_FAILED);
       // 保存が成功した = いまのシーンはサーバーの上限を満たしている。
       setOverLimit(false);
       savedSignature.current = sent;
@@ -1134,7 +1150,7 @@ export function BoardPage({
     board.id,
     creationGenerations,
     currentBackground,
-    dismissKey,
+    dismissHere,
     generations,
     onError,
     refreshAnnotations,

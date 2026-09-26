@@ -248,4 +248,60 @@ test.describe("通知", () => {
     await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
+
+  // 切れると: 離れたボードの取得が成功した時点で `dismissKey` が走り、通知は
+  // ボードより上（`NotificationProvider`）に key で消されるので、**いま開いて
+  // いるボードに出ている同じ通知が消える。** 出す側だけを塞いでも足りない。
+  test("離れたあとに届いた取得成功で、別のボードの通知を消さない", async ({ page }) => {
+    const mock = twoBoards();
+    await installApi(page, mock);
+
+    // **ボードごとに分ける。** 片方は止めて成功させ、もう片方は失敗させたいので、
+    // 共有の `breakAnnotations`（どのボードにも当たる）では作れない並び。
+    let release = (): void => {};
+    const held = new Promise<void>((r) => (release = () => r()));
+    await page.route(
+      (url) => url.pathname === `/api/boards/${BOARD_ID}/annotations`,
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.fallback();
+          return;
+        }
+        await held;
+        await route.fallback();
+      },
+    );
+    await page.route(
+      (url) => url.pathname === `/api/boards/${OTHER_ID}/annotations`,
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.fallback();
+          return;
+        }
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ code: "internal", error: "internal error" }),
+        });
+      },
+    );
+
+    await page.goto("/");
+    // 1 枚目は注釈の取得を止めたまま開く。
+    await openBoard(page, BOARD_NAME);
+    // 2 枚目へ移る。こちらの取得は失敗するので通知が出る。
+    await openBoard(page, OTHER_NAME);
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("注釈の状態を取得できませんでした");
+
+    // ここで 1 枚目の取得が成功して返る。
+    release();
+    await page.waitForTimeout(500);
+
+    // 2 枚目の通知は残る。
+    await expect(page.getByRole("alert")).toContainText(
+      "注釈の状態を取得できませんでした",
+    );
+  });
 });
