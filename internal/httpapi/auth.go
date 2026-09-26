@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -54,7 +55,26 @@ func (h *handlers) startLogin(c *gin.Context) {
 		return
 	}
 
-	authorizeURL, err := h.auth.Start(c.Request.Context(), h.redirectURI(c))
+	// ボディは任意。戻り先を持たない呼び出し（画面を開いただけのログイン、
+	// curl）は何も送ってこないので、空ボディを不正としない。
+	//
+	// **Content-Length では判定しない。** chunked で送られると -1 になり、
+	// 本文があるのに読み飛ばす。空かどうかを知っているのは読んだ側だけ。
+	var req apitypes.LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		h.badRequest(c, err)
+		return
+	}
+
+	var returnTo string
+	if req.ReturnTo != nil {
+		returnTo = *req.ReturnTo
+	}
+
+	// **検証はユースケースが行う。** ここで形を見ると判定が 2 箇所になる
+	// （.claude/rules/validation-boundaries.md）。ErrInvalidInput は h.fail が
+	// 400 に写す。
+	authorizeURL, err := h.auth.Start(c.Request.Context(), h.redirectURI(c), returnTo)
 	if err != nil {
 		h.fail(c, err)
 		return
@@ -81,16 +101,24 @@ func (h *handlers) completeLogin(c *gin.Context) {
 		return
 	}
 
-	token, _, err := h.auth.Complete(c.Request.Context(), code, state, h.redirectURI(c))
+	result, err := h.auth.Complete(c.Request.Context(), code, state, h.redirectURI(c))
 	if err != nil {
 		h.failAuth(c, err)
 		return
 	}
 
-	h.setSessionCookie(c, token)
+	h.setSessionCookie(c, result.Token)
 
 	// 画面に戻す。認可の code と state を URL に残したままにしない。
-	c.Redirect(http.StatusFound, "/")
+	//
+	// **戻り先はログインを始めた時点で state と一緒に保存したもの**（ADR 0059）。
+	// 自オリジンの相対パスであることは保存する前に確かめてあるので、ここで
+	// 検証し直さない（検証を 2 箇所に置かない）。指定が無ければこれまでどおり "/"。
+	target := result.ReturnTo
+	if target == "" {
+		target = "/"
+	}
+	c.Redirect(http.StatusFound, target)
 }
 
 // logout はセッションを破棄する。

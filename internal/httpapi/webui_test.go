@@ -138,6 +138,23 @@ func TestWebUI_KeepsHealthz(t *testing.T) {
 	}
 }
 
+// 開いているボードはクエリで表す（ADR 0059）。パスとしては "/" なので、
+// fallback を持たないまま配れる。**ここが切れると、ボードの URL を直接開いた
+// 人に画面が出ない。** ADR 0032 の判断をそのままにできる根拠がこれ。
+func TestWebUI_ServesIndexForBoardQuery(t *testing.T) {
+	t.Parallel()
+
+	r := newWebRouter(t, newWebDir(t))
+	rec := do(t, r, http.MethodGet, "/?board=board-1&picking=1", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "<!doctype") {
+		t.Errorf("画面が返っていない: %q", rec.Body.String())
+	}
+}
+
 // SPA の fallback は持たない。フロントに client-side routing が無いので、
 // 実在しないパスは 404 のままにする（ADR 0032）。
 func TestWebUI_UnknownPathIsNotFound(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
 	"github.com/yusuke0610/etoki/internal/httpapi"
+	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/secret"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
@@ -550,4 +551,71 @@ func doWithCookie(
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	return rec
+}
+
+// ログイン後の戻り先は state と一緒に保存したもの（ADR 0059）。ここが "/" に
+// 固定されると、セッションが切れて入り直した人は開いていたボードを探し直す。
+func TestCallback_RedirectsToSavedReturnTo(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newAuthRouter(t, &stubProvider{})
+
+	rec := do(t, r, http.MethodPost, "/api/auth/login",
+		map[string]string{"returnTo": "/?board=board-1"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", rec.Code, rec.Body)
+	}
+	u, err := url.Parse(decode[map[string]any](t, rec)["authorizeUrl"].(string))
+	if err != nil {
+		t.Fatalf("parse authorize url: %v", err)
+	}
+
+	rec = do(t, r, http.MethodGet,
+		"/api/auth/callback?code=c1&state="+u.Query().Get("state"), nil)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 (%s)", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Location"); got != "/?board=board-1" {
+		t.Errorf("Location = %q, want /?board=board-1", got)
+	}
+}
+
+// 戻り先を送らなかったログインはこれまでどおり "/" に戻す。**戻り先を渡す
+// 経路を足したことで、渡さない経路の挙動が変わらないことまで見る。**
+func TestCallback_RedirectsToRootWithoutReturnTo(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newAuthRouter(t, &stubProvider{})
+
+	rec := do(t, r, http.MethodPost, "/api/auth/login", nil)
+	u, err := url.Parse(decode[map[string]any](t, rec)["authorizeUrl"].(string))
+	if err != nil {
+		t.Fatalf("parse authorize url: %v", err)
+	}
+
+	rec = do(t, r, http.MethodGet,
+		"/api/auth/callback?code=c1&state="+u.Query().Get("state"), nil)
+	if got := rec.Header().Get("Location"); got != "/" {
+		t.Errorf("Location = %q, want /", got)
+	}
+}
+
+// 他所を指す戻り先は 400 で弾く。判定はユースケースにあるので、ここが見るのは
+// 「弾かれた結果が 400 と invalid_input として境界に出ること」まで。
+func TestLogin_RejectsForeignReturnTo(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newAuthRouter(t, &stubProvider{})
+
+	for _, returnTo := range []string{"https://evil.example/", "//evil.example/", "/\\evil.example/"} {
+		rec := do(t, r, http.MethodPost, "/api/auth/login",
+			map[string]string{"returnTo": returnTo})
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("login(returnTo=%q) = %d, want 400 (%s)", returnTo, rec.Code, rec.Body)
+			continue
+		}
+		if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeInvalidInput {
+			t.Errorf("login(returnTo=%q) の code = %q, want invalid_input", returnTo, code)
+		}
+	}
 }

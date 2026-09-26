@@ -19,7 +19,15 @@ export function LoginPage() {
     setStarting(true);
     setError(null);
     try {
-      const { authorizeUrl } = await authApi.start();
+      // **いま見えている場所を戻り先として渡す**（ADR 0059）。セッションが
+      // 切れてここへ落ちた人は、ボードの URL を開いたまま立っている。渡さないと
+      // ログインし直した先が常に `/` になり、作業していたボードを探し直す。
+      //
+      // **戻り先を持つのはサーバー**（state と一緒）。ここから渡すのは 1 度きりで、
+      // 認可の往復の URL には載らない。自オリジン以外は 400 で弾かれる。
+      const { authorizeUrl } = await authApi.start(
+        window.location.pathname + window.location.search,
+      );
       window.location.assign(authorizeUrl);
     } catch (e) {
       setError(describeFailure("ログインを開始できませんでした", e));

@@ -304,17 +304,73 @@ func TestConsumeState_IsSingleUse(t *testing.T) {
 
 	repo := newSessions(t, newDB(t))
 
-	if err := repo.SaveState(t.Context(), "state-1", baseTime, baseTime.Add(time.Minute)); err != nil {
+	if err := repo.SaveState(t.Context(), port.OAuthState{
+		State:     "state-1",
+		CreatedAt: baseTime,
+		ExpiresAt: baseTime.Add(time.Minute),
+	}); err != nil {
 		t.Fatalf("SaveState: %v", err)
 	}
 
-	ok, err := repo.ConsumeState(t.Context(), "state-1", baseTime)
-	if err != nil || !ok {
-		t.Fatalf("1 回目の ConsumeState() = (%v, %v), want (true, nil)", ok, err)
+	got, err := repo.ConsumeState(t.Context(), "state-1", baseTime)
+	if err != nil || got == nil {
+		t.Fatalf("1 回目の ConsumeState() = (%v, %v), want (非 nil, nil)", got, err)
 	}
 
-	if ok, err = repo.ConsumeState(t.Context(), "state-1", baseTime); err != nil || ok {
-		t.Fatalf("2 回目の ConsumeState() = (%v, %v), want (false, nil)", ok, err)
+	if got, err = repo.ConsumeState(t.Context(), "state-1", baseTime); err != nil || got != nil {
+		t.Fatalf("2 回目の ConsumeState() = (%v, %v), want (nil, nil)", got, err)
+	}
+}
+
+// ログイン後の戻り先は state と一緒に往復する（ADR 0059）。ここが切れると
+// 入り直した人は開いていたボードへ戻れない。
+func TestConsumeState_ReturnsSavedReturnTo(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+
+	if err := repo.SaveState(t.Context(), port.OAuthState{
+		State:     "state-1",
+		ReturnTo:  "/?board=board-1",
+		CreatedAt: baseTime,
+		ExpiresAt: baseTime.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+
+	got, err := repo.ConsumeState(t.Context(), "state-1", baseTime)
+	if err != nil {
+		t.Fatalf("ConsumeState() = %v", err)
+	}
+	if got == nil {
+		t.Fatal("ConsumeState() = nil, want 非 nil")
+	}
+	if got.ReturnTo != "/?board=board-1" {
+		t.Errorf("ReturnTo = %q, want /?board=board-1", got.ReturnTo)
+	}
+}
+
+// 戻り先を指定しなかった state は空文字で返る。列を足す前に保存された行も
+// 同じ形になる（DEFAULT ”）ので、「知らない」を 1 つの表し方に寄せてある。
+func TestConsumeState_ReturnToDefaultsToEmpty(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+
+	if err := repo.SaveState(t.Context(), port.OAuthState{
+		State:     "state-1",
+		CreatedAt: baseTime,
+		ExpiresAt: baseTime.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+
+	got, err := repo.ConsumeState(t.Context(), "state-1", baseTime)
+	if err != nil || got == nil {
+		t.Fatalf("ConsumeState() = (%v, %v)", got, err)
+	}
+	if got.ReturnTo != "" {
+		t.Errorf("ReturnTo = %q, want 空文字", got.ReturnTo)
 	}
 }
 
@@ -323,17 +379,21 @@ func TestConsumeState_RejectsExpiredAndUnknown(t *testing.T) {
 
 	repo := newSessions(t, newDB(t))
 
-	if err := repo.SaveState(t.Context(), "old", baseTime, baseTime.Add(time.Minute)); err != nil {
+	if err := repo.SaveState(t.Context(), port.OAuthState{
+		State:     "old",
+		CreatedAt: baseTime,
+		ExpiresAt: baseTime.Add(time.Minute),
+	}); err != nil {
 		t.Fatalf("SaveState: %v", err)
 	}
 
-	ok, err := repo.ConsumeState(t.Context(), "old", baseTime.Add(time.Hour))
-	if err != nil || ok {
-		t.Errorf("期限切れの ConsumeState() = (%v, %v), want (false, nil)", ok, err)
+	got, err := repo.ConsumeState(t.Context(), "old", baseTime.Add(time.Hour))
+	if err != nil || got != nil {
+		t.Errorf("期限切れの ConsumeState() = (%v, %v), want (nil, nil)", got, err)
 	}
 
-	if ok, err = repo.ConsumeState(t.Context(), "never-issued", baseTime); err != nil || ok {
-		t.Errorf("未知の ConsumeState() = (%v, %v), want (false, nil)", ok, err)
+	if got, err = repo.ConsumeState(t.Context(), "never-issued", baseTime); err != nil || got != nil {
+		t.Errorf("未知の ConsumeState() = (%v, %v), want (nil, nil)", got, err)
 	}
 }
 
