@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { breakAnnotations, breakBoards, installApi } from "./helpers/api";
 import { drawRectangle, openBoard } from "./helpers/board";
-import { BOARD_ID, baseMock } from "./helpers/fixtures";
+import { BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
 
 /**
  * 描画中に落ちたときの見せ方（ADR 0027）。
@@ -15,8 +15,6 @@ import { BOARD_ID, baseMock } from "./helpers/fixtures";
  * 落とし方は API の応答を壊す（`breakAnnotations` / `breakBoards`）。フロントは
  * 応答を検証せずに型として扱うので、契約から外れた本文は render まで届く。
  */
-
-const BOARD_NAME = "認証まわりのブレスト";
 
 test.describe("描画に失敗したとき", () => {
   test("注釈パネルが落ちても、落ちる前に描いたものは保存できる", async ({ page }) => {

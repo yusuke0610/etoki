@@ -1,10 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, type ApiMock } from "./helpers/api";
-import { openBoard } from "./helpers/board";
+import { type ApiMock } from "./helpers/api";
+import { openBoardWithMock } from "./helpers/board";
 import { baseMock, BOARD_ID } from "./helpers/fixtures";
 
-const BOARD_NAME = "認証まわりのブレスト";
 const GONE_ID = "frame-gone";
 
 /**
@@ -39,9 +38,7 @@ test.describe("キャンバスに無い注釈", () => {
   // 名前は取れない（シーンから消えている）。何の囲みだったかは、作ったものから
   // 読むしかない。
   test("作ったものから何の囲みだったかを辿れる", async ({ page }) => {
-    await installApi(page, withDetached());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, withDetached());
 
     const section = page.locator(".panel-section").filter({
       has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
@@ -83,9 +80,7 @@ test.describe("キャンバスに無い注釈", () => {
       },
     };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     const section = page.locator(".panel-section").filter({
       has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
@@ -110,9 +105,7 @@ test.describe("キャンバスに無い注釈", () => {
 
   // ふつうは空。常に空の枠が並ぶと、本当に何か残っているときに気づけない。
   test("消えた注釈が無ければ節ごと出さない", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     await expect(
       page.getByRole("heading", { name: "キャンバスに無い注釈" }),
@@ -121,9 +114,7 @@ test.describe("キャンバスに無い注釈", () => {
 
   // 3 状態も名前も無い。状態の一覧に混ぜると「押せない注釈」が並ぶ。
   test("状態の一覧には混ざらない", async ({ page }) => {
-    await installApi(page, withDetached());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, withDetached());
 
     const states = page.locator(".panel-section").filter({
       has: page.getByRole("heading", { name: "状態" }),
