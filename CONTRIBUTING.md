@@ -152,6 +152,21 @@ PR を作ると CodeRabbit のレビューが付く。**作りっぱなしにせ
 [`docs/review-findings.md`](docs/review-findings.md) へ。**どちらも同じ場面で書く**
 ので、片方だけ忘れたことに気づける（[ADR 0033](docs/adr/0033-review-derived-rules.md)）。
 
+## マージ
+
+**Claude がマージしてよいのは、最新の head に対する `@coderabbitai full review`
+で指摘が 0 件だった PR だけ。** それ以外はマージできる状態まで仕上げてユーザーに
+渡し、マージはユーザーが行う。
+
+次のものは条件を満たさない。
+
+- 増分レビュー（`@coderabbitai review` や push 時の自動レビュー）で指摘ゼロ
+- 指摘をスレッド内のやりとりで確かめて解決した
+- full review の後にコミットを積んだ（docs だけでも）
+
+指摘が付いたら直して push し、もう一度 full review を依頼する。**full review は
+1 時間に 1 回しか回らない**ので、直すものはまとめて 1 回に載せる。
+
 ## CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が PR ごとに走る。
