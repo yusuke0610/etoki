@@ -845,6 +845,35 @@ func TestListRepositories_StopsAtMaxRepositories(t *testing.T) {
 	}
 }
 
+// **上限ちょうどで取り切ったのは打ち切りではない。** `truncated` は「まだある」
+// ではなく「辿るのをやめた」の意味（ADR 0054）。上限の判定を次ページの有無より
+// 先に置くと、ちょうど 500 件しか持たない利用者に毎回「打ち切っています」と
+// 出る。**判定の順を戻すと落ちる。**
+func TestListRepositories_ExactlyMaxAndFetchedAllIsNotTruncated(t *testing.T) {
+	t.Parallel()
+
+	nodes := make([]string, 0, 500)
+	for i := range 500 {
+		nodes = append(nodes, fmt.Sprintf(`{"name":"repo-%d","owner":{"login":"acme"}}`, i))
+	}
+	body := `{"data":{"viewer":{"repositories":{` +
+		`"pageInfo":{"hasNextPage":false,"endCursor":"c1"},` +
+		`"nodes":[` + strings.Join(nodes, ",") + `]}}}}`
+
+	c, _ := newClient(t, body)
+
+	list, err := c.ListRepositories(t.Context())
+	if err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+	if len(list.Repositories) != 500 {
+		t.Errorf("len(repos) = %d, want 500", len(list.Repositories))
+	}
+	if list.Truncated {
+		t.Error("Truncated = true, want false（取り切っている）")
+	}
+}
+
 // カーソルが進まないと、辿り続けても同じページを取り直すだけで終わらない。
 func TestListRepositories_StopsWhenCursorDoesNotAdvance(t *testing.T) {
 	t.Parallel()
@@ -1130,6 +1159,38 @@ func TestListRepositories_AppModeStopsAtMaxRepositories(t *testing.T) {
 	// 利用者が権限やインストールを疑うことになる。
 	if !list.Truncated {
 		t.Error("Truncated = false, want true（上限に当たっている）")
+	}
+}
+
+// App 経路でも同じ。**最後のインストールを取り切った上で上限ちょうど**なら
+// 辿るのをやめていないので打ち切りではない（ADR 0054）。上限の判定を
+// 「取り切ったか」より先に置くと、ここが true に倒れる。
+func TestListRepositories_AppModeExactlyMaxAndFetchedAllIsNotTruncated(t *testing.T) {
+	t.Parallel()
+
+	// 2 つのインストールで合計ちょうど上限。どちらも埋まっていないページで
+	// 終わるので、残りは無い。
+	ids := []int64{1, 2}
+	repos := make(map[int64][]installedRepo, len(ids))
+	for n, id := range ids {
+		batch := make([]installedRepo, 250)
+		for i := range batch {
+			batch[i] = installedRepo{name: fmt.Sprintf("repo-%d-%d", n, i), owner: "acme"}
+		}
+		repos[id] = batch
+	}
+
+	c, _ := newAppClient(t, ids, repos)
+
+	list, err := c.ListRepositories(t.Context())
+	if err != nil {
+		t.Fatalf("ListRepositories() = %v", err)
+	}
+	if len(list.Repositories) != 500 {
+		t.Errorf("len(repos) = %d, want 500", len(list.Repositories))
+	}
+	if list.Truncated {
+		t.Error("Truncated = true, want false（取り切っている）")
 	}
 }
 

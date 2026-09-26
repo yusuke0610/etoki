@@ -217,22 +217,32 @@ func (c *Client) listViewerRepositories(ctx context.Context) (port.RepositoryLis
 			})
 		}
 
-		// 上限に達したらそこで返す。選択肢として見せるものなので、全件を
-		// 取り切る必要が無い。**打ち切ったことは返り値に載せる**（ADR 0054）。
-		// 黙って切ると、目当てが出ない利用者が権限を疑うことになる。
-		if len(repos) >= maxRepositories {
-			return port.RepositoryList{
-				Repositories: repos[:maxRepositories], Truncated: true,
-			}, nil
-		}
-
+		// **上限の判定より先に、次のページがあるかを見る。** 上限ちょうどで
+		// 取り切ったのは「辿るのをやめた」ではないので、打ち切りにしない
+		// （ADR 0054）。順を逆にすると、ちょうど 500 件の利用者に毎回
+		// 「打ち切っています」と出る。
 		page := resp.Viewer.Repositories.PageInfo
 		next, err := nextCursor("repositories", page.HasNextPage, page.EndCursor, after)
 		if err != nil {
 			return port.RepositoryList{}, err
 		}
 		if next == nil {
+			// 取り切った。返さないぶんがあるときだけ打ち切り。
+			if len(repos) > maxRepositories {
+				return port.RepositoryList{
+					Repositories: repos[:maxRepositories], Truncated: true,
+				}, nil
+			}
 			return port.RepositoryList{Repositories: repos}, nil
+		}
+
+		// まだ続くのに上限に達した。ここで辿るのをやめる。選択肢として見せる
+		// ものなので全件を取り切る必要が無い。**やめたことは返り値に載せる。**
+		// 黙って切ると、目当てが出ない利用者が権限を疑うことになる。
+		if len(repos) >= maxRepositories {
+			return port.RepositoryList{
+				Repositories: repos[:maxRepositories], Truncated: true,
+			}, nil
 		}
 		after = next
 	}
@@ -326,7 +336,7 @@ func (c *Client) listInstalledRepositories(ctx context.Context) (port.Repository
 		truncated bool
 	)
 
-	for _, instID := range installIDs {
+	for i, instID := range installIDs {
 		for page := 1; ; page++ {
 			var body struct {
 				Repositories []struct {
@@ -358,24 +368,34 @@ func (c *Client) listInstalledRepositories(ctx context.Context) (port.Repository
 				})
 			}
 
+			// 埋まっていないページは、このインストールを取り切った印。
+			// total_count は権限で絞られた件数と食い違うので信じない。
+			done := len(body.Repositories) < listPageSize
+			last := i == len(installIDs)-1
+
 			// 選択肢として見せるものなので、全件を取り切る必要は無い。
-			// **打ち切ったことは返り値に載せる**（ADR 0054）。
+			// **打ち切ったことは返り値に載せる**（ADR 0054）。ただし
+			// **最後のインストールを取り切った上で上限ちょうどだったなら、
+			// 辿るのをやめてはいない**ので打ち切りにしない。
 			if len(repos) >= maxRepositories {
+				// 最後のインストールを取り切ったなら、辿るのをやめていない。
+				fetchedAll := done && last
 				return port.RepositoryList{
-					Repositories: repos[:maxRepositories], Truncated: true,
+					Repositories: repos[:maxRepositories],
+					Truncated:    !fetchedAll || len(repos) > maxRepositories,
 				}, nil
+			}
+			if done {
+				break
 			}
 			// 上の判定は残った件数しか見ない。アーカイブ済みばかりのページが
 			// 続くと repos が増えず、上限に達しないまま辿り続ける。走査した
 			// ページ数にも上限を置く。**こちらも打ち切り。** インストールの
 			// 途中で止めているので、残りのページに候補があっても出ない。
+			// **短いページを見たあとに判定する。** 先に判定すると、ちょうど
+			// 上限のページで取り切ったときまで打ち切り扱いになる。
 			if page >= maxRestPages {
 				truncated = true
-				break
-			}
-			// 埋まっていないページが返ったら終わり。total_count は権限で
-			// 絞られた件数と食い違うので信じない。
-			if len(body.Repositories) < listPageSize {
 				break
 			}
 		}
