@@ -1,75 +1,28 @@
 import { useState } from "react";
 
-import { partialCreationFailure, type Failure } from "../api/errorMessage";
 import type {
   AnnotationStatus,
-  CreatedRun,
   DetachedAnnotation,
   DiagramKind,
   Granularity,
   Interpretation,
-  InterpretedItem,
-  ItemKind,
   ProjectAccess,
-  SyncItem,
-  SyncRun,
   SyncState,
 } from "../api/types";
-import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
-import {
-  GRANULARITY_LABEL,
-  ITEM_KIND_LABEL,
-  annotationLabels,
-  frameLabel,
-  itemKinds,
-} from "./annotationLabel";
+import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import { DetachedSection } from "./DetachedSection";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
-import { groupByEpic } from "./interpretation";
+import { InterpretationSection } from "./InterpretationSection";
+import type { InterpretationState } from "./interpretationHistory";
+import { ItemBody, ProjectLinkLine } from "./panelParts";
 import {
-  interpretationOrderLabel,
-  selectedInterpretation,
-  type InterpretationRun,
-  type InterpretationState,
-} from "./interpretationHistory";
-import {
-  blockingReasons,
-  buildInterpretation,
-  createDraft,
-  leftBehindItemIds,
-  markCreated,
-  orphanedLocalIds,
-  setBody,
-  setKind,
-  setTitle,
-  setUpdatesPrevious,
-  toggleItem,
-} from "./interpretationDraft";
+  INTERPRETATION_UNAVAILABLE_ID,
+  type CreationState,
+  type RunsProps,
+} from "./panelShared";
 import type { ProjectLink } from "./projectLink";
-
-/** 注釈 1 つぶんの作成の進み具合。 */
-export type CreationState =
-  | { status: "running" }
-  | { status: "done"; run: CreatedRun }
-  | { status: "error"; failure: Failure };
-
-/**
- * 注釈 1 つぶんの実行履歴の読み込み具合。
- *
- * 未実行（キーが無い）と「引いたが 0 件」は別物。前者はまだ押していない、
- * 後者は「一度も作っていない」ことが分かっている状態。
- */
-export type RunHistoryState =
-  | { status: "loading" }
-  | { status: "done"; runs: SyncRun[] }
-  | { status: "error"; failure: Failure };
-
-/**
- * 「LLM が未設定」の説明文の id。
- *
- * パネルに 1 つしか出さないので固定でよい。各注釈の「解釈する」がここを指す。
- */
-const INTERPRETATION_UNAVAILABLE_ID = "interpretation-unavailable";
+import { RunHistory } from "./RunHistory";
 
 const STATE_LABEL: Record<SyncState, string> = {
   uncreated: "未作成",
@@ -77,19 +30,17 @@ const STATE_LABEL: Record<SyncState, string> = {
   changed: "変更あり",
 };
 
-type Props = {
-  annotations: AnnotationStatus[];
-  /**
-   * シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
-   *
-   * **`annotations` と混ぜて渡さない。** 3 状態も名前も無いので、注釈の
-   * カードと同じ形では出せない。
-   */
-  detached: DetachedAnnotation[];
+/**
+ * キャンバスの frame とのやりとり。
+ *
+ * **ひとまとまりで渡す。** どれも「いまキャンバスで何が選ばれ、どの frame が
+ * 在るか」を答えるもので、1 つだけ差し替わることが無い（#146）。
+ */
+type FramesProps = {
   /** 選択中の frame のうち、まだ注釈になっていないもの。 */
-  markableFrames: SelectableFrame[];
+  markable: SelectableFrame[];
   /** 選択中の frame のうち、すでに注釈になっているもの。 */
-  unmarkableFrames: SelectableFrame[];
+  unmarkable: SelectableFrame[];
   /**
    * キャンバスにいま在る frame の ID。まだ分からなければ null。
    *
@@ -98,22 +49,22 @@ type Props = {
    * 無いことにしない。** 空配列と同じ扱いにすると、マウント直後の一瞬だけ
    * 全部のカードが「キャンバスにありません」になる。
    */
-  canvasFrameIds: string[] | null;
-  /**
-   * キャンバスで選択中の frame の ID。対応するカードを強調するために使う。
-   */
-  selectedFrameIds: string[];
+  canvasIds: string[] | null;
+  /** キャンバスで選択中の frame の ID。対応するカードを強調するために使う。 */
+  selectedIds: string[];
   /** カードを押したとき、キャンバスをそのフレームへ寄せて選択する。 */
-  onFocusFrame: (frameId: string) => void;
+  onFocus: (frameId: string) => void;
   onMark: (frameId: string, granularity: Granularity) => void;
   onUnmark: (frameId: string) => void;
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
   /** 図の種別を差し替える。`undefined` は「指定なし」に戻す。 */
   onChangeKind: (frameId: string, kind: DiagramKind | undefined) => void;
-  /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
-  stale: boolean;
+};
+
+/** 解釈の実行と、引いた結果の選び直し。 */
+type InterpretationProps = {
   /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
-  interpretations: Record<string, InterpretationState>;
+  states: Record<string, InterpretationState>;
   onInterpret: (annotationId: string) => void;
   /**
    * 見る解釈を選び直す。
@@ -121,20 +72,37 @@ type Props = {
    * 解釈は引き直すたびに揺れるので、前のほうが良いことがある。選び直せないと、
    * 引き直しは「戻せない操作」になる。
    */
-  onSelectInterpretation: (annotationId: string, runId: number) => void;
+  onSelect: (annotationId: string, runId: number) => void;
   /**
-   * 注釈 ID をキーにした実行履歴。**まだ押していない注釈は入っていない。**
+   * LLM が未設定なら理由。使えるなら null（ADR 0030）。
    *
-   * 開いただけで全注釈ぶん引かない（中核思想 3）。
+   * `creation.projectAccess` とは別物。あちらはこのボードの Project に
+   * 書けるか、こちらは etoki に LLM が設定されているか。**混ぜない。**
    */
-  runHistories: Record<string, RunHistoryState>;
-  onLoadRuns: (annotationId: string) => void;
+  unavailable: string | null;
+};
+
+/** 作成の実行と、その可否。 */
+type CreationProps = {
   /** 注釈 ID をキーにした作成の状態。未実行の注釈は入っていない。 */
-  creations: Record<string, CreationState>;
-  /** 保存中は作成させない。保存が作成の結果を捨てるため。 */
+  states: Record<string, CreationState>;
+  /**
+   * 保存中は下書きの編集も止める。保存が解釈ごと捨てるため。
+   *
+   * **`blocked` とは別物。** あちらは「押せない理由」で、こちらは「入力を
+   * 凍らせるかどうか」。作成を止める条件は保存だけではないので、一方を
+   * もう一方から導かない。
+   */
   saving: boolean;
-  /** 取り込み中は作成させない。キャンバスの置き換えと並走させないため。 */
-  importing: boolean;
+  /**
+   * いま作成を始められない理由。押せるなら null。
+   *
+   * **文言はここで組まない。** 何が走っているとどう言うかは
+   * `web/src/board/exclusion.ts` の表が持ち、`BoardPage` が引いて渡す
+   * （ADR 0060）。パネルが `saving` / `importing` から組み直していたころは、
+   * 同じ判定がヘッダーとここの 2 箇所にあった。
+   */
+  blocked: string | null;
   /**
    * `interpretationId` は下書きの元になった解釈。作ったものをその解釈に
    * 結びつけて持つために渡す（ADR 0052）。
@@ -145,13 +113,6 @@ type Props = {
     interpretation: Interpretation,
   ) => void;
   /**
-   * 編集できるか。viewer は false（ADR 0017）。
-   *
-   * 解釈も含めて出さない。解釈は LLM を叩く外部呼び出しであり、閲覧者に
-   * 許すのは「閲覧」ではない。
-   */
-  canEdit: boolean;
-  /**
    * 作成先の Project に書けるかどうかの、いまの状態。
    *
    * `denied` でもボタンを黙って消さず、理由を出す。ブレストには参加できて
@@ -159,17 +120,43 @@ type Props = {
    * 「なぜできないか」が見えていないと使えない（中核思想 3）。
    */
   projectAccess: ProjectAccess;
-  /**
-   * LLM が未設定なら理由。使えるなら null（ADR 0030）。
-   *
-   * `projectAccess` とは別物。あちらはこのボードの Project に書けるか、
-   * こちらは etoki に LLM が設定されているか。**混ぜない。**
-   */
-  interpretationUnavailable: string | null;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
-  creationUnavailable: string | null;
+  unavailable: string | null;
+};
+
+/**
+ * **関心ごとに束ねて受け取る**（#146）。
+ *
+ * 平たく並べていたころは 26 個あり、どれとどれが一緒に動くのかがここからは
+ * 読めなかった。束は `BoardPage` が持つ関心の単位でもあるので、そのまま渡せる。
+ */
+type Props = {
+  annotations: AnnotationStatus[];
+  /**
+   * シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
+   *
+   * **`annotations` と混ぜて渡さない。** 3 状態も名前も無いので、注釈の
+   * カードと同じ形では出せない。
+   */
+  detached: DetachedAnnotation[];
+  frames: FramesProps;
+  interpretation: InterpretationProps;
+  creation: CreationProps;
+  runs: RunsProps;
+  /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
+  stale: boolean;
+  /**
+   * 編集できるか。viewer は false（ADR 0017）。
+   *
+   * 解釈も含めて出さない。解釈は LLM を叩く外部呼び出しであり、閲覧者に
+   * 許すのは「閲覧」ではない。
+   */
+  canEdit: boolean;
   /**
    * 作成先へのリンク。組めなければ null（ADR 0025）。
+   *
+   * **束の中に入れない。** 作ったものを確かめにいく先は、解釈にも作成にも
+   * シーンから消えた注釈にも同じものが出る。
    *
    * draft issue 個別の URL は組めないので、飛び先は注釈ごとではなく
    * ボードごとに 1 つ。**行ごとにリンクを置かない。** 置くと、行ごとに
@@ -186,29 +173,12 @@ type PendingKind = {
 export function AnnotationPanel({
   annotations,
   detached,
-  markableFrames,
-  unmarkableFrames,
-  canvasFrameIds,
-  selectedFrameIds,
-  onFocusFrame,
-  onMark,
-  onUnmark,
-  onChangeGranularity,
-  onChangeKind,
+  frames,
+  interpretation,
+  creation,
+  runs,
   stale,
-  interpretations,
-  onInterpret,
-  onSelectInterpretation,
-  runHistories,
-  onLoadRuns,
-  creations,
-  saving,
-  importing,
-  onCreate,
   canEdit,
-  projectAccess,
-  interpretationUnavailable,
-  creationUnavailable,
   projectLink,
 }: Props) {
   // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
@@ -249,9 +219,9 @@ export function AnnotationPanel({
         viewer には出さない。どのみち解釈できないことは上の 1 行が言っており、
         設定の話を重ねても打てる手は増えない（ADR 0017）。
       */}
-      {canEdit && interpretationUnavailable !== null && (
+      {canEdit && interpretation.unavailable !== null && (
         <p className="hint" role="status" id={INTERPRETATION_UNAVAILABLE_ID}>
-          {interpretationUnavailable}
+          {interpretation.unavailable}
         </p>
       )}
 
@@ -259,7 +229,7 @@ export function AnnotationPanel({
         <h3>選択中のフレーム</h3>
         {!canEdit ? (
           <p className="hint">注釈を付け外しできるのは編集できる人だけです。</p>
-        ) : markableFrames.length === 0 && unmarkableFrames.length === 0 ? (
+        ) : frames.markable.length === 0 && frames.unmarkable.length === 0 ? (
           <p className="hint">
             フレームツール（F）で囲んでから、そのフレームを選択してください。
           </p>
@@ -269,17 +239,17 @@ export function AnnotationPanel({
               どのフレームに対する操作なのかを項目ごとに出す。複数を選んだとき、
               ボタンの文言だけでは項目が区別できない（ADR 0022）。
             */}
-            {markableFrames.map((frame) => (
+            {frames.markable.map((frame) => (
               <li key={frame.id}>
-                <button type="button" onClick={() => onMark(frame.id, "")}>
+                <button type="button" onClick={() => frames.onMark(frame.id, "")}>
                   {frameLabel(frame.name)}
                   <span className="kind">を注釈にする</span>
                 </button>
               </li>
             ))}
-            {unmarkableFrames.map((frame) => (
+            {frames.unmarkable.map((frame) => (
               <li key={frame.id}>
-                <button type="button" onClick={() => onUnmark(frame.id)}>
+                <button type="button" onClick={() => frames.onUnmark(frame.id)}>
                   {labels.get(frame.id) ?? frameLabel(frame.name)}
                   <span className="kind">の注釈を外す</span>
                 </button>
@@ -300,8 +270,9 @@ export function AnnotationPanel({
         ) : (
           <ul className="annotation-list">
             {annotations.map((a) => {
-              const onCanvas = canvasFrameIds === null || canvasFrameIds.includes(a.id);
-              const selected = selectedFrameIds.includes(a.id);
+              const onCanvas =
+                frames.canvasIds === null || frames.canvasIds.includes(a.id);
+              const selected = frames.selectedIds.includes(a.id);
               const missingId = `annotation-missing-${a.id}`;
               const pendingKind = pendingKinds[a.id];
               const kind =
@@ -324,7 +295,7 @@ export function AnnotationPanel({
                     <button
                       type="button"
                       className="annotation-name"
-                      onClick={() => onFocusFrame(a.id)}
+                      onClick={() => frames.onFocus(a.id)}
                       disabled={!onCanvas}
                       aria-describedby={onCanvas ? undefined : missingId}
                     >
@@ -351,7 +322,7 @@ export function AnnotationPanel({
                       value={a.granularity}
                       disabled={!canEdit}
                       onChange={(e) =>
-                        onChangeGranularity(a.id, e.target.value as Granularity)
+                        frames.onChangeGranularity(a.id, e.target.value as Granularity)
                       }
                     >
                       {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
@@ -382,7 +353,7 @@ export function AnnotationPanel({
                           ...current,
                           [a.id]: { value: nextKind },
                         }));
-                        onChangeKind(a.id, nextKind);
+                        frames.onChangeKind(a.id, nextKind);
                       }}
                     >
                       {/*
@@ -438,8 +409,8 @@ export function AnnotationPanel({
                     <details className="run-history">
                       <summary>実行の履歴</summary>
                       <RunHistory
-                        state={runHistories[a.id]}
-                        onLoad={() => onLoadRuns(a.id)}
+                        state={runs.states[a.id]}
+                        onLoad={() => runs.onLoad(a.id)}
                       />
                     </details>
                   )}
@@ -448,22 +419,24 @@ export function AnnotationPanel({
                     <InterpretationSection
                       annotationId={a.id}
                       granularity={a.granularity}
-                      state={interpretations[a.id]}
-                      creation={creations[a.id]}
+                      state={interpretation.states[a.id]}
+                      creation={creation.states[a.id]}
                       stale={stale}
-                      saving={saving}
-                      importing={importing}
-                      projectAccess={projectAccess}
-                      interpretationUnavailable={interpretationUnavailable}
-                      creationUnavailable={creationUnavailable}
+                      saving={creation.saving}
+                      creationBlocked={creation.blocked}
+                      projectAccess={creation.projectAccess}
+                      interpretationUnavailable={interpretation.unavailable}
+                      creationUnavailable={creation.unavailable}
                       previous={a.items ?? []}
                       projectLink={projectLink}
-                      onInterpret={() => onInterpret(a.id)}
+                      onInterpret={() => interpretation.onInterpret(a.id)}
                       onSelectInterpretation={(runId) =>
-                        onSelectInterpretation(a.id, runId)
+                        interpretation.onSelect(a.id, runId)
                       }
-                      onCreate={(interpretationId, interpretation) =>
-                        onCreate(a.id, interpretationId, interpretation)
+                      // 束の `interpretation` と名前がぶつかるので、引数は
+                      // 解釈結果そのものを指す名前にする。
+                      onCreate={(interpretationId, result) =>
+                        creation.onCreate(a.id, interpretationId, result)
                       }
                     />
                   )}
@@ -474,986 +447,7 @@ export function AnnotationPanel({
         )}
       </section>
 
-      <DetachedSection
-        annotations={detached}
-        runHistories={runHistories}
-        onLoadRuns={onLoadRuns}
-        projectLink={projectLink}
-      />
+      <DetachedSection annotations={detached} runs={runs} projectLink={projectLink} />
     </aside>
-  );
-}
-
-/**
- * シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
- *
- * **注釈のカードと同じ形にはしない。** 名前も 3 状態も無く、解釈も作成も
- * できない。混ぜると「押せない注釈」が状態の一覧に並ぶことになる。
- *
- * **etoki からは消しも作り直しもしない**（中核思想 3）。できるのは、GitHub に
- * 残っているものへ辿れるようにするところまで。frame を引き直すと要素の ID が
- * 変わるので、以後は別の注釈として扱われる。**それも書いて渡す。** 書かないと、
- * 引き直せば戻ると読める。
- *
- * 1 件も無ければ節ごと出さない。ふつうは空なので、常に空の枠が並ぶと、
- * 本当に何か残っているときに気づけない。
- */
-function DetachedSection({
-  annotations,
-  runHistories,
-  onLoadRuns,
-  projectLink,
-}: {
-  annotations: DetachedAnnotation[];
-  runHistories: Record<string, RunHistoryState>;
-  onLoadRuns: (annotationId: string) => void;
-  projectLink: ProjectLink | null;
-}) {
-  if (annotations.length === 0) return null;
-
-  return (
-    <section className="panel-section">
-      <h3>キャンバスに無い注釈</h3>
-      <p className="hint">
-        囲みは消えていますが、そこから作った draft issue は GitHub に残っています。
-        囲みを引き直しても、これらとは繋がりません。
-      </p>
-
-      <ul className="annotation-list">
-        {annotations.map((a) => (
-          <li key={a.id} className="annotation">
-            {/*
-              **名前は出せない。** シーンから消えているので取りようが無い。
-              何の囲みだったかは、下に並ぶ「作ったもの」から読む。
-            */}
-            <p className="hint">
-              最後の実行:{" "}
-              {a.lastSyncedAt === undefined ? "不明" : formatRunTimestamp(a.lastSyncedAt)}
-            </p>
-
-            <details open>
-              <summary>GitHub にある {a.items.length} 件</summary>
-              <ul className="plain-list">
-                {a.items.map((it) => (
-                  <li key={it.itemId}>
-                    <span className="kind">{it.kind}</span> {it.title}
-                    <ItemBody body={it.body} />
-                  </li>
-                ))}
-              </ul>
-              <ProjectLinkLine link={projectLink} />
-            </details>
-
-            {/* 履歴の口はシーンに注釈が残っているかを見ない（ADR 0007）。 */}
-            <details className="run-history">
-              <summary>実行の履歴</summary>
-              <RunHistory state={runHistories[a.id]} onLoad={() => onLoadRuns(a.id)} />
-            </details>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-type InterpretationSectionProps = {
-  /** 説明文の id を注釈ごとに分けるために持つ。一覧に複数並ぶため。 */
-  annotationId: string;
-  /** 注釈の粒度。作成前に手直しできる範囲がこれで変わる。 */
-  granularity: Granularity;
-  state?: InterpretationState;
-  creation?: CreationState;
-  /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
-  stale: boolean;
-  saving: boolean;
-  importing: boolean;
-  projectAccess: ProjectAccess;
-  /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
-  interpretationUnavailable: string | null;
-  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
-  creationUnavailable: string | null;
-  /** この注釈が GitHub に在らしめているもの（ADR 0026）。 */
-  previous: SyncItem[];
-  /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
-  projectLink: ProjectLink | null;
-  onInterpret: () => void;
-  onSelectInterpretation: (runId: number) => void;
-  onCreate: (interpretationId: number, interpretation: Interpretation) => void;
-};
-
-/**
- * 解釈の実行と結果表示。
- *
- * 結果を見せるだけで、ここから GitHub には何も作らない。何を作るかは
- * 開発者が別途トリガーする。
- */
-function InterpretationSection({
-  annotationId,
-  granularity,
-  state,
-  creation,
-  stale,
-  saving,
-  importing,
-  projectAccess,
-  interpretationUnavailable,
-  creationUnavailable,
-  previous,
-  projectLink,
-  onInterpret,
-  onSelectInterpretation,
-  onCreate,
-}: InterpretationSectionProps) {
-  const running = state?.running ?? false;
-  const runs = state?.runs ?? [];
-  // いま見ている解釈。1 件も返っていなければ undefined。
-  const selected = selectedInterpretation(state);
-  // 押せない理由は title に隠さず本文として出す。disabled なボタンはフォーカスも
-  // 当たらないので、title ではキーボードと読み上げの利用者に理由が届かない。
-  const blockedId = `interpret-blocked-${annotationId}`;
-  // **設定の不足が先。** 保存しても状況は変わらないので、「保存してから」を
-  // 先に出すと、保存した人がもう一度同じところで止まる（ADR 0030）。
-  //
-  // 未設定の理由はパネルの上に 1 つだけ出ているので、ここでは指すだけにする。
-  // 注釈の数だけ同じ文を並べない。
-  const unavailable = interpretationUnavailable !== null;
-  const describedBy = unavailable
-    ? INTERPRETATION_UNAVAILABLE_ID
-    : stale
-      ? blockedId
-      : undefined;
-
-  return (
-    <div className="interpretation">
-      {/*
-        未保存のあいだは押させない。テキストは保存済みシーンから、画像は画面
-        から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
-      */}
-      <button
-        type="button"
-        onClick={onInterpret}
-        disabled={running || unavailable || stale}
-        aria-describedby={describedBy}
-      >
-        {running ? "解釈中…" : "解釈する"}
-      </button>
-
-      {!unavailable && stale && (
-        <p className="hint" id={blockedId}>
-          保存してから解釈できます。テキストは保存済みのシーンから、
-          画像は画面から取るためです。
-        </p>
-      )}
-
-      {/*
-        失敗しても過去の結果は消さない。引き直しに失敗しただけで前の結果まで
-        消えると、やり直せば済むはずの失敗が取り返しのつかないものになる。
-      */}
-      {state?.failure && <ErrorNotice failure={state.failure} />}
-
-      {/*
-        2 件以上あるときだけ出す。1 件しか無いのに選択肢を並べると、選ぶ
-        余地があるように見えて読むものが増える。
-      */}
-      {runs.length > 1 && (
-        <InterpretationHistory
-          annotationId={annotationId}
-          runs={runs}
-          selectedId={selected?.id ?? null}
-          onSelect={onSelectInterpretation}
-        />
-      )}
-
-      {selected && (
-        <InterpretationDraft
-          // 選び直したら手直しは引き継がない。別の解釈に対する編集が
-          // 混ざると、何を作るのかが読めなくなる（解釈し直したときと同じ）。
-          key={selected.id}
-          annotationId={annotationId}
-          granularity={granularity}
-          result={selected.result}
-          created={selected.created ?? []}
-          creation={creation}
-          saving={saving}
-          importing={importing}
-          projectAccess={projectAccess}
-          creationUnavailable={creationUnavailable}
-          previous={previous}
-          projectLink={projectLink}
-          onCreate={(interpretation) => onCreate(selected.id, interpretation)}
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * その注釈の実行履歴（ADR 0007）。
- *
- * **押されるまで引かない。** 開いただけで全注釈ぶん引くと、注釈の数だけ
- * 問い合わせが増える（中核思想 3、作成先の名前の取り直しと同じ形）。
- *
- * **畳み込み（「GitHub にある N 件」）とは別物。** あちらは「いま在るもの」、
- * こちらは「いつ何回に分けて作ったか」。同じものを 2 通りに見せているのでは
- * なく、答えている問いが違う（ADR 0026）。
- */
-function RunHistory({
-  state,
-  onLoad,
-}: {
-  /** まだ押していなければ undefined。 */
-  state?: RunHistoryState;
-  onLoad: () => void;
-}) {
-  if (state === undefined) {
-    return (
-      <button type="button" onClick={onLoad}>
-        履歴を読み込む
-      </button>
-    );
-  }
-
-  if (state.status === "loading") {
-    return <p className="hint">読み込み中…</p>;
-  }
-
-  /*
-    **読み直す口は、引けたときだけでなく失敗と 0 件にも出す。** 一度引いた注釈は
-    キーが残るので、出さないと通信が 1 度失敗しただけでボードを開き直すまで
-    履歴を読めない。0 件も同じで、あのあと作った run はここからしか見えない。
-  */
-  const reload = (
-    <button type="button" onClick={onLoad}>
-      履歴を読み込み直す
-    </button>
-  );
-
-  if (state.status === "error") {
-    return (
-      <>
-        <ErrorNotice failure={state.failure} />
-        {reload}
-      </>
-    );
-  }
-
-  if (state.runs.length === 0) {
-    return (
-      <>
-        <p className="hint">実行の記録はありません。</p>
-        {reload}
-      </>
-    );
-  }
-
-  return (
-    <>
-      <ul className="plain-list">
-        {state.runs.map((run) => (
-          <li key={run.id}>
-            <span className="hint">{formatRunTimestamp(run.createdAt)}</span>
-            {/*
-              途中で失敗した run はそれと分かる形にする（ADR 0043）。件数だけを
-              並べると、途中で止まった run と「もともとその件数だった run」が
-              同じに見え、再実行すべきかどうかを決める材料が無い。
-
-              **outcome が無い run には何も出さない。** 記録していなかった頃の
-              run であり、成功したとは言えない。
-            */}
-            {run.outcome === "incomplete" && (
-              <ErrorNotice
-                failure={partialCreationFailure(partialSummary(run.items), run.error)}
-                live={false}
-              />
-            )}
-            {/*
-              その 1 回で何をしたかを出す。**畳んだ結果ではない**ので、
-              触らなかった item はここには現れない（ADR 0026）。
-            */}
-            <ul className="plain-list">
-              {run.items.length === 0 ? (
-                <li className="hint">作られたものはありません。</li>
-              ) : (
-                run.items.map((it) => (
-                  <li key={it.itemId}>
-                    <span className="kind">{it.kind}</span> {it.title}
-                    {it.action === "updated" && (
-                      <span className="badge badge-updated">更新</span>
-                    )}
-                  </li>
-                ))
-              )}
-            </ul>
-          </li>
-        ))}
-      </ul>
-      {reload}
-    </>
-  );
-}
-
-/** run の実行時刻。日をまたぐので日付まで出す（解釈の履歴とは違う）。 */
-function formatRunTimestamp(at: string): string {
-  return new Date(at).toLocaleString("ja-JP");
-}
-
-/**
- * 引いた解釈を並べて、どれを見るか選ばせる。
- *
- * **サーバーには何も置かない。** 解釈は GitHub にも DB にも何も作らないので、
- * 残す意味があるのは画面を開いているあいだだけ。保存すると前提のシーンが
- * 変わるので、そこで丸ごと捨てる（`BoardPage` の `save`）。
- *
- * 実行時刻と粒度を添えるのは、見比べる材料がその 2 つだから。同じ粒度で
- * 引き直したのか、指定を変えて引いたのかが読めないと、選ぶ理由が無い。
- */
-function InterpretationHistory({
-  annotationId,
-  runs,
-  selectedId,
-  onSelect,
-}: {
-  annotationId: string;
-  /** 新しい順。 */
-  runs: InterpretationRun[];
-  selectedId: number | null;
-  onSelect: (runId: number) => void;
-}) {
-  // 一覧に複数の注釈が並ぶので、id は注釈ごとに分ける。
-  const selectId = `interpretation-history-${annotationId}`;
-
-  return (
-    <div className="interpretation-history">
-      <label htmlFor={selectId}>解釈結果</label>
-      <select
-        id={selectId}
-        value={selectedId ?? ""}
-        onChange={(e) => onSelect(Number(e.target.value))}
-      >
-        {runs.map((run, i) => (
-          <option key={run.id} value={run.id}>
-            {`${interpretationOrderLabel(i)}・${formatRunTime(run.at)}・粒度 ${
-              GRANULARITY_LABEL[run.granularity]
-            }`}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-/**
- * 解釈を引いた時刻。
- *
- * 日付は出さない。解釈は保存で捨てるので、画面に並ぶのは同じセッションの
- * ものだけになる。
- */
-function formatRunTime(at: string): string {
-  return new Date(at).toLocaleTimeString("ja-JP");
-}
-
-/**
- * 作成の実行と結果表示。
- *
- * 解釈が済んでいるときだけ出す。何を作るかは開発者が結果を見て決める
- * （中核思想 3）。
- */
-function CreationSection({
-  annotationId,
-  state,
-  saving,
-  importing,
-  reasons,
-  projectAccess,
-  creationUnavailable,
-  projectLink,
-  onCreate,
-}: {
-  annotationId: string;
-  state?: CreationState;
-  saving: boolean;
-  importing: boolean;
-  /** このまま作らせない理由。空なら押させる。 */
-  reasons: string[];
-  projectAccess: ProjectAccess;
-  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
-  creationUnavailable: string | null;
-  /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
-  projectLink: ProjectLink | null;
-  onCreate: () => void;
-}) {
-  const running = state?.status === "running";
-  const blockedId = `create-blocked-${annotationId}`;
-  // 作成できない理由。押せるなら null（ADR 0039）。
-  //
-  // **不備が先。** 保存が終わっても、1 件も選ばれていなければ押せないままなので、
-  // 一時的なほうを先に出すと待った人が同じところで止まる（解釈のボタンと同じ順）。
-  //
-  // **`blockingReasons` には混ぜない。** あちらは下書きだけを見て「作るものが
-  // 揃っているか」に答える純関数で、進行中かどうかを知らない。混ぜると UI の
-  // 一時的な状態を引数に取ることになる。
-  //
-  // **未設定の説明と違って、注釈ごとにボタンの下へ置く**（ADR 0030 の「パネルに
-  // 1 つ」と揃えない）。あちらは全注釈で同じことを恒常的に言うが、こちらは
-  // 出ている時間が保存の 1 往復ぶんしかない。パネルに上げると、作成ボタンが
-  // 1 つも無い注釈しか無いときにも出る。
-  const blocked =
-    reasons.length > 0
-      ? reasons.join(" ")
-      : saving
-        ? "保存が終わるまで作成できません。"
-        : importing
-          ? "取り込みが終わるまで作成できません。"
-          : null;
-
-  // **GitHub が未設定なら、権限より先にこちら。** 未設定の構成では
-  // projectAccess は unknown にしかならないので、下の denied では拾えない。
-  // 解釈まではこのまま続けられることも書く（ADR 0008 / 0030）。
-  if (creationUnavailable !== null) {
-    return (
-      <div className="creation">
-        <p className="hint">
-          {creationUnavailable}
-          {"ブレストと解釈はこのまま続けられます。"}
-        </p>
-      </div>
-    );
-  }
-
-  // 書けないと分かっているなら、押させずに理由を出す。押せば GitHub が 403 を
-  // 返すので結果は同じだが、理由が読めるのは先に出したときだけ（ADR 0017）。
-  if (projectAccess === "denied") {
-    return (
-      <div className="creation">
-        <p className="hint">
-          {"この Project に書き込む権限がありません。"}
-          {"ブレストと解釈はこのまま続けられます。"}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="creation">
-      <button
-        type="button"
-        onClick={onCreate}
-        disabled={running || blocked !== null}
-        aria-describedby={blocked !== null ? blockedId : undefined}
-      >
-        {running ? "作成中…" : "GitHub に作成する"}
-      </button>
-
-      {/*
-        押せない理由は本文として出す。disabled なボタンはフォーカスも当たらない
-        ので、title ではキーボードと読み上げの利用者に理由が届かない。
-      */}
-      {blocked !== null && (
-        <p className="hint" id={blockedId}>
-          {blocked}
-        </p>
-      )}
-
-      {state?.status === "error" && <ErrorNotice failure={state.failure} />}
-
-      {state?.status === "done" && (
-        <div className="creation-result">
-          {/* 途中で失敗しても作れたぶんは残る。何も作られていないと
-              誤解して再実行すると、GitHub 側に重複が増える。 */}
-          {state.run.incomplete ? (
-            // 部分失敗の本文には code を足さない。1 件ずつ理由が違いうるので
-            // 1 つの code に落ちない。畳んで見せる扱いだけ揃える。文言は
-            // errorMessage.ts、数えるのはこちら。
-            <ErrorNotice
-              failure={partialCreationFailure(
-                partialSummary(state.run.items),
-                state.run.error,
-              )}
-            />
-          ) : (
-            <p className="hint">{resultSummary(state.run.items)}。</p>
-          )}
-          <ul className="plain-list">
-            {state.run.items.map((it) => (
-              <li key={it.itemId}>
-                <span className="kind">{it.kind}</span> {it.title}
-                {/*
-                  作ったのか書き換えたのかを残す。GitHub 側に何が増えたのかは
-                  この内訳でしか数えられない（ADR 0026）。
-                */}
-                {it.action === "updated" && (
-                  <span className="badge badge-updated">更新</span>
-                )}
-                <ItemBody body={it.body} />
-              </li>
-            ))}
-          </ul>
-          <ProjectLinkLine link={projectLink} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * 解釈結果を見せ、作るものを選ばせ、手直しさせる。
- *
- * summary は GitHub には作らない。LLM がこの囲みをどう読んだかを開発者が
- * 確かめるための材料（ADR 0006）なので、編集もさせない。
- *
- * 作成は取り消せない（ADR 0009）。押す前に中身が読めているだけでなく、
- * **LLM が決めたとおりに作るしかない状態にしない**（中核思想 3、ADR 0024）。
- *
- * **下書きをここで持つ。`BoardPage` に上げない。** 保存も解釈のやり直しも
- * `InterpretationState` を done から外すので、この枝ごと unmount されて編集は
- * 捨てられる。上げると `save` と `interpret` の両方に破棄を書き足すことになり、
- * 片方を忘れると保存したあとに古い編集が残る。
- */
-function InterpretationDraft({
-  annotationId,
-  granularity,
-  result,
-  created,
-  creation,
-  saving,
-  importing,
-  projectAccess,
-  creationUnavailable,
-  previous,
-  projectLink,
-  onCreate,
-}: {
-  annotationId: string;
-  granularity: Granularity;
-  result: Interpretation;
-  /** この解釈から作ったもの。作成の 1 回ごとに 1 要素（ADR 0052）。 */
-  created: SyncItem[][];
-  creation?: CreationState;
-  saving: boolean;
-  importing: boolean;
-  projectAccess: ProjectAccess;
-  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
-  creationUnavailable: string | null;
-  /** この注釈が GitHub に在らしめているもの。取り残しの算出に使う。 */
-  previous: SyncItem[];
-  projectLink: ProjectLink | null;
-  onCreate: (interpretation: Interpretation) => void;
-}) {
-  // 作ったものは作り直した下書きにも反映する。解釈を選び直して戻ってきた
-  // ときに、作成済みの項目が全部選ばれた状態に戻ると押し直しで重複する
-  // （ADR 0052）。
-  const [draft, setDraft] = useState(() =>
-    created.reduce(markCreated, createDraft(result)),
-  );
-  // 下書きに反映した作成の回数。**増えたぶんだけを反映する。** 前に作った
-  // 項目を選び直していたのに、今回の作成に載らなかったものまで外すと、選んだ
-  // 操作が黙って消える（`markCreated`）。
-  const [appliedCreations, setAppliedCreations] = useState(created.length);
-  if (created.length > appliedCreations) {
-    // 描画中に揃える。effect にすると、作成が済んだのに選択が残った 1 フレームで
-    // ボタンが押せてしまう。
-    setAppliedCreations(created.length);
-    setDraft((d) => created.slice(appliedCreations).reduce(markCreated, d));
-  }
-
-  // 編集後の kind で組み直す。構造を変えたことがその場で見えるようにする。
-  const groups = groupByEpic(draft.items.map((d) => d.item));
-  // groupByEpic は下書きの項目そのものを並べ替えて返すので、引けない localId は
-  // 無い。それでも既定を持つのは、無いものを「選ばれている」と倒さないため。
-  const selected = new Map(draft.items.map((d) => [d.item.localId, d.selected]));
-  // LLM の答えに従うかどうか。既定は従う（ADR 0026）。
-  const updatesPrevious = new Map(
-    draft.items.map((d) => [d.item.localId, d.updatesPrevious]),
-  );
-  // この解釈から作った項目。
-  const createdItems = new Set(
-    draft.items.filter((d) => d.createdItemId).map((d) => d.item.localId),
-  );
-  const orphans = orphanedLocalIds(draft);
-  const reasons = blockingReasons(draft, granularity);
-  // 今回の作成で GitHub 側に置き去りになるもの（ADR 0026）。
-  const leftBehind = leftBehindItemIds(draft, previous);
-
-  // 作成中と保存中は入力も止める。ボタンだけ止めても、押せないあいだに
-  // 編集できるのでは何を作っているのかが定まらない。
-  const frozen = creation?.status === "running" || saving;
-
-  // 粒度に issue を指定した注釈では epic を 1 件も作れない（サーバーの
-  // Validate が弾く）。選ばせる理由が無いので種別は変えさせない。
-  const editableKind = granularity !== "issue";
-
-  const fields = (item: InterpretedItem) => (
-    <DraftItemFields
-      item={item}
-      selected={selected.get(item.localId) ?? false}
-      createdItem={createdItems.has(item.localId)}
-      updatesPrevious={updatesPrevious.get(item.localId) ?? false}
-      orphan={orphans.has(item.localId)}
-      frozen={frozen}
-      editableKind={editableKind}
-      onToggle={() => setDraft((d) => toggleItem(d, item.localId))}
-      onKind={(kind) => setDraft((d) => setKind(d, item.localId, kind))}
-      onTitle={(title) => setDraft((d) => setTitle(d, item.localId, title))}
-      onBody={(body) => setDraft((d) => setBody(d, item.localId, body))}
-      onUpdatesPrevious={(updates) =>
-        setDraft((d) => setUpdatesPrevious(d, item.localId, updates))
-      }
-    />
-  );
-
-  return (
-    <>
-      <div className="interpretation-result">
-        <p className="summary">{draft.summary}</p>
-
-        {groups.length === 0 ? (
-          <p className="hint">作成される項目はありません。</p>
-        ) : (
-          <ul className="plain-list">
-            {groups.map((g, i) => (
-              <li key={g.epic?.localId ?? `orphans-${i}`}>
-                {g.epic ? (
-                  fields(g.epic)
-                ) : (
-                  <span className="hint">epic に属さない issue</span>
-                )}
-
-                {g.issues.length > 0 && (
-                  <ul className="plain-list">
-                    {g.issues.map((it) => (
-                      <li key={it.localId}>{fields(it)}</li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <LeftBehind items={previous.filter((it) => leftBehind.has(it.itemId))} />
-
-      <CreationSection
-        annotationId={annotationId}
-        state={creation}
-        saving={saving}
-        importing={importing}
-        reasons={reasons}
-        projectAccess={projectAccess}
-        creationUnavailable={creationUnavailable}
-        projectLink={projectLink}
-        onCreate={() => onCreate(buildInterpretation(draft))}
-      />
-    </>
-  );
-}
-
-/**
- * 解釈結果 1 件ぶんの、作るかどうかと中身。
- *
- * ラベルは `localId` で分ける。一覧に同じ役割の入力が何組も並ぶので、
- * タイトルで分けると編集の途中でラベルが変わってしまう。
- */
-function DraftItemFields({
-  item,
-  selected,
-  createdItem,
-  updatesPrevious,
-  orphan,
-  frozen,
-  editableKind,
-  onToggle,
-  onKind,
-  onTitle,
-  onBody,
-  onUpdatesPrevious,
-}: {
-  item: InterpretedItem;
-  selected: boolean;
-  /**
-   * この解釈から作った項目かどうか（ADR 0052）。
-   *
-   * 作った項目は新規には戻せない。選び直すと、作った draft issue の書き換えに
-   * なる。
-   */
-  createdItem: boolean;
-  /**
-   * LLM が対応づけた更新先に、実際に書き込むかどうか。
-   *
-   * `item.previousItemId` を持たない項目では常に false。切り替えも出さない。
-   * 指す先が無いので、選ばせるものが無い。
-   */
-  updatesPrevious: boolean;
-  /**
-   * 親を失ったまま作られる issue かどうか。
-   *
-   * 選ばれていない項目は最初から含まれない（`orphanedLocalIds`）。ここで
-   * `selected` と重ねて判定しない。同じことを 2 箇所で決めることになる。
-   */
-  orphan: boolean;
-  frozen: boolean;
-  editableKind: boolean;
-  onToggle: () => void;
-  onKind: (kind: ItemKind) => void;
-  onTitle: (title: string) => void;
-  onBody: (body: string) => void;
-  onUpdatesPrevious: (updatesPrevious: boolean) => void;
-}) {
-  return (
-    <div className={`draft-item${selected ? "" : " unselected"}`}>
-      <div className="draft-head">
-        <input
-          type="checkbox"
-          checked={selected}
-          disabled={frozen}
-          onChange={onToggle}
-          aria-label={`${item.localId} を作成する`}
-        />
-
-        {editableKind ? (
-          <select
-            className="draft-kind"
-            value={item.kind}
-            disabled={frozen}
-            onChange={(e) => onKind(e.target.value as ItemKind)}
-            aria-label={`${item.localId} の種別`}
-          >
-            {itemKinds().map((k) => (
-              <option key={k} value={k}>
-                {ITEM_KIND_LABEL[k]}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="kind">{ITEM_KIND_LABEL[item.kind]}</span>
-        )}
-
-        <input
-          className="draft-title"
-          value={item.title}
-          disabled={frozen}
-          onChange={(e) => onTitle(e.target.value)}
-          aria-label={`${item.localId} のタイトル`}
-        />
-
-        {/*
-          作るのか書き換えるのかは、押す前に見えている必要がある（ADR 0026）。
-          どちらも取り消せないが、取り返しのつかなさが違う。書き換えは前の内容を
-          消す。
-
-          **印だけでなく、覆せる形で出す。** 対応づけを解釈させるのは LLM でも、
-          決めるのは開発者（ADR 0026）。指す先が GitHub から消えていると、
-          更新のままでは作成が必ず失敗する。
-        */}
-        {createdItem ? (
-          <span className="badge badge-created">作成した</span>
-        ) : (
-          item.previousItemId &&
-          updatesPrevious && <span className="badge badge-updated">更新</span>
-        )}
-      </div>
-
-      {/*
-        作った項目は、選び直すと書き換えになることを先に言う。チェックだけ
-        外れていると、作り損ねたのか作ったのかが読めない。
-      */}
-      {createdItem && (
-        <p className="hint">
-          {selected
-            ? "作成した draft issue を書き換えます。"
-            : "作成しました。選び直すと、作成した draft issue を書き換えます。"}
-        </p>
-      )}
-
-      {/*
-        **切り替えは見出しの行に置かない。** パネルは狭く、種別とタイトルが
-        すでに並んでいる。同じ行に足すとタイトルが読めなくなり、押す前に中身が
-        見えているという前提（ADR 0024）が崩れる。
-
-        LLM が言ったこととの差も添える。既定のままなら出さない。「残ります」は
-        ここでは言わない。取り残しは作成ボタンの手前にまとめて出しており
-        （ADR 0026）、同じことを 2 箇所で数えることになる。
-      */}
-      {/*
-        作った項目には出さない。作った ID の書き換えにしか送れないので
-        （`markCreated`）、選ばせるものが無い。
-      */}
-      {item.previousItemId && !createdItem && (
-        <div className="draft-previous">
-          <select
-            value={updatesPrevious ? "update" : "create"}
-            disabled={frozen}
-            onChange={(e) => onUpdatesPrevious(e.target.value === "update")}
-            aria-label={`${item.localId} を更新するか新しく作るか`}
-          >
-            <option value="update">更新する</option>
-            <option value="create">新しく作る</option>
-          </select>
-          {!updatesPrevious && (
-            <span className="hint">解釈では既存の draft issue の更新でした。</span>
-          )}
-        </div>
-      )}
-
-      {/*
-        親が消えたことを黙って起こさない（ADR 0024）。作られるものが変わって
-        いるので、押す前に見えている必要がある。
-      */}
-      {orphan && <p className="hint">epic に属さない issue として作られます。</p>}
-
-      <DraftItemBody
-        localId={item.localId}
-        body={item.body}
-        frozen={frozen}
-        onBody={onBody}
-      />
-    </div>
-  );
-}
-
-/**
- * これから作る draft issue の本文。既定は畳んでおく。
- *
- * `ItemBody` と見え方を揃える。畳んであること、生テキストのまま出すこと、
- * 空なら空と分かること。**整形しない。** GitHub に送るのはこのテキスト
- * そのもので、整形すると「確認したもの」と「作られるもの」がずれる。
- */
-function DraftItemBody({
-  localId,
-  body,
-  frozen,
-  onBody,
-}: {
-  localId: string;
-  body: string;
-  frozen: boolean;
-  onBody: (body: string) => void;
-}) {
-  return (
-    <details className="item-body">
-      {/* 空のときの文言は `ItemBody` と揃える。同じものを見ているのに、
-          読むときと直すときで呼び方が変わると別物に見える（ADR 0023）。 */}
-      <summary>{body === "" ? "本文なし" : "本文"}</summary>
-      <textarea
-        value={body}
-        rows={6}
-        disabled={frozen}
-        onChange={(e) => onBody(e.target.value)}
-        aria-label={`${localId} の本文`}
-      />
-    </details>
-  );
-}
-
-/**
- * 作成結果の内訳を 1 行にする（ADR 0026）。
- *
- * 件数だけでは、GitHub 側に何が増えたのかが分からない。更新は増えないので、
- * 「5 件を作成しました」と出しておいて実際に増えたのが 2 件、ということが起きる。
- */
-function resultSummary(items: SyncItem[]): string {
-  const { created, updated } = countByAction(items);
-
-  if (updated === 0) return `${created} 件を作成しました`;
-  if (created === 0) return `${updated} 件を更新しました`;
-
-  return `${created} 件を作成し、${updated} 件を更新しました`;
-}
-
-/**
- * 途中で失敗した run の内訳（ADR 0009 / 0026）。
- *
- * **完了したときとは言い回しを変える。** ここで伝えたいのは「もう GitHub 側に
- * 在る」ことで、何も作られていないと誤解させると再実行で重複が増える。
- */
-function partialSummary(items: SyncItem[]): string {
-  const { created, updated } = countByAction(items);
-
-  if (updated === 0) return `${created} 件は作成済み`;
-  if (created === 0) return `${updated} 件は更新済み`;
-
-  return `${created} 件は作成済み、${updated} 件は更新済み`;
-}
-
-function countByAction(items: SyncItem[]): { created: number; updated: number } {
-  const updated = items.filter((it) => it.action === "updated").length;
-  return { created: items.length - updated, updated };
-}
-
-/**
- * 今回の作成で GitHub 側に置き去りになるもの（ADR 0026）。
- *
- * **消す判断はしない。** draft issue は削除できないので、etoki にできるのは
- * 「残ります」と見せるところまで。黙って落とすと、開発者は自分が何を置き去りに
- * したのかを確かめられない（中核思想 3）。
- *
- * 0 件なら何も出さない。常に枠を出すと、取り残しが無いことと 0 件であることの
- * 区別に注意を割かせる。
- */
-function LeftBehind({ items }: { items: SyncItem[] }) {
-  if (items.length === 0) return null;
-
-  return (
-    <div className="left-behind">
-      <p className="hint">
-        {`前回作った ${items.length} 件は、今回の作成では書き換わりません。`}
-        {"GitHub 側にそのまま残ります。"}
-      </p>
-      <ul className="plain-list">
-        {items.map((it) => (
-          <li key={it.itemId}>
-            <span className="kind">{it.kind}</span> {it.title}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/**
- * 作成した draft issue を確かめにいくリンク 1 行（ADR 0025）。
- *
- * **リストごとに 1 本で、行ごとには置かない。** draft issue には個別の URL が
- * 無く、飛び先はどの行でも同じ Project になる。行ごとに並べると、行ごとに
- * 違う場所へ飛ぶように読めてしまう。
- *
- * Project そのものに着地しないときは、そう書く。リポジトリの Projects まで
- * しか辿れないのに「Project を開く」と言うと、リンクの約束が崩れる。
- */
-function ProjectLinkLine({ link }: { link: ProjectLink | null }) {
-  // 作成先が未選択のボードでは飛び先が無い。何も出さない。
-  if (!link) return null;
-
-  return (
-    <p className="hint">
-      <a href={link.href} target="_blank" rel="noreferrer">
-        {link.exact
-          ? "GitHub でこの Project を開く"
-          : "GitHub でリポジトリの Projects を開く"}
-      </a>
-    </p>
-  );
-}
-
-/**
- * draft issue の本文。既定は畳んでおく。
- *
- * これから作るものと、前回作ったものの両方で使う。同じものを見ているので
- * 見え方を変えない。
- *
- * **markdown として整形しない。** GitHub に送るのはこの生テキストそのもの
- * なので、整形して見せると「確認したもの」と「作られるもの」がずれる。
- */
-function ItemBody({ body }: { body: string }) {
-  // 契約上は必須の string なので undefined にはならない。空文字だけを見る。
-  if (body === "") {
-    return <p className="hint">本文なし</p>;
-  }
-
-  return (
-    <details className="item-body">
-      <summary>本文</summary>
-      <pre>{body}</pre>
-    </details>
   );
 }

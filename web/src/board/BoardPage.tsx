@@ -2,11 +2,10 @@ import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, boardsApi, githubApi } from "../api/boards";
+import { boardsApi, githubApi } from "../api/boards";
 import {
   describeFailure,
   diagramNotPlaceableFailure,
-  sceneFileUnreadableFailure,
   sceneUnreadableFailure,
   targetProjectMissingFailure,
   type Failure,
@@ -40,26 +39,13 @@ import {
 } from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
-import { formatSceneSize, sceneBytes } from "../excalidraw/size";
+import { formatSceneSize } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
-import {
-  exportFileName,
-  readSceneFile,
-  remapImportedAnnotationIds,
-  remapImportedFileIds,
-  sceneJSON,
-  type ImportedScene,
-} from "../excalidraw/transfer";
 import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
-import { log } from "../logger";
 import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
-import {
-  AnnotationPanel,
-  type CreationState,
-  type RunHistoryState,
-} from "./AnnotationPanel";
+import { AnnotationPanel } from "./AnnotationPanel";
 import { DiagramChatPanel } from "./DiagramChatPanel";
 import {
   beginTurn,
@@ -71,6 +57,7 @@ import {
   startChat,
   type DiagramChat,
 } from "./diagramChat";
+import { useExclusion, useReentryGuard } from "./exclusion";
 import { createGenerations } from "./generation";
 import {
   addInterpretation,
@@ -81,16 +68,13 @@ import {
   type InterpretationState,
 } from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
+import type { CreationState, RunHistoryState } from "./panelShared";
 import { projectLink } from "./projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
-
-/**
- * シーンの大きさを数え直すまでの待ち時間（ミリ秒）。
- *
- * 描くたびに数えると、画像を貼った大きいボードほど重くなる。手が止まってから
- * 数えれば、表示が少し遅れるだけで済む。
- */
-const MEASURE_DELAY_MS = 500;
+import { useBoardTransfer } from "./useBoardTransfer";
+import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
+import { useSceneSave } from "./useSceneSave";
+import { useSceneSize } from "./useSceneSize";
 
 /**
  * 図のドラフト生成の世代キー。
@@ -222,35 +206,25 @@ export function BoardPage({
   const [canvasFrameIds, setCanvasFrameIds] = useState<string[] | null>(null);
   // 注釈にした frame に重ねる枠。キャンバスの見え方が変わるたびに引き直す。
   const [overlayBoxes, setOverlayBoxes] = useState<AnnotationBox[]>([]);
-  const [dirty, setDirtyState] = useState(false);
-  // 未保存かどうかを ref でも持つ。**待ちを挟んだ判定が古い値を見ないため**
-  // （`App` の `unsaved` と同じ理由、ADR 0021）。取り込みはファイルを読む
-  // await を挟んでから確認を出すので、その時点の値が要る。
-  const dirtyRef = useRef(false);
-  // **書くのは必ずこちらを通す。** state だけを書くと ref が置いていかれ、
-  // 「未保存かどうか」の答えが 2 つになる。
-  const setDirty = useCallback((next: boolean) => {
-    dirtyRef.current = next;
-    setDirtyState(next);
-  }, []);
-  const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
-  // 保存に送るシーンのバイト数。null は「まだ数えていない」。
-  //
-  // **上限は持たない。** 判定はサーバーだけが持つ（ADR 0018 / 0038）ので、
-  // ここが出すのは「いまどれくらいか」という状態にとどめる。
-  const [sceneSize, setSceneSize] = useState<number | null>(null);
-  // 保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
-  // 状態（issue #103）。`board.sceneOverLimit` を初期値にする。
-  //
-  // **保存が成功したら手元で false に倒す。** 保存が成功した = サーバーの
-  // 上限を満たした、という事実からそう言える。上限の数値をフロントが持って
-  // いなくても、判定結果だけを追随させられる（ADR 0038 は数値の複製を禁じて
-  // いるのであって、この推論を禁じてはいない）。
-  const [overLimit, setOverLimit] = useState(board.sceneOverLimit);
-  // 他の人が先に保存していて、こちらの保存を拒まれた状態（ADR 0020）。
-  // 未保存のまま残すので、dirty とは別に持つ。
-  const [conflicted, setConflicted] = useState(false);
+  // 未保存かどうかを決めるのはここだけ（`useDirtyScene`）。
+  const { dirty, isDirty, applySignature, markSaved } = useDirtyScene(onDirtyChange);
+  /**
+   * 保存・取り込み・作成の排他（#146）。**表も判定も `exclusion.ts` にある。**
+   *
+   * 以前は `exclusiveOperation`（ref）・`saving` / `importing`（state）・
+   * `creations` からの導出（`creating`）に分かれていて、どの操作とどの操作が
+   * 排他かを知るにはこのファイルを通して読むことになっていた。
+   */
+  const exclusive = useExclusion();
+  // 表示のための別名。**ここで条件を組み直さない。** 何が走っているかを
+  // 知っているのは `exclusive` だけで、こちらはその言い換え。
+  const saving = exclusive.running === "saving";
+  const importing = exclusive.running === "importing";
+  const creating = exclusive.running === "creating";
+  // いまのシーンの大きさ（`useSceneSize`）。**束のまま持たない。**
+  // `handleChange` は `scheduleMeasure` を依存に置くので、束で受けると
+  // バイト数が変わるたびに `onChange` ごと差し替わる。
+  const { bytes: sceneBytes, schedule: scheduleMeasure } = useSceneSize(api);
   const [interpretations, setInterpretations] = useState<
     Record<string, InterpretationState>
   >({});
@@ -273,10 +247,9 @@ export function BoardPage({
   // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
   const [diagramGenerations] = useState(createGenerations);
   // 置いている最中か。**走っているあいだの二重押しは弾く**（`loadingRuns` と
-  // 同じ形）。state ではなく ref で覚えるのは、判定が「押した時点の値」を見る
-  // 必要があるため。state に置くと、同じ tick に届いた 2 回目がまだ false を
-  // 読み、同じ図が同じ場所に重なって置かれる。
-  const placing = useRef(false);
+  // 同じ形）。**排他の表とは別物**で、止めるのは同じ操作の連打だけ。理由と
+  // 仕組みは `exclusion.ts` の `useReentryGuard`。
+  const placing = useReentryGuard();
   // 作成先の Project に書けるかどうか。確かめるまでは unknown。
   //
   // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
@@ -388,15 +361,13 @@ export function BoardPage({
    * **押されたときだけ引く。** 開いただけで全注釈ぶん引くと、注釈の数だけ
    * 問い合わせが増える（中核思想 3、作成先の名前の取り直しと同じ形）。
    *
-   * 走っているあいだの二重押しは弾く。state ではなく ref で覚えるのは、
-   * 判定が「押した時点の値」を見る必要があるため。
+   * 走っているあいだの二重押しは注釈ごとに弾く（`exclusion.ts`）。
    */
-  const loadingRuns = useRef(new Set<string>());
+  const loadingRuns = useReentryGuard();
 
   const loadRuns = useCallback(
     async (annotationId: string) => {
-      if (loadingRuns.current.has(annotationId)) return;
-      loadingRuns.current.add(annotationId);
+      if (!loadingRuns.enter(annotationId)) return;
 
       // 走っているあいだに作成が終わると、この応答は 1 件足りない履歴になる。
       // 世代で照合して捨てる（`.claude/rules/async-ui.md`）。
@@ -422,10 +393,10 @@ export function BoardPage({
           },
         }));
       } finally {
-        loadingRuns.current.delete(annotationId);
+        loadingRuns.leave(annotationId);
       }
     },
-    [board.id, runGenerations],
+    [board.id, loadingRuns, runGenerations],
   );
 
   /**
@@ -531,76 +502,6 @@ export function BoardPage({
   useEffect(() => {
     void refreshAnnotations();
   }, [refreshAnnotations]);
-
-  // 保存済みシーンの署名。未保存かどうかはこれと現在の署名の比較で決める。
-  // null は Excalidraw から最初の onChange がまだ来ていない状態。
-  const savedSignature = useRef<string | null>(null);
-  const latestSignature = useRef<string | null>(null);
-
-  // 保存の基準にする版。「サーバーが持っているシーンはどれか」を指す（ADR 0020）。
-  // 署名が「何を描いたか」を持つのに対して、こちらは「何の上に描いたか」を持つ。
-  const baseUpdatedAt = useRef(board.updatedAt);
-
-  // 作成先の変更などでボードを取り直したら基準も差し替える。据え置くと、
-  // 自分の操作でずれた版のせいで以後の保存が必ず衝突する。
-  useEffect(() => {
-    baseUpdatedAt.current = board.updatedAt;
-    setConflicted(false);
-  }, [board.updatedAt]);
-
-  useEffect(() => {
-    onDirtyChange(dirty);
-  }, [dirty, onDirtyChange]);
-
-  // 外れるときは未保存を下ろす。残すと、キャンバスがもう無いのに親が止め続ける。
-  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
-
-  /**
-   * シーンの大きさを数え直す。
-   *
-   * 数えるには保存と同じ直列化が要る（画像は `getFiles()` ごと乗る）ので、
-   * 描くたびに数えると、いちばん数えたい大きいボードでいちばん重くなる。
-   * 変化が止まってから 1 度だけ数える。
-   */
-  const measureScene = useCallback(() => {
-    if (!api) return;
-    setSceneSize(sceneBytes(sceneJSON(api)));
-  }, [api]);
-
-  const measureTimer = useRef<number | null>(null);
-
-  const scheduleMeasure = useCallback(() => {
-    if (measureTimer.current !== null) window.clearTimeout(measureTimer.current);
-    measureTimer.current = window.setTimeout(() => {
-      measureTimer.current = null;
-      measureScene();
-    }, MEASURE_DELAY_MS);
-  }, [measureScene]);
-
-  // 開いた直後にも 1 度数える。押す前に見せるための表示なので、何か描くまで
-  // 空欄というのでは遅い。
-  useEffect(() => {
-    measureScene();
-  }, [measureScene]);
-
-  useEffect(
-    () => () => {
-      if (measureTimer.current !== null) window.clearTimeout(measureTimer.current);
-    },
-    [],
-  );
-
-  /** 署名を取り込み、保存済みと違えば未保存にする。 */
-  const applySignature = useCallback(
-    (signature: string) => {
-      latestSignature.current = signature;
-      // Excalidraw はマウント時にも onChange を発火する。その 1 回目は保存済み
-      // シーンそのものなので、未保存ではなく基準として覚える。
-      savedSignature.current ??= signature;
-      setDirty(signature !== savedSignature.current);
-    },
-    [setDirty],
-  );
 
   // いまのキャンバスの見え方。**state ではなく ref に持つ。** 重ねる枠の
   // 引き直しにしか使わないので、スクロールのたびに再描画を増やす理由が無い。
@@ -785,8 +686,7 @@ export function BoardPage({
   const placeDraft = useCallback(async () => {
     // 変換は非同期。**押した時点で弾かないと、2 回目が同じ `draftOrigin` を
     // 得て、同じ図が同じ場所に重なる。** 取り消しで戻すしかなくなる。
-    if (!api || chat.draft === null || placing.current) return;
-    placing.current = true;
+    if (!api || chat.draft === null || !placing.enter()) return;
 
     try {
       const converted = await mermaidToElements(chat.draft.mermaid);
@@ -812,9 +712,9 @@ export function BoardPage({
       // 起きていないように見える（ADR 0040）。
       api.scrollToContent(placed as never, { fitToContent: true, animate: true });
     } finally {
-      placing.current = false;
+      placing.leave();
     }
-  }, [api, chat.draft, currentElements, generateDiagram, updateElements]);
+  }, [api, chat.draft, currentElements, generateDiagram, placing, updateElements]);
 
   /**
    * 付箋を 1 枚置く。
@@ -891,172 +791,48 @@ export function BoardPage({
     [api, currentElements],
   );
 
-  /**
-   * いまのキャンバスを `.excalidraw` として書き出す（ADR 0045）。
-   *
-   * **保存済みシーンではなくキャンバスから出す。** 保存済みから出すと、未保存の
-   * 描き足しが黙って落ちる（中核思想 3）。**未保存でも押させる。** 入力は 1 つ
-   * しかないので、解釈のように揃うまで待たせる理由が無い（ADR 0018 との違い）。
-   *
-   * viewer にも出す。見えているものを出すだけで、共有した相手にはすでに全部
-   * 見えている（ADR 0017）。
-   */
-  const exportScene = useCallback(() => {
-    if (!api) return;
-
-    // 保存が送るのと同じバイト列。ヘッダーに出ている大きさが、そのまま
-    // 書き出したファイルの大きさになる。
-    const url = URL.createObjectURL(
-      new Blob([sceneJSON(api)], { type: "application/json" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = exportFileName(board.name);
-    // DOM に入っていない a のクリックを無視するブラウザがあるので、一度入れる。
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    // 押した直後に外すと、ダウンロードが始まる前に URL が消えることがある。
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-  }, [api, board.name]);
-
-  const fileInput = useRef<HTMLInputElement | null>(null);
-  // 取り込みと作成のどちらを実行しているか。**押した時点で弾く**（`placing` と
-  // 同じ形）。どちらも非同期なので、state で覚えると同じ tick の次の操作がまだ
-  // false を読み、キャンバスの置き換えと GitHub への作成が並走する。
-  const exclusiveOperation = useRef<"importing" | "creating" | null>(null);
-
-  /**
-   * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0045）。
-   *
-   * **サーバーには何も送らない。** 載せるだけで、確定させるのは人間の保存操作
-   * だけ（中核思想 3）。取り込んだシーンの検証・版の照合・大きさの上限は、
-   * その保存の経路のまま効く。
-   *
-   * **引いた解釈は捨てない。** これはキャンバスの編集であって保存ではない。
-   * 捨てるのは保存したときだけで、それまでは未保存なので解釈は押せない
-   * （ADR 0018）。
-   */
-  const importScene = useCallback(
-    async (file: File) => {
-      if (!api || saving || exclusiveOperation.current !== null) return;
-      exclusiveOperation.current = "importing";
-      setImporting(true);
-
-      try {
-        let imported: ImportedScene;
-        try {
-          // **読んでから訊く**（`App.open` と同じ形、ADR 0021）。訊いてから
-          // 読むと、読んでいるあいだの描き足しを確認なしで捨てる。読めなかった
-          // ときに捨ててよいかを訊いてしまうことも無くなる。
-          imported = await readSceneFile(file, api);
-        } catch (e) {
-          // 読めなかった。**キャンバスには触らない。** 例外の中身は画面に
-          // 出さず console に残す（`web/CLAUDE.md`）。
-          log.error("シーンファイルを読み込めませんでした", e);
-          onError(sceneFileUnreadableFailure());
-          return;
-        }
-
-        // **ここから先に待ちは無い。** 挟むと、待っているあいだの描き足しを
-        // 確認なしで捨てる。
-        if (
-          dirtyRef.current &&
-          !window.confirm(
-            "取り込むと、いまキャンバスにある内容は置き換わります。未保存の変更は失われます。",
-          )
-        ) {
-          return;
-        }
-
-        // 同じボードへ戻したファイルでも、以前の sync_runs / sync_items を
-        // 引き継がないよう、注釈とそれを指す要素を一緒に新しい ID へ移す。
-        imported = remapImportedAnnotationIds(imported);
-        // addFiles は同じ ID のデータを上書きしない。別の画像がすでに同じ ID を
-        // 使っていたら、取り込む画像とそれを指す要素を一緒に新しい ID へ移す。
-        imported = remapImportedFileIds(imported, api.getFiles());
-        updateElements(
-          imported.elements,
-          imported.viewBackgroundColor === undefined
-            ? undefined
-            : { viewBackgroundColor: imported.viewBackgroundColor },
-        );
-        // 貼ってあった画像。**入れ忘れると画像の要素だけが空白で置かれる。**
-        api.addFiles(Object.values(imported.files) as never);
-
-        // 取り込んだ絵が画面の外にあると、押しても何も起きていないように見える
-        // （ADR 0040 で図のドラフトに対して決めたのと同じ形）。空のシーンには
-        // 寄せる先が無い。
-        if (imported.elements.length > 0) {
-          api.scrollToContent(imported.elements as never, { fitToContent: true });
-        }
-      } finally {
-        exclusiveOperation.current = null;
-        setImporting(false);
-      }
-    },
-    [api, onError, saving, updateElements],
-  );
-
-  const save = useCallback(async () => {
-    // disabled は表示の約束。ファイルの読み込み中に直接呼ばれても保存しないよう、
-    // 永続化の入口でも同じ排他を確かめる。
-    if (!api || exclusiveOperation.current === "importing") return;
-
-    setSaving(true);
-    try {
-      const elements = api.getSceneElements();
-      const scene = sceneJSON(api);
-      // 送った内容そのものを新しい基準にする。保存の待ち時間に編集されていたら
-      // 未保存のまま残す必要があるので、setDirty(false) とは書かない。
-      // **背景色も `scene` に載っている**ので、基準にも同じものを含める。
-      const sent = sceneSignature(
-        elements as unknown as SceneElement[],
-        currentBackground(),
-      );
-
-      const { updatedAt } = await boardsApi.saveScene(
-        board.id,
-        scene,
-        baseUpdatedAt.current,
-      );
-      // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
-      baseUpdatedAt.current = updatedAt;
-      setConflicted(false);
-      // 保存が成功した = いまのシーンはサーバーの上限を満たしている。
-      setOverLimit(false);
-      savedSignature.current = sent;
-      setDirty(latestSignature.current !== sent);
-      // 解釈は保存済みシーンに対する結果。保存したら対象が変わったので捨てる。
-      // 実行中のものも無効にする。後から返ってきて結果が復活すると、いまの
-      // 内容を解釈したものだと誤読される。
-      generations.invalidateAll();
-      creationGenerations.invalidateAll();
-      setInterpretations({});
-      setCreations({});
-      await refreshAnnotations();
-    } catch (e) {
-      // 409 は「保存に失敗した」ではなく「他の人が先に保存した」という状態。
-      // こちらの編集は未保存のまま残す。捨てて読み直すと、消えるのは相手では
-      // なくこちらの作業になる（ADR 0020）。
-      if (e instanceof ApiError && e.code === "scene_conflict") {
-        setConflicted(true);
-        return;
-      }
-      onError(describeFailure("保存できませんでした", e));
-    } finally {
-      setSaving(false);
-    }
-  }, [
+  const { fileInput, exportScene, importScene } = useBoardTransfer({
     api,
-    board.id,
-    creationGenerations,
-    currentBackground,
-    generations,
+    boardName: board.name,
+    exclusive,
+    isDirty,
+    updateElements,
     onError,
-    refreshAnnotations,
-    setDirty,
-  ]);
+  });
+
+  /**
+   * 保存が済んだら捨てるもの。**一覧はここ 1 箇所にある**（#146）。
+   *
+   * - **引いた解釈。** 保存済みシーンに対する結果なので、対象が変わった。
+   * - **作成の結果。** どの解釈に対して作ったのかが読めなくなる。
+   * - **それぞれの世代。** 実行中のものが後から返って復活すると、いまの内容を
+   *   解釈したものだと誤読される。
+   *
+   * **図のドラフトの会話は捨てない。** 生成は保存済みシーンを読まないので、
+   * 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
+   *
+   * 最後に注釈の状態を取り直す。**これは etoki 自身の状態の読み直しであって
+   * GitHub への同期ではない**（`.claude/rules/async-ui.md`）。
+   */
+  const discardAfterSave = useCallback(async () => {
+    generations.invalidateAll();
+    creationGenerations.invalidateAll();
+    setInterpretations({});
+    setCreations({});
+    await refreshAnnotations();
+  }, [creationGenerations, generations, refreshAnnotations]);
+
+  const { conflicted, overLimit, save } = useSceneSave({
+    api,
+    boardId: board.id,
+    updatedAt: board.updatedAt,
+    sceneOverLimit: board.sceneOverLimit,
+    exclusive,
+    currentBackground,
+    markSaved,
+    onSaved: discardAfterSave,
+    onError,
+  });
 
   /**
    * 注釈を解釈させる。
@@ -1139,107 +915,75 @@ export function BoardPage({
       interpretationId: number,
       interpretation: Interpretation,
     ) => {
-      // disabled は表示の約束。取り込み中、または別の注釈を作成中に直接呼ばれても
-      // 取り消せない GitHub への作成を並走させない。
-      if (exclusiveOperation.current !== null) return;
-      exclusiveOperation.current = "creating";
+      // disabled は表示の約束。保存や取り込みの最中、または別の注釈を作成中に
+      // 直接呼ばれても、取り消せない GitHub への作成を並走させない
+      // （表は `exclusion.ts`）。
+      await exclusive.run("creating", async () => {
+        const generation = creationGenerations.start(annotationId);
+        setCreations((prev) => ({ ...prev, [annotationId]: { status: "running" } }));
 
-      const generation = creationGenerations.start(annotationId);
-      setCreations((prev) => ({ ...prev, [annotationId]: { status: "running" } }));
-
-      try {
-        const run = await boardsApi.createItems(board.id, annotationId, interpretation);
-        // 保存が挟まっていたら、この結果は保存前の解釈に対するもの。表示すると
-        // いまの内容に対して作られたと誤読される。
-        if (!creationGenerations.isCurrent(annotationId, generation)) return;
-        // 作ったものを解釈に結びつける。下書きはこれを見て、作れた項目を
-        // 同じ下書きから新規に作らせない（ADR 0052）。応答を受けた時点で
-        // 入れる。実行中は下書きが止まっているので、ここで外れても押せない。
-        setInterpretations((prev) => {
-          const state = prev[annotationId];
-          if (!state) return prev;
-          return {
+        try {
+          const run = await boardsApi.createItems(board.id, annotationId, interpretation);
+          // 保存が挟まっていたら、この結果は保存前の解釈に対するもの。表示すると
+          // いまの内容に対して作られたと誤読される。
+          if (!creationGenerations.isCurrent(annotationId, generation)) return;
+          // 作ったものを解釈に結びつける。下書きはこれを見て、作れた項目を
+          // 同じ下書きから新規に作らせない（ADR 0052）。応答を受けた時点で
+          // 入れる。実行中は下書きが止まっているので、ここで外れても押せない。
+          setInterpretations((prev) => {
+            const state = prev[annotationId];
+            if (!state) return prev;
+            return {
+              ...prev,
+              [annotationId]: recordCreated(state, interpretationId, run.items),
+            };
+          });
+          // 履歴は 1 件増えたので、引いてあるものは捨てる。**黙って古いまま
+          // 出さない。** 読み直すかどうかは、これまでどおり押した人が決める。
+          // 走っている読み込みも無効にする。捨てた直後に古い応答が入ると、
+          // 作ったばかりの run が抜けた履歴が残る。
+          runGenerations.start(annotationId);
+          setRunHistories((prev) => {
+            if (!(annotationId in prev)) return prev;
+            const next = { ...prev };
+            delete next[annotationId];
+            return next;
+          });
+          await refreshAnnotations();
+          // **状態を取り直してから done にする。** 先に done にすると、作ったばかりの
+          // item が畳み込みに入る前の隙間で、保存や押し直しと競合する
+          // （.claude/rules/async-ui.md）。取り直しの失敗は refreshAnnotations が
+          // 自分で出すので、ここでは待つだけ。
+          if (!creationGenerations.isCurrent(annotationId, generation)) return;
+          setCreations((prev) => ({
             ...prev,
-            [annotationId]: recordCreated(state, interpretationId, run.items),
-          };
-        });
-        // 履歴は 1 件増えたので、引いてあるものは捨てる。**黙って古いまま
-        // 出さない。** 読み直すかどうかは、これまでどおり押した人が決める。
-        // 走っている読み込みも無効にする。捨てた直後に古い応答が入ると、
-        // 作ったばかりの run が抜けた履歴が残る。
-        runGenerations.start(annotationId);
-        setRunHistories((prev) => {
-          if (!(annotationId in prev)) return prev;
-          const next = { ...prev };
-          delete next[annotationId];
-          return next;
-        });
-        await refreshAnnotations();
-        // **状態を取り直してから done にする。** 先に done にすると、作ったばかりの
-        // item が畳み込みに入る前の隙間で、保存や押し直しと競合する
-        // （.claude/rules/async-ui.md）。取り直しの失敗は refreshAnnotations が
-        // 自分で出すので、ここでは待つだけ。
-        if (!creationGenerations.isCurrent(annotationId, generation)) return;
-        setCreations((prev) => ({
-          ...prev,
-          [annotationId]: { status: "done", run },
-        }));
-      } catch (e) {
-        if (!creationGenerations.isCurrent(annotationId, generation)) return;
-        setCreations((prev) => ({
-          ...prev,
-          [annotationId]: {
-            status: "error",
-            failure: describeFailure("作成できませんでした", e),
-          },
-        }));
-      } finally {
-        exclusiveOperation.current = null;
-      }
+            [annotationId]: { status: "done", run },
+          }));
+        } catch (e) {
+          if (!creationGenerations.isCurrent(annotationId, generation)) return;
+          setCreations((prev) => ({
+            ...prev,
+            [annotationId]: {
+              status: "error",
+              failure: describeFailure("作成できませんでした", e),
+            },
+          }));
+        }
+      });
     },
-    [board.id, creationGenerations, refreshAnnotations, runGenerations],
+    [board.id, creationGenerations, exclusive, refreshAnnotations, runGenerations],
   );
 
-  // 保存と作成は互いに排他にする。作成中に保存させないのは、GitHub への作成が
-  // 取り消せないため。実行中にシーンが変わると、作られた内容と記録されるハッシュ
-  // が食い違いうる。逆に保存は creations を捨てるので、保存中に作らせると
-  // GitHub には残ったまま結果だけ消え、作られていないと思って再実行した開発者が
-  // draft issue を重複させる。保存側は creating で、作成側は saving を渡して止める。
-  const creating = Object.values(creations).some((c) => c.status === "running");
+  // 未保存のあいだと、作成の実行中は離脱を確認する（ADR 0021 / 0051）。
+  // ブレストは etoki の最初のフェーズなので、ここで失うと後段（注釈・解釈・
+  // 作成）が全部やり直しになる。**2 つを渡すのはここ**で、理由は
+  // `useConfirmLeave` にある。
+  useConfirmLeave(dirty || creating);
 
-  // 未保存のあいだと、作成の実行中は離脱を確認する。ブレストは etoki の最初のフェーズなので、
-  // ここで失うと後段（注釈・解釈・作成）が全部やり直しになる。保存は明示操作で
-  // ある以上（中核思想 3）押し忘れは構造的に起きるので、**自動で保存しないなら
-  // 失う直前に知らせる責任が対になる。**
-  //
-  // **作成中も確認する**（ADR 0051）。解釈が保存を要求するので、作成を押す時点では
-  // ふつう保存済みで、未保存だけを見ていると何も訊かれない。閉じれば作成は
-  // 止まり、残りは作られない。作れたぶんは記録されるが、閉じた人は結果を
-  // 見られない。
-  useEffect(() => {
-    if (!dirty && !creating) return;
-
-    const confirmLeave = (e: BeforeUnloadEvent) => {
-      // 文面はブラウザが決める。ここで渡した文字列は表示されない。
-      e.preventDefault();
-      // preventDefault だけを見ないブラウザが残っているので両方立てる。
-      e.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", confirmLeave);
-    return () => window.removeEventListener("beforeunload", confirmLeave);
-  }, [dirty, creating]);
-
-  const importBlocked = saving
-    ? "保存が終わるまで取り込めません"
-    : creating
-      ? "作成が終わるまで取り込めません"
-      : null;
-  const saveBlocked = importing
-    ? "取り込みが終わるまで保存できません"
-    : creating
-      ? "作成が終わるまで保存できません"
-      : null;
+  // 押せない理由は表から引く（`exclusion.ts`）。**ここで条件を組み直さない。**
+  // 組み直すと、止める条件と画面に出る文が別々に古くなる。
+  const importBlocked = exclusive.reasonFor("importing");
+  const saveBlocked = exclusive.reasonFor("saving");
 
   // 設定していない機能は、押す前に理由を出す（ADR 0030）。null は使える、
   // または「まだ確かめていない」。
@@ -1269,11 +1013,12 @@ export function BoardPage({
   // **未保存が先。** `dirty` を下ろすのは応答が返ってから（`save`）なので、
   // 保存中もこちらが出続ける。保存中の文が出るのは、変更が無いまま保存を
   // 押したとき。そこも押せないことに変わりはないので、理由を空けない。
+  // **未保存は排他ではない。** 表が答えるのは「何が走っているか」だけなので、
+  // 保存していないという前提はここで先に見る（`blockingReasons` に進行中の
+  // 状態を混ぜないのと同じ切り分け）。
   const targetChangeBlocked = dirty
     ? "保存してから作成先を変更できます"
-    : saving
-      ? "保存が終わるまで作成先を変更できません"
-      : null;
+    : exclusive.reasonFor("changeTarget");
 
   return (
     <div className="board">
@@ -1434,7 +1179,7 @@ export function BoardPage({
                 onClick={onChangeTarget}
                 // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
                 // 黙って捨てずに、保存してからにしてもらう。
-                disabled={dirty || saving}
+                disabled={targetChangeBlocked !== null}
                 aria-describedby={
                   targetChangeBlocked !== null ? "target-change-blocked" : undefined
                 }
@@ -1475,7 +1220,7 @@ export function BoardPage({
                 // **作成中は取り込ませない。** キャンバスを置き換えるので、
                 // 保存を止めているのと同じ理由で止める（作られた内容と記録
                 // されるハッシュが食い違いうる）。
-                disabled={!api || saving || creating || importing}
+                disabled={!api || exclusive.running !== null}
                 aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
               >
                 {importing ? "取り込み中…" : "取り込み"}
@@ -1511,9 +1256,9 @@ export function BoardPage({
             になる（ADR 0018 / 0038）。「大きいときだけ」出さないのも同じ
             理由で、上限を知らない以上どこからが大きいのかを決められない。
           */}
-          {sceneSize !== null && (
+          {sceneBytes !== null && (
             <span className="badge badge-size" title="保存に送るシーンの大きさ">
-              {formatSceneSize(sceneSize)}
+              {formatSceneSize(sceneBytes)}
             </span>
           )}
           {dirty && <span className="dirty">未保存</span>}
@@ -1528,7 +1273,7 @@ export function BoardPage({
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={saving || creating || importing || !api}
+                disabled={!api || exclusive.running !== null}
                 aria-describedby={saveBlocked !== null ? "save-blocked" : undefined}
               >
                 {saving ? "保存中…" : "保存"}
@@ -1638,7 +1383,7 @@ export function BoardPage({
           {
             "このボードは保存できる上限を超えています。保存し直すには貼った画像を減らしてください。"
           }
-          {sceneSize !== null && `（いまの大きさ: ${formatSceneSize(sceneSize)}）`}
+          {sceneBytes !== null && `（いまの大きさ: ${formatSceneSize(sceneBytes)}）`}
         </p>
       )}
 
@@ -1708,31 +1453,35 @@ export function BoardPage({
           <AnnotationPanel
             annotations={annotations}
             detached={detached}
-            markableFrames={markable}
-            unmarkableFrames={unmarkable}
-            canvasFrameIds={canvasFrameIds}
-            selectedFrameIds={selectedFrames.map((f) => f.id)}
-            onFocusFrame={focusFrame}
-            onMark={handleMark}
-            onUnmark={handleUnmark}
-            onChangeGranularity={(id, g) => handleMark(id, g)}
-            onChangeKind={handleChangeAnnotationKind}
+            frames={{
+              markable,
+              unmarkable,
+              canvasIds: canvasFrameIds,
+              selectedIds: selectedFrames.map((f) => f.id),
+              onFocus: focusFrame,
+              onMark: handleMark,
+              onUnmark: handleUnmark,
+              onChangeGranularity: handleMark,
+              onChangeKind: handleChangeAnnotationKind,
+            }}
+            interpretation={{
+              states: interpretations,
+              onInterpret: (id) => void interpret(id),
+              onSelect: showInterpretation,
+              unavailable: interpretationUnavailable,
+            }}
+            creation={{
+              states: creations,
+              saving,
+              blocked: exclusive.reasonFor("creating"),
+              onCreate: (id, interpretationId, result) =>
+                void create(id, interpretationId, result),
+              projectAccess,
+              unavailable: creationUnavailable,
+            }}
+            runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
             stale={dirty}
-            interpretations={interpretations}
-            onInterpret={(id) => void interpret(id)}
-            onSelectInterpretation={showInterpretation}
-            runHistories={runHistories}
-            onLoadRuns={(id) => void loadRuns(id)}
-            creations={creations}
-            saving={saving}
-            importing={importing}
-            onCreate={(id, interpretationId, interpretation) =>
-              void create(id, interpretationId, interpretation)
-            }
             canEdit={canEdit}
-            projectAccess={projectAccess}
-            interpretationUnavailable={interpretationUnavailable}
-            creationUnavailable={creationUnavailable}
             projectLink={link}
           />
         </ErrorBoundary>
