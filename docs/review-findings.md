@@ -45,6 +45,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#138](https://github.com/yusuke0610/etoki/pull/138) |        6 |      6 |        0 |      0 | e2e-mocks に偽の上流の節 / make-targets / validation-boundaries / test-effectiveness         |
 | [#158](https://github.com/yusuke0610/etoki/pull/158) |        1 |      0 |        1 |      0 | docs-consistency の「やらないこと」（見出しの参照に地の文まで寄せない）                      |
 | [#159](https://github.com/yusuke0610/etoki/pull/159) |        3 |      3 |        0 |      0 | test-effectiveness（写しの照合は両側から）。変数名の文字クラスと rv の例は単発で還さず       |
+| [#179](https://github.com/yusuke0610/etoki/pull/179) |        1 |      1 |        0 |      0 | async-ui（画面より長く生きる通知へ、離れたあとに返った失敗を書かない）                       |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
