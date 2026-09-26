@@ -1281,7 +1281,10 @@ export function BoardPage({
    */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "s" && e.key !== "S") return;
+      // **`e.key` だけで見ない。** 非ラテン配列では物理の S を押しても `e.key` が
+      // "s" にならず、保存されないままブラウザの既定（ページを保存）が開く。
+      // 物理キーの位置（`e.code`）も見る。Ctrl+S の習慣は位置で覚えているため。
+      if (e.key !== "s" && e.key !== "S" && e.code !== "KeyS") return;
       if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
 
       e.preventDefault();

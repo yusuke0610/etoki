@@ -392,6 +392,39 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
   });
 
+  // 切れると: 非ラテン配列（ロシア語など）では物理の S を押しても `e.key` が
+  // "s" にならないので誰も拾わず、**ブラウザの「ページを保存」が開く。**
+  // Ctrl+S の習慣はキーの位置で覚えているので、`e.code` も見る。
+  //
+  // Playwright の `press` は配列を差し替えられないので、`key` と `code` が
+  // 食い違うイベントを直に投げる。**ハンドラは window で聴いている**ので届く。
+  test("非ラテン配列でも Ctrl / Cmd + S で保存できる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    const saved = page.waitForRequest(
+      (req) => req.method() === "PUT" && new URL(req.url()).pathname.endsWith("/scene"),
+    );
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "\u044B", // ロシア語配列で物理の S が返す文字
+          code: "KeyS",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await saved;
+
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
   // **押せないときも既定の動作は止める。** 「保存できなかった」の代わりに
   // ブラウザの保存ダイアログが出るのは、押せない理由を見せるどころではない。
   // viewer には保存そのものが無い（ADR 0017）ので、ここがいちばん外しやすい。

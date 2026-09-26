@@ -132,6 +132,24 @@ test.describe("作成先の選択", () => {
     await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeVisible();
   });
 
+  // 切れると: 見ていない範囲が残っているのに「権限を確認してください」と案内し、
+  // 確認しても何も出てこないところへ送ることになる（ADR 0054）。打ち切りの空と
+  // 取り切った空は、打ち手が違う。
+  test("打ち切ったうえで 0 件なら、権限ではなく範囲の話にする", async ({ page }) => {
+    const mock = withUnselected();
+    mock.repositories = { status: 200, body: { repositories: [], truncated: true } };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openUnselected(page);
+
+    await expect(
+      page.getByText("見た範囲にはリポジトリがありませんでした"),
+    ).toBeVisible();
+    // 権限の案内は出さない。
+    await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeHidden();
+  });
+
   // 候補を取り切っていないことを画面に出す（ADR 0054）。黙って切ると、目当てが
   // 出ない利用者は「権限が無い」「インストールしていない」「見た範囲の外」を
   // 区別できず、見当違いの設定を疑うことになる（中核思想 3）。
