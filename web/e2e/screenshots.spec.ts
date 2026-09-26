@@ -1,4 +1,4 @@
-import { test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   breakAnnotations,
@@ -235,6 +235,42 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "保存" }).click();
     await page.getByText("他の人がこのボードを保存しました").waitFor();
     await shot(page, "15-save-conflict");
+  });
+
+  // 画面全体の失敗は、キャンバスの上に重ねた通知で出る（ADR 0058）。**キャンバス
+  // が縮んでいないこと**と、2 つ重なっても両方読めることと、その場から押し直せる
+  // ことを画像で見る。
+  test("重なった失敗の通知を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.saveSceneError = {
+      status: 500,
+      body: { code: "internal", error: "etoki: database is locked" },
+    };
+    mock.refreshTargetDisplayError = {
+      status: 502,
+      body: { code: "github_unavailable", error: "github: 502 Bad Gateway" },
+    };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByRole("alert").waitFor();
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await expect(page.locator(".notifications").getByRole("alert")).toHaveCount(2);
+    // 出るときのフェードが終わってから撮る。途中だと下が透けて、重なり方を
+    // 読み違える。
+    await page.evaluate(() =>
+      Promise.all(
+        [...document.querySelectorAll(".notification")].flatMap((el) =>
+          el.getAnimations().map((a) => a.finished),
+        ),
+      ),
+    );
+    await shot(page, "36-notifications");
   });
 
   // 大きさで保存を断られた状態（ADR 0038）。**保存できない = 描いたものが

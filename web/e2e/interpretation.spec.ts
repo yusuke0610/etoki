@@ -476,9 +476,8 @@ test.describe("解釈と作成", () => {
     // 出すのは code から引いた打ち手。サーバーの内部文言は前に出さない（#86）。
     await expect(card.getByText("LLM が未設定です", { exact: false })).toBeVisible();
     await expect(card.getByText("llm is not configured", { exact: false })).toBeHidden();
-    // 画面全体のエラー帯に流すと、どの注釈で起きたか分からなくなる。帯は
-    // main の直下にしか出ない。
-    await expect(page.locator("main > .error")).toHaveCount(0);
+    // 画面全体の通知に流すと、どの注釈で起きたか分からなくなる（ADR 0058）。
+    await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 
   // 実行の上限は利用者ごとで、解釈と図の生成が 1 つの枠を共有する（ADR 0044）。
@@ -503,7 +502,7 @@ test.describe("解釈と作成", () => {
     await expect(
       card.getByText("llm call rate limit reached", { exact: false }),
     ).toBeHidden();
-    await expect(page.locator("main > .error")).toHaveCount(0);
+    await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 
   test("解釈時点とシーンが食い違うと、作成は 409 で止まる", async ({ page }) => {

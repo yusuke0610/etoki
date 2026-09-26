@@ -446,10 +446,10 @@ test.describe("取り込み", () => {
 
     await chooseFile(page, "これは Excalidraw のシーンではない");
 
-    await expect(page.locator(".error-message")).toContainText(
+    await expect(page.getByRole("alert")).toContainText(
       "Excalidraw のシーンとして読めませんでした",
     );
-    await expect(page.locator(".error-message")).toContainText(
+    await expect(page.getByRole("alert")).toContainText(
       "別の .excalidraw ファイルを選んでください",
     );
     await expect(annotationFrames(page)).toHaveCount(3);

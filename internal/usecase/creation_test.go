@@ -46,7 +46,9 @@ type fakeGitHub struct {
 	// そのあと実物の HTTP クライアントと同じく ctx が切れていれば失敗する。
 	// GitHub が受理したのに応答が届かない並びを作る。
 	cancelDuring func()
-	seq          int
+	// updatedDatabaseIDs は UpdateDraftIssue が item ごとに返す識別子。
+	updatedDatabaseIDs map[string]int64
+	seq                int
 	// repos と projects は作成先の候補一覧が返すもの。
 	repos    []port.Repository
 	projects []port.Project
@@ -77,16 +79,18 @@ func (f *fakeGitHub) ListProjectFields(_ context.Context, projectID string) ([]p
 	return f.fields, nil
 }
 
-func (f *fakeGitHub) CreateDraftIssue(ctx context.Context, projectID string, item port.DraftIssue) (string, error) {
+func (f *fakeGitHub) CreateDraftIssue(
+	ctx context.Context, projectID string, item port.DraftIssue,
+) (port.ProjectItemRef, error) {
 	f.projectIDs = append(f.projectIDs, projectID)
 	if f.cancelDuring != nil {
 		f.cancelDuring()
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return port.ProjectItemRef{}, err
 		}
 	}
 	if f.failOnTitle != "" && item.Title == f.failOnTitle {
-		return "", errors.New("github: boom")
+		return port.ProjectItemRef{}, errors.New("github: boom")
 	}
 	f.seq++
 	id := "PVTI_" + string(rune('a'+f.seq-1))
@@ -94,21 +98,31 @@ func (f *fakeGitHub) CreateDraftIssue(ctx context.Context, projectID string, ite
 	if f.afterCreate != nil {
 		f.afterCreate()
 	}
-	return id, nil
+	// 識別子は ID ごとに違う値にする。全部に同じ値を返すと、取り違えた
+	// 詰め替えでも通る（.claude/rules/test-effectiveness.md）。
+	return port.ProjectItemRef{ItemID: id, DatabaseID: createdDatabaseID(f.seq)}, nil
 }
+
+// createdDatabaseID は seq 件目に作った item の識別子。
+func createdDatabaseID(seq int) int64 { return int64(1000 + seq) }
 
 // UpdateDraftIssue は既存の draft issue を書き換えたことにする。
 //
 // projectID を取らない。更新は content の ID で行うので、GitHub 側も Project を
 // 要求しない（ADR 0026）。
-func (f *fakeGitHub) UpdateDraftIssue(_ context.Context, itemID string, item port.DraftIssue) error {
+//
+// 返す識別子は updatedDatabaseIDs に置いたもの。置いていなければ 0（引き直しで
+// 取れなかった）。
+func (f *fakeGitHub) UpdateDraftIssue(
+	_ context.Context, itemID string, item port.DraftIssue,
+) (port.ProjectItemRef, error) {
 	if f.failOnTitle != "" && item.Title == f.failOnTitle {
-		return errors.New("github: boom")
+		return port.ProjectItemRef{}, errors.New("github: boom")
 	}
 	f.calls = append(f.calls, githubCall{
 		op: "update", itemID: itemID, title: item.Title, body: item.Body,
 	})
-	return nil
+	return port.ProjectItemRef{ItemID: itemID, DatabaseID: f.updatedDatabaseIDs[itemID]}, nil
 }
 
 func (f *fakeGitHub) SetItemFieldValue(_ context.Context, projectID, itemID string, v port.FieldValue) error {
@@ -1003,6 +1017,55 @@ func TestCreate_UpdatesPreviousItems(t *testing.T) {
 	// 更新したのに「変更あり」のまま残る。
 	if run.ContentHash != currentContentHash(t) {
 		t.Errorf("ContentHash = %q, want 更新後の値", run.ContentHash)
+	}
+}
+
+// item の数値の識別子が、作成でも更新でも記録（port.SyncItem）まで届くこと
+// （ADR 0057）。詰め替えで写し忘れると、item ごとのリンクが黙って出なくなる。
+// 更新で届くことが、列を足す前の item を後から埋める経路になっている。
+func TestCreate_RecordsItemDatabaseID(t *testing.T) {
+	t.Parallel()
+
+	gh := &fakeGitHub{
+		fields:             projectFields(),
+		updatedDatabaseIDs: map[string]int64{"PVTI_old_epic": 777},
+	}
+	mappings := &fakeMappings{}
+	seedRun(t, mappings, savedItem("PVTI_old_epic", "e1", port.KindEpic, "決済フローの見直し"))
+
+	svc := newCreationService(t, gh, mappings)
+
+	previous := "PVTI_old_epic"
+	in := domain.Interpretation{
+		Summary: "文言を直した",
+		Items: []domain.InterpretedItem{
+			{
+				LocalID: "e1", Kind: domain.KindEpic, Title: "決済フローの作り直し",
+				PreviousItemID: &previous,
+			},
+			{LocalID: "i1", Kind: domain.KindIssue, Title: "新しく足す issue"},
+		},
+	}
+
+	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), in); err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+
+	// seedRun のぶんと合わせて 2 件。見るのは今回の run。
+	if len(mappings.runs) != 2 {
+		t.Fatalf("保存された run = %d 件, want 2", len(mappings.runs))
+	}
+	got := make(map[string]int64)
+	for _, it := range mappings.runs[1].Items {
+		got[it.LocalID] = it.ItemDatabaseID
+	}
+	// 更新は引き直しで取った値、作成は作成の応答の値。どちらも別の値にして
+	// あるので、取り違えても落ちる。
+	want := map[string]int64{"e1": 777, "i1": createdDatabaseID(1)}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s の ItemDatabaseID = %d, want %d", id, got[id], w)
+		}
 	}
 }
 

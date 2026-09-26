@@ -298,9 +298,12 @@ export function annotations(): AnnotationStatus[] {
       granularity: "epic",
       state: "created",
       lastSyncedAt: "2026-08-04T12:00:00Z",
+      // 識別子を控えた item と、控えていなかった頃の item を混ぜておく
+      // （ADR 0057）。移行前の run が混ざるのは実際に起きる形。
       items: [
         {
           itemId: "PVTI_epic",
+          itemDatabaseId: 101,
           kind: "epic",
           title: "パスワード再設定",
           body: "忘れたときの導線をまとめる",
@@ -412,6 +415,7 @@ export function createdRun(): CreatedRun {
       // 解釈結果と同じ本文で作られる。作成後もそのまま読める（ADR 0022）。
       {
         itemId: "PVTI_1",
+        itemDatabaseId: 201,
         kind: "epic",
         title: "ログイン基盤",
         body: "入口をまとめる",
@@ -420,6 +424,7 @@ export function createdRun(): CreatedRun {
       },
       {
         itemId: "PVTI_2",
+        itemDatabaseId: 202,
         kind: "issue",
         title: "メールとパスワードでログインする",
         body: "フォームと検証",
@@ -429,6 +434,7 @@ export function createdRun(): CreatedRun {
       },
       {
         itemId: "PVTI_3",
+        itemDatabaseId: 203,
         kind: "issue",
         title: "ログイン失敗を数える",
         body: "連続失敗の記録",
@@ -514,6 +520,7 @@ export function matchedInterpretationMock(): ApiMock {
             },
             {
               itemId: "PVTI_kept",
+              itemDatabaseId: 88,
               kind: "issue",
               title: "触らないほう",
               body: "",

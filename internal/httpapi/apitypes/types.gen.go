@@ -990,6 +990,14 @@ type SyncItem struct {
 	// Body 作成時の本文。記録していなかった頃の run では空
 	Body string `json:"body"`
 
+	// ItemDatabaseID item の数値の識別子（GraphQL の `fullDatabaseId`）。**省略と 0 は
+	// 「知らない」。** 記録していなかった頃の run と、GitHub が返さなかった
+	// ときにそうなる。
+	//
+	// **URL ではなく素材だけを返す**（ADR 0057）。item ごとのリンクの形と、
+	// 組めないときの落とし先はフロントの 1 箇所が持つ。
+	ItemDatabaseID int64 `json:"itemDatabaseId,omitempty"`
+
 	// ItemID GitHub Projects v2 の item ID
 	ItemID string `json:"itemId"`
 

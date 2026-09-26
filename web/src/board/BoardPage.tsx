@@ -52,6 +52,8 @@ import {
 } from "../excalidraw/transfer";
 import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { useNotify } from "../notification/NotificationProvider";
+import type { NotifyOptions } from "../notification/types";
 import { log } from "../logger";
 import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
@@ -139,6 +141,18 @@ type DeletionState =
   | { status: "confirming"; losing: BoardDeletion }
   | { status: "deleting"; losing: BoardDeletion };
 
+/** 保存の失敗の通知。続けて失敗しても 1 件に畳み、保存できたら下げる。 */
+const SAVE_FAILED = "save-failed";
+/**
+ * 開いたときに effect から出る失敗の通知。
+ *
+ * **effect から出すものには key を付ける。** 開発時の StrictMode では effect が
+ * 2 回走るので、畳まないと同じ失敗が 2 件並ぶ。注釈の状態は保存や作成のたびにも
+ * 取り直すので、読めたら下げる。
+ */
+const ANNOTATIONS_FAILED = "annotations-failed";
+const SCENE_UNREADABLE = "scene-unreadable";
+
 type Props = {
   board: BoardDetail;
   /**
@@ -148,7 +162,6 @@ type Props = {
    * ボードを開くたびに変わりはしない。**混ぜない。**
    */
   capabilities: Capabilities | null;
-  onError: (failure: Failure) => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
   /**
@@ -195,7 +208,6 @@ type Props = {
 export function BoardPage({
   board,
   capabilities,
-  onError,
   onChangeTarget,
   onTargetRefreshed,
   onRenamed,
@@ -205,6 +217,54 @@ export function BoardPage({
   onThemeChange,
 }: Props) {
   const canEdit = canEditBoard(board.role);
+
+  // 画面全体に出す失敗は通知へ（ADR 0058）。**保存の衝突・解釈や作成の失敗は
+  // ここを通さない。** 消えてよい失敗ではなく、残して読ませる状態だから。
+  const { notify, dismissKey } = useNotify();
+  // **画面から外れたあとに返った失敗は通知しない。** 通知はキャンバスより上に
+  // 生きているので、ボードを離れる前に投げた保存が離れたあとで失敗すると、
+  // 別のボードの画面に「保存できませんでした」が出る。その「再試行」が呼ぶのは
+  // 離れたボードの save で、捨てると決めたシーンを前のボードへ保存しにいく。
+  // 離れる時点で出ている通知は下げてある（SAVE_FAILED の effect）ので、ここで
+  // 塞ぐのは離れる時点でまだ応答待ちだったぶん。
+  //
+  // 印は effect で立てる。StrictMode は effect を 2 回走らせ、そのあいだに
+  // cleanup を挟むので、初期値で true にすると 2 回目以降が false のまま残る。
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // **下げる側も同じ印を見る。** 通知はボードより上（`NotificationProvider`）に
+  // 生きていて key で消すので、**離れたあとに届いた成功で下げると、いま開いて
+  // いるボードに出ている同じ key の通知が消える。** 出す側（`onError`）だけを
+  // 塞いでも、消える側からボードを跨いでしまう。
+  //
+  // **離れる時点で下げるのは別の話**なので、そちらは `dismissKey` を直に呼ぶ
+  // （下の `board.id` の cleanup）。あれは「離れたから下げる」であって、
+  // 「離れたのに下げる」ではない。
+  const dismissHere = useCallback(
+    (key: string) => {
+      if (!mounted.current) return;
+      dismissKey(key);
+    },
+    [dismissKey],
+  );
+
+  const onError = useCallback(
+    (failure: Failure, options: Pick<NotifyOptions, "action" | "key"> = {}) => {
+      if (!mounted.current) return;
+      notify({
+        kind: "error",
+        message: failure.message,
+        detail: failure.detail,
+        ...options,
+      });
+    },
+    [notify],
+  );
 
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationStatus[]>([]);
@@ -492,7 +552,7 @@ export function BoardPage({
     };
   }, [board.id]);
 
-  const initialData = useMemo(() => {
+  const initialScene = useMemo(() => {
     try {
       const scene = JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
       // **開いたら中身が見えている位置から始める。** シーンの原点はキャンバスの
@@ -502,13 +562,20 @@ export function BoardPage({
       //
       // **要素は動かさない。** 動かすと座標の変更として未保存になり、開いた
       // だけで保存を促すことになる。動かすのは見ている位置のほう。
-      return { ...scene, scrollToContent: true };
+      return { data: { ...scene, scrollToContent: true }, unreadable: false };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
-      onError(sceneUnreadableFailure());
-      return { elements: [], appState: {} };
+      return { data: { elements: [], appState: {} }, unreadable: true };
     }
-  }, [board.scene, onError]);
+  }, [board.scene]);
+  const initialData = initialScene.data;
+
+  // 読めなかったことの通知は描画の外で出す。useMemo の中で出すと、描画中に
+  // 別のコンポーネント（通知）の状態を書き換えることになる。
+  useEffect(() => {
+    if (initialScene.unreadable)
+      onError(sceneUnreadableFailure(), { key: SCENE_UNREADABLE });
+  }, [initialScene, onError]);
 
   // 状態の取得は初期表示・保存・作成から重なって走る。番号を振って最後に
   // 投げたものだけ反映する。古い応答で上書きすると、作成済みの注釈が未作成に
@@ -522,11 +589,14 @@ export function BoardPage({
       if (request !== annotationsRequest.current) return;
       setAnnotations(next.annotations);
       setDetached(next.detached);
+      dismissHere(ANNOTATIONS_FAILED);
     } catch (e) {
       if (request !== annotationsRequest.current) return;
-      onError(describeFailure("注釈の状態を取得できませんでした", e));
+      onError(describeFailure("注釈の状態を取得できませんでした", e), {
+        key: ANNOTATIONS_FAILED,
+      });
     }
-  }, [board.id, onError]);
+  }, [board.id, dismissHere, onError]);
 
   useEffect(() => {
     void refreshAnnotations();
@@ -925,6 +995,9 @@ export function BoardPage({
   // 同じ形）。どちらも非同期なので、state で覚えると同じ tick の次の操作がまだ
   // false を読み、キャンバスの置き換えと GitHub への作成が並走する。
   const exclusiveOperation = useRef<"importing" | "creating" | null>(null);
+  // 走っている保存。`saving` は表示のための state なので、`save` の中から
+  // 読むと古い値を見る。止める判断はこちらで行う。
+  const savingRef = useRef(false);
 
   /**
    * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0045）。
@@ -999,10 +1072,21 @@ export function BoardPage({
   );
 
   const save = useCallback(async () => {
-    // disabled は表示の約束。ファイルの読み込み中に直接呼ばれても保存しないよう、
-    // 永続化の入口でも同じ排他を確かめる。
-    if (!api || exclusiveOperation.current === "importing") return;
+    // disabled は表示の約束。**ここで確かめ直すのは、ボタン以外から呼ばれる経路が
+    // できたため**（通知の「再試行」）。
+    //
+    // いま踏める穴があるわけではない。作成中は解釈が保存済みシーンを要求するので
+    // 「解釈する」が押せず、通知の「再試行」は押した時点で通知ごと下がるので
+    // 二度押せない。**それでも入口で見るのは、この関数の呼び出し元がボタン 1 つ
+    // だった前提が崩れたから。** 表示側の disabled（`saving || creating ||
+    // importing`）と同じ条件をここでも満たす。
+    //
+    // 揃えないと何が起きるかは下の「保存と作成は互いに排他にする」にある。
+    // 要点は、保存が creations を捨てるので、GitHub に draft issue が残ったまま
+    // 結果だけ消え、作られていないと思った開発者が作り直して重複させること。
+    if (!api || exclusiveOperation.current !== null || savingRef.current) return;
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const elements = api.getSceneElements();
@@ -1023,6 +1107,9 @@ export function BoardPage({
       // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
       baseUpdatedAt.current = updatedAt;
       setConflicted(false);
+      // 前の保存の失敗はもう当てはまらない。残すと、保存できているのに
+      // 「保存できませんでした」が読める。
+      dismissHere(SAVE_FAILED);
       // 保存が成功した = いまのシーンはサーバーの上限を満たしている。
       setOverLimit(false);
       savedSignature.current = sent;
@@ -1043,8 +1130,19 @@ export function BoardPage({
         setConflicted(true);
         return;
       }
-      onError(describeFailure("保存できませんでした", e));
+      // 失敗したら同じ保存をその場から押し直せるようにする。**押し直して解けない
+      // ものには出さない。** 409 は上で帯に回してあり、413 は描いたものを減らす
+      // まで何度押しても同じ答えが返る。key を揃えて、失敗が続いても同じ 1 件を
+      // 差し替えるだけにする。
+      const retryable = !(e instanceof ApiError && e.code === "scene_too_large");
+      onError(describeFailure("保存できませんでした", e), {
+        key: SAVE_FAILED,
+        action: retryable
+          ? { label: "再試行", run: () => void saveRef.current() }
+          : undefined,
+      });
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }, [
@@ -1052,11 +1150,25 @@ export function BoardPage({
     board.id,
     creationGenerations,
     currentBackground,
+    dismissHere,
     generations,
     onError,
     refreshAnnotations,
     setDirty,
   ]);
+  // 通知の「再試行」から呼ぶ保存。**押された時点の save を呼ぶ。** 通知は失敗した
+  // 時点で作られるので、そのときの save を閉じ込めると、あとで api が変わった
+  // あとでも古いものを呼ぶ。
+  const saveRef = useRef(save);
+  useEffect(() => {
+    saveRef.current = save;
+  }, [save]);
+
+  // **ボードを変えたら保存失敗の通知は下げる。** 通知はキャンバスより上に生きて
+  // いるので、残すと別のボードの画面に「保存できませんでした」が並ぶ。しかも
+  // 「再試行」が呼ぶのは押した時点の save、つまり**いま開いているボードの保存**
+  // なので、読んでいる文と起きることが食い違う。
+  useEffect(() => () => dismissKey(SAVE_FAILED), [board.id, dismissKey]);
 
   /**
    * 注釈を解釈させる。

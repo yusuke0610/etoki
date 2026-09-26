@@ -285,6 +285,10 @@ test.describe("シーンの保存", () => {
 
     // 打ち手まで言う。「大きすぎます」だけでは、描いた量を減らせと読める。
     await expect(page.getByText("貼った画像が大きすぎて保存できません")).toBeVisible();
+    // 押し直しても同じ答えが返るので、再試行は出さない（ADR 0058）。
+    await expect(
+      page.getByRole("alert").getByRole("button", { name: "再試行" }),
+    ).toHaveCount(0);
     // 拒まれたのは保存だけ。描いたものはキャンバスに残り、続けて編集できる。
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });

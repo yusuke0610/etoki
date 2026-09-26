@@ -1086,6 +1086,16 @@ export interface components {
         SyncItem: {
             /** @description GitHub Projects v2 の item ID */
             itemId: string;
+            /**
+             * Format: int64
+             * @description item の数値の識別子（GraphQL の `fullDatabaseId`）。**省略と 0 は
+             *     「知らない」。** 記録していなかった頃の run と、GitHub が返さなかった
+             *     ときにそうなる。
+             *
+             *     **URL ではなく素材だけを返す**（ADR 0057）。item ごとのリンクの形と、
+             *     組めないときの落とし先はフロントの 1 箇所が持つ。
+             */
+            itemDatabaseId?: number;
             kind: components["schemas"]["ItemKind"];
             title: string;
             /** @description 作成時の本文。記録していなかった頃の run では空 */
