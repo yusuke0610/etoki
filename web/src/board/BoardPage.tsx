@@ -84,7 +84,7 @@ import {
 } from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
 import { projectLink } from "./projectLink";
-import { ROLE_LABELS } from "./roles";
+import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
 
 /**
  * シーンの大きさを数え直すまでの待ち時間（ミリ秒）。
@@ -216,8 +216,7 @@ export function BoardPage({
   theme,
   onThemeChange,
 }: Props) {
-  // viewer は読むだけ。解釈も許さない（ADR 0017）。
-  const canEdit = board.role !== "viewer";
+  const canEdit = canEditBoard(board.role);
 
   // 画面全体に出す失敗は通知へ（ADR 0058）。**保存の衝突・解釈や作成の失敗は
   // ここを通さない。** 消えてよい失敗ではなく、残して読ませる状態だから。
@@ -1455,7 +1454,7 @@ export function BoardPage({
             読めず、disabled なボタンはフォーカスも当たらないので、キーボードと
             読み上げの利用者には理由が届かない。
           */}
-          {board.role !== "owner" ? (
+          {!isOwner(board.role) ? (
             // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
             // 断るより、押せないことを見せるほうが状態として正しい。
             <span className="hint">作成先を変えられるのはオーナーだけです</span>
@@ -1608,7 +1607,7 @@ export function BoardPage({
             文だけにするのも「作成先を変更」と揃えている。ロールは開いている
             あいだ変わらないので、押せる見込みの無いボタンを置く相手がいない。
           */}
-          {board.role === "owner" ? (
+          {isOwner(board.role) ? (
             <button
               type="button"
               className="danger"

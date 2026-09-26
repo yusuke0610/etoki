@@ -1,10 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { openBoard } from "./helpers/board";
+import { openBoardWithMock } from "./helpers/board";
 import { annotatedScene, baseMock, board, BOARD_ID } from "./helpers/fixtures";
-
-const BOARD_NAME = "認証まわりのブレスト";
 
 /**
  * フォントを配る URL。正本は `web/vite.config.ts` の `EXCALIDRAW_ASSET_PATH`。
@@ -45,9 +42,7 @@ test.describe("キャンバスのフォント", () => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), scene: annotatedScene() };
 
-    await installApi(page, mock);
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     // 取りに行くまで待つ。**外部への要求も待つ対象に入れる。** 自前の側だけを
     // 待つと、CDN へ出ていったときに「まだ何もしていない」と区別が付かず、

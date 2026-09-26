@@ -1,10 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, summarize } from "./helpers/api";
-import { annotationCard, openBoard } from "./helpers/board";
+import { summarize } from "./helpers/api";
+import { annotationCard, openBoardWithMock } from "./helpers/board";
 import { BOARD_ID, baseMock, board, matchedInterpretationMock } from "./helpers/fixtures";
-
-const BOARD_NAME = "認証まわりのブレスト";
 
 /** 作成先の URL を控えていないボード。URL を保存する前に選んだものが該当する。 */
 function withoutProjectUrl() {
@@ -22,9 +20,7 @@ function withoutProjectUrl() {
 // 見にいけない。その導線が壊れていないことを href で固定する（ADR 0025）。
 test.describe("GitHub へ辿る導線", () => {
   test("ヘッダの作成先バッジが Project へのリンクになる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     // 番号から組み立てず、保存された URL をそのまま使う。owner が user か
     // org かで形が変わり、etoki はどちらなのかを知らない。
@@ -35,9 +31,7 @@ test.describe("GitHub へ辿る導線", () => {
   });
 
   test("URL を控えていないボードはリポジトリの Projects へ落ちる", async ({ page }) => {
-    await installApi(page, withoutProjectUrl());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, withoutProjectUrl());
 
     // 番号（1）は持っているが、そこからは組み立てない。組み立てると owner の
     // 種別を当てにいくことになり、外すと 404 になる。
@@ -48,9 +42,7 @@ test.describe("GitHub へ辿る導線", () => {
   });
 
   test("GitHub にある項目から Project へ飛べる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "パスワード再設定");
     await card.getByText("GitHub にある 2 件").click();
@@ -61,9 +53,7 @@ test.describe("GitHub へ辿る導線", () => {
   });
 
   test("作成結果から Project へ飛べる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
@@ -80,9 +70,7 @@ test.describe("GitHub へ辿る導線", () => {
   // Project そのものに着地しないなら、そう書く。リポジトリの Projects まで
   // しか辿れないのに「Project を開く」と言うと、リンクの約束が崩れる。
   test("一覧止まりのときは飛び先をそう書く", async ({ page }) => {
-    await installApi(page, withoutProjectUrl());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, withoutProjectUrl());
 
     const card = annotationCard(page, "パスワード再設定");
     await card.getByText("GitHub にある 2 件").click();
@@ -96,9 +84,7 @@ test.describe("GitHub へ辿る導線", () => {
   // ときに知りたいのは「どの 3 件か」で、Project 全体では答えにならない。
   test.describe("item ごとのリンク", () => {
     test("GitHub にある項目から 1 件ずつ開ける", async ({ page }) => {
-      await installApi(page, baseMock());
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, baseMock());
 
       const card = annotationCard(page, "パスワード再設定");
       await card.getByText("GitHub にある 2 件").click();
@@ -124,9 +110,7 @@ test.describe("GitHub へ辿る導線", () => {
     });
 
     test("作成結果から 1 件ずつ開ける", async ({ page }) => {
-      await installApi(page, baseMock());
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, baseMock());
 
       const card = annotationCard(page, "ログイン");
       await card.getByRole("button", { name: "解釈する" }).click();
@@ -151,9 +135,7 @@ test.describe("GitHub へ辿る導線", () => {
     // 押す前に「GitHub 側にそのまま残ります」と見せている item を、その場で
     // 見にいけるようにする。
     test("取り残しの予告から開ける", async ({ page }) => {
-      await installApi(page, matchedInterpretationMock());
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, matchedInterpretationMock());
 
       const card = annotationCard(page, "セッション管理");
       await card.getByRole("button", { name: "解釈する" }).click();
@@ -170,9 +152,7 @@ test.describe("GitHub へ辿る導線", () => {
 
     // Project の URL を知らないなら、土台を組み立て直さない（ADR 0025）。
     test("URL を控えていないボードでは item ごとのリンクを出さない", async ({ page }) => {
-      await installApi(page, withoutProjectUrl());
-      await page.goto("/");
-      await openBoard(page, BOARD_NAME);
+      await openBoardWithMock(page, withoutProjectUrl());
 
       const card = annotationCard(page, "パスワード再設定");
       await card.getByText("GitHub にある 2 件").click();
