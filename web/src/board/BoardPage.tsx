@@ -1279,294 +1279,324 @@ export function BoardPage({
   return (
     <div className="board">
       <header className="board-header">
-        {nameDraft === null ? (
-          <h1>
-            {/* 長い名前は省略して出すので、全体はホバーで読めるようにする。 */}
-            <span className="board-title" title={board.name}>
-              {board.name}
-            </span>
+        {/*
+          上段は「どこの何を開いていて、いま保存が要るか」。作成先・名前・ロールと、
+          未保存と保存を並べる。**保存は上段に置く。** 下段の操作と同じ列に並べると、
+          10 個のボタンに埋もれて主な操作が読めなくなる（#62）。
+        */}
+        <div className="board-header-main">
+          <div className="board-title">
             {/*
-              名前はブレストの中身に属する表示物なので、editor にも直させる
-              （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
-            */}
-            {canEdit && (
-              <button
-                type="button"
-                className="rename"
-                onClick={() => setNameDraft(board.name)}
-              >
-                名前を変更
-              </button>
-            )}
-          </h1>
-        ) : (
-          <form
-            className="rename-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void rename();
-            }}
-          >
-            {/*
-              ラベルはサイドバーの「ボード名」（新規作成の入力）と分ける。
-              同じ名前にすると、読み上げでも E2E でも 2 つが区別できない。
-            */}
-            <input
-              aria-label="ボードの名前"
-              value={nameDraft}
-              disabled={renaming}
-              onChange={(e) => setNameDraft(e.target.value)}
-              /*
-                jsx-a11y が禁じているのは「開いた瞬間に勝手に焦点が移る」
-                autoFocus で、ここはそれに当たらない。押した「名前を変更」が
-                この入力に差し替わるので、移さないとキーボードの利用者の焦点は
-                body に落ちる。**外すほうが a11y は悪くなる。** 規則が見て
-                いるのは属性で、押した結果として現れたかどうかは見られない
-                （ADR 0039）。
-              */
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
-            />
-            {/*
-              「保存」とは書かない。ヘッダーにはシーンの保存ボタンが並んで
-              いるので、同じ文言だと何を保存するのかが読めない。
-            */}
-            <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
-              {renaming ? "変更中…" : "名前を保存"}
-            </button>
-            <button type="button" disabled={renaming} onClick={() => setNameDraft(null)}>
-              取消
-            </button>
-          </form>
-        )}
-        <div className="board-actions">
-          {/*
-            自分が何をできるのかは、操作して断られる前に見えている必要がある。
-            共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
-          */}
-          <span className="badge badge-role">{ROLE_LABELS[board.role]}</span>
-          {/*
-            共有が組み立てられていない構成では、押しても 503 しか返らない。
-            ボタンを黙って消さず、代わりに理由を出す（中核思想 3）。作成先の
-            変更を owner 以外に出さないのと同じ形。
-          */}
-          {sharingUnavailable !== null ? (
-            <span className="hint">{sharingUnavailable}</span>
-          ) : (
-            <button type="button" onClick={() => setShowingMembers((v) => !v)}>
-              {showingMembers ? "メンバーを閉じる" : "メンバー"}
-            </button>
-          )}
-          {/*
-            図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
-            叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。
+                どこに作られるのかは、作る直前ではなく常に見えている必要がある。
+                作った draft issue は取り消せない（ADR 0009）。
 
-            LLM が未設定でもボタンは出す。**黙って消さず、開いた先で理由を
-            見せる**（ADR 0030、中核思想 3）。
-          */}
-          {canEdit && (
-            <button type="button" onClick={() => setShowingChat((v) => !v)}>
-              {showingChat ? "図のドラフトを閉じる" : "図のドラフト"}
-            </button>
-          )}
-          {/*
-            どこに作られるのかは、作る直前ではなく常に見えている必要がある。
-            作った draft issue は取り消せない（ADR 0009）。
-
-            飛び先が組めるならリンクにする。取り消せない操作の結果を確かめる
-            導線がここから始まる（ADR 0025）。組めないのは作成先が未選択の
-            ボードだけなので、そのときはこれまでどおり文字のまま出す。
-          */}
-          {link ? (
-            <a
-              className="badge badge-target"
-              href={link.href}
-              target="_blank"
-              rel="noreferrer"
-              title={
-                link.exact
-                  ? "作成先の Project を GitHub で開く"
-                  : "リポジトリの Projects を GitHub で開く"
-              }
-            >
-              {board.repositoryOwner}/{board.repositoryName}
-            </a>
-          ) : (
-            <span className="badge badge-target">
-              {board.repositoryOwner}/{board.repositoryName}
-            </span>
-          )}
-          {/*
-            押せない理由は title に隠さず、本文として出す。title はホバーでしか
-            読めず、disabled なボタンはフォーカスも当たらないので、キーボードと
-            読み上げの利用者には理由が届かない。
-          */}
-          {board.role !== "owner" ? (
-            // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
-            // 断るより、押せないことを見せるほうが状態として正しい。
-            <span className="hint">作成先を変えられるのはオーナーだけです</span>
-          ) : board.targetLocked ? (
-            // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
-            // 押せないことを見せるほうが状態として正しい。
-            //
-            // **名前の取り直しだけは出す。** 固定するのは作成先そのもので
-            // あって、表示用のスナップショットではない（ADR 0037）。ここが
-            // 無いと、GitHub 側で改名されたボードは古い名前を出し続ける。
-            <>
-              <span className="hint">作成先は確定（draft issue を作成済み）</span>
-              {/*
-                GitHub が組み立てられていない構成では、押しても Project の
-                一覧を引けない。ボタンを黙って消さず、代わりに理由を出す
-                （ADR 0030）。メンバーの口と同じ形。
+                飛び先が組めるならリンクにする。取り消せない操作の結果を確かめる
+                導線がここから始まる（ADR 0025）。組めないのは作成先が未選択の
+                ボードだけなので、そのときはこれまでどおり文字のまま出す。
               */}
-              {creationUnavailable !== null ? (
-                <span className="hint">{creationUnavailable}</span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void refreshTargetDisplay()}
-                  disabled={refreshingTarget}
-                >
-                  {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={onChangeTarget}
-                // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
-                // 黙って捨てずに、保存してからにしてもらう。
-                disabled={dirty || saving}
-                aria-describedby={
-                  targetChangeBlocked !== null ? "target-change-blocked" : undefined
+            {link ? (
+              <a
+                className="badge badge-target"
+                href={link.href}
+                target="_blank"
+                rel="noreferrer"
+                title={
+                  link.exact
+                    ? "作成先の Project を GitHub で開く"
+                    : "リポジトリの Projects を GitHub で開く"
                 }
               >
-                作成先を変更
-              </button>
-              {targetChangeBlocked !== null && (
-                <span className="hint" id="target-change-blocked">
-                  {targetChangeBlocked}
+                {board.repositoryOwner}/{board.repositoryName}
+              </a>
+            ) : (
+              <span className="badge badge-target">
+                {board.repositoryOwner}/{board.repositoryName}
+              </span>
+            )}
+            {nameDraft === null ? (
+              <h1>
+                {/* 長い名前は省略して出すので、全体はホバーで読めるようにする。 */}
+                <span className="board-name" title={board.name}>
+                  {board.name}
                 </span>
-              )}
-            </>
-          )}
-          {/*
-            付箋は描いている最中に使うものなので、パネルではなくヘッダーに
-            置いて常に 1 手で押せるようにする。
-          */}
-          {canEdit && (
-            <button type="button" onClick={addStickyNote} disabled={!api}>
-              付箋
-            </button>
-          )}
-          {/*
-            持ち出しと取り込みの口はここ 1 つ（ADR 0045）。ライブラリのメニュー
-            からは外してある（`UI_OPTIONS`）。
-
-            書き出しは viewer にも出す。見えているものを出すだけなので、
-            共有した相手に新しく見せるものが無い（ADR 0017）。
-          */}
-          <button type="button" onClick={exportScene} disabled={!api}>
-            書き出し
-          </button>
-          {canEdit && (
-            <>
-              <button
-                type="button"
-                onClick={() => fileInput.current?.click()}
-                // **作成中は取り込ませない。** キャンバスを置き換えるので、
-                // 保存を止めているのと同じ理由で止める（作られた内容と記録
-                // されるハッシュが食い違いうる）。
-                disabled={!api || saving || creating || importing}
-                aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
-              >
-                {importing ? "取り込み中…" : "取り込み"}
-              </button>
-              {importBlocked !== null && (
-                <span className="hint" id="import-blocked">
-                  {importBlocked}
-                </span>
-              )}
-              {/*
-                入力そのものは出さない。**押す口はボタン 1 つ**で、ここは
-                ファイルを選ばせるためだけに置いてある。
-              */}
-              <input
-                ref={fileInput}
-                type="file"
-                aria-label="取り込む .excalidraw ファイル"
-                accept=".excalidraw,application/json"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  // 選び直しで同じファイルをもう一度選べるようにする。値を
-                  // 残すと、2 回目の選択で change が発火しない。
-                  e.target.value = "";
-                  if (file) void importScene(file);
+                {/*
+                  名前はブレストの中身に属する表示物なので、editor にも直させる
+                  （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
+                */}
+                {canEdit && (
+                  <button
+                    type="button"
+                    className="rename"
+                    onClick={() => setNameDraft(board.name)}
+                  >
+                    名前を変更
+                  </button>
+                )}
+              </h1>
+            ) : (
+              <form
+                className="rename-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void rename();
                 }}
-              />
-            </>
-          )}
-          {/*
-            いまの大きさを出す。**上限との比は出さない。** 比を出すには上限を
-            フロントが知る必要があり、それは判定を 2 箇所に持つのと同じこと
-            になる（ADR 0018 / 0038）。「大きいときだけ」出さないのも同じ
-            理由で、上限を知らない以上どこからが大きいのかを決められない。
-          */}
-          {sceneSize !== null && (
-            <span className="badge badge-size" title="保存に送るシーンの大きさ">
-              {formatSceneSize(sceneSize)}
-            </span>
-          )}
-          {dirty && <span className="dirty">未保存</span>}
-          {canEdit && (
-            <>
-              {/*
-                取り消せない操作と保存は相互に排他する。**押せない理由を title に
-                隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
-                フォーカスも当たらないので、キーボードと読み上げには届かない。
-                「作成先を変更」と同じ形で本文に出して aria-describedby で結ぶ。
+              >
+                {/*
+                  ラベルはサイドバーの「ボード名」（新規作成の入力）と分ける。
+                  同じ名前にすると、読み上げでも E2E でも 2 つが区別できない。
+                */}
+                <input
+                  aria-label="ボードの名前"
+                  value={nameDraft}
+                  disabled={renaming}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  /*
+                    jsx-a11y が禁じているのは「開いた瞬間に勝手に焦点が移る」
+                    autoFocus で、ここはそれに当たらない。押した「名前を変更」が
+                    この入力に差し替わるので、移さないとキーボードの利用者の焦点は
+                    body に落ちる。**外すほうが a11y は悪くなる。** 規則が見て
+                    いるのは属性で、押した結果として現れたかどうかは見られない
+                    （ADR 0039）。
+                  */
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                />
+                {/*
+                  「保存」とは書かない。ヘッダーにはシーンの保存ボタンが並んで
+                  いるので、同じ文言だと何を保存するのかが読めない。
+                */}
+                <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
+                  {renaming ? "変更中…" : "名前を保存"}
+                </button>
+                <button
+                  type="button"
+                  disabled={renaming}
+                  onClick={() => setNameDraft(null)}
+                >
+                  取消
+                </button>
+              </form>
+            )}
+            {/*
+                自分が何をできるのかは、操作して断られる前に見えている必要がある。
+                共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
               */}
+            <span className="badge badge-role">{ROLE_LABELS[board.role]}</span>
+          </div>
+          <div className="board-status">
+            {/*
+                いまの大きさを出す。**上限との比は出さない。** 比を出すには上限を
+                フロントが知る必要があり、それは判定を 2 箇所に持つのと同じこと
+                になる（ADR 0018 / 0038）。「大きいときだけ」出さないのも同じ
+                理由で、上限を知らない以上どこからが大きいのかを決められない。
+              */}
+            {sceneSize !== null && (
+              <span className="badge badge-size" title="保存に送るシーンの大きさ">
+                {formatSceneSize(sceneSize)}
+              </span>
+            )}
+            {dirty && <span className="dirty">未保存</span>}
+            {canEdit && (
+              <>
+                {/*
+                    取り消せない操作と保存は相互に排他する。**押せない理由を title に
+                    隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
+                    フォーカスも当たらないので、キーボードと読み上げには届かない。
+                    「作成先を変更」と同じ形で本文に出して aria-describedby で結ぶ。
+                  */}
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => void save()}
+                  disabled={saving || creating || importing || !api}
+                  aria-describedby={saveBlocked !== null ? "save-blocked" : undefined}
+                >
+                  {saving ? "保存中…" : "保存"}
+                </button>
+                {saveBlocked !== null && (
+                  <span className="hint" id="save-blocked">
+                    {saveBlocked}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        {/*
+          下段はボードに対する操作。**畳まずに全部並べ、意味の近いものを群にする。**
+          メニューに畳むと、押せない理由を畳んだ中でも読ませる作りが要り、1 手も
+          遠くなる。ボードの削除だけは右端に離す（ADR 0042）。
+        */}
+        <div className="board-actions">
+          <div className="board-action-group">
+            {/*
+              付箋は描いている最中に使うものなので、パネルではなくヘッダーに
+              置いて常に 1 手で押せるようにする。
+            */}
+            {canEdit && (
+              <button type="button" onClick={addStickyNote} disabled={!api}>
+                付箋
+              </button>
+            )}
+          </div>
+          <div className="board-action-group">
+            {/*
+              図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
+              叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。
+
+              LLM が未設定でもボタンは出す。**黙って消さず、開いた先で理由を
+              見せる**（ADR 0030、中核思想 3）。
+            */}
+            {canEdit && (
+              <button type="button" onClick={() => setShowingChat((v) => !v)}>
+                {showingChat ? "図のドラフトを閉じる" : "図のドラフト"}
+              </button>
+            )}
+            {/*
+              共有が組み立てられていない構成では、押しても 503 しか返らない。
+              ボタンを黙って消さず、代わりに理由を出す（中核思想 3）。作成先の
+              変更を owner 以外に出さないのと同じ形。
+            */}
+            {sharingUnavailable !== null ? (
+              <span className="hint">{sharingUnavailable}</span>
+            ) : (
+              <button type="button" onClick={() => setShowingMembers((v) => !v)}>
+                {showingMembers ? "メンバーを閉じる" : "メンバー"}
+              </button>
+            )}
+          </div>
+          <div className="board-action-group">
+            {/*
+              持ち出しと取り込みの口はここ 1 つ（ADR 0045）。ライブラリのメニュー
+              からは外してある（`UI_OPTIONS`）。
+
+              書き出しは viewer にも出す。見えているものを出すだけなので、
+              共有した相手に新しく見せるものが無い（ADR 0017）。
+            */}
+            <button type="button" onClick={exportScene} disabled={!api}>
+              書き出し
+            </button>
+            {canEdit && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => fileInput.current?.click()}
+                  // **作成中は取り込ませない。** キャンバスを置き換えるので、
+                  // 保存を止めているのと同じ理由で止める（作られた内容と記録
+                  // されるハッシュが食い違いうる）。
+                  disabled={!api || saving || creating || importing}
+                  aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
+                >
+                  {importing ? "取り込み中…" : "取り込み"}
+                </button>
+                {importBlocked !== null && (
+                  <span className="hint" id="import-blocked">
+                    {importBlocked}
+                  </span>
+                )}
+                {/*
+                  入力そのものは出さない。**押す口はボタン 1 つ**で、ここは
+                  ファイルを選ばせるためだけに置いてある。
+                */}
+                <input
+                  ref={fileInput}
+                  type="file"
+                  aria-label="取り込む .excalidraw ファイル"
+                  accept=".excalidraw,application/json"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    // 選び直しで同じファイルをもう一度選べるようにする。値を
+                    // 残すと、2 回目の選択で change が発火しない。
+                    e.target.value = "";
+                    if (file) void importScene(file);
+                  }}
+                />
+              </>
+            )}
+          </div>
+          <div className="board-action-group">
+            {/*
+              押せない理由は title に隠さず、本文として出す。title はホバーでしか
+              読めず、disabled なボタンはフォーカスも当たらないので、キーボードと
+              読み上げの利用者には理由が届かない。
+            */}
+            {board.role !== "owner" ? (
+              // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
+              // 断るより、押せないことを見せるほうが状態として正しい。
+              <span className="hint">作成先を変えられるのはオーナーだけです</span>
+            ) : board.targetLocked ? (
+              // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
+              // 押せないことを見せるほうが状態として正しい。
+              //
+              // **名前の取り直しだけは出す。** 固定するのは作成先そのもので
+              // あって、表示用のスナップショットではない（ADR 0037）。ここが
+              // 無いと、GitHub 側で改名されたボードは古い名前を出し続ける。
+              <>
+                <span className="hint">作成先は確定（draft issue を作成済み）</span>
+                {/*
+                  GitHub が組み立てられていない構成では、押しても Project の
+                  一覧を引けない。ボタンを黙って消さず、代わりに理由を出す
+                  （ADR 0030）。メンバーの口と同じ形。
+                */}
+                {creationUnavailable !== null ? (
+                  <span className="hint">{creationUnavailable}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void refreshTargetDisplay()}
+                    disabled={refreshingTarget}
+                  >
+                    {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onChangeTarget}
+                  // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
+                  // 黙って捨てずに、保存してからにしてもらう。
+                  disabled={dirty || saving}
+                  aria-describedby={
+                    targetChangeBlocked !== null ? "target-change-blocked" : undefined
+                  }
+                >
+                  作成先を変更
+                </button>
+                {targetChangeBlocked !== null && (
+                  <span className="hint" id="target-change-blocked">
+                    {targetChangeBlocked}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          <div className="board-action-group board-action-group-end">
+            {/*
+              ボードごと畳むのは owner だけ（ADR 0042）。押せる人にだけ出すのは
+              「作成先を変更」と同じ形。**押した時点では消さない。** 何が残るのかを
+              引いてから確認を出す。
+
+              **消すなら理由を出す**（ADR 0017 / 0030）。権限で押せない操作は、
+              ボタンを黙って消さずに押せない理由のほうを見せる。disabled にせず
+              文だけにするのも「作成先を変更」と揃えている。ロールは開いている
+              あいだ変わらないので、押せる見込みの無いボタンを置く相手がいない。
+            */}
+            {board.role === "owner" ? (
               <button
                 type="button"
-                className="primary"
-                onClick={() => void save()}
-                disabled={saving || creating || importing || !api}
-                aria-describedby={saveBlocked !== null ? "save-blocked" : undefined}
+                className="danger"
+                onClick={() => void askDelete()}
+                disabled={deletion !== null}
               >
-                {saving ? "保存中…" : "保存"}
+                {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
               </button>
-              {saveBlocked !== null && (
-                <span className="hint" id="save-blocked">
-                  {saveBlocked}
-                </span>
-              )}
-            </>
-          )}
-          {/*
-            ボードごと畳むのは owner だけ（ADR 0042）。押せる人にだけ出すのは
-            「作成先を変更」と同じ形。**押した時点では消さない。** 何が残るのかを
-            引いてから確認を出す。
-
-            **消すなら理由を出す**（ADR 0017 / 0030）。権限で押せない操作は、
-            ボタンを黙って消さずに押せない理由のほうを見せる。disabled にせず
-            文だけにするのも「作成先を変更」と揃えている。ロールは開いている
-            あいだ変わらないので、押せる見込みの無いボタンを置く相手がいない。
-          */}
-          {board.role === "owner" ? (
-            <button
-              type="button"
-              className="danger"
-              onClick={() => void askDelete()}
-              disabled={deletion !== null}
-            >
-              {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
-            </button>
-          ) : (
-            <span className="hint">ボードを削除できるのはオーナーだけです</span>
-          )}
+            ) : (
+              <span className="hint">ボードを削除できるのはオーナーだけです</span>
+            )}
+          </div>
         </div>
       </header>
 

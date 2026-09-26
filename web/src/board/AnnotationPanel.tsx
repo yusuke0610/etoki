@@ -18,6 +18,7 @@ import type {
 import { ErrorNotice } from "../ErrorNotice";
 import type { SelectableFrame } from "../excalidraw/annotation";
 import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import { groupByState } from "./annotationGroups";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { groupByEpic } from "./interpretation";
 import {
@@ -31,6 +32,7 @@ import {
   buildInterpretation,
   createDraft,
   leftBehindItemIds,
+  type Draft,
   markCreated,
   orphanedLocalIds,
   setBody,
@@ -220,6 +222,20 @@ export function AnnotationPanel({
   // （`App`）ので、残る量は開いているボードで選び直した種別の数に留まり、
   // 実害の無い範囲。
   const [pendingKinds, setPendingKinds] = useState<Record<string, PendingKind>>({});
+  // 注釈ごとの下書きの手直し。**カードの外に預ける。** カードは状態の組ごとに
+  // 別の一覧へ並ぶので、作成で「作成済み」の組へ移ると作り直され、中で持って
+  // いた手直し（今回送らなかった項目の選択・種別・タイトル・本文）が黙って
+  // 消える（#162）。残る量と掃除しない理由は pendingKinds と同じ。
+  const [keptDrafts, setKeptDrafts] = useState<Record<string, KeptDraft>>({});
+  // 解釈を選び直すときは預けた手直しを捨てる。別の解釈に対する編集は
+  // 引き継がない（`InterpretationDraft` の key と同じ約束）。解釈し直しは
+  // 解釈の ID が変わるので、捨てなくても照合で使われない。
+  const dropKeptDraft = (annotationId: string) =>
+    setKeptDrafts((prev) => {
+      const next = { ...prev };
+      delete next[annotationId];
+      return next;
+    });
 
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
   // 出ると、同じものが 2 つあるように見える。
@@ -292,71 +308,89 @@ export function AnnotationPanel({
         {annotations.length === 0 ? (
           <p className="hint">保存済みの注釈はありません。</p>
         ) : (
-          <ul className="annotation-list">
-            {annotations.map((a) => {
-              const onCanvas = canvasFrameIds === null || canvasFrameIds.includes(a.id);
-              const selected = selectedFrameIds.includes(a.id);
-              const missingId = `annotation-missing-${a.id}`;
-              const pendingKind = pendingKinds[a.id];
-              const kind =
-                pendingKind && pendingKind.value !== a.kind ? pendingKind.value : a.kind;
+          // 状態ごとにまとめ、手を打つ必要があるものから並べる（#62）。**見出しは
+          // 見せ方だけで、状態の判定には触らない**（`groupByState`）。
+          <div className="state-groups">
+            {groupByState(annotations).map((group) => (
+              <section
+                key={group.state}
+                className={`state-group state-group-${group.state}`}
+                aria-labelledby={`state-group-${group.state}`}
+              >
+                <h4 id={`state-group-${group.state}`}>
+                  {STATE_LABEL[group.state]}
+                  <span className="state-group-count">{group.annotations.length} 件</span>
+                </h4>
+                <ul className="annotation-list">
+                  {group.annotations.map((a) => {
+                    const onCanvas =
+                      canvasFrameIds === null || canvasFrameIds.includes(a.id);
+                    const selected = selectedFrameIds.includes(a.id);
+                    const missingId = `annotation-missing-${a.id}`;
+                    const pendingKind = pendingKinds[a.id];
+                    const kind =
+                      pendingKind && pendingKind.value !== a.kind
+                        ? pendingKind.value
+                        : a.kind;
 
-              return (
-                <li
-                  key={a.id}
-                  className={`annotation${selected ? " selected" : ""}`}
-                  // キャンバスで選択したフレームがどのカードなのかを、色だけに
-                  // 頼らず読み上げにも届く形で示す。
-                  aria-current={selected ? "true" : undefined}
-                >
-                  <div className="annotation-head">
-                    {/*
+                    return (
+                      <li
+                        key={a.id}
+                        className={`annotation state-${a.state}${selected ? " selected" : ""}`}
+                        // キャンバスで選択したフレームがどのカードなのかを、色だけに
+                        // 頼らず読み上げにも届く形で示す。
+                        aria-current={selected ? "true" : undefined}
+                      >
+                        <div className="annotation-head">
+                          {/*
                       見出しを押すとキャンバスがそのフレームへ寄る。名前に頼らず
                       対応を確かめられる唯一の手段なので、名前の有無に関わらず
                       押せるようにしてある（ADR 0022）。
                     */}
-                    <button
-                      type="button"
-                      className="annotation-name"
-                      onClick={() => onFocusFrame(a.id)}
-                      disabled={!onCanvas}
-                      aria-describedby={onCanvas ? undefined : missingId}
-                    >
-                      {labels.get(a.id)}
-                    </button>
-                    <span className={`badge badge-${a.state}`}>
-                      {STATE_LABEL[a.state]}
-                    </span>
-                  </div>
+                          <button
+                            type="button"
+                            className="annotation-name"
+                            onClick={() => onFocusFrame(a.id)}
+                            disabled={!onCanvas}
+                            aria-describedby={onCanvas ? undefined : missingId}
+                          >
+                            {labels.get(a.id)}
+                          </button>
+                          <span className={`badge badge-${a.state}`}>
+                            {STATE_LABEL[a.state]}
+                          </span>
+                        </div>
 
-                  {/*
+                        {/*
                     状態は保存済みシーンが基準なので、未保存で消したフレームの
                     注釈がここに残る。押せない理由は title に隠さず本文で出す。
                   */}
-                  {!onCanvas && (
-                    <p className="hint" id={missingId}>
-                      このフレームはキャンバスにありません。保存すると一覧からも消えます。
-                    </p>
-                  )}
+                        {!onCanvas && (
+                          <p className="hint" id={missingId}>
+                            このフレームはキャンバスにありません。保存すると一覧からも消えます。
+                          </p>
+                        )}
 
-                  <label className="granularity">
-                    粒度
-                    <select
-                      value={a.granularity}
-                      disabled={!canEdit}
-                      onChange={(e) =>
-                        onChangeGranularity(a.id, e.target.value as Granularity)
-                      }
-                    >
-                      {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
-                        <option key={g} value={g}>
-                          {GRANULARITY_LABEL[g]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                        <label className="granularity">
+                          粒度
+                          <select
+                            value={a.granularity}
+                            disabled={!canEdit}
+                            onChange={(e) =>
+                              onChangeGranularity(a.id, e.target.value as Granularity)
+                            }
+                          >
+                            {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map(
+                              (g) => (
+                                <option key={g} value={g}>
+                                  {GRANULARITY_LABEL[g]}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                        </label>
 
-                  {/*
+                        {/*
                     何の図として読ませるかを選ばせる。**ひな形は絵を置くだけ**
                     （ADR 0047）で、どこを囲むかも何の図かも人が決めるので、
                     種別が載る先はここしかない。
@@ -364,52 +398,52 @@ export function AnnotationPanel({
                     粒度と同じ形（`<select>` + 表を引く）にしてあるのは、
                     同じメタデータに載る 2 つが画面で別物に見えないため。
                   */}
-                  <label className="granularity">
-                    種別
-                    <select
-                      value={kind ?? ""}
-                      disabled={!canEdit}
-                      onChange={(e) => {
-                        const nextKind = (e.target.value || undefined) as
-                          | DiagramKind
-                          | undefined;
-                        setPendingKinds((current) => ({
-                          ...current,
-                          [a.id]: { value: nextKind },
-                        }));
-                        onChangeKind(a.id, nextKind);
-                      }}
-                    >
-                      {/*
+                        <label className="granularity">
+                          種別
+                          <select
+                            value={kind ?? ""}
+                            disabled={!canEdit}
+                            onChange={(e) => {
+                              const nextKind = (e.target.value || undefined) as
+                                | DiagramKind
+                                | undefined;
+                              setPendingKinds((current) => ({
+                                ...current,
+                                [a.id]: { value: nextKind },
+                              }));
+                              onChangeKind(a.id, nextKind);
+                            }}
+                          >
+                            {/*
                         「指定なし」は種別の語彙（DiagramKind）に無い値なので、
                         ここだけ空文字で表す。選ばれたら customData からキーごと
                         落ちる（setAnnotationKind）。
                       */}
-                      <option value="">指定なし</option>
-                      {diagramKinds().map((k) => (
-                        <option key={k} value={k}>
-                          {DIAGRAM_KIND_LABELS[k]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                            <option value="">指定なし</option>
+                            {diagramKinds().map((k) => (
+                              <option key={k} value={k}>
+                                {DIAGRAM_KIND_LABELS[k]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
 
-                  {a.items && a.items.length > 0 && (
-                    <details>
-                      <summary>GitHub にある {a.items.length} 件</summary>
-                      <ul className="plain-list">
-                        {a.items.map((it) => (
-                          <li key={it.itemId}>
-                            <span className="kind">{it.kind}</span> {it.title}
-                            <ItemBody body={it.body} />
-                          </li>
-                        ))}
-                      </ul>
-                      <ProjectLinkLine link={projectLink} />
-                    </details>
-                  )}
+                        {a.items && a.items.length > 0 && (
+                          <details>
+                            <summary>GitHub にある {a.items.length} 件</summary>
+                            <ul className="plain-list">
+                              {a.items.map((it) => (
+                                <li key={it.itemId}>
+                                  <span className="kind">{it.kind}</span> {it.title}
+                                  <ItemBody body={it.body} />
+                                </li>
+                              ))}
+                            </ul>
+                            <ProjectLinkLine link={projectLink} />
+                          </details>
+                        )}
 
-                  {/*
+                        {/*
                     前回実行が途中で失敗したことは、履歴を開かなくても見える
                     ところに出す（ADR 0043）。**状態（3 状態）は変えない。**
                     作れたぶんは記録するので created のままであり、そこに件数
@@ -417,55 +451,66 @@ export function AnnotationPanel({
 
                     **理由はここには出さない。** 手掛かりの本文は履歴が持つ。
                   */}
-                  {a.lastRunOutcome === "incomplete" && (
-                    <p className="hint">
-                      前回の実行は途中で失敗しました。作れたところまでは GitHub
-                      側に残っています。
-                    </p>
-                  )}
+                        {a.lastRunOutcome === "incomplete" && (
+                          <p className="hint">
+                            前回の実行は途中で失敗しました。作れたところまでは GitHub
+                            側に残っています。
+                          </p>
+                        )}
 
-                  {/*
+                        {/*
                     履歴は一度でも実行した注釈にだけ出す。**未実行の注釈にも
                     出すと、常に空の枠が並ぶ。** lastSyncedAt があることと
                     run が 1 件以上あることは同じ（最新 run から来る）。
                   */}
-                  {a.lastSyncedAt !== undefined && (
-                    <details className="run-history">
-                      <summary>実行の履歴</summary>
-                      <RunHistory
-                        state={runHistories[a.id]}
-                        onLoad={() => onLoadRuns(a.id)}
-                      />
-                    </details>
-                  )}
+                        {a.lastSyncedAt !== undefined && (
+                          <details className="run-history">
+                            <summary>実行の履歴</summary>
+                            <RunHistory
+                              state={runHistories[a.id]}
+                              onLoad={() => onLoadRuns(a.id)}
+                            />
+                          </details>
+                        )}
 
-                  {canEdit && (
-                    <InterpretationSection
-                      annotationId={a.id}
-                      granularity={a.granularity}
-                      state={interpretations[a.id]}
-                      creation={creations[a.id]}
-                      stale={stale}
-                      saving={saving}
-                      importing={importing}
-                      projectAccess={projectAccess}
-                      interpretationUnavailable={interpretationUnavailable}
-                      creationUnavailable={creationUnavailable}
-                      previous={a.items ?? []}
-                      projectLink={projectLink}
-                      onInterpret={() => onInterpret(a.id)}
-                      onSelectInterpretation={(runId) =>
-                        onSelectInterpretation(a.id, runId)
-                      }
-                      onCreate={(interpretationId, interpretation) =>
-                        onCreate(a.id, interpretationId, interpretation)
-                      }
-                    />
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                        {canEdit && (
+                          <InterpretationSection
+                            annotationId={a.id}
+                            granularity={a.granularity}
+                            state={interpretations[a.id]}
+                            creation={creations[a.id]}
+                            stale={stale}
+                            saving={saving}
+                            importing={importing}
+                            projectAccess={projectAccess}
+                            interpretationUnavailable={interpretationUnavailable}
+                            creationUnavailable={creationUnavailable}
+                            previous={a.items ?? []}
+                            projectLink={projectLink}
+                            kept={keptDrafts[a.id]}
+                            onKeepDraft={(kept) =>
+                              setKeptDrafts((prev) => ({ ...prev, [a.id]: kept }))
+                            }
+                            // 解釈し直しでは捨てない。失敗すると同じ解釈と手直しが画面に
+                            // 残るのに、預け先だけが空になる。成功すれば解釈の ID が
+                            // 変わるので、古い手直しは照合で使われない。
+                            onInterpret={() => onInterpret(a.id)}
+                            onSelectInterpretation={(runId) => {
+                              dropKeptDraft(a.id);
+                              onSelectInterpretation(a.id, runId);
+                            }}
+                            onCreate={(interpretationId, interpretation) =>
+                              onCreate(a.id, interpretationId, interpretation)
+                            }
+                          />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+          </div>
         )}
       </section>
 
@@ -571,6 +616,9 @@ type InterpretationSectionProps = {
   previous: SyncItem[];
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
   projectLink: ProjectLink | null;
+  /** カードの外に預けてある下書きの手直し（#162）。 */
+  kept?: KeptDraft;
+  onKeepDraft: (kept: KeptDraft) => void;
   onInterpret: () => void;
   onSelectInterpretation: (runId: number) => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
@@ -595,6 +643,8 @@ function InterpretationSection({
   creationUnavailable,
   previous,
   projectLink,
+  kept,
+  onKeepDraft,
   onInterpret,
   onSelectInterpretation,
   onCreate,
@@ -664,6 +714,9 @@ function InterpretationSection({
           // 選び直したら手直しは引き継がない。別の解釈に対する編集が
           // 混ざると、何を作るのかが読めなくなる（解釈し直したときと同じ）。
           key={selected.id}
+          runId={selected.id}
+          kept={kept}
+          onKeep={onKeepDraft}
           annotationId={annotationId}
           granularity={granularity}
           result={selected.result}
@@ -1005,7 +1058,22 @@ function CreationSection({
  * 捨てられる。上げると `save` と `interpret` の両方に破棄を書き足すことになり、
  * 片方を忘れると保存したあとに古い編集が残る。
  */
+/**
+ * カードの外に預ける下書き（#162）。状態の組を移ってカードが作り直されても、
+ * 同じ解釈に対する手直しならここから引き継ぐ。
+ */
+type KeptDraft = {
+  /** どの解釈に対する下書きか。違う解釈のものは引き継がない。 */
+  runId: number;
+  draft: Draft;
+  /** `draft` に反映済みの作成の回数。引き継ぐときは増えたぶんだけ反映する。 */
+  appliedCreations: number;
+};
+
 function InterpretationDraft({
+  runId,
+  kept,
+  onKeep,
   annotationId,
   granularity,
   result,
@@ -1019,6 +1087,9 @@ function InterpretationDraft({
   projectLink,
   onCreate,
 }: {
+  runId: number;
+  kept?: KeptDraft;
+  onKeep: (kept: KeptDraft) => void;
   annotationId: string;
   granularity: Granularity;
   result: Interpretation;
@@ -1038,8 +1109,13 @@ function InterpretationDraft({
   // 作ったものは作り直した下書きにも反映する。解釈を選び直して戻ってきた
   // ときに、作成済みの項目が全部選ばれた状態に戻ると押し直しで重複する
   // （ADR 0052）。
+  //
+  // 預けた手直しが同じ解釈のものなら引き継ぐ。作成で状態の組を移ると、この
+  // 下書きは作り直される（#162）。
   const [draft, setDraft] = useState(() =>
-    created.reduce(markCreated, createDraft(result)),
+    kept?.runId === runId
+      ? created.slice(kept.appliedCreations).reduce(markCreated, kept.draft)
+      : created.reduce(markCreated, createDraft(result)),
   );
   // 下書きに反映した作成の回数。**増えたぶんだけを反映する。** 前に作った
   // 項目を選び直していたのに、今回の作成に載らなかったものまで外すと、選んだ
@@ -1051,6 +1127,14 @@ function InterpretationDraft({
     setAppliedCreations(created.length);
     setDraft((d) => created.slice(appliedCreations).reduce(markCreated, d));
   }
+
+  // 手直しは預け先にも写す。写すのは操作のときだけで、描画中の揃え（上の
+  // markCreated）は写さない。引き継ぐ側が回数の差から同じものを反映する。
+  const edit = (change: (d: Draft) => Draft) => {
+    const next = change(draft);
+    setDraft(next);
+    onKeep({ runId, draft: next, appliedCreations });
+  };
 
   // 編集後の kind で組み直す。構造を変えたことがその場で見えるようにする。
   const groups = groupByEpic(draft.items.map((d) => d.item));
@@ -1087,12 +1171,12 @@ function InterpretationDraft({
       orphan={orphans.has(item.localId)}
       frozen={frozen}
       editableKind={editableKind}
-      onToggle={() => setDraft((d) => toggleItem(d, item.localId))}
-      onKind={(kind) => setDraft((d) => setKind(d, item.localId, kind))}
-      onTitle={(title) => setDraft((d) => setTitle(d, item.localId, title))}
-      onBody={(body) => setDraft((d) => setBody(d, item.localId, body))}
+      onToggle={() => edit((d) => toggleItem(d, item.localId))}
+      onKind={(kind) => edit((d) => setKind(d, item.localId, kind))}
+      onTitle={(title) => edit((d) => setTitle(d, item.localId, title))}
+      onBody={(body) => edit((d) => setBody(d, item.localId, body))}
       onUpdatesPrevious={(updates) =>
-        setDraft((d) => setUpdatesPrevious(d, item.localId, updates))
+        edit((d) => setUpdatesPrevious(d, item.localId, updates))
       }
     />
   );
