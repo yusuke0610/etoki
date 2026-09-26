@@ -1,4 +1,4 @@
-import type { AnnotationStatus, Granularity } from "../api/types";
+import type { AnnotationStatus, Granularity, ItemKind } from "../api/types";
 
 /**
  * 粒度の見出し。
@@ -11,6 +11,28 @@ export const GRANULARITY_LABEL: Record<Granularity, string> = {
   epic: "epic",
   issue: "issue",
 };
+
+/**
+ * 解釈で作るものの種別の見出し。
+ *
+ * 粒度（注釈に付けるメタデータ）とは別の型なので表も分ける。語が同じでも、
+ * 片方に値を足したときにもう片方へ混ざらないようにするため。
+ */
+export const ITEM_KIND_LABEL: Record<ItemKind, string> = {
+  epic: "epic",
+  issue: "issue",
+};
+
+/**
+ * 種別を選択肢に並べる順。**表そのものの並び。**
+ *
+ * 手書きの `<option>` にしない。`Record` は網羅を `tsc` が見るが、選択肢の
+ * 並びは見ないので、契約に種別を足したときに黙って抜ける（`diagramKinds` と
+ * 同じ形）。
+ */
+export function itemKinds(): ItemKind[] {
+  return Object.keys(ITEM_KIND_LABEL) as ItemKind[];
+}
 
 /**
  * 注釈の見出し。名前が無ければ一覧上の位置で採番する。

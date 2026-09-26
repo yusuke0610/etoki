@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
-import { openBoard } from "./helpers/board";
+import { openBoardWithMock } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -11,8 +10,6 @@ import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
  * 置いても保存しないこと、未保存でも使えること、viewer に出さないこと。
  * LLM とのやりとりそのものはユースケース層の単体テストの担当。
  */
-
-const BOARD_NAME = "認証まわりのブレスト";
 
 /** チャットを開く。 */
 async function openChat(page: Page): Promise<void> {
@@ -26,9 +23,7 @@ test.describe("図のドラフト", () => {
   test("生成しただけではキャンバスが変わらず、「置く」で初めて置かれる", async ({
     page,
   }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
     await openChat(page);
 
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
@@ -69,9 +64,7 @@ test.describe("図のドラフト", () => {
   // **未保存でも使える**（ADR 0041）。保存済みシーンを読まないので、解釈の
   // 「保存してから解釈できます」と同じ制約をかける理由が無い。
   test("未保存のままでも生成できる", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
     await openChat(page);
 
     // 置いて未保存にしたうえで、続けて直せること。
@@ -92,9 +85,7 @@ test.describe("図のドラフト", () => {
   // **サーバーは会話を持たない**（ADR 0041）。続きを頼むときは、ここまでの
   // やりとりを毎回まるごと送る。送れていないと、直す土台が消える。
   test("直すときは、ここまでのやりとりをまるごと送る", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    const mock = await openBoardWithMock(page, baseMock());
     await openChat(page);
 
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
@@ -117,9 +108,7 @@ test.describe("図のドラフト", () => {
   // 積み上げた指示は前の種類の図に対するもの。引き継ぐと、シーケンス図への
   // 指示をフローチャートの続きとして送ることになる。
   test("種類を変えると会話ごと捨てる", async ({ page }) => {
-    await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, baseMock());
     await openChat(page);
 
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
@@ -140,10 +129,7 @@ test.describe("図のドラフト", () => {
       status: 413,
       body: { code: "diagram_chat_too_long", error: "etoki: diagram chat is too long" },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await openChat(page);
 
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
@@ -166,10 +152,7 @@ test.describe("図のドラフト", () => {
         error: "etoki: too many concurrent llm calls: 1 running, limit is 1",
       },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await openChat(page);
 
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
@@ -191,10 +174,7 @@ test.describe("図のドラフト", () => {
         error: "etoki: llm output did not contain a diagram",
       },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await openChat(page);
 
     await page.getByLabel("図への指示").fill("なにかいい感じに");
@@ -217,10 +197,7 @@ test.describe("図のドラフト", () => {
         error: "llm is not configured: set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL",
       },
     };
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
     await openChat(page);
 
     const send = page.getByRole("button", { name: "生成", exact: true });
@@ -241,10 +218,7 @@ test.describe("図のドラフト", () => {
     const viewer = { ...board(), role: "viewer" as const };
     mock.details[BOARD_ID] = viewer;
     mock.boards = [{ ...(mock.boards[0] ?? {}), ...viewer, role: "viewer" }];
-    await installApi(page, mock);
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
+    await openBoardWithMock(page, mock);
 
     await expect(
       page.getByRole("button", { name: "図のドラフト", exact: true }),

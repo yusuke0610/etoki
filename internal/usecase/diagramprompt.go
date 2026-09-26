@@ -23,6 +23,20 @@ type diagramNotation struct {
 	instruction string
 }
 
+// flowchart は flowchart 記法で書かせる種類の定義を作る。
+//
+// 3 種類（やること・マインドマップ・システム構成図）が flowchart で書くので、
+// 名前と頭の語をここ 1 つに置く（#156）。種類ごとに書き写すと、mermaid の
+// 別名（graph）を 1 つだけ足し忘れたときに、頼んだとおりに書いた出力をその
+// 種類でだけ弾く。
+func flowchart(instruction string) diagramNotation {
+	return diagramNotation{
+		name:        "flowchart",
+		headers:     []string{"flowchart", "graph"},
+		instruction: instruction,
+	}
+}
+
 // diagramNotations は種類ごとの記法。
 //
 // # なぜ mermaid の mindmap と architecture-beta を使わないか
@@ -37,28 +51,20 @@ type diagramNotation struct {
 // 構成図は subgraph で境界を作った図になる。**開発者が選ぶ語彙（5 種）は
 // 変えずに、その中でどう書かせるかだけを変えている。**
 var diagramNotations = map[domain.DiagramKind]diagramNotation{
-	domain.DiagramKindTodo: {
-		name:    "flowchart",
-		headers: []string{"flowchart", "graph"},
-		instruction: `やることの洗い出しです。flowchart で書いてください。
+	domain.DiagramKindTodo: flowchart(`やることの洗い出しです。flowchart で書いてください。
 
 - 1 行目は "flowchart TD" にしてください。
 - 作業を 1 つずつノードにしてください。
 - 先にやる必要があるものから矢印を引いてください。順序が決まっていない
-  ものは矢印で結ばないでください。`,
-	},
+  ものは矢印で結ばないでください。`),
 
-	domain.DiagramKindMindmap: {
-		name:    "flowchart",
-		headers: []string{"flowchart", "graph"},
-		instruction: `発想を広げるマインドマップです。**mindmap 記法は使わず、
+	domain.DiagramKindMindmap: flowchart(`発想を広げるマインドマップです。**mindmap 記法は使わず、
 flowchart で木として書いてください。**
 
 - 1 行目は "flowchart LR" にしてください。
 - 中心になる主題をノード 1 つにして、そこから枝を伸ばしてください。
 - 枝は 2 段か 3 段までにしてください。それより深いものは、別の主題として
-  分けたほうが読めます。`,
-	},
+  分けたほうが読めます。`),
 
 	domain.DiagramKindSequence: {
 		name:    "sequenceDiagram",
@@ -81,18 +87,14 @@ flowchart で木として書いてください。**
   すべて挙げる場ではありません。`,
 	},
 
-	domain.DiagramKindArchitecture: {
-		name:    "flowchart",
-		headers: []string{"flowchart", "graph"},
-		instruction: `構成要素と境界です。**architecture-beta 記法は使わず、
+	domain.DiagramKindArchitecture: flowchart(`構成要素と境界です。**architecture-beta 記法は使わず、
 flowchart で書いてください。**
 
 - 1 行目は "flowchart TD" にしてください。
 - 構成要素を 1 つずつノードにしてください。
 - 境界（サービス、ネットワーク、チームの持ち場）は subgraph で囲んで
   ください。
-- 矢印は呼び出しやデータの向きに引き、何が流れるのかを書いてください。`,
-	},
+- 矢印は呼び出しやデータの向きに引き、何が流れるのかを書いてください。`),
 }
 
 // diagramSystemPrompt は生成の役割と出力形式を伝えるシステム指示。
