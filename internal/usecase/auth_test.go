@@ -74,7 +74,7 @@ type fakeSessions struct {
 	users    map[string]port.User        // id -> user
 	sessions map[string]port.Session     // tokenHash -> session
 	creds    map[string]port.Credentials // userID -> credentials
-	states   map[string]time.Time        // state -> expiresAt
+	states   map[string]port.OAuthState  // state -> 保存した内容
 	saves    int
 	seq      int
 }
@@ -84,7 +84,7 @@ func newFakeSessions() *fakeSessions {
 		users:    map[string]port.User{},
 		sessions: map[string]port.Session{},
 		creds:    map[string]port.Credentials{},
-		states:   map[string]time.Time{},
+		states:   map[string]port.OAuthState{},
 	}
 }
 
@@ -199,22 +199,25 @@ func (f *fakeSessions) FindCredentials(
 	return &c, nil
 }
 
-func (f *fakeSessions) SaveState(_ context.Context, state string, _, expiresAt time.Time) error {
+func (f *fakeSessions) SaveState(_ context.Context, st port.OAuthState) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.states[state] = expiresAt
+	f.states[st.State] = st
 	return nil
 }
 
 func (f *fakeSessions) ConsumeState(
 	_ context.Context, state string, now time.Time,
-) (bool, error) {
+) (*port.OAuthState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	expiresAt, ok := f.states[state]
+	saved, ok := f.states[state]
 	delete(f.states, state)
-	return ok && expiresAt.After(now), nil
+	if !ok || !saved.ExpiresAt.After(now) {
+		return nil, nil
+	}
+	return &saved, nil
 }
 
 func (f *fakeSessions) savedCredentials(userID string) port.Credentials {
@@ -254,7 +257,7 @@ func TestStartAndComplete(t *testing.T) {
 	provider, sessions := defaultProvider(), newFakeSessions()
 	svc := newAuthService(t, provider, sessions)
 
-	if _, err := svc.Start(t.Context(), "http://127.0.0.1:5173/api/auth/callback"); err != nil {
+	if _, err := svc.Start(t.Context(), "http://127.0.0.1:5173/api/auth/callback", ""); err != nil {
 		t.Fatalf("Start() = %v", err)
 	}
 
@@ -266,15 +269,16 @@ func TestStartAndComplete(t *testing.T) {
 		t.Fatal("state が保存されていない")
 	}
 
-	token, user, err := svc.Complete(t.Context(), "code-1", state, "http://127.0.0.1:5173/api/auth/callback")
+	result, err := svc.Complete(t.Context(), "code-1", state, "http://127.0.0.1:5173/api/auth/callback")
 	if err != nil {
 		t.Fatalf("Complete() = %v", err)
 	}
+	token := result.Token
 	if token == "" {
 		t.Fatal("セッション token が空")
 	}
-	if user.Login != "octocat" {
-		t.Errorf("user.Login = %q, want octocat", user.Login)
+	if result.User.Login != "octocat" {
+		t.Errorf("user.Login = %q, want octocat", result.User.Login)
 	}
 
 	// cookie の値そのものは保存しない。DB が漏れても生きたセッションに
@@ -305,13 +309,13 @@ func TestStart_LimitsLoginStarts(t *testing.T) {
 		usecase.WithAuthClock(func() time.Time { return now }))
 
 	for i := range usecase.MaxLoginStarts {
-		if _, err := svc.Start(t.Context(), ""); err != nil {
+		if _, err := svc.Start(t.Context(), "", ""); err != nil {
 			t.Fatalf("%d 回目の Start() = %v", i+1, err)
 		}
 	}
 
 	saved := len(sessions.states)
-	if _, err := svc.Start(t.Context(), ""); !errors.Is(err, usecase.ErrRateLimited) {
+	if _, err := svc.Start(t.Context(), "", ""); !errors.Is(err, usecase.ErrRateLimited) {
 		t.Fatalf("上限を超えた Start() = %v, want ErrRateLimited", err)
 	}
 	if len(sessions.states) != saved {
@@ -320,7 +324,7 @@ func TestStart_LimitsLoginStarts(t *testing.T) {
 
 	// 窓（StateTTL）を出れば通る。**上限は永久に閉じるものではない。**
 	now = authNow.Add(usecase.StateTTL + time.Second)
-	if _, err := svc.Start(t.Context(), ""); err != nil {
+	if _, err := svc.Start(t.Context(), "", ""); err != nil {
 		t.Errorf("窓を出たあとの Start() = %v, want nil", err)
 	}
 }
@@ -332,7 +336,7 @@ func TestComplete_RejectsReusedState(t *testing.T) {
 	provider, sessions := defaultProvider(), newFakeSessions()
 	svc := newAuthService(t, provider, sessions)
 
-	if _, err := svc.Start(t.Context(), "http://127.0.0.1/api/auth/callback"); err != nil {
+	if _, err := svc.Start(t.Context(), "http://127.0.0.1/api/auth/callback", ""); err != nil {
 		t.Fatalf("Start() = %v", err)
 	}
 	var state string
@@ -340,10 +344,10 @@ func TestComplete_RejectsReusedState(t *testing.T) {
 		state = s
 	}
 
-	if _, _, err := svc.Complete(t.Context(), "code-1", state, ""); err != nil {
+	if _, err := svc.Complete(t.Context(), "code-1", state, ""); err != nil {
 		t.Fatalf("1 回目の Complete() = %v", err)
 	}
-	if _, _, err := svc.Complete(t.Context(), "code-1", state, ""); !errors.Is(err, usecase.ErrInvalidInput) {
+	if _, err := svc.Complete(t.Context(), "code-1", state, ""); !errors.Is(err, usecase.ErrInvalidInput) {
 		t.Fatalf("2 回目の Complete() = %v, want ErrInvalidInput", err)
 	}
 }
@@ -353,7 +357,7 @@ func TestComplete_RejectsUnknownState(t *testing.T) {
 
 	svc := newAuthService(t, defaultProvider(), newFakeSessions())
 
-	_, _, err := svc.Complete(t.Context(), "code-1", "never-issued", "")
+	_, err := svc.Complete(t.Context(), "code-1", "never-issued", "")
 	if !errors.Is(err, usecase.ErrInvalidInput) {
 		t.Fatalf("Complete() = %v, want ErrInvalidInput", err)
 	}
@@ -366,7 +370,7 @@ func TestComplete_DoesNotExchangeWithBadState(t *testing.T) {
 	provider := defaultProvider()
 	svc := newAuthService(t, provider, newFakeSessions())
 
-	if _, _, err := svc.Complete(t.Context(), "code-1", "bogus", ""); err == nil {
+	if _, err := svc.Complete(t.Context(), "code-1", "bogus", ""); err == nil {
 		t.Fatal("Complete() = nil, want error")
 	}
 	if provider.exchangeCode != "" {
@@ -380,17 +384,18 @@ func TestResolve(t *testing.T) {
 	provider, sessions := defaultProvider(), newFakeSessions()
 	svc := newAuthService(t, provider, sessions)
 
-	if _, err := svc.Start(t.Context(), ""); err != nil {
+	if _, err := svc.Start(t.Context(), "", ""); err != nil {
 		t.Fatalf("Start() = %v", err)
 	}
 	var state string
 	for s := range sessions.states {
 		state = s
 	}
-	token, _, err := svc.Complete(t.Context(), "code-1", state, "")
+	result, err := svc.Complete(t.Context(), "code-1", state, "")
 	if err != nil {
 		t.Fatalf("Complete() = %v", err)
 	}
+	token := result.Token
 
 	user, err := svc.Resolve(t.Context(), token)
 	if err != nil {
@@ -610,5 +615,110 @@ func TestStaticTokenSource(t *testing.T) {
 
 	if _, err := usecase.StaticTokenSource("").Token(t.Context()); !errors.Is(err, port.ErrNotAuthenticated) {
 		t.Fatalf("Token() = %v, want ErrNotAuthenticated", err)
+	}
+}
+
+// ログイン後の戻り先は自オリジンの相対パスだけ（ADR 0059）。ここが緩むと、
+// ログインさせた相手を任意の URL へ送り出せる。
+func TestSanitizeReturnTo(t *testing.T) {
+	t.Parallel()
+
+	allowed := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"指定なし", "", ""},
+		{"ボードの URL", "/?board=board-1", "/?board=board-1"},
+		{"選び直しの URL", "/?board=board-1&picking=1", "/?board=board-1&picking=1"},
+		{"ルート", "/", "/"},
+		// フラグメントは捨てる。ブラウザは Location のフラグメントを送って
+		// こないので、持ち回っても届かない。
+		{"フラグメントは落とす", "/?board=b#frame", "/?board=b"},
+	}
+	for _, tc := range allowed {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := usecase.SanitizeReturnTo(tc.in)
+			if err != nil {
+				t.Fatalf("SanitizeReturnTo(%q) = %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("SanitizeReturnTo(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+
+	rejected := []struct {
+		name string
+		in   string
+	}{
+		{"絶対 URL", "https://evil.example/"},
+		{"スキーム相対", "//evil.example/"},
+		// ブラウザは "/\" を "//" と同じに読む。文字列の形だけを見た検査を
+		// すり抜ける典型。
+		{"バックスラッシュ", "/\\evil.example/"},
+		{"スキームだけ", "javascript:alert(1)"},
+		{"パスで始まらない", "board-1"},
+		{"壊れた URL", "/%zz"},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := usecase.SanitizeReturnTo(tc.in)
+			if !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("SanitizeReturnTo(%q) = (%q, %v), want ErrInvalidInput", tc.in, got, err)
+			}
+			// **黙って空に落とさない。** 落とすと、渡した値が消えたことに
+			// 呼び出し側が気づけない。
+			if got != "" {
+				t.Errorf("弾いたのに値を返している: %q", got)
+			}
+		})
+	}
+}
+
+// 弾いた戻り先では state を発行しない。発行してしまうと、400 を返した分だけ
+// 表が育つ。
+func TestStart_RejectsForeignReturnTo(t *testing.T) {
+	t.Parallel()
+
+	provider, sessions := defaultProvider(), newFakeSessions()
+	svc := newAuthService(t, provider, sessions)
+
+	if _, err := svc.Start(t.Context(), "", "https://evil.example/"); !errors.Is(
+		err, usecase.ErrInvalidInput,
+	) {
+		t.Fatalf("Start() = %v, want ErrInvalidInput", err)
+	}
+	if len(sessions.states) != 0 {
+		t.Errorf("弾いたのに state を保存している: %v", sessions.states)
+	}
+}
+
+// 戻り先は state と一緒に往復する。Complete がここを落とすと、入り直した人は
+// 開いていたボードへ戻れない。
+func TestComplete_CarriesReturnTo(t *testing.T) {
+	t.Parallel()
+
+	provider, sessions := defaultProvider(), newFakeSessions()
+	svc := newAuthService(t, provider, sessions)
+
+	if _, err := svc.Start(t.Context(), "", "/?board=board-1"); err != nil {
+		t.Fatalf("Start() = %v", err)
+	}
+	var state string
+	for s := range sessions.states {
+		state = s
+	}
+
+	result, err := svc.Complete(t.Context(), "code-1", state, "")
+	if err != nil {
+		t.Fatalf("Complete() = %v", err)
+	}
+	if result.ReturnTo != "/?board=board-1" {
+		t.Errorf("ReturnTo = %q, want /?board=board-1", result.ReturnTo)
 	}
 }

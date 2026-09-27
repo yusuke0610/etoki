@@ -908,6 +908,20 @@ export function holdSave(page: Page, hold: Promise<void>): Promise<void> {
   );
 }
 
+/**
+ * 指定したボードの取得だけを止める。解決するまで応答を返さない。
+ *
+ * **1 枚だけ止める。** 全部止めると、追い越す側の取得まで待つことになり、
+ * 確かめたい「古い応答があとから着く」並びを作れない。
+ */
+export function holdBoardDetail(
+  page: Page,
+  boardId: string,
+  hold: Promise<void>,
+): Promise<void> {
+  return holdRoute(page, (url) => url.pathname === `/api/boards/${boardId}`, "GET", hold);
+}
+
 /** 作成を「作成中」のまま止める。解決するまで応答を返さない。 */
 export function holdCreate(page: Page, hold: Promise<void>): Promise<void> {
   return holdRoute(
