@@ -60,3 +60,4 @@
 | [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない    | 採用                 |
 | [0059](0059-open-boards-by-url.md)                               | 開いているボードはクエリで URL に載せ、戻り先は state と一緒に持つ     | 採用                 |
 | [0061](0061-pin-mermaid-until-converter-catches-up.md)           | mermaid を 11.13.0 に固定し、既知の脆弱性を受け入れる                  | 採用                 |
+| [0062](0062-paste-mermaid-as-a-copy.md)                          | 既存の設計（mermaid）は写しとして貼り、図形にして置くだけにする        | 採用                 |

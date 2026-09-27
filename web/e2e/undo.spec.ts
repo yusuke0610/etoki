@@ -73,6 +73,28 @@ test.describe("元に戻す", () => {
     expect(elements.filter((el) => el.type === "frame")).toHaveLength(3);
   });
 
+  // 貼った mermaid も置き方は図のドラフトと同じ（ADR 0062）。貼り間違いを
+  // 1 手で戻せないと、属性の断片まで 1 つずつ消すことになる。
+  test("貼った mermaid を置いてから戻すと、置いたものが消える", async ({ page }) => {
+    const mock = await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "mermaid を貼る" }).click();
+    await page.getByLabel("貼る mermaid").fill("flowchart TD\n  A[注文] --> B[出荷]");
+    await page.getByRole("button", { name: "キャンバスに置く" }).click();
+    await expect
+      .poll(async () => (await saveAndRead(page, mock)).some((el) => el.type === "arrow"))
+      .toBe(true);
+    await undo(page);
+
+    const elements = await saveAndRead(page, mock);
+    expect(elements.filter((el) => el.type === "arrow")).toHaveLength(0);
+    expect(elements.filter((el) => el.type === "rectangle")).toHaveLength(1);
+    expect(elements.filter((el) => el.type === "frame")).toHaveLength(3);
+  });
+
   // 誤って外すと、粒度や種別を選び直すことになる。
   test("注釈を外してから戻すと、注釈に戻る", async ({ page }) => {
     const mock = await installApi(page, mixedFramesMock());

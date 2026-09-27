@@ -1,4 +1,5 @@
 import { serializeAsJSON } from "@excalidraw/excalidraw";
+import mermaid from "mermaid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { isAnnotation, type SceneElement } from "./annotation";
@@ -6,6 +7,8 @@ import {
   DRAFT_GAP,
   draftOrigin,
   type ElementSkeleton,
+  MERMAID_CONFIG,
+  MERMAID_MAX_TEXT_SIZE,
   mermaidToElements,
   moveDraft,
 } from "./mermaid";
@@ -165,6 +168,35 @@ describe("mermaidToElements", () => {
     expect(got.ok).toBe(true);
     if (!got.ok) return;
     expect(got.elements.some((el) => el.type === "frame")).toBe(false);
+  });
+});
+
+describe("MERMAID_CONFIG", () => {
+  // 図の中（`%%{init}%%` と frontmatter）から CSS を注入できる経路を塞ぐ
+  // （GHSA-87f9-hvmw-gh4p、ADR 0062）。外すと、貼った図が etoki の画面に
+  // CSS を差し込める。実際に塞げていることは E2E（`mermaidPaste.spec.ts`）が
+  // ビーコンで見ている。ここは設定から落としたことに早く気づくため。
+  it("CSS を注入できるキーを図の中から書き換えさせない", () => {
+    const secure = (MERMAID_CONFIG as { secure?: string[] }).secure ?? [];
+
+    for (const key of ["themeCSS", "fontFamily", "altFontFamily", "themeVariables"]) {
+      expect(secure).toContain(key);
+    }
+  });
+
+  // `secure` は配列ごと置き換わる。mermaid の既定を 1 つでも落とすと、
+  // `securityLevel` のような守りの設定を図の中から書き換えられるようになる。
+  it("mermaid の既定の secure を残す", () => {
+    const secure = (MERMAID_CONFIG as { secure?: string[] }).secure ?? [];
+
+    for (const key of mermaid.mermaidAPI.defaultConfig.secure ?? []) {
+      expect(secure).toContain(key);
+    }
+    expect(mermaid.mermaidAPI.defaultConfig.secure?.length).toBeGreaterThan(0);
+  });
+
+  it("変換できる長さの上限を、前検査と同じ値で渡す", () => {
+    expect(MERMAID_CONFIG.maxTextSize).toBe(MERMAID_MAX_TEXT_SIZE);
   });
 });
 

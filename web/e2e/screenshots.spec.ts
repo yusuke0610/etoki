@@ -735,6 +735,48 @@ test.describe("スクリーンショット", () => {
       if (typeof release === "function") release();
     });
   });
+  // 既存の設計（mermaid）を写しとして貼る（ADR 0062）。**変換器の ER 図の
+  // 描き方**（属性が罫線とばらばらのテキストになる、論点 B）は画像でしか
+  // 確かめられないので、置いた後を撮る。構文エラーは、畳んだパーサの
+  // メッセージを開いた状態で撮る。
+  //
+  // 番号は同時期の PR が 36 を使っているので 37 から。
+  test("mermaid の貼り付けを撮る", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openBoardWithMock(page, baseMock());
+
+    await page.getByRole("button", { name: "mermaid を貼る" }).click();
+    await page
+      .getByLabel("貼る mermaid")
+      .fill(
+        [
+          "erDiagram",
+          "  CUSTOMER ||--o{ ORDER : places",
+          "  ORDER ||--|{ LINE_ITEM : contains",
+          "  CUSTOMER {",
+          "    int id PK",
+          "    string email",
+          "  }",
+          "  ORDER {",
+          "    int id PK",
+          "    int customer_id FK",
+          "  }",
+        ].join("\n"),
+      );
+    await page.getByRole("button", { name: "キャンバスに置く" }).click();
+    await page.getByText("未保存", { exact: true }).waitFor();
+    // 置いた先へ寄せるアニメーションを待つ。
+    await page.waitForTimeout(600);
+    await shot(page, "37-mermaid-paste-placed");
+
+    await page.getByLabel("貼る mermaid").fill("erDiagram\n  CUSTOMER ||--");
+    await page.getByRole("button", { name: "キャンバスに置く" }).click();
+    const notice = page.locator(".mermaid-paste .error");
+    await notice.waitFor();
+    await notice.locator("summary").click();
+    await shot(page, "38-mermaid-paste-syntax-error");
+  });
+
   // ダーク（ADR 0055）。変数を差し替えるだけなので、画面ごとに撮り分ける
   // 価値があるのは、色の種類がいちばん多く並ぶところ（3 状態・解釈結果・
   // 更新と取り残し）。
