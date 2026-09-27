@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
@@ -139,6 +140,94 @@ func TestListStates_ReturnsDetachedAnnotations(t *testing.T) {
 	}
 }
 
+// 届いたか分からない書き込みは、在るものとは別のリストで返す（ADR 0056、#170）。
+//
+// **混ぜると「いま GitHub に在る N 件」が嘘になる。** 未確定の作成は item ID を
+// 持たないので、混ぜたぶんは更新先としても選べてしまう（ADR 0026 の照合）。
+//
+// **3 状態はこれを見ない。** 確定が 1 件も無くても created のまま。押し直しで
+// 消せない draft issue が重複するほうを避ける（ADR 0009）。
+func TestListStates_SeparatesUnconfirmedWrites(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	mappings := &fakeMappings{}
+
+	// annot-1 は 1 件目で応答を失っただけ。確定した item は 1 件も無い。
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-1", ContentHash: currentContentHash(t),
+		CreatedAt: baseTime, Outcome: port.OutcomeIncomplete, Error: "boom",
+		Items: []port.SyncItem{{
+			Kind: port.KindIssue, Title: "届いたか分からないほう", LocalID: "i1",
+			Action: port.ActionCreated, CreatedAt: baseTime,
+		}},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	states, _, err := usecase.NewAnnotationService(boards, mappings).
+		ListStates(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("ListStates() = %v", err)
+	}
+	if len(states) != 1 {
+		t.Fatalf("states = %+v, want 1 件", states)
+	}
+
+	if len(states[0].Items) != 0 {
+		t.Errorf("Items = %+v, want 0 件（在るとは言えない）", states[0].Items)
+	}
+	if len(states[0].Unconfirmed) != 1 {
+		t.Fatalf("Unconfirmed = %+v, want 1 件", states[0].Unconfirmed)
+	}
+	if got := states[0].Unconfirmed[0].Title; got != "届いたか分からないほう" {
+		t.Errorf("Unconfirmed[0].Title = %q", got)
+	}
+
+	// **uncreated に戻さない。** 戻すと、開き直した開発者が作り直して重複する。
+	if states[0].State != domain.StateCreated {
+		t.Errorf("State = %q, want %q", states[0].State, domain.StateCreated)
+	}
+}
+
+// 囲みを消しても、確かめようのない書き込みは落とさない（ADR 0056）。
+//
+// **確定が 1 件も無い注釈でも出す。** 「作っていないから辿る先が無い」とは
+// 言えない。辿る先が在るかどうかが分からないことこそ見せる相手。
+func TestListStates_KeepsDetachedWithOnlyUnconfirmedWrites(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	mappings := &fakeMappings{}
+
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID: "board-1", AnnotationID: "annot-gone", ContentHash: "h1",
+		CreatedAt: baseTime, Outcome: port.OutcomeIncomplete, Error: "boom",
+		Items: []port.SyncItem{{
+			Kind: port.KindIssue, Title: "消した囲みの、届いたか分からないほう",
+			LocalID: "i1", Action: port.ActionCreated, CreatedAt: baseTime,
+		}},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	_, detached, err := usecase.NewAnnotationService(boards, mappings).
+		ListStates(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("ListStates() = %v", err)
+	}
+
+	if len(detached) != 1 || detached[0].ID != "annot-gone" {
+		t.Fatalf("detached = %+v, want annot-gone の 1 件", detached)
+	}
+	if len(detached[0].Items) != 0 {
+		t.Errorf("Items = %+v, want 0 件", detached[0].Items)
+	}
+	if len(detached[0].Unconfirmed) != 1 {
+		t.Errorf("Unconfirmed = %+v, want 1 件", detached[0].Unconfirmed)
+	}
+}
+
 // 消しただけで 1 件も作っていない注釈は出さない。辿る先が無い。
 func TestListStates_IgnoresDetachedWithoutItems(t *testing.T) {
 	t.Parallel()
@@ -201,6 +290,7 @@ func saveRunWithItems(
 			Title:     title,
 			LocalID:   "i1",
 			Action:    port.ActionCreated,
+			Confirmed: true,
 			CreatedAt: baseTime,
 		}},
 	}); err != nil {
