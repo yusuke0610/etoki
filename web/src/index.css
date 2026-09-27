@@ -194,10 +194,19 @@ body {
   min-height: 0;
 }
 
+/*
+ * ヘッダーは折り返す。**折り返さないと、収まらなくなった時点で重なる。**
+ * flex は min-content より下には縮めないので、名前の欄と操作の列が両方とも
+ * 縮みきったあとは、右の列が名前の欄の上に乗る（改名のボタンがバッジに
+ * 隠れて押せなくなる）。狭い窓では以前から起きていて、issue #145 で
+ * ショートカットの案内を 1 つ足したときに手元の幅でも出た。
+ */
 .board-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 6px 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--color-border);
 }
@@ -209,8 +218,10 @@ body {
 
 .board-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 6px 8px;
 }
 
 .board-body {
