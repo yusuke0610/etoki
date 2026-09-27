@@ -115,6 +115,9 @@ export type SessionStatus = Schemas["SessionStatus"];
 /** ログイン中の利用者。 */
 export type AuthUser = Schemas["AuthUser"];
 
+/** ログイン開始のリクエストボディ。戻り先を渡すときだけ送る。 */
+export type LoginRequest = Schemas["LoginRequest"];
+
 /** 認可画面へ送り出すための URL。 */
 export type LoginResponse = Schemas["LoginResponse"];
 
