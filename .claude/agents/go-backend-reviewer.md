@@ -22,10 +22,11 @@ Bash は読み取りと検査（`git diff` / `git log` / `go vet` / `go test` �
    # ステージ済みも含める。
    git diff HEAD -- '*.go' 'api/openapi.yaml' 'migrations/**'
    # 新規ファイルはどちらの diff にも出ない。名前を出して 1 つずつ読む。
-   git ls-files --others --exclude-standard -- '*.go'
+   # 対象は上の diff と同じにする。ずらすと、新規の migration や契約だけが漏れる。
+   git ls-files --others --exclude-standard -- '*.go' 'api/openapi.yaml' 'migrations/**'
    ```
 
-   **`git status --short` は一覧しか返さない。** 新規・ステージ済みの `.go` を
+   **`git status --short` は一覧しか返さない。** 新規・ステージ済みのファイルを
    読まずに終えると、いちばん新しいコードがレビューされない。
 
 2. 下の表の正本を開き、**1 項目ずつ差分に照らす。**
