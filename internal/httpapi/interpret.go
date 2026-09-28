@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -50,12 +51,22 @@ const maxInterpretBody = usecase.MaxImageBytes*usecase.MaxImages*4/3 + 4<<10
 //
 // ボディごと省略できる（ADR 0018）。省略されたときは画像なしで解釈する。
 func (h *handlers) bindInterpretImages(c *gin.Context) ([]port.Image, bool) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxInterpretBody)
+	widenBody(c, maxInterpretBody)
 
 	var req apitypes.InterpretRequest
 	// 空のボディは「画像なし」であってエラーではない。JSON デコーダは
 	// その場合に io.EOF を返す。
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		// 歯止めに当たった失敗も契約の code に写す
+		// （`.claude/rules/api-contract.md`）。写さないと、同じ「大きすぎる」が
+		// ボディの大きさしだいで 400 と 413 に割れる。
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
+				errRequestTooLarge, maxInterpretBody))
+			return nil, false
+		}
+
 		h.badRequest(c, err)
 		return nil, false
 	}

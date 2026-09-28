@@ -47,12 +47,15 @@ func TestGitHubAdapterRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	c, fake, base := newGitHub(t)
 
-	repos, err := c.ListRepositories(ctx)
+	list, err := c.ListRepositories(ctx)
 	if err != nil {
 		t.Fatalf("ListRepositories() = %v", err)
 	}
-	if len(repos) != 1 || repos[0].Owner != fakeupstream.RepositoryOwner || repos[0].Name != fakeupstream.RepositoryName {
-		t.Fatalf("ListRepositories() = %+v", repos)
+	// 打ち切りの有無も候補と一緒に返る（ADR 0054）。偽物は 1 件しか持たない
+	// ので、取り切ったと言っているかもここで見る。
+	repos := list.Repositories
+	if len(repos) != 1 || repos[0].Owner != fakeupstream.RepositoryOwner || repos[0].Name != fakeupstream.RepositoryName || list.Truncated {
+		t.Fatalf("ListRepositories() = %+v", list)
 	}
 
 	projects, err := c.ListRepositoryProjects(ctx, repos[0].Owner, repos[0].Name)
