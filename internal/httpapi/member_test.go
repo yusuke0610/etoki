@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -329,6 +330,48 @@ func TestRemoveMember_LastOwnerIsConflict(t *testing.T) {
 
 // 認証を設定していない構成では共有そのものが無い。404 ではなく 503 を返し、
 // 「URL が違う」のか「設定していない」のかを区別できるようにする。
+// 共有の 2 つの口にも `/api` の既定の上限が掛かる（issue #147）。
+//
+// **未設定の 503 より後に見る。** 共有を組み立てていない構成は本文を読む前に
+// 断るのが正しいので、認証つきのルーターで確かめる。
+func TestMemberBodies_AreLimited(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	r, _ := newAuthRouter(t, provider)
+
+	alice := signInAs(t, r, provider, "1", "alice")
+	boardID := createSharedBoard(t, r, alice, "共有するボード")
+
+	// 相手を先に作らない。本文を読む前に弾かれるので、引き当てまで進まない。
+	huge := strings.Repeat("あ", 64<<10)
+
+	cases := map[string]struct {
+		method string
+		path   string
+		body   map[string]string
+	}{
+		"招待": {http.MethodPost, "/api/boards/" + boardID + "/members",
+			map[string]string{"login": huge, "role": "editor"}},
+		"ロールの変更": {http.MethodPut, "/api/boards/" + boardID + "/members/u1",
+			map[string]string{"role": huge}},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := doJSON(t, r, tc.method, tc.path, alice, tc.body)
+			if rec.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("status = %d, want 413 (%s)", rec.Code, rec.Body)
+			}
+			if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeRequestTooLarge {
+				t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeRequestTooLarge)
+			}
+		})
+	}
+}
+
 func TestMembers_WithoutAuthConfigured(t *testing.T) {
 	t.Parallel()
 

@@ -57,6 +57,7 @@
 | [0051](0051-stop-creation-on-disconnect-and-record.md)           | 接続が切れたら作成を止め、作れたぶんは切れない文脈で記録する           | 採用                 |
 | [0052](0052-do-not-recreate-from-the-same-draft.md)              | 作った項目は同じ下書きから新規に作らせない                             | 採用                 |
 | [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる            | 採用                 |
+| [0054](0054-report-repository-list-truncation.md)                | 作成先の候補は打ち切りを添えて返し、絞り込みは手元で行う               | 採用                 |
 | [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない    | 採用                 |
 | [0056](0056-record-writes-with-unknown-delivery.md)              | 届いたか分からない書き込みも記録し、停止の猶予をその後始末から導く     | 採用                 |
 | [0059](0059-open-boards-by-url.md)                               | 開いているボードはクエリで URL に載せ、戻り先は state と一緒に持つ     | 採用                 |
