@@ -6,7 +6,7 @@ import type {
   DiagramDraft,
   Interpretation,
   Project,
-  Repository,
+  RepositoryList,
   SessionStatus,
   SyncRun,
 } from "../../src/api/types";
@@ -258,11 +258,15 @@ export function signedIn(): SessionStatus {
   };
 }
 
-export function repositories(): Repository[] {
-  return [
-    { owner: "acme", name: "web", description: "フロントエンド" },
-    { owner: "acme", name: "api" },
-  ];
+export function repositories(): RepositoryList {
+  return {
+    repositories: [
+      { owner: "acme", name: "web", description: "フロントエンド" },
+      { owner: "acme", name: "api" },
+    ],
+    // 既定は取り切っている。打ち切りを見るテストだけが true を置く（ADR 0054）。
+    truncated: false,
+  };
 }
 
 export function projects(): Project[] {

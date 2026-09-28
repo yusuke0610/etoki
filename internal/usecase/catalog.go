@@ -21,7 +21,12 @@ func NewGitHubCatalogService(github port.GitHubClient) *GitHubCatalogService {
 }
 
 // ListRepositories は選べるリポジトリを返す。
-func (s *GitHubCatalogService) ListRepositories(ctx context.Context) ([]port.Repository, error) {
+//
+// **打ち切りの有無も一緒に返す**（ADR 0054）。ここで落とすと、境界に出る前に
+// 「これで全部」と「ここまでしか見ていない」の区別が消える。
+func (s *GitHubCatalogService) ListRepositories(
+	ctx context.Context,
+) (port.RepositoryList, error) {
 	return s.github.ListRepositories(ctx)
 }
 
