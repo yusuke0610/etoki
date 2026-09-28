@@ -783,11 +783,12 @@ func TestInterpret_ShowsPreviousItemsAsRefs(t *testing.T) {
 			{
 				ItemID: "PVTI_first", LocalID: "e1", Kind: port.KindEpic,
 				Title: "決済基盤", Body: "入口をまとめる",
-				Action: port.ActionCreated, CreatedAt: baseTime,
+				Action: port.ActionCreated, Confirmed: true, CreatedAt: baseTime,
 			},
 			{
 				ItemID: "PVTI_second", LocalID: "i1", Kind: port.KindIssue,
-				Title: "カード決済", Action: port.ActionCreated, CreatedAt: baseTime,
+				Title: "カード決済", Action: port.ActionCreated, Confirmed: true,
+				CreatedAt: baseTime,
 			},
 		},
 	}); err != nil {
