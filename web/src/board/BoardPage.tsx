@@ -925,6 +925,9 @@ export function BoardPage({
   // 同じ形）。どちらも非同期なので、state で覚えると同じ tick の次の操作がまだ
   // false を読み、キャンバスの置き換えと GitHub への作成が並走する。
   const exclusiveOperation = useRef<"importing" | "creating" | null>(null);
+  // 保存が走っているか。**`saving` と二重に持つ。** あちらは画面を描くための
+  // state で、次の描画までは古い値を読む。押した時点で弾く判定はこちらが持つ。
+  const savingNow = useRef(false);
 
   /**
    * `.excalidraw` ファイルをキャンバスに取り込む（ADR 0045）。
@@ -1003,6 +1006,13 @@ export function BoardPage({
     // 永続化の入口でも同じ排他を確かめる。
     if (!api || exclusiveOperation.current === "importing") return;
 
+    // **押した時点で弾く**（`exclusiveOperation` と同じ形）。`saving` は state な
+    // ので、次の描画までは同じ tick の 2 回目がまだ false を読む。ボタンだけなら
+    // 押し間違いの二度押しで済んだが、Ctrl / Cmd + S にはキーの自動リピートが
+    // あり（押しっぱなしで keydown が連続する）、保存が何本も並走する。
+    if (savingNow.current) return;
+    savingNow.current = true;
+
     setSaving(true);
     try {
       const elements = api.getSceneElements();
@@ -1045,6 +1055,7 @@ export function BoardPage({
       }
       onError(describeFailure("保存できませんでした", e));
     } finally {
+      savingNow.current = false;
       setSaving(false);
     }
   }, [
@@ -1240,6 +1251,50 @@ export function BoardPage({
     : creating
       ? "作成が終わるまで保存できません"
       : null;
+
+  /**
+   * 保存を押せるか。**ボタンの `disabled` とショートカットで同じ式を使う。**
+   *
+   * 2 つに分けて書くと、片方だけに条件を足したときに、押せないはずの経路が
+   * キーボードからだけ通る。
+   */
+  const canSave = canEdit && !saving && !creating && !importing && api !== null;
+
+  /**
+   * Ctrl / Cmd + S で保存する（issue #145）。
+   *
+   * 保存は明示操作だけ（ADR 0021）なので、押すまでの手数の少なさがそのまま
+   * 値打ちになる。**誰も拾わないと既定の動作（ブラウザの「ページを保存」）に
+   * 落ちる。** Excalidraw 側の Ctrl+S は `saveToActiveFile` だが、etoki は
+   * それを `UIOptions` から外してある（ADR 0045）ので、押しても何も起きず
+   * `preventDefault` もされない。
+   *
+   * **押せないときも既定の動作は止める。** 「保存できなかった」の代わりに
+   * ブラウザの保存ダイアログが出るのは、押せない理由を見せるどころではない。
+   *
+   * **Shift は拾わない。** Ctrl/Cmd+Shift+S は Excalidraw 側の書き出しで、
+   * 別の操作（`web/e2e/scene.spec.ts` が走らないことを見ている）。
+   *
+   * **入力欄にフォーカスがあっても同じ扱いにする。** この画面で Ctrl+S が
+   * 指しうる保存はシーンの保存 1 つだけで、ボード名の変更には専用のボタンが
+   * ある。フォーカス位置で意味が変わるほうが、習慣で押す人には読めない。
+   */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // **`e.key` だけで見ない。** 非ラテン配列では物理の S を押しても `e.key` が
+      // "s" にならず、保存されないままブラウザの既定（ページを保存）が開く。
+      // 物理キーの位置（`e.code`）も見る。Ctrl+S の習慣は位置で覚えているため。
+      if (e.key !== "s" && e.key !== "S" && e.code !== "KeyS") return;
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+
+      e.preventDefault();
+      if (!canSave) return;
+      void save();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canSave, save]);
 
   // 設定していない機能は、押す前に理由を出す（ADR 0030）。null は使える、
   // または「まだ確かめていない」。
@@ -1528,11 +1583,28 @@ export function BoardPage({
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={saving || creating || importing || !api}
-                aria-describedby={saveBlocked !== null ? "save-blocked" : undefined}
+                disabled={!canSave}
+                aria-describedby={
+                  saveBlocked !== null ? "save-shortcut save-blocked" : "save-shortcut"
+                }
               >
                 {saving ? "保存中…" : "保存"}
               </button>
+              {/*
+                ショートカットの存在を画面に出す。**`title` に隠さない**
+                （ADR 0039）。ホバーでしか読めず、disabled なボタンはフォーカスも
+                当たらないので、キーボードと読み上げには届かない。
+
+                **ボタンの中には置かない。** 中に置くと読み上げる名前が
+                「保存 Ctrl / ⌘ + S」になり、名前で引いている E2E が全部ずれる。
+                外に出して `aria-describedby` で結ぶ。
+
+                修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
+                それを見ていないので、片方だけ出すともう片方の利用者には嘘になる。
+              */}
+              <kbd className="hint shortcut" id="save-shortcut">
+                ⌘/Ctrl+S
+              </kbd>
               {saveBlocked !== null && (
                 <span className="hint" id="save-blocked">
                   {saveBlocked}
