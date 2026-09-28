@@ -13,6 +13,7 @@ import { CreationSection } from "./CreationSection";
 import { groupByEpic } from "./interpretation";
 import {
   blockingReasons,
+  canResend,
   buildInterpretation,
   createDraft,
   leftBehindItemIds,
@@ -103,6 +104,14 @@ export function DraftEditor({
   const createdItems = new Set(
     draft.items.filter((d) => d.createdItemId).map((d) => d.item.localId),
   );
+  // 送ったが、GitHub に届いたか分からない項目（ADR 0056）。
+  const unconfirmedItems = new Set(
+    draft.items.filter((d) => d.unconfirmed).map((d) => d.item.localId),
+  );
+  // そのうち、送り先も分からないので押し直せない項目。
+  const lockedItems = new Set(
+    draft.items.filter((d) => !canResend(d)).map((d) => d.item.localId),
+  );
   const orphans = orphanedLocalIds(draft);
   const reasons = blockingReasons(draft, granularity);
   // 今回の作成で GitHub 側に置き去りになるもの（ADR 0026）。
@@ -119,8 +128,11 @@ export function DraftEditor({
   const fields = (item: InterpretedItem) => (
     <DraftItemFields
       item={item}
+      annotationId={annotationId}
       selected={selected.get(item.localId) ?? false}
       createdItem={createdItems.has(item.localId)}
+      unconfirmed={unconfirmedItems.has(item.localId)}
+      locked={lockedItems.has(item.localId)}
       updatesPrevious={updatesPrevious.get(item.localId) ?? false}
       orphan={orphans.has(item.localId)}
       frozen={frozen}
@@ -189,8 +201,11 @@ export function DraftEditor({
  */
 function DraftItemFields({
   item,
+  annotationId,
   selected,
   createdItem,
+  unconfirmed,
+  locked,
   updatesPrevious,
   orphan,
   frozen,
@@ -202,6 +217,14 @@ function DraftItemFields({
   onUpdatesPrevious,
 }: {
   item: InterpretedItem;
+  /**
+   * 説明文の id を注釈ごとに分けるために持つ。
+   *
+   * **`localId` だけでは足りない。** 解釈の中でしか一意でないので、注釈が
+   * 並ぶ一覧では別のカードの `i1` と同じ id になる。同じ id が 2 つあると、
+   * 読み上げはどちらを読むか決められない（`web/CLAUDE.md`）。
+   */
+  annotationId: string;
   selected: boolean;
   /**
    * この解釈から作った項目かどうか（ADR 0052）。
@@ -210,6 +233,20 @@ function DraftItemFields({
    * なる。
    */
   createdItem: boolean;
+  /**
+   * 送ったが、GitHub に届いたか分からない項目かどうか（ADR 0056）。
+   *
+   * **`createdItem` と重ならないとは限らない。** 更新では相手の ID が分かって
+   * いるので、届いたか分からなくても書き直しには送れる。
+   */
+  unconfirmed: boolean;
+  /**
+   * もう一度送れない項目かどうか（ADR 0056）。
+   *
+   * 送り先の ID が分からない未確定の作成がこれ。受理されていた場合、もう一度
+   * 送ると消せない draft issue が重複する。
+   */
+  locked: boolean;
   /**
    * LLM が対応づけた更新先に、実際に書き込むかどうか。
    *
@@ -232,15 +269,20 @@ function DraftItemFields({
   onBody: (body: string) => void;
   onUpdatesPrevious: (updatesPrevious: boolean) => void;
 }) {
+  const unconfirmedId = `draft-unconfirmed-${annotationId}-${item.localId}`;
+
   return (
     <div className={`draft-item${selected ? "" : " unselected"}`}>
       <div className="draft-head">
         <input
           type="checkbox"
           checked={selected}
-          disabled={frozen}
+          // **押し直せない項目は選ばせない**（ADR 0056）。押せない理由は
+          // 下の本文に出す（ADR 0039）。title に隠さない。
+          disabled={frozen || locked}
           onChange={onToggle}
           aria-label={`${item.localId} を作成する`}
+          aria-describedby={locked ? unconfirmedId : undefined}
         />
 
         {editableKind ? (
@@ -278,7 +320,11 @@ function DraftItemFields({
           決めるのは開発者（ADR 0026）。指す先が GitHub から消えていると、
           更新のままでは作成が必ず失敗する。
         */}
-        {createdItem ? (
+        {unconfirmed ? (
+          // **「作成した」より先に出す**（ADR 0056）。届いたか分からない
+          // ものを「作成した」と名乗らせない。
+          <span className="badge badge-unconfirmed">確認できていません</span>
+        ) : createdItem ? (
           <span className="badge badge-created">作成した</span>
         ) : (
           item.previousItemId &&
@@ -287,10 +333,23 @@ function DraftItemFields({
       </div>
 
       {/*
+        分からないことを分からないと出す（中核思想 3）。**「失敗しました」とは
+        書かない。** GitHub が受理したあとで応答だけを失った場合も、受理せずに
+        返した場合も、etoki からは区別できない。
+      */}
+      {unconfirmed && (
+        <p className="hint" id={unconfirmedId}>
+          {locked
+            ? "GitHub に届いたか確認できていません。作られているかもしれないので、この下書きからは送り直せません。GitHub を見て確かめてください。"
+            : "GitHub に届いたか確認できていません。選び直すと、同じ draft issue に書き直します。"}
+        </p>
+      )}
+
+      {/*
         作った項目は、選び直すと書き換えになることを先に言う。チェックだけ
         外れていると、作り損ねたのか作ったのかが読めない。
       */}
-      {createdItem && (
+      {createdItem && !unconfirmed && (
         <p className="hint">
           {selected
             ? "作成した draft issue を書き換えます。"
@@ -310,8 +369,12 @@ function DraftItemFields({
       {/*
         作った項目には出さない。作った ID の書き換えにしか送れないので
         （`markCreated`）、選ばせるものが無い。
+
+        **送り直せない項目にも出さない**（ADR 0056）。選択そのものを止めて
+        いるので、切り替えても送るものが変わらない。効かない選択肢を並べるのは
+        状態を見せることにならない（中核思想 3）。
       */}
-      {item.previousItemId && !createdItem && (
+      {item.previousItemId && !createdItem && !locked && (
         <div className="draft-previous">
           <select
             value={updatesPrevious ? "update" : "create"}

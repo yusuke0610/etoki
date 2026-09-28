@@ -1,5 +1,5 @@
 import type { DetachedAnnotation } from "../api/types";
-import { ItemBody, ProjectLinkLine } from "./panelParts";
+import { ItemBody, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
 import type { RunsProps } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 import { RunHistory, formatRunTimestamp } from "./RunHistory";
@@ -49,18 +49,24 @@ export function DetachedSection({
               {a.lastSyncedAt === undefined ? "不明" : formatRunTimestamp(a.lastSyncedAt)}
             </p>
 
-            <details open>
-              <summary>GitHub にある {a.items.length} 件</summary>
-              <ul className="plain-list">
-                {a.items.map((it) => (
-                  <li key={it.itemId}>
-                    <span className="kind">{it.kind}</span> {it.title}
-                    <ItemBody body={it.body} />
-                  </li>
-                ))}
-              </ul>
-              <ProjectLinkLine link={projectLink} />
-            </details>
+            {/* 1 件も無いことはありうる（届いたか分からないものだけが残る）。 */}
+            {a.items.length > 0 && (
+              <details open>
+                <summary>GitHub にある {a.items.length} 件</summary>
+                <ul className="plain-list">
+                  {a.items.map((it) => (
+                    <li key={it.itemId}>
+                      <span className="kind">{it.kind}</span> {it.title}
+                      <ItemBody body={it.body} />
+                    </li>
+                  ))}
+                </ul>
+                <ProjectLinkLine link={projectLink} />
+              </details>
+            )}
+
+            {/* 囲みを消しても、確かめようのない書き込みは落とさない（ADR 0056）。 */}
+            <UnconfirmedItems items={a.unconfirmedItems ?? []} link={projectLink} />
 
             {/* 履歴の口はシーンに注釈が残っているかを見ない（ADR 0007）。 */}
             <details className="run-history">

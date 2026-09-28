@@ -164,12 +164,12 @@ func TestGetBoardDeletion(t *testing.T) {
 	for _, action := range []port.SyncAction{port.ActionCreated, port.ActionUpdated} {
 		items := []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API",
-			LocalID: "e1", Action: action, CreatedAt: fixedTime,
+			LocalID: "e1", Action: action, Confirmed: true, CreatedAt: fixedTime,
 		}}
 		if action == port.ActionCreated {
 			items = append(items, port.SyncItem{
 				ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新",
-				LocalID: "i1", Action: action, CreatedAt: fixedTime,
+				LocalID: "i1", Action: action, Confirmed: true, CreatedAt: fixedTime,
 			})
 		}
 		if _, err := mappings.SaveRun(t.Context(), port.SyncRun{

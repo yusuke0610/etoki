@@ -1,3 +1,4 @@
+import type { SyncItem } from "../api/types";
 import type { ProjectLink } from "./projectLink";
 
 /**
@@ -52,5 +53,47 @@ export function ItemBody({ body }: { body: string }) {
       <summary>本文</summary>
       <pre>{body}</pre>
     </details>
+  );
+}
+
+/**
+ * GitHub に届いたか分からない書き込み（ADR 0056）。
+ *
+ * **「失敗した」とは書かない。** GitHub が受理したあとで応答だけを失った場合も、
+ * 受理せずに返した場合も、etoki からは区別できない。分からないことを分からない
+ * と出して、確かめるのは開発者に任せる（中核思想 3）。
+ *
+ * **押し直しの導線は置かない。** 受理されていた場合、もう一度送ると消せない
+ * draft issue が重複する。出口は GitHub を見ること 1 つだけなので、リンクを
+ * 添える。
+ */
+export function UnconfirmedItems({
+  items,
+  link,
+}: {
+  items: SyncItem[];
+  link: ProjectLink | null;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="unconfirmed-items">
+      <p className="hint">
+        {items.length} 件は、GitHub に届いたか確認できていません。作られている
+        かもしれません。<strong>もう一度作る前に GitHub を見てください。</strong>
+      </p>
+      <ul className="plain-list">
+        {items.map((it, i) => (
+          // 未確定の作成は itemId を持たないので、鍵には使えない。並びは
+          // サーバーが返した順で、再描画で入れ替わらない。
+          <li key={it.itemId === "" ? `${it.localId}-${i}` : it.itemId}>
+            <span className="kind">{it.kind}</span> {it.title}
+            <span className="badge badge-unconfirmed">確認できていません</span>
+            <ItemBody body={it.body} />
+          </li>
+        ))}
+      </ul>
+      <ProjectLinkLine link={link} />
+    </div>
   );
 }

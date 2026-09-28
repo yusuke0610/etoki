@@ -598,21 +598,21 @@ func TestDeletion_CountsFoldedItems(t *testing.T) {
 		{
 			BoardID: "board-1", AnnotationID: "annot-1",
 			Items: []port.SyncItem{
-				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionCreated},
-				{ItemID: "PVTI_2", LocalID: "i1", Action: port.ActionCreated},
+				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionCreated, Confirmed: true},
+				{ItemID: "PVTI_2", LocalID: "i1", Action: port.ActionCreated, Confirmed: true},
 			},
 		},
 		{
 			// 同じ item を書き換えた run。畳み込みで 1 件に吸収される。
 			BoardID: "board-1", AnnotationID: "annot-1",
 			Items: []port.SyncItem{
-				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionUpdated},
+				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionUpdated, Confirmed: true},
 			},
 		},
 		{
 			BoardID: "board-1", AnnotationID: "annot-2",
 			Items: []port.SyncItem{
-				{ItemID: "PVTI_3", LocalID: "e1", Action: port.ActionCreated},
+				{ItemID: "PVTI_3", LocalID: "e1", Action: port.ActionCreated, Confirmed: true},
 			},
 		},
 		// 別のボードの run は数えない。混ぜると、消してもいないボードの件数を
@@ -620,7 +620,7 @@ func TestDeletion_CountsFoldedItems(t *testing.T) {
 		{
 			BoardID: "board-2", AnnotationID: "annot-9",
 			Items: []port.SyncItem{
-				{ItemID: "PVTI_9", LocalID: "e1", Action: port.ActionCreated},
+				{ItemID: "PVTI_9", LocalID: "e1", Action: port.ActionCreated, Confirmed: true},
 			},
 		},
 	}}
@@ -665,7 +665,7 @@ func TestDelete_SucceedsEvenWithRuns(t *testing.T) {
 	boards := &fakeBoards{board: newBoard(interpretScene)}
 	mappings := &fakeMappings{runs: []port.SyncRun{{
 		BoardID: "board-1", AnnotationID: "annot-1",
-		Items: []port.SyncItem{{ItemID: "PVTI_1", LocalID: "e1"}},
+		Items: []port.SyncItem{{ItemID: "PVTI_1", LocalID: "e1", Confirmed: true}},
 	}}}
 	svc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks())
 

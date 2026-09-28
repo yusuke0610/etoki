@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,7 +47,14 @@ type fakeGitHub struct {
 	// そのあと実物の HTTP クライアントと同じく ctx が切れていれば失敗する。
 	// GitHub が受理したのに応答が届かない並びを作る。
 	cancelDuring func()
-	seq          int
+	// afterListFields が非 nil なら、フィールドを引いた直後に呼ぶ。作成に
+	// 手を付ける手前でリクエストが切れた並びを作る（ADR 0051）。
+	afterListFields func()
+	// attemptedCreates は CreateDraftIssue を呼ばれた回数。**失敗したぶんも
+	// 数える。** calls は成功したものしか積まないので、「こけた 1 件の先へ
+	// 進んでいないこと」をそちらでは確かめられない。
+	attemptedCreates int
+	seq              int
 	// repos と projects は作成先の候補一覧が返すもの。
 	repos    []port.Repository
 	projects []port.Project
@@ -74,11 +82,15 @@ func (f *fakeGitHub) ListProjectFields(_ context.Context, projectID string) ([]p
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
+	if f.afterListFields != nil {
+		f.afterListFields()
+	}
 	return f.fields, nil
 }
 
 func (f *fakeGitHub) CreateDraftIssue(ctx context.Context, projectID string, item port.DraftIssue) (string, error) {
 	f.projectIDs = append(f.projectIDs, projectID)
+	f.attemptedCreates++
 	if f.cancelDuring != nil {
 		f.cancelDuring()
 		if err := ctx.Err(); err != nil {
@@ -197,6 +209,10 @@ func (f *fakeMappings) ListRunsByAnnotation(
 // **実装と同じく畳む。** 最新 run の Items を返すフェイクにすると、更新の run の
 // あとに取り残しが消える不具合をテストが素通しする。並びは最初に作られた順で、
 // 更新しても動かさない。
+//
+// **実装と同じく未確定の書き込みを外す**（ADR 0056）。混ぜるフェイクにすると、
+// 届いたか分からないものが「いま GitHub に在るもの」に紛れ、更新先の照合
+// （checkPreviousItems）まで通ってしまう不具合を素通しする。
 func (f *fakeMappings) ListItemsByAnnotation(
 	_ context.Context, boardID, annotationID string,
 ) ([]port.SyncItem, error) {
@@ -208,6 +224,9 @@ func (f *fakeMappings) ListItemsByAnnotation(
 			continue
 		}
 		for _, it := range run.Items {
+			if !it.Confirmed {
+				continue
+			}
 			if _, seen := latest[it.ItemID]; !seen {
 				order = append(order, it.ItemID)
 			}
@@ -220,6 +239,46 @@ func (f *fakeMappings) ListItemsByAnnotation(
 		items = append(items, latest[id])
 	}
 	return items, nil
+}
+
+// ListUnconfirmedItemsByBoard は届いたか分からない書き込みを注釈ごとに返す
+// （ADR 0056）。
+//
+// **実装と同じく、あとで同じ item に確定の記録が付いたものは外す。** 常に全部
+// 返すフェイクにすると、解けた不確かさが残り続ける不具合を素通しする。
+func (f *fakeMappings) ListUnconfirmedItemsByBoard(
+	_ context.Context, boardID string,
+) (map[string][]port.SyncItem, error) {
+	// あとから確定した (注釈, ItemID) を先に集める。ItemID を持たない未確定の
+	// 作成は、確定させる手段が無いのでここには現れない。
+	type key struct{ annotation, itemID string }
+	confirmedAt := map[key]int{}
+	seq := 0
+	for _, run := range f.runs {
+		for _, it := range run.Items {
+			seq++
+			if run.BoardID == boardID && it.Confirmed && it.ItemID != "" {
+				confirmedAt[key{run.AnnotationID, it.ItemID}] = seq
+			}
+		}
+	}
+
+	byAnnotation := make(map[string][]port.SyncItem)
+	seq = 0
+	for _, run := range f.runs {
+		for _, it := range run.Items {
+			seq++
+			if run.BoardID != boardID || it.Confirmed {
+				continue
+			}
+			if at, ok := confirmedAt[key{run.AnnotationID, it.ItemID}]; ok && it.ItemID != "" && at > seq {
+				continue
+			}
+			byAnnotation[run.AnnotationID] = append(byAnnotation[run.AnnotationID], it)
+		}
+	}
+
+	return byAnnotation, nil
 }
 
 // ListItemsByBoard は畳み込みをボード全体で行い、注釈ごとに束ねて返す。
@@ -537,15 +596,29 @@ func TestCreate_RecordsPartialRunOnFailure(t *testing.T) {
 	if run == nil {
 		t.Fatal("run = nil, want 作成済みの記録")
 	}
-	if len(run.Items) != 2 {
-		t.Errorf("len(run.Items) = %d, want 2", len(run.Items))
+
+	// **こけた 1 件も載る**（ADR 0056）。GitHub が受理したのか受理していないのかを
+	// etoki は知らないので、確定した 2 件に「届いたか分からない 1 件」が続く。
+	// 捨てると、受理されていた場合にその draft issue が etoki から辿れない。
+	if got := confirmedTitles(run.Items); !slices.Equal(got, []string{"決済フローの見直し", "Stripe SDK の更新"}) {
+		t.Errorf("確定した items = %v", got)
+	}
+	if got := unconfirmedTitles(run.Items); !slices.Equal(got, []string{"返金導線の整理"}) {
+		t.Errorf("届いたか分からない items = %v, want [返金導線の整理]", got)
 	}
 
 	if len(mappings.runs) != 1 {
 		t.Fatalf("保存された run = %d 件, want 1", len(mappings.runs))
 	}
-	if len(mappings.runs[0].Items) != 2 {
-		t.Errorf("保存された Items = %d 件, want 2", len(mappings.runs[0].Items))
+	if len(mappings.runs[0].Items) != 3 {
+		t.Errorf("保存された Items = %d 件, want 3", len(mappings.runs[0].Items))
+	}
+	// 応答を失った作成は item ID を知らない。埋めると、在りもしない item を
+	// 更新先として扱える（ADR 0026 の照合が空文字を通す）。
+	for _, it := range mappings.runs[0].Items {
+		if !it.Confirmed && it.ItemID != "" {
+			t.Errorf("未確定なのに item ID = %q", it.ItemID)
+		}
 	}
 
 	// **記録にも失敗を残す。** 応答にしか出さないと、手掛かりが生きているのは
@@ -679,19 +752,75 @@ func TestCreate_RecordsCompleteOutcome(t *testing.T) {
 	}
 }
 
-// 空の run を残すと、状態が created に変わって「作成済み」に見えてしまう。
-func TestCreate_DoesNotRecordWhenNothingCreated(t *testing.T) {
+// 最初の 1 件で応答を失っても run は残す（ADR 0056、#170）。
+//
+// **ここが以前いちばん痛かった経路。** 1 件も確定しないと run ごと保存されず、
+// 3 状態は uncreated のまま。GitHub が受理していた場合、開き直した開発者は
+// 何も作られていないと判断して作り直し、消せない draft issue が重複する。
+func TestCreate_RecordsRunWhenTheFirstWriteIsLost(t *testing.T) {
 	t.Parallel()
 
 	gh := &fakeGitHub{fields: projectFields(), failOnTitle: "決済フローの見直し"}
 	mappings := &fakeMappings{}
 	svc := newCreationService(t, gh, mappings)
 
-	if _, err := svc.Create(t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation()); err == nil {
-		t.Fatal("Create() = nil, want error")
+	if _, err := svc.Create(
+		t.Context(), "board-1", "annot-1", currentContentHash(t), interpretation(),
+	); !errors.Is(err, usecase.ErrCreationIncomplete) {
+		t.Fatalf("Create() = %v, want ErrCreationIncomplete", err)
+	}
+
+	if len(mappings.runs) != 1 {
+		t.Fatalf("保存された run = %d 件, want 1（作り直しで重複する）", len(mappings.runs))
+	}
+	saved := mappings.runs[0]
+	if saved.Outcome != port.OutcomeIncomplete {
+		t.Errorf("Outcome = %q, want %q", saved.Outcome, port.OutcomeIncomplete)
+	}
+	if got := confirmedTitles(saved.Items); len(got) != 0 {
+		t.Errorf("確定した items = %v, want 0 件", got)
+	}
+	if got := unconfirmedTitles(saved.Items); !slices.Equal(got, []string{"決済フローの見直し"}) {
+		t.Errorf("届いたか分からない items = %v, want [決済フローの見直し]", got)
+	}
+
+	// **epic がこけたら子には手を付けない。** 続けると、親の無い issue が
+	// 「届いたか分からない」で並ぶ。
+	if gh.attemptedCreates != 1 {
+		t.Errorf("作成の試行 = %d 回, want 1（こけた epic だけ）", gh.attemptedCreates)
+	}
+}
+
+// 手を付けていないなら記録するものが無い。**「作れなかった」とは別。**
+//
+// 空の run を残すと、状態が created に変わって「作成済み」に見えてしまう。
+// 1 件目に手を付ける前にリクエストが切れていたら、GitHub には何も送っていない。
+func TestCreate_DoesNotRecordWhenNothingWasAttempted(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	gh := &fakeGitHub{fields: projectFields()}
+	// フィールドを引き終えた時点で切る。applyItems は 1 件目の手前で ctx を
+	// 見るので、GitHub への書き込みは 1 回も起きない（ADR 0051）。
+	gh.afterListFields = cancel
+	mappings := &fakeMappings{}
+	svc := newCreationService(t, gh, mappings)
+
+	if _, err := svc.Create(
+		ctx, "board-1", "annot-1", currentContentHash(t), interpretation(),
+	); !errors.Is(err, usecase.ErrCreationIncomplete) {
+		t.Fatalf("Create() = %v, want ErrCreationIncomplete", err)
+	}
+
+	if gh.attemptedCreates != 0 {
+		t.Errorf("作成の試行 = %d 回, want 0（切れた先で手を付けている）", gh.attemptedCreates)
+	}
+	if len(gh.calls) != 0 {
+		t.Errorf("GitHub に書き込んでいる: %+v", gh.calls)
 	}
 	if len(mappings.runs) != 0 {
-		t.Errorf("1 件も作れていないのに run が記録されている: %+v", mappings.runs)
+		t.Errorf("何も送っていないのに run が記録されている: %+v", mappings.runs)
 	}
 }
 
@@ -939,7 +1068,7 @@ func seedRun(t *testing.T, mappings *fakeMappings, items ...port.SyncItem) {
 func savedItem(itemID, localID string, kind port.ItemKind, title string) port.SyncItem {
 	return port.SyncItem{
 		ItemID: itemID, LocalID: localID, Kind: kind, Title: title,
-		Action: port.ActionCreated, CreatedAt: createdAt,
+		Action: port.ActionCreated, Confirmed: true, CreatedAt: createdAt,
 	}
 }
 
@@ -1079,9 +1208,36 @@ func TestCreate_RecordsPartialUpdate(t *testing.T) {
 	if run == nil {
 		t.Fatal("run が nil。途中まで進んだことを記録していない")
 	}
-	if len(run.Items) != 1 || run.Items[0].ItemID != "PVTI_a" {
-		t.Errorf("items = %+v, want PVTI_a だけ", run.Items)
+	// **更新では相手の ID が分かっている。** 分からないのは書き換えが届いたか
+	// どうかだけなので、ID を載せたまま未確定で記録する（ADR 0056）。
+	if got := confirmedTitles(run.Items); !slices.Equal(got, []string{"書き換えたほう"}) {
+		t.Errorf("確定した items = %v, want [書き換えたほう]", got)
 	}
+	if len(run.Items) != 2 || run.Items[1].ItemID != "PVTI_b" || run.Items[1].Confirmed {
+		t.Errorf("items = %+v, want PVTI_b が未確定で続く", run.Items)
+	}
+}
+
+// confirmedTitles は確定した書き込みのタイトルを並べる。
+func confirmedTitles(items []port.SyncItem) []string {
+	var out []string
+	for _, it := range items {
+		if it.Confirmed {
+			out = append(out, it.Title)
+		}
+	}
+	return out
+}
+
+// unconfirmedTitles は届いたか分からない書き込みのタイトルを並べる（ADR 0056）。
+func unconfirmedTitles(items []port.SyncItem) []string {
+	var out []string
+	for _, it := range items {
+		if !it.Confirmed {
+			out = append(out, it.Title)
+		}
+	}
+	return out
 }
 
 // 親子は epic のタイトルによる手作りの外部キー（ADR 0006）。epic のタイトルを

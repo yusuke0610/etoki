@@ -155,7 +155,15 @@ describe("世代との噛み合わせ", () => {
 });
 
 function syncItem(localId: string, itemId: string): SyncItem {
-  return { itemId, kind: "issue", title: localId, body: "", localId, action: "created" };
+  return {
+    itemId,
+    kind: "issue",
+    title: localId,
+    body: "",
+    localId,
+    action: "created",
+    confirmed: true,
+  };
 }
 
 // 作ったものは、その解釈に結びつけて持つ（ADR 0052）。下書きは解釈を選び

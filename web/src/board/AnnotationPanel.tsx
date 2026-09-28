@@ -15,7 +15,7 @@ import { DetachedSection } from "./DetachedSection";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { InterpretationSection } from "./InterpretationSection";
 import type { InterpretationState } from "./interpretationHistory";
-import { ItemBody, ProjectLinkLine } from "./panelParts";
+import { ItemBody, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
 import {
   INTERPRETATION_UNAVAILABLE_ID,
   type CreationState,
@@ -384,6 +384,13 @@ export function AnnotationPanel({
                       <ProjectLinkLine link={projectLink} />
                     </details>
                   )}
+
+                  {/*
+                    **畳まない**（ADR 0056）。「GitHub にある N 件」は開いて
+                    確かめるものだが、こちらは開発者が手を打つまで消えない。
+                    details に入れると、開かない限り気づけない。
+                  */}
+                  <UnconfirmedItems items={a.unconfirmedItems ?? []} link={projectLink} />
 
                   {/*
                     前回実行が途中で失敗したことは、履歴を開かなくても見える

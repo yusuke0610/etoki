@@ -2,7 +2,7 @@ import { partialCreationFailure } from "../api/errorMessage";
 import type { ProjectAccess } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
 import { partialSummary, resultSummary } from "./itemSummary";
-import { ItemBody, ProjectLinkLine } from "./panelParts";
+import { ItemBody, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
 import type { CreationState } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 
@@ -126,21 +126,31 @@ export function CreationSection({
             <p className="hint">{resultSummary(state.run.items)}。</p>
           )}
           <ul className="plain-list">
-            {state.run.items.map((it) => (
-              <li key={it.itemId}>
-                <span className="kind">{it.kind}</span> {it.title}
-                {/*
-                  作ったのか書き換えたのかを残す。GitHub 側に何が増えたのかは
-                  この内訳でしか数えられない（ADR 0026）。
-                */}
-                {it.action === "updated" && (
-                  <span className="badge badge-updated">更新</span>
-                )}
-                <ItemBody body={it.body} />
-              </li>
-            ))}
+            {state.run.items
+              .filter((it) => it.confirmed)
+              .map((it) => (
+                <li key={it.itemId}>
+                  <span className="kind">{it.kind}</span> {it.title}
+                  {/*
+                    作ったのか書き換えたのかを残す。GitHub 側に何が増えたのかは
+                    この内訳でしか数えられない（ADR 0026）。
+                  */}
+                  {it.action === "updated" && (
+                    <span className="badge badge-updated">更新</span>
+                  )}
+                  <ItemBody body={it.body} />
+                </li>
+              ))}
           </ul>
           <ProjectLinkLine link={projectLink} />
+          {/*
+            届いたか分からないものは、確かに作れたものと同じリストに並べない
+            （ADR 0056）。並べると「作れた」と読まれる。
+          */}
+          <UnconfirmedItems
+            items={state.run.items.filter((it) => !it.confirmed)}
+            link={projectLink}
+          />
         </div>
       )}
     </div>

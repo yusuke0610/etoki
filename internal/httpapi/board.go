@@ -81,6 +81,9 @@ func toSyncItem(it port.SyncItem) apitypes.SyncItem {
 		Body:    it.Body,
 		LocalID: it.LocalID,
 		Action:  apitypes.SyncAction(it.Action),
+		// **写し忘れると「確かに作った」ではなく「分からない」に倒れる**
+		// （ADR 0056）。ゼロ値の向きをそちらに取ってあるのはこのため。
+		Confirmed: it.Confirmed,
 	}
 	if it.ParentLocalID != nil {
 		out.ParentLocalID = *it.ParentLocalID
@@ -412,6 +415,10 @@ func toDetachedAnnotation(d usecase.DetachedAnnotation) apitypes.DetachedAnnotat
 		ID:    d.ID,
 		Items: toSyncItems(d.Items),
 	}
+	// 届いたか分からない書き込みは別のリストで返す（ADR 0056）。0 件なら省く。
+	if len(d.Unconfirmed) > 0 {
+		res.UnconfirmedItems = toSyncItems(d.Unconfirmed)
+	}
 	if d.LatestRun != nil {
 		t := d.LatestRun.CreatedAt
 		res.LastSyncedAt = &t
@@ -497,6 +504,11 @@ func toAnnotationStatus(s usecase.AnnotationState) apitypes.AnnotationStatus {
 	// 中身は最新 run ではなく畳み込みから出す（ADR 0026）。0 件なら省く。
 	if len(s.Items) > 0 {
 		res.Items = toSyncItems(s.Items)
+	}
+	// **畳み込みには入らないものを別に出す**（ADR 0056）。混ぜると「いま
+	// GitHub に在る N 件」が嘘になる。0 件なら省く。
+	if len(s.Unconfirmed) > 0 {
+		res.UnconfirmedItems = toSyncItems(s.Unconfirmed)
 	}
 
 	return res

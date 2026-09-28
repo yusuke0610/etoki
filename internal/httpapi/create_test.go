@@ -261,17 +261,30 @@ func TestCreateItems_ReportsPartialCreation(t *testing.T) {
 		t.Error("何が失敗したのか返っていない")
 	}
 
+	// **こけた 1 件も応答に載る**（ADR 0056）。確定した 1 件と、届いたか
+	// 分からない 1 件。画面はこの印で「作った」と「分からない」を書き分ける。
 	items, _ := got["items"].([]any)
-	if len(items) != 1 {
-		t.Errorf("len(items) = %d, want 1", len(items))
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(items))
+	}
+	confirmed := map[string]any{}
+	for _, raw := range items {
+		it, _ := raw.(map[string]any)
+		confirmed[it["title"].(string)] = it["confirmed"]
+	}
+	if confirmed["決済フローの見直し"] != true {
+		t.Errorf("確定した 1 件の confirmed = %v, want true", confirmed["決済フローの見直し"])
+	}
+	if confirmed["Stripe SDK の更新"] != false {
+		t.Errorf("こけた 1 件の confirmed = %v, want false", confirmed["Stripe SDK の更新"])
 	}
 
-	// 作れたぶんは記録する。記録漏れは追跡不能を生む（ADR 0009）。
+	// 作れたぶんは記録する。記録漏れは追跡不能を生む（ADR 0009 / 0056）。
 	run, err := mappings.FindLatestRun(t.Context(), id, "annot-1")
 	if err != nil {
 		t.Fatalf("FindLatestRun: %v", err)
 	}
-	if run == nil || len(run.Items) != 1 {
+	if run == nil || len(run.Items) != 2 {
 		t.Errorf("部分的な run が記録されていない: %+v", run)
 	}
 }

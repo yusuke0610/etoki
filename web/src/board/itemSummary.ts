@@ -37,7 +37,15 @@ export function partialSummary(items: SyncItem[]): string {
   return `${created} 件は作成済み、${updated} 件は更新済み`;
 }
 
+/**
+ * 何件作って何件更新したか。
+ *
+ * **届いたか分からないものは数えない**（ADR 0056）。混ぜると「2 件は作成済み」が
+ * 嘘になる。そちらは件数ではなく 1 件ずつ `UnconfirmedItems` に出す。確かめ方が
+ * 違う（GitHub を見にいく）ので、同じ数に足し込まない。
+ */
 function countByAction(items: SyncItem[]): { created: number; updated: number } {
-  const updated = items.filter((it) => it.action === "updated").length;
-  return { created: items.length - updated, updated };
+  const confirmed = items.filter((it) => it.confirmed);
+  const updated = confirmed.filter((it) => it.action === "updated").length;
+  return { created: confirmed.length - updated, updated };
 }
