@@ -27,6 +27,18 @@ type AnnotationState struct {
 	// 画面から消える。GitHub 側には残っているのに etoki が見せなくなるのは、
 	// 状態を見せるという方針に反する（中核思想 3）。
 	Items []port.SyncItem
+	// Unconfirmed は届いたか分からない書き込み（ADR 0056）。
+	//
+	// **Items に混ぜない。** あちらは「いま GitHub に在るもの」で、こちらは
+	// 在るかどうかが分からないもの。混ぜると件数が嘘になり、更新先としても
+	// 選べてしまう（未確定の作成は item ID を持たない）。分けているのは
+	// DetachedAnnotation と同じ理由（ADR 0046）。
+	//
+	// **3 状態はこれを見ない。** 判定は最新 run のハッシュだけで決まるので、
+	// 確定が 1 件も無くても state は created になる。ADR 0009 が「途中失敗でも
+	// created」と決めたのと同じ形で、**押し直しによる重複を防ぐ側に倒してある。**
+	// 何が在るのかは件数とこのリストで読む。
+	Unconfirmed []port.SyncItem
 }
 
 // DetachedAnnotation はシーンから消えた注釈が GitHub に残しているもの。
@@ -58,6 +70,13 @@ type DetachedAnnotation struct {
 	// **見分ける材料はここにしか無い。** frame の名前が取れない以上、
 	// 「何を作った囲みだったのか」はここから読むしかない。
 	Items []port.SyncItem
+
+	// Unconfirmed は届いたか分からない書き込み（ADR 0056）。
+	//
+	// **消えた注釈のぶんも返す。** 囲みを消したことで、確かめようのない書き込みが
+	// 画面から消えてよい理由にはならない。Items が空でここだけが埋まる注釈も
+	// ありうる（1 件目で応答を失ったまま、frame を消した）。
+	Unconfirmed []port.SyncItem
 }
 
 // MaxRunHistory は 1 回の問い合わせで返す run の件数。
@@ -134,6 +153,12 @@ func (s *AnnotationService) ListStates(
 		return nil, nil, err
 	}
 
+	// 届いたか分からない書き込みは畳み込みに入らないので、別に引く（ADR 0056）。
+	unconfirmedByAnnotation, err := s.mappings.ListUnconfirmedItemsByBoard(ctx, boardID)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	latestByAnnotation := make(map[string]port.SyncRun, len(runs))
 	for _, r := range runs {
 		latestByAnnotation[r.AnnotationID] = r
@@ -162,14 +187,18 @@ func (s *AnnotationService) ListStates(
 		}
 
 		states = append(states, AnnotationState{
-			Annotation: a,
-			State:      domain.DecideState(latestHash, current),
-			LatestRun:  latestRun,
-			Items:      itemsByAnnotation[a.ID],
+			Annotation:  a,
+			State:       domain.DecideState(latestHash, current),
+			LatestRun:   latestRun,
+			Items:       itemsByAnnotation[a.ID],
+			Unconfirmed: unconfirmedByAnnotation[a.ID],
 		})
 	}
 
-	return states, detachedAnnotations(itemsByAnnotation, latestByAnnotation, inScene), nil
+	detached := detachedAnnotations(
+		itemsByAnnotation, unconfirmedByAnnotation, latestByAnnotation, inScene)
+
+	return states, detached, nil
 }
 
 // detachedAnnotations は畳み込みに在ってシーンに無い注釈を組み立てる。
@@ -182,24 +211,40 @@ func (s *AnnotationService) ListStates(
 // なく、GitHub に残っているものへ辿れるようにするのが目的（ADR 0009）。
 // 作っていないなら辿る先が無く、消した frame の残骸が並ぶだけになる。
 //
+// **届いたか分からない書き込みだけを持つ注釈も出す**（ADR 0056）。辿る先が
+// 在るかどうかは分からないが、**分からないことこそ見せる相手**であって、
+// 囲みを消したら黙って落としてよいものではない。
+//
 // 並びは ID 順に固定する。map の反復順は実行ごとに変わるので、揃えないと
 // 開き直すたびに並びが入れ替わる。
 func detachedAnnotations(
 	itemsByAnnotation map[string][]port.SyncItem,
+	unconfirmedByAnnotation map[string][]port.SyncItem,
 	latestByAnnotation map[string]port.SyncRun,
 	inScene map[string]struct{},
 ) []DetachedAnnotation {
 	out := make([]DetachedAnnotation, 0)
 
-	for id, items := range itemsByAnnotation {
+	// 2 つの map を合わせた注釈の集合を回る。片方だけを回ると、もう片方に
+	// しか無い注釈が落ちる。
+	ids := make(map[string]struct{}, len(itemsByAnnotation)+len(unconfirmedByAnnotation))
+	for id := range itemsByAnnotation {
+		ids[id] = struct{}{}
+	}
+	for id := range unconfirmedByAnnotation {
+		ids[id] = struct{}{}
+	}
+
+	for id := range ids {
 		if _, ok := inScene[id]; ok {
 			continue
 		}
-		if len(items) == 0 {
+		items, unconfirmed := itemsByAnnotation[id], unconfirmedByAnnotation[id]
+		if len(items) == 0 && len(unconfirmed) == 0 {
 			continue
 		}
 
-		d := DetachedAnnotation{ID: id, Items: items}
+		d := DetachedAnnotation{ID: id, Items: items, Unconfirmed: unconfirmed}
 		if run, ok := latestByAnnotation[id]; ok {
 			r := run
 			d.LatestRun = &r

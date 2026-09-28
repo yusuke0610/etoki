@@ -8,7 +8,14 @@ import {
   openBoard,
   openBoardWithMock,
 } from "./helpers/board";
-import { BOARD_ID, BOARD_NAME, annotations, baseMock } from "./helpers/fixtures";
+import {
+  ANNOTATION_IDS,
+  BOARD_ID,
+  BOARD_NAME,
+  annotations,
+  baseMock,
+  createdRun,
+} from "./helpers/fixtures";
 
 /**
  * アクセシビリティの判断が壊れたことに気づくための spec（#80、ADR 0039）。
@@ -348,6 +355,40 @@ test.describe("押せない理由が本文として読める", () => {
 
   // 理由を出す側が壊れたら落ちること自体を確かめる。**ここが落ちなければ、
   // 上のどれも何も守っていない。**
+  // 届いたか分からない項目は選び直させない（ADR 0056、#170）。受理されていた
+  // 場合、もう一度送ると消せない draft issue が重複する。
+  //
+  // **止めているのはチェックボックス。** ボタンと同じで、押せない理由が画面に
+  // 無い状態は許されない。
+  test("作成する：届いたか分からない項目のとき", async ({ page }) => {
+    const mock = baseMock();
+    const [confirmed, lost] = createdRun().items.slice(0, 2);
+    if (confirmed === undefined || lost === undefined) throw new Error("fixture");
+    mock.createItems = {
+      status: 201,
+      body: {
+        ...createdRun(),
+        items: [confirmed, { ...lost, itemId: "", confirmed: false }],
+        incomplete: true,
+        error: "Post ...: EOF",
+      },
+    };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await card.locator(".unconfirmed-items").waitFor();
+
+    await expectBlockedReason(
+      card.getByLabel("i1 を作成する"),
+      /この下書きからは送り直せません/,
+    );
+  });
+
   test("理由の要素が消えたら落ちる", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
@@ -428,6 +469,40 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expect(
         card.getByText("作成しました。選び直すと、作成した draft issue を書き換えます。"),
       ).toHaveCount(3);
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 届いたか分からない書き込みの帯（ADR 0056）。**「作れた」とも「失敗した」とも
+    // 見えない色**に寄せてあるので、コントラストは描いて測るしかない。
+    // **作成がこけないと DOM に出ない**ので、上の検査では一度も掛かっていない。
+    test("届いたか分からない書き込みが出ている状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.annotations[BOARD_ID] = annotations().map((a) =>
+        a.id === ANNOTATION_IDS.created
+          ? {
+              ...a,
+              unconfirmedItems: [
+                {
+                  itemId: "",
+                  kind: "issue" as const,
+                  title: "確認できていないほう",
+                  body: "本文",
+                  localId: "i9",
+                  action: "created" as const,
+                  confirmed: false,
+                },
+              ],
+            }
+          : a,
+      );
+      await installApi(page, mock);
+
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+      await annotationCard(page, "パスワード再設定")
+        .locator(".unconfirmed-items")
+        .waitFor();
 
       await expectNoAxeViolations(page);
     });
