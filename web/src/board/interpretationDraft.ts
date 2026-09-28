@@ -34,6 +34,19 @@ export type DraftItem = {
    * 約束がある（`updatesPrevious`）。
    */
   createdItemId?: string;
+
+  /**
+   * この下書きから送ったが、GitHub に届いたか分からない項目（ADR 0056）。
+   *
+   * 作成では相手の ID が返ってこないので `createdItemId` も持てない。**押し直し
+   * の対象から外す。** 受理されていた場合、もう一度送ると消せない draft issue が
+   * 重複する。受理されていなかったのかを確かめられるのは GitHub を見た開発者
+   * だけなので、etoki は見せるところまでにする（中核思想 3）。
+   *
+   * 更新では相手の ID が分かっているので `createdItemId` も入る。そちらは
+   * 選び直せる。同じ item への書き直しは重複を作らない。
+   */
+  unconfirmed?: boolean;
 };
 
 /**
@@ -91,16 +104,39 @@ function targetItemIdOf(d: DraftItem): string | undefined {
  * 選んだ操作が黙って消える。
  */
 export function markCreated(draft: Draft, created: SyncItem[]): Draft {
-  const byLocalId = new Map(created.map((it) => [it.localId, it.itemId]));
+  const byLocalId = new Map(created.map((it) => [it.localId, it]));
 
   return {
     ...draft,
     items: draft.items.map((d) => {
-      const itemId = byLocalId.get(d.item.localId);
-      if (itemId === undefined) return d;
-      return { ...d, selected: false, createdItemId: itemId };
+      const written = byLocalId.get(d.item.localId);
+      if (written === undefined) return d;
+
+      // **届いたか分からず、相手の ID も分からない**（ADR 0056）。作成の応答を
+      // 失った項目がこれ。`createdItemId` を空文字で埋めると `targetItemIdOf` が
+      // 落として新規作成に戻り、押し直しで重複する道が開く。
+      if (!written.confirmed && written.itemId === "") {
+        return { ...d, selected: false, unconfirmed: true };
+      }
+
+      return {
+        ...d,
+        selected: false,
+        createdItemId: written.itemId,
+        unconfirmed: !written.confirmed,
+      };
     }),
   };
+}
+
+/**
+ * その項目をもう一度送れるか。
+ *
+ * **送り先が分からない項目だけを止める**（ADR 0056）。相手の ID が分かって
+ * いれば、届いたか分からなくても書き直しで重複は作らない。
+ */
+export function canResend(d: DraftItem): boolean {
+  return !d.unconfirmed || Boolean(d.createdItemId);
 }
 
 /**
@@ -145,6 +181,11 @@ function effectiveParentOf(
 export function toggleItem(draft: Draft, localId: string): Draft {
   const target = draft.items.find((d) => d.item.localId === localId);
   if (!target) return draft;
+
+  // **送り先の分からない項目は選び直させない**（ADR 0056）。外すのは通す。
+  // 止めるのは「もう一度 GitHub に送る」ことだけで、選択を外して他の項目を
+  // 送ることまで塞ぐ理由は無い。
+  if (!target.selected && !canResend(target)) return draft;
 
   const selected = !target.selected;
   const cascades = !selected && target.item.kind === "epic";
