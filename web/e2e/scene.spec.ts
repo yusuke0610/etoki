@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { holdCreate, installApi, summarize, type ApiMock } from "./helpers/api";
+import { holdCreate, holdSave, installApi, summarize, type ApiMock } from "./helpers/api";
 import {
   annotationCard,
   drawRectangle,
@@ -369,6 +369,158 @@ test.describe("シーンの保存", () => {
     await expect(
       page.getByText("保存してから解釈できます", { exact: false }).first(),
     ).toBeVisible();
+  });
+
+  // 保存は明示操作だけ（ADR 0021）なので、押すまでの手数の少なさがそのまま
+  // 値打ちになる。**誰も拾わないと既定の動作（ブラウザの「ページを保存」）に
+  // 落ちる。** Excalidraw 側の Ctrl+S は `UIOptions` から外してある（ADR 0045）
+  // ので、押しても何も起きず preventDefault もされない（issue #145）。
+  test("Ctrl / Cmd + S で保存できる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    const saved = page.waitForRequest(
+      (req) => req.method() === "PUT" && new URL(req.url()).pathname.endsWith("/scene"),
+    );
+    await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
+    await saved;
+
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
+  // 切れると: 非ラテン配列（ロシア語など）では物理の S を押しても `e.key` が
+  // "s" にならないので誰も拾わず、**ブラウザの「ページを保存」が開く。**
+  // Ctrl+S の習慣はキーの位置で覚えているので、`e.code` も見る。
+  //
+  // Playwright の `press` は配列を差し替えられないので、`key` と `code` が
+  // 食い違うイベントを直に投げる。**ハンドラは window で聴いている**ので届く。
+  test("非ラテン配列でも Ctrl / Cmd + S で保存できる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    const saved = page.waitForRequest(
+      (req) => req.method() === "PUT" && new URL(req.url()).pathname.endsWith("/scene"),
+    );
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "\u044B", // ロシア語配列で物理の S が返す文字
+          code: "KeyS",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await saved;
+
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
+  // **押せないときも既定の動作は止める。** 「保存できなかった」の代わりに
+  // ブラウザの保存ダイアログが出るのは、押せない理由を見せるどころではない。
+  // viewer には保存そのものが無い（ADR 0017）ので、ここがいちばん外しやすい。
+  test("viewer が押しても保存せず、ブラウザの既定にも落とさない", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
+    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await expect(page.getByRole("button", { name: "保存" })).toHaveCount(0);
+
+    const requests: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PUT") requests.push(req.url());
+    });
+
+    // 既定の動作が止まったかは、押した側で見るしかない。ブラウザの保存
+    // ダイアログは Playwright からは観測できない。
+    const prevented = await page.evaluate(async () => {
+      let seen = false;
+      const watch = (e: KeyboardEvent) => {
+        if (e.key === "s") seen = e.defaultPrevented;
+      };
+      // **`keydown` の最後に見る。** 先に登録すると、保存側が
+      // preventDefault する前に読むことになる。
+      window.addEventListener("keydown", watch);
+      document.querySelector("canvas")?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "s",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      window.removeEventListener("keydown", watch);
+      return seen;
+    });
+
+    expect(prevented).toBe(true);
+    expect(requests).toEqual([]);
+  });
+
+  // 保存中にもう一度押しても、2 本目を投げない（issue #145）。
+  //
+  // **同じ tick に 2 回押す。** `saving` は state なので、次の描画までは 2 回目が
+  // まだ false を読む。ボタンだけなら押し間違いの二度押しで済んだが、
+  // Ctrl / Cmd + S には**キーの自動リピート**があり、押しっぱなしで keydown が
+  // 連続する。押した時点で弾く ref を外すと、ここが 2 本目を数える。
+  //
+  // 押す間隔を空けると、そのあいだに再描画が入って state だけでも通ってしまう。
+  // dispatchEvent で 2 つ続けて投げているのはそのため。
+  test("保存中に押しても、保存を重ねない", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await holdSave(page, held);
+
+    const saves: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PUT" && new URL(req.url()).pathname.endsWith("/scene")) {
+        saves.push(req.url());
+      }
+    });
+
+    await page.evaluate(() => {
+      for (let i = 0; i < 2; i++) {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "s",
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    });
+
+    await expect(page.getByRole("button", { name: "保存中…" })).toBeVisible();
+
+    // 再描画を挟んだあとの 1 回も通さない。こちらはボタンの disabled と同じ式が
+    // 効いていることを見る。
+    await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
+    await expect(page.getByRole("button", { name: "保存中…" })).toBeVisible();
+
+    release();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    expect(saves).toHaveLength(1);
   });
 
   test("保存すると、それまでの解釈結果は捨てられる", async ({ page }) => {
