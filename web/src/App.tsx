@@ -497,7 +497,9 @@ export function App() {
 
   if (session.authRequired && !session.authenticated) {
     return (
-      <div className="app">
+      // 地を沈めるためだけの印。ログインはカード 1 枚しか置かないので、
+      // 他の画面と同じ地にすると、置いたものが浮いて見えない。
+      <div className="app app-signed-out">
         <main className="main">
           <LoginPage />
         </main>

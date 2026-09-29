@@ -20,6 +20,7 @@ import {
   BOARD_ID,
   BOARD_NAME,
   annotations,
+  authRequiredMock,
   baseMock,
   board,
   historyRuns,
@@ -453,14 +454,21 @@ test.describe("スクリーンショット", () => {
 
   // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。
   test("ログイン画面を撮る", async ({ page }) => {
-    const mock = baseMock();
-    mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+    const mock = authRequiredMock();
 
     await installApi(page, mock);
 
     await page.goto("/");
     await page.getByRole("button", { name: "GitHub でログイン" }).waitFor();
     await shot(page, "09-login");
+
+    // 絵の線と主となる操作のボタンは変数から色を引いている。ダークで地に
+    // 沈んでいないかは、撮って見るしかない。
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.locator('html[data-theme="dark"]').waitFor({ state: "attached" });
+    await shot(page, "09-login-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.locator('html[data-theme="light"]').waitFor({ state: "attached" });
 
     // ログイン後はサイドバーに利用者が出る。
     mock.session = { status: 200, body: signedIn() };

@@ -205,6 +205,11 @@ body {
   height: 100vh;
 }
 
+/* ログインのときだけ地を沈める。置いてあるカードが 1 枚だと見せるため。 */
+.app-signed-out {
+  background: var(--color-surface-sunken);
+}
+
 .sidebar {
   /* 入れ子のぶん字下げが要るので、平坦な一覧だったときより広い（ADR 0019）。 */
   width: 240px;
@@ -679,6 +684,48 @@ body {
 }
 
 /*
+ * 主となる操作のボタン。**1 つの画面に 1 つだけ。** 押せるものを全部これに
+ * すると、どれが本筋なのかが色では読めなくなる。
+ *
+ * 押せないときはブランドを外す。**文字は薄くしすぎない。** 押せない理由は
+ * 本文で別に出すが（ADR 0039 / 0066）、ラベル自体が読めないと何が押せないのか
+ * が分からない。
+ */
+button.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  background: var(--brand);
+  color: var(--on-brand);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary:hover:not(:disabled) {
+  border-color: var(--brand-hover);
+  background: var(--brand-hover);
+}
+
+button.primary:disabled {
+  border-color: var(--color-border);
+  background: var(--color-neutral-bg);
+  color: var(--color-text-subtle);
+  cursor: default;
+}
+
+/* マークはラベルの高さに合わせる。名前は文字が持つので、色も文字に従わせる。 */
+button.primary svg {
+  width: 1.2em;
+  height: 1.2em;
+  flex-shrink: 0;
+  fill: currentcolor;
+}
+
+/*
   取り消せない操作のボタン。いまはボードの削除だけが使う（ADR 0042）。
 
   **消さず、押しにくくもしない。** 押す前に何が失われるかを見せる形で守って
@@ -891,29 +938,85 @@ a.badge-target:hover {
 
 /*
  * ログイン画面。ここだけは中身が数行しか無いので、左上に寄せると
- * 読み込みに失敗した画面に見える。
+ * 読み込みに失敗した画面に見える。**画面の真ん中に 1 枚だけ置く。**
+ *
+ * この画面は GitHub App を設定した構成でしか出ない（ADR 0004 / 0015）。
  */
 .login {
   margin: auto;
   padding: var(--space-8);
+  width: 100%;
   max-width: 420px;
+  box-sizing: border-box;
+}
+
+/* 地から浮かせて、押すものが 1 つであることを見せる。 */
+.login-card {
+  padding: var(--space-8);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--space-5);
 }
 
-.login h1 {
+.login-mark {
   font-size: var(--text-2xl);
-  margin: 0 0 var(--space-4);
+  margin: 0;
 }
 
-.login button {
-  margin-top: var(--space-5);
+.login-lead {
+  margin: 0;
+  line-height: 1.7;
+}
+
+/*
+ * 何をする道具かの絵。**色は変数から引く。** 直書きすると、ここだけダークで
+ * 明るいまま残る。線の太さは 1 つに揃えて、絵が主張しすぎないようにする。
+ */
+.login-art {
+  width: 100%;
+  height: auto;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.login-art .art-line {
+  stroke: var(--color-border);
+}
+
+.login-art .art-shape {
+  stroke: var(--color-text-muted);
+}
+
+/* 囲った範囲＝注釈。キャンバス上の印と同じ色にする（ADR 0036）。 */
+.login-art .art-frame {
+  stroke: var(--color-annotation);
+  stroke-dasharray: 5 4;
+}
+
+.login-art .art-text {
+  stroke: var(--color-border);
+}
+
+/* 作られた draft issue。「作成済み」のバッジと同じ色にする。 */
+.login-art .art-done {
+  stroke: var(--color-success);
+}
+
+.login-start {
+  justify-content: center;
+  width: 100%;
+}
+
+.login-note {
+  margin: 0;
 }
 
 .login .error {
-  margin: var(--space-4) 0;
   border-radius: var(--radius-sm);
 }
 

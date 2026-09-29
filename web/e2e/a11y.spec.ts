@@ -13,6 +13,7 @@ import {
   BOARD_ID,
   BOARD_NAME,
   annotations,
+  authRequiredMock,
   baseMock,
   createdRun,
 } from "./helpers/fixtures";
@@ -418,6 +419,20 @@ test.describe("押せない理由が本文として読める", () => {
 for (const colorScheme of ["light", "dark"] as const) {
   test.describe(`axe（etoki が書いた DOM・${colorScheme}）`, () => {
     test.use({ colorScheme });
+
+    /*
+     * ログイン画面。**ボードを開く経路からは一度も通らない**ので、他の検査に
+     * ついでに掛かることがない。主となる操作のボタン（`button.primary`）と、
+     * 絵に添えた説明が出るのもこの画面だけ。
+     */
+    test("ログイン画面", async ({ page }) => {
+      await installApi(page, authRequiredMock());
+
+      await page.goto("/");
+      await page.getByRole("button", { name: "GitHub でログイン" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
 
     test("ボードの一覧", async ({ page }) => {
       await installApi(page, baseMock());
