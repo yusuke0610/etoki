@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { annotationCard, openBoardWithMock } from "./helpers/board";
+import { annotationCard, openBoardMenu, openBoardWithMock } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -80,12 +80,15 @@ test.describe("設定していない機能", () => {
     };
     await openBoardWithMock(page, mock);
 
+    // 口はメニューの中にある。**開いてから「無い」を見る。** 閉じたままだと
+    // 出していても通る。
+    const menu = await openBoardMenu(page);
     await expect(
-      page.getByRole("button", { name: "作成先の名前を取り直す" }),
+      menu.getByRole("button", { name: "作成先の名前を取り直す" }),
     ).toHaveCount(0);
     // 確定していることは変わらず読める。理由は押した後に返る 503 と同じ文言。
-    await expect(page.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
-    await expect(page.getByText("ETOKI_GITHUB_TOKEN").first()).toBeVisible();
+    await expect(menu.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
+    await expect(menu.getByText("ETOKI_GITHUB_TOKEN").first()).toBeVisible();
   });
 
   test("共有が未設定なら、メンバーのボタンの代わりに理由を出す", async ({ page }) => {
@@ -96,10 +99,11 @@ test.describe("設定していない機能", () => {
     };
     await openBoardWithMock(page, mock);
 
-    await expect(page.getByRole("button", { name: "メンバー", exact: true })).toHaveCount(
+    const menu = await openBoardMenu(page);
+    await expect(menu.getByRole("button", { name: "メンバー", exact: true })).toHaveCount(
       0,
     );
-    await expect(page.getByText("共有には認証の設定が必要です")).toBeVisible();
+    await expect(menu.getByText("共有には認証の設定が必要です")).toBeVisible();
   });
 
   // 確かめられなかったことを「使えない」として見せない（中核思想 3）。
@@ -111,8 +115,9 @@ test.describe("設定していない機能", () => {
 
     const card = annotationCard(page, "ログイン");
     await expect(card.getByRole("button", { name: "解釈する" })).toBeEnabled();
+    const menu = await openBoardMenu(page);
     await expect(
-      page.getByRole("button", { name: "メンバー", exact: true }),
+      menu.getByRole("button", { name: "メンバー", exact: true }),
     ).toBeVisible();
   });
 });

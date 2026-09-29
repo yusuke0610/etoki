@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import type { ApiMock } from "./helpers/api";
-import { openBoardWithMock } from "./helpers/board";
+import { chooseFromMenu, openBoardMenu, openBoardWithMock } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -28,7 +28,7 @@ type SavedElement = {
 
 /** パネルを開く。 */
 async function openPaste(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "mermaid を貼る" }).click();
+  await chooseFromMenu(page, "mermaid を貼る");
   await expect(page.getByRole("heading", { name: "mermaid を貼る" })).toBeVisible();
 }
 
@@ -286,13 +286,13 @@ test.describe("mermaid を貼る", () => {
   test("図のドラフトと貼り付けは、どちらか一方だけを開く", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await chooseFromMenu(page, "図のドラフト");
     await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
 
     await openPaste(page);
     await expect(page.getByRole("heading", { name: "図のドラフト" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await chooseFromMenu(page, "図のドラフト");
     await expect(page.getByRole("heading", { name: "mermaid を貼る" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
   });
@@ -307,7 +307,7 @@ test.describe("mermaid を貼る", () => {
     await paste(page, broken);
     await expect(page.locator(".mermaid-paste .error")).toBeVisible();
 
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await chooseFromMenu(page, "図のドラフト");
     await openPaste(page);
     await expect(page.getByLabel("貼る mermaid")).toHaveValue(broken);
 
@@ -324,6 +324,8 @@ test.describe("mermaid を貼る", () => {
     mock.boards = [{ ...(mock.boards[0] ?? {}), ...viewer, role: "viewer" }];
     await openBoardWithMock(page, mock);
 
-    await expect(page.getByRole("button", { name: "mermaid を貼る" })).toHaveCount(0);
+    // 閉じたメニューの中身は DOM に無いので、開いてから見る。
+    const menu = await openBoardMenu(page);
+    await expect(menu.getByRole("button", { name: "mermaid を貼る" })).toHaveCount(0);
   });
 });

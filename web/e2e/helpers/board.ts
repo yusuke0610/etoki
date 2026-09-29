@@ -4,14 +4,40 @@ import { installApi, type ApiMock } from "./api";
 import { BOARD_NAME } from "./fixtures";
 
 /**
+ * キャンバスのメニューを開いて、その枠を返す（ADR 0065）。開いていれば開き直さない。
+ *
+ * **閉じたメニューの中身は DOM に無い。** 「出さない」を `toHaveCount(0)` で
+ * 見るときも、先にここを通す。開かずに見ると、出していても常に通る。
+ */
+export async function openBoardMenu(page: Page): Promise<Locator> {
+  const menu = page.locator(".excalidraw .dropdown-menu");
+  if (!(await menu.isVisible())) {
+    await page.locator('[data-testid="main-menu-trigger"]').click();
+  }
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/**
+ * キャンバスのメニューの項目を押す。押すとメニューは閉じる。
+ *
+ * **名前は完全一致で引く。** 「メンバー」と「メンバーを閉じる」のように、
+ * 前方が同じ項目が並ぶ。
+ */
+export async function chooseFromMenu(page: Page, name: string): Promise<void> {
+  const menu = await openBoardMenu(page);
+  await menu.getByRole("button", { name, exact: true }).click();
+}
+
+/**
  * 開いているボードを閉じて一覧へ戻る（ADR 0064）。
  *
  * **一覧はボードと別の画面にある。** 別のボードを開くのも、一覧の中身を
  * 確かめるのも、ここを通ってから。未保存なら確認が出るので、それを見る spec は
- * 先に `dialog` を拾っておく。
+ * 先に `dialog` を拾っておく。戻る口はキャンバスのメニューの先頭（ADR 0065）。
  */
 export async function backToList(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "ボード一覧", exact: true }).click();
+  await chooseFromMenu(page, "ボード一覧へ戻る");
   // **見出しは完全一致で引く。** 同じ画面に「新しいボード」の見出しも並ぶ。
   await expect(
     page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),

@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { installApi, summarize } from "./helpers/api";
 import {
   backToList,
+  chooseFromMenu,
   chooseTarget,
   drawRectangle,
   openBoard,
@@ -188,7 +189,7 @@ test.describe("ボード", () => {
   test("ボードの名前を変えると、見出しと一覧の両方が変わる", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "名前を変更" }).click();
+    await chooseFromMenu(page, "名前を変更");
     await page.getByLabel("ボードの名前").fill("認証の設計会");
     await page.getByRole("button", { name: "名前を保存" }).click();
 
@@ -218,7 +219,7 @@ test.describe("ボード", () => {
     await drawRectangle(page);
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "名前を変更" }).click();
+    await chooseFromMenu(page, "名前を変更");
     await page.getByLabel("ボードの名前").fill("会議中に改名");
     await page.getByRole("button", { name: "名前を保存" }).click();
     await expect(
@@ -245,7 +246,7 @@ test.describe("ボード", () => {
   test("名前を空にしたままでは保存できない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "名前を変更" }).click();
+    await chooseFromMenu(page, "名前を変更");
     await page.getByLabel("ボードの名前").fill("   ");
 
     await expect(page.getByRole("button", { name: "名前を保存" })).toBeDisabled();
@@ -258,7 +259,7 @@ test.describe("ボード", () => {
     mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
     await openBoardWithMock(page, mock);
 
-    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await chooseFromMenu(page, "ボードを削除");
 
     // 件数と、GitHub 側が残ることの両方を出す。片方だけだと「消えるのか
     // 残るのか」が読めない。
@@ -276,7 +277,7 @@ test.describe("ボード", () => {
   test("削除すると一覧から消え、キャンバスが閉じる", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await chooseFromMenu(page, "ボードを削除");
     await page.getByRole("alertdialog").getByRole("button", { name: "削除する" }).click();
 
     // 木は作成先でまとめて見せる（ADR 0019）。消したボードが残っていると、
@@ -304,7 +305,7 @@ test.describe("ボード", () => {
       body: { code: "internal", error: "internal error" },
     };
 
-    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await chooseFromMenu(page, "ボードを削除");
     await page.getByRole("alertdialog").getByRole("button", { name: "削除する" }).click();
 
     await expect(
