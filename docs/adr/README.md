@@ -61,5 +61,6 @@
 | [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない    | 採用                 |
 | [0056](0056-record-writes-with-unknown-delivery.md)              | 届いたか分からない書き込みも記録し、停止の猶予をその後始末から導く     | 採用                 |
 | [0059](0059-open-boards-by-url.md)                               | 開いているボードはクエリで URL に載せ、戻り先は state と一緒に持つ     | 採用                 |
+| [0060](0060-one-table-for-mutual-exclusion.md)                   | 操作どうしの排他は 1 つの表に集め、UI はそれを読むだけにする           | 採用                 |
 | [0061](0061-pin-mermaid-until-converter-catches-up.md)           | mermaid を 11.13.0 に固定し、既知の脆弱性を受け入れる                  | 採用                 |
 | [0063](0063-leave-sticky-notes-to-excalidraw.md)                 | 付箋を置くボタンを外し、Excalidraw の操作に任せる                      | 採用                 |
