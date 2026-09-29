@@ -64,4 +64,4 @@
 | [0061](0061-pin-mermaid-until-converter-catches-up.md)           | mermaid を 11.13.0 に固定し、既知の脆弱性を受け入れる                  | 採用                 |
 | [0064](0064-split-the-board-list-into-its-own-screen.md)         | ボード一覧を別の画面に分け、ボードは全面キャンバスにする               | 採用                 |
 | [0065](0065-mount-on-excalidraw-extension-points.md)             | 画面の部品は Excalidraw の拡張点に載せ、配色は変数で上書きする         | 採用                 |
-| [0066](0066-where-blocked-reasons-live.md)                       | 押せない理由は、一時的か恒久的かで置き場所を分ける                     | 採用                 |
+| [0066](0066-where-blocked-reasons-live.md)                       | 押せない理由はボタンの隣に置き、待たされる操作だけ外に残す             | 採用                 |
