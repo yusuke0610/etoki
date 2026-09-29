@@ -2,7 +2,14 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { holdBoardDetail, installApi, summarize, type ApiMock } from "./helpers/api";
 import { drawRectangle, openBoard } from "./helpers/board";
-import { baseMock, board, BOARD_ID, signedIn } from "./helpers/fixtures";
+import {
+  authRequiredMock,
+  baseMock,
+  board,
+  BOARD_ID,
+  signedIn,
+  signedOut,
+} from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
 const OTHER_ID = "board-other";
@@ -280,8 +287,7 @@ test.describe("ボードの URL", () => {
     // **戻り先はサーバーが state と一緒に持つ**ので、ここで確かめられるのは
     // 「開始のリクエストに載ったこと」まで。
     test("ログインの開始に、開いていたボードの URL が載る", async ({ page }) => {
-      const mock = baseMock();
-      mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+      const mock = authRequiredMock();
       await installApi(page, mock);
 
       await page.route(
@@ -311,7 +317,7 @@ test.describe("ボードの URL", () => {
       await page.goto("/");
       await openBoard(page, BOARD_NAME);
 
-      mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+      mock.session = { status: 200, body: signedOut() };
       await page.getByRole("button", { name: "ログアウト" }).click();
 
       await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
