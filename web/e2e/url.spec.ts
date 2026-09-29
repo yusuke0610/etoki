@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { holdBoardDetail, installApi, summarize, type ApiMock } from "./helpers/api";
-import { backToList, drawRectangle, openBoard } from "./helpers/board";
+import { backToList, chooseFromMenu, drawRectangle, openBoard } from "./helpers/board";
 import {
   authRequiredMock,
   baseMock,
@@ -201,7 +201,7 @@ test.describe("ボードの URL", () => {
       await page.goto("/");
       await openBoard(page, BOARD_NAME);
 
-      await page.getByRole("button", { name: "作成先を変更" }).click();
+      await chooseFromMenu(page, "作成先を変更");
       await expect(page.locator(".picker")).toBeVisible();
       expect(search(page)).toBe(`?board=${BOARD_ID}&picking=1`);
 

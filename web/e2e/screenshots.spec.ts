@@ -9,9 +9,11 @@ import {
 } from "./helpers/api";
 import {
   annotationCard,
+  chooseFromMenu,
   chooseTarget,
   drawRectangle,
   openBoard,
+  openBoardMenu,
   openBoardWithMock,
   picker,
 } from "./helpers/board";
@@ -234,9 +236,19 @@ test.describe("スクリーンショット", () => {
       (r) =>
         new URL(r.url()).pathname === "/api/boards" && r.request().method() === "GET",
     );
-    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await chooseFromMenu(page, "作成先の名前を取り直す");
     await reloaded;
     await shot(page, "22-target-display-refreshed");
+  });
+
+  // キャンバスのメニュー（ADR 0065）。たまに押す操作と、押せない理由の文
+  // （ADR 0066）がここに入る。未保存にして、理由が出ている状態を撮る。
+  test("キャンバスのメニューを撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await drawRectangle(page);
+    const menu = await openBoardMenu(page);
+    await menu.getByText("保存してから作成先を変更できます").waitFor();
+    await shot(page, "37-board-menu");
   });
 
   // 押せない理由は title ではなく本文で出す。ホバーできない利用者と読み上げにも
@@ -282,7 +294,7 @@ test.describe("スクリーンショット", () => {
     await drawRectangle(page);
     await page.getByRole("button", { name: "保存", exact: true }).click();
     await page.getByRole("alert").waitFor();
-    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await chooseFromMenu(page, "作成先の名前を取り直す");
     await expect(page.locator(".notifications").getByRole("alert")).toHaveCount(2);
     // 出るときのフェードが終わってから撮る。途中だと下が透けて、重なり方を
     // 読み違える。
@@ -411,7 +423,7 @@ test.describe("スクリーンショット", () => {
     };
 
     await openBoardWithMock(page, mock);
-    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+    await chooseFromMenu(page, "メンバー");
     await page.getByText("Carol").waitFor();
     await shot(page, "11-members");
 
@@ -652,7 +664,7 @@ test.describe("スクリーンショット", () => {
   test("名前の変更中を撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "名前を変更" }).click();
+    await chooseFromMenu(page, "名前を変更");
     await page.getByLabel("ボードの名前").fill("認証の設計会");
     await shot(page, "26-rename");
   });
@@ -663,7 +675,7 @@ test.describe("スクリーンショット", () => {
   test("図のドラフトのチャットを撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await chooseFromMenu(page, "図のドラフト");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     // mermaid が出るまで待つ。待たずに撮ると、生成中の画面が写る。
@@ -683,7 +695,7 @@ test.describe("スクリーンショット", () => {
     mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
     await openBoardWithMock(page, mock);
 
-    await page.getByRole("button", { name: "ボードを削除" }).click();
+    await chooseFromMenu(page, "ボードを削除");
     await page.getByRole("alertdialog").waitFor();
     await shot(page, "29-delete-confirm");
   });

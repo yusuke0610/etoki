@@ -51,7 +51,7 @@ export function useSceneSize(api: ExcalidrawImperativeAPI | null): SceneSize {
   /*
     開いた直後に 1 度数える。押す前に見せるための表示なので、**何か描くまで
     空欄というのでは遅い。** デバウンスを通すと 0.5 秒遅れて出るようになり、
-    ヘッダーのバッジが開いた直後に無い状態ができる（スクリーンショットで
+    下の帯のバッジが開いた直後に無い状態ができる（スクリーンショットで
     見つけた）。
 
     `set-state-in-effect` は「props や state から導ける値を effect で作るな」

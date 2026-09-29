@@ -1,13 +1,18 @@
 import { expect, test } from "@playwright/test";
 
-import { annotationCard, openBoardWithMock } from "./helpers/board";
+import {
+  annotationCard,
+  chooseFromMenu,
+  openBoardMenu,
+  openBoardWithMock,
+} from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 test.describe("共有", () => {
   test("オーナーは招待でき、招待した相手が一覧に並ぶ", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+    await chooseFromMenu(page, "メンバー");
 
     // 招待できる相手の条件は、失敗してから知らせるのでは遅い。
     await expect(
@@ -34,7 +39,7 @@ test.describe("共有", () => {
     });
 
     const mock = await openBoardWithMock(page, baseMock());
-    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+    await chooseFromMenu(page, "メンバー");
 
     await page.getByLabel("招待する login").fill("bob");
     await page.getByRole("button", { name: "確認する" }).click();
@@ -87,7 +92,7 @@ test.describe("共有", () => {
       const mock = baseMock();
       mock.inviteError = { status, body: { code, error } };
       await openBoardWithMock(page, mock);
-      await page.getByRole("button", { name: "メンバー", exact: true }).click();
+      await chooseFromMenu(page, "メンバー");
 
       await page.getByLabel("招待する login").fill("bob");
       await page.getByRole("button", { name: "確認する" }).click();
@@ -148,8 +153,11 @@ test.describe("共有", () => {
 
     await openBoardWithMock(page, mock);
 
-    await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
-    await expect(page.getByText("作成先を変えられるのはオーナーだけです")).toBeVisible();
+    // 口はメニューの中にある。**開いてから「無い」を見る。** 閉じたままだと
+    // 出していても通る。
+    const menu = await openBoardMenu(page);
+    await expect(menu.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
+    await expect(menu.getByText("作成先を変えられるのはオーナーだけです")).toBeVisible();
   });
 
   // ボードごと畳めるのは owner だけ（ADR 0042）。押せるのに 403 で断るより、
@@ -161,11 +169,12 @@ test.describe("共有", () => {
 
     await openBoardWithMock(page, mock);
 
-    await expect(page.getByRole("button", { name: "ボードを削除" })).toHaveCount(0);
-    await expect(page.getByText("ボードを削除できるのはオーナーだけです")).toBeVisible();
+    const menu = await openBoardMenu(page);
+    await expect(menu.getByRole("button", { name: "ボードを削除" })).toHaveCount(0);
+    await expect(menu.getByText("ボードを削除できるのはオーナーだけです")).toBeVisible();
     // 改名は editor にも許す。並べて見ることで、消えているのが削除だけだと
-    // 分かる。
-    await expect(page.getByRole("button", { name: "名前を変更" })).toBeVisible();
+    // 分かる。**同じメニューの中で見る**ので、開いていなかった、では通らない。
+    await expect(menu.getByRole("button", { name: "名前を変更" })).toBeVisible();
   });
 
   // メンバー一覧は owner でなくても見られる。誰と共有しているかを owner だけが
@@ -186,7 +195,7 @@ test.describe("共有", () => {
     };
 
     await openBoardWithMock(page, mock);
-    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+    await chooseFromMenu(page, "メンバー");
 
     await expect(page.getByRole("region", { name: "メンバー" })).toContainText("Alice");
     await expect(page.getByLabel("招待する login")).toHaveCount(0);
@@ -205,7 +214,7 @@ test.describe("共有", () => {
     };
 
     await openBoardWithMock(page, mock);
-    await page.getByRole("button", { name: "メンバー", exact: true }).click();
+    await chooseFromMenu(page, "メンバー");
 
     await page.getByLabel("招待する login").fill("carol");
     await page.getByRole("button", { name: "確認する" }).click();
