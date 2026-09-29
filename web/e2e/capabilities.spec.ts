@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { annotationCard, openBoardMenu, openBoardWithMock } from "./helpers/board";
+import {
+  annotationCard,
+  openBoardMenu,
+  openBoardWithMock,
+  openPanelTab,
+} from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -91,7 +96,9 @@ test.describe("設定していない機能", () => {
     await expect(menu.getByText("ETOKI_GITHUB_TOKEN").first()).toBeVisible();
   });
 
-  test("共有が未設定なら、メンバーのボタンの代わりに理由を出す", async ({ page }) => {
+  // タブは黙って消さず、開いた先で理由を出す（ADR 0030）。図のドラフトで LLM が
+  // 未設定のときと同じ形。
+  test("共有が未設定なら、メンバーのタブを開いた先で理由を出す", async ({ page }) => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
@@ -99,11 +106,11 @@ test.describe("設定していない機能", () => {
     };
     await openBoardWithMock(page, mock);
 
-    const menu = await openBoardMenu(page);
-    await expect(menu.getByRole("button", { name: "メンバー", exact: true })).toHaveCount(
-      0,
-    );
-    await expect(menu.getByText("共有には認証の設定が必要です")).toBeVisible();
+    const panel = await openPanelTab(page, "メンバー");
+    await expect(panel.getByText("共有には認証の設定が必要です")).toBeVisible();
+    // **開いてから「無い」を見る。** 初めて開くまで中身は DOM に無いので、
+    // 開かずに見ると一覧を出していても通る。
+    await expect(page.getByRole("region", { name: "メンバー" })).toHaveCount(0);
   });
 
   // 確かめられなかったことを「使えない」として見せない（中核思想 3）。
@@ -115,9 +122,7 @@ test.describe("設定していない機能", () => {
 
     const card = annotationCard(page, "ログイン");
     await expect(card.getByRole("button", { name: "解釈する" })).toBeEnabled();
-    const menu = await openBoardMenu(page);
-    await expect(
-      menu.getByRole("button", { name: "メンバー", exact: true }),
-    ).toBeVisible();
+    await openPanelTab(page, "メンバー");
+    await expect(page.getByRole("region", { name: "メンバー" })).toBeVisible();
   });
 });

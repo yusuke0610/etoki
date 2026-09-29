@@ -79,7 +79,9 @@ import {
   type InterpretationState,
 } from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
+import { DiagramTab, type DiagramMode } from "./DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
+import { SidePanel, type SidePanelTab } from "./SidePanel";
 import type { CreationState, RunHistoryState } from "./panelShared";
 import { projectLink } from "./projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
@@ -313,27 +315,18 @@ export function BoardPage({
   // 履歴の読み込みも別の世代で持つ。作成すると履歴は 1 件増えるので、走って
   // いる読み込みは古くなる。
   const [runGenerations] = useState(createGenerations);
-  // メンバーの一覧を開いているかどうか。
-  const [showingMembers, setShowingMembers] = useState(false);
-  // キャンバスの左に開いているパネル。**枠は 1 つ**で、図のドラフトと
-  // mermaid の貼り付けのどちらか一方だけを開く。並べるとキャンバスが狭まり、
-  // 置いた図がどこに出るかを見ながら直す、という左に置いた理由が崩れる。
-  const [leftPanel, setLeftPanel] = useState<"chat" | "paste" | null>(null);
-  const showingChat = leftPanel === "chat";
-  // メニューの子要素の依存に入るので同一性を保つ（`web/CLAUDE.md` の「<Excalidraw>
-  // に渡すもの」）。
-  const toggleLeftPanel = useCallback(
-    (panel: "chat" | "paste") => setLeftPanel((open) => (open === panel ? null : panel)),
-    [],
-  );
+  // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
+  const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
+  // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
+  const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
-  // 持つ。** パネルは図のドラフトへ切り替えたときや閉じたときに外れるので、
-  // そちらで持つと構文エラーを直している途中の入力が消える。消すのは置けた
-  // ときだけ。ボードを切り替えれば BoardPage ごと作り直されるので残らない。
+  // 持つ。** 置けたときに消すのはここ（`pasteMermaid`）で、パネルは落ちたときに
+  // 境界で作り直される（ADR 0027）。そちらで持つと、構文エラーを直している
+  // 途中の入力が消える。ボードを切り替えれば BoardPage ごと作り直されるので
+  // 残らない。
   const [pasteText, setPasteText] = useState("");
   // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
   // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
-  // パネルを閉じても（貼り付けに切り替えても）会話は残る。
   const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
   // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
   // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
@@ -1454,48 +1447,6 @@ export function BoardPage({
             名前を変更
           </MainMenu.Item>
         )}
-        {/*
-        共有が組み立てられていない構成では、押しても 503 しか返らない。
-        ボタンを黙って消さず、代わりに理由を出す（中核思想 3）。
-      */}
-        {sharingUnavailable !== null ? (
-          <MenuNote>{sharingUnavailable}</MenuNote>
-        ) : (
-          <MainMenu.Item
-            className="etoki-menu-item"
-            onSelect={() => setShowingMembers((v) => !v)}
-          >
-            {showingMembers ? "メンバーを閉じる" : "メンバー"}
-          </MainMenu.Item>
-        )}
-        {/*
-        図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
-        叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。
-
-        LLM が未設定でもボタンは出す。**黙って消さず、開いた先で理由を
-        見せる**（ADR 0030、中核思想 3）。
-      */}
-        {canEdit && (
-          <MainMenu.Item
-            className="etoki-menu-item"
-            onSelect={() => toggleLeftPanel("chat")}
-          >
-            {showingChat ? "図のドラフトを閉じる" : "図のドラフト"}
-          </MainMenu.Item>
-        )}
-        {/*
-        既存の設計（mermaid）を写しとして貼る（ADR 0062）。**LLM を通さない
-        ので、未設定でも使える。** viewer には出さない。描かせないのと同じ
-        理由で、置いても保存できない（ADR 0017）。
-      */}
-        {canEdit && (
-          <MainMenu.Item
-            className="etoki-menu-item"
-            onSelect={() => toggleLeftPanel("paste")}
-          >
-            {leftPanel === "paste" ? "貼り付けを閉じる" : "mermaid を貼る"}
-          </MainMenu.Item>
-        )}
         <MainMenu.Separator />
         {!isOwner(board.role) ? (
           // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
@@ -1612,11 +1563,6 @@ export function BoardPage({
       board.name,
       board.role,
       board.targetLocked,
-      sharingUnavailable,
-      showingMembers,
-      showingChat,
-      leftPanel,
-      toggleLeftPanel,
       api,
       creationUnavailable,
       refreshTargetDisplay,
@@ -1756,53 +1702,7 @@ export function BoardPage({
         </p>
       )}
 
-      {/*
-        パネルは境界で包み、キャンバスを巻き込ませない。落ちたのがパネルでも、
-        外側の 1 枚だけで受けるとツリーごと外れ、保存していないブレストが
-        その場で消える（ADR 0027）。
-      */}
-      {showingMembers && (
-        <ErrorBoundary name="メンバーパネル" recovery="remount">
-          <MemberPanel
-            boardId={board.id}
-            role={board.role}
-            onClose={() => setShowingMembers(false)}
-          />
-        </ErrorBoundary>
-      )}
-
       <div className="board-body">
-        {/*
-          チャットはキャンバスの左に置く。**キャンバスを覆わない。** 置いた図が
-          どこに出るかを見ながら直す道具なので、隠すと「置く」を押した結果が
-          確かめられない。メンバーのように上に敷かないのもそのため。
-
-          **パネルは境界で包む**（ADR 0027）。落ちたのがここでも外側の 1 枚で
-          受けると、キャンバスごと外れて未保存のブレストが消える。
-        */}
-        {showingChat && canEdit && (
-          <ErrorBoundary name="図のドラフト" recovery="remount">
-            <DiagramChatPanel
-              chat={chat}
-              onChangeKind={handleChangeKind}
-              onSend={generateDiagram}
-              onPlace={() => void placeDraft()}
-              onClose={() => setLeftPanel(null)}
-              unavailable={diagramUnavailable}
-            />
-          </ErrorBoundary>
-        )}
-        {leftPanel === "paste" && canEdit && (
-          <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
-            <MermaidPastePanel
-              text={pasteText}
-              onChangeText={setPasteText}
-              onPlace={pasteMermaid}
-              onClose={() => setLeftPanel(null)}
-            />
-          </ErrorBoundary>
-        )}
-
         <div className="canvas">
           <Excalidraw
             excalidrawAPI={setApi}
@@ -1838,42 +1738,116 @@ export function BoardPage({
           </ErrorBoundary>
         </div>
 
-        <ErrorBoundary name="注釈パネル" recovery="remount">
-          <AnnotationPanel
-            annotations={annotations}
-            detached={detached}
-            frames={{
-              markable,
-              unmarkable,
-              canvasIds: canvasFrameIds,
-              selectedIds: selectedFrames.map((f) => f.id),
-              onFocus: focusFrame,
-              onMark: handleMark,
-              onUnmark: handleUnmark,
-              onChangeGranularity: handleMark,
-              onChangeKind: handleChangeAnnotationKind,
-            }}
-            interpretation={{
-              states: interpretations,
-              onInterpret: (id) => void interpret(id),
-              onSelect: showInterpretation,
-              unavailable: interpretationUnavailable,
-            }}
-            creation={{
-              states: creations,
-              saving,
-              blocked: exclusive.reasonFor("creating"),
-              onCreate: (id, interpretationId, result) =>
-                void create(id, interpretationId, result),
-              projectAccess,
-              unavailable: creationUnavailable,
-            }}
-            runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
-            stale={dirty}
-            canEdit={canEdit}
-            projectLink={link}
-          />
-        </ErrorBoundary>
+        {/*
+          注釈・図のドラフト・メンバーは右の 1 か所にタブで並べる（ADR 0065）。
+          **キャンバスを覆わない。** 図のドラフトは置いた図がどこに出るかを
+          見ながら直す道具なので、上に敷くと「置く」を押した結果が確かめられない。
+
+          **パネルは 1 枚ずつ境界で包む**（ADR 0027）。落ちたのが 1 枚でも外側で
+          受けると、キャンバスごと外れて未保存のブレストが消える。
+        */}
+        <SidePanel
+          active={panelTab}
+          onSelect={setPanelTab}
+          tabs={[
+            {
+              id: "annotations",
+              label: "注釈",
+              content: (
+                <ErrorBoundary name="注釈パネル" recovery="remount">
+                  <AnnotationPanel
+                    annotations={annotations}
+                    detached={detached}
+                    frames={{
+                      markable,
+                      unmarkable,
+                      canvasIds: canvasFrameIds,
+                      selectedIds: selectedFrames.map((f) => f.id),
+                      onFocus: focusFrame,
+                      onMark: handleMark,
+                      onUnmark: handleUnmark,
+                      onChangeGranularity: handleMark,
+                      onChangeKind: handleChangeAnnotationKind,
+                    }}
+                    interpretation={{
+                      states: interpretations,
+                      onInterpret: (id) => void interpret(id),
+                      onSelect: showInterpretation,
+                      unavailable: interpretationUnavailable,
+                    }}
+                    creation={{
+                      states: creations,
+                      saving,
+                      blocked: exclusive.reasonFor("creating"),
+                      onCreate: (id, interpretationId, result) =>
+                        void create(id, interpretationId, result),
+                      projectAccess,
+                      unavailable: creationUnavailable,
+                    }}
+                    runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
+                    stale={dirty}
+                    canEdit={canEdit}
+                    projectLink={link}
+                  />
+                </ErrorBoundary>
+              ),
+            },
+            // 図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
+            // 叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。LLM が
+            // 未設定でもタブは出す。**黙って消さず、開いた先で理由を見せる**
+            // （ADR 0030、中核思想 3）。mermaid を貼る口（ADR 0062）も同じタブに
+            // 置く。LLM を通さないので未設定でも使えるが、描かせないのと同じ
+            // 理由で viewer には出さない。
+            ...(canEdit
+              ? [
+                  {
+                    id: "diagram" as const,
+                    label: "図のドラフト",
+                    content: (
+                      <DiagramTab
+                        mode={diagramMode}
+                        onModeChange={setDiagramMode}
+                        generate={
+                          <ErrorBoundary name="図のドラフト" recovery="remount">
+                            <DiagramChatPanel
+                              chat={chat}
+                              onChangeKind={handleChangeKind}
+                              onSend={generateDiagram}
+                              onPlace={() => void placeDraft()}
+                              unavailable={diagramUnavailable}
+                            />
+                          </ErrorBoundary>
+                        }
+                        paste={
+                          <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
+                            <MermaidPastePanel
+                              text={pasteText}
+                              onChangeText={setPasteText}
+                              onPlace={pasteMermaid}
+                            />
+                          </ErrorBoundary>
+                        }
+                      />
+                    ),
+                  },
+                ]
+              : []),
+            {
+              id: "members",
+              label: "メンバー",
+              // 共有が組み立てられていない構成では、押しても 503 しか返らない。
+              // タブは黙って消さず、開いた先で理由を出す（中核思想 3）。
+              content:
+                sharingUnavailable !== null ? (
+                  <p className="hint side-panel-note">{sharingUnavailable}</p>
+                ) : (
+                  <ErrorBoundary name="メンバーパネル" recovery="remount">
+                    <MemberPanel boardId={board.id} role={board.role} />
+                  </ErrorBoundary>
+                ),
+            },
+          ]}
+        />
       </div>
     </div>
   );

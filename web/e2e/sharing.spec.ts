@@ -2,9 +2,9 @@ import { expect, test } from "@playwright/test";
 
 import {
   annotationCard,
-  chooseFromMenu,
   openBoardMenu,
   openBoardWithMock,
+  openPanelTab,
 } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
@@ -12,7 +12,7 @@ test.describe("共有", () => {
   test("オーナーは招待でき、招待した相手が一覧に並ぶ", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await chooseFromMenu(page, "メンバー");
+    await openPanelTab(page, "メンバー");
 
     // 招待できる相手の条件は、失敗してから知らせるのでは遅い。
     await expect(
@@ -39,7 +39,7 @@ test.describe("共有", () => {
     });
 
     const mock = await openBoardWithMock(page, baseMock());
-    await chooseFromMenu(page, "メンバー");
+    await openPanelTab(page, "メンバー");
 
     await page.getByLabel("招待する login").fill("bob");
     await page.getByRole("button", { name: "確認する" }).click();
@@ -92,7 +92,7 @@ test.describe("共有", () => {
       const mock = baseMock();
       mock.inviteError = { status, body: { code, error } };
       await openBoardWithMock(page, mock);
-      await chooseFromMenu(page, "メンバー");
+      await openPanelTab(page, "メンバー");
 
       await page.getByLabel("招待する login").fill("bob");
       await page.getByRole("button", { name: "確認する" }).click();
@@ -195,7 +195,7 @@ test.describe("共有", () => {
     };
 
     await openBoardWithMock(page, mock);
-    await chooseFromMenu(page, "メンバー");
+    await openPanelTab(page, "メンバー");
 
     await expect(page.getByRole("region", { name: "メンバー" })).toContainText("Alice");
     await expect(page.getByLabel("招待する login")).toHaveCount(0);
@@ -214,7 +214,7 @@ test.describe("共有", () => {
     };
 
     await openBoardWithMock(page, mock);
-    await chooseFromMenu(page, "メンバー");
+    await openPanelTab(page, "メンバー");
 
     await page.getByLabel("招待する login").fill("carol");
     await page.getByRole("button", { name: "確認する" }).click();

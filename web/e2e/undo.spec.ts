@@ -3,9 +3,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { installApi, type ApiMock } from "./helpers/api";
 import {
   annotationCard,
-  chooseFromMenu,
   drawRectangle,
   openBoard,
+  openMermaidPaste,
+  openPanelTab,
 } from "./helpers/board";
 import { BOARD_ID, baseMock, mixedFramesMock } from "./helpers/fixtures";
 
@@ -45,7 +46,7 @@ test.describe("元に戻す", () => {
     await openBoard(page, BOARD_NAME);
 
     await drawRectangle(page);
-    await chooseFromMenu(page, "図のドラフト");
+    await openPanelTab(page, "図のドラフト");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     await expect(page.locator(".diagram-mermaid")).toContainText("flowchart TD");
@@ -71,7 +72,7 @@ test.describe("元に戻す", () => {
     await openBoard(page, BOARD_NAME);
 
     await drawRectangle(page);
-    await chooseFromMenu(page, "mermaid を貼る");
+    await openMermaidPaste(page);
     await page.getByLabel("貼る mermaid").fill("flowchart TD\n  A[注文] --> B[出荷]");
     await page.getByRole("button", { name: "キャンバスに置く" }).click();
     await expect
@@ -116,7 +117,7 @@ test.describe("元に戻す", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
-    await chooseFromMenu(page, "図のドラフト");
+    await openPanelTab(page, "図のドラフト");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     await expect(page.locator(".diagram-mermaid")).toContainText("flowchart TD");

@@ -10,20 +10,19 @@ type Props = {
   boardId: string;
   /** 見ている人のロール。owner だけが招待と解除を触れる。 */
   role: BoardRole;
-  onClose: () => void;
 };
 
 /**
  * ボードを誰と共有しているかを見せ、owner なら招待と解除をさせる。
  *
  * **招待される側にリポジトリのアクセス権は要らない**（ADR 0017）。ブレストに
- * 呼ぶ相手と GitHub に書ける相手は同じではない。書けるかどうかはボードの
- * ヘッダに別に出る。
+ * 呼ぶ相手と GitHub に書ける相手は同じではない。書けるかどうかは注釈
+ * パネルに別に出る。
  *
  * 一覧は owner でなくても見られる。誰と共有しているかを owner だけが知って
  * いる状態にすると、招待された側は自分が何に呼ばれたのか分からない。
  */
-export function MemberPanel({ boardId, role, onClose }: Props) {
+export function MemberPanel({ boardId, role }: Props) {
   const [members, setMembers] = useState<BoardMember[] | null>(null);
   const [login, setLogin] = useState("");
   const [inviteRole, setInviteRole] = useState<BoardRole>("editor");
@@ -132,12 +131,11 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
 
   return (
     <section className="member-panel" aria-label="メンバー">
-      <header className="member-panel-header">
-        <h2>メンバー</h2>
-        <button type="button" onClick={onClose}>
-          閉じる
-        </button>
-      </header>
+      {/*
+        見出しは見た目だけ隠す。右のパネルのタブに同じ名前が出ている
+        （`SidePanel`）。**閉じる口は置かない。** 開閉はタブが持つ。
+      */}
+      <h2 className="visually-hidden">メンバー</h2>
 
       {error && <ErrorNotice failure={error} />}
 
