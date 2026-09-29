@@ -228,12 +228,14 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
     await shot(page, "21-target-locked");
 
+    // 取り直しが反映されるまで待つ。待たずに撮ると、取り直す前の画面が写る。
+    // 反映すると一覧を引き直すので、その取得の応答を合図にする。
+    const reloaded = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/boards" && r.request().method() === "GET",
+    );
     await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
-    // 木の名前が変わるまで待つ。待たずに撮ると、取り直す前の画面が写る。
-    await page
-      .locator(".board-list")
-      .getByRole("button", { name: "#1 改名後のロードマップ" })
-      .waitFor();
+    await reloaded;
     await shot(page, "22-target-display-refreshed");
   });
 
@@ -484,7 +486,10 @@ test.describe("スクリーンショット", () => {
       mock.annotations[b.id] = [];
     }
 
-    await openBoardWithMock(page, mock);
+    // 木は一覧の画面にある（ADR 0064）。ボードは開かない。
+    await installApi(page, mock);
+    await page.goto("/");
+    await page.locator(".board-tree").waitFor();
     await shot(page, "14-board-tree");
   });
 
@@ -506,7 +511,7 @@ test.describe("スクリーンショット", () => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.locator('html[data-theme="light"]').waitFor({ state: "attached" });
 
-    // ログイン後はサイドバーに利用者が出る。
+    // ログイン後は一覧の画面に利用者が出る。
     mock.session = { status: 200, body: signedIn() };
     await page.reload();
     await page.getByText("Octo Cat").waitFor();
@@ -844,6 +849,9 @@ test.describe("スクリーンショット", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
+    await page.locator(".board-tree").waitFor();
+    await shot(page, "34-dark-board-list");
+
     await openBoard(page, BOARD_NAME);
     await shot(page, "34-dark-board-states");
 

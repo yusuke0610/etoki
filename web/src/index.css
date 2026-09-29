@@ -40,7 +40,6 @@
   --on-brand: #fff;
   --color-selected-bg: var(--brand-bg-subtle);
   --color-selected-fg: #0a4a32;
-  --color-active-bg: var(--brand-bg);
   --color-link: var(--brand-hover);
   --color-success: var(--brand);
   --color-success-bg: var(--brand-bg);
@@ -128,8 +127,8 @@
   --color-neutral-bg: #2a2f37;
   /*
    * ブランドの緑。**ライトで `var(--brand-*)` を指しているものは、ここを
-   * 差し替えるだけで付いてくる**（`--color-selected-bg` / `--color-active-bg` /
-   * `--color-link` / `--color-success` / `--color-annotation`）。
+   * 差し替えるだけで付いてくる**（`--color-selected-bg` / `--color-link` /
+   * `--color-success` / `--color-annotation`）。
    * 同じ値をもう一度並べない。並べると、片方だけ直した日に食い違う。
    *
    * 濃い側と薄い側はライトと逆になる。地が暗いので、hover は明るいほうへ動く。
@@ -214,25 +213,50 @@ body {
   background: var(--color-surface-sunken);
 }
 
-.sidebar {
-  /* 入れ子のぶん字下げが要るので、平坦な一覧だったときより広い（ADR 0019）。 */
-  width: 240px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--color-border);
-  padding: var(--space-5);
+/*
+ * ボードの一覧。**ボードとは別の画面**（ADR 0064）。
+ *
+ * 幅は絞る。一覧は 1 行 1 ボードの木なので、画面いっぱいに伸ばすと行の左端の
+ * 名前と、押したときに反応する範囲の右端が離れすぎる。
+ */
+.board-list-page {
   overflow-y: auto;
+  height: 100%;
+}
+
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-8);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .brand {
   font-size: var(--text-xl);
-  margin: 0 0 var(--space-5);
+  margin: 0;
+}
+
+.list-body {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.list-section h2 {
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-4);
 }
 
 .create-board {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .create-board input {
@@ -240,12 +264,10 @@ body {
   flex: 1;
 }
 
-/* ひな形は名前の下の行に置く。同じ行に並べるとサイドバーの幅で潰れる。 */
 .template-picker {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex-basis: 100%;
   font-size: var(--text-sm);
 }
 
@@ -272,9 +294,8 @@ body {
   border-radius: var(--radius-sm);
 }
 
-.board-list button.active {
-  background: var(--color-active-bg);
-  font-weight: 600;
+.board-list button:hover {
+  background: var(--color-hover);
 }
 
 /* 入れ子の一覧。ul は上で list-style を消してあるので、字下げだけ足す。 */
@@ -328,6 +349,23 @@ body {
   gap: var(--space-3) var(--space-4);
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--color-border);
+}
+
+/* 戻る口とボード名の組。ヘッダーの左側に 1 まとまりで置く。 */
+.board-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* 一覧へ戻る口。ボード名より目立たせない。 */
+.board-title .back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  font-size: var(--text-sm);
 }
 
 .board-header h1 {

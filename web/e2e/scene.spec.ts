@@ -3,9 +3,11 @@ import { expect, test } from "@playwright/test";
 import { holdCreate, holdSave, installApi, summarize, type ApiMock } from "./helpers/api";
 import {
   annotationCard,
+  backToList,
   drawRectangle,
   openBoard,
   openBoardWithMock,
+  waitForBoard,
 } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
@@ -90,7 +92,10 @@ test.describe("シーンの保存", () => {
 
   // ブレストは最初のフェーズなので、ここで失うと後段が全部やり直しになる。
   // 保存が明示操作である以上、押し忘れは構造的に起きる。
-  test("未保存のままボードを切り替えようとすると、確認が出て残る", async ({ page }) => {
+  //
+  // 別のボードへ移る導線は「一覧へ戻る」を必ず通る（ADR 0064）ので、確認を
+  // 出すのはそこ。
+  test("未保存のまま一覧へ戻ろうとすると、確認が出て残る", async ({ page }) => {
     await openBoardWithMock(page, twoBoards());
     await drawRectangle(page);
 
@@ -100,57 +105,16 @@ test.describe("シーンの保存", () => {
       messages.push(dialog.message());
       void dialog.dismiss();
     });
-    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
+    await page.getByRole("button", { name: "ボード一覧", exact: true }).click();
 
-    // 確認は切り替え先を取ってから出る。押した直後には出ていないので待つ。
     await expect.poll(() => messages.length).toBe(1);
     expect(messages[0]).toContain("未保存の変更があります");
 
     await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
-  });
-
-  // 押した時点では未保存でなくても、切り替え先を取っているあいだに描き足せる。
-  // 確認と外すことのあいだに待ちがあると、そのぶんを確認なしで捨てる。
-  test("切り替え先を待っているあいだに描いても、確認なしでは捨てない", async ({
-    page,
-  }) => {
-    await installApi(page, twoBoards());
-
-    // 切り替え先の取得を、こちらが放すまで返さない。待ち時間を作るのが目的。
-    let release = (): void => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await page.route(
-      (url) => url.pathname === `/api/boards/${OTHER_ID}`,
-      async (route) => {
-        await held;
-        // 応答そのものは installApi のモックに任せる。ここは遅らせるだけ。
-        await route.fallback();
-      },
-    );
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    const messages: string[] = [];
-    page.on("dialog", (dialog) => {
-      messages.push(dialog.message());
-      void dialog.dismiss();
-    });
-
-    // 押した時点では未保存ではない。取得を待っているあいだに描く。
-    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
-    await drawRectangle(page);
-    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
-
-    release();
-
-    // 描いたぶんは確認を経ずに捨てられない。断ったので元のボードに残る。
-    await expect.poll(() => messages.length).toBe(1);
-    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
-    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+    // URL もボードのまま。一覧の URL を積んでから断ると、アドレスバーだけが
+    // 一覧を指して残る。
+    expect(new URL(page.url()).search).toBe(`?board=${BOARD_ID}`);
   });
 
   // リロードとタブを閉じる操作はアプリ側で止められない。beforeunload を登録して
@@ -204,20 +168,20 @@ test.describe("シーンの保存", () => {
   });
 
   // 止めるのは「知らせずに捨てる」ことだけ。捨てると決めたなら通す（中核思想 3）。
-  test("確認を承諾すれば、ボードは切り替わる", async ({ page }) => {
+  test("確認を承諾すれば、一覧へ戻って別のボードを開ける", async ({ page }) => {
     await openBoardWithMock(page, twoBoards());
     await drawRectangle(page);
 
     page.on("dialog", (dialog) => void dialog.accept());
-    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
+    await backToList(page);
+    await openBoard(page, OTHER_NAME);
 
-    await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
-    // 切り替えた先は未保存ではない。持ち越すと、開いただけで止められる。
+    // 開いた先は未保存ではない。持ち越すと、開いただけで止められる。
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
   });
 
-  // 保存済みなら黙って切り替わる。毎回確認を出すと、確認そのものが読まれなくなる。
-  test("保存してあれば、確認なしで切り替わる", async ({ page }) => {
+  // 保存済みなら黙って戻れる。毎回確認を出すと、確認そのものが読まれなくなる。
+  test("保存してあれば、確認なしで一覧へ戻る", async ({ page }) => {
     await openBoardWithMock(page, twoBoards());
     await drawRectangle(page);
     await page.getByRole("button", { name: "保存" }).click();
@@ -230,9 +194,8 @@ test.describe("シーンの保存", () => {
       messages.push(dialog.message());
       void dialog.dismiss();
     });
-    await page.locator(".board-list").getByRole("button", { name: OTHER_NAME }).click();
+    await backToList(page);
 
-    await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
     expect(messages).toEqual([]);
   });
 
@@ -329,8 +292,9 @@ test.describe("シーンの保存", () => {
 
     // 開き直しても出ない。サーバーが返す sceneOverLimit で出し直すので、
     // 画面上で消えただけで開き直すと戻るなら、警告の出どころがずれている。
+    // 読み込み直すと URL のボードがそのまま開く（ADR 0059）。
     await page.reload();
-    await openBoard(page, BOARD_NAME);
+    await waitForBoard(page, BOARD_NAME);
     await expect(page.getByText("このボードは保存できる上限を超えています")).toBeHidden();
   });
 

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
-import { openBoard } from "./helpers/board";
+import { openBoard, waitForBoard } from "./helpers/board";
 import { baseMock } from "./helpers/fixtures";
 
 /**
@@ -67,7 +67,8 @@ test.describe("配色", () => {
 
     // OS と同じテーマに戻したら、以後は OS に従う。覚えたままだと、
     // 一度切り替えた人は OS の設定を変えても付いてこなくなる。
-    await openBoard(page, BOARD_NAME);
+    // 読み込み直すと URL のボードがそのまま開く（ADR 0059）。
+    await waitForBoard(page, BOARD_NAME);
     await toggleThemeFromCanvasMenu(page);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     expect(

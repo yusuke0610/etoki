@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { holdBoardDetail, installApi, summarize, type ApiMock } from "./helpers/api";
-import { drawRectangle, openBoard } from "./helpers/board";
+import { backToList, drawRectangle, openBoard } from "./helpers/board";
 import {
   authRequiredMock,
   baseMock,
@@ -39,7 +39,7 @@ function search(page: Page): string {
 
 test.describe("ボードの URL", () => {
   // ADR 0059。開いているボードが URL に出ないと、リロードでも共有でも
-  // 「サイドバーから探す」しか手が無い。
+  // 「一覧から探す」しか手が無い。
   test("開いているボードが URL に出る", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
@@ -70,7 +70,7 @@ test.describe("ボードの URL", () => {
   // 非メンバーにも消えたボードにも同じ not_found が返る（ADR 0016 / 0017）。
   // **URL から開いたときも見せ方を変えない。** 変えると、画面の違いから
   // ボードの存在を確かめられる。
-  test("権限の無いボード ID は案内文に落ち、URL も戻る", async ({ page }) => {
+  test("権限の無いボード ID は一覧に落ち、URL も戻る", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/?board=someone-elses-board");
 
@@ -78,23 +78,38 @@ test.describe("ボードの URL", () => {
       "見つかりませんでした。消されたか、権限がありません。",
     );
     await expect(
-      page.getByText("左からボードを選ぶか、新しく作成してください。"),
+      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
     ).toBeVisible();
     // 開けなかったボードを URL に残すと、読み込み直すたびに同じ失敗を繰り返す。
     expect(search(page)).toBe("");
   });
 
-  test("戻る / 進むでボードが切り替わる", async ({ page }) => {
+  // ボードからボードへは必ず一覧を挟む（ADR 0064）。閉じるのも押して移った
+  // 先なので履歴に積む。**積まないと、「戻る」で閉じたボードへ引き返せない。**
+  test("戻る / 進むで一覧とボードを行き来する", async ({ page }) => {
     await installApi(page, twoBoards());
     await page.goto("/");
 
     await openBoard(page, BOARD_NAME);
+    await backToList(page);
+    expect(search(page)).toBe("");
     await openBoard(page, OTHER_NAME);
     expect(search(page)).toBe(`?board=${OTHER_ID}`);
 
     await page.goBack();
+    await expect(
+      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
+    ).toBeVisible();
+    expect(search(page)).toBe("");
+
+    await page.goBack();
     await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
     expect(search(page)).toBe(`?board=${BOARD_ID}`);
+
+    await page.goForward();
+    await expect(
+      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
+    ).toBeVisible();
 
     await page.goForward();
     await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
@@ -109,6 +124,7 @@ test.describe("ボードの URL", () => {
     await page.goto("/");
 
     await openBoard(page, BOARD_NAME);
+    await backToList(page);
     await openBoard(page, OTHER_NAME);
     await drawRectangle(page);
     await expect(page.locator(".dirty")).toBeVisible();
@@ -130,22 +146,23 @@ test.describe("ボードの URL", () => {
     await expect.poll(() => search(page)).toBe(`?board=${OTHER_ID}`);
   });
 
-  test("戻るで未保存の確認に応じると、前のボードへ移る", async ({ page }) => {
+  test("戻るで未保存の確認に応じると、一覧へ戻る", async ({ page }) => {
     await installApi(page, twoBoards());
     await page.goto("/");
 
     await openBoard(page, BOARD_NAME);
-    await openBoard(page, OTHER_NAME);
     await drawRectangle(page);
 
     page.once("dialog", (dialog) => void dialog.accept());
     await page.goBack();
 
-    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
-    await expect.poll(() => search(page)).toBe(`?board=${BOARD_ID}`);
+    await expect(
+      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
+    ).toBeVisible();
+    await expect.poll(() => search(page)).toBe("");
   });
 
-  // 開く導線が 2 つ（サイドバーと戻る / 進む）あるので、取得が並走する
+  // 開く導線が 2 つ（一覧と戻る / 進む）あるので、取得が並走する
   // （`.claude/rules/async-ui.md`）。古い応答を反映すると、押した順と違う
   // ボードが開き、URL もそちらを指す。
   test("追い越された取得の応答は捨てる", async ({ page }) => {
@@ -176,49 +193,6 @@ test.describe("ボードの URL", () => {
     );
     // URL も巻き戻らない。ここが抜けると、画面と URL が別のボードを指す。
     await expect.poll(() => search(page)).toBe(`?board=${OTHER_ID}`);
-  });
-
-  // 切れると: ボードを開かない場所（`/`）へ戻ったときだけ世代が進まないので、
-  // 走っていた取得の応答が離れたはずのボードを開き直し、URL まで積む。
-  // `logout` と同じ規則で、対象が変わる時点で世代を無効にする
-  // （`.claude/rules/async-ui.md`）。
-  test("ボードを開かない場所へ戻ると、走っている取得の応答を捨てる", async ({ page }) => {
-    const mock = twoBoards();
-    await installApi(page, mock);
-
-    await page.goto("/");
-    // 2 枚目を開いて履歴を 1 つ積む。これで「戻る」の行き先が `/` になる。
-    await openBoard(page, OTHER_NAME);
-    await expect.poll(() => search(page)).toBe(`?board=${OTHER_ID}`);
-
-    // 1 枚目の取得を止めたまま押す。止めてあるので URL はまだ動かない。
-    let release = (): void => {};
-    await holdBoardDetail(
-      page,
-      BOARD_ID,
-      new Promise<void>((r) => (release = () => r())),
-    );
-    await page.locator(".board-list").getByRole("button", { name: BOARD_NAME }).click();
-
-    // ボードを開かない場所へ戻る。
-    await page.goBack();
-    await expect.poll(() => search(page)).toBe("");
-
-    // **応答が着くところまで待ってから見る。** 着く前に見ると、反映される前の
-    // 画面を見て通ってしまう（無効化を外しても緑になる）。
-    const responded = page.waitForResponse(
-      (r) => new URL(r.url()).pathname === `/api/boards/${BOARD_ID}`,
-    );
-    release();
-    await responded;
-    // 反映は応答の直後に起きるので、1 拍だけ置いてから確かめる。
-    await page.waitForTimeout(500);
-
-    // 捨てないと 1 枚目が開いて URL が積まれる。
-    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toHaveCount(
-      0,
-    );
-    expect(search(page)).toBe("");
   });
 
   test.describe("作成先の選び直し", () => {
@@ -307,21 +281,25 @@ test.describe("ボードの URL", () => {
       expect((await started).postDataJSON()).toEqual({ returnTo: `/?board=${BOARD_ID}` });
     });
 
-    // ログアウトはキャンバスを外すので、URL も戻す。残すと、ログイン画面の
-    // アドレスバーだけがボードを指したまま残る。
-    test("ログアウトすると URL からボードが消える", async ({ page }) => {
+    // ログアウトの口は一覧の画面にしかない（ADR 0064）ので、押す時点で URL に
+    // ボードは載っていない。**見るのは履歴を積まないこと。** 積むと「戻る」で
+    // ログアウト前の画面の URL に戻れてしまい、ログイン画面と食い違う。
+    test("ログアウトしても履歴を積まず、URL にボードは残らない", async ({ page }) => {
       const mock = baseMock();
       mock.session = { status: 200, body: signedIn() };
 
       await installApi(page, mock);
       await page.goto("/");
       await openBoard(page, BOARD_NAME);
+      await backToList(page);
 
+      const before = await page.evaluate(() => window.history.length);
       mock.session = { status: 200, body: signedOut() };
       await page.getByRole("button", { name: "ログアウト" }).click();
 
       await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
       expect(search(page)).toBe("");
+      expect(await page.evaluate(() => window.history.length)).toBe(before);
     });
   });
 });

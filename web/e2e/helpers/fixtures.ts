@@ -14,7 +14,7 @@ import { summarize, type ApiMock } from "./api";
 
 export const BOARD_ID = "board-1";
 
-/** `board()` の名前。サイドバーからボードを開くときに引く。 */
+/** `board()` の名前。一覧からボードを開くときに引く。 */
 export const BOARD_NAME = "認証まわりのブレスト";
 
 /** 3 状態それぞれを 1 つずつ持たせてある。並びは画面の並びと同じ。 */

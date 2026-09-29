@@ -4,13 +4,37 @@ import { installApi, type ApiMock } from "./api";
 import { BOARD_NAME } from "./fixtures";
 
 /**
- * サイドバーからボードを開き、キャンバスと注釈パネルが出るまで待つ。
+ * 開いているボードを閉じて一覧へ戻る（ADR 0064）。
+ *
+ * **一覧はボードと別の画面にある。** 別のボードを開くのも、一覧の中身を
+ * 確かめるのも、ここを通ってから。未保存なら確認が出るので、それを見る spec は
+ * 先に `dialog` を拾っておく。
+ */
+export async function backToList(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "ボード一覧", exact: true }).click();
+  // **見出しは完全一致で引く。** 同じ画面に「新しいボード」の見出しも並ぶ。
+  await expect(
+    page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
+  ).toBeVisible();
+}
+
+/** 一覧からボードを開き、キャンバスと注釈パネルが出るまで待つ。 */
+export async function openBoard(page: Page, name: string): Promise<void> {
+  await page.locator(".board-list").getByRole("button", { name }).click();
+  await waitForBoard(page, name);
+}
+
+/**
+ * ボードの画面が出て、キャンバスと注釈パネルが揃うまで待つ。
+ *
+ * **押さずに開く経路ではこちらを使う。** 読み込み直しや URL から入ると、一覧を
+ * 通らずにボードが出る（ADR 0059）。そこで `openBoard` を呼ぶと、無い一覧を
+ * 押しにいって落ちる。
  *
  * Excalidraw のマウントはキャンバスの描画を伴い、注釈パネルより遅れる。
  * ここで揃うまで待たないと、後続の操作がマウント途中の DOM に当たる。
  */
-export async function openBoard(page: Page, name: string): Promise<void> {
-  await page.locator(".board-list").getByRole("button", { name }).click();
+export async function waitForBoard(page: Page, name: string): Promise<void> {
   await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
   await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
   // **見出しは階層まで絞る。** パネルの中には「キャンバスに無い注釈」
@@ -40,9 +64,10 @@ export async function openBoardWithMock(
 /**
  * 作成先の選択画面。
  *
- * **リポジトリを押すときは必ずここで絞る。** サイドバーの木にも同じ
- * `acme/web` という名前のボタンが並ぶので（ADR 0019）、ページ全体から
- * 名前で引くと 2 つ見つかって落ちる。
+ * **リポジトリを押すときは必ずここで絞る。** 一覧が同じ画面にあったころは、
+ * 木にも同じ `acme/web` という名前のボタンが並んだ（ADR 0019）。一覧が別の
+ * 画面になって（ADR 0064）今は衝突しないが、戻す判断が出た日に黙って壊れない
+ * ように絞り続ける。
  */
 export function picker(page: Page): Locator {
   return page.locator(".picker");
