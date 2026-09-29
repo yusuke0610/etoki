@@ -167,6 +167,23 @@ export function sceneFileUnreadableFailure(): Failure {
 }
 
 /**
+ * キャンバスに貼られた文字列を、Excalidraw が mermaid として描こうとしたので
+ * 止めた（ADR 0067）。
+ *
+ * `ErrorCode` を持たない。止めたのは手元で、サーバーには何も送っていない。
+ * **止めたことは黙らない。** 貼っても何も起きないと、貼り損ねたのか弾かれたのか
+ * 区別が付かない。打ち手は、文字のまま置くこと。テキストを入力している最中の
+ * 貼り付けは Excalidraw が変換に回さない。
+ */
+export function canvasMermaidPasteFailure(): Failure {
+  return {
+    message:
+      "mermaid の図はキャンバスに直接貼れません。キャンバスはそのままです。文字のまま置くなら、テキストを入力している最中に貼り付けてください。",
+    detail: "",
+  };
+}
+
+/**
  * 作成先の Project が GitHub 側で見つからなかった（ADR 0037）。
  *
  * `ErrorCode` を持たない。GitHub も etoki も 200 を返していて、一覧に

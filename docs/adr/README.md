@@ -63,3 +63,4 @@
 | [0059](0059-open-boards-by-url.md)                               | 開いているボードはクエリで URL に載せ、戻り先は state と一緒に持つ     | 採用                 |
 | [0060](0060-one-table-for-mutual-exclusion.md)                   | 操作どうしの排他は 1 つの表に集め、UI はそれを読むだけにする           | 採用                 |
 | [0061](0061-pin-mermaid-until-converter-catches-up.md)           | mermaid を 11.13.0 に固定し、既知の脆弱性を受け入れる                  | 採用                 |
+| [0067](0067-close-excalidraw-mermaid-entrances.md)               | Excalidraw 自身の mermaid の入口を閉じる                               | 採用                 |

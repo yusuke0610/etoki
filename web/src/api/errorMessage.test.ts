@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "./boards";
 import {
+  canvasMermaidPasteFailure,
   describeFailure,
   ERROR_MESSAGES,
   partialCreationFailure,
@@ -84,6 +85,15 @@ describe("code を持たない失敗", () => {
 
     expect(failure.message).toContain("キャンバスはそのままです");
     expect(failure.message).toContain("別の .excalidraw ファイルを選んでください");
+    expect(failure.detail).toBe("");
+  });
+
+  it("キャンバスへの mermaid の貼り付けを止めたときは、止めたことと次の打ち手を言う", () => {
+    const failure = canvasMermaidPasteFailure();
+
+    expect(failure.message).toContain("キャンバスに直接貼れません");
+    expect(failure.message).toContain("キャンバスはそのままです");
+    expect(failure.message).toContain("テキストを入力している最中に貼り付けてください");
     expect(failure.detail).toBe("");
   });
 

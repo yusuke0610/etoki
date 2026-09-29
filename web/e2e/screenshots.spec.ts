@@ -13,6 +13,7 @@ import {
   drawRectangle,
   openBoard,
   openBoardWithMock,
+  pasteOnCanvas,
   picker,
 } from "./helpers/board";
 import {
@@ -791,6 +792,24 @@ test.describe("スクリーンショット", () => {
       if (typeof release === "function") release();
     });
   });
+  // Excalidraw 自身の mermaid の入口を閉じた後の姿（ADR 0067）。メニューは
+  // 項目と見出しが消えて詰まって見えるか、貼り付けは止めた理由が出るか。
+  test("mermaid の入口を閉じた状態を撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    await page.locator(".App-toolbar__extra-tools-trigger").click();
+    await page.locator(".App-toolbar__extra-tools-dropdown").waitFor();
+    await shot(page, "39-extra-tools-without-mermaid");
+
+    await page.keyboard.press("Escape");
+    await pasteOnCanvas(
+      page,
+      "gantt\n  title 計画\n  section A\n  作業 :a1, 2024-01-01, 30d",
+    );
+    await page.getByText("mermaid の図はキャンバスに直接貼れません").waitFor();
+    await shot(page, "40-canvas-mermaid-paste-blocked");
+  });
+
   // ダーク（ADR 0055）。変数を差し替えるだけなので、画面ごとに撮り分ける
   // 価値があるのは、色の種類がいちばん多く並ぶところ（3 状態・解釈結果・
   // 更新と取り残し）。

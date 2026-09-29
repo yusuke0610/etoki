@@ -539,6 +539,13 @@ cd web && bunx playwright test --ui
   通ること。** 変換器を上げたらまず外して回す。固定した版に残る既知の脆弱性を
   受け入れている理由は ADR にあり、**mermaid の文字列を本人のプロンプト以外から
   受け取る機能を足すなら、その前に見直す。**
+- **Excalidraw 自身の mermaid の入口は閉じてある**（ADR 0067）。「その他」
+  メニューの「Mermaid to Excalidraw」は `web/src/index.css` で隠し、キャンバスへの
+  貼り付けの自動変換は `BoardPage` の `onPaste` で止めている。**どちらも開いて
+  いると、上の脆弱性の受け入れの前提が崩れる。** props で消せない UI に外から
+  手を入れているので、Excalidraw を上げると黙って戻りうる。
+  `web/e2e/excalidrawMermaid.spec.ts` と `src/excalidraw/excalidrawMermaid.test.ts`
+  が落ちたら、隠し方と判定の写しを見直す。
 - **`web/vite.config.ts` の `test.include`** — vitest の既定は `*.spec.ts` も
   拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の

@@ -91,3 +91,28 @@ export async function drawRectangle(page: Page): Promise<void> {
 
   await expect(page.getByRole("button", { name: "元に戻す" })).toBeEnabled();
 }
+
+/**
+ * キャンバスに文字列を貼る。
+ *
+ * 本物のクリップボードは権限と OS に依存するので、`ClipboardEvent` を直接
+ * 投げる。Excalidraw は `document` の paste を拾い、カーソルの下がキャンバスで
+ * あることを確かめるので、先にキャンバスの上をクリックしておく。
+ */
+export async function pasteOnCanvas(page: Page, text: string): Promise<void> {
+  await page
+    .locator(".excalidraw canvas")
+    .last()
+    .click({ position: { x: 400, y: 300 } });
+  await page.evaluate((t) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", t);
+    document.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }, text);
+}
