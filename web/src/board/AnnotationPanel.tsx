@@ -5,30 +5,22 @@ import type {
   DetachedAnnotation,
   DiagramKind,
   Granularity,
-  Interpretation,
-  ProjectAccess,
-  SyncState,
 } from "../api/types";
 import type { SelectableFrame } from "../excalidraw/annotation";
-import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import {
+  GRANULARITY_LABEL,
+  STATE_LABEL,
+  annotationLabels,
+  frameLabel,
+} from "./annotationLabel";
 import { DetachedSection } from "./DetachedSection";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
-import { InterpretationSection } from "./InterpretationSection";
+import { InterpretControl } from "./InterpretationSection";
 import type { InterpretationState } from "./interpretationHistory";
 import { ItemBody, ItemLink, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
-import {
-  INTERPRETATION_UNAVAILABLE_ID,
-  type CreationState,
-  type RunsProps,
-} from "./panelShared";
+import { INTERPRETATION_UNAVAILABLE_ID, type RunsProps } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 import { RunHistory } from "./RunHistory";
-
-const STATE_LABEL: Record<SyncState, string> = {
-  uncreated: "未作成",
-  created: "作成済み",
-  changed: "変更あり",
-};
 
 /**
  * キャンバスの frame とのやりとり。
@@ -62,7 +54,7 @@ type FramesProps = {
 };
 
 /** 解釈の実行と、引いた結果の選び直し。 */
-type InterpretationProps = {
+export type InterpretationProps = {
   /** 注釈 ID をキーにした解釈の状態。未実行の注釈は入っていない。 */
   states: Record<string, InterpretationState>;
   onInterpret: (annotationId: string) => void;
@@ -82,48 +74,6 @@ type InterpretationProps = {
   unavailable: string | null;
 };
 
-/** 作成の実行と、その可否。 */
-type CreationProps = {
-  /** 注釈 ID をキーにした作成の状態。未実行の注釈は入っていない。 */
-  states: Record<string, CreationState>;
-  /**
-   * 保存中は下書きの編集も止める。保存が解釈ごと捨てるため。
-   *
-   * **`blocked` とは別物。** あちらは「押せない理由」で、こちらは「入力を
-   * 凍らせるかどうか」。作成を止める条件は保存だけではないので、一方を
-   * もう一方から導かない。
-   */
-  saving: boolean;
-  /**
-   * いま作成を始められない理由。押せるなら null。
-   *
-   * **文言はここで組まない。** 何が走っているとどう言うかは
-   * `web/src/board/exclusion.ts` の表が持ち、`BoardPage` が引いて渡す
-   * （ADR 0060）。パネルが `saving` / `importing` から組み直していたころは、
-   * 同じ判定がヘッダーとここの 2 箇所にあった。
-   */
-  blocked: string | null;
-  /**
-   * `interpretationId` は下書きの元になった解釈。作ったものをその解釈に
-   * 結びつけて持つために渡す（ADR 0052）。
-   */
-  onCreate: (
-    annotationId: string,
-    interpretationId: number,
-    interpretation: Interpretation,
-  ) => void;
-  /**
-   * 作成先の Project に書けるかどうかの、いまの状態。
-   *
-   * `denied` でもボタンを黙って消さず、理由を出す。ブレストには参加できて
-   * 作成だけができない、というのがこの機能で普通に起きる状態なので、
-   * 「なぜできないか」が見えていないと使えない（中核思想 3）。
-   */
-  projectAccess: ProjectAccess;
-  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
-  unavailable: string | null;
-};
-
 /**
  * **関心ごとに束ねて受け取る**（#146）。
  *
@@ -140,8 +90,8 @@ type Props = {
    */
   detached: DetachedAnnotation[];
   frames: FramesProps;
-  interpretation: InterpretationProps;
-  creation: CreationProps;
+  // 結果を選び直す口は詳細（`AnnotationDetail`）が持つ。
+  interpretation: Omit<InterpretationProps, "onSelect">;
   runs: RunsProps;
   /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
   stale: boolean;
@@ -163,6 +113,12 @@ type Props = {
    * 違う場所へ飛ぶように読めてしまう。
    */
   projectLink: ProjectLink | null;
+  /**
+   * 注釈 1 件の解釈の結果を、キャンバスの上の広い面（`AnnotationDetail`）で
+   * 開く。**結果はこのパネルに出さない。** 下書きの手直しまで含めると 1 件で
+   * 画面数枚分に伸び、ほかの注釈の状態が読めなくなる。
+   */
+  onOpenDetail: (annotationId: string) => void;
 };
 
 type PendingKind = {
@@ -175,11 +131,11 @@ export function AnnotationPanel({
   detached,
   frames,
   interpretation,
-  creation,
   runs,
   stale,
   canEdit,
   projectLink,
+  onOpenDetail,
 }: Props) {
   // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
   // 新しく、次の保存まで a.kind は古いので、そのあいだはここで選択値を持つ。
@@ -425,28 +381,14 @@ export function AnnotationPanel({
                   )}
 
                   {canEdit && (
-                    <InterpretationSection
+                    <InterpretControl
                       annotationId={a.id}
-                      granularity={a.granularity}
+                      label={labels.get(a.id) ?? ""}
                       state={interpretation.states[a.id]}
-                      creation={creation.states[a.id]}
                       stale={stale}
-                      saving={creation.saving}
-                      creationBlocked={creation.blocked}
-                      projectAccess={creation.projectAccess}
                       interpretationUnavailable={interpretation.unavailable}
-                      creationUnavailable={creation.unavailable}
-                      previous={a.items ?? []}
-                      projectLink={projectLink}
                       onInterpret={() => interpretation.onInterpret(a.id)}
-                      onSelectInterpretation={(runId) =>
-                        interpretation.onSelect(a.id, runId)
-                      }
-                      // 束の `interpretation` と名前がぶつかるので、引数は
-                      // 解釈結果そのものを指す名前にする。
-                      onCreate={(interpretationId, result) =>
-                        creation.onCreate(a.id, interpretationId, result)
-                      }
+                      onOpen={() => onOpenDetail(a.id)}
                     />
                   )}
                 </li>

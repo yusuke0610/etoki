@@ -76,6 +76,12 @@
   --color-on-annotation: var(--on-brand);
   /* 通知のように地の上へ浮かせる面の影。 */
   --color-shadow: rgb(0 0 0 / 15%);
+  /*
+   * キャンバスの上に浮かせる面（注釈の詳細）の影。**`.excalidraw` の外に置く
+   * ので、ライブラリの `--shadow-island` は読めない。** 地の明るさで効き方が
+   * 変わるので、テーマごとに値を持つ。
+   */
+  --shadow-raised: 0 12px 32px rgb(0 0 0 / 14%), 0 2px 6px rgb(0 0 0 / 8%);
 
   /*
    * 余白・文字の大きさ・角丸。**色と違ってテーマでは変わらない**ので、ここで
@@ -163,6 +169,8 @@
   --color-annotation-bg: rgb(111 220 172 / 10%);
   /* 暗い地では薄い黒が見えないので濃くする。 */
   --color-shadow: rgb(0 0 0 / 50%);
+  /* 暗い地では薄い影が見えないので、濃くして縁を立てる。 */
+  --shadow-raised: 0 12px 32px rgb(0 0 0 / 55%), 0 2px 6px rgb(0 0 0 / 40%);
 
   color-scheme: dark;
 }
@@ -540,6 +548,70 @@ body {
 }
 
 /*
+ * 注釈 1 件の解釈の結果と下書きの手直し（`AnnotationDetail`）。キャンバスの
+ * 上に広く開く。
+ *
+ * **Excalidraw の UI より下（z-index 3）に置く。** 上に置くと、左上から開く
+ * メニューがこの面の下に潜る。上下はツールバーと下の帯の分だけ空けて、
+ * 重ならないようにする。上はツールバーの下に出る操作の案内（2 行まで折れる）
+ * の分も空ける。
+ *
+ * **高さは中身に合わせ、上限だけ決める。** 下まで伸ばしておくと、下書きが
+ * 数件のときに空の面がキャンバスを覆う。
+ */
+.annotation-detail {
+  position: absolute;
+  top: 104px;
+  max-height: calc(100% - 104px - 72px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 2 * var(--space-6)));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-raised);
+}
+
+/* `display: flex` が `hidden` 属性の既定（display: none）に勝つので戻す。
+   戻さないと、閉じた詳細が全部重なって出る。 */
+.annotation-detail[hidden] {
+  display: none;
+}
+
+.annotation-detail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-7);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.annotation-detail-header h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-lg);
+  overflow-wrap: anywhere;
+}
+
+.annotation-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-7);
+}
+
+/* カードの「解釈する」と「解釈結果を開く」。狭いカードでは折り返す。 */
+.interpretation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/*
  * 右のパネル（`SidePanel`）。注釈・図のドラフト・メンバーをタブで並べる
  * （ADR 0065）。**幅と境界線はここが持つ。** 中に入る各パネルは幅を持たない。
  */
@@ -742,7 +814,8 @@ body {
   font-family: inherit;
   font-size: var(--text-sm);
   line-height: 1.6;
-  /* パネルは 280px しかない。改行は残したまま、長い行は折り返す。 */
+  /* 改行は残したまま、長い行は折り返す。横に流すと、作られる本文の右端が
+     スクロールしないと読めない。 */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -817,7 +890,7 @@ body {
 
 /*
  * 更新するか新しく作るかの切り替え（ADR 0026、#112）。**見出しの行には
- * 置かない。** パネルが狭く、同じ行に足すとタイトルが読めなくなる。
+ * 置かない。** 同じ行に足すと、そのぶんタイトルの入力欄が縮む。
  */
 .draft-previous {
   display: flex;
@@ -828,7 +901,7 @@ body {
 }
 
 .draft-title {
-  /* パネルが狭いので、余った幅は全部タイトルに渡す。 */
+  /* 余った幅は全部タイトルに渡す。いちばん読んで直すのがタイトル。 */
   flex: 1;
   min-width: 0;
 }

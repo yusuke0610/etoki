@@ -932,6 +932,16 @@ export function holdCreate(page: Page, hold: Promise<void>): Promise<void> {
   );
 }
 
+/** 解釈を「解釈中」のまま止める。解決するまで応答を返さない。 */
+export function holdInterpret(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/annotations\/[^/]+\/interpret$/.test(url.pathname),
+    "POST",
+    hold,
+  );
+}
+
 function boardIdOf(route: Route): string {
   const segments = new URL(route.request().url()).pathname.split("/");
   // /api/boards/<id>/... の 4 番目が ID。

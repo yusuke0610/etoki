@@ -94,7 +94,7 @@ test.describe("元に戻す", () => {
 
     await expect(page.locator(".annotation-overlay-frame")).toHaveCount(2);
     await annotationCard(page, "ログイン")
-      .getByRole("button", { name: "ログイン" })
+      .getByRole("button", { name: "ログイン", exact: true })
       .click();
     await page.getByRole("button", { name: /の注釈を外す/ }).click();
     await expect(page.locator(".annotation-overlay-frame")).toHaveCount(1);

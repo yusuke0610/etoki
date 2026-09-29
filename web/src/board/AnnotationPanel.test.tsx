@@ -24,21 +24,13 @@ function props(): ComponentProps<typeof AnnotationPanel> {
     interpretation: {
       states: {},
       onInterpret: vi.fn(),
-      onSelect: vi.fn(),
-      unavailable: null,
-    },
-    creation: {
-      states: {},
-      saving: false,
-      blocked: null,
-      onCreate: vi.fn(),
-      projectAccess: "allowed",
       unavailable: null,
     },
     runs: { states: {}, onLoad: vi.fn() },
     stale: false,
     canEdit: true,
     projectLink: null,
+    onOpenDetail: vi.fn(),
   };
 }
 

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { summarize } from "./helpers/api";
-import { annotationCard, openBoardWithMock } from "./helpers/board";
+import { annotationCard, annotationDetail, openBoardWithMock } from "./helpers/board";
 import { BOARD_ID, baseMock, board, matchedInterpretationMock } from "./helpers/fixtures";
 
 /** 作成先の URL を控えていないボード。URL を保存する前に選んだものが該当する。 */
@@ -56,12 +56,13 @@ test.describe("GitHub へ辿る導線", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
     await expect(
-      card
+      detail
         .locator(".creation-result")
         .getByRole("link", { name: "GitHub でこの Project を開く" }),
     ).toHaveAttribute("href", "https://github.com/orgs/acme/projects/1");
@@ -113,11 +114,12 @@ test.describe("GitHub へ辿る導線", () => {
       await openBoardWithMock(page, baseMock());
 
       const card = annotationCard(page, "ログイン");
+      const detail = annotationDetail(page, "ログイン");
       await card.getByRole("button", { name: "解釈する" }).click();
-      await card.getByRole("button", { name: "GitHub に作成する" }).click();
-      await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+      await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+      await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
-      const result = card.locator(".creation-result");
+      const result = detail.locator(".creation-result");
       for (const [title, id] of [
         ["ログイン基盤", 201],
         ["メールとパスワードでログインする", 202],
@@ -138,10 +140,11 @@ test.describe("GitHub へ辿る導線", () => {
       await openBoardWithMock(page, matchedInterpretationMock());
 
       const card = annotationCard(page, "セッション管理");
+      const detail = annotationDetail(page, "セッション管理");
       await card.getByRole("button", { name: "解釈する" }).click();
 
       await expect(
-        card
+        detail
           .locator(".left-behind")
           .getByRole("link", { name: "「触らないほう」を GitHub で開く" }),
       ).toHaveAttribute(

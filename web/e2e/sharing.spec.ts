@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   annotationCard,
+  annotationDetail,
   openBoardMenu,
   openBoardWithMock,
   openPanelTab,
@@ -117,17 +118,20 @@ test.describe("共有", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
 
     // 解釈まではできる。GitHub は要らない。
     await expect(
-      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+      detail.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
 
     // 作成だけができない。押させずに理由を出す。
-    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
+      0,
+    );
     await expect(
-      card.getByText("この Project に書き込む権限がありません。"),
+      detail.getByText("この Project に書き込む権限がありません。"),
     ).toBeVisible();
   });
 

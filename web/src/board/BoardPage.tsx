@@ -56,7 +56,8 @@ import { useNotify } from "../notification/NotificationProvider";
 import type { NotifyOptions } from "../notification/types";
 import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
-import { AnnotationPanel } from "./AnnotationPanel";
+import { AnnotationDetail, type CreationProps } from "./AnnotationDetail";
+import { AnnotationPanel, type InterpretationProps } from "./AnnotationPanel";
 import { DiagramChatPanel } from "./DiagramChatPanel";
 import {
   beginTurn,
@@ -325,6 +326,8 @@ export function BoardPage({
   // 途中の入力が消える。ボードを切り替えれば BoardPage ごと作り直されるので
   // 残らない。
   const [pasteText, setPasteText] = useState("");
+  // キャンバスの上に開いている注釈の詳細（`AnnotationDetail`）。null なら閉じている。
+  const [detailId, setDetailId] = useState<string | null>(null);
   // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
   // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
   const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
@@ -1224,6 +1227,28 @@ export function BoardPage({
   const linkExact = link?.exact ?? false;
   const running = exclusive.running;
 
+  // 解釈の口。右のパネルのカード（押す）と詳細（結果を見る）の両方に渡す。
+  const interpretation: InterpretationProps = {
+    states: interpretations,
+    // 押したら詳細を開く。結果はそこに出るので、開かないと押したあとに何が
+    // 起きたかが見えない。
+    onInterpret: (id) => {
+      setDetailId(id);
+      void interpret(id);
+    },
+    onSelect: showInterpretation,
+    unavailable: interpretationUnavailable,
+  };
+  // 作成の口。作るのは詳細の中だけ。
+  const creation: CreationProps = {
+    states: creations,
+    saving,
+    blocked: exclusive.reasonFor("creating"),
+    onCreate: (id, interpretationId, result) => void create(id, interpretationId, result),
+    projectAccess,
+    unavailable: creationUnavailable,
+  };
+
   // 作成先を変更できない理由。押せるなら null（ADR 0039）。
   //
   // **未保存が先。** `dirty` を下ろすのは応答が返ってから（`save`）なので、
@@ -1736,6 +1761,21 @@ export function BoardPage({
           <ErrorBoundary name="注釈の枠" recovery="remount">
             <AnnotationOverlay boxes={overlayBoxes} />
           </ErrorBoundary>
+          {/*
+            解釈の結果と下書きの手直しは、キャンバスの上に広く開く。
+            **`.excalidraw` の外に置く。** 中に入れると色の変数がぶつかり、
+            axe が色を判定できない（ADR 0065）。
+          */}
+          <ErrorBoundary name="解釈の結果" recovery="remount">
+            <AnnotationDetail
+              openId={detailId}
+              onClose={() => setDetailId(null)}
+              annotations={annotations}
+              interpretation={interpretation}
+              creation={creation}
+              projectLink={link}
+            />
+          </ErrorBoundary>
         </div>
 
         {/*
@@ -1769,25 +1809,12 @@ export function BoardPage({
                       onChangeGranularity: handleMark,
                       onChangeKind: handleChangeAnnotationKind,
                     }}
-                    interpretation={{
-                      states: interpretations,
-                      onInterpret: (id) => void interpret(id),
-                      onSelect: showInterpretation,
-                      unavailable: interpretationUnavailable,
-                    }}
-                    creation={{
-                      states: creations,
-                      saving,
-                      blocked: exclusive.reasonFor("creating"),
-                      onCreate: (id, interpretationId, result) =>
-                        void create(id, interpretationId, result),
-                      projectAccess,
-                      unavailable: creationUnavailable,
-                    }}
+                    interpretation={interpretation}
                     runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
                     stale={dirty}
                     canEdit={canEdit}
                     projectLink={link}
+                    onOpenDetail={setDetailId}
                   />
                 </ErrorBoundary>
               ),
