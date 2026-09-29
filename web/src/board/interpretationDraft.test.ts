@@ -4,6 +4,7 @@ import type { Interpretation, InterpretedItem, SyncItem } from "../api/types";
 import {
   blockingReasons,
   buildInterpretation,
+  canResend,
   createDraft,
   type Draft,
   leftBehindItemIds,
@@ -237,6 +238,7 @@ describe("leftBehindItemIds", () => {
       body: "",
       localId: "e1",
       action: "created",
+      confirmed: true,
     },
     {
       itemId: "PVTI_b",
@@ -245,6 +247,7 @@ describe("leftBehindItemIds", () => {
       body: "",
       localId: "i1",
       action: "created",
+      confirmed: true,
     },
   ];
 
@@ -368,6 +371,7 @@ function created(localId: string, itemId: string): SyncItem {
     body: "",
     localId,
     action: "created",
+    confirmed: true,
   };
 }
 
@@ -452,5 +456,67 @@ describe("markCreated", () => {
     const previous = [created("e1", "PVTI_e1"), created("zz", "PVTI_other")];
 
     expect(leftBehindItemIds(draft, previous)).toEqual(new Set(["PVTI_other"]));
+  });
+});
+
+/** 応答を失った作成 1 件。**item ID は分からない**（ADR 0056）。 */
+function lostCreate(localId: string): SyncItem {
+  return { ...created(localId, ""), confirmed: false };
+}
+
+/** 届いたか分からない更新 1 件。相手の ID は分かっている。 */
+function lostUpdate(localId: string, itemId: string): SyncItem {
+  return { ...created(localId, itemId), action: "updated", confirmed: false };
+}
+
+// 届いたか分からない書き込みを、押し直しの対象から外す（ADR 0056、#170）。
+//
+// **受理されていたかどうかを etoki は知らない。** もう一度送って重複するより、
+// 開発者に GitHub を見てもらうほうを選ぶ（中核思想 3）。
+describe("markCreated（届いたか分からない項目）", () => {
+  it("応答を失った作成は選択が外れ、選び直せない", () => {
+    const draft = markCreated(createDraft(sample()), [lostCreate("e1")]);
+    const e1 = draft.items.find((d) => d.item.localId === "e1");
+
+    expect(e1?.selected).toBe(false);
+    expect(e1?.unconfirmed).toBe(true);
+    // **`createdItemId` を空文字で埋めない。** 埋めると targetItemIdOf が
+    // 落として新規作成に戻り、押し直しで重複する道が開く。
+    expect(e1?.createdItemId).toBeUndefined();
+    expect(canResend(e1!)).toBe(false);
+  });
+
+  it("選び直そうとしても選択は変わらない", () => {
+    const draft = markCreated(createDraft(sample()), [lostCreate("e1")]);
+
+    expect(selectedIds(toggleItem(draft, "e1"))).not.toContain("e1");
+  });
+
+  it("送り先が分からない項目は、送信対象にも入らない", () => {
+    const draft = markCreated(createDraft(sample()), [lostCreate("e1")]);
+
+    expect(sentIds(draft)).not.toContain("e1");
+  });
+
+  it("届いたか分からない更新は、相手の ID が分かるので選び直せる", () => {
+    const draft = markCreated(createDraft(sample()), [lostUpdate("e1", "PVTI_e1")]);
+    const e1 = draft.items.find((d) => d.item.localId === "e1");
+
+    expect(e1?.selected).toBe(false);
+    expect(e1?.unconfirmed).toBe(true);
+    expect(e1?.createdItemId).toBe("PVTI_e1");
+    expect(canResend(e1!)).toBe(true);
+
+    // 選び直すと、同じ item への書き直しとして送る。重複は作らない。
+    const again = toggleItem(draft, "e1");
+    expect(sentItem(again, "e1").previousItemId).toBe("PVTI_e1");
+  });
+
+  it("確定した項目は、これまでどおり作成済みとして扱う", () => {
+    const draft = markCreated(createDraft(sample()), [created("e1", "PVTI_e1")]);
+    const e1 = draft.items.find((d) => d.item.localId === "e1");
+
+    expect(e1?.unconfirmed).toBeFalsy();
+    expect(canResend(e1!)).toBe(true);
   });
 });

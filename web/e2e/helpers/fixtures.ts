@@ -6,7 +6,7 @@ import type {
   DiagramDraft,
   Interpretation,
   Project,
-  Repository,
+  RepositoryList,
   SessionStatus,
   SyncRun,
 } from "../../src/api/types";
@@ -258,11 +258,15 @@ export function signedIn(): SessionStatus {
   };
 }
 
-export function repositories(): Repository[] {
-  return [
-    { owner: "acme", name: "web", description: "フロントエンド" },
-    { owner: "acme", name: "api" },
-  ];
+export function repositories(): RepositoryList {
+  return {
+    repositories: [
+      { owner: "acme", name: "web", description: "フロントエンド" },
+      { owner: "acme", name: "api" },
+    ],
+    // 既定は取り切っている。打ち切りを見るテストだけが true を置く（ADR 0054）。
+    truncated: false,
+  };
 }
 
 export function projects(): Project[] {
@@ -306,6 +310,7 @@ export function annotations(): AnnotationStatus[] {
           body: "忘れたときの導線をまとめる",
           localId: "e1",
           action: "created",
+          confirmed: true,
         },
         {
           itemId: "PVTI_issue",
@@ -315,6 +320,7 @@ export function annotations(): AnnotationStatus[] {
           localId: "i1",
           parentLocalId: "e1",
           action: "created",
+          confirmed: true,
         },
       ],
     },
@@ -336,6 +342,7 @@ export function annotations(): AnnotationStatus[] {
           body: "",
           localId: "i9",
           action: "created",
+          confirmed: true,
         },
       ],
     },
@@ -360,6 +367,7 @@ export function historyRuns(): SyncRun[] {
           body: "有効期限つきのリンクを送る",
           localId: "i1",
           action: "created",
+          confirmed: true,
         },
       ],
     },
@@ -374,6 +382,7 @@ export function historyRuns(): SyncRun[] {
           body: "忘れたときの導線をまとめる",
           localId: "e1",
           action: "created",
+          confirmed: true,
         },
       ],
     },
@@ -417,6 +426,7 @@ export function createdRun(): CreatedRun {
         body: "入口をまとめる",
         localId: "e1",
         action: "created",
+        confirmed: true,
       },
       {
         itemId: "PVTI_2",
@@ -426,6 +436,7 @@ export function createdRun(): CreatedRun {
         localId: "i1",
         parentLocalId: "e1",
         action: "created",
+        confirmed: true,
       },
       {
         itemId: "PVTI_3",
@@ -435,6 +446,7 @@ export function createdRun(): CreatedRun {
         localId: "i2",
         parentLocalId: "e1",
         action: "created",
+        confirmed: true,
       },
     ],
   };
@@ -511,6 +523,7 @@ export function matchedInterpretationMock(): ApiMock {
               body: "",
               localId: "i9",
               action: "created",
+              confirmed: true,
             },
             {
               itemId: "PVTI_kept",
@@ -519,6 +532,7 @@ export function matchedInterpretationMock(): ApiMock {
               body: "",
               localId: "i8",
               action: "created",
+              confirmed: true,
             },
           ],
         },

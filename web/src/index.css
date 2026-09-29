@@ -712,6 +712,25 @@ a.badge-target:hover {
   border-radius: 4px;
 }
 
+/*
+ * 候補の絞り込み（issue #150）。**ラベルは置く。** placeholder だけにすると、
+ * 打ち始めた時点で何の欄なのかが画面から消える。
+ */
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--color-text-subtle);
+}
+
+.filter input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+}
+
 .plain-list button {
   display: flex;
   align-items: baseline;
@@ -861,6 +880,29 @@ a.badge-target:hover {
 }
 
 /*
+ * GitHub に届いたか分からない書き込み（ADR 0056）。
+ *
+ * **「作れた」とも「失敗した」とも見えない色にする。** 成功の側に寄せると
+ * 確かめずに済ませてしまい、失敗の側に寄せると押し直して重複を作る。打ち手が
+ * 「GitHub を見る」しかないので、注意を引く帯で出して畳まない。
+ *
+ * 色だけに頼らない。文言（「確認できていません」）とバッジの文字が同じことを
+ * 言っている。
+ */
+.unconfirmed-items {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--color-warning);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badge-unconfirmed {
+  background: var(--color-warning);
+  color: var(--color-warning-bg);
+}
+
+/*
  * 今回の作成で置き去りになるもの。作成ボタンの手前に置く。押したあとに
  * 気づいても、draft issue は削除できない。
  */
@@ -896,6 +938,18 @@ a.badge-target:hover {
 .rename-form input {
   font-size: 15px;
   padding: 2px 6px;
+}
+
+/*
+ * ボタンに添えるショートカットの表示。**`title` ではなく本文で出す**（ADR 0039）。
+ *
+ * 色と大きさは `.hint` に預ける（両方のクラスを付ける）。押せない理由と同じ
+ * 「本文で出す手掛かり」なので、片方だけ濃さが違う理由が無い。ここが持つのは
+ * 等幅と折り返さないことだけ。
+ */
+.shortcut {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
 }
 
 /*

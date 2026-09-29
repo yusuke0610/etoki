@@ -16,15 +16,15 @@ func (h *handlers) listRepositories(c *gin.Context) {
 		return
 	}
 
-	repos, err := h.catalog.ListRepositories(c.Request.Context())
+	list, err := h.catalog.ListRepositories(c.Request.Context())
 	if err != nil {
 		h.failCatalog(c, err)
 		return
 	}
 
 	// nil を返すと JSON が null になる。一覧は常に配列にする。
-	out := make([]apitypes.Repository, 0, len(repos))
-	for _, r := range repos {
+	out := make([]apitypes.Repository, 0, len(list.Repositories))
+	for _, r := range list.Repositories {
 		out = append(out, apitypes.Repository{
 			Owner:       r.Owner,
 			Name:        r.Name,
@@ -32,7 +32,13 @@ func (h *handlers) listRepositories(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, out)
+	// **配列ではなくオブジェクトで返す**（ADR 0054）。打ち切りを載せる場所が
+	// 要る。ヘッダにしなかったのは、契約に現れないものを画面が読むことになり、
+	// 生成した型から辿れなくなるため（ADR 0011）。
+	c.JSON(http.StatusOK, apitypes.RepositoryList{
+		Repositories: out,
+		Truncated:    list.Truncated,
+	})
 }
 
 // listRepositoryProjects はリポジトリに紐づく Projects v2 を返す。

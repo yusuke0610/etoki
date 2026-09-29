@@ -93,8 +93,7 @@ func (h *handlers) inviteBoardMember(c *gin.Context) {
 	}
 
 	var req apitypes.InviteMemberRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindJSON(c, &req) {
 		return
 	}
 
@@ -115,8 +114,7 @@ func (h *handlers) setBoardMemberRole(c *gin.Context) {
 	}
 
 	var req apitypes.SetMemberRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.badRequest(c, err)
+	if !h.bindJSON(c, &req) {
 		return
 	}
 

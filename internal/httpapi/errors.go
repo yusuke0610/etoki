@@ -11,6 +11,18 @@ import (
 	"github.com/yusuke0610/etoki/port"
 )
 
+// errRequestTooLarge は既定の上限を超える本文が届いたことを表す（issue #147）。
+//
+// **ここだけ sentinel が httpapi にある。** 他は usecase / port が持つが、これは
+// 読み込みの歯止め（router.go の defaultMaxBody）そのものであって、ユースケース層
+// には対応する判定が無い。シーンの大きさ（usecase.MaxSceneBytes）のように「正本は
+// ユースケース層、ハンドラのは歯止め」という関係を持たないので、上に置くと
+// 誰も使わない上限がユースケース層に生える。
+//
+// errors_test.go の網羅検査は usecase と port のソースだけを数え直すので、
+// これは対象外。写し替えは下の表で持つ。
+var errRequestTooLarge = errors.New("etoki: request body is too large")
+
 // errorMapping は sentinel error 1 つを、契約の code と HTTP ステータスに写す。
 type errorMapping struct {
 	err    error
@@ -61,6 +73,11 @@ var errorMappings = []errorMapping{
 	{usecase.ErrAlreadyMember, http.StatusConflict, apitypes.ErrorCodeAlreadyMember},
 	{usecase.ErrInviteeChanged, http.StatusConflict, apitypes.ErrorCodeInviteeChanged},
 	{usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
+
+	// 既定の上限を超える本文。**scene_too_large に畳まない。** あちらは「貼った
+	// 画像を減らす」、こちらは「送っているものがそもそも想定外」で、画面が
+	// 案内できることが違う。
+	{errRequestTooLarge, http.StatusRequestEntityTooLarge, apitypes.ErrorCodeRequestTooLarge},
 
 	// 大きすぎるシーン。400 に畳まない。中身の誤りではなく大きさなので、
 	// 打ち手が「送った内容を直す」ではなく「貼った画像を減らす」になる。

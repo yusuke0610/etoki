@@ -1,20 +1,26 @@
 package etoki_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki"
+	githubauth "github.com/yusuke0610/etoki/internal/adapter/auth/github"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
+	"github.com/yusuke0610/etoki/internal/secret"
+	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -192,6 +198,98 @@ func TestRunShutsDownOnContextCancel(t *testing.T) {
 	}
 }
 
+// 停止の猶予は、作成が記録を終えるまでの最長を覆う（ADR 0056、#170）。
+//
+// **これが崩れると失われるのは 1 件ではなく run ごと。** 書き込み中の 1 件は
+// 取り消しから切り離して待つので（ADR 0051）、猶予が先に尽きるとプロセスが
+// 終わり、その run で先に作れていた項目の記録まで消える。GitHub には draft
+// issue があるのに etoki は何も知らない、という ADR 0009 がいちばん避けたかった
+// 状態に戻る。
+//
+// 実際に 75 秒待つわけにはいかないので、定数どうしの関係で固定する。猶予を
+// 固定値（以前の 10 秒）に書き戻すと落ちる。
+func TestShutdownBudgetCoversCreationDrain(t *testing.T) {
+	t.Parallel()
+
+	shutdown, cancelAfter := etoki.ShutdownBudgetForTest()
+
+	if want := cancelAfter + usecase.MaxCreationDrain; shutdown < want {
+		t.Errorf("shutdownTimeout = %v, want >= %v（切るまで %v + 後始末 %v）",
+			shutdown, want, cancelAfter, usecase.MaxCreationDrain)
+	}
+	// 切るのは猶予の中でなければ意味が無い。等しくすると後始末の時間が残らない。
+	if cancelAfter >= shutdown {
+		t.Errorf("cancelRequestsAfter = %v, want < shutdownTimeout %v", cancelAfter, shutdown)
+	}
+}
+
+// 取り消しのあとも走り続けるハンドラを、猶予の中なら待ち切る。
+//
+// **ctx を切ることと、ハンドラを打ち切ることは別。** `Shutdown` は処理中の
+// ハンドラが返るのを待つので、切り離して書き込みを続ける作成（ADR 0051）は
+// 最後まで進んで記録できる。猶予を超えて打ち切る実装に変えると落ちる。
+func TestRunWaitsForHandlersThatOutliveTheCancel(t *testing.T) {
+	t.Parallel()
+
+	const (
+		cancelAfter = 50 * time.Millisecond
+		// 切られたあとも走り続ける「書き込み中の 1 件 + 記録」のぶん。
+		drain    = 250 * time.Millisecond
+		shutdown = cancelAfter + drain + 250*time.Millisecond
+	)
+
+	entered := make(chan struct{})
+	recorded := make(chan struct{})
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		// ctx は見ない。始めた 1 件は取り消しから切り離して待つ（ADR 0051）。
+		time.Sleep(drain)
+		close(recorded)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	srv := etoki.NewServerForTest(freeAddr(t), h, shutdown, cancelAfter)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	waitForListener(t, srv.Addr())
+
+	go func() {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+srv.Addr()+"/", nil)
+		if err != nil {
+			return
+		}
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler was not entered")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return")
+	}
+
+	// **Run が返ったときには記録まで終わっている。** 先に返る実装だと、
+	// この時点ではまだ書き込みの途中で、プロセスが終われば記録は残らない。
+	select {
+	case <-recorded:
+	default:
+		t.Error("Run が記録の前に返った（猶予を超えて打ち切っている）")
+	}
+}
+
 // 停止の猶予が尽きる前に、処理中のリクエストの ctx を切る（ADR 0051、#140）。
 //
 // Shutdown は処理中のハンドラを待つだけなので、切らないと作成は猶予を超えて
@@ -352,4 +450,84 @@ func TestNewAcceptsUnsetLLMLimits(t *testing.T) {
 	if _, err := etoki.New(options(t, "")); err != nil {
 		t.Fatalf("New: %v", err)
 	}
+}
+
+// 認証なしでループバック以外にバインドしたら、起動時に知らせる（issue #148）。
+//
+// 止めはしない。広げるのは利用者が明示的に選んだ設定（ADR 0016）で、拒むと
+// その選択を後から覆すことになる。代わりに、どういう構成になっているかを
+// 見せる（中核思想 3）。
+//
+// **警告が出ないほうも固定する。** 常に出す実装でも「出る」側だけなら通る。
+func TestNewWarnsWhenExposedWithoutAuth(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		addr string
+		auth bool
+		want bool
+	}{
+		"既定（ループバック）":    {addr: "", want: false},
+		"127.0.0.1 を明示": {addr: "127.0.0.1:8080", want: false},
+		"localhost":     {addr: "localhost:8080", want: false},
+		"IPv6 のループバック":  {addr: "[::1]:8080", want: false},
+		"0.0.0.0":       {addr: "0.0.0.0:8080", want: true},
+		"ホストを省いた全インターフェース": {addr: ":8080", want: true},
+		"LAN のアドレス":        {addr: "192.168.1.10:8080", want: true},
+		"公開しても認証があれば言わない":  {addr: "0.0.0.0:8080", auth: true, want: false},
+		"ループバック + 認証も言わない": {addr: "", auth: true, want: false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			opts := options(t, tc.addr)
+			opts.Logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+				Level: slog.LevelWarn,
+			}))
+			if tc.auth {
+				opts.Auth = fakeAuthenticator(t)
+			}
+
+			if _, err := etoki.New(opts); err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			got := strings.Contains(buf.String(), "listening beyond loopback without authentication")
+			if got != tc.want {
+				t.Errorf("warned = %t, want %t (log: %q)", got, tc.want, buf.String())
+			}
+		})
+	}
+}
+
+// fakeAuthenticator は「認証を設定した」状態を作るためだけの Authenticator。
+//
+// 中身は呼ばない。New が見るのは nil かどうかだけ。
+func fakeAuthenticator(t *testing.T) *etoki.Authenticator {
+	t.Helper()
+
+	provider, err := githubauth.New(githubauth.Config{ClientID: "id", ClientSecret: "secret"})
+	if err != nil {
+		t.Fatalf("githubauth.New: %v", err)
+	}
+
+	box, err := secret.New(make([]byte, secret.KeySize))
+	if err != nil {
+		t.Fatalf("secret.New: %v", err)
+	}
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "auth.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	auth, err := etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box))
+	if err != nil {
+		t.Fatalf("NewAuthenticator: %v", err)
+	}
+	return auth
 }

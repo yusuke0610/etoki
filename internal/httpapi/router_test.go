@@ -171,6 +171,80 @@ func TestAPIResponses_AreNotCached(t *testing.T) {
 	}
 }
 
+// `/api` の入口で本文の読み込みに既定の上限が掛かる（issue #147）。
+//
+// **口ごとに置かず入口で掛ける。** シーン・解釈・図のドラフトに歯止めを入れた
+// あとも、改名・作成先・作成・招待の 6 つは素通しのままだった。
+//
+// **歯止めに当たった失敗も契約の code に写す**（`.claude/rules/api-contract.md`）。
+// 400 に落とすと、同じ「大きすぎる」がボディの大きさしだいで 400 と 413 に割れ、
+// 画面が同じ原因を 2 通りに案内することになる。
+//
+// 共有は、設定されていないと本文を読む前に 503 で返るので、そちらのルーターを
+// 持つ member_test.go に置いてある。作成は既定ではなく項目の上限から導いた
+// 上限で読む（create_test.go）。
+func TestAPIBodies_AreLimitedAtTheEntrance(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "設計会")
+
+	// 既定の上限（64 KiB）を確実に超える値。**contentHash のような 1 フィールドに
+	// 載せる。** 項目数で超えさせると、件数の上限（domain.MaxItems）のほうに
+	// 先に当たり、歯止めを見ていない実装でも 4xx になる。
+	huge := strings.Repeat("あ", 64<<10)
+
+	cases := map[string]struct {
+		method string
+		path   string
+		body   map[string]any
+	}{
+		"改名": {http.MethodPatch, "/api/boards/" + id,
+			map[string]any{"name": huge}},
+		"作成先": {http.MethodPut, "/api/boards/" + id + "/target",
+			map[string]any{"repositoryOwner": huge, "repositoryName": "web", "projectId": "PVT_1"}},
+		"作成先の表示": {http.MethodPut, "/api/boards/" + id + "/target/display",
+			map[string]any{"projectId": "PVT_1", "projectTitle": huge}},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := do(t, r, tc.method, tc.path, tc.body)
+			if rec.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("status = %d, want %d (%s)",
+					rec.Code, http.StatusRequestEntityTooLarge, rec.Body)
+			}
+			if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeRequestTooLarge {
+				t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeRequestTooLarge)
+			}
+		})
+	}
+}
+
+// 既定の上限は、広い本文を受ける口では置き換わる（issue #147）。
+//
+// **これが無いと、入口の歯止めがシーンの保存を巻き込んでいても緑のまま通る。**
+// http.MaxBytesReader は重ねると内側が先に切るので、置き換えではなく重ねる形に
+// 戻すとここが落ちる。
+func TestSceneBody_IsNotCutByTheDefaultLimit(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newRouter(t)
+	id := createBoard(t, r, "設計会")
+
+	// 既定（64 KiB）を超えるが、シーンの上限には収まる大きさ。
+	scene := `{"type":"excalidraw","version":2,"source":"test","elements":[],` +
+		`"appState":{"note":"` + strings.Repeat("x", 128<<10) + `"},"files":{}}`
+
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
+		map[string]any{"scene": scene, "baseUpdatedAt": fixedTime})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
 func TestUnknownRouteReturns404(t *testing.T) {
 	t.Parallel()
 
@@ -491,7 +565,7 @@ func TestListAnnotationRuns(t *testing.T) {
 			Outcome:   port.OutcomeComplete,
 			Items: []port.SyncItem{{
 				ItemID: "PVTI_" + title, Kind: port.KindEpic, Title: title,
-				LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+				LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 			}},
 		}); err != nil {
 			t.Fatalf("SaveRun: %v", err)
@@ -534,7 +608,7 @@ func TestListAnnotationRuns_ShowsIncomplete(t *testing.T) {
 		Outcome: port.OutcomeIncomplete, Error: "github graphql: rate limited",
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "作れたほう",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -583,7 +657,7 @@ func TestListAnnotationRuns_OmitsOutcomeWhenNotRecorded(t *testing.T) {
 		CreatedAt: fixedTime, Outcome: port.OutcomeComplete,
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "古い run",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -861,7 +935,7 @@ func TestListAnnotations_Detached(t *testing.T) {
 		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{{
 			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API",
-			LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime,
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
 		}},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)
@@ -977,6 +1051,66 @@ func TestListAnnotations_ReturnsKind(t *testing.T) {
 	}
 }
 
+// 届いたか分からない書き込みは、在るものとは別のキーで返る（ADR 0056、#170）。
+//
+// **畳み込みには入らない**ので、`items` に混ざると「いま GitHub に在る N 件」が
+// 嘘になる。ここが繋がっていないと、画面は記録があることに気づけない。
+func TestListAnnotations_SeparatesUnconfirmedItems(t *testing.T) {
+	t.Parallel()
+
+	r, mappings := newRouter(t)
+	id := createBoard(t, r, "ボード")
+	saveAnnotatedScene(t, r, id)
+
+	// 1 件目は書けて、2 件目は応答を失った run。
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID:      id,
+		AnnotationID: "annot-1",
+		ContentHash:  currentHash(t, r, id),
+		CreatedAt:    fixedTime,
+		Outcome:      port.OutcomeIncomplete,
+		Error:        "Post ...: EOF",
+		Items: []port.SyncItem{
+			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime},
+			{ItemID: "", Kind: port.KindIssue, Title: "SDK更新", LocalID: "i1", Action: port.ActionCreated, Confirmed: false, CreatedAt: fixedTime},
+		},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	got := listAnnotations(t, r, id).Annotations
+
+	items, _ := got[0]["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %d 件, want 1（未確定が混ざっている）", len(items))
+	}
+	if it, _ := items[0].(map[string]any); it["confirmed"] != true {
+		t.Errorf("items[0].confirmed = %v, want true", it["confirmed"])
+	}
+
+	unconfirmed, _ := got[0]["unconfirmedItems"].([]any)
+	if len(unconfirmed) != 1 {
+		t.Fatalf("unconfirmedItems = %d 件, want 1", len(unconfirmed))
+	}
+	it, _ := unconfirmed[0].(map[string]any)
+	if it["title"] != "SDK更新" {
+		t.Errorf("unconfirmedItems[0].title = %v, want SDK更新", it["title"])
+	}
+	// **item ID は埋めない。** 埋めると、在りもしない item を更新先として送れる。
+	if it["itemId"] != "" {
+		t.Errorf("unconfirmedItems[0].itemId = %v, want 空文字", it["itemId"])
+	}
+	if it["confirmed"] != false {
+		t.Errorf("unconfirmedItems[0].confirmed = %v, want false", it["confirmed"])
+	}
+
+	// **状態は created のまま。** uncreated に戻すと、作り直しで重複する
+	// （ADR 0009 / 0056）。
+	if got[0]["state"] != "created" {
+		t.Errorf("state = %v, want created", got[0]["state"])
+	}
+}
+
 // 実行記録があってハッシュが一致すれば created、ボードを変えれば changed。
 func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 	t.Parallel()
@@ -1001,8 +1135,8 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 		CreatedAt:    fixedTime,
 		Outcome:      port.OutcomeComplete,
 		Items: []port.SyncItem{
-			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", Action: port.ActionCreated, CreatedAt: fixedTime},
-			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, Action: port.ActionCreated, CreatedAt: fixedTime},
+			{ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API", Body: "決済まわりの入口", LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime},
+			{ItemID: "PVTI_i1", Kind: port.KindIssue, Title: "SDK更新", Body: "SDK の更新内容", LocalID: "i1", ParentLocalID: &parent, Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime},
 		},
 	}); err != nil {
 		t.Fatalf("SaveRun: %v", err)

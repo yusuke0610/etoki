@@ -27,6 +27,7 @@ import {
   matchedInterpretationMock,
   mixedFramesMock,
   multiFrameMock,
+  repositories,
   signedIn,
   unselectedBoard,
 } from "./helpers/fixtures";
@@ -185,6 +186,25 @@ test.describe("スクリーンショット", () => {
     await page.locator(".excalidraw canvas").first().waitFor();
     await page.getByRole("heading", { name: "注釈", level: 2 }).waitFor();
     await shot(page, "07-target-selected");
+  });
+
+  // 候補を取り切っていない状態（ADR 0054）。打ち切りの知らせと絞り込みが
+  // どちらも見えていることを、画像としても残す。
+  test("打ち切った作成先の一覧を撮る", async ({ page }) => {
+    const mock = baseMock();
+    const target = unselectedBoard();
+    mock.boards = [summarize(target)];
+    mock.details = { [target.id]: target };
+    mock.annotations = { [target.id]: [] };
+    mock.repositories = { status: 200, body: { ...repositories(), truncated: true } };
+
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+    await page.getByText("一覧を打ち切っています").waitFor();
+    await shot(page, "20-target-truncated");
   });
 
   // 固定済みでも表示名は取り直せる（ADR 0037）。確定していることと、名前だけは
@@ -543,6 +563,41 @@ test.describe("スクリーンショット", () => {
     await shot(page, "27-run-incomplete");
   });
 
+  // 届いたか分からない書き込み（ADR 0056）。**「作れた」とも「失敗した」とも
+  // 見えていないか**、畳まれていないか、在る件数に紛れていないかを画像で見る。
+  test("届いたか分からない書き込みを撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.annotations[BOARD_ID] = annotations().map((a) =>
+      a.id === ANNOTATION_IDS.created
+        ? {
+            ...a,
+            lastRunOutcome: "incomplete" as const,
+            unconfirmedItems: [
+              {
+                // 応答を失った作成なので item ID は無い。
+                itemId: "",
+                kind: "issue" as const,
+                title: "再設定メールの文面を決める",
+                body: "有効期限の書き方まで",
+                localId: "i9",
+                action: "created" as const,
+                confirmed: false,
+              },
+            ],
+          }
+        : a,
+    );
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const card = annotationCard(page, "パスワード再設定");
+    await card.locator(".unconfirmed-items").waitFor();
+    await shot(page, "36-unconfirmed-items");
+  });
+
   // 名前を変えている最中。見出しが入力に変わるので、押し間違いで名前が
   // 変わるように見えていないかを画像で見る。
   test("名前の変更中を撮る", async ({ page }) => {
@@ -685,6 +740,7 @@ test.describe("スクリーンショット", () => {
             body: "囲みは消えているが GitHub には残っている",
             localId: "e1",
             action: "created",
+            confirmed: true,
           },
         ],
       },
