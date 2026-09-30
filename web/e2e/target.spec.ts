@@ -4,9 +4,11 @@ import type { BoardDetail } from "../src/api/types";
 import { installApi, summarize } from "./helpers/api";
 import {
   backToList,
+  chooseFromMenu,
   chooseTarget,
   drawRectangle,
   openBoard,
+  openBoardMenu,
   openBoardWithMock,
   picker,
 } from "./helpers/board";
@@ -238,18 +240,26 @@ test.describe("作成先の選択", () => {
   test("未保存の変更があるうちは作成先を変更できない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
+    // 口はメニューの中にある（ADR 0065）。描く・保存するあいだは閉じておく。
+    // 開いたまま外を押すと、その 1 回はメニューを閉じるのに使われる。
     const change = page.getByRole("button", { name: "作成先を変更" });
+    await openBoardMenu(page);
     await expect(change).toBeEnabled();
+    await page.keyboard.press("Escape");
 
     await drawRectangle(page);
 
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+    const menu = await openBoardMenu(page);
     await expect(change).toBeDisabled();
     // 押せない理由は本文として出す。title に隠すと、ホバーできない利用者と
     // 読み上げには届かない（disabled なボタンにはフォーカスも当たらない）。
-    await expect(page.getByText("保存してから作成先を変更できます")).toBeVisible();
+    await expect(menu.getByText("保存してから作成先を変更できます")).toBeVisible();
+    await page.keyboard.press("Escape");
 
     await page.getByRole("button", { name: "保存" }).click();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    await openBoardMenu(page);
     await expect(change).toBeEnabled();
   });
 
@@ -279,7 +289,7 @@ test.describe("作成先の選択", () => {
   test("固定前は作成先を選び直せる", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "作成先を変更" }).click();
+    await chooseFromMenu(page, "作成先を変更");
     await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
 
     await picker(page)
@@ -300,9 +310,16 @@ test.describe("作成先の選択", () => {
 
     await openBoardWithMock(page, mock);
 
-    await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
+    // 口はメニューの中にある。**開いてから「無い」を見る。** 閉じたままだと
+    // 出していても通る。
+    const menu = await openBoardMenu(page);
+    await expect(menu.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
     // 確定していることだけでなく、なぜ確定なのかも本文で読める必要がある。
-    await expect(page.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
+    await expect(menu.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
+    await page.keyboard.press("Escape");
+    // **確定しているという状態は、メニューを閉じていても読める**（#62）。
+    // メニューの文は「作成先を変更」が無い理由で、閉じると消える。
+    await expect(page.locator(".board-context")).toContainText("作成先は確定");
   });
 
   // 固定するのは作成先そのものであって、表示用のスナップショットではない
@@ -324,10 +341,13 @@ test.describe("作成先の選択", () => {
 
     await openBoardWithMock(page, mock);
 
-    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await chooseFromMenu(page, "作成先の名前を取り直す");
 
-    // 作成先そのものは固定されたまま。変更の口は出ない。
-    await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
+    // 作成先そのものは固定されたまま。変更の口は出ない。押すとメニューは
+    // 閉じるので、開き直してから見る。
+    const menu = await openBoardMenu(page);
+    await expect(menu.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
 
     // 一覧は作成先でまとめて見せる（ADR 0019）。取り直した名前が木に出る。
     // 一覧は別の画面なので戻って見る（ADR 0064）。
@@ -385,7 +405,7 @@ test.describe("作成先の選択", () => {
 
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
-    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await chooseFromMenu(page, "作成先の名前を取り直す");
 
     // 応答を握ったまま、一覧へ戻って別のボードへ移る。
     await backToList(page);
@@ -426,7 +446,7 @@ test.describe("作成先の選択", () => {
 
     await openBoardWithMock(page, mock);
 
-    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await chooseFromMenu(page, "作成先の名前を取り直す");
 
     await expect(page.getByRole("alert")).toContainText(
       "作成先の Project が GitHub 側で見つかりませんでした",
@@ -445,7 +465,7 @@ test.describe("作成先の選択", () => {
 
     await openBoardWithMock(page, mock);
 
-    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await chooseFromMenu(page, "作成先の名前を取り直す");
 
     await expect(page.getByRole("alert")).toContainText(
       "作成先が変わっています。ボードを開き直してください。",

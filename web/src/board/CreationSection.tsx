@@ -28,7 +28,7 @@ export function CreationSection({
    * いま作成を始められない理由。始められるなら null。
    *
    * **`BoardPage` が `exclusion.ts` の表から引いて渡す。** ここで
-   * `saving` / `importing` から組み直すと、同じ判定がヘッダーと 2 箇所に
+   * `saving` / `importing` から組み直すと、同じ判定が右上・メニューと 2 箇所に
    * なる（#146）。
    */
   creationBlocked: string | null;

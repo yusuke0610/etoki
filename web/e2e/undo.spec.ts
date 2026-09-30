@@ -1,7 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { installApi, type ApiMock } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoard } from "./helpers/board";
+import {
+  annotationCard,
+  chooseFromMenu,
+  drawRectangle,
+  openBoard,
+} from "./helpers/board";
 import { BOARD_ID, baseMock, mixedFramesMock } from "./helpers/fixtures";
 
 const BOARD_NAME = "認証まわりのブレスト";
@@ -40,7 +45,7 @@ test.describe("元に戻す", () => {
     await openBoard(page, BOARD_NAME);
 
     await drawRectangle(page);
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await chooseFromMenu(page, "図のドラフト");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     await expect(page.locator(".diagram-mermaid")).toContainText("flowchart TD");
@@ -89,7 +94,7 @@ test.describe("元に戻す", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await chooseFromMenu(page, "図のドラフト");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     await expect(page.locator(".diagram-mermaid")).toContainText("flowchart TD");

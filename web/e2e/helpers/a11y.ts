@@ -62,17 +62,45 @@ export async function expectBlockedReason(
 }
 
 /**
+ * Excalidraw の拡張点に載せた、etoki が書いた部品（ADR 0065）。
+ *
+ * 右上の島（`renderTopRightUI`）、下の帯（`Footer`）、メニューの中の etoki の
+ * 項目と押せない理由の文。**部品を拡張点に足したら、ここにも足す。** 足さないと
+ * `.excalidraw` の除外に巻き込まれて、検査されないまま残る。
+ */
+const ETOKI_INSIDE_CANVAS = [
+  ".excalidraw .board-status",
+  ".excalidraw .board-context",
+  ".excalidraw .etoki-menu-item",
+  ".excalidraw .menu-note",
+];
+
+/**
  * etoki が書いた DOM に axe を掛け、違反が無いことを確かめる。
  *
  * **`.excalidraw` は外す。** 掛けた時点で Excalidraw 自身のメニューボタンが
  * `button-name` に引っかかっており、etoki には直せない。外さないと、直せない
  * 指摘が常時 1 件出続ける検査になり、やがて誰も見なくなる（ADR 0039）。
  *
+ * **ただし etoki が拡張点に載せた部品は戻す**（`ETOKI_INSIDE_CANVAS`）。axe は
+ * 包含と除外が重なると深いほうを採るので、除外の中の包含で戻せる。戻さないと、
+ * 部品を拡張点へ移しただけで検査が静かに減る（ADR 0065）。
+ *
+ * **戻した部品の色のコントラストは、axe では判定できない。** Excalidraw の層に
+ * 重なっているので、axe は背景色を決められず「判定不能」（`incomplete`）に回す。
+ * 違反として落ちないので、読めない色にしても通る。**効いているのは構造の検査
+ * だけ**（名前の無いボタン、`aria-describedby` の指す先）。色は使っている
+ * トークンの側で守る。同じトークンは、axe が背景を決められる画面（ログインの
+ * 主ボタン、一覧）で検査されている。
+ *
  * jsx-a11y と重ならない。あちらは JSX の属性しか見ないので、**実際に描いた
  * 色のコントラストと、`aria-describedby` の指す先が実在するかは見えない。**
  */
 export async function expectNoAxeViolations(page: Page): Promise<void> {
-  const results = await new AxeBuilder({ page }).exclude(".excalidraw").analyze();
+  // 包含を 1 つでも指定すると、既定の「文書全体」が外れる。`body` から始める。
+  let builder = new AxeBuilder({ page }).include("body").exclude(".excalidraw");
+  for (const selector of ETOKI_INSIDE_CANVAS) builder = builder.include(selector);
+  const results = await builder.analyze();
 
   // id と対象の要素まで出す。件数だけでは、落ちたときにどこを直すのか分からない。
   const found = results.violations.map(
