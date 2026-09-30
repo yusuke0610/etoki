@@ -2,7 +2,7 @@ import { partialCreationFailure } from "../api/errorMessage";
 import type { ProjectAccess } from "../api/types";
 import { ErrorNotice } from "../ErrorNotice";
 import { partialSummary, resultSummary } from "./itemSummary";
-import { ItemBody, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
+import { ItemBody, ItemLink, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
 import type { CreationState } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 
@@ -138,6 +138,7 @@ export function CreationSection({
                   {it.action === "updated" && (
                     <span className="badge badge-updated">更新</span>
                   )}
+                  <ItemLink link={projectLink} item={it} />
                   <ItemBody body={it.body} />
                 </li>
               ))}

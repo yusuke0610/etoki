@@ -7,7 +7,11 @@ import { describeFailure, type Failure } from "../api/errorMessage";
 import { sceneSignature } from "../excalidraw/dirty";
 import type { SceneElement } from "../excalidraw/annotation";
 import { sceneJSON } from "../excalidraw/transfer";
+import type { NotifyOptions } from "../notification/types";
 import type { Exclusion } from "./exclusion";
+
+/** 保存の失敗の通知。続けて失敗しても 1 件に畳み、保存できたら下げる。 */
+export const SAVE_FAILED = "save-failed";
 
 type Options = {
   api: ExcalidrawImperativeAPI | null;
@@ -36,7 +40,9 @@ type Options = {
    * 捨てるものを足した日に無効にし忘れる場所が増える（#146）。
    */
   onSaved: () => Promise<void>;
-  onError: (failure: Failure) => void;
+  onError: (failure: Failure, options?: Pick<NotifyOptions, "action" | "key">) => void;
+  /** 前の保存の失敗の通知を下げる（ADR 0058）。 */
+  dismiss: (key: string) => void;
 };
 
 export type SceneSave = {
@@ -65,6 +71,7 @@ export function useSceneSave({
   markSaved,
   onSaved,
   onError,
+  dismiss,
 }: Options): SceneSave {
   /**
    * 衝突したときに基準だった版。衝突していなければ null。
@@ -88,6 +95,11 @@ export function useSceneSave({
     baseUpdatedAt.current = updatedAt;
   }, [updatedAt]);
 
+  // 通知の「再試行」から呼ぶ保存。**押された時点の save を呼ぶ。** 通知は失敗した
+  // 時点で作られるので、そのときの save を閉じ込めると、あとで api が変わった
+  // あとでも古いものを呼ぶ。
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+
   const save = useCallback(async () => {
     if (!api) return;
 
@@ -109,6 +121,9 @@ export function useSceneSave({
         // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
         baseUpdatedAt.current = saved.updatedAt;
         setConflictedFor(null);
+        // 前の保存の失敗はもう当てはまらない。残すと、保存できているのに
+        // 「保存できませんでした」が読める。
+        dismiss(SAVE_FAILED);
         // 保存が成功した = いまのシーンはサーバーの上限を満たしている。
         setOverLimit(false);
         markSaved(sent);
@@ -121,19 +136,34 @@ export function useSceneSave({
           setConflictedFor(updatedAt);
           return;
         }
-        onError(describeFailure("保存できませんでした", e));
+        // 失敗したら同じ保存をその場から押し直せるようにする。**押し直して解けない
+        // ものには出さない。** 409 は上で帯に回してあり、413 は描いたものを減らす
+        // まで何度押しても同じ答えが返る。key を揃えて、失敗が続いても同じ 1 件を
+        // 差し替えるだけにする。
+        const retryable = !(e instanceof ApiError && e.code === "scene_too_large");
+        onError(describeFailure("保存できませんでした", e), {
+          key: SAVE_FAILED,
+          action: retryable
+            ? { label: "再試行", run: () => void saveRef.current() }
+            : undefined,
+        });
       }
     });
   }, [
     api,
     boardId,
     currentBackground,
+    dismiss,
     exclusive,
     markSaved,
     onError,
     onSaved,
     updatedAt,
   ]);
+
+  useEffect(() => {
+    saveRef.current = save;
+  }, [save]);
 
   return useMemo(() => ({ conflicted, overLimit, save }), [conflicted, overLimit, save]);
 }

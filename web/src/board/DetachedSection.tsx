@@ -1,5 +1,5 @@
 import type { DetachedAnnotation } from "../api/types";
-import { ItemBody, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
+import { ItemBody, ItemLink, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
 import type { RunsProps } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 import { RunHistory, formatRunTimestamp } from "./RunHistory";
@@ -57,6 +57,7 @@ export function DetachedSection({
                   {a.items.map((it) => (
                     <li key={it.itemId}>
                       <span className="kind">{it.kind}</span> {it.title}
+                      <ItemLink link={projectLink} item={it} />
                       <ItemBody body={it.body} />
                     </li>
                   ))}

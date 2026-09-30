@@ -11,6 +11,7 @@ import type {
 import { ITEM_KIND_LABEL, itemKinds } from "./annotationLabel";
 import { CreationSection } from "./CreationSection";
 import { groupByEpic } from "./interpretation";
+import { ItemLink } from "./panelParts";
 import {
   blockingReasons,
   canResend,
@@ -177,7 +178,10 @@ export function DraftEditor({
         )}
       </div>
 
-      <LeftBehind items={previous.filter((it) => leftBehind.has(it.itemId))} />
+      <LeftBehind
+        items={previous.filter((it) => leftBehind.has(it.itemId))}
+        projectLink={projectLink}
+      />
 
       <CreationSection
         annotationId={annotationId}
@@ -451,7 +455,13 @@ function DraftItemBody({
  * 0 件なら何も出さない。常に枠を出すと、取り残しが無いことと 0 件であることの
  * 区別に注意を割かせる。
  */
-function LeftBehind({ items }: { items: SyncItem[] }) {
+function LeftBehind({
+  items,
+  projectLink,
+}: {
+  items: SyncItem[];
+  projectLink: ProjectLink | null;
+}) {
   if (items.length === 0) return null;
 
   return (
@@ -464,6 +474,7 @@ function LeftBehind({ items }: { items: SyncItem[] }) {
         {items.map((it) => (
           <li key={it.itemId}>
             <span className="kind">{it.kind}</span> {it.title}
+            <ItemLink link={projectLink} item={it} />
           </li>
         ))}
       </ul>

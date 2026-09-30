@@ -1065,6 +1065,14 @@ type SyncItem struct {
 	// 記録できなかった
 	Confirmed bool `json:"confirmed"`
 
+	// ItemDatabaseID item の数値の識別子（GraphQL の `fullDatabaseId`）。**省略と 0 は
+	// 「知らない」。** 記録していなかった頃の run と、GitHub が返さなかった
+	// ときにそうなる。
+	//
+	// **URL ではなく素材だけを返す**（ADR 0057）。item ごとのリンクの形と、
+	// 組めないときの落とし先はフロントの 1 箇所が持つ。
+	ItemDatabaseID int64 `json:"itemDatabaseId,omitempty"`
+
 	// ItemID GitHub Projects v2 の item ID。
 	//
 	// **`confirmed` が false の作成では空文字**（ID が返ってこなかった）。
