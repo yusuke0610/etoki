@@ -11,7 +11,7 @@ import type {
   BoardDetail,
   BoardMember,
   BoardRole,
-  BoardSummary,
+  BoardListEntry,
   BoardTarget,
   BoardTargetDisplay,
   CreatedRun,
@@ -99,7 +99,7 @@ export const capabilitiesApi = {
 };
 
 export const boardsApi = {
-  list: () => request<BoardSummary[]>("/api/boards"),
+  list: () => request<BoardListEntry[]>("/api/boards"),
 
   /**
    * ボードを作る。
