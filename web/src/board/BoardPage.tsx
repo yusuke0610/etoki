@@ -844,6 +844,10 @@ export function BoardPage({
         }
 
         placeElements(converted.elements);
+        // 置けたら入力を消す。残すと同じ図を 2 度置きやすい。**送った文字列の
+        // ままのときだけ。** 変換を待つあいだにパネルを閉じて開き直すと入力を
+        // 書き換えられるので、無条件に消すと新しい入力を捨てる。
+        setPasteText((current) => (current === text ? "" : current));
         return { placed: true };
       } finally {
         placing.leave();

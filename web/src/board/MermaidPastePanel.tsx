@@ -21,7 +21,7 @@ type Props = {
    */
   text: string;
   onChangeText: (text: string) => void;
-  /** 貼られた文字列を変換して置く。 */
+  /** 貼られた文字列を変換して置く。置けたら入力を消すのもこちら。 */
   onPlace: (text: string) => Promise<PasteOutcome>;
   onClose: () => void;
 };
@@ -48,13 +48,10 @@ export function MermaidPastePanel({ text, onChangeText, onPlace, onClose }: Prop
     // 前の失敗は押した時点で消す。新しい結果の隣に古い理由が残らないように。
     setFailure(null);
     try {
+      // 置けたら入力を消すのは `onPlace`（`BoardPage`）。待っているあいだに
+      // 閉じて開き直せば書き換えられるので、送った文字列のままのときだけ消す。
       const outcome = await onPlace(text);
-      if (outcome.placed) {
-        // 置けたら消す。残すと同じ図を 2 度置きやすい。
-        onChangeText("");
-      } else {
-        setFailure(outcome.failure);
-      }
+      if (!outcome.placed) setFailure(outcome.failure);
     } finally {
       setPlacing(false);
     }
