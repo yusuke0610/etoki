@@ -39,6 +39,8 @@
   --color-annotation: #6965db;
   --color-annotation-bg: rgb(105 101 219 / 6%);
   --color-on-annotation: #fff;
+  /* 通知のように地の上へ浮かせる面の影。 */
+  --color-shadow: rgb(0 0 0 / 15%);
 
   /* ボタンや入力欄などブラウザが描く部品も、テーマに合わせて描かせる。 */
   color-scheme: light;
@@ -80,6 +82,8 @@
   --color-annotation: #8f8cf0;
   --color-annotation-bg: rgb(143 140 240 / 8%);
   --color-on-annotation: #15142b;
+  /* 暗い地では薄い黒が見えないので濃くする。 */
+  --color-shadow: rgb(0 0 0 / 50%);
 
   color-scheme: dark;
 }
@@ -573,7 +577,7 @@ body {
   border-radius: 6px;
   background: var(--color-bg);
   color: var(--color-text);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+  box-shadow: 0 2px 8px var(--color-shadow);
 }
 
 .notification-error {

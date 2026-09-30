@@ -72,6 +72,14 @@ describe("notificationsReducer", () => {
       ).toBe(1000);
     });
 
+    // ADR 0058。指定より種別を優先する。
+    it("error と warning は指定があっても消さない", () => {
+      expect(add([], 1, { ...error("a"), duration: 1000 })[0]?.duration).toBeNull();
+      expect(
+        add([], 1, { kind: "warning", message: "w", duration: 1000 })[0]?.duration,
+      ).toBeNull();
+    });
+
     // 消える瞬間に押そうとした手が空振りする。指定より優先する。
     it("action を持つ通知は指定があっても消さない", () => {
       const s = add([], 1, {

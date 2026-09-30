@@ -7,7 +7,8 @@ export const MAX_NOTIFICATIONS = 3;
  * 種別ごとの既定の表示時間。`null` は自動で消さない。
  *
  * **`error` と `warning` は消さない。** etoki で警告に当たるのは「未保存」
- * 「取り残しが出る」のような状態が多く、消えると読めなくなる。
+ * 「取り残しが出る」のような状態が多く、消えると読めなくなる。呼び出し側が
+ * `duration` を渡しても従わない（ADR 0058）。
  */
 const DEFAULT_DURATION: Record<NotificationKind, number | null> = {
   error: null,
@@ -49,7 +50,7 @@ export function notificationsReducer(
 
 function toNotification(id: number, options: NotifyOptions): Notification {
   const duration =
-    options.action !== undefined
+    options.action !== undefined || DEFAULT_DURATION[options.kind] === null
       ? null
       : options.duration !== undefined
         ? options.duration
