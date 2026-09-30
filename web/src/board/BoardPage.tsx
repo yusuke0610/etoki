@@ -903,11 +903,25 @@ export function BoardPage({
     dismiss: dismissHere,
   });
 
-  // **ボードを変えたら保存失敗の通知は下げる。** 通知はキャンバスより上に生きて
-  // いるので、残すと別のボードの画面に「保存できませんでした」が並ぶ。しかも
-  // 「再試行」が呼ぶのは押した時点の save、つまり**いま開いているボードの保存**
-  // なので、読んでいる文と起きることが食い違う。
-  useEffect(() => () => dismissKey(SAVE_FAILED), [board.id, dismissKey]);
+  // **ボードを変えたら、そのボードについての通知は全部下げる。** 通知は
+  // キャンバスより上に生きているので、残すと別のボードの画面に並ぶ。
+  //
+  // - `SAVE_FAILED` — 「再試行」が呼ぶのは押した時点の save、つまり**いま開いて
+  //   いるボードの保存**なので、読んでいる文と起きることが食い違う。
+  // - `SCENE_UNREADABLE` — 下げる経路がここしか無い。残すと、読めたボードが
+  //   空で開いたように読める。
+  // - `ANNOTATIONS_FAILED` — 次のボードの取得が成功するまで前のボードの失敗が
+  //   残る。
+  //
+  // 次のボードが出す通知は消さない。前のボードの cleanup は、次のボードの effect
+  // より先に走る。
+  useEffect(
+    () => () => {
+      for (const key of [SAVE_FAILED, SCENE_UNREADABLE, ANNOTATIONS_FAILED])
+        dismissKey(key);
+    },
+    [board.id, dismissKey],
+  );
 
   /**
    * 注釈を解釈させる。

@@ -210,6 +210,20 @@ test.describe("通知", () => {
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
+  // 切れると: 読めたボードの画面に「シーンを読み込めませんでした。空のボードと
+  // して開きます。」が残り、いま開いているボードが空で開いたように読める。
+  // この通知を下げる経路は離れるときしか無い。
+  test("ボードを変えたらシーンを読めなかった通知は消える", async ({ page }) => {
+    const mock = twoBoards();
+    mock.details[BOARD_ID] = { ...board(), scene: "{" };
+    await openBoardWithMock(page, mock);
+    await expect(page.getByRole("alert")).toContainText("シーンを読み込めませんでした");
+
+    await openBoard(page, OTHER_NAME);
+
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
   // 切れると: 離れる前に投げた保存が離れたあとで失敗し、別のボードの画面に
   // 「保存できませんでした」が出る。その「再試行」は離れたボードの save を
   // 呼ぶので、捨てると決めたシーンを前のボードへ保存しにいく。

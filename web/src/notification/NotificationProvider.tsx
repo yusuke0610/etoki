@@ -33,7 +33,7 @@ const NotificationsContext = createContext<Notification[] | null>(null);
  *
  * **状態管理の基盤を足さない。** etoki の状態はコンポーネントの `useState` と
  * props で降ろす形で、グローバルな store は無い。通知だけは深い位置
- * （BoardPage の保存・パネル）から出すので、React 標準の Context を 1 つ
+ * （BoardPage の保存・パネル）から出すので、React 標準の Context に
  * 置き、持たせるのは通知の並びと出し入れの口だけにする（ADR 0058）。
  */
 export function NotificationProvider({ children }: { children: ReactNode }) {
