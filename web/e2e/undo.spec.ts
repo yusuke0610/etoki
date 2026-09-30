@@ -8,7 +8,6 @@ const BOARD_NAME = "認証まわりのブレスト";
 
 type SavedElement = {
   type: string;
-  backgroundColor?: string;
   isDeleted?: boolean;
   customData?: Record<string, unknown>;
 };
@@ -28,27 +27,13 @@ function undo(page: Page) {
   return page.getByRole("button", { name: "元に戻す" }).click();
 }
 
-// etoki がキャンバスに加えた変更（付箋・図のドラフト・注釈の付け外し）は、
+// etoki がキャンバスに加えた変更（図のドラフト・注釈の付け外し）は、
 // 人の操作として「元に戻す」で 1 手ずつ戻る（#144）。**戻らないだけでなく、
 // 押すと直前に自分が描いたものが消えていた。** ブレスト中の置き間違いを戻す
 // 手段が無いと手が止まる（中核思想 1）。
 test.describe("元に戻す", () => {
-  // いちばん失いたくないものを直接見る。「付箋が消える」だけでは、描いた矩形も
-  // 一緒に消える実装でも通る。
-  test("付箋を置いてから戻すと、付箋だけが消えて描いた図形は残る", async ({ page }) => {
-    const mock = await installApi(page, baseMock());
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    await drawRectangle(page);
-    await page.getByRole("button", { name: "付箋" }).click();
-    await undo(page);
-
-    const elements = await saveAndRead(page, mock);
-    const rectangles = elements.filter((el) => el.type === "rectangle");
-    expect(rectangles.map((el) => el.backgroundColor)).toEqual(["transparent"]);
-  });
-
+  // いちばん失いたくないものを直接見る。「置いたものが消える」だけでは、描いた
+  // 矩形も一緒に消える実装でも通る。
   test("図のドラフトを置いてから戻すと、置いたものが消える", async ({ page }) => {
     const mock = await installApi(page, baseMock());
     await page.goto("/");
@@ -118,12 +103,20 @@ test.describe("元に戻す", () => {
 
   // 戻したら「未保存」も追いつく。署名を取り直さないと、保存した状態に戻した
   // のに未保存のまま残り、離れるときに理由の無い確認が出る。
-  test("保存した直後に付箋を置いて戻すと、未保存が消える", async ({ page }) => {
+  //
+  // 置くのは新しい要素だけの変更にする。既存の要素を書き換える変更（注釈の
+  // 付け外し）は、戻しても version が上がって未保存が残る（`web/CLAUDE.md`）。
+  test("保存した直後に図のドラフトを置いて戻すと、未保存が消える", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
-    await page.getByRole("button", { name: "付箋" }).click();
+    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+    await expect(page.locator(".diagram-mermaid")).toContainText("flowchart TD");
+    await page.getByRole("button", { name: "キャンバスに置く" }).click();
+    // 変換は非同期なので、置けたこと（未保存になったこと）を待ってから戻す。
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
 
     await undo(page);
