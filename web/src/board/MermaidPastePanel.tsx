@@ -14,6 +14,13 @@ import { ACCEPTED_KINDS_LABEL, canPaste } from "../excalidraw/mermaidPaste";
 export type PasteOutcome = { placed: true } | { placed: false; failure: Failure | null };
 
 type Props = {
+  /**
+   * 貼られている文字列。**持つのは `BoardPage`。** パネルは図のドラフトへ
+   * 切り替えたときや「閉じる」で外れるので、ここで持つと直している途中の
+   * 入力が消える。
+   */
+  text: string;
+  onChangeText: (text: string) => void;
   /** 貼られた文字列を変換して置く。 */
   onPlace: (text: string) => Promise<PasteOutcome>;
   onClose: () => void;
@@ -29,8 +36,7 @@ type Props = {
  * 種別（`kind`）も付けない。`erDiagram` を貼っても、ER 図だと決めるのは
  * 注釈パネルで種別を選ぶ人（ADR 0047）。
  */
-export function MermaidPastePanel({ onPlace, onClose }: Props) {
-  const [text, setText] = useState("");
+export function MermaidPastePanel({ text, onChangeText, onPlace, onClose }: Props) {
   const [placing, setPlacing] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
 
@@ -45,7 +51,7 @@ export function MermaidPastePanel({ onPlace, onClose }: Props) {
       const outcome = await onPlace(text);
       if (outcome.placed) {
         // 置けたら消す。残すと同じ図を 2 度置きやすい。
-        setText("");
+        onChangeText("");
       } else {
         setFailure(outcome.failure);
       }
@@ -85,7 +91,7 @@ export function MermaidPastePanel({ onPlace, onClose }: Props) {
             disabled={placing}
             spellCheck={false}
             placeholder={"例:\nerDiagram\n  CUSTOMER ||--o{ ORDER : places"}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onChangeText(e.target.value)}
           />
           <button type="submit" disabled={!placeable}>
             {placing ? "置いています…" : "キャンバスに置く"}

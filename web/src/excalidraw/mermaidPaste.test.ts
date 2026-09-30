@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MERMAID_MAX_TEXT_SIZE, type MermaidParser } from "./mermaid";
-import { canPaste, isAcceptedKind, pasteToElements, unwrapFence } from "./mermaidPaste";
+import {
+  canPaste,
+  isAcceptedKind,
+  pasteToElements,
+  stripComments,
+  unwrapFence,
+} from "./mermaidPaste";
 
 /**
  * 変換器の代わり。**呼ばれたかどうかを数える。**
@@ -71,6 +77,51 @@ describe("isAcceptedKind", () => {
   });
 });
 
+describe("stripComments", () => {
+  // mermaid 11.13.0 の `detectType` が使う正規表現。etoki はこれを写さずに
+  // 書き直した（2 乗の時間がかかる）ので、先頭の語が同じになることを見る。
+  const mermaidStrip = (text: string) => text.replace(/\s*%%.*\n/gm, "\n");
+  const headOf = (text: string) => /^\s*([^\s]+)/.exec(text)?.[1];
+
+  it.each([
+    ["コメント行", "%% x\nerDiagram"],
+    ["行末のコメント", "erDiagram %% x\n  A"],
+    ["語に続くコメント", "erDiagram%%x\n  A"],
+    ["改行で終わらないコメント", "%% erDiagram"],
+    ["CRLF", "%% x\r\nerDiagram"],
+    ["CR の後ろのコメント", "a\r%% x\nerDiagram"],
+    ["U+2028 の前のコメント", "%% x\u2028erDiagram\n"],
+    ["空行を挟む", "\n\n  %% x\n\n  erDiagram"],
+    ["% が 1 つ", "% x\nerDiagram"],
+  ])("先頭の語が mermaid と同じになる（%s）", (_name, text) => {
+    expect(headOf(stripComments(text))).toBe(headOf(mermaidStrip(text)));
+  });
+
+  // 手で並べた例の外も突き合わせる。取り違えると、etoki が erDiagram と
+  // 見た文字列を mermaid が別の種類として描く抜け道になる。
+  it("短い文字列を総当たりしても、先頭の語が mermaid と同じになる", () => {
+    const alphabet = ["%", "\n", "\r", " ", "a", "\u2028"];
+    const walk = (prefix: string, depth: number) => {
+      expect(headOf(stripComments(prefix)), JSON.stringify(prefix)).toBe(
+        headOf(mermaidStrip(prefix)),
+      );
+      if (depth === 0) return;
+      for (const c of alphabet) walk(prefix + c, depth - 1);
+    };
+    walk("", 6);
+  });
+
+  // 上限いっぱいの 1 行でもメインスレッドを止めない。
+  it.each([
+    ["改行の無い %", "%".repeat(MERMAID_MAX_TEXT_SIZE)],
+    ["改行の無い空白", " ".repeat(MERMAID_MAX_TEXT_SIZE)],
+  ])("上限いっぱいでもすぐ終わる（%s）", (_name, text) => {
+    const start = performance.now();
+    stripComments(text);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+});
+
 describe("canPaste", () => {
   it("空白だけなら押させない", () => {
     expect(canPaste("")).toBe(false);
@@ -106,10 +157,10 @@ describe("pasteToElements", () => {
   // 1 ノードにすり替える。前で拒まないと、それが置けたものとして置かれる。
   it("上限ちょうどは通し、1 字でも超えたら変換器に渡さずに tooLarge で返す", async () => {
     const head = "flowchart TD\n  A --> B\n";
-    // 埋め草は改行で終える。改行の無い長い `%%` 行は、mermaid から写した
-    // コメントの正規表現（`isAcceptedKind`）が 2 乗の時間をかけ、並列で回すと
-    // 5 秒の上限を超える。見たいのは長さだけ。
-    const atLimit = head + "%".repeat(MERMAID_MAX_TEXT_SIZE - head.length - 1) + "\n";
+    // 埋め草は改行で終えない。改行の無い長い `%%` 行は、mermaid の正規表現を
+    // そのまま写すと 2 乗の時間がかかった（`stripComments`）。**戻すと、ここが
+    // テストの時間上限で落ちる。**
+    const atLimit = head + "%".repeat(MERMAID_MAX_TEXT_SIZE - head.length);
     expect(atLimit).toHaveLength(MERMAID_MAX_TEXT_SIZE);
 
     const parse = spyParser();
@@ -125,8 +176,7 @@ describe("pasteToElements", () => {
   // 上限はフェンスを剥がしたあとの長さで見る。mermaid に渡るのはそちら。
   it("上限はフェンスを剥がしたあとの長さで比べる", async () => {
     const head = "flowchart TD\n  A --> B\n";
-    // 改行で終える理由は上のテストと同じ。
-    const atLimit = head + "%".repeat(MERMAID_MAX_TEXT_SIZE - head.length - 1) + "\n";
+    const atLimit = head + "%".repeat(MERMAID_MAX_TEXT_SIZE - head.length);
 
     const got = await pasteToElements("```mermaid\n" + atLimit + "\n```", spyParser());
 

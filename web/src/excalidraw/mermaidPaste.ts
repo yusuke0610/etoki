@@ -57,22 +57,52 @@ export const ACCEPTED_KINDS_LABEL = "erDiagram・sequenceDiagram・flowchart（g
  * mermaid（`detectType`）は frontmatter・`%%{…}%%`・`%%` コメントを取り除いて
  * から、先頭の語で種類を決める。取り除き方が mermaid とずれると、etoki が
  * erDiagram だと思った文字列を mermaid が gantt として描く抜け道になる。
- * 3 つの正規表現は mermaid 11.13.0 の `detectType` から写した。
+ * frontmatter と `%%{…}%%` の正規表現は mermaid 11.13.0 の `detectType` から
+ * 写した。`%%` コメントだけは写さずに書き直してある（`stripComments`）。
  *
  * **語の境界まで見る。** mermaid の検出は前方一致なので `flowchart-elk` も
  * flowchart の仲間として拾うが、etoki が確かめていない描き方なので通さない。
  */
 export function isAcceptedKind(definition: string): boolean {
-  const body = definition
+  const withoutDirectives = definition
     .replace(/^-{3}\s*[\n\r](.*?)[\n\r]-{3}\s*[\n\r]+/s, "")
     .replace(
       /%{2}{\s*(?:(\w+)\s*:|(\w+))\s*(?:(\w+)|((?:(?!}%{2}).|\r?\n)*))?\s*(?:}%{2})?/gi,
       "",
-    )
-    .replace(/\s*%%.*\n/gm, "\n");
+    );
+  const body = stripComments(withoutDirectives);
 
   const head = /^\s*([^\s]+)/.exec(body)?.[1];
   return head !== undefined && ACCEPTED_KEYWORDS.includes(head);
+}
+
+/**
+ * `%%` コメントを取り除く。**mermaid の `/\s*%%.*\n/gm` と同じ行を消す。**
+ *
+ * 正規表現を写さないのは、改行で終わらない長い行で 2 乗の時間がかかるため。
+ * 上限（`MERMAID_MAX_TEXT_SIZE`）いっぱいの `%` 1 行で数秒かかり、その間
+ * ブラウザのメインスレッドが止まってキャンバスも触れない。
+ *
+ * 消えるのは「`\n` で終わる行の、最初の `%%` から行末まで」。`.` は `\r`・
+ * `\u2028`・`\u2029` にも当たらないので、それらより前の `%%` は消えない。
+ * mermaid が前に付く空白（改行を含む）も消すのとは違うが、見たいのは
+ * 先頭の語だけなので結果は変わらない（テストで mermaid の正規表現と突き合わせている）。
+ */
+export function stripComments(text: string): string {
+  const lines = text.split("\n");
+  // 最後の要素は `\n` で終わっていないので、mermaid も消さない。
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i] ?? "";
+    const runStart =
+      Math.max(
+        line.lastIndexOf("\r"),
+        line.lastIndexOf("\u2028"),
+        line.lastIndexOf("\u2029"),
+      ) + 1;
+    const at = line.indexOf("%%", runStart);
+    if (at !== -1) lines[i] = line.slice(0, at);
+  }
+  return lines.join("\n");
 }
 
 /**

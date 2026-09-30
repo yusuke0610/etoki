@@ -307,6 +307,11 @@ export function BoardPage({
   const showingChat = leftPanel === "chat";
   const toggleLeftPanel = (panel: "chat" | "paste") =>
     setLeftPanel((open) => (open === panel ? null : panel));
+  // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
+  // 持つ。** パネルは図のドラフトへ切り替えたときや閉じたときに外れるので、
+  // そちらで持つと構文エラーを直している途中の入力が消える。消すのは置けた
+  // ときだけ。ボードを切り替えれば BoardPage ごと作り直されるので残らない。
+  const [pasteText, setPasteText] = useState("");
   // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
   // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
   // パネルを閉じても（貼り付けに切り替えても）会話は残る。
@@ -1616,6 +1621,8 @@ export function BoardPage({
         {leftPanel === "paste" && canEdit && (
           <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
             <MermaidPastePanel
+              text={pasteText}
+              onChangeText={setPasteText}
               onPlace={pasteMermaid}
               onClose={() => setLeftPanel(null)}
             />

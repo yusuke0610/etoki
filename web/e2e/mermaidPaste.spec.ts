@@ -297,6 +297,25 @@ test.describe("mermaid を貼る", () => {
     await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
   });
 
+  // 構文エラーを直している途中で図のドラフトを見に行ったり閉じたりしても、
+  // 入力は残る。パネルは外れるので、文字列は BoardPage が持つ。
+  test("置けなかった入力は、パネルを切り替えても閉じても残る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await openPaste(page);
+
+    const broken = "flowchart TD\n  A[[[[ -->";
+    await paste(page, broken);
+    await expect(page.locator(".mermaid-paste .error")).toBeVisible();
+
+    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await openPaste(page);
+    await expect(page.getByLabel("貼る mermaid")).toHaveValue(broken);
+
+    await page.locator(".mermaid-paste").getByRole("button", { name: "閉じる" }).click();
+    await openPaste(page);
+    await expect(page.getByLabel("貼る mermaid")).toHaveValue(broken);
+  });
+
   // 描けないのに置けると、置いたものを保存できずに黙って捨てる（ADR 0017）。
   test("viewer には出さない", async ({ page }) => {
     const mock = baseMock();

@@ -52,6 +52,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#168](https://github.com/yusuke0610/etoki/pull/168) |        6 |      6 |        0 |      0 | test-effectiveness（上限は「ちょうどで取り切った」側も見る）。契約と README のずれは docs-consistency に既にある               |
 | [#179](https://github.com/yusuke0610/etoki/pull/179) |        3 |      3 |        0 |      0 | async-ui（画面より長く生きる通知へ、離れたあとに返った失敗を書かない）                                                         |
 | [#183](https://github.com/yusuke0610/etoki/pull/183) |        8 |      7 |        1 |      0 | docs-consistency（エージェント定義の `tools` と手順を対応させる）。取り下げは ADR 0009 / 0052 の読み違い                       |
+| [#188](https://github.com/yusuke0610/etoki/pull/188) |        3 |      3 |        0 |      0 | async-ui（外れるパネルの入力は親で持つ）/ validation-boundaries（外から来る文字列の正規表現は線形か確かめる）                  |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
