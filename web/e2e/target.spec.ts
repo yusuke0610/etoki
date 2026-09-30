@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { BoardDetail } from "../src/api/types";
 import { installApi, summarize } from "./helpers/api";
 import {
+  backToList,
   chooseTarget,
   drawRectangle,
   openBoard,
@@ -33,7 +34,7 @@ function withUnselected() {
   return mock;
 }
 
-/** サイドバーからボードを開く。キャンバスが出ないので openBoard は使えない。 */
+/** 一覧からボードを開く。キャンバスが出ないので openBoard は使えない。 */
 async function openUnselected(page: Page): Promise<void> {
   await page
     .locator(".board-list")
@@ -54,6 +55,25 @@ test.describe("作成先の選択", () => {
 
     await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
     await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
+  });
+
+  // 切れると: 未選択のボードを開いた人が、選ぶ以外に出る手段を失う。未選択の
+  // うちはキャンバスを出さないので戻る先が無く、以前はサイドバーから逃げられて
+  // いたが、一覧が別の画面になった（ADR 0064）いま、ここが唯一の出口になる。
+  test("作成先が未選択でも、選ばずに一覧へ戻れる", async ({ page }) => {
+    const mock = await installApi(page, withUnselected());
+    await page.goto("/");
+    await openUnselected(page);
+
+    await picker(page).getByRole("button", { name: "やめる" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
+    ).toBeVisible();
+    expect(new URL(page.url()).search).toBe("");
+    // 引き返しただけで作成先は決まっていない。戻る途中で何かを選んでいたら、
+    // 次に開いたときにブレストへ進んでしまう。
+    expect(mock.details[unselectedBoard().id]?.projectId).toBe("");
   });
 
   // 利用者が選ぶのはリポジトリだが、保存するのはそこに紐づく Project。
@@ -177,8 +197,8 @@ test.describe("作成先の選択", () => {
   // 500 件の平らなリストから目で探すのはつらい（#150）。**絞るのは手元だけ。**
   // 打ち切りの外は問い合わせ直しても出てこない。
   //
-  // サイドバーの木にも同じ `acme/web` が出る（ADR 0019）ので、picker の中だけを
-  // 見る。ここを page 直下にすると、絞っても消えない木のほうに当たる。
+  // picker の中だけを見る。一覧が同じ画面にあったころは木にも同じ `acme/web` が
+  // 出て（ADR 0019）、page 直下で引くと絞っても消えない木のほうに当たった。
   test("名前の一部でリポジトリを絞れる", async ({ page }) => {
     await installApi(page, withUnselected());
     await page.goto("/");
@@ -306,19 +326,22 @@ test.describe("作成先の選択", () => {
 
     await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
 
+    // 作成先そのものは固定されたまま。変更の口は出ない。
+    await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
+
     // 一覧は作成先でまとめて見せる（ADR 0019）。取り直した名前が木に出る。
+    // 一覧は別の画面なので戻って見る（ADR 0064）。
+    await backToList(page);
     await expect(
       page
         .locator(".board-list")
         .getByRole("button", { name: "#1 改名後のロードマップ" }),
     ).toBeVisible();
-    // 作成先そのものは固定されたまま。変更の口は出ない。
-    await expect(page.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
   });
 
-  // 取り直しは GitHub と etoki の 2 往復ある。そのあいだにボードを切り替えられる
-  // ので、遅れて届いた応答をそのまま入れると、今開いているボードが外れる。
-  // 切り替えは confirmDiscard を通ってきているのに、その先で確認なしに
+  // 取り直しは GitHub と etoki の 2 往復ある。そのあいだに一覧へ戻って別の
+  // ボードを開けるので、遅れて届いた応答をそのまま入れると、今開いているボードが
+  // 外れる。移るときは confirmDiscard を通ってきているのに、その先で確認なしに
   // キャンバスが作り直される形になる。
   test("取り直しの応答が遅れて届いても、切り替えた先のボードを外さない", async ({
     page,
@@ -364,21 +387,34 @@ test.describe("作成先の選択", () => {
     await openBoard(page, BOARD_NAME);
     await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
 
-    // 応答を握ったまま別のボードへ移る。
+    // 応答を握ったまま、一覧へ戻って別のボードへ移る。
+    await backToList(page);
     await openBoard(page, OTHER_NAME);
-    release();
 
-    // 応答は届いている。一覧を引き直したことは、取り直した後の名前が木に
-    // 出ることで見る（ADR 0019）。開いているボードのほうは動かない。
+    // **応答が反映されたところまで待ってから見る。** 着く前に見ると、反映
+    // される前の画面を見て通ってしまう。反映すると一覧を引き直すので、その
+    // 取得の応答を合図にする（ボードを開いても一覧は引き直さない）。
+    const reloaded = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/boards" && r.request().method() === "GET",
+    );
+    release();
+    await reloaded;
+
+    // 開いているボードのほうは動かない。
+    await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toHaveCount(
+      0,
+    );
+
+    // 一覧を引き直したことは、取り直した後の名前が木に出ることで見る
+    // （ADR 0019）。
+    await backToList(page);
     await expect(
       page
         .locator(".board-list")
         .getByRole("button", { name: "#1 改名後のロードマップ" }),
     ).toBeVisible();
-    await expect(page.getByRole("heading", { name: OTHER_NAME, level: 1 })).toBeVisible();
-    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toHaveCount(
-      0,
-    );
   });
 
   // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので選び直しでは
