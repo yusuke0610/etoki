@@ -5,6 +5,7 @@ import {
   canvasMermaidPasteFailure,
   describeFailure,
   ERROR_MESSAGES,
+  mermaidPasteFailure,
   partialCreationFailure,
   sceneFileUnreadableFailure,
   sceneUnreadableFailure,
@@ -108,6 +109,44 @@ describe("code を持たない失敗", () => {
   // 契約上 SyncRun.error は任意。無くても detail は文字列でなければならない。
   it("本文が無ければ畳む側は空になる", () => {
     expect(partialCreationFailure("2 件は作成済み", undefined).detail).toBe("");
+  });
+});
+
+describe("mermaidPasteFailure", () => {
+  // どの理由でもキャンバスには触っていない。貼った人が「何か壊したか」を
+  // 確かめに行かなくてよいように言い切る。
+  it.each(["empty", "kind", "tooLarge", "syntax", "unsupported"] as const)(
+    "キャンバスがそのままだと言う（%s）",
+    (reason) => {
+      expect(mermaidPasteFailure(reason, "x").message).toContain(
+        "キャンバスはそのままです",
+      );
+    },
+  );
+
+  // 構文エラーだけは直す場所がパーサの位置つきの英文にしか無い（ADR 0062）。
+  // 前に出すのは固定文で、本文は畳んだ側に置く。
+  it("構文エラーのときだけパーサのメッセージを畳んで添える", () => {
+    const syntax = mermaidPasteFailure("syntax", "Parse error on line 2");
+    expect(syntax.detail).toBe("Parse error on line 2");
+    expect(syntax.message).not.toContain("Parse error");
+
+    for (const reason of ["empty", "kind", "tooLarge", "unsupported"] as const) {
+      expect(
+        mermaidPasteFailure(reason, "conversion returned a image element").detail,
+      ).toBe("");
+    }
+  });
+
+  // 図のドラフトの「種類を変えて」は LLM への頼み方の話。貼った人には打ち手が
+  // 無いので、置ける種類を名指しする。
+  it("種類で拒んだときは、置ける種類を名指しする", () => {
+    const message = mermaidPasteFailure("kind", "").message;
+
+    for (const kind of ["erDiagram", "sequenceDiagram", "flowchart"]) {
+      expect(message).toContain(kind);
+    }
+    expect(message).not.toContain("種類を変えて");
   });
 });
 

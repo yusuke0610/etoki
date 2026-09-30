@@ -449,6 +449,19 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    // mermaid の貼り付けも、キャンバスの左に開く領域（ADR 0062）。**開かないと
+    // DOM に出ない。** 構文エラーまで出して、失敗の帯と畳んだ本文を含めて見る。
+    test("mermaid の貼り付けで構文エラーを出した状態", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+
+      await page.getByRole("button", { name: "mermaid を貼る" }).click();
+      await page.getByLabel("貼る mermaid").fill("flowchart TD\n  A[[[[ -->");
+      await page.getByRole("button", { name: "キャンバスに置く" }).click();
+      await page.locator(".mermaid-paste .error").waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     // 作った項目の説明は、選択の外れた（薄く描く）行の中に出る（ADR 0052）。
     // **作成が済まないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
     test("作成が済んだ下書き", async ({ page }) => {

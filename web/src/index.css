@@ -1232,9 +1232,23 @@ a.badge-target:hover {
  * 道具なので、上に敷くと「置く」を押した結果が確かめられない。.panel を
  * 共有しているので幅と余白は注釈パネルと揃い、境界線だけ左右を入れ替える。
  */
-.diagram-chat {
+.diagram-chat,
+.mermaid-paste {
   border-left: none;
   border-right: 1px solid var(--color-border);
+}
+
+/*
+ * 貼る mermaid は字下げと列が意味を持つ（ER 図の属性、sequence の並び）。
+ * プロポーショナルな字面だと、どこがずれているかが読めない。構文エラーの
+ * 詳細も同じで、パーサは `^` で列を指すので、揃わないと指す先がずれる。
+ */
+.mermaid-paste .diagram-chat-form textarea,
+.mermaid-paste .error-detail pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
 }
 
 .diagram-chat-header {
