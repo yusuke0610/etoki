@@ -43,7 +43,6 @@ import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
-import { createStickyNote, stickyNotePosition } from "../excalidraw/sticky";
 import { ErrorBoundary } from "../ErrorBoundary";
 import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
@@ -593,7 +592,7 @@ export function BoardPage({
    * `appState` は要素と一緒に変えるものだけを渡す（取り込みの背景色、ADR 0045）。
    * 表示状態そのものはここで触らない。
    *
-   * **ここを通る変更は、人の操作として「元に戻す」に積む**（#144）。付箋・図の
+   * **ここを通る変更は、人の操作として「元に戻す」に積む**（#144）。図の
    * ドラフト・注釈の付け外しと種別・取り込みが通る。どれも開発者が押して
    * 起こした変更で、置き間違いを戻す手段が要る。取り込みは確認を経た置き換え
    * だが、戻せるほうが失うものが少ない。
@@ -733,34 +732,6 @@ export function BoardPage({
       placing.leave();
     }
   }, [api, chat.draft, currentElements, generateDiagram, placing, updateElements]);
-
-  /**
-   * 付箋を 1 枚置く。
-   *
-   * **ダイアログを挟まない。** 描いている最中の操作なので、手数の少なさが
-   * そのまま値打ちになる（矩形を描いて色を選んで文字を書く、を 1 手にする）。
-   * 置くだけで保存はしない。確定させるのは人間の保存操作だけ。
-   *
-   * 置いた付箋は選んでおく。Enter でそのまま書き始められる。
-   */
-  const addStickyNote = useCallback(() => {
-    if (!api) return;
-
-    const elements = currentElements();
-    const { scrollX, scrollY, zoom, width, height } = api.getAppState();
-    const { x, y } = stickyNotePosition(
-      { scrollX, scrollY, zoom: zoom.value, width, height },
-      elements,
-    );
-
-    const note = createStickyNote(x, y);
-    updateElements([...elements, ...note]);
-
-    const id = note[0]?.id;
-    if (id !== undefined) {
-      api.updateScene({ appState: { selectedElementIds: { [id]: true } } } as never);
-    }
-  }, [api, currentElements, updateElements]);
 
   const handleMark = useCallback(
     (frameId: string, granularity: Granularity) => {
@@ -1258,15 +1229,6 @@ export function BoardPage({
                 </span>
               )}
             </>
-          )}
-          {/*
-            付箋は描いている最中に使うものなので、パネルではなくヘッダーに
-            置いて常に 1 手で押せるようにする。
-          */}
-          {canEdit && (
-            <button type="button" onClick={addStickyNote} disabled={!api}>
-              付箋
-            </button>
           )}
           {/*
             持ち出しと取り込みの口はここ 1 つ（ADR 0045）。ライブラリのメニュー

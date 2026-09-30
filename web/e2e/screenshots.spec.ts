@@ -493,13 +493,13 @@ test.describe("スクリーンショット", () => {
     await shot(page, "20-app-error");
   });
 
-  // 付箋を 1 枚置いた状態と、保存に送る大きさの表示。**大きさは上限との比を
-  // 出さない**（ADR 0018 / 0038）ので、催促に見えていないかを画像で見る。
-  test("付箋を置いた状態と大きさの表示を撮る", async ({ page }) => {
+  // 描き足して未保存になった状態と、保存に送る大きさの表示。**大きさは上限との
+  // 比を出さない**（ADR 0018 / 0038）ので、催促に見えていないかを画像で見る。
+  test("未保存の大きさの表示を撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
-    await page.getByRole("button", { name: "付箋" }).click();
+    await drawRectangle(page);
     await page.getByText("未保存", { exact: true }).waitFor();
-    await shot(page, "23-sticky-note");
+    await shot(page, "23-scene-size");
   });
 
   // 引いた解釈が 2 件並んだ状態。どれを作成に送るのかが読めるかを見る。
