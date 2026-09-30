@@ -2,7 +2,6 @@ import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 
 import type { DiagramKind } from "../api/types";
 import type { SceneElement } from "./annotation";
-import { STICKY_SIZE, STICKY_STYLE } from "./sticky";
 
 /**
  * 新しいボードを何から始めるか。
@@ -133,6 +132,29 @@ function vertical(length: number): Record<string, unknown> {
 const GAP = 60;
 const BOX_WIDTH = 200;
 const BOX_HEIGHT = 90;
+
+/**
+ * やることの洗い出しで並べる付箋の 1 辺。
+ *
+ * 正方形にしてあるのは、書く前から「これは付箋だ」と読めるようにするため。
+ */
+const STICKY_SIZE = 180;
+
+/**
+ * 付箋の見た目。
+ *
+ * **色は 1 つだけ持つ。** 色を塗り分けると、選んだ色に意味を持たせたくなり、
+ * その意味を読むコードを書きたくなる。構造は座標や色から推測せず LLM に
+ * 解釈させる（中核思想 2）ので、etoki 側が色から何かを決めることはない。
+ * 人が塗り分けたければ Excalidraw の既存の操作でできる。
+ */
+const STICKY_STYLE = {
+  backgroundColor: "#fff3bf",
+  strokeColor: "#e8b339",
+  fillStyle: "solid",
+  strokeWidth: 1,
+  roughness: 0,
+} as const;
 
 /**
  * 種別ごとの中身。
