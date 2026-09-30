@@ -1951,6 +1951,18 @@ components:
 
             **`confirmed` が false の作成では空文字**（ID が返ってこなかった）。
             更新では相手の ID が分かっているので、未確定でも入る
+        itemDatabaseId:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            item の数値の識別子（GraphQL の `fullDatabaseId`）。**省略と 0 は
+            「知らない」。** 記録していなかった頃の run と、GitHub が返さなかった
+            ときにそうなる。
+
+            **URL ではなく素材だけを返す**（ADR 0057）。item ごとのリンクの形と、
+            組めないときの落とし先はフロントの 1 箇所が持つ。
+          x-go-type-skip-optional-pointer: true
         kind:
           $ref: "#/components/schemas/ItemKind"
         title:

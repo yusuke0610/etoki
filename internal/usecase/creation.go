@@ -379,8 +379,10 @@ func (s *CreationService) applyOne(
 		CreatedAt:     now,
 	}
 
-	itemID, action, err := s.writeDraftIssue(ctx, projectID, item)
+	ref, action, err := s.writeDraftIssue(ctx, projectID, item)
+	itemID := ref.ItemID
 	saved.ItemID = itemID
+	saved.ItemDatabaseID = ref.DatabaseID
 	saved.Action = action
 	if err != nil {
 		// **届いたかどうかを etoki は知らない。** 応答が返らなかったのか、GitHub が
@@ -437,35 +439,40 @@ func (s *CreationService) applyOne(
 	return saved, nil
 }
 
-// writeDraftIssue は draft issue を作るか書き換え、その item ID を返す。
+// writeDraftIssue は draft issue を作るか書き換え、その item を指す手掛かりを返す。
 //
 // 分岐はここだけ。呼び出し側は「作った」か「書き換えた」かを Action で受け取る。
 func (s *CreationService) writeDraftIssue(
 	ctx context.Context, projectID string, item domain.InterpretedItem,
-) (string, port.SyncAction, error) {
+) (port.ProjectItemRef, port.SyncAction, error) {
 	draft := port.DraftIssue{Title: item.Title, Body: item.Body}
 
 	if item.PreviousItemID == nil {
-		itemID, err := s.github.CreateDraftIssue(ctx, projectID, draft)
+		ref, err := s.github.CreateDraftIssue(ctx, projectID, draft)
 		if err != nil {
 			// **失敗しても Action は返す。** 何をしようとしたのかは分かって
 			// いて、それが記録の読み手にとっての手掛かりになる（ADR 0056）。
 			// ID のほうは本当に分からないので空のまま。
-			return "", port.ActionCreated, fmt.Errorf("create %q: %w", item.Title, err)
+			return port.ProjectItemRef{}, port.ActionCreated, fmt.Errorf("create %q: %w", item.Title, err)
 		}
-		return itemID, port.ActionCreated, nil
+		return ref, port.ActionCreated, nil
 	}
 
 	// 更新先が本当にこの注釈のものかは Create の入口で確かめてある。
 	itemID := *item.PreviousItemID
-	if err := s.github.UpdateDraftIssue(ctx, itemID, draft); err != nil {
+	ref, err := s.github.UpdateDraftIssue(ctx, itemID, draft)
+	if err != nil {
 		// **更新では相手の ID が分かっている。** 分からないのは書き換えが届いた
 		// かどうかだけなので、ID は載せる。畳み込み（ADR 0026）には入らないので、
 		// これが最新の中身として読まれることはない。
-		return itemID, port.ActionUpdated, fmt.Errorf("update %q: %w", item.Title, err)
+		return port.ProjectItemRef{ItemID: itemID}, port.ActionUpdated,
+			fmt.Errorf("update %q: %w", item.Title, err)
 	}
+	// 以後の操作に使う ID は、実装が返したものではなく更新先として確かめた
+	// もの。実装が別の ID を返しても、畳み込み集合の外の item には触らない。
+	ref.ItemID = itemID
 
-	return itemID, port.ActionUpdated, nil
+	return ref, port.ActionUpdated, nil
 }
 
 // projectFields は作成に必要なカスタムフィールドの ID。

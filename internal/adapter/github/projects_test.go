@@ -234,26 +234,29 @@ func TestHonorsContextCancellation(t *testing.T) {
 func TestCreateDraftIssue(t *testing.T) {
 	t.Parallel()
 
-	body := `{"data":{"addProjectV2DraftIssue":{"projectItem":{"id":"PVTI_item1"}}}}`
+	// fullDatabaseId は BigInt で、GitHub は文字列で返す。32 ビットを超える値で
+	// 固定しておくと、int に落とす実装も落ちる。
+	body := `{"data":{"addProjectV2DraftIssue":{"projectItem":{"id":"PVTI_item1","fullDatabaseId":"123456789012"}}}}`
 	c, got := newClient(t, body)
 
-	itemID, err := c.CreateDraftIssue(t.Context(), "PVT_1",
+	ref, err := c.CreateDraftIssue(t.Context(), "PVT_1",
 		port.DraftIssue{Title: "決済フローの見直し", Body: "全体の方針"})
 	if err != nil {
 		t.Fatalf("CreateDraftIssue() = %v", err)
 	}
 
 	// 返すのは ProjectV2Item の ID。DraftIssue content の ID ではない。
-	if itemID != "PVTI_item1" {
-		t.Errorf("itemID = %q, want PVTI_item1", itemID)
+	want := port.ProjectItemRef{ItemID: "PVTI_item1", DatabaseID: 123456789012}
+	if ref != want {
+		t.Errorf("ref = %+v, want %+v", ref, want)
 	}
 
 	req := (*got)[0]
 	if !strings.Contains(req.Query, "addProjectV2DraftIssue") {
 		t.Errorf("クエリが違う:\n%s", req.Query)
 	}
-	if !strings.Contains(req.Query, "projectItem") {
-		t.Errorf("projectItem の id を取っていない:\n%s", req.Query)
+	if !strings.Contains(req.Query, "projectItem { id fullDatabaseId }") {
+		t.Errorf("projectItem の id と fullDatabaseId を取っていない:\n%s", req.Query)
 	}
 	if req.Variables["projectId"] != "PVT_1" {
 		t.Errorf("projectId = %v", req.Variables["projectId"])
@@ -293,20 +296,59 @@ func TestCreateDraftIssue_Errors(t *testing.T) {
 	})
 }
 
+// 識別子はリンクを組むためだけのもの。読めなくても作成は済んでいるので、
+// 失敗にせず 0（知らない）で返す（ADR 0057）。失敗にすると、作ったのに
+// 記録されない item が出る。
+func TestCreateDraftIssue_DatabaseIDUnreadable(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"返らない":       `{"id":"PVTI_1"}`,
+		"null":       `{"id":"PVTI_1","fullDatabaseId":null}`,
+		"数値で届く":      `{"id":"PVTI_1","fullDatabaseId":42}`,
+		"数字ではない":     `{"id":"PVTI_1","fullDatabaseId":"javascript:alert(1)"}`,
+		"int64 を超える": `{"id":"PVTI_1","fullDatabaseId":"99999999999999999999"}`,
+		"0":          `{"id":"PVTI_1","fullDatabaseId":"0"}`,
+		"負":          `{"id":"PVTI_1","fullDatabaseId":"-5"}`,
+	}
+	for name, item := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			c, _ := newClient(t, `{"data":{"addProjectV2DraftIssue":{"projectItem":`+item+`}}}`)
+
+			ref, err := c.CreateDraftIssue(t.Context(), "PVT_1", port.DraftIssue{Title: "t"})
+			if err != nil {
+				t.Fatalf("CreateDraftIssue() = %v, want nil", err)
+			}
+			want := port.ProjectItemRef{ItemID: "PVTI_1", DatabaseID: 0}
+			if ref != want {
+				t.Errorf("ref = %+v, want %+v", ref, want)
+			}
+		})
+	}
+}
+
 // 更新は 2 往復する。受け取るのは ProjectV2Item の ID だが、GitHub の更新が
 // 要求するのは DraftIssue content の ID で、この 2 つは別物（ADR 0026）。
 func TestUpdateDraftIssue(t *testing.T) {
 	t.Parallel()
 
 	c, got := newClient(t,
-		`{"data":{"node":{"content":{"__typename":"DraftIssue","id":"DI_draft1"}}}}`,
+		`{"data":{"node":{"fullDatabaseId":"77","content":{"__typename":"DraftIssue","id":"DI_draft1"}}}}`,
 		`{"data":{"updateProjectV2DraftIssue":{"draftIssue":{"id":"DI_draft1"}}}}`,
 	)
 
-	err := c.UpdateDraftIssue(t.Context(), "PVTI_item1",
+	ref, err := c.UpdateDraftIssue(t.Context(), "PVTI_item1",
 		port.DraftIssue{Title: "決済フローの見直し", Body: "方針を書き直した"})
 	if err != nil {
 		t.Fatalf("UpdateDraftIssue() = %v", err)
+	}
+
+	// 識別子は更新の payload ではなく、1 往復目の引き当てから取る（ADR 0057）。
+	want := port.ProjectItemRef{ItemID: "PVTI_item1", DatabaseID: 77}
+	if ref != want {
+		t.Errorf("ref = %+v, want %+v", ref, want)
 	}
 
 	if len(*got) != 2 {
@@ -320,6 +362,9 @@ func TestUpdateDraftIssue(t *testing.T) {
 	}
 	if strings.Contains(lookup.Query, "mutation") {
 		t.Errorf("引き当てで書き換えている:\n%s", lookup.Query)
+	}
+	if !strings.Contains(lookup.Query, "fullDatabaseId") {
+		t.Errorf("引き当てで fullDatabaseId を取っていない:\n%s", lookup.Query)
 	}
 
 	// 2 往復目が更新。送る ID は content のもので、item のものではない。
@@ -349,7 +394,7 @@ func TestUpdateDraftIssue_Errors(t *testing.T) {
 
 		c, got := newClient(t, `{"data":{"node":{"content":{"__typename":"Issue"}}}}`)
 
-		if err := c.UpdateDraftIssue(t.Context(), "PVTI_item1",
+		if _, err := c.UpdateDraftIssue(t.Context(), "PVTI_item1",
 			port.DraftIssue{Title: "t"}); err == nil {
 			t.Fatal("UpdateDraftIssue() = nil, want error")
 		}
@@ -364,7 +409,7 @@ func TestUpdateDraftIssue_Errors(t *testing.T) {
 
 		c, got := newClient(t, `{"data":{"node":null}}`)
 
-		if err := c.UpdateDraftIssue(t.Context(), "PVTI_gone",
+		if _, err := c.UpdateDraftIssue(t.Context(), "PVTI_gone",
 			port.DraftIssue{Title: "t"}); err == nil {
 			t.Fatal("UpdateDraftIssue() = nil, want error")
 		}
@@ -378,10 +423,10 @@ func TestUpdateDraftIssue_Errors(t *testing.T) {
 
 		c, got := newClient(t, `{"data":{}}`)
 
-		if err := c.UpdateDraftIssue(t.Context(), "", port.DraftIssue{Title: "t"}); err == nil {
+		if _, err := c.UpdateDraftIssue(t.Context(), "", port.DraftIssue{Title: "t"}); err == nil {
 			t.Error("item id が空なのにエラーにならない")
 		}
-		if err := c.UpdateDraftIssue(t.Context(), "PVTI_1", port.DraftIssue{}); err == nil {
+		if _, err := c.UpdateDraftIssue(t.Context(), "PVTI_1", port.DraftIssue{}); err == nil {
 			t.Error("タイトルが空なのにエラーにならない")
 		}
 		if len(*got) != 0 {

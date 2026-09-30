@@ -60,6 +60,8 @@
 | [0054](0054-report-repository-list-truncation.md)                | 作成先の候補は打ち切りを添えて返し、絞り込みは手元で行う               | 採用                 |
 | [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない    | 採用                 |
 | [0056](0056-record-writes-with-unknown-delivery.md)              | 届いたか分からない書き込みも記録し、停止の猶予をその後始末から導く     | 採用                 |
+| [0057](0057-link-to-each-draft-issue.md)                         | 作った draft issue へは Project の URL に識別子を添えて辿らせる        | 採用                 |
+| [0058](0058-notifications-for-passing-failures.md)               | 通知は過ぎ去ってよい失敗のためのもので、状態は通知にしない             | 採用                 |
 | [0059](0059-open-boards-by-url.md)                               | 開いているボードはクエリで URL に載せ、戻り先は state と一緒に持つ     | 採用                 |
 | [0060](0060-one-table-for-mutual-exclusion.md)                   | 操作どうしの排他は 1 つの表に集め、UI はそれを読むだけにする           | 採用                 |
 | [0061](0061-pin-mermaid-until-converter-catches-up.md)           | mermaid を 11.13.0 に固定し、既知の脆弱性を受け入れる                  | 採用                 |
