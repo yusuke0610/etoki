@@ -75,12 +75,13 @@ func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
 // 注釈の状態と作成結果の両方で返すので 1 箇所に置く。
 func toSyncItem(it port.SyncItem) apitypes.SyncItem {
 	out := apitypes.SyncItem{
-		ItemID:  it.ItemID,
-		Kind:    apitypes.ItemKind(it.Kind),
-		Title:   it.Title,
-		Body:    it.Body,
-		LocalID: it.LocalID,
-		Action:  apitypes.SyncAction(it.Action),
+		ItemID:         it.ItemID,
+		ItemDatabaseID: it.ItemDatabaseID,
+		Kind:           apitypes.ItemKind(it.Kind),
+		Title:          it.Title,
+		Body:           it.Body,
+		LocalID:        it.LocalID,
+		Action:         apitypes.SyncAction(it.Action),
 		// **写し忘れると「確かに作った」ではなく「分からない」に倒れる**
 		// （ADR 0056）。ゼロ値の向きをそちらに取ってあるのはこのため。
 		Confirmed: it.Confirmed,

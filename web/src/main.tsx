@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { logUncaught } from "./logger";
+import { NotificationProvider } from "./notification/NotificationProvider";
 import { applyTheme, initialTheme } from "./theme";
 
 const container = document.getElementById("root");
@@ -29,7 +30,9 @@ createRoot(container).render(
       パネル）。ここまで来ると読み込み直すしか無い（ADR 0027）。
     */}
     <ErrorBoundary name="アプリ全体" recovery="reload">
-      <App />
+      <NotificationProvider>
+        <App />
+      </NotificationProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

@@ -1,4 +1,4 @@
-import { test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   breakAnnotations,
@@ -257,6 +257,42 @@ test.describe("スクリーンショット", () => {
     await shot(page, "15-save-conflict");
   });
 
+  // 画面全体の失敗は、キャンバスの上に重ねた通知で出る（ADR 0058）。**キャンバス
+  // が縮んでいないこと**と、2 つ重なっても両方読めることと、その場から押し直せる
+  // ことを画像で見る。
+  test("重なった失敗の通知を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    mock.saveSceneError = {
+      status: 500,
+      body: { code: "internal", error: "etoki: database is locked" },
+    };
+    mock.refreshTargetDisplayError = {
+      status: 502,
+      body: { code: "github_unavailable", error: "github: 502 Bad Gateway" },
+    };
+    await installApi(page, mock);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByRole("alert").waitFor();
+    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await expect(page.locator(".notifications").getByRole("alert")).toHaveCount(2);
+    // 出るときのフェードが終わってから撮る。途中だと下が透けて、重なり方を
+    // 読み違える。
+    await page.evaluate(() =>
+      Promise.all(
+        [...document.querySelectorAll(".notification")].flatMap((el) =>
+          el.getAnimations().map((a) => a.finished),
+        ),
+      ),
+    );
+    await shot(page, "36-notifications");
+  });
+
   // 大きさで保存を断られた状態（ADR 0038）。**保存できない = 描いたものが
   // 失われる**ように読めてはならないので、未保存のまま残っていることと打ち手が
   // 同じ画面に出ているかを画像で見る。
@@ -492,13 +528,13 @@ test.describe("スクリーンショット", () => {
     await shot(page, "20-app-error");
   });
 
-  // 付箋を 1 枚置いた状態と、保存に送る大きさの表示。**大きさは上限との比を
-  // 出さない**（ADR 0018 / 0038）ので、催促に見えていないかを画像で見る。
-  test("付箋を置いた状態と大きさの表示を撮る", async ({ page }) => {
+  // 描き足して未保存になった状態と、保存に送る大きさの表示。**大きさは上限との
+  // 比を出さない**（ADR 0018 / 0038）ので、催促に見えていないかを画像で見る。
+  test("未保存の大きさの表示を撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
-    await page.getByRole("button", { name: "付箋" }).click();
+    await drawRectangle(page);
     await page.getByText("未保存", { exact: true }).waitFor();
-    await shot(page, "23-sticky-note");
+    await shot(page, "23-scene-size");
   });
 
   // 引いた解釈が 2 件並んだ状態。どれを作成に送るのかが読めるかを見る。

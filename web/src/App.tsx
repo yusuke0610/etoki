@@ -12,7 +12,6 @@ import type {
   SessionStatus,
 } from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
-import { ErrorNotice } from "./ErrorNotice";
 import { BoardPage } from "./board/BoardPage";
 import { BoardTree } from "./board/BoardTree";
 import { createGenerations } from "./board/generation";
@@ -29,7 +28,20 @@ import {
   parseBoardLocation,
   type BoardLocation,
 } from "./location";
+import { useNotify } from "./notification/NotificationProvider";
+import { Notifications } from "./notification/Notifications";
+import type { NotifyOptions } from "./notification/types";
 import { useTheme } from "./theme";
+
+/** ボード一覧の取得失敗の通知。続けて失敗しても 1 件に畳み、読めたら下げる。 */
+const BOARD_LIST_FAILED = "board-list-failed";
+/**
+ * ログイン状態の取得失敗の通知。
+ *
+ * 取りにいくのは起動時の effect で、開発時の StrictMode では 2 回走る。key で
+ * 畳まないと、同じ失敗が 2 件並ぶ（1 本の state だった頃は上書きで隠れていた）。
+ */
+const SESSION_FAILED = "session-failed";
 
 /**
  * ボードを開く要求の世代のキー。
@@ -65,7 +77,19 @@ function canOpenTargetPicker(board: BoardDetail): boolean {
 export function App() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [current, setCurrent] = useState<BoardDetail | null>(null);
-  const [error, setError] = useState<Failure | null>(null);
+  // 画面全体に出す失敗は通知へ（ADR 0058）。1 本の state に持つと、後から
+  // 来た失敗が前の失敗を黙って消していた。
+  const { notify, dismissKey } = useNotify();
+  const showFailure = useCallback(
+    (failure: Failure, options: Pick<NotifyOptions, "action" | "key"> = {}) =>
+      notify({
+        kind: "error",
+        message: failure.message,
+        detail: failure.detail,
+        ...options,
+      }),
+    [notify],
+  );
   const [name, setName] = useState("");
   // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
   const [picking, setPicking] = useState(false);
@@ -125,15 +149,22 @@ export function App() {
       } catch (e) {
         // 状態が分からないなら、ログインを求めない側に倒す。求める側に倒すと、
         // 認証を設定していない構成が API の一時的な失敗で使えなくなる。
-        setError(describeFailure("ログイン状態を取得できませんでした", e));
+        showFailure(describeFailure("ログイン状態を取得できませんでした", e), {
+          key: SESSION_FAILED,
+        });
         setSession({ authRequired: false, authenticated: false });
       }
     })();
-  }, []);
+  }, [showFailure]);
 
+  // 通知の「再読み込み」から呼ぶ。通知は失敗した時点で作られるので、押された
+  // 時点の reload を呼ぶよう ref を介す（reload 自身の中からは自分を指せない）。
+  const reloadRef = useRef<() => Promise<void>>(async () => {});
   const reload = useCallback(async () => {
     try {
       setBoards(await boardsApi.list());
+      // 前に読めなかったことの通知は、もう当てはまらない。
+      dismissKey(BOARD_LIST_FAILED);
     } catch (e) {
       // 使っている最中の失効はここで初めて分かる。エラーだけ出すと、画面は
       // ログイン済みのまま何も操作できず、リロードするまで戻れない。
@@ -145,14 +176,25 @@ export function App() {
         try {
           setSession(await authApi.session());
         } catch (sessionError) {
-          setError(describeFailure("ログイン状態を取得できませんでした", sessionError));
+          showFailure(
+            describeFailure("ログイン状態を取得できませんでした", sessionError),
+            { key: SESSION_FAILED },
+          );
           setSession({ authRequired: false, authenticated: false });
         }
         return;
       }
-      setError(describeFailure("ボード一覧を取得できませんでした", e));
+      // その場から読み直せるようにする。一覧が空のまま残ると、リロード以外に
+      // 戻る手が画面に無い。
+      showFailure(describeFailure("ボード一覧を取得できませんでした", e), {
+        key: BOARD_LIST_FAILED,
+        action: { label: "再読み込み", run: () => void reloadRef.current() },
+      });
     }
-  }, []);
+  }, [dismissKey, showFailure]);
+  useEffect(() => {
+    reloadRef.current = reload;
+  }, [reload]);
 
   // ログインが要る構成では、済むまで読みにいかない。先に叩くと 401 が
   // エラー表示に出て、ログイン画面の上に無関係な失敗が重なる。
@@ -249,12 +291,12 @@ export function App() {
         // 新しいボードの上にエラーを出し、URL まで巻き戻す。
         if (!openings.isCurrent(OPENING, generation)) return null;
 
-        setError(describeFailure("ボードを開けませんでした", e));
+        showFailure(describeFailure("ボードを開けませんでした", e));
         showLocation(shown.current, "replace");
         return null;
       }
     },
-    [openings, showLocation],
+    [openings, showFailure, showLocation],
   );
 
   const logout = useCallback(async () => {
@@ -279,12 +321,12 @@ export function App() {
       // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
       setSession(await authApi.session());
     } catch (e) {
-      setError(describeFailure("ログアウトできませんでした", e));
+      showFailure(describeFailure("ログアウトできませんでした", e));
       // 失敗したらログインしたまま。一覧を空のままにすると、何も操作できない
       // 画面が残る。
       await reload();
     }
-  }, [confirmDiscard, openings, reload, showLocation]);
+  }, [confirmDiscard, openings, reload, showFailure, showLocation]);
 
   const open = useCallback(
     async (id: string, options: OpenOptions = {}) => {
@@ -554,7 +596,11 @@ export function App() {
       </nav>
 
       <main className="main">
-        {error && <ErrorNotice failure={error} onClose={() => setError(null)} />}
+        {/*
+          失敗の通知はフローの外に出す（position: fixed）。帯としてここに置くと、
+          出た瞬間にキャンバスが縮んで描画位置が動く（ADR 0058）。
+        */}
+        <Notifications />
 
         {/*
           「ボードに入る → 対象リポジトリ選択 → ブレスト開始」の分岐はここに置く。
@@ -592,7 +638,6 @@ export function App() {
             key={current.id}
             board={current}
             capabilities={capabilities}
-            onError={setError}
             // **選び直しは URL に載せるが、履歴には積まない**（ADR 0059）。
             // 同じボードの中のモードなので、読み込み直しで戻せれば足りる。
             // 積むと、選び終えた後の「戻る」が選択画面に引き返す。
