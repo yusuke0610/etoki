@@ -51,9 +51,19 @@ const countByType = (elements: readonly SceneElement[]): Record<string, number> 
 /** 変換器の代わり。骨格をそのまま返す。 */
 const returning = (elements: ElementSkeleton[]) => async () => ({ elements });
 
-/** 変換器の代わり。構文エラーのように投げる。 */
+/**
+ * 変換器の代わり。mermaid の構文エラーのように投げる。
+ *
+ * jison のパーサは位置の情報を `hash` に載せて投げる。`hash` の無い例外は
+ * 構文エラーとして扱わないので、ここでも付ける。
+ */
 const throwing = (message: string) => async () => {
-  throw new Error(message);
+  throw Object.assign(new Error(message), { hash: { line: 1 } });
+};
+
+/** 変換器の代わり。パーサの不具合のように、構文と無関係に投げる。 */
+const crashing = (message: string) => async () => {
+  throw new TypeError(message);
 };
 
 describe("mermaidToElements", () => {
@@ -109,10 +119,26 @@ describe("mermaidToElements", () => {
     expect(got.detail).toContain("Parse error");
   });
 
-  it("変換器が投げたら syntax で返し、例外を素通しにしない", async () => {
+  it("変換器が構文エラーを投げたら syntax で返し、例外を素通しにしない", async () => {
     const got = await mermaidToElements("なんでもよい", throwing("boom"));
 
     expect(got).toEqual({ ok: false, reason: "syntax", detail: "boom" });
+  });
+
+  it("種類を見分けられなかったら syntax で返す", async () => {
+    const got = await mermaidToElements("これは図ではない");
+
+    expect(got.ok).toBe(false);
+    if (got.ok) return;
+    expect(got.reason).toBe("syntax");
+  });
+
+  // 構文エラーと取り違えると、貼り付けではパーサ内部の英文を「直す手掛かり」
+  // として画面に出し、図のドラフトでは直らない再送に課金する。
+  it("構文と無関係な例外は unsupported で返す", async () => {
+    const got = await mermaidToElements("なんでもよい", crashing("x is undefined"));
+
+    expect(got).toEqual({ ok: false, reason: "unsupported", detail: "x is undefined" });
   });
 
   // 図の種類が変換器の守備範囲の外だと、mermaid は SVG を描いて画像 1 枚に

@@ -106,7 +106,10 @@ describe("pasteToElements", () => {
   // 1 ノードにすり替える。前で拒まないと、それが置けたものとして置かれる。
   it("上限ちょうどは通し、1 字でも超えたら変換器に渡さずに tooLarge で返す", async () => {
     const head = "flowchart TD\n  A --> B\n";
-    const atLimit = head + "%".repeat(MERMAID_MAX_TEXT_SIZE - head.length);
+    // 埋め草は改行で終える。改行の無い長い `%%` 行は、mermaid から写した
+    // コメントの正規表現（`isAcceptedKind`）が 2 乗の時間をかけ、並列で回すと
+    // 5 秒の上限を超える。見たいのは長さだけ。
+    const atLimit = head + "%".repeat(MERMAID_MAX_TEXT_SIZE - head.length - 1) + "\n";
     expect(atLimit).toHaveLength(MERMAID_MAX_TEXT_SIZE);
 
     const parse = spyParser();
@@ -122,7 +125,8 @@ describe("pasteToElements", () => {
   // 上限はフェンスを剥がしたあとの長さで見る。mermaid に渡るのはそちら。
   it("上限はフェンスを剥がしたあとの長さで比べる", async () => {
     const head = "flowchart TD\n  A --> B\n";
-    const atLimit = head + "%".repeat(MERMAID_MAX_TEXT_SIZE - head.length);
+    // 改行で終える理由は上のテストと同じ。
+    const atLimit = head + "%".repeat(MERMAID_MAX_TEXT_SIZE - head.length - 1) + "\n";
 
     const got = await pasteToElements("```mermaid\n" + atLimit + "\n```", spyParser());
 
@@ -142,10 +146,21 @@ describe("pasteToElements", () => {
   // メッセージ）を落とさずに返す。
   it("変換器が投げたら syntax で、メッセージを添えて返す", async () => {
     const got = await pasteToElements("erDiagram\n  A ||--", async () => {
-      throw new Error("Parse error on line 2");
+      throw Object.assign(new Error("Parse error on line 2"), { hash: { line: 2 } });
     });
 
     expect(got).toEqual({ ok: false, reason: "syntax", detail: "Parse error on line 2" });
+  });
+
+  // パーサ内部の例外の英文は、貼った人が直す手掛かりにならない。
+  it("構文と無関係な例外は unsupported で返す", async () => {
+    const got = await pasteToElements("erDiagram\n  A ||--o{ B : has", async () => {
+      throw new TypeError("x is undefined");
+    });
+
+    expect(got.ok).toBe(false);
+    if (got.ok) return;
+    expect(got.reason).toBe("unsupported");
   });
 
   // 変換してから拒む門番（画像・frame、ADR 0040）も同じく効く。

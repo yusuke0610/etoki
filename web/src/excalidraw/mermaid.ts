@@ -149,7 +149,14 @@ export async function mermaidToElements(
   try {
     ({ elements: skeletons } = await parse(definition));
   } catch (err) {
-    return { ok: false, reason: "syntax", detail: messageOf(err) };
+    // **投げたものが全部構文エラーとは限らない。** パーサ内部の `TypeError`
+    // なども同じ口から来る。構文エラーとして返すと、貼り付けはその英文を
+    // 「直す手掛かり」として画面に出し、図のドラフトは直らない再送に課金する。
+    return {
+      ok: false,
+      reason: isSyntaxError(err) ? "syntax" : "unsupported",
+      detail: messageOf(err),
+    };
   }
 
   const refused = skeletons.find((el) => NOT_DRAWABLE.has(el.type));
@@ -180,6 +187,18 @@ export async function mermaidToElements(
     // 種類で頼み直しても同じ骨格が返るとしか言えず、課金だけが増える。
     return { ok: false, reason: "unsupported", detail: messageOf(err) };
   }
+}
+
+/**
+ * mermaid が「読めなかった」と言って投げたものか。
+ *
+ * 受け付ける 3 種（`mermaidPaste.ts`）はどれも jison のパーサで、構文エラーは
+ * 位置の情報を `hash` に載せて投げる。先頭の語で種類を見分けられなかったときは
+ * `UnknownDiagramError`。図のドラフトでは LLM が別の種類を書いたときにここへ
+ * 来るので、生成し直せば直りうる側に入れる。
+ */
+function isSyntaxError(err: unknown): boolean {
+  return err instanceof Error && ("hash" in err || err.name === "UnknownDiagramError");
 }
 
 /** 例外から投げ直しに渡せる文字列を取り出す。 */
