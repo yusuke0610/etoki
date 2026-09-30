@@ -537,6 +537,14 @@ test.describe("スクリーンショット", () => {
     await shot(page, "23-scene-size");
   });
 
+  // 置いた表。空の矩形が格子に並び、group ごと選ばれている見た目を見る。
+  test("表を置いた状態を撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await page.getByRole("button", { name: "表", exact: true }).click();
+    await page.getByText("未保存", { exact: true }).waitFor();
+    await shot(page, "24-table");
+  });
+
   // 引いた解釈が 2 件並んだ状態。どれを作成に送るのかが読めるかを見る。
   test("解釈の履歴を撮る", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());
