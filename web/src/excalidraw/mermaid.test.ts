@@ -1,4 +1,5 @@
 import { serializeAsJSON } from "@excalidraw/excalidraw";
+import mermaid from "mermaid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { isAnnotation, type SceneElement } from "./annotation";
@@ -6,6 +7,8 @@ import {
   DRAFT_GAP,
   draftOrigin,
   type ElementSkeleton,
+  MERMAID_CONFIG,
+  MERMAID_MAX_TEXT_SIZE,
   mermaidToElements,
   moveDraft,
 } from "./mermaid";
@@ -48,9 +51,19 @@ const countByType = (elements: readonly SceneElement[]): Record<string, number> 
 /** 変換器の代わり。骨格をそのまま返す。 */
 const returning = (elements: ElementSkeleton[]) => async () => ({ elements });
 
-/** 変換器の代わり。構文エラーのように投げる。 */
+/**
+ * 変換器の代わり。mermaid の構文エラーのように投げる。
+ *
+ * jison のパーサは位置の情報を `hash` に載せて投げる。`hash` の無い例外は
+ * 構文エラーとして扱わないので、ここでも付ける。
+ */
 const throwing = (message: string) => async () => {
-  throw new Error(message);
+  throw Object.assign(new Error(message), { hash: { line: 1 } });
+};
+
+/** 変換器の代わり。パーサの不具合のように、構文と無関係に投げる。 */
+const crashing = (message: string) => async () => {
+  throw new TypeError(message);
 };
 
 describe("mermaidToElements", () => {
@@ -106,10 +119,26 @@ describe("mermaidToElements", () => {
     expect(got.detail).toContain("Parse error");
   });
 
-  it("変換器が投げたら syntax で返し、例外を素通しにしない", async () => {
+  it("変換器が構文エラーを投げたら syntax で返し、例外を素通しにしない", async () => {
     const got = await mermaidToElements("なんでもよい", throwing("boom"));
 
     expect(got).toEqual({ ok: false, reason: "syntax", detail: "boom" });
+  });
+
+  it("種類を見分けられなかったら syntax で返す", async () => {
+    const got = await mermaidToElements("これは図ではない");
+
+    expect(got.ok).toBe(false);
+    if (got.ok) return;
+    expect(got.reason).toBe("syntax");
+  });
+
+  // 構文エラーと取り違えると、貼り付けではパーサ内部の英文を「直す手掛かり」
+  // として画面に出し、図のドラフトでは直らない再送に課金する。
+  it("構文と無関係な例外は unsupported で返す", async () => {
+    const got = await mermaidToElements("なんでもよい", crashing("x is undefined"));
+
+    expect(got).toEqual({ ok: false, reason: "unsupported", detail: "x is undefined" });
   });
 
   // 図の種類が変換器の守備範囲の外だと、mermaid は SVG を描いて画像 1 枚に
@@ -165,6 +194,35 @@ describe("mermaidToElements", () => {
     expect(got.ok).toBe(true);
     if (!got.ok) return;
     expect(got.elements.some((el) => el.type === "frame")).toBe(false);
+  });
+});
+
+describe("MERMAID_CONFIG", () => {
+  // 図の中（`%%{init}%%` と frontmatter）から CSS を注入できる経路を塞ぐ
+  // （GHSA-87f9-hvmw-gh4p、ADR 0062）。外すと、貼った図が etoki の画面に
+  // CSS を差し込める。実際に塞げていることは E2E（`mermaidPaste.spec.ts`）が
+  // ビーコンで見ている。ここは設定から落としたことに早く気づくため。
+  it("CSS を注入できるキーを図の中から書き換えさせない", () => {
+    const secure = (MERMAID_CONFIG as { secure?: string[] }).secure ?? [];
+
+    for (const key of ["themeCSS", "fontFamily", "altFontFamily", "themeVariables"]) {
+      expect(secure).toContain(key);
+    }
+  });
+
+  // `secure` は配列ごと置き換わる。mermaid の既定を 1 つでも落とすと、
+  // `securityLevel` のような守りの設定を図の中から書き換えられるようになる。
+  it("mermaid の既定の secure を残す", () => {
+    const secure = (MERMAID_CONFIG as { secure?: string[] }).secure ?? [];
+
+    for (const key of mermaid.mermaidAPI.defaultConfig.secure ?? []) {
+      expect(secure).toContain(key);
+    }
+    expect(mermaid.mermaidAPI.defaultConfig.secure?.length).toBeGreaterThan(0);
+  });
+
+  it("変換できる長さの上限を、前検査と同じ値で渡す", () => {
+    expect(MERMAID_CONFIG.maxTextSize).toBe(MERMAID_MAX_TEXT_SIZE);
   });
 });
 

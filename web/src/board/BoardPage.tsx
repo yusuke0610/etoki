@@ -6,6 +6,7 @@ import { boardsApi, githubApi } from "../api/boards";
 import {
   describeFailure,
   diagramNotPlaceableFailure,
+  mermaidPasteFailure,
   sceneUnreadableFailure,
   targetProjectMissingFailure,
   type Failure,
@@ -41,7 +42,9 @@ import { sceneSignature } from "../excalidraw/dirty";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
+import { pasteToElements } from "../excalidraw/mermaidPaste";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { log } from "../logger";
 import { useNotify } from "../notification/NotificationProvider";
 import type { NotifyOptions } from "../notification/types";
 import type { Theme } from "../theme";
@@ -69,6 +72,7 @@ import {
   type InterpretationState,
 } from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
+import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
 import type { CreationState, RunHistoryState } from "./panelShared";
 import { projectLink } from "./projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
@@ -296,16 +300,30 @@ export function BoardPage({
   const [runGenerations] = useState(createGenerations);
   // メンバーの一覧を開いているかどうか。
   const [showingMembers, setShowingMembers] = useState(false);
+  // キャンバスの左に開いているパネル。**枠は 1 つ**で、図のドラフトと
+  // mermaid の貼り付けのどちらか一方だけを開く。並べるとキャンバスが狭まり、
+  // 置いた図がどこに出るかを見ながら直す、という左に置いた理由が崩れる。
+  const [leftPanel, setLeftPanel] = useState<"chat" | "paste" | null>(null);
+  const showingChat = leftPanel === "chat";
+  const toggleLeftPanel = (panel: "chat" | "paste") =>
+    setLeftPanel((open) => (open === panel ? null : panel));
+  // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
+  // 持つ。** パネルは図のドラフトへ切り替えたときや閉じたときに外れるので、
+  // そちらで持つと構文エラーを直している途中の入力が消える。消すのは置けた
+  // ときだけ。ボードを切り替えれば BoardPage ごと作り直されるので残らない。
+  const [pasteText, setPasteText] = useState("");
   // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
   // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
-  const [showingChat, setShowingChat] = useState(false);
+  // パネルを閉じても（貼り付けに切り替えても）会話は残る。
   const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
   // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
   // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
   const [diagramGenerations] = useState(createGenerations);
   // 置いている最中か。**走っているあいだの二重押しは弾く**（`loadingRuns` と
   // 同じ形）。**排他の表とは別物**で、止めるのは同じ操作の連打だけ。理由と
-  // 仕組みは `exclusion.ts` の `useReentryGuard`。
+  // 仕組みは `exclusion.ts` の `useReentryGuard`。**図のドラフトと貼り付けで
+  // 1 つにする。** どちらも同じ `draftOrigin` を読むので、分けると両方が同じ
+  // 場所に置かれうる。
   const placing = useReentryGuard();
   // 作成先の Project に書けるかどうか。確かめるまでは unknown。
   //
@@ -740,6 +758,26 @@ export function BoardPage({
   );
 
   /**
+   * 変換した要素をキャンバスに置く。図のドラフトと貼り付けで共有する。
+   *
+   * **既存の要素には一切触らない。追加するだけ**（#58 の原則）。置き場所は
+   * 既存の絵の右外で、重ねない（ADR 0040）。**保存はしない。**
+   */
+  const placeElements = useCallback(
+    (elements: readonly SceneElement[]) => {
+      if (!api) return;
+      const existing = currentElements();
+      const placed = moveDraft(elements, draftOrigin(existing));
+      updateElements([...existing, ...placed]);
+
+      // 置いた先へ寄せる。既存の絵の外に置くので、寄せないと押したのに何も
+      // 起きていないように見える（ADR 0040）。
+      api.scrollToContent(placed as never, { fitToContent: true, animate: true });
+    },
+    [api, currentElements, updateElements],
+  );
+
+  /**
    * いまのドラフトをキャンバスに置く。
    *
    * **既存の要素には一切触らない。追加するだけ**（#58 の原則）。置き場所は
@@ -771,17 +809,52 @@ export function BoardPage({
         return;
       }
 
-      const existing = currentElements();
-      const placed = moveDraft(converted.elements, draftOrigin(existing));
-      updateElements([...existing, ...placed]);
-
-      // 置いた先へ寄せる。既存の絵の外に置くので、寄せないと押したのに何も
-      // 起きていないように見える（ADR 0040）。
-      api.scrollToContent(placed as never, { fitToContent: true, animate: true });
+      placeElements(converted.elements);
     } finally {
       placing.leave();
     }
-  }, [api, chat.draft, currentElements, generateDiagram, placing, updateElements]);
+  }, [api, chat.draft, generateDiagram, placeElements, placing]);
+
+  /**
+   * 貼られた mermaid を変換して置く（ADR 0062）。
+   *
+   * 置き方は図のドラフトと同じ（`placeElements`）。違うのは**失敗したときに
+   * 頼み直す相手がいない**ことで、構文エラーも種類違いも、理由を返して貼った
+   * 人に直してもらう。
+   *
+   * **LLM を通さないので `capabilities` を見ない。** 止めると LLM を設定して
+   * いない人が使えなくなる。
+   */
+  const pasteMermaid = useCallback(
+    async (text: string): Promise<PasteOutcome> => {
+      if (!api || !placing.enter()) return { placed: false, failure: null };
+
+      try {
+        const converted = await pasteToElements(text);
+        if (!converted.ok) {
+          // 変換器が返した理由は console にも残す。画面に畳んで出すのは
+          // 構文エラーのときだけ（`mermaidPasteFailure`）。
+          if (converted.reason === "syntax" || converted.reason === "unsupported") {
+            log.warn("貼られた mermaid を置けませんでした", converted.detail);
+          }
+          return {
+            placed: false,
+            failure: mermaidPasteFailure(converted.reason, converted.detail),
+          };
+        }
+
+        placeElements(converted.elements);
+        // 置けたら入力を消す。残すと同じ図を 2 度置きやすい。**送った文字列の
+        // ままのときだけ。** 変換を待つあいだにパネルを閉じて開き直すと入力を
+        // 書き換えられるので、無条件に消すと新しい入力を捨てる。
+        setPasteText((current) => (current === text ? "" : current));
+        return { placed: true };
+      } finally {
+        placing.leave();
+      }
+    },
+    [api, placeElements, placing],
+  );
 
   const handleMark = useCallback(
     (frameId: string, granularity: Granularity) => {
@@ -1214,8 +1287,18 @@ export function BoardPage({
             見せる**（ADR 0030、中核思想 3）。
           */}
           {canEdit && (
-            <button type="button" onClick={() => setShowingChat((v) => !v)}>
+            <button type="button" onClick={() => toggleLeftPanel("chat")}>
               {showingChat ? "図のドラフトを閉じる" : "図のドラフト"}
+            </button>
+          )}
+          {/*
+            既存の設計（mermaid）を写しとして貼る（ADR 0062）。**LLM を通さない
+            ので、未設定でも使える。** viewer には出さない。描かせないのと同じ
+            理由で、置いても保存できない（ADR 0017）。
+          */}
+          {canEdit && (
+            <button type="button" onClick={() => toggleLeftPanel("paste")}>
+              {leftPanel === "paste" ? "貼り付けを閉じる" : "mermaid を貼る"}
             </button>
           )}
           {/*
@@ -1534,8 +1617,18 @@ export function BoardPage({
               onChangeKind={handleChangeKind}
               onSend={generateDiagram}
               onPlace={() => void placeDraft()}
-              onClose={() => setShowingChat(false)}
+              onClose={() => setLeftPanel(null)}
               unavailable={diagramUnavailable}
+            />
+          </ErrorBoundary>
+        )}
+        {leftPanel === "paste" && canEdit && (
+          <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
+            <MermaidPastePanel
+              text={pasteText}
+              onChangeText={setPasteText}
+              onPlace={pasteMermaid}
+              onClose={() => setLeftPanel(null)}
             />
           </ErrorBoundary>
         )}

@@ -1,5 +1,8 @@
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
-import { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
+import {
+  type MermaidConfig,
+  parseMermaidToExcalidraw,
+} from "@excalidraw/mermaid-to-excalidraw";
 
 import type { SceneElement } from "./annotation";
 
@@ -64,6 +67,60 @@ export type MermaidDraft =
 const NOT_DRAWABLE = new Set(["image", "frame"]);
 
 /**
+ * mermaid が 1 つの図として読む文字数の上限。
+ *
+ * **超えても mermaid は投げない。** 図を「Maximum text size in diagram
+ * exceeded」と書いた 1 ノードの flowchart にすり替えて描くので、置けたように
+ * 見えてしまう。貼り付け（`mermaidPaste.ts`）はこの値で変換の前に拒む。
+ * **上限を 2 箇所に持たないため、変換器に渡す値もここから出す。**
+ *
+ * 保存の上限（ADR 0038）とは別物。あちらはサーバーだけが持つシーンの大きさで、
+ * こちらは手元のライブラリが変換できる文字列の長さ。
+ */
+export const MERMAID_MAX_TEXT_SIZE = 50_000;
+
+/**
+ * 図の中（`%%{init}%%` と frontmatter の `config`）から書き換えさせない設定。
+ *
+ * 先頭の 6 つは mermaid の既定値。**配列ごと置き換わるので写してある。**
+ * 残りは CSS を注入できる経路（GHSA-87f9-hvmw-gh4p）。固定した mermaid
+ * 11.13.0 は直っていない（ADR 0061）。貼り付けで外から来た文字列を描くように
+ * なったので、図の中からは触らせない（ADR 0062）。`themeVariables` は
+ * 中の `fontFamily` が同じ経路になるので丸ごと入れる。
+ */
+const SECURE_CONFIG_KEYS = [
+  "secure",
+  "securityLevel",
+  "startOnLoad",
+  "maxTextSize",
+  "suppressErrorRendering",
+  "maxEdges",
+  "themeCSS",
+  "fontFamily",
+  "altFontFamily",
+  "themeVariables",
+];
+
+/**
+ * etoki が変換器に渡す mermaid の設定。
+ *
+ * **図のドラフトと貼り付けで共有する。** 変換器は `mermaid.initialize` を
+ * プロセス全体に効かせるので、経路ごとに分けても最後に呼んだ側の設定になる
+ * だけ。
+ *
+ * `secure` は変換器の型に無い。mermaid 本体へはそのまま渡る（変換器は受けた
+ * 設定を広げて `initialize` に渡す）。
+ */
+export const MERMAID_CONFIG = {
+  maxTextSize: MERMAID_MAX_TEXT_SIZE,
+  secure: SECURE_CONFIG_KEYS,
+} as MermaidConfig;
+
+/** 変換器の既定。etoki の設定を必ず通す。 */
+const parseWithEtokiConfig: MermaidParser = (definition) =>
+  parseMermaidToExcalidraw(definition, MERMAID_CONFIG);
+
+/**
  * mermaid を Excalidraw の要素に変換する。**キャンバスには反映しない。**
  *
  * 返すのは要素だけで、置くのは呼び出し側。ドラフトを見てから置くかどうかを
@@ -86,13 +143,20 @@ const NOT_DRAWABLE = new Set(["image", "frame"]);
  */
 export async function mermaidToElements(
   definition: string,
-  parse: MermaidParser = parseMermaidToExcalidraw,
+  parse: MermaidParser = parseWithEtokiConfig,
 ): Promise<MermaidDraft> {
   let skeletons: readonly ElementSkeleton[];
   try {
     ({ elements: skeletons } = await parse(definition));
   } catch (err) {
-    return { ok: false, reason: "syntax", detail: messageOf(err) };
+    // **投げたものが全部構文エラーとは限らない。** パーサ内部の `TypeError`
+    // なども同じ口から来る。構文エラーとして返すと、貼り付けはその英文を
+    // 「直す手掛かり」として画面に出し、図のドラフトは直らない再送に課金する。
+    return {
+      ok: false,
+      reason: isSyntaxError(err) ? "syntax" : "unsupported",
+      detail: messageOf(err),
+    };
   }
 
   const refused = skeletons.find((el) => NOT_DRAWABLE.has(el.type));
@@ -123,6 +187,18 @@ export async function mermaidToElements(
     // 種類で頼み直しても同じ骨格が返るとしか言えず、課金だけが増える。
     return { ok: false, reason: "unsupported", detail: messageOf(err) };
   }
+}
+
+/**
+ * mermaid が「読めなかった」と言って投げたものか。
+ *
+ * 受け付ける 3 種（`mermaidPaste.ts`）はどれも jison のパーサで、構文エラーは
+ * 位置の情報を `hash` に載せて投げる。先頭の語で種類を見分けられなかったときは
+ * `UnknownDiagramError`。図のドラフトでは LLM が別の種類を書いたときにここへ
+ * 来るので、生成し直せば直りうる側に入れる。
+ */
+function isSyntaxError(err: unknown): boolean {
+  return err instanceof Error && ("hash" in err || err.name === "UnknownDiagramError");
 }
 
 /** 例外から投げ直しに渡せる文字列を取り出す。 */

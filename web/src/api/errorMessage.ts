@@ -12,6 +12,8 @@
  * **畳んで見せるのはサーバーが返した本文だけ。** 応答が返ってこなかったときの
  * 例外は console に固定する（`web/CLAUDE.md`）。
  */
+import { MERMAID_MAX_TEXT_SIZE } from "../excalidraw/mermaid";
+import { ACCEPTED_KINDS_LABEL, type PasteFailure } from "../excalidraw/mermaidPaste";
 import { log } from "../logger";
 import { ApiError } from "./boards";
 import type { ErrorCode } from "./types";
@@ -197,6 +199,53 @@ export function diagramNotPlaceableFailure(): Failure {
       "この図はキャンバスに置ける形になりませんでした。図の種類を変えて試してください。",
     detail: "",
   };
+}
+
+/**
+ * 貼った mermaid をキャンバスに置けなかった（ADR 0062）。
+ *
+ * `ErrorCode` を持たない。サーバーを通らず、手元の前検査と変換器が判断した
+ * だけ。**それでも文言はここに置く**（`web/CLAUDE.md`）。
+ *
+ * 図のドラフト（`diagramNotPlaceableFailure`）と文を分けるのは、**頼み直す
+ * 相手がいない**ため。あちらの「種類を変えて」は LLM への頼み方の話で、
+ * 貼った人が直すのは貼ったもの。どの理由でもキャンバスには触っていないので、
+ * そう言い切る。
+ *
+ * **構文エラーのときだけ `detail` にパーサのメッセージを載せる。** 「例外の
+ * 中身は画面に出さない」（`web/CLAUDE.md`）の例外。貼った本人しか直せず、
+ * どこが読めなかったかは mermaid の位置つきの英文にしか無い。畳んで添え、
+ * 前に出すのは固定文にする（サーバーの本文と同じ扱い、ADR 0034）。
+ */
+export function mermaidPasteFailure(reason: PasteFailure, detail: string): Failure {
+  switch (reason) {
+    case "empty":
+      return {
+        message: "フェンスの中に図がありません。キャンバスはそのままです。",
+        detail: "",
+      };
+    case "kind":
+      return {
+        message: `置けるのは ${ACCEPTED_KINDS_LABEL} だけです。キャンバスはそのままです。`,
+        detail: "",
+      };
+    case "tooLarge":
+      return {
+        message: `mermaid が変換できる長さ（${MERMAID_MAX_TEXT_SIZE.toLocaleString("ja-JP")} 文字）を超えています。図を分けて貼ってください。キャンバスはそのままです。`,
+        detail: "",
+      };
+    case "syntax":
+      return {
+        message:
+          "mermaid として読めませんでした。詳細の行番号を手がかりに直してください。キャンバスはそのままです。",
+        detail,
+      };
+    case "unsupported":
+      return {
+        message: "この図は図形に分解できませんでした。キャンバスはそのままです。",
+        detail: "",
+      };
+  }
 }
 
 /**
