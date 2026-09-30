@@ -1,5 +1,5 @@
 import type { SyncItem } from "../api/types";
-import type { ProjectLink } from "./projectLink";
+import { projectItemLink, type ProjectLink } from "./projectLink";
 
 /**
  * 注釈パネルの中で、複数の節から同じ形で使う部品。
@@ -11,9 +11,9 @@ import type { ProjectLink } from "./projectLink";
 /**
  * 作成した draft issue を確かめにいくリンク 1 行（ADR 0025）。
  *
- * **リストごとに 1 本で、行ごとには置かない。** draft issue には個別の URL が
- * 無く、飛び先はどの行でも同じ Project になる。行ごとに並べると、行ごとに
- * 違う場所へ飛ぶように読めてしまう。
+ * **行ごとのリンク（`ItemLink`）とは別に、リストごとに 1 本残す**（ADR 0057）。
+ * Project 全体を見にいくのは、item を 1 件見にいくのとは別の用事で、消すと
+ * 作ったものの全体像への導線が無くなる。
  *
  * Project そのものに着地しないときは、そう書く。リポジトリの Projects まで
  * しか辿れないのに「Project を開く」と言うと、リンクの約束が崩れる。
@@ -30,6 +30,43 @@ export function ProjectLinkLine({ link }: { link: ProjectLink | null }) {
           : "GitHub でリポジトリの Projects を開く"}
       </a>
     </p>
+  );
+}
+
+/**
+ * 作成した draft issue 1 件を開くリンク（ADR 0057）。
+ *
+ * 組めない行では何も出さない。識別子を控えていなかった頃の run が該当し、
+ * 更新すれば埋まる。**注記は足さない。** 行の下にリストごとのリンクが
+ * 必ずあり、そこから辿れることは今日と変わらないため。
+ *
+ * 同じ文言のリンクが行の数だけ並ぶので、読み上げのリンク一覧で見分けられる
+ * よう、アクセシブルな名前にタイトルを含める。見える文言も名前に含めておく
+ * （見えている語で音声操作できるように）。
+ */
+export function ItemLink({
+  link,
+  item,
+}: {
+  link: ProjectLink | null;
+  item: Pick<SyncItem, "itemDatabaseId" | "title">;
+}) {
+  const href = projectItemLink(link, item);
+  if (href === null) return null;
+
+  return (
+    <>
+      {" "}
+      <a
+        className="item-link"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`「${item.title}」を GitHub で開く`}
+      >
+        GitHub で開く
+      </a>
+    </>
   );
 }
 

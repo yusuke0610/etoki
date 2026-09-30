@@ -45,6 +45,8 @@ import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid
 import { pasteToElements } from "../excalidraw/mermaidPaste";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { log } from "../logger";
+import { useNotify } from "../notification/NotificationProvider";
+import type { NotifyOptions } from "../notification/types";
 import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
 import { AnnotationPanel } from "./AnnotationPanel";
@@ -76,7 +78,7 @@ import { projectLink } from "./projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
 import { useBoardTransfer } from "./useBoardTransfer";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
-import { useSceneSave } from "./useSceneSave";
+import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
 
 /**
@@ -126,6 +128,16 @@ type DeletionState =
   | { status: "confirming"; losing: BoardDeletion }
   | { status: "deleting"; losing: BoardDeletion };
 
+/**
+ * 開いたときに effect から出る失敗の通知。
+ *
+ * **effect から出すものには key を付ける。** 開発時の StrictMode では effect が
+ * 2 回走るので、畳まないと同じ失敗が 2 件並ぶ。注釈の状態は保存や作成のたびにも
+ * 取り直すので、読めたら下げる。
+ */
+const ANNOTATIONS_FAILED = "annotations-failed";
+const SCENE_UNREADABLE = "scene-unreadable";
+
 type Props = {
   board: BoardDetail;
   /**
@@ -135,7 +147,6 @@ type Props = {
    * ボードを開くたびに変わりはしない。**混ぜない。**
    */
   capabilities: Capabilities | null;
-  onError: (failure: Failure) => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
   /**
@@ -182,7 +193,6 @@ type Props = {
 export function BoardPage({
   board,
   capabilities,
-  onError,
   onChangeTarget,
   onTargetRefreshed,
   onRenamed,
@@ -192,6 +202,54 @@ export function BoardPage({
   onThemeChange,
 }: Props) {
   const canEdit = canEditBoard(board.role);
+
+  // 画面全体に出す失敗は通知へ（ADR 0058）。**保存の衝突・解釈や作成の失敗は
+  // ここを通さない。** 消えてよい失敗ではなく、残して読ませる状態だから。
+  const { notify, dismissKey } = useNotify();
+  // **画面から外れたあとに返った失敗は通知しない。** 通知はキャンバスより上に
+  // 生きているので、ボードを離れる前に投げた保存が離れたあとで失敗すると、
+  // 別のボードの画面に「保存できませんでした」が出る。その「再試行」が呼ぶのは
+  // 離れたボードの save で、捨てると決めたシーンを前のボードへ保存しにいく。
+  // 離れる時点で出ている通知は下げてある（SAVE_FAILED の effect）ので、ここで
+  // 塞ぐのは離れる時点でまだ応答待ちだったぶん。
+  //
+  // 印は effect で立てる。StrictMode は effect を 2 回走らせ、そのあいだに
+  // cleanup を挟むので、初期値で true にすると 2 回目以降が false のまま残る。
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // **下げる側も同じ印を見る。** 通知はボードより上（`NotificationProvider`）に
+  // 生きていて key で消すので、**離れたあとに届いた成功で下げると、いま開いて
+  // いるボードに出ている同じ key の通知が消える。** 出す側（`onError`）だけを
+  // 塞いでも、消える側からボードを跨いでしまう。
+  //
+  // **離れる時点で下げるのは別の話**なので、そちらは `dismissKey` を直に呼ぶ
+  // （下の `board.id` の cleanup）。あれは「離れたから下げる」であって、
+  // 「離れたのに下げる」ではない。
+  const dismissHere = useCallback(
+    (key: string) => {
+      if (!mounted.current) return;
+      dismissKey(key);
+    },
+    [dismissKey],
+  );
+
+  const onError = useCallback(
+    (failure: Failure, options: Pick<NotifyOptions, "action" | "key"> = {}) => {
+      if (!mounted.current) return;
+      notify({
+        kind: "error",
+        message: failure.message,
+        detail: failure.detail,
+        ...options,
+      });
+    },
+    [notify],
+  );
 
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationStatus[]>([]);
@@ -475,7 +533,7 @@ export function BoardPage({
     };
   }, [board.id]);
 
-  const initialData = useMemo(() => {
+  const initialScene = useMemo(() => {
     try {
       const scene = JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
       // **開いたら中身が見えている位置から始める。** シーンの原点はキャンバスの
@@ -485,13 +543,20 @@ export function BoardPage({
       //
       // **要素は動かさない。** 動かすと座標の変更として未保存になり、開いた
       // だけで保存を促すことになる。動かすのは見ている位置のほう。
-      return { ...scene, scrollToContent: true };
+      return { data: { ...scene, scrollToContent: true }, unreadable: false };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
-      onError(sceneUnreadableFailure());
-      return { elements: [], appState: {} };
+      return { data: { elements: [], appState: {} }, unreadable: true };
     }
-  }, [board.scene, onError]);
+  }, [board.scene]);
+  const initialData = initialScene.data;
+
+  // 読めなかったことの通知は描画の外で出す。useMemo の中で出すと、描画中に
+  // 別のコンポーネント（通知）の状態を書き換えることになる。
+  useEffect(() => {
+    if (initialScene.unreadable)
+      onError(sceneUnreadableFailure(), { key: SCENE_UNREADABLE });
+  }, [initialScene, onError]);
 
   // 状態の取得は初期表示・保存・作成から重なって走る。番号を振って最後に
   // 投げたものだけ反映する。古い応答で上書きすると、作成済みの注釈が未作成に
@@ -505,11 +570,14 @@ export function BoardPage({
       if (request !== annotationsRequest.current) return;
       setAnnotations(next.annotations);
       setDetached(next.detached);
+      dismissHere(ANNOTATIONS_FAILED);
     } catch (e) {
       if (request !== annotationsRequest.current) return;
-      onError(describeFailure("注釈の状態を取得できませんでした", e));
+      onError(describeFailure("注釈の状態を取得できませんでした", e), {
+        key: ANNOTATIONS_FAILED,
+      });
     }
-  }, [board.id, onError]);
+  }, [board.id, dismissHere, onError]);
 
   useEffect(() => {
     void refreshAnnotations();
@@ -867,7 +935,28 @@ export function BoardPage({
     markSaved,
     onSaved: discardAfterSave,
     onError,
+    dismiss: dismissHere,
   });
+
+  // **ボードを変えたら、そのボードについての通知は全部下げる。** 通知は
+  // キャンバスより上に生きているので、残すと別のボードの画面に並ぶ。
+  //
+  // - `SAVE_FAILED` — 「再試行」が呼ぶのは押した時点の save、つまり**いま開いて
+  //   いるボードの保存**なので、読んでいる文と起きることが食い違う。
+  // - `SCENE_UNREADABLE` — 下げる経路がここしか無い。残すと、読めたボードが
+  //   空で開いたように読める。
+  // - `ANNOTATIONS_FAILED` — 次のボードの取得が成功するまで前のボードの失敗が
+  //   残る。
+  //
+  // 次のボードが出す通知は消さない。前のボードの cleanup は、次のボードの effect
+  // より先に走る。
+  useEffect(
+    () => () => {
+      for (const key of [SAVE_FAILED, SCENE_UNREADABLE, ANNOTATIONS_FAILED])
+        dismissKey(key);
+    },
+    [board.id, dismissKey],
+  );
 
   /**
    * 注釈を解釈させる。

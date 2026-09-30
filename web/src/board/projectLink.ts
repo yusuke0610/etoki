@@ -1,4 +1,4 @@
-import type { BoardSummary } from "../api/types";
+import type { BoardSummary, SyncItem } from "../api/types";
 
 /**
  * 作成先 Project へのリンクを組む（ADR 0025）。
@@ -51,4 +51,41 @@ export function projectLink(target: BoardSummary): ProjectLink | null {
     href: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/projects`,
     exact: false,
   };
+}
+
+/**
+ * 作成した draft issue 1 件へのリンクを返す。組めなければ null（ADR 0057）。
+ *
+ * draft issue に固有の URL は無い。Project の URL に `pane=issue&itemId=` を
+ * 添えると、Project を開いたうえでその item のペインが開く。
+ *
+ * **知らない部分は組み立てない**（ADR 0025 の線はそのまま）。土台にするのは
+ * GitHub が返した Project の URL だけで、それが無い（`exact` でない）ときは
+ * null。リポジトリの Projects タブに `itemId` を足しても item は開かない。
+ * 呼び出し側はそのとき、リストごとの 1 本（`projectLink`）だけを出す。
+ *
+ * 識別子は `0`（知らない）か、JavaScript の数値で正確に表せないときも null。
+ * 丸められた値は別の item を指しうるので、リンクが無いより悪い。
+ *
+ * 文字列連結ではなく `URL` で組む。保存された URL に既にクエリや fragment が
+ * 付いていても壊れない。
+ */
+export function projectItemLink(
+  link: ProjectLink | null,
+  item: Pick<SyncItem, "itemDatabaseId">,
+): string | null {
+  if (link === null || !link.exact) return null;
+
+  const id = item.itemDatabaseId ?? 0;
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+
+  let url: URL;
+  try {
+    url = new URL(link.href);
+  } catch {
+    return null;
+  }
+  url.searchParams.set("pane", "issue");
+  url.searchParams.set("itemId", String(id));
+  return url.toString();
 }

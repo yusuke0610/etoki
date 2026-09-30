@@ -81,7 +81,7 @@ type blockingGitHub struct {
 
 func (g *blockingGitHub) CreateDraftIssue(
 	ctx context.Context, projectID string, item port.DraftIssue,
-) (string, error) {
+) (port.ProjectItemRef, error) {
 	g.once.Do(func() {
 		close(g.started)
 		<-g.resume

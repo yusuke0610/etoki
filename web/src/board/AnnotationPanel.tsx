@@ -15,7 +15,7 @@ import { DetachedSection } from "./DetachedSection";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { InterpretationSection } from "./InterpretationSection";
 import type { InterpretationState } from "./interpretationHistory";
-import { ItemBody, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
+import { ItemBody, ItemLink, ProjectLinkLine, UnconfirmedItems } from "./panelParts";
 import {
   INTERPRETATION_UNAVAILABLE_ID,
   type CreationState,
@@ -377,6 +377,7 @@ export function AnnotationPanel({
                         {a.items.map((it) => (
                           <li key={it.itemId}>
                             <span className="kind">{it.kind}</span> {it.title}
+                            <ItemLink link={projectLink} item={it} />
                             <ItemBody body={it.body} />
                           </li>
                         ))}
