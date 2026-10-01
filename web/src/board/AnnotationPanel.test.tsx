@@ -7,7 +7,7 @@ import { AnnotationPanel } from "./AnnotationPanel";
 function props(): ComponentProps<typeof AnnotationPanel> {
   return {
     annotations: [
-      { id: "frame-1", name: "ログイン", granularity: "", state: "uncreated" },
+      { id: "frame-1", name: "ログイン", granularity: "epic", state: "changed" },
     ],
     detached: [],
     frames: {
@@ -15,16 +15,8 @@ function props(): ComponentProps<typeof AnnotationPanel> {
       unmarkable: [],
       canvasIds: ["frame-1"],
       selectedIds: [],
-      onFocus: vi.fn(),
       onMark: vi.fn(),
       onUnmark: vi.fn(),
-      onChangeGranularity: vi.fn(),
-      onChangeKind: vi.fn(),
-    },
-    interpretation: {
-      states: {},
-      onInterpret: vi.fn(),
-      unavailable: null,
     },
     runs: { states: {}, onLoad: vi.fn() },
     stale: false,
@@ -35,65 +27,35 @@ function props(): ComponentProps<typeof AnnotationPanel> {
 }
 
 describe("AnnotationPanel", () => {
-  // 種別の更新は live scene にだけ先に反映され、annotations は保存するまで古い。
-  // ここで選択値を直接見ることで、古い a.kind を表示し続ける回帰を検知する。
-  it("保存前でも選んだ種別を表示する", () => {
+  // カードはボタン 1 つ。名前は注釈の見出しだけにし、状態と要約は説明として
+  // 結ぶ。全部を名前にすると、名前で引く読み上げと E2E の両方で長すぎる。
+  it("カードを押すと詳細を開き、状態と要約は説明として読める", () => {
     const panelProps = props();
     render(<AnnotationPanel {...panelProps} />);
 
-    const select = screen.getByLabelText("種別");
-    fireEvent.change(select, { target: { value: "sequence" } });
+    const card = screen.getByRole("button", { name: "ログイン" });
+    expect(card).toHaveAccessibleDescription("変更あり 粒度 epic · 種別 未指定");
 
-    expect(panelProps.frames.onChangeKind).toHaveBeenCalledWith("frame-1", "sequence");
-    expect(select).toHaveValue("sequence");
+    fireEvent.click(card);
+    expect(panelProps.onOpenDetail).toHaveBeenCalledWith("frame-1");
   });
 
-  // 前の選択（sequence）の保存だけが後から追いつくと、「保存済みの値が変わった
-  // から追いついた」という判定では、追いついたのが古い選択のほうでも pending を
-  // 消してしまい、選択欄がキャンバスと食い違う値（sequence）に戻ってしまう。
-  it("保存中に選び直しても、古い選択の保存が追いついた時点で表示を戻さない", () => {
+  // キャンバスに無い注釈も詳細で GitHub にあるものや履歴を読めるようにする。
+  // 押せないのは詳細の「キャンバスで見る」のほう（ADR 0022）。
+  it("キャンバスに無い注釈のカードも押せ、そのことを畳まずに出す", () => {
     const panelProps = props();
-    const { rerender } = render(<AnnotationPanel {...panelProps} />);
-
-    const select = screen.getByLabelText("種別");
-    fireEvent.change(select, { target: { value: "sequence" } });
-    fireEvent.change(select, { target: { value: "er" } });
-
-    expect(panelProps.frames.onChangeKind).toHaveBeenLastCalledWith("frame-1", "er");
-    expect(select).toHaveValue("er");
-
-    // 1 回目の選択（sequence）の保存だけが先に追いつく。2 回目（er）はまだ未保存。
-    rerender(
+    render(
       <AnnotationPanel
         {...panelProps}
-        annotations={[
-          {
-            id: "frame-1",
-            name: "ログイン",
-            granularity: "",
-            state: "uncreated",
-            kind: "sequence",
-          },
-        ]}
+        frames={{ ...panelProps.frames, canvasIds: [] }}
       />,
     );
-    expect(select).toHaveValue("er");
 
-    // 2 回目の選択（er）の保存が追いつく。ここで初めて表示の根拠が a.kind に戻る。
-    rerender(
-      <AnnotationPanel
-        {...panelProps}
-        annotations={[
-          {
-            id: "frame-1",
-            name: "ログイン",
-            granularity: "",
-            state: "uncreated",
-            kind: "er",
-          },
-        ]}
-      />,
-    );
-    expect(select).toHaveValue("er");
+    expect(screen.getByRole("button", { name: "ログイン" })).toBeEnabled();
+    expect(
+      screen.getByText(
+        "このフレームはキャンバスにありません。保存すると一覧からも消えます。",
+      ),
+    ).toBeInTheDocument();
   });
 });

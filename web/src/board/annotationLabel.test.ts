@@ -4,6 +4,7 @@ import type { AnnotationStatus } from "../api/types";
 import {
   annotationLabel,
   annotationLabels,
+  annotationSummary,
   frameLabel,
   ITEM_KIND_LABEL,
   itemKinds,
@@ -67,5 +68,41 @@ describe("frameLabel", () => {
   // 番号を振ると、状態欄の「注釈 n」と食い違う番号が同じ画面に 2 種類出る。
   it("名前が無ければ番号を振らない", () => {
     expect(frameLabel("")).toBe("名前のないフレーム");
+  });
+});
+
+describe("annotationSummary", () => {
+  const base: AnnotationStatus = {
+    id: "a1",
+    name: "ログイン",
+    granularity: "",
+    state: "uncreated",
+  };
+
+  it("選んでいない粒度と種別は「未指定」と書く", () => {
+    expect(annotationSummary(base)).toBe("粒度 未指定 · 種別 未指定");
+  });
+
+  it("選んだ粒度と種別は表示名で書く", () => {
+    expect(annotationSummary({ ...base, granularity: "epic", kind: "sequence" })).toBe(
+      "粒度 epic · 種別 シーケンス図",
+    );
+  });
+
+  // 0 件を並べると、未作成のカードがどれも同じ長さの行で埋まる。
+  it("GitHub の件数は 1 件以上のときだけ添える", () => {
+    const item = {
+      itemId: "PVTI_1",
+      kind: "issue",
+      title: "t",
+      body: "",
+      localId: "i1",
+      action: "created",
+      confirmed: true,
+    } as const;
+    expect(annotationSummary({ ...base, items: [] })).toBe("粒度 未指定 · 種別 未指定");
+    expect(
+      annotationSummary({ ...base, items: [item, { ...item, itemId: "PVTI_2" }] }),
+    ).toBe("粒度 未指定 · 種別 未指定 · GitHub に 2 件");
   });
 });

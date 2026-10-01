@@ -8,104 +8,9 @@ import {
   type InterpretationRun,
   type InterpretationState,
 } from "./interpretationHistory";
-import { INTERPRETATION_UNAVAILABLE_ID, type CreationState } from "./panelShared";
+import { DetailBand, type InterpretControl } from "./DetailBand";
+import type { CreationState } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
-
-/**
- * カードの「解釈結果を開く」の id。詳細を閉じたとき、焦点をここへ戻す
- * （`AnnotationDetail`）。
- */
-export function openDetailButtonId(annotationId: string): string {
-  return `interpret-open-${annotationId}`;
-}
-
-type InterpretControlProps = {
-  /** 説明文の id を注釈ごとに分けるために持つ。一覧に複数並ぶため。 */
-  annotationId: string;
-  /**
-   * 注釈の見出し。ボタンの名前に見えない形で添える。**添えないと、注釈の数だけ
-   * 「解釈結果を開く」が並び、読み上げではどれの結果か区別できない。**
-   */
-  label: string;
-  state?: InterpretationState;
-  /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
-  stale: boolean;
-  /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
-  interpretationUnavailable: string | null;
-  onInterpret: () => void;
-  /** 解釈の結果（中央の面）を開く。 */
-  onOpen: () => void;
-};
-
-/**
- * 注釈のカードに残す、解釈の口（ADR 0065 の右のパネル）。
- *
- * **結果はここに出さない。** 下書きの手直しまで含めると 1 件で画面数枚分に
- * 伸び、ほかの注釈の状態（このパネルの主題）が読めなくなる。結果は中央の面
- * （`AnnotationDetail`）に広く出し、ここには押す口と開く口だけを置く。
- */
-export function InterpretControl({
-  annotationId,
-  label,
-  state,
-  stale,
-  interpretationUnavailable,
-  onInterpret,
-  onOpen,
-}: InterpretControlProps) {
-  const running = state?.running ?? false;
-  // 開けるものがあるか。**解釈中も開ける。** 閉じたあとに結果を待つ場所が
-  // 無いと、返ってきたことに気づけない。
-  const openable =
-    running || (state?.runs.length ?? 0) > 0 || state?.failure !== undefined;
-  // 押せない理由は title に隠さず本文として出す。disabled なボタンはフォーカスも
-  // 当たらないので、title ではキーボードと読み上げの利用者に理由が届かない。
-  const blockedId = `interpret-blocked-${annotationId}`;
-  // **設定の不足が先。** 保存しても状況は変わらないので、「保存してから」を
-  // 先に出すと、保存した人がもう一度同じところで止まる（ADR 0030）。
-  //
-  // 未設定の理由はパネルの上に 1 つだけ出ているので、ここでは指すだけにする。
-  // 注釈の数だけ同じ文を並べない。
-  const unavailable = interpretationUnavailable !== null;
-  const describedBy = unavailable
-    ? INTERPRETATION_UNAVAILABLE_ID
-    : stale
-      ? blockedId
-      : undefined;
-
-  return (
-    <div className="interpretation">
-      <div className="interpretation-actions">
-        {/*
-          未保存のあいだは押させない。テキストは保存済みシーンから、画像は画面
-          から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
-        */}
-        <button
-          type="button"
-          onClick={onInterpret}
-          disabled={running || unavailable || stale}
-          aria-describedby={describedBy}
-        >
-          {running ? "解釈中…" : "解釈する"}
-          <span className="visually-hidden">（{label}）</span>
-        </button>
-        {openable && (
-          <button type="button" id={openDetailButtonId(annotationId)} onClick={onOpen}>
-            解釈結果を開く
-            <span className="visually-hidden">（{label}）</span>
-          </button>
-        )}
-      </div>
-
-      {!unavailable && stale && (
-        <p className="hint" id={blockedId}>
-          保存してから解釈できます。テキストは保存済みのシーンから、
-          画像は画面から取るためです。
-        </p>
-      )}
-    </div>
-  );
-}
 
 type InterpretationSectionProps = {
   /** 説明文の id を注釈ごとに分けるために持つ。一覧に複数並ぶため。 */
@@ -125,16 +30,31 @@ type InterpretationSectionProps = {
   previous: SyncItem[];
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
   projectLink: ProjectLink | null;
+  /** 作る先の見出し（`acme/web › #1 ロードマップ`）。帯の文に出す。 */
+  targetLabel: string | null;
+  /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
+  stale: boolean;
+  /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
+  interpretationUnavailable: string | null;
+  onInterpret: () => void;
   onSelectInterpretation: (runId: number) => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
 };
 
 /**
- * 解釈の結果。中央の面（`AnnotationDetail`）に出す。
+ * 未保存のあいだ「解釈する」を押せない理由。テキストは保存済みシーンから、
+ * 画像は画面から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
+ */
+const STALE_REASON =
+  "保存してから解釈できます。テキストは保存済みのシーンから、画像は画面から取るためです。";
+
+/**
+ * 解釈の結果と、下端の帯（`DetailBand`）。注釈の詳細（`AnnotationDetail`）の
+ * 本文に出す。
  *
- * 結果を見せるだけで、ここから GitHub には何も作らない。何を作るかは
- * 開発者が別途トリガーする。解釈する口は注釈のカード（`InterpretControl`）に
- * ある。
+ * 解釈を 1 件選んでいれば、帯は下書きの手直し（`DraftEditor`）が描く。作成の
+ * 口は下書きを持つ側にしか組めないため。まだ選べるものが無いうちは、ここで
+ * 「解釈する」だけの帯を描く（**解釈するまで作成のボタンは出さない**）。
  */
 export function InterpretationSection({
   annotationId,
@@ -147,6 +67,10 @@ export function InterpretationSection({
   creationUnavailable,
   previous,
   projectLink,
+  targetLabel,
+  stale,
+  interpretationUnavailable,
+  onInterpret,
   onSelectInterpretation,
   onCreate,
 }: InterpretationSectionProps) {
@@ -155,18 +79,30 @@ export function InterpretationSection({
   // いま見ている解釈。1 件も返っていなければ undefined。
   const selected = selectedInterpretation(state);
 
+  const interpret: InterpretControl = {
+    annotationId,
+    label:
+      runs.length > 0 || state?.failure !== undefined ? "解釈をやり直す" : "解釈する",
+    running,
+    // **設定の不足が先。** 保存しても状況は変わらないので、「保存してから」を
+    // 先に出すと、保存した人がもう一度同じところで止まる（ADR 0030）。
+    blocked: interpretationUnavailable ?? (stale ? STALE_REASON : null),
+    onInterpret,
+  };
+
   return (
     <div className="interpretation-result-area">
       {running && <p className="hint">解釈しています…</p>}
 
       {/*
-        保存すると解釈は捨てる（前提のシーンが変わる、web/CLAUDE.md）。開いた
-        ままだと中が空になるので、何が起きたのかと、次に何をすればよいかを出す。
+        解釈の前でも詳細は開ける（粒度と種別を選ぶ場所がここなので）。何を押すと
+        何が起きるかを出す。保存すると解釈は捨てる（前提のシーンが変わる、
+        web/CLAUDE.md）ので、開いたまま保存したときも同じ文に戻る。
       */}
       {!running && runs.length === 0 && !state?.failure && (
         <p className="hint">
-          解釈の結果はありません。保存すると前の結果は捨てます。注釈の「解釈する」から
-          解釈し直せます。
+          まだ解釈していません。「解釈する」を押すと、この注釈を読んで、作るものの
+          下書きを出します。保存すると、前に解釈した結果は捨てます。
         </p>
       )}
 
@@ -189,7 +125,7 @@ export function InterpretationSection({
         />
       )}
 
-      {selected && (
+      {selected ? (
         <DraftEditor
           // 選び直したら手直しは引き継がない。別の解釈に対する編集が
           // 混ざると、何を作るのかが読めなくなる（解釈し直したときと同じ）。
@@ -205,8 +141,12 @@ export function InterpretationSection({
           creationUnavailable={creationUnavailable}
           previous={previous}
           projectLink={projectLink}
+          targetLabel={targetLabel}
+          interpret={interpret}
           onCreate={(interpretation) => onCreate(selected.id, interpretation)}
         />
+      ) : (
+        <DetailBand interpret={interpret} />
       )}
     </div>
   );

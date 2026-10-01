@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import type { SyncRun } from "../src/api/types";
-import { annotationCard, openBoardWithMock } from "./helpers/board";
+import { annotationCard, openAnnotationDetail, openBoardWithMock } from "./helpers/board";
 import {
   ANNOTATION_IDS,
   BOARD_ID,
@@ -25,30 +25,54 @@ test.describe("注釈の状態", () => {
     ).toBeVisible();
   });
 
+  // カードは名前・状態・要約 1 行だけ（#201）。粒度と種別の選択、GitHub に
+  // あるもの、実行の履歴、解釈の口は詳細にある。カードに並べていたころは、
+  // 注釈が 3 つで右のパネルが埋まり、ほかの注釈の状態が読めなくなった。
+  test("カードには名前・状態・要約だけが出る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    // GitHub の件数は 1 件以上のときだけ添える。
+    await expect(annotationCard(page, "ログイン")).toContainText(
+      "粒度 未指定 · 種別 未指定",
+    );
+    await expect(annotationCard(page, "ログイン")).not.toContainText("GitHub に");
+    await expect(annotationCard(page, "パスワード再設定")).toContainText(
+      "粒度 epic · 種別 未指定 · GitHub に 2 件",
+    );
+    await expect(annotationCard(page, "セッション管理")).toContainText(
+      "粒度 issue · 種別 シーケンス図 · GitHub に 1 件",
+    );
+
+    const card = annotationCard(page, "セッション管理");
+    await expect(card.getByRole("combobox")).toHaveCount(0);
+    await expect(card.getByRole("button")).toHaveCount(1);
+  });
+
   test("粒度はサーバーが返した値が選ばれている", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     // 空文字は「指定なし」。粒度の判断を LLM に任せることを表す。
-    await expect(annotationCard(page, "ログイン").getByLabel("粒度")).toHaveValue("");
-    await expect(annotationCard(page, "パスワード再設定").getByLabel("粒度")).toHaveValue(
-      "epic",
-    );
-    await expect(annotationCard(page, "セッション管理").getByLabel("粒度")).toHaveValue(
-      "issue",
-    );
+    for (const [name, value] of [
+      ["ログイン", ""],
+      ["パスワード再設定", "epic"],
+      ["セッション管理", "issue"],
+    ] as const) {
+      const detail = await openAnnotationDetail(page, name);
+      await expect(detail.getByLabel("粒度")).toHaveValue(value);
+    }
   });
 
   // 何の図として読ませるかは人が選ぶ。**ひな形は絵を置くだけ**（ADR 0045）
-  // なので、種別が載る先はこのパネルしかない。
+  // なので、種別が載る先は注釈の詳細しかない。
   test("種別はサーバーが返した値が選ばれている", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await expect(annotationCard(page, "セッション管理").getByLabel("種別")).toHaveValue(
-      "sequence",
-    );
+    const session = await openAnnotationDetail(page, "セッション管理");
+    await expect(session.getByLabel("種別")).toHaveValue("sequence");
     // 選んでいない囲みは「指定なし」。空文字は DiagramKind に無い値なので、
     // シーンには載っていない（キーごと落ちている）。
-    await expect(annotationCard(page, "ログイン").getByLabel("種別")).toHaveValue("");
+    const login = await openAnnotationDetail(page, "ログイン");
+    await expect(login.getByLabel("種別")).toHaveValue("");
   });
 
   // 種別は content_hash の入力なので、選び直せば「変更あり」になる。ここでは
@@ -58,7 +82,8 @@ test.describe("注釈の状態", () => {
 
     await expect(page.getByText("未保存の変更あり")).toBeHidden();
 
-    await annotationCard(page, "ログイン").getByLabel("種別").selectOption("er");
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByLabel("種別").selectOption("er");
 
     await expect(page.getByText("未保存の変更あり")).toBeVisible();
   });
@@ -66,11 +91,11 @@ test.describe("注釈の状態", () => {
   test("GitHub にある項目は畳まれていて、開くと中身が出る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    const card = annotationCard(page, "パスワード再設定");
-    const item = card.getByText("再設定メールを送る");
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    const item = detail.getByText("再設定メールを送る");
 
     await expect(item).toBeHidden();
-    await card.getByText("GitHub にある 2 件").click();
+    await detail.getByRole("button", { name: "GitHub にある 2 件" }).click();
     await expect(item).toBeVisible();
   });
 
@@ -79,10 +104,10 @@ test.describe("注釈の状態", () => {
   test("GitHub にある項目の本文が読める", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    const card = annotationCard(page, "パスワード再設定");
-    await card.getByText("GitHub にある 2 件").click();
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await detail.getByRole("button", { name: "GitHub にある 2 件" }).click();
 
-    const item = card.locator("li").filter({ hasText: "再設定メールを送る" }).last();
+    const item = detail.locator("li").filter({ hasText: "再設定メールを送る" }).last();
     await item.getByText("本文", { exact: true }).click();
     await expect(item.getByText("有効期限つきのリンクを送る")).toBeVisible();
   });
@@ -92,10 +117,10 @@ test.describe("注釈の状態", () => {
   test("本文を記録していない項目は、無いことが分かる", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    const card = annotationCard(page, "セッション管理");
-    await card.getByText("GitHub にある 1 件").click();
+    const detail = await openAnnotationDetail(page, "セッション管理");
+    await detail.getByRole("button", { name: "GitHub にある 1 件" }).click();
 
-    await expect(card.getByText("本文なし")).toBeVisible();
+    await expect(detail.getByText("本文なし")).toBeVisible();
   });
 
   // 名前を付けていない frame は Excalidraw 側も `Frame` としか描かないので、
@@ -108,17 +133,19 @@ test.describe("注釈の状態", () => {
 
   // 押す → updateScene → onChange → 選択の反映、の一周が実ブラウザで
   // 通ることを見る。ここが切れると、どのカードがどのフレームか分からない
-  // という元の状態に戻る。
-  test("カードを押すとキャンバスでそのフレームが選ばれ、カードが強調される", async ({
-    page,
-  }) => {
+  // という元の状態に戻る。**口は詳細の「キャンバスで見る」**（#201）。カードを
+  // 押すと詳細が開く。
+  test("「キャンバスで見る」でフレームが選ばれ、カードが強調される", async ({ page }) => {
     await openBoardWithMock(page, multiFrameMock());
 
     const card = annotationCard(page, "注釈 2");
     await expect(card).not.toHaveAttribute("aria-current", "true");
 
-    await card.getByRole("button", { name: "注釈 2", exact: true }).click();
+    const detail = await openAnnotationDetail(page, "注釈 2");
+    await detail.getByRole("button", { name: "キャンバスで見る" }).click();
 
+    // 詳細を閉じてから寄せる。開いたままだと、選んだ frame が詳細の裏に隠れる。
+    await expect(detail).toBeHidden();
     await expect(card).toHaveAttribute("aria-current", "true");
     await expect(annotationCard(page, "ログイン")).not.toHaveAttribute(
       "aria-current",
@@ -165,10 +192,9 @@ test.describe("注釈の状態", () => {
   test("注釈を外すと印も消える", async ({ page }) => {
     await openBoardWithMock(page, mixedFramesMock());
 
-    // カードを押すとキャンバスでそのフレームが選ばれ、パネルに外す口が出る。
-    await annotationCard(page, "ログイン")
-      .getByRole("button", { name: "ログイン", exact: true })
-      .click();
+    // 「キャンバスで見る」でそのフレームが選ばれ、パネルに外す口が出る。
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "キャンバスで見る" }).click();
     await page.getByRole("button", { name: /の注釈を外す/ }).click();
 
     await expect(page.locator(".annotation-overlay-frame")).toHaveCount(1);
@@ -207,19 +233,23 @@ test.describe("実行の履歴", () => {
 
     await openBoardWithMock(page, withRuns());
 
-    const card = annotationCard(page, "パスワード再設定");
-    await expect(card.getByText("実行の履歴")).toBeVisible();
+    // 詳細を開いただけでは引かない。**件数は読み込んだあとだけ添える。** 開く
+    // 前は件数を知らない。
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    const toggle = detail.getByRole("button", { name: /^実行の履歴/ });
+    await expect(toggle).toHaveAccessibleName("実行の履歴");
     expect(requests).toBe(0);
 
-    await card.getByText("実行の履歴").click();
-    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+    await toggle.click();
+    await detail.getByRole("button", { name: "履歴を読み込む" }).click();
 
     // 畳み込み（「GitHub にある N 件」）にも同じタイトルが並ぶので、履歴の中に
     // 絞って見る。**同じ文字列を別の問いに対する答えとして出している**ことが
     // ここで分かる（ADR 0026）。
-    const history = card.locator(".run-history");
+    const history = detail.locator(".run-history");
     await expect(history.getByText("再設定メールを送る")).toBeVisible();
     await expect(history.getByText("パスワード再設定")).toBeVisible();
+    await expect(toggle).toHaveAccessibleName("実行の履歴 2 件");
     expect(requests).toBe(1);
   });
 
@@ -240,17 +270,17 @@ test.describe("実行の履歴", () => {
     };
     await openBoardWithMock(page, mock);
 
-    const card = annotationCard(page, "パスワード再設定");
-    await card.getByText("実行の履歴").click();
-    await card.getByRole("button", { name: "履歴を読み込む" }).click();
-    await expect(card.getByText("履歴を読み込めませんでした")).toBeVisible();
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await detail.getByRole("button", { name: /^実行の履歴/ }).click();
+    await detail.getByRole("button", { name: "履歴を読み込む" }).click();
+    await expect(detail.getByText("履歴を読み込めませんでした")).toBeVisible();
 
     // 直ったら、開き直さずに読める。
     mock.runs = { [ANNOTATION_IDS.created]: succeeds };
-    await card.getByRole("button", { name: "履歴を読み込み直す" }).click();
+    await detail.getByRole("button", { name: "履歴を読み込み直す" }).click();
 
     await expect(
-      card.locator(".run-history").getByText("再設定メールを送る"),
+      detail.locator(".run-history").getByText("再設定メールを送る"),
     ).toBeVisible();
   });
 
@@ -285,10 +315,11 @@ test.describe("実行の履歴", () => {
     // 状態そのものは変えない。作れたぶんは記録されている（ADR 0009）。
     await expect(card.getByText("作成済み")).toBeVisible();
 
-    await card.getByText("実行の履歴").click();
-    await card.getByRole("button", { name: "履歴を読み込む" }).click();
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await detail.getByRole("button", { name: /^実行の履歴/ }).click();
+    await detail.getByRole("button", { name: "履歴を読み込む" }).click();
 
-    const history = card.locator(".run-history");
+    const history = detail.locator(".run-history");
     await expect(history.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
     // 理由は畳んで残す。利用者向けの文言ではない（ADR 0034）。
     await expect(history.getByText("github graphql: rate limited")).toBeHidden();
@@ -326,10 +357,14 @@ test.describe("実行の履歴", () => {
     );
     await openBoardWithMock(page, mock);
 
-    const card = annotationCard(page, "パスワード再設定");
-    const unconfirmed = card.locator(".unconfirmed-items");
+    // カードには件数を畳まずに出す。詳細を開かなくても気づける。
+    await expect(annotationCard(page, "パスワード再設定")).toContainText(
+      "届いたか分からない書き込みが 1 件あります。",
+    );
 
-    // 畳まれていない。開く操作をしないまま読める。
+    // 詳細でも畳まない。開閉の操作をしないまま一覧が読める。
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    const unconfirmed = detail.locator(".unconfirmed-items");
     await expect(unconfirmed.getByText("確認できていないほう")).toBeVisible();
     await expect(
       unconfirmed.getByText("GitHub に届いたか確認できていません", { exact: false }),
@@ -337,7 +372,9 @@ test.describe("実行の履歴", () => {
 
     // **「GitHub にある N 件」には数えない。** 畳み込み（ADR 0026）の 2 件のまま
     // で、3 件にはならない。数えると在る件数が嘘になる。
-    await expect(card.getByText("GitHub にある 2 件")).toBeVisible();
+    await expect(
+      detail.getByRole("button", { name: "GitHub にある 2 件" }),
+    ).toBeVisible();
   });
 
   // 一度も実行していない注釈に履歴の枠を出さない。常に出すと、空の枠が
@@ -345,6 +382,7 @@ test.describe("実行の履歴", () => {
   test("未実行の注釈には履歴を出さない", async ({ page }) => {
     await openBoardWithMock(page, withRuns());
 
-    await expect(annotationCard(page, "ログイン").getByText("実行の履歴")).toHaveCount(0);
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await expect(detail.getByRole("button", { name: /^実行の履歴/ })).toHaveCount(0);
   });
 });

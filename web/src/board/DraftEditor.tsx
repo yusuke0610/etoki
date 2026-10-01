@@ -9,7 +9,8 @@ import type {
   SyncItem,
 } from "../api/types";
 import { ITEM_KIND_LABEL, itemKinds } from "./annotationLabel";
-import { CreationSection } from "./CreationSection";
+import { createControlOf, CreationResult } from "./CreationSection";
+import { DetailBand, type InterpretControl } from "./DetailBand";
 import { groupByEpic } from "./interpretation";
 import { ItemLink } from "./panelParts";
 import {
@@ -55,6 +56,8 @@ export function DraftEditor({
   creationUnavailable,
   previous,
   projectLink,
+  targetLabel,
+  interpret,
   onCreate,
 }: {
   annotationId: string;
@@ -73,6 +76,10 @@ export function DraftEditor({
   /** この注釈が GitHub に在らしめているもの。取り残しの算出に使う。 */
   previous: SyncItem[];
   projectLink: ProjectLink | null;
+  /** 作る先の見出し（`acme/web › #1 ロードマップ`）。帯の文に出す。 */
+  targetLabel: string | null;
+  /** 帯の「解釈をやり直す」。帯はここで描くので受け取って並べる。 */
+  interpret: InterpretControl;
   onCreate: (interpretation: Interpretation) => void;
 }) {
   // 作ったものは作り直した下書きにも反映する。解釈を選び直して戻ってきた
@@ -148,11 +155,24 @@ export function DraftEditor({
     />
   );
 
+  const selectedCount = draft.items.filter((d) => d.selected).length;
+  const leftBehindItems = previous.filter((it) => leftBehind.has(it.itemId));
+  // 押せるときに帯に出す文。**取り消せないことと作る先を、押す直前に言う。**
+  // ボタンは主となる操作の緑で、赤にしない（#203）。取り残しは本文の中にも
+  // 一覧で出すが、帯を下端に固定するとスクロールで見えなくなりうるので、
+  // 件数をここにも添える（作成ボタンの手前に出す約束、`web/CLAUDE.md`）。
+  const notice =
+    `作成は取り消せません。選んだ ${selectedCount} 件を ${targetLabel ?? "作成先"} に作ります。` +
+    (leftBehindItems.length > 0
+      ? `前回作った ${leftBehindItems.length} 件は書き換わりません。`
+      : "");
+
   return (
     <>
       <div className="interpretation-result">
         <p className="summary">{draft.summary}</p>
 
+        <h3>作るもの（{selectedCount} 件を選択中）</h3>
         {groups.length === 0 ? (
           <p className="hint">作成される項目はありません。</p>
         ) : (
@@ -178,20 +198,21 @@ export function DraftEditor({
         )}
       </div>
 
-      <LeftBehind
-        items={previous.filter((it) => leftBehind.has(it.itemId))}
-        projectLink={projectLink}
-      />
+      <LeftBehind items={leftBehindItems} projectLink={projectLink} />
 
-      <CreationSection
-        annotationId={annotationId}
-        state={creation}
-        creationBlocked={creationBlocked}
-        reasons={reasons}
-        projectAccess={projectAccess}
-        creationUnavailable={creationUnavailable}
-        projectLink={projectLink}
-        onCreate={() => onCreate(buildInterpretation(draft))}
+      <CreationResult state={creation} projectLink={projectLink} />
+
+      <DetailBand
+        interpret={interpret}
+        create={createControlOf({
+          state: creation,
+          creationBlocked,
+          reasons,
+          projectAccess,
+          creationUnavailable,
+          notice,
+          onCreate: () => onCreate(buildInterpretation(draft)),
+        })}
       />
     </>
   );
@@ -330,9 +351,12 @@ function DraftItemFields({
           <span className="badge badge-unconfirmed">確認できていません</span>
         ) : createdItem ? (
           <span className="badge badge-created">作成した</span>
+        ) : item.previousItemId && updatesPrevious ? (
+          <span className="badge badge-updated">更新</span>
         ) : (
-          item.previousItemId &&
-          updatesPrevious && <span className="badge badge-updated">更新</span>
+          // 新しく作る項目にも印を付ける（#201）。印が「更新」にしか無いと、
+          // 印の無い項目が何になるのかを読み手が補うことになる。
+          <span className="badge badge-new">新規</span>
         )}
       </div>
 
@@ -412,11 +436,13 @@ function DraftItemFields({
 }
 
 /**
- * これから作る draft issue の本文。既定は畳んでおく。
+ * これから作る draft issue の本文。**開いたまま出す**（#201）。
  *
- * `ItemBody` と見え方を揃える。畳んであること、生テキストのまま出すこと、
- * 空なら空と分かること。**整形しない。** GitHub に送るのはこのテキスト
- * そのもので、整形すると「確認したもの」と「作られるもの」がずれる。
+ * 畳んでいたのは、狭い右のパネルで全部開くと一覧が縦に伸びて全体像が追え
+ * なかったから。詳細は広い面なので、その理由が無い。空なら欄の中に「本文なし」と
+ * 出す（`ItemBody` と同じ呼び方。読むときと直すときで呼び方が変わると別物に
+ * 見える、ADR 0023）。**整形しない。** GitHub に送るのはこのテキストそのもので、
+ * 整形すると「確認したもの」と「作られるもの」がずれる。
  */
 function DraftItemBody({
   localId,
@@ -430,18 +456,15 @@ function DraftItemBody({
   onBody: (body: string) => void;
 }) {
   return (
-    <details className="item-body">
-      {/* 空のときの文言は `ItemBody` と揃える。同じものを見ているのに、
-          読むときと直すときで呼び方が変わると別物に見える（ADR 0023）。 */}
-      <summary>{body === "" ? "本文なし" : "本文"}</summary>
-      <textarea
-        value={body}
-        rows={6}
-        disabled={frozen}
-        onChange={(e) => onBody(e.target.value)}
-        aria-label={`${localId} の本文`}
-      />
-    </details>
+    <textarea
+      className="draft-body"
+      value={body}
+      rows={3}
+      placeholder="本文なし"
+      disabled={frozen}
+      onChange={(e) => onBody(e.target.value)}
+      aria-label={`${localId} の本文`}
+    />
   );
 }
 
@@ -466,6 +489,7 @@ function LeftBehind({
 
   return (
     <div className="left-behind">
+      <h3>触らないほう {items.length} 件</h3>
       <p className="hint">
         {`前回作った ${items.length} 件は、今回の作成では書き換わりません。`}
         {"GitHub 側にそのまま残ります。"}

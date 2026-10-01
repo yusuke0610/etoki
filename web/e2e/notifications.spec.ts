@@ -7,6 +7,7 @@ import {
   backToList,
   chooseFromMenu,
   drawRectangle,
+  interpret,
   openBoard,
   openBoardWithMock,
 } from "./helpers/board";
@@ -138,7 +139,7 @@ test.describe("通知", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
     await expect(annotationDetail(page, "ログイン").getByRole("alert")).toBeVisible();
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
