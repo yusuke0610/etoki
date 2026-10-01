@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { boardsApi, githubApi } from "../api/boards";
 import {
+  canvasMermaidPasteFailure,
   describeFailure,
   diagramNotPlaceableFailure,
   mermaidPasteFailure,
@@ -39,6 +40,7 @@ import {
   type Viewport,
 } from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
+import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
@@ -607,6 +609,22 @@ export function BoardPage({
       (api?.getAppState() as { viewBackgroundColor?: string } | undefined)
         ?.viewBackgroundColor,
     [api],
+  );
+
+  /**
+   * mermaid らしい文字列の貼り付けを、Excalidraw が描く前に止める（ADR 0067）。
+   *
+   * Excalidraw はこれに当たる文字列を etoki の守り（ADR 0040 / 0061）を通さずに
+   * mermaid で描く。**当たらないものは素通しする。** `false` を返すと貼り付け
+   * そのものが止まるので、広げると普通の文字も貼れなくなる。
+   */
+  const handlePaste = useCallback(
+    (data: { text?: string }) => {
+      if (data.text === undefined || !isMaybeMermaidDefinition(data.text)) return true;
+      onError(canvasMermaidPasteFailure());
+      return false;
+    },
+    [onError],
   );
 
   /** 選択状態の変化を拾い、注釈にできる frame を割り出す。 */
@@ -1642,6 +1660,13 @@ export function BoardPage({
             theme={theme}
             // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0045）。
             UIOptions={UI_OPTIONS}
+            // Excalidraw の AI の口を閉じる（ADR 0067）。コマンドパレットの
+            // 「Mermaid to Excalidraw」はこれで出し分けられている。0.18.1 は
+            // パレットを置かないので今は効いていないが、置かれたときに守りを
+            // 通らない口が黙って開かないようにする。「その他」メニューの同じ
+            // 項目はこれでは消えないので、`index.css` で隠している。
+            aiEnabled={false}
+            onPaste={handlePaste}
             // viewer には描かせない。描けるのに保存できないと、描いた内容を
             // 黙って捨てることになる（ADR 0017）。
             viewModeEnabled={!canEdit}

@@ -352,6 +352,34 @@ body {
 }
 
 /*
+ * ツールバー「その他」の「Mermaid to Excalidraw」を隠す（ADR 0067）。
+ *
+ * ここから貼った mermaid は etoki の守り（受け付ける種類・`secure`・大きさの
+ * 上限・画像を置かない）を通らずに描かれる。Excalidraw 0.18.1 はこの項目を
+ * props で消させない（`aiEnabled` でも残る）。
+ *
+ * **セレクタは脆い。** 項目の `data-testid` は Web 埋め込みと同じ
+ * `toolbar-embeddable` なので使えず、mermaid のアイコンだけが持つ `viewBox` で
+ * 見分けている。上の「Generate」見出しは class を持たない唯一の子で、
+ * `aiEnabled={false}` のもとではこの項目のためだけに残る。ライブラリを上げて
+ * 形が変わると黙って戻るので、`web/e2e/excalidrawMermaid.spec.ts` が
+ * 出ていないことを見ている。
+ *
+ * `:root` を前に付けるのは、この CSS が Excalidraw の CSS より先に読まれるため。
+ */
+:root
+  .excalidraw
+  .App-toolbar__extra-tools-dropdown
+  .dropdown-menu-item:has(svg[viewBox="0 0 512 512"]),
+:root
+  .excalidraw
+  .App-toolbar__extra-tools-dropdown
+  .dropdown-menu-container
+  > div:not([class]) {
+  display: none;
+}
+
+/*
  * 注釈にした frame に重ねる枠。
  *
  * キャンバスの上に出すが、Excalidraw の UI（ツールバーやパネル）より下に置く。

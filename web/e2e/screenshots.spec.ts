@@ -13,6 +13,7 @@ import {
   drawRectangle,
   openBoard,
   openBoardWithMock,
+  pasteOnCanvas,
   picker,
 } from "./helpers/board";
 import {
@@ -827,6 +828,24 @@ test.describe("スクリーンショット", () => {
       if (typeof release === "function") release();
     });
   });
+  // Excalidraw 自身の mermaid の入口を閉じた後の姿（ADR 0067）。メニューは
+  // 項目と見出しが消えて詰まって見えるか、貼り付けは止めた理由が出るか。
+  test("mermaid の入口を閉じた状態を撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    await page.locator(".App-toolbar__extra-tools-trigger").click();
+    await page.locator(".App-toolbar__extra-tools-dropdown").waitFor();
+    await shot(page, "39-extra-tools-without-mermaid");
+
+    await page.keyboard.press("Escape");
+    await pasteOnCanvas(
+      page,
+      "gantt\n  title 計画\n  section A\n  作業 :a1, 2024-01-01, 30d",
+    );
+    await page.getByText("mermaid の図はキャンバスに直接貼れません").waitFor();
+    await shot(page, "40-canvas-mermaid-paste-blocked");
+  });
+
   // 既存の設計（mermaid）を写しとして貼る（ADR 0062）。**変換器の ER 図の
   // 描き方**（属性が罫線とばらばらのテキストになる、論点 B）は画像でしか
   // 確かめられないので、置いた後を撮る。構文エラーは、畳んだパーサの
