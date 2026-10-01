@@ -40,7 +40,6 @@
   --on-brand: #fff;
   --color-selected-bg: var(--brand-bg-subtle);
   --color-selected-fg: #0a4a32;
-  --color-active-bg: var(--brand-bg);
   --color-link: var(--brand-hover);
   --color-success: var(--brand);
   --color-success-bg: var(--brand-bg);
@@ -128,8 +127,8 @@
   --color-neutral-bg: #2a2f37;
   /*
    * ブランドの緑。**ライトで `var(--brand-*)` を指しているものは、ここを
-   * 差し替えるだけで付いてくる**（`--color-selected-bg` / `--color-active-bg` /
-   * `--color-link` / `--color-success` / `--color-annotation`）。
+   * 差し替えるだけで付いてくる**（`--color-selected-bg` / `--color-link` /
+   * `--color-success` / `--color-annotation`）。
    * 同じ値をもう一度並べない。並べると、片方だけ直した日に食い違う。
    *
    * 濃い側と薄い側はライトと逆になる。地が暗いので、hover は明るいほうへ動く。
@@ -209,25 +208,55 @@ body {
   height: 100vh;
 }
 
-.sidebar {
-  /* 入れ子のぶん字下げが要るので、平坦な一覧だったときより広い（ADR 0019）。 */
-  width: 240px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--color-border);
-  padding: var(--space-5);
+/* ログインのときだけ地を沈める。置いてあるカードが 1 枚だと見せるため。 */
+.app-signed-out {
+  background: var(--color-surface-sunken);
+}
+
+/*
+ * ボードの一覧。**ボードとは別の画面**（ADR 0064）。
+ *
+ * 幅は絞る。一覧は 1 行 1 ボードの木なので、画面いっぱいに伸ばすと行の左端の
+ * 名前と、押したときに反応する範囲の右端が離れすぎる。
+ */
+.board-list-page {
   overflow-y: auto;
+  height: 100%;
+}
+
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-8);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .brand {
   font-size: var(--text-xl);
-  margin: 0 0 var(--space-5);
+  margin: 0;
+}
+
+.list-body {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.list-section h2 {
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-4);
 }
 
 .create-board {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .create-board input {
@@ -235,12 +264,10 @@ body {
   flex: 1;
 }
 
-/* ひな形は名前の下の行に置く。同じ行に並べるとサイドバーの幅で潰れる。 */
 .template-picker {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex-basis: 100%;
   font-size: var(--text-sm);
 }
 
@@ -267,9 +294,8 @@ body {
   border-radius: var(--radius-sm);
 }
 
-.board-list button.active {
-  background: var(--color-active-bg);
-  font-weight: 600;
+.board-list button:hover {
+  background: var(--color-hover);
 }
 
 /* 入れ子の一覧。ul は上で list-style を消してあるので、字下げだけ足す。 */
@@ -325,6 +351,23 @@ body {
   border-bottom: 1px solid var(--color-border);
 }
 
+/* 戻る口とボード名の組。ヘッダーの左側に 1 まとまりで置く。 */
+.board-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* 一覧へ戻る口。ボード名より目立たせない。 */
+.board-title .back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+}
+
 .board-header h1 {
   font-size: var(--text-xl);
   margin: 0;
@@ -349,6 +392,34 @@ body {
   min-width: 0;
   /* 注釈の枠を重ねる基準。枠はこの矩形の左上からの座標で置く。 */
   position: relative;
+}
+
+/*
+ * ツールバー「その他」の「Mermaid to Excalidraw」を隠す（ADR 0067）。
+ *
+ * ここから貼った mermaid は etoki の守り（受け付ける種類・`secure`・大きさの
+ * 上限・画像を置かない）を通らずに描かれる。Excalidraw 0.18.1 はこの項目を
+ * props で消させない（`aiEnabled` でも残る）。
+ *
+ * **セレクタは脆い。** 項目の `data-testid` は Web 埋め込みと同じ
+ * `toolbar-embeddable` なので使えず、mermaid のアイコンだけが持つ `viewBox` で
+ * 見分けている。上の「Generate」見出しは class を持たない唯一の子で、
+ * `aiEnabled={false}` のもとではこの項目のためだけに残る。ライブラリを上げて
+ * 形が変わると黙って戻るので、`web/e2e/excalidrawMermaid.spec.ts` が
+ * 出ていないことを見ている。
+ *
+ * `:root` を前に付けるのは、この CSS が Excalidraw の CSS より先に読まれるため。
+ */
+:root
+  .excalidraw
+  .App-toolbar__extra-tools-dropdown
+  .dropdown-menu-item:has(svg[viewBox="0 0 512 512"]),
+:root
+  .excalidraw
+  .App-toolbar__extra-tools-dropdown
+  .dropdown-menu-container
+  > div:not([class]) {
+  display: none;
 }
 
 /*
@@ -765,6 +836,48 @@ body {
 }
 
 /*
+ * 主となる操作のボタン。**1 つの画面に 1 つだけ。** 押せるものを全部これに
+ * すると、どれが本筋なのかが色では読めなくなる。
+ *
+ * 押せないときはブランドを外す。**文字は薄くしすぎない。** 押せない理由は
+ * 本文で別に出すが（ADR 0039 / 0066）、ラベル自体が読めないと何が押せないのか
+ * が分からない。
+ */
+button.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  background: var(--brand);
+  color: var(--on-brand);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary:hover:not(:disabled) {
+  border-color: var(--brand-hover);
+  background: var(--brand-hover);
+}
+
+button.primary:disabled {
+  border-color: var(--color-border);
+  background: var(--color-neutral-bg);
+  color: var(--color-text-subtle);
+  cursor: default;
+}
+
+/* マークはラベルの高さに合わせる。名前は文字が持つので、色も文字に従わせる。 */
+button.primary svg {
+  width: 1.2em;
+  height: 1.2em;
+  flex-shrink: 0;
+  fill: currentcolor;
+}
+
+/*
   取り消せない操作のボタン。いまはボードの削除だけが使う（ADR 0042）。
 
   **消さず、押しにくくもしない。** 押す前に何が失われるかを見せる形で守って
@@ -977,29 +1090,85 @@ a.badge-target:hover {
 
 /*
  * ログイン画面。ここだけは中身が数行しか無いので、左上に寄せると
- * 読み込みに失敗した画面に見える。
+ * 読み込みに失敗した画面に見える。**画面の真ん中に 1 枚だけ置く。**
+ *
+ * この画面は GitHub App を設定した構成でしか出ない（ADR 0004 / 0015）。
  */
 .login {
   margin: auto;
   padding: var(--space-8);
+  width: 100%;
   max-width: 420px;
+  box-sizing: border-box;
+}
+
+/* 地から浮かせて、押すものが 1 つであることを見せる。 */
+.login-card {
+  padding: var(--space-8);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--space-5);
 }
 
-.login h1 {
+.login-mark {
   font-size: var(--text-2xl);
-  margin: 0 0 var(--space-4);
+  margin: 0;
 }
 
-.login button {
-  margin-top: var(--space-5);
+.login-lead {
+  margin: 0;
+  line-height: 1.7;
+}
+
+/*
+ * 何をする道具かの絵。**色は変数から引く。** 直書きすると、ここだけダークで
+ * 明るいまま残る。線の太さは 1 つに揃えて、絵が主張しすぎないようにする。
+ */
+.login-art {
+  width: 100%;
+  height: auto;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.login-art .art-line {
+  stroke: var(--color-border);
+}
+
+.login-art .art-shape {
+  stroke: var(--color-text-muted);
+}
+
+/* 囲った範囲＝注釈。キャンバス上の印と同じ色にする（ADR 0036）。 */
+.login-art .art-frame {
+  stroke: var(--color-annotation);
+  stroke-dasharray: 5 4;
+}
+
+.login-art .art-text {
+  stroke: var(--color-border);
+}
+
+/* 作られた draft issue。「作成済み」のバッジと同じ色にする。 */
+.login-art .art-done {
+  stroke: var(--color-success);
+}
+
+.login-start {
+  justify-content: center;
+  width: 100%;
+}
+
+.login-note {
+  margin: 0;
 }
 
 .login .error {
-  margin: var(--space-4) 0;
   border-radius: var(--radius-sm);
 }
 

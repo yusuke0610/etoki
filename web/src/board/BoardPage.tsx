@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { boardsApi, githubApi } from "../api/boards";
 import {
+  canvasMermaidPasteFailure,
   describeFailure,
   diagramNotPlaceableFailure,
   mermaidPasteFailure,
@@ -39,6 +40,7 @@ import {
   type Viewport,
 } from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
+import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
@@ -148,6 +150,13 @@ type Props = {
    * ボードを開くたびに変わりはしない。**混ぜない。**
    */
   capabilities: Capabilities | null;
+  /**
+   * ボードを閉じて一覧へ戻る（ADR 0064）。未保存の確認は親が通す。
+   *
+   * **一覧はボードと同じ画面に無い。** これが無いと、開いたボードから出る
+   * 手段がブラウザの「戻る」しか無くなる。
+   */
+  onClose: () => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
   /**
@@ -194,6 +203,7 @@ type Props = {
 export function BoardPage({
   board,
   capabilities,
+  onClose,
   onChangeTarget,
   onTargetRefreshed,
   onRenamed,
@@ -610,6 +620,22 @@ export function BoardPage({
     [api],
   );
 
+  /**
+   * mermaid らしい文字列の貼り付けを、Excalidraw が描く前に止める（ADR 0067）。
+   *
+   * Excalidraw はこれに当たる文字列を etoki の守り（ADR 0040 / 0061）を通さずに
+   * mermaid で描く。**当たらないものは素通しする。** `false` を返すと貼り付け
+   * そのものが止まるので、広げると普通の文字も貼れなくなる。
+   */
+  const handlePaste = useCallback(
+    (data: { text?: string }) => {
+      if (data.text === undefined || !isMaybeMermaidDefinition(data.text)) return true;
+      onError(canvasMermaidPasteFailure());
+      return false;
+    },
+    [onError],
+  );
+
   /** 選択状態の変化を拾い、注釈にできる frame を割り出す。 */
   const handleChange = useCallback(
     (
@@ -858,7 +884,7 @@ export function BoardPage({
   );
 
   /**
-   * 表を 1 つ置く（ADR 0067）。
+   * 表を 1 つ置く（ADR 0068）。
    *
    * **ダイアログを挟まない。** 描いている最中の操作なので、手数の少なさが
    * そのまま値打ちになる。大きさは固定で、足りなければ複製やセルの追加で
@@ -1234,41 +1260,51 @@ export function BoardPage({
   return (
     <div className="board">
       <header className="board-header">
-        {nameDraft === null ? (
-          <h1>
-            {board.name}
-            {/*
+        {/*
+          戻る口とボード名は 1 組にして左に寄せる。ヘッダーは左右に振り分けて
+          いるので、組にしないと戻る口だけが名前から離れて宙に浮く。
+        */}
+        <div className="board-title">
+          <button type="button" className="back" onClick={onClose}>
+            {/* 矢印は飾り。押すものの名前は文字が持つ。 */}
+            <span aria-hidden="true">←</span>
+            ボード一覧
+          </button>
+          {nameDraft === null ? (
+            <h1>
+              {board.name}
+              {/*
               名前はブレストの中身に属する表示物なので、editor にも直させる
               （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
             */}
-            {canEdit && (
-              <button
-                type="button"
-                className="rename"
-                onClick={() => setNameDraft(board.name)}
-              >
-                名前を変更
-              </button>
-            )}
-          </h1>
-        ) : (
-          <form
-            className="rename-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void rename();
-            }}
-          >
-            {/*
-              ラベルはサイドバーの「ボード名」（新規作成の入力）と分ける。
-              同じ名前にすると、読み上げでも E2E でも 2 つが区別できない。
+              {canEdit && (
+                <button
+                  type="button"
+                  className="rename"
+                  onClick={() => setNameDraft(board.name)}
+                >
+                  名前を変更
+                </button>
+              )}
+            </h1>
+          ) : (
+            <form
+              className="rename-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void rename();
+              }}
+            >
+              {/*
+              ラベルは一覧の画面の「ボード名」（新規作成の入力）と分ける。
+              入れるものが違う（作るボードの名前か、開いているボードの名前か）。
             */}
-            <input
-              aria-label="ボードの名前"
-              value={nameDraft}
-              disabled={renaming}
-              onChange={(e) => setNameDraft(e.target.value)}
-              /*
+              <input
+                aria-label="ボードの名前"
+                value={nameDraft}
+                disabled={renaming}
+                onChange={(e) => setNameDraft(e.target.value)}
+                /*
                 jsx-a11y が禁じているのは「開いた瞬間に勝手に焦点が移る」
                 autoFocus で、ここはそれに当たらない。押した「名前を変更」が
                 この入力に差し替わるので、移さないとキーボードの利用者の焦点は
@@ -1276,21 +1312,26 @@ export function BoardPage({
                 いるのは属性で、押した結果として現れたかどうかは見られない
                 （ADR 0039）。
               */
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
-            />
-            {/*
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              />
+              {/*
               「保存」とは書かない。ヘッダーにはシーンの保存ボタンが並んで
               いるので、同じ文言だと何を保存するのかが読めない。
             */}
-            <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
-              {renaming ? "変更中…" : "名前を保存"}
-            </button>
-            <button type="button" disabled={renaming} onClick={() => setNameDraft(null)}>
-              取消
-            </button>
-          </form>
-        )}
+              <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
+                {renaming ? "変更中…" : "名前を保存"}
+              </button>
+              <button
+                type="button"
+                disabled={renaming}
+                onClick={() => setNameDraft(null)}
+              >
+                取消
+              </button>
+            </form>
+          )}
+        </div>
         <div className="board-actions">
           {/*
             自分が何をできるのかは、操作して断られる前に見えている必要がある。
@@ -1681,6 +1722,13 @@ export function BoardPage({
             theme={theme}
             // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0045）。
             UIOptions={UI_OPTIONS}
+            // Excalidraw の AI の口を閉じる（ADR 0067）。コマンドパレットの
+            // 「Mermaid to Excalidraw」はこれで出し分けられている。0.18.1 は
+            // パレットを置かないので今は効いていないが、置かれたときに守りを
+            // 通らない口が黙って開かないようにする。「その他」メニューの同じ
+            // 項目はこれでは消えないので、`index.css` で隠している。
+            aiEnabled={false}
+            onPaste={handlePaste}
             // viewer には描かせない。描けるのに保存できないと、描いた内容を
             // 黙って捨てることになる（ADR 0017）。
             viewModeEnabled={!canEdit}

@@ -2,14 +2,14 @@ import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { chooseTarget } from "./helpers/board";
-import { AUTHORIZE_URL, BOARD_NAME, baseMock, signedIn } from "./helpers/fixtures";
-
-/** 認証を設定した構成のモック。既定は未ログイン。 */
-function withAuth() {
-  const mock = baseMock();
-  mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
-  return mock;
-}
+import {
+  AUTHORIZE_URL,
+  BOARD_NAME,
+  authRequiredMock,
+  baseMock,
+  signedIn,
+  signedOut,
+} from "./helpers/fixtures";
 
 test.describe("ログイン", () => {
   // 認証を設定していない構成の挙動は変えない。PAT だけで動く（ADR 0015）。
@@ -22,7 +22,7 @@ test.describe("ログイン", () => {
   });
 
   test("認証を設定していて未ログインなら、ログイン画面を出す", async ({ page }) => {
-    await installApi(page, withAuth());
+    await installApi(page, authRequiredMock());
     await page.goto("/");
 
     await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
@@ -32,7 +32,7 @@ test.describe("ログイン", () => {
 
   // 認可画面そのものは外部。遷移したことだけを確かめる（ADR 0012）。
   test("ログインを押すと認可画面へ送り出す", async ({ page }) => {
-    await installApi(page, withAuth());
+    await installApi(page, authRequiredMock());
 
     // github.test には行かせない。要求が出たことだけを見て止める。
     let sentTo = "";
@@ -55,7 +55,7 @@ test.describe("ログイン", () => {
   });
 
   test("ログイン済みなら、ボード一覧が使える", async ({ page }) => {
-    const mock = withAuth();
+    const mock = authRequiredMock();
     mock.session = { status: 200, body: signedIn() };
 
     await installApi(page, mock);
@@ -67,7 +67,7 @@ test.describe("ログイン", () => {
   });
 
   test("ログアウトするとログイン画面に戻る", async ({ page }) => {
-    const mock = withAuth();
+    const mock = authRequiredMock();
     mock.session = { status: 200, body: signedIn() };
 
     await installApi(page, mock);
@@ -96,7 +96,7 @@ test.describe("ログイン", () => {
   });
 
   test("ログインを開始できなければ、その旨をログイン画面に出す", async ({ page }) => {
-    const mock = withAuth();
+    const mock = authRequiredMock();
     mock.login = {
       status: 503,
       body: { code: "auth_not_configured", error: "authentication is not configured" },
@@ -135,7 +135,7 @@ test.describe("ログイン", () => {
       status: 401,
       body: { code: "login_required", error: "login required" },
     };
-    mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+    mock.session = { status: 200, body: signedOut() };
 
     // 状態はサーバーに訊き直す。画面だけログイン画面に切り替える実装でも
     // 見た目は同じになるので、問い合わせが起きたことを別に縛る。

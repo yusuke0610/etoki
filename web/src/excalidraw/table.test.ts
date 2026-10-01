@@ -63,7 +63,7 @@ describe("createTable", () => {
     expect((top + bottom) / 2).toBeCloseTo(300);
   });
 
-  // 手で描いた矩形と区別しない（ADR 0067）。区別すると、色や形から意味を
+  // 手で描いた矩形と区別しない（ADR 0068）。区別すると、色や形から意味を
   // 読むコードを書きたくなる（中核思想 2）。
   it("customData を付けず、frame も作らず、中身は空", () => {
     const table = createTable({ x: 0, y: 0 });

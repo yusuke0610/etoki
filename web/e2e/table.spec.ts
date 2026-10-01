@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { installApi, type ApiMock } from "./helpers/api";
-import { drawRectangle, openBoard } from "./helpers/board";
+import { drawRectangle, openBoard, waitForBoard } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
 
 type SavedElement = {
@@ -27,7 +27,7 @@ async function placeTable(page: Page): Promise<void> {
   await expect(page.getByText("未保存", { exact: true })).toBeVisible();
 }
 
-// 表は矩形 9 枚を group にまとめて置く（ADR 0067）。行・列として読ませる
+// 表は矩形 9 枚を group にまとめて置く（ADR 0068）。行・列として読ませる
 // 実装は無いので、確かめるのは「置ける・まとまって動く・戻せる・残る」まで。
 test.describe("表", () => {
   test("押すと矩形が 9 枚、1 つの group で置かれる", async ({ page }) => {
@@ -87,8 +87,10 @@ test.describe("表", () => {
     await placeTable(page);
     await saveAndRead(page, mock);
 
+    // リロードしても URL が開いていたボードを復元する（ADR 0059）。一覧からは
+    // 開き直さない。
     await page.reload();
-    await openBoard(page, BOARD_NAME);
+    await waitForBoard(page, BOARD_NAME);
     // 開き直して読めたことを、描き足して保存し直したシーンで確かめる。
     await drawRectangle(page);
     const elements = await saveAndRead(page, mock);

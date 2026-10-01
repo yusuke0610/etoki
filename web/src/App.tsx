@@ -12,11 +12,10 @@ import type {
   SessionStatus,
 } from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
+import { BoardListPage } from "./board/BoardListPage";
 import { BoardPage } from "./board/BoardPage";
-import { BoardTree } from "./board/BoardTree";
 import { createGenerations } from "./board/generation";
 import { RepositoryPicker } from "./board/RepositoryPicker";
-import { TemplatePicker } from "./board/TemplatePicker";
 import {
   BLANK_TEMPLATE,
   templateScene,
@@ -130,7 +129,7 @@ export function App() {
   const shown = useRef<BoardLocation>(NO_BOARD);
   // ボードを開く要求の世代（`.claude/rules/async-ui.md`）。
   //
-  // **開く導線が 2 つある**（サイドバーと戻る / 進む）ので、続けて操作されると
+  // **開く導線が 2 つある**（一覧と戻る / 進む）ので、続けて操作されると
   // 取得が並走する。古い応答を反映すると、押した順と違うボードが開き、URL も
   // そちらを指したまま残る。**いま画面に出ているものとの ID 照合では足りない。**
   // 照合したい相手は「最後に要求されたもの」で、それはまだ画面に出ていない。
@@ -272,8 +271,8 @@ export function App() {
    * ボードを取ってくる。取れなければ null。
    *
    * **失敗したら URL をいま出ているものに合わせ直す。** 開けなかったボードを
-   * URL に残すと、読み込み直すたびに同じ失敗を繰り返す。サイドバーから開こう
-   * として失敗したときは、開いたままのボードの URL に戻る。
+   * URL に残すと、読み込み直すたびに同じ失敗を繰り返す。一覧から開こうとして
+   * 失敗したときは、一覧の URL のまま残る。
    *
    * 非メンバーにも消えたボードにも同じ `not_found` が返る（ADR 0016 / 0017）。
    * **URL から開いたときも見せ方を変えない。** 変えると、返ってきた画面の違いから
@@ -350,6 +349,26 @@ export function App() {
     },
     [confirmDiscard, loadBoard, showLocation],
   );
+
+  /**
+   * ボードを閉じて一覧へ戻る（ADR 0064）。
+   *
+   * **キャンバスが外れる導線なので、未保存の確認を通す**（ADR 0021）。確認と
+   * 外すことのあいだに待ちは無い。
+   *
+   * **履歴に積む。** 一覧は押して移った先なので、「戻る」で閉じたボードへ
+   * 引き返せるべき（ADR 0059）。
+   */
+  const closeBoard = useCallback(() => {
+    if (!confirmDiscard()) return;
+
+    // 走っている取得を無効にする（ログアウトと同じ理由）。
+    openings.invalidateAll();
+    setCurrent(null);
+    setPicking(false);
+    setCreating(null);
+    showLocation(NO_BOARD, "push");
+  }, [confirmDiscard, openings, showLocation]);
 
   /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
   const startCreating = useCallback(() => {
@@ -507,7 +526,7 @@ export function App() {
 
         setCreating(null);
         if (board === null) {
-          // **ここは `loadBoard` を通らないので、世代が進まない。** サイドバーで
+          // **ここは `loadBoard` を通らないので、世代が進まない。** 一覧で
           // 始めた取得が走っていると、遅れて着いた応答が「離れたはずのボード」を
           // 開き直し、URL まで積む。`logout` と同じ規則で、対象が変わる時点で
           // 関連する世代を全部無効にする（`.claude/rules/async-ui.md`）。
@@ -539,7 +558,9 @@ export function App() {
 
   if (session.authRequired && !session.authenticated) {
     return (
-      <div className="app">
+      // 地を沈めるためだけの印。ログインはカード 1 枚しか置かないので、
+      // 他の画面と同じ地にすると、置いたものが浮いて見えない。
+      <div className="app app-signed-out">
         <main className="main">
           <LoginPage />
         </main>
@@ -549,52 +570,6 @@ export function App() {
 
   return (
     <div className="app">
-      <nav className="sidebar">
-        <h1 className="brand">etoki</h1>
-
-        {session.user && (
-          <div className="account">
-            <span className="account-name">{session.user.displayName}</span>
-            <button type="button" onClick={() => void logout()}>
-              ログアウト
-            </button>
-          </div>
-        )}
-
-        <form
-          className="create-board"
-          onSubmit={(e) => {
-            e.preventDefault();
-            startCreating();
-          }}
-        >
-          <input
-            aria-label="ボード名"
-            placeholder="新しいボード名"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          {/*
-            何から始めるかをここで選ばせる（#52）。**画面を 1 枚増やさない。**
-            増やすと、空白で始めたい人にも通り抜けるだけの手順が要る。
-          */}
-          <TemplatePicker value={template} onChange={setTemplate} />
-          <button type="submit" disabled={!name.trim()}>
-            次へ
-          </button>
-        </form>
-
-        {/*
-          一覧はリポジトリと Project でまとめる（ADR 0019）。作成先はボードの
-          属性なので、開くまで分からないままだと取り違えたまま作成に進める。
-        */}
-        <BoardTree
-          boards={boards}
-          currentId={current?.id ?? null}
-          onOpen={(id) => void open(id)}
-        />
-      </nav>
-
       <main className="main">
         {/*
           失敗の通知はフローの外に出す（position: fixed）。帯としてここに置くと、
@@ -603,6 +578,10 @@ export function App() {
         <Notifications />
 
         {/*
+          画面は 1 度に 1 つだけ出す（ADR 0064）。一覧・作成先の選択・ボードは
+          別の画面で、**一覧はボードと同時に出ない。** 描いているあいだは、他の
+          ボードも作成先の構造も視界に入れない（中核思想 1）。
+
           「ボードに入る → 対象リポジトリ選択 → ブレスト開始」の分岐はここに置く。
           BoardPage の中ではなく手前で切ることで、作成先が決まるまでキャンバスを
           出さないという要求がそのまま形になる。
@@ -615,20 +594,32 @@ export function App() {
             onCancel={() => setCreating(null)}
           />
         ) : current === null ? (
-          <p className="hint">左からボードを選ぶか、新しく作成してください。</p>
+          <BoardListPage
+            user={session.user}
+            onLogout={() => void logout()}
+            boards={boards}
+            onOpen={(id) => void open(id)}
+            name={name}
+            onNameChange={setName}
+            template={template}
+            onTemplateChange={setTemplate}
+            onCreate={startCreating}
+          />
         ) : picking || current.projectId === "" ? (
           <RepositoryPicker
             key={current.id}
             title={current.name}
             onSelected={changeTarget}
-            // 未選択のうちは引き返す先が無い。選び直しのときだけ戻れる。
+            // 選び直しなら、選ぶ前のボードへ戻る。**未選択のボードは一覧へ
+            // 戻す。** 未選択のうちはキャンバスを出さないので引き返す先が無く、
+            // 一覧が同じ画面に無くなったいま、渡さないと行き止まりになる。
             onCancel={
               picking
                 ? () => {
                     setPicking(false);
                     showLocation({ boardId: current.id, picking: false }, "replace");
                   }
-                : undefined
+                : closeBoard
             }
           />
         ) : (
@@ -638,6 +629,7 @@ export function App() {
             key={current.id}
             board={current}
             capabilities={capabilities}
+            onClose={closeBoard}
             // **選び直しは URL に載せるが、履歴には積まない**（ADR 0059）。
             // 同じボードの中のモードなので、読み込み直しで戻せれば足りる。
             // 積むと、選び終えた後の「戻る」が選択画面に引き返す。

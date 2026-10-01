@@ -13,6 +13,7 @@ import {
   drawRectangle,
   openBoard,
   openBoardWithMock,
+  pasteOnCanvas,
   picker,
 } from "./helpers/board";
 import {
@@ -20,6 +21,7 @@ import {
   BOARD_ID,
   BOARD_NAME,
   annotations,
+  authRequiredMock,
   baseMock,
   board,
   historyRuns,
@@ -227,12 +229,14 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
     await shot(page, "21-target-locked");
 
+    // 取り直しが反映されるまで待つ。待たずに撮ると、取り直す前の画面が写る。
+    // 反映すると一覧を引き直すので、その取得の応答を合図にする。
+    const reloaded = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/boards" && r.request().method() === "GET",
+    );
     await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
-    // 木の名前が変わるまで待つ。待たずに撮ると、取り直す前の画面が写る。
-    await page
-      .locator(".board-list")
-      .getByRole("button", { name: "#1 改名後のロードマップ" })
-      .waitFor();
+    await reloaded;
     await shot(page, "22-target-display-refreshed");
   });
 
@@ -483,14 +487,16 @@ test.describe("スクリーンショット", () => {
       mock.annotations[b.id] = [];
     }
 
-    await openBoardWithMock(page, mock);
+    // 木は一覧の画面にある（ADR 0064）。ボードは開かない。
+    await installApi(page, mock);
+    await page.goto("/");
+    await page.locator(".board-tree").waitFor();
     await shot(page, "14-board-tree");
   });
 
   // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。
   test("ログイン画面を撮る", async ({ page }) => {
-    const mock = baseMock();
-    mock.session = { status: 200, body: { authRequired: true, authenticated: false } };
+    const mock = authRequiredMock();
 
     await installApi(page, mock);
 
@@ -498,7 +504,15 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "GitHub でログイン" }).waitFor();
     await shot(page, "09-login");
 
-    // ログイン後はサイドバーに利用者が出る。
+    // 絵の線と主となる操作のボタンは変数から色を引いている。ダークで地に
+    // 沈んでいないかは、撮って見るしかない。
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.locator('html[data-theme="dark"]').waitFor({ state: "attached" });
+    await shot(page, "09-login-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.locator('html[data-theme="light"]').waitFor({ state: "attached" });
+
+    // ログイン後は一覧の画面に利用者が出る。
     mock.session = { status: 200, body: signedIn() };
     await page.reload();
     await page.getByText("Octo Cat").waitFor();
@@ -835,6 +849,24 @@ test.describe("スクリーンショット", () => {
       if (typeof release === "function") release();
     });
   });
+  // Excalidraw 自身の mermaid の入口を閉じた後の姿（ADR 0067）。メニューは
+  // 項目と見出しが消えて詰まって見えるか、貼り付けは止めた理由が出るか。
+  test("mermaid の入口を閉じた状態を撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    await page.locator(".App-toolbar__extra-tools-trigger").click();
+    await page.locator(".App-toolbar__extra-tools-dropdown").waitFor();
+    await shot(page, "39-extra-tools-without-mermaid");
+
+    await page.keyboard.press("Escape");
+    await pasteOnCanvas(
+      page,
+      "gantt\n  title 計画\n  section A\n  作業 :a1, 2024-01-01, 30d",
+    );
+    await page.getByText("mermaid の図はキャンバスに直接貼れません").waitFor();
+    await shot(page, "40-canvas-mermaid-paste-blocked");
+  });
+
   // 既存の設計（mermaid）を写しとして貼る（ADR 0062）。**変換器の ER 図の
   // 描き方**（属性が罫線とばらばらのテキストになる、論点 B）は画像でしか
   // 確かめられないので、置いた後を撮る。構文エラーは、畳んだパーサの
@@ -886,6 +918,9 @@ test.describe("スクリーンショット", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
+    await page.locator(".board-tree").waitFor();
+    await shot(page, "34-dark-board-list");
+
     await openBoard(page, BOARD_NAME);
     await shot(page, "34-dark-board-states");
 
