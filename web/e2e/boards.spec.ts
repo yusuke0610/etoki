@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { installApi, summarize } from "./helpers/api";
 import {
+  backToList,
   chooseTarget,
   drawRectangle,
   openBoard,
@@ -20,12 +21,17 @@ test.describe("ボード", () => {
     await installApi(page, baseMock());
     await page.goto("/");
 
+    // 最初に出るのは一覧の画面。キャンバスはまだ無い（ADR 0064）。
     await expect(
-      page.getByText("左からボードを選ぶか、新しく作成してください。"),
+      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
     ).toBeVisible();
+    await expect(page.locator(".excalidraw")).toHaveCount(0);
 
     await openBoard(page, BOARD_NAME);
     await expect(page.getByRole("heading", { name: "選択中のフレーム" })).toBeVisible();
+    // 開いたら一覧の画面は外れる。描いているあいだ、他のボードは視界に入れない
+    // （中核思想 1）。
+    await expect(page.locator(".board-list")).toHaveCount(0);
   });
 
   // 作成先を選ぶまでボードは作られない。書ける Project を 1 つも持たない人は
@@ -34,6 +40,15 @@ test.describe("ボード", () => {
   test("名前を入れて作成先を選ぶと、そのボードが開く", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
+
+    // 作成のリクエストを控える。選択画面には一覧が無いので、「一覧にまだ
+    // 並ばない」では作っていないことを確かめられない（一覧が無ければ常に通る）。
+    const created: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "POST" && new URL(req.url()).pathname === "/api/boards") {
+        created.push(req.url());
+      }
+    });
 
     const name = page.getByLabel("ボード名");
     const submit = page.getByRole("button", { name: "次へ" });
@@ -47,16 +62,17 @@ test.describe("ボード", () => {
 
     // まだ作られていない。先に作成先を選ばせる。
     await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
-    await expect(
-      page.locator(".board-list").getByRole("button", { name: "決済フローのブレスト" }),
-    ).toHaveCount(0);
+    expect(created).toEqual([]);
 
     await chooseTarget(page, "acme/web", "#1 ロードマップ");
 
     await expect(
       page.getByRole("heading", { name: "決済フローのブレスト", level: 1 }),
     ).toBeVisible();
-    // 作成したら入力欄は空に戻り、一覧にも並ぶ。
+    expect(created).toHaveLength(1);
+
+    // 作成したら入力欄は空に戻り、一覧にも並ぶ。一覧は別の画面なので戻って見る。
+    await backToList(page);
     await expect(name).toHaveValue("");
     await expect(
       page.locator(".board-list").getByRole("button", { name: "決済フローのブレスト" }),
@@ -104,7 +120,8 @@ test.describe("ボード", () => {
     // 囲むのは人なので、開いた時点では注釈が無い。
     await expect(page.getByText("保存済みの注釈はありません。")).toBeVisible();
     // 作ったあとは空白に戻す。次のボードが前の選択を引き継ぐと、選んだ覚えの
-    // ない絵が出る。
+    // ない絵が出る。選ぶ欄は一覧の画面にあるので、戻って見る。
+    await backToList(page);
     await expect(page.getByLabel("ひな形")).toHaveValue("");
   });
 
@@ -178,13 +195,15 @@ test.describe("ボード", () => {
     await expect(
       page.getByRole("heading", { name: "認証の設計会", level: 1 }),
     ).toBeVisible();
+    // キャンバスは外れない。
+    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
+
     // 木は作成先でまとめて見せる（ADR 0019）。一覧が古い名前のままだと、
     // 開くまでどれがどれか分からない。
+    await backToList(page);
     await expect(
       page.locator(".board-list").getByRole("button", { name: "認証の設計会" }),
     ).toBeVisible();
-    // キャンバスは外れない。
-    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
   });
 
   // **描いている途中に改名しても、描いたものは残り、そのまま保存できる。**
@@ -265,8 +284,10 @@ test.describe("ボード", () => {
     await expect(
       page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
     ).toHaveCount(0);
+    // 閉じた先は一覧の画面。1 枚しか無かったので空の案内になる。**案内が出る
+    // こと自体が、一覧から外れた証拠。** 木は 1 件でもあれば描かれる。
     await expect(
-      page.getByText("左からボードを選ぶか、新しく作成してください。"),
+      page.getByText("まだボードがありません。上で名前を付けて作成してください。"),
     ).toBeVisible();
     expect(mock.details[BOARD_ID]).toBeUndefined();
   });

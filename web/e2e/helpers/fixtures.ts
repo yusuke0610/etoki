@@ -14,7 +14,7 @@ import { summarize, type ApiMock } from "./api";
 
 export const BOARD_ID = "board-1";
 
-/** `board()` の名前。サイドバーからボードを開くときに引く。 */
+/** `board()` の名前。一覧からボードを開くときに引く。 */
 export const BOARD_NAME = "認証まわりのブレスト";
 
 /** 3 状態それぞれを 1 つずつ持たせてある。並びは画面の並びと同じ。 */
@@ -256,6 +256,14 @@ export function signedIn(): SessionStatus {
     authenticated: true,
     user: { provider: "github", login: "octocat", displayName: "Octo Cat" },
   };
+}
+
+/**
+ * 認証を設定した構成で、ログインしていない状態。途中で失効させる spec も
+ * これを使う。
+ */
+export function signedOut(): SessionStatus {
+  return { authRequired: true, authenticated: false };
 }
 
 export function repositories(): RepositoryList {
@@ -502,6 +510,18 @@ export function baseMock(): ApiMock {
       "acme/api": { status: 200, body: [] },
     },
   };
+}
+
+/**
+ * 認証を設定した構成のモック。既定は未ログインなので、ログイン画面が出る。
+ *
+ * **spec ごとに組まない。** 未ログインを作るのは `session` を 1 つ差し替える
+ * だけだが、何箇所にも書くと `SessionStatus` が変わった日に一部だけ古くなる。
+ */
+export function authRequiredMock(): ApiMock {
+  const mock = baseMock();
+  mock.session = { status: 200, body: signedOut() };
+  return mock;
 }
 
 /**

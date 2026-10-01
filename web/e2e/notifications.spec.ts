@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { holdSave, installApi, summarize } from "./helpers/api";
 import {
   annotationCard,
+  backToList,
   drawRectangle,
   openBoard,
   openBoardWithMock,
@@ -205,6 +206,8 @@ test.describe("通知", () => {
 
     // 未保存のまま離れるので確認が出る。
     page.on("dialog", (dialog) => void dialog.accept());
+    // ボードからボードへは一覧を挟む（ADR 0064）。
+    await backToList(page);
     await openBoard(page, OTHER_NAME);
 
     await expect(page.getByRole("alert")).toHaveCount(0);
@@ -219,6 +222,7 @@ test.describe("通知", () => {
     await openBoardWithMock(page, mock);
     await expect(page.getByRole("alert")).toContainText("シーンを読み込めませんでした");
 
+    await backToList(page);
     await openBoard(page, OTHER_NAME);
 
     await expect(page.getByRole("alert")).toHaveCount(0);
@@ -243,6 +247,7 @@ test.describe("通知", () => {
     await page.getByRole("button", { name: "保存" }).click();
 
     page.on("dialog", (dialog) => void dialog.accept());
+    await backToList(page);
     await openBoard(page, OTHER_NAME);
 
     // 離れたあとで保存が失敗して返る。
@@ -304,6 +309,7 @@ test.describe("通知", () => {
     // 1 枚目は注釈の取得を止めたまま開く。
     await openBoard(page, BOARD_NAME);
     // 2 枚目へ移る。こちらの取得は失敗するので通知が出る。
+    await backToList(page);
     await openBoard(page, OTHER_NAME);
 
     const alert = page.getByRole("alert");

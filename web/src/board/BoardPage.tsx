@@ -149,6 +149,13 @@ type Props = {
    * ボードを開くたびに変わりはしない。**混ぜない。**
    */
   capabilities: Capabilities | null;
+  /**
+   * ボードを閉じて一覧へ戻る（ADR 0064）。未保存の確認は親が通す。
+   *
+   * **一覧はボードと同じ画面に無い。** これが無いと、開いたボードから出る
+   * 手段がブラウザの「戻る」しか無くなる。
+   */
+  onClose: () => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
   onChangeTarget: () => void;
   /**
@@ -195,6 +202,7 @@ type Props = {
 export function BoardPage({
   board,
   capabilities,
+  onClose,
   onChangeTarget,
   onTargetRefreshed,
   onRenamed,
@@ -1222,41 +1230,51 @@ export function BoardPage({
   return (
     <div className="board">
       <header className="board-header">
-        {nameDraft === null ? (
-          <h1>
-            {board.name}
-            {/*
+        {/*
+          戻る口とボード名は 1 組にして左に寄せる。ヘッダーは左右に振り分けて
+          いるので、組にしないと戻る口だけが名前から離れて宙に浮く。
+        */}
+        <div className="board-title">
+          <button type="button" className="back" onClick={onClose}>
+            {/* 矢印は飾り。押すものの名前は文字が持つ。 */}
+            <span aria-hidden="true">←</span>
+            ボード一覧
+          </button>
+          {nameDraft === null ? (
+            <h1>
+              {board.name}
+              {/*
               名前はブレストの中身に属する表示物なので、editor にも直させる
               （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
             */}
-            {canEdit && (
-              <button
-                type="button"
-                className="rename"
-                onClick={() => setNameDraft(board.name)}
-              >
-                名前を変更
-              </button>
-            )}
-          </h1>
-        ) : (
-          <form
-            className="rename-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void rename();
-            }}
-          >
-            {/*
-              ラベルはサイドバーの「ボード名」（新規作成の入力）と分ける。
-              同じ名前にすると、読み上げでも E2E でも 2 つが区別できない。
+              {canEdit && (
+                <button
+                  type="button"
+                  className="rename"
+                  onClick={() => setNameDraft(board.name)}
+                >
+                  名前を変更
+                </button>
+              )}
+            </h1>
+          ) : (
+            <form
+              className="rename-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void rename();
+              }}
+            >
+              {/*
+              ラベルは一覧の画面の「ボード名」（新規作成の入力）と分ける。
+              入れるものが違う（作るボードの名前か、開いているボードの名前か）。
             */}
-            <input
-              aria-label="ボードの名前"
-              value={nameDraft}
-              disabled={renaming}
-              onChange={(e) => setNameDraft(e.target.value)}
-              /*
+              <input
+                aria-label="ボードの名前"
+                value={nameDraft}
+                disabled={renaming}
+                onChange={(e) => setNameDraft(e.target.value)}
+                /*
                 jsx-a11y が禁じているのは「開いた瞬間に勝手に焦点が移る」
                 autoFocus で、ここはそれに当たらない。押した「名前を変更」が
                 この入力に差し替わるので、移さないとキーボードの利用者の焦点は
@@ -1264,21 +1282,26 @@ export function BoardPage({
                 いるのは属性で、押した結果として現れたかどうかは見られない
                 （ADR 0039）。
               */
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
-            />
-            {/*
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              />
+              {/*
               「保存」とは書かない。ヘッダーにはシーンの保存ボタンが並んで
               いるので、同じ文言だと何を保存するのかが読めない。
             */}
-            <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
-              {renaming ? "変更中…" : "名前を保存"}
-            </button>
-            <button type="button" disabled={renaming} onClick={() => setNameDraft(null)}>
-              取消
-            </button>
-          </form>
-        )}
+              <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
+                {renaming ? "変更中…" : "名前を保存"}
+              </button>
+              <button
+                type="button"
+                disabled={renaming}
+                onClick={() => setNameDraft(null)}
+              >
+                取消
+              </button>
+            </form>
+          )}
+        </div>
         <div className="board-actions">
           {/*
             自分が何をできるのかは、操作して断られる前に見えている必要がある。
