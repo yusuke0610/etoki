@@ -259,6 +259,18 @@ test.describe("スクリーンショット", () => {
     await shot(page, "37-board-menu");
   });
 
+  // 作成先が確定したボードのメニュー。「作成先を変更」の代わりに理由の文と
+  // 「作成先の名前を取り直す」が並ぶ。**アイコンの付いた項目と理由の文の頭が
+  // 揃って見えるか**を、上の 1 枚と並べて見る（#204）。
+  test("作成先が確定したボードのメニューを撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
+    await openBoardWithMock(page, mock);
+    const menu = await openBoardMenu(page);
+    await menu.getByText("作成先は確定（draft issue を作成済み）").waitFor();
+    await shot(page, "37-board-menu-locked");
+  });
+
   // 押せない理由は title ではなく本文で出す。ホバーできない利用者と読み上げにも
   // 届く必要がある。見た目の話でもあるので撮る。
   test("作成先を変更できない状態を撮る", async ({ page }) => {
