@@ -19,6 +19,14 @@ export function openDetailButtonId(annotationId: string): string {
   return `interpret-open-${annotationId}`;
 }
 
+/**
+ * カードの「解釈する」の id。「解釈結果を開く」が無いとき（保存で解釈が捨てられた
+ * あとなど）、詳細を閉じた焦点の戻り先にする（`AnnotationDetail`）。
+ */
+export function interpretButtonId(annotationId: string): string {
+  return `interpret-run-${annotationId}`;
+}
+
 type InterpretControlProps = {
   /** 説明文の id を注釈ごとに分けるために持つ。一覧に複数並ぶため。 */
   annotationId: string;
@@ -82,6 +90,7 @@ export function InterpretControl({
         */}
         <button
           type="button"
+          id={interpretButtonId(annotationId)}
           onClick={onInterpret}
           disabled={running || unavailable || stale}
           aria-describedby={describedBy}

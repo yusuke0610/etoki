@@ -107,4 +107,48 @@ test.describe("注釈の詳細", () => {
     release();
     await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
   });
+
+  // 切れると: 詳細が開いているあいだに同じ注釈の「解釈結果を開く」をキーボードで
+  // 押しても、焦点がカードに残る。開いたことに気づけない。注釈 ID だけを見ていると、
+  // 開いたままの注釈では effect が走り直さない。
+  test("開いたままの注釈の「解釈結果を開く」でも、焦点が詳細へ移る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(detail).toBeFocused();
+
+    const reopen = card.getByRole("button", { name: "解釈結果を開く" });
+    await reopen.focus();
+    await page.keyboard.press("Enter");
+
+    await expect(detail).toBeFocused();
+  });
+
+  // 切れると: 開いたまま保存すると解釈が捨てられ、戻り先の「解釈結果を開く」が
+  // 消える。そのまま閉じると、焦点は隠した面の中に取り残され、次の Tab が画面の
+  // 先頭から始まる。
+  test("保存で解釈が消えたあとに閉じると、カードの「解釈する」へ焦点が戻る", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+
+    // 詳細はキャンバスの上に開いているので、開いたまま描き足せない。保存は未保存
+    // でなくても押せ、どの保存でも解釈は捨てられる。
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    // 保存が解釈を捨てるので、開くボタンは無くなっている。
+    await expect(card.getByRole("button", { name: "解釈結果を開く" })).toHaveCount(0);
+
+    await detail.focus();
+    await page.keyboard.press("Escape");
+
+    await expect(detail).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "解釈する" })).toBeFocused();
+  });
 });

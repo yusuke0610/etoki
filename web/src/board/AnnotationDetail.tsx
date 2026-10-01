@@ -3,7 +3,11 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { AnnotationStatus, Interpretation, ProjectAccess } from "../api/types";
 import { STATE_LABEL, annotationLabels } from "./annotationLabel";
 import type { InterpretationProps } from "./AnnotationPanel";
-import { InterpretationSection, openDetailButtonId } from "./InterpretationSection";
+import {
+  InterpretationSection,
+  interpretButtonId,
+  openDetailButtonId,
+} from "./InterpretationSection";
 import type { CreationState } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 
@@ -52,6 +56,12 @@ export type CreationProps = {
 type Props = {
   /** 開いている注釈。null なら閉じている。 */
   openId: string | null;
+  /**
+   * 開く操作が起きるたびに増える数。**注釈 ID とは別に持つ。** 開いたままの注釈の
+   * 「解釈結果を開く」や解釈し直しでは `openId` が変わらず、ID だけを見ると
+   * 焦点がカードに残る。描画ごとには移さない（下書きの入力を奪う）。
+   */
+  openRequest: number;
   onClose: () => void;
   annotations: AnnotationStatus[];
   interpretation: Pick<InterpretationProps, "states" | "onSelect">;
@@ -77,6 +87,7 @@ type Props = {
  */
 export function AnnotationDetail({
   openId,
+  openRequest,
   onClose,
   annotations,
   interpretation,
@@ -96,16 +107,28 @@ export function AnnotationDetail({
   // 気づけない。** 見出しではなく面そのもので受ける（削除の確認と同じ形）。
   useEffect(() => {
     if (openId !== null) sections.current.get(openId)?.focus();
-  }, [openId]);
+    // `openRequest` を依存に置くのは、同じ注釈を開き直す操作でも焦点を移すため。
+  }, [openId, openRequest]);
 
   // 閉じたらカードの「解釈結果を開く」へ焦点を戻す。**戻さないと、焦点は
   // 隠した面の中に取り残され、次の Tab が画面の先頭から始まる。**
   //
   // 押したボタンを覚えて戻す形にしない。「解釈する」は押した時点で解釈中に
   // なって押せなくなり、焦点を受けられない。
+  //
+  // **「解釈結果を開く」が無いことがある。** 開いたまま保存すると解釈が捨てられ、
+  // ボタンごと消える。そのときは同じカードの「解釈する」へ戻す。どちらも受けられ
+  // ないなら戻さない（無いものへ移そうとして、隠した面に焦点を残さないよう、
+  // 候補は存在して押せるものだけに絞る）。
   const close = (id: string) => {
     onClose();
-    document.getElementById(openDetailButtonId(id))?.focus();
+    for (const target of [openDetailButtonId(id), interpretButtonId(id)]) {
+      const el = document.getElementById(target);
+      if (el instanceof HTMLButtonElement && !el.disabled) {
+        el.focus();
+        return;
+      }
+    }
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>, id: string) => {
