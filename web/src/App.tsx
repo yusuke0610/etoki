@@ -6,7 +6,7 @@ import { ApiError, authApi, boardsApi, capabilitiesApi } from "./api/boards";
 import { describeFailure, type Failure } from "./api/errorMessage";
 import type {
   BoardDetail,
-  BoardSummary,
+  BoardListEntry,
   BoardTarget,
   Capabilities,
   SessionStatus,
@@ -74,7 +74,7 @@ function canOpenTargetPicker(board: BoardDetail): boolean {
 }
 
 export function App() {
-  const [boards, setBoards] = useState<BoardSummary[]>([]);
+  const [boards, setBoards] = useState<BoardListEntry[]>([]);
   const [current, setCurrent] = useState<BoardDetail | null>(null);
   // 画面全体に出す失敗は通知へ（ADR 0058）。1 本の state に持つと、後から
   // 来た失敗が前の失敗を黙って消していた。
