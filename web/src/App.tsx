@@ -505,6 +505,14 @@ export function App() {
     if (!signedIn) return;
 
     const handlePopState = () => {
+      // **比べる前に、走っている取得を全部無効にする**（`.claude/rules/async-ui.md`
+      // の「対象が変わるイベントは、関連する世代を全部無効化する」）。戻る / 進むは、
+      // どちらへ動いても前に向かっていた先から外れる。下の「同じ場所なら何もしない」
+      // は画面に出ている場所（`shown`）と比べるので、読み込み中に一覧へ戻ると
+      // 一覧のままと判定して抜ける。ここで無効にしておかないと、走っていた取得が
+      // あとから着いてボードを開き、URL まで書き換える（#205）。
+      openings.invalidateAll();
+
       const next = parseBoardLocation(window.location.search);
       const here = shown.current;
       if (next.boardId === here.boardId && next.picking === here.picking) return;
@@ -526,11 +534,8 @@ export function App() {
 
         setCreating(null);
         if (board === null) {
-          // **ここは `loadBoard` を通らないので、世代が進まない。** 一覧で
-          // 始めた取得が走っていると、遅れて着いた応答が「離れたはずのボード」を
-          // 開き直し、URL まで積む。`logout` と同じ規則で、対象が変わる時点で
-          // 関連する世代を全部無効にする（`.claude/rules/async-ui.md`）。
-          openings.invalidateAll();
+          // 走っていた取得は頭で無効にしてある。一覧で始めた取得が遅れて着いても、
+          // 「離れたはずのボード」は開き直さない。
           setCurrent(null);
           setPicking(false);
           showLocation(NO_BOARD, "replace");
