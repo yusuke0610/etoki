@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import { openBoard, openBoardWithMock, openPanelTab } from "./helpers/board";
-import { BOARD_NAME, baseMock } from "./helpers/fixtures";
+import { BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
 
 /**
  * 右のパネル（`SidePanel`、ADR 0065）。注釈・図のドラフト・メンバーをタブで並べる。
@@ -76,5 +76,77 @@ test.describe("右のパネル", () => {
     await page.keyboard.press("ArrowLeft");
     await page.keyboard.press("ArrowLeft");
     await expect(page.getByRole("tab", { name: "メンバー", exact: true })).toBeFocused();
+  });
+
+  // 切れると: 共有が未設定のメンバーのタブは理由の本文だけで、中にフォーカスできる
+  // ものが無い。タブから Tab キーを押しても、キーボードだけの人はパネルの中身
+  // （理由）へ移れず、次の領域へ飛ぶ。
+  test("フォーカスできるものが無いパネルも、Tab キーで移れる", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = {
+      status: 200,
+      body: { interpretation: true, diagramDraft: true, creation: true, sharing: false },
+    };
+    await openBoardWithMock(page, mock);
+
+    const panel = await openPanelTab(page, "メンバー");
+    await expect(panel.getByText("共有には認証の設定が必要です")).toBeVisible();
+
+    await page.getByRole("tab", { name: "メンバー", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    await expect(panel).toBeFocused();
+  });
+
+  // 切れると: 取得に失敗したメンバー一覧は、ボードを開き直すまで復旧できない。
+  // パネルは開いたタブを隠したまま残すので、タブを切り替えても取り直されない。
+  test("メンバー一覧の取得に失敗したら、再試行で取り直せる", async ({ page }) => {
+    const mock = baseMock();
+    mock.members = {
+      [BOARD_ID]: [
+        {
+          userId: "user-1",
+          login: "alice",
+          displayName: "Alice",
+          role: "owner",
+          createdAt: "2026-08-05T10:00:00Z",
+        },
+      ],
+    };
+    mock.membersListError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+    await openBoardWithMock(page, mock);
+
+    const panel = await openPanelTab(page, "メンバー");
+    await expect(panel.getByRole("alert")).toContainText(
+      "メンバーを取得できませんでした",
+    );
+
+    delete mock.membersListError;
+    await panel.getByRole("button", { name: "再試行" }).click();
+
+    await expect(panel).toContainText("Alice");
+    await expect(panel.getByRole("alert")).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "再試行" })).toHaveCount(0);
+  });
+
+  // 再試行は一覧の取得だけのもの。招待の失敗に出すと、何を再試行するのか読めない。
+  test("招待の失敗には再試行を出さない", async ({ page }) => {
+    const mock = baseMock();
+    mock.members = { [BOARD_ID]: [] };
+    mock.inviteError = {
+      status: 403,
+      body: { code: "forbidden_role", error: "etoki: insufficient role" },
+    };
+    await openBoardWithMock(page, mock);
+
+    const panel = await openPanelTab(page, "メンバー");
+    await panel.getByLabel("招待する login").fill("bob");
+    await panel.getByRole("button", { name: "確認する" }).click();
+    await panel.getByRole("button", { name: "@bob を招待する" }).click();
+
+    await expect(panel.getByRole("alert")).toBeVisible();
+    await expect(panel.getByRole("button", { name: "再試行" })).toHaveCount(0);
   });
 });
