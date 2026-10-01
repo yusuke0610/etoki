@@ -571,6 +571,15 @@ test.describe("スクリーンショット", () => {
     await shot(page, "23-scene-size");
   });
 
+  // 右のパネルを畳んだ帯（#202）。縦書きの名前と件数が読めるか、キャンバスが
+  // 帯のぶんまで広がるかを見る。
+  test("右のパネルを畳んだ状態を撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+    await page.getByRole("navigation", { name: "パネル" }).waitFor();
+    await shot(page, "41-side-panel-collapsed");
+  });
+
   // 引いた解釈が 2 件並んだ状態。どれを作成に送るのかが読めるかを見る。
   test("解釈の履歴を撮る", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());
