@@ -586,6 +586,17 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    // 右のパネルを畳んだ帯（#202）。開くまで DOM に出ない。件数を添えた縦書きの
+    // ボタンが並ぶ唯一の場所。
+    test("右のパネルを畳んだ状態", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+
+      await page.getByRole("button", { name: "パネルを閉じる" }).click();
+      await page.getByRole("navigation", { name: "パネル" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     // メンバーのパネルも独立した領域で、開くまで DOM に出ない。行ごとのボタンが
     // 並ぶ唯一の画面でもある（`.claude/rules/async-ui.md` の「行固有の
     // accessible name」）。

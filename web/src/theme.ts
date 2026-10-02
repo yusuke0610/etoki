@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { safeLocalStorage } from "./storage";
+
 /**
  * 画面の配色。etoki のパネルと Excalidraw のキャンバスで 1 つの値を共有する
  * （ADR 0055）。
@@ -57,15 +59,6 @@ export function writeStoredTheme(
     else storage?.setItem(STORAGE_KEY, theme);
   } catch {
     // 覚えられないだけで、いまの画面のテーマは切り替わる。
-  }
-}
-
-/** `localStorage` へのアクセス自体が投げる環境があるので、触る前に包む。 */
-function safeLocalStorage(): Storage | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
   }
 }
 

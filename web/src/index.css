@@ -674,13 +674,80 @@ body {
   border-left: 1px solid var(--color-border);
 }
 
+/*
+ * 畳んでも中身は外さない（`SidePanel`）。**`hidden` は上の `display: flex` に
+ * 負ける**ので、ここで戻す。
+ */
+.side-panel[hidden] {
+  display: none;
+}
+
+/* タブの行と、その右の「パネルを閉じる」。 */
+.side-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) var(--space-4) 0;
+}
+
 .side-panel-tabs {
   display: flex;
+  flex: 1;
   gap: var(--space-1);
-  margin: var(--space-4) var(--space-4) 0;
   padding: var(--space-1);
   border-radius: var(--radius-sm);
   background: var(--color-surface-sunken);
+}
+
+.side-panel-close {
+  flex-shrink: 0;
+}
+
+/*
+ * 畳んだときに右端に残す縦の帯（#202）。タブの名前を縦書きで並べ、注釈には
+ * 手を打つ必要がある件数を添える。**畳んでいるあいだも状態を隠さない**
+ * （ADR 0064）。
+ */
+.side-panel-rail {
+  width: 40px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.side-panel-rail-tab {
+  writing-mode: vertical-rl;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-subtle);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.side-panel-rail-tab:hover {
+  background: var(--color-hover);
+}
+
+/* 開いたときに戻る先。色だけで示さない。`aria-current` を読み上げが伝える。 */
+.side-panel-rail-tab[aria-current="true"] {
+  background: var(--color-selected-bg);
+  color: var(--color-selected-fg);
+}
+
+/* 縦書きの中の数字は横に寝かせず、立てて 1 字に収める。 */
+.upright {
+  text-combine-upright: all;
 }
 
 .side-panel-tabs [role="tab"] {
