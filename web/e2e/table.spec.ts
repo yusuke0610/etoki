@@ -96,4 +96,27 @@ test.describe("表", () => {
     const elements = await saveAndRead(page, mock);
     expect(elements.filter((el) => el.type === "rectangle")).toHaveLength(10);
   });
+
+  // 切れると: 矩形ツールを選んだまま「表」を押すと、ツールが矩形のまま残る。置いた
+  // 直後のポインター操作が選択を外して新しい矩形を描き、表を動かせない。
+  test("矩形ツールのまま置いても、選択ツールに切り替わる", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    // 矩形ツールはショートカットで選ぶ（`drawRectangle` と同じ。キャンバスに
+    // フォーカスが無いと届かないので、先に何も無いところを押す）。
+    const canvas = await page.locator(".excalidraw canvas").first().boundingBox();
+    if (!canvas) throw new Error("キャンバスが表示されていない");
+    await page.mouse.click(
+      canvas.x + canvas.width * 0.5,
+      canvas.y + canvas.height * 0.85,
+    );
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("toolbar-rectangle")).toBeChecked();
+
+    await placeTable(page);
+
+    await expect(page.getByTestId("toolbar-selection")).toBeChecked();
+  });
 });

@@ -903,6 +903,10 @@ export function BoardPage({
 
     const groupId = table[0]?.groupIds?.[0];
     if (groupId !== undefined) {
+      // 選択を渡す `updateScene` はツールを切り替えない。矩形ツールのまま置くと、
+      // 次のポインター操作で選択が外れて新しい矩形を描いてしまい、置いた直後に
+      // 表を動かせない。
+      api.setActiveTool({ type: "selection" });
       api.updateScene({
         appState: {
           selectedElementIds: Object.fromEntries(table.map((el) => [el.id, true])),
