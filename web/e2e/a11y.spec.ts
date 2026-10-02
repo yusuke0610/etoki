@@ -9,6 +9,8 @@ import {
   openBoard,
   openBoardMenu,
   openBoardWithMock,
+  openMermaidPaste,
+  openPanelTab,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -72,7 +74,7 @@ test.describe("押せない理由が本文として読める", () => {
       body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
     };
     await openBoardWithMock(page, mock);
-    await chooseFromMenu(page, "図のドラフト");
+    await openPanelTab(page, "図のドラフト");
 
     await expectBlockedReason(
       page.getByRole("button", { name: "生成", exact: true }),
@@ -472,14 +474,14 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    // 図のドラフトのチャットは、キャンバスの左に開く独立した領域（ADR 0041）。
+    // 図のドラフトのチャットは、右のパネルのタブの 1 つ（ADR 0041 / 0065）。
     // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
     // 生成結果を出したところまで開けて、`.diagram-mermaid` と
     // 「ここまでのやりとり」まで含めて見る。
     test("図のドラフトを生成した状態", async ({ page }) => {
       await openBoardWithMock(page, baseMock());
 
-      await chooseFromMenu(page, "図のドラフト");
+      await openPanelTab(page, "図のドラフト");
       await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
       await page.getByRole("button", { name: "生成", exact: true }).click();
       await page.locator(".diagram-mermaid").waitFor();
@@ -487,12 +489,13 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    // mermaid の貼り付けも、キャンバスの左に開く領域（ADR 0062）。**開かないと
-    // DOM に出ない。** 構文エラーまで出して、失敗の帯と畳んだ本文を含めて見る。
+    // mermaid の貼り付けは、図のドラフトのタブの中で切り替えて出す（ADR 0062、
+    // `DiagramTab`）。**開かないと DOM に出ない。** 構文エラーまで出して、失敗の
+    // 帯と畳んだ本文を含めて見る。
     test("mermaid の貼り付けで構文エラーを出した状態", async ({ page }) => {
       await openBoardWithMock(page, baseMock());
 
-      await chooseFromMenu(page, "mermaid を貼る");
+      await openMermaidPaste(page);
       await page.getByLabel("貼る mermaid").fill("flowchart TD\n  A[[[[ -->");
       await page.getByRole("button", { name: "キャンバスに置く" }).click();
       await page.locator(".mermaid-paste .error").waitFor();
@@ -597,7 +600,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       };
       await openBoardWithMock(page, mock);
 
-      await chooseFromMenu(page, "メンバー");
+      await openPanelTab(page, "メンバー");
       await page.getByText("Bob").waitFor();
 
       await expectNoAxeViolations(page);

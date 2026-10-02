@@ -129,6 +129,8 @@ export type ApiMock = {
   access?: Record<string, Reply<BoardAccess>>;
   /** ボード ID をキーにしたメンバー一覧。 */
   members?: Record<string, BoardMember[]>;
+  /** メンバー一覧の取得を失敗させたいときに指定する。 */
+  membersListError?: Reply<never>;
   /** 招待を失敗させたいときに指定する。 */
   inviteError?: Reply<never>;
   /**
@@ -605,6 +607,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       // メソッドで叩いていても緑になる。
       if (route.request().method() !== "GET") {
         await route.fallback();
+        return;
+      }
+
+      if (mock.membersListError) {
+        await json(route, mock.membersListError.status, mock.membersListError.body);
         return;
       }
 

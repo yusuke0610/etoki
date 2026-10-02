@@ -15,6 +15,8 @@ import {
   openBoard,
   openBoardMenu,
   openBoardWithMock,
+  openMermaidPaste,
+  openPanelTab,
   pasteOnCanvas,
   picker,
 } from "./helpers/board";
@@ -424,7 +426,7 @@ test.describe("スクリーンショット", () => {
     };
 
     await openBoardWithMock(page, mock);
-    await chooseFromMenu(page, "メンバー");
+    await openPanelTab(page, "メンバー");
     await page.getByText("Carol").waitFor();
     await shot(page, "11-members");
 
@@ -676,7 +678,7 @@ test.describe("スクリーンショット", () => {
   test("図のドラフトのチャットを撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await chooseFromMenu(page, "図のドラフト");
+    await openPanelTab(page, "図のドラフト");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     // mermaid が出るまで待つ。待たずに撮ると、生成中の画面が写る。
@@ -881,7 +883,7 @@ test.describe("スクリーンショット", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openBoardWithMock(page, baseMock());
 
-    await chooseFromMenu(page, "mermaid を貼る");
+    await openMermaidPaste(page);
     await page
       .getByLabel("貼る mermaid")
       .fill(
