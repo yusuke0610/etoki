@@ -1,7 +1,14 @@
 import { expect, test } from "@playwright/test";
 
+import { installApi } from "./helpers/api";
 import { openBoardWithMock } from "./helpers/board";
-import { annotatedScene, baseMock, board, BOARD_ID } from "./helpers/fixtures";
+import {
+  annotatedScene,
+  authRequiredMock,
+  baseMock,
+  board,
+  BOARD_ID,
+} from "./helpers/fixtures";
 
 /**
  * フォントを配る URL。正本は `web/vite.config.ts` の `EXCALIDRAW_ASSET_PATH`。
@@ -52,4 +59,41 @@ test.describe("キャンバスのフォント", () => {
     expect(external).toEqual([]);
     expect(fonts.filter((status) => status !== 200)).toEqual([]);
   });
+});
+
+/**
+ * 画面の書体（Assistant）も外から取ってこないこと（#203）。
+ *
+ * 書体の先頭を Excalidraw の UI と同じ Assistant にした。読むのはライブラリの CSS
+ * の `@font-face` なので、**キャンバスを開かない画面でも同じ配信元から取る。**
+ * キャンバスのフォント（上）は描く文字があるときだけ取りに行くが、こちらは
+ * 画面の文字の英数字で取りに行く。
+ */
+test.describe("画面の書体", () => {
+  for (const [screen, mock] of [
+    ["ボード一覧", baseMock],
+    ["ログイン", authRequiredMock],
+  ] as const) {
+    test(`${screen}の画面は、Assistant を自前の配信元から取る`, async ({ page }) => {
+      const external: string[] = [];
+      const assistant: number[] = [];
+
+      await page.route(/^https?:\/\/(?!127\.0\.0\.1:5173\/)/, async (route) => {
+        external.push(route.request().url());
+        await route.abort();
+      });
+      page.on("response", (response) => {
+        if (/\/Assistant-[^/]*\.woff2/.test(response.url())) {
+          assistant.push(response.status());
+        }
+      });
+
+      await installApi(page, mock());
+      await page.goto("/");
+
+      await expect.poll(() => assistant.length + external.length).toBeGreaterThan(0);
+      expect(external).toEqual([]);
+      expect(assistant.filter((status) => status !== 200)).toEqual([]);
+    });
+  }
 });

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   annotationCard,
+  annotationDetail,
   openBoardMenu,
   openBoardWithMock,
   openPanelTab,
@@ -63,15 +64,20 @@ test.describe("設定していない機能", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
 
     // 解釈はできる。**ブレストと解釈まで進めることが読めている**必要がある。
     await expect(
-      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+      detail.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
-    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(0);
-    await expect(card.getByText("ETOKI_GITHUB_TOKEN")).toBeVisible();
-    await expect(card.getByText("ブレストと解釈はこのまま続けられます。")).toBeVisible();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
+      0,
+    );
+    await expect(detail.getByText("ETOKI_GITHUB_TOKEN")).toBeVisible();
+    await expect(
+      detail.getByText("ブレストと解釈はこのまま続けられます。"),
+    ).toBeVisible();
   });
 
   // 表示名の取り直しは GitHub の Project 一覧を引く（ADR 0037）。設定して

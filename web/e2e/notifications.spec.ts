@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { holdSave, installApi, summarize } from "./helpers/api";
 import {
   annotationCard,
+  annotationDetail,
   backToList,
   chooseFromMenu,
   drawRectangle,
@@ -129,7 +130,7 @@ test.describe("通知", () => {
   });
 
   // 切れると: どの注釈で失敗したのかが分からなくなる。
-  test("解釈の失敗は通知に流さず、注釈のパネルに残す", async ({ page }) => {
+  test("解釈の失敗は通知に流さず、注釈の詳細に残す", async ({ page }) => {
     const mock = baseMock();
     mock.interpret = { status: 500, body: { code: "internal", error: "boom" } };
     await installApi(page, mock);
@@ -139,7 +140,7 @@ test.describe("通知", () => {
     const card = annotationCard(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
 
-    await expect(card.getByRole("alert")).toBeVisible();
+    await expect(annotationDetail(page, "ログイン").getByRole("alert")).toBeVisible();
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 

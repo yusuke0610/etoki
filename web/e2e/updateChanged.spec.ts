@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { annotationCard, openBoardWithMock } from "./helpers/board";
+import { annotationCard, annotationDetail, openBoardWithMock } from "./helpers/board";
 import { matchedInterpretationMock } from "./helpers/fixtures";
 
 // 3 状態判定の changed には、これまで「重複を作るか、何もしないか」しか出口が
@@ -10,18 +10,19 @@ test.describe("changed の注釈を更新する", () => {
     await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
 
     // 更新は前の内容を消す。作成と同じ見た目にしない。
     //
     // **印だけに絞って引く。** 同じ行には切り替えの選択肢（「更新する」）も
     // 並ぶので、前方一致で引くと 2 つ見つかる。
-    const updating = card.locator(".draft-item").filter({
+    const updating = detail.locator(".draft-item").filter({
       has: page.getByLabel("i1 のタイトル"),
     });
     await expect(updating.getByText("更新", { exact: true })).toBeVisible();
 
-    const creating = card.locator(".draft-item").filter({
+    const creating = detail.locator(".draft-item").filter({
       has: page.getByLabel("i2 のタイトル"),
     });
     await expect(creating.getByText("更新", { exact: true })).toBeHidden();
@@ -32,9 +33,10 @@ test.describe("changed の注釈を更新する", () => {
     await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
 
-    const leftBehind = card.locator(".left-behind");
+    const leftBehind = detail.locator(".left-behind");
     await expect(leftBehind).toContainText("1 件");
     await expect(leftBehind).toContainText("触らないほう");
     // 書き換わるほうは取り残しではない。
@@ -46,11 +48,12 @@ test.describe("changed の注釈を更新する", () => {
     await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
 
-    await card.getByLabel("i1 を作成する").uncheck();
+    await detail.getByLabel("i1 を作成する").uncheck();
 
-    const leftBehind = card.locator(".left-behind");
+    const leftBehind = detail.locator(".left-behind");
     await expect(leftBehind).toContainText("2 件");
     await expect(leftBehind).toContainText("セッションの有効期限");
   });
@@ -63,14 +66,15 @@ test.describe("changed の注釈を更新する", () => {
     const mock = await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
 
-    const updating = card.locator(".draft-item").filter({
+    const updating = detail.locator(".draft-item").filter({
       has: page.getByLabel("i1 のタイトル"),
     });
     await expect(updating.getByText("更新", { exact: true })).toBeVisible();
 
-    await card
+    await detail
       .getByLabel("i1 を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
 
@@ -81,12 +85,12 @@ test.describe("changed の注釈を更新する", () => {
     ).toBeVisible();
 
     // そこへは書かないので、更新先は取り残しに戻る（押す前に見せる）。
-    const leftBehind = card.locator(".left-behind");
+    const leftBehind = detail.locator(".left-behind");
     await expect(leftBehind).toContainText("2 件");
     await expect(leftBehind).toContainText("セッションの有効期限");
 
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByText("件を作成しました。")).toBeVisible();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByText("件を作成しました。")).toBeVisible();
 
     expect(mock.createRequests).toHaveLength(1);
     const sent = mock.createRequests[0]?.items ?? [];
@@ -101,10 +105,11 @@ test.describe("changed の注釈を更新する", () => {
     await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
 
-    await expect(card.getByLabel("i1 を更新するか新しく作るか")).toBeVisible();
-    await expect(card.getByLabel("i2 を更新するか新しく作るか")).toBeHidden();
+    await expect(detail.getByLabel("i1 を更新するか新しく作るか")).toBeVisible();
+    await expect(detail.getByLabel("i2 を更新するか新しく作るか")).toBeHidden();
   });
 
   // 件数だけでは GitHub 側に何が増えたのか分からない。更新は増えない。
@@ -141,10 +146,11 @@ test.describe("changed の注釈を更新する", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
-    const result = card.locator(".creation-result");
+    const result = detail.locator(".creation-result");
     await expect(result).toContainText("1 件を作成し、1 件を更新しました");
     // 書き換えた行にだけ印が付く。
     await expect(
@@ -159,9 +165,10 @@ test.describe("changed の注釈を更新する", () => {
     const mock = await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
     await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByText("件を作成しました。")).toBeVisible();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByText("件を作成しました。")).toBeVisible();
 
     expect(mock.createRequests).toHaveLength(1);
     const sent = mock.createRequests[0]?.items ?? [];
