@@ -120,11 +120,23 @@ export function AnnotationDetail({
   // ボタンごと消える。そのときは同じカードの「解釈する」へ戻す。どちらも受けられ
   // ないなら戻さない（無いものへ移そうとして、隠した面に焦点を残さないよう、
   // 候補は存在して押せるものだけに絞る）。
+  //
+  // **開いたまま別のタブへ切り替えると、カードは DOM に残ったまま隠れる**
+  // （`SidePanel`）。隠れたボタンは焦点を受けられないので、見えているものだけを
+  // 候補にし、無ければ選ばれているタブへ戻す。
   const close = (id: string) => {
     onClose();
-    for (const target of [openDetailButtonId(id), interpretButtonId(id)]) {
-      const el = document.getElementById(target);
-      if (el instanceof HTMLButtonElement && !el.disabled) {
+    const candidates = [
+      document.getElementById(openDetailButtonId(id)),
+      document.getElementById(interpretButtonId(id)),
+      document.querySelector('[role="tab"][aria-selected="true"]'),
+    ];
+    for (const el of candidates) {
+      if (
+        el instanceof HTMLButtonElement &&
+        !el.disabled &&
+        el.getClientRects().length > 0
+      ) {
         el.focus();
         return;
       }

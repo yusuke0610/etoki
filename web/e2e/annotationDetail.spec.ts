@@ -6,6 +6,7 @@ import {
   annotationDetail,
   openBoard,
   openBoardWithMock,
+  openPanelTab,
 } from "./helpers/board";
 import { BOARD_NAME, baseMock } from "./helpers/fixtures";
 
@@ -150,5 +151,25 @@ test.describe("注釈の詳細", () => {
 
     await expect(detail).toHaveCount(0);
     await expect(card.getByRole("button", { name: "解釈する" })).toBeFocused();
+  });
+
+  // 切れると: 開いたまま別のタブへ切り替えると、カードは DOM に残ったまま隠れる。
+  // 隠れたボタンは焦点を受けられず、閉じても焦点が隠した面の中に取り残される。
+  test("別のタブへ切り替えてから閉じると、選んでいるタブへ焦点が戻る", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+
+    await openPanelTab(page, "メンバー");
+    await detail.focus();
+    await page.keyboard.press("Escape");
+
+    await expect(detail).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "メンバー", exact: true })).toBeFocused();
   });
 });
