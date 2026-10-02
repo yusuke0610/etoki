@@ -1,12 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
-import {
-  annotationCard,
-  openBoard,
-  openBoardWithMock,
-  openPanelTab,
-} from "./helpers/board";
+import { openBoard, openBoardWithMock, openPanelTab } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
 
 /**
@@ -14,30 +9,13 @@ import { BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
  *
  * **守りたいのは「切り替えても手元の作業が消えない」こと。** Excalidraw の
  * `Sidebar` に載せなかった理由がそれで（閉じるとタブの中身ごと外れる）、1 度
- * 開いたタブは描いたまま隠している。ここが崩れると、手直し中の下書きがタブを
- * 切り替えただけで消える。
+ * 開いたタブは描いたまま隠している。ここが崩れると、図への指示の書きかけが
+ * タブを切り替えただけで消える。
+ *
+ * 下書きの手直しはタブではなく注釈の詳細に出る。消えないことはそちらで見る
+ * （`annotationDetail.spec.ts`）。
  */
 test.describe("右のパネル", () => {
-  // 切れると: 下書きのタイトルや本文を直している途中で、メンバーを確かめに
-  // 行って戻ると、直したぶんが解釈の出したままに戻る。作成は取り消せない
-  // （ADR 0009）ので、戻ったことに気づかずに押すと、直す前の中身で作られる。
-  test("タブを切り替えても、手直し中の下書きは消えない", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
-
-    const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    const title = card.getByLabel("e1 のタイトル");
-    await expect(title).toHaveValue("ログイン基盤");
-    await title.fill("ログイン基盤（手直し済み）");
-
-    await openPanelTab(page, "メンバー");
-    await openPanelTab(page, "注釈");
-
-    await expect(
-      annotationCard(page, "ログイン").getByLabel("e1 のタイトル"),
-    ).toHaveValue("ログイン基盤（手直し済み）");
-  });
-
   test("図のドラフトの書きかけの指示は、タブを切り替えても残る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 

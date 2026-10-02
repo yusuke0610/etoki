@@ -263,7 +263,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
       )}
 
       {onCancel && (
-        <button type="button" onClick={onCancel}>
+        <button type="button" className="quiet" onClick={onCancel}>
           やめる
         </button>
       )}

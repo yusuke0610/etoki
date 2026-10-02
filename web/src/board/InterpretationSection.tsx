@@ -11,60 +11,61 @@ import {
 import { INTERPRETATION_UNAVAILABLE_ID, type CreationState } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 
-type InterpretationSectionProps = {
+/**
+ * カードの「解釈結果を開く」の id。詳細を閉じたとき、焦点をここへ戻す
+ * （`AnnotationDetail`）。
+ */
+export function openDetailButtonId(annotationId: string): string {
+  return `interpret-open-${annotationId}`;
+}
+
+/**
+ * カードの「解釈する」の id。「解釈結果を開く」が無いとき（保存で解釈が捨てられた
+ * あとなど）、詳細を閉じた焦点の戻り先にする（`AnnotationDetail`）。
+ */
+export function interpretButtonId(annotationId: string): string {
+  return `interpret-run-${annotationId}`;
+}
+
+type InterpretControlProps = {
   /** 説明文の id を注釈ごとに分けるために持つ。一覧に複数並ぶため。 */
   annotationId: string;
-  /** 注釈の粒度。作成前に手直しできる範囲がこれで変わる。 */
-  granularity: Granularity;
+  /**
+   * 注釈の見出し。ボタンの名前に見えない形で添える。**添えないと、注釈の数だけ
+   * 「解釈結果を開く」が並び、読み上げではどれの結果か区別できない。**
+   */
+  label: string;
   state?: InterpretationState;
-  creation?: CreationState;
   /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
   stale: boolean;
-  /** 保存中は下書きの編集も止める。 */
-  saving: boolean;
-  /** いま作成を始められない理由。押せるなら null（表は `exclusion.ts`）。 */
-  creationBlocked: string | null;
-  projectAccess: ProjectAccess;
   /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
   interpretationUnavailable: string | null;
-  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
-  creationUnavailable: string | null;
-  /** この注釈が GitHub に在らしめているもの（ADR 0026）。 */
-  previous: SyncItem[];
-  /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
-  projectLink: ProjectLink | null;
   onInterpret: () => void;
-  onSelectInterpretation: (runId: number) => void;
-  onCreate: (interpretationId: number, interpretation: Interpretation) => void;
+  /** 解釈の結果（中央の面）を開く。 */
+  onOpen: () => void;
 };
 
 /**
- * 解釈の実行と結果表示。
+ * 注釈のカードに残す、解釈の口（ADR 0065 の右のパネル）。
  *
- * 結果を見せるだけで、ここから GitHub には何も作らない。何を作るかは
- * 開発者が別途トリガーする。
+ * **結果はここに出さない。** 下書きの手直しまで含めると 1 件で画面数枚分に
+ * 伸び、ほかの注釈の状態（このパネルの主題）が読めなくなる。結果は中央の面
+ * （`AnnotationDetail`）に広く出し、ここには押す口と開く口だけを置く。
  */
-export function InterpretationSection({
+export function InterpretControl({
   annotationId,
-  granularity,
+  label,
   state,
-  creation,
   stale,
-  saving,
-  creationBlocked,
-  projectAccess,
   interpretationUnavailable,
-  creationUnavailable,
-  previous,
-  projectLink,
   onInterpret,
-  onSelectInterpretation,
-  onCreate,
-}: InterpretationSectionProps) {
+  onOpen,
+}: InterpretControlProps) {
   const running = state?.running ?? false;
-  const runs = state?.runs ?? [];
-  // いま見ている解釈。1 件も返っていなければ undefined。
-  const selected = selectedInterpretation(state);
+  // 開けるものがあるか。**解釈中も開ける。** 閉じたあとに結果を待つ場所が
+  // 無いと、返ってきたことに気づけない。
+  const openable =
+    running || (state?.runs.length ?? 0) > 0 || state?.failure !== undefined;
   // 押せない理由は title に隠さず本文として出す。disabled なボタンはフォーカスも
   // 当たらないので、title ではキーボードと読み上げの利用者に理由が届かない。
   const blockedId = `interpret-blocked-${annotationId}`;
@@ -82,23 +83,99 @@ export function InterpretationSection({
 
   return (
     <div className="interpretation">
-      {/*
-        未保存のあいだは押させない。テキストは保存済みシーンから、画像は画面
-        から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
-      */}
-      <button
-        type="button"
-        onClick={onInterpret}
-        disabled={running || unavailable || stale}
-        aria-describedby={describedBy}
-      >
-        {running ? "解釈中…" : "解釈する"}
-      </button>
+      <div className="interpretation-actions">
+        {/*
+          未保存のあいだは押させない。テキストは保存済みシーンから、画像は画面
+          から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
+        */}
+        <button
+          type="button"
+          id={interpretButtonId(annotationId)}
+          onClick={onInterpret}
+          disabled={running || unavailable || stale}
+          aria-describedby={describedBy}
+        >
+          {running ? "解釈中…" : "解釈する"}
+          <span className="visually-hidden">（{label}）</span>
+        </button>
+        {openable && (
+          <button type="button" id={openDetailButtonId(annotationId)} onClick={onOpen}>
+            解釈結果を開く
+            <span className="visually-hidden">（{label}）</span>
+          </button>
+        )}
+      </div>
 
       {!unavailable && stale && (
         <p className="hint" id={blockedId}>
           保存してから解釈できます。テキストは保存済みのシーンから、
           画像は画面から取るためです。
+        </p>
+      )}
+    </div>
+  );
+}
+
+type InterpretationSectionProps = {
+  /** 説明文の id を注釈ごとに分けるために持つ。一覧に複数並ぶため。 */
+  annotationId: string;
+  /** 注釈の粒度。作成前に手直しできる範囲がこれで変わる。 */
+  granularity: Granularity;
+  state?: InterpretationState;
+  creation?: CreationState;
+  /** 保存中は下書きの編集も止める。 */
+  saving: boolean;
+  /** いま作成を始められない理由。押せるなら null（表は `exclusion.ts`）。 */
+  creationBlocked: string | null;
+  projectAccess: ProjectAccess;
+  /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
+  creationUnavailable: string | null;
+  /** この注釈が GitHub に在らしめているもの（ADR 0026）。 */
+  previous: SyncItem[];
+  /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
+  projectLink: ProjectLink | null;
+  onSelectInterpretation: (runId: number) => void;
+  onCreate: (interpretationId: number, interpretation: Interpretation) => void;
+};
+
+/**
+ * 解釈の結果。中央の面（`AnnotationDetail`）に出す。
+ *
+ * 結果を見せるだけで、ここから GitHub には何も作らない。何を作るかは
+ * 開発者が別途トリガーする。解釈する口は注釈のカード（`InterpretControl`）に
+ * ある。
+ */
+export function InterpretationSection({
+  annotationId,
+  granularity,
+  state,
+  creation,
+  saving,
+  creationBlocked,
+  projectAccess,
+  creationUnavailable,
+  previous,
+  projectLink,
+  onSelectInterpretation,
+  onCreate,
+}: InterpretationSectionProps) {
+  const running = state?.running ?? false;
+  const runs = state?.runs ?? [];
+  // いま見ている解釈。1 件も返っていなければ undefined。
+  const selected = selectedInterpretation(state);
+
+  return (
+    <div className="interpretation-result-area">
+      {running && <p className="hint">解釈しています…</p>}
+
+      {/*
+        保存すると解釈は捨てる（前提のシーンが変わる、web/CLAUDE.md）。開いた
+        ままだと中が空になるので、何が起きたのかと、次に何をすればよいかを出す。
+      */}
+      {!running && runs.length === 0 && !state?.failure && (
+        <p className="hint">
+          解釈の結果はありません。保存すると前の結果は捨てます。注釈の「解釈する」から
+          解釈し直せます。
         </p>
       )}
 

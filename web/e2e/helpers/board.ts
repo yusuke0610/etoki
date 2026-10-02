@@ -140,6 +140,19 @@ export function annotationCard(page: Page, name: string): Locator {
 }
 
 /**
+ * 注釈 1 つぶんの詳細（解釈の結果と下書き）。**開いているものだけ**を返す。
+ *
+ * 閉じた詳細も、手直しを残すために描いたまま隠してある（`AnnotationDetail`）。
+ * 隠れているものまで拾うと、閉じたあとの「見えない」が別の注釈の詳細で
+ * 満たされてしまう。
+ */
+export function annotationDetail(page: Page, name: string): Locator {
+  return page
+    .locator("section.annotation-detail:not([hidden])")
+    .filter({ has: page.getByRole("heading", { level: 2, name }) });
+}
+
+/**
  * キャンバスに矩形を 1 つ描いて、シーンを変更した状態にする。
  *
  * 座標はキャンバスからの相対で取る。左上に固定オフセットで打つと、ツールバーや

@@ -1,4 +1,14 @@
-import type { AnnotationStatus, Granularity, ItemKind } from "../api/types";
+import type { AnnotationStatus, Granularity, ItemKind, SyncState } from "../api/types";
+
+/**
+ * 注釈の 3 状態の見出し。右のパネルのカードと、中央の面（解釈の結果）の両方に
+ * 出す。**1 か所に置く。** 2 か所に書くと文言が割れる。
+ */
+export const STATE_LABEL: Record<SyncState, string> = {
+  uncreated: "未作成",
+  created: "作成済み",
+  changed: "変更あり",
+};
 
 /**
  * 粒度の見出し。
