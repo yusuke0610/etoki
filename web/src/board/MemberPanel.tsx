@@ -228,7 +228,12 @@ export function MemberPanel({ boardId, role }: Props) {
             <button type="button" disabled={busy} onClick={() => void invite()}>
               {`@${invitee.login} を招待する`}
             </button>
-            <button type="button" disabled={busy} onClick={() => setInvitee(null)}>
+            <button
+              type="button"
+              className="quiet"
+              disabled={busy}
+              onClick={() => setInvitee(null)}
+            >
               やめる
             </button>
           </div>
@@ -264,6 +269,7 @@ export function MemberPanel({ boardId, role }: Props) {
                   </select>
                   <button
                     type="button"
+                    className="danger"
                     aria-label={`${m.login || m.userId} を外す`}
                     disabled={busy}
                     onClick={() => void remove(m.userId)}

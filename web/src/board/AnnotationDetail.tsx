@@ -179,7 +179,7 @@ export function AnnotationDetail({
               </span>
               <button
                 type="button"
-                className="annotation-detail-close"
+                className="quiet annotation-detail-close"
                 onClick={() => close(id)}
               >
                 閉じる

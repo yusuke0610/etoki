@@ -75,6 +75,7 @@ function NotificationItem({ notification: n }: { notification: Notification }) {
             名前に本文を含める（見える文言も名前に残す）。 */}
         <button
           type="button"
+          className="quiet"
           aria-label={`「${n.message}」を閉じる`}
           onClick={() => dismiss(n.id)}
         >

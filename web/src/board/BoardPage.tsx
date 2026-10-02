@@ -1279,7 +1279,7 @@ export function BoardPage({
    */
   const topRightUI = useMemo(
     () => (
-      <div className="board-status">
+      <div className="board-status etoki-ui">
         {nameDraft === null ? (
           <h1>{board.name}</h1>
         ) : (
@@ -1317,7 +1317,12 @@ export function BoardPage({
             <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
               {renaming ? "変更中…" : "名前を保存"}
             </button>
-            <button type="button" disabled={renaming} onClick={() => setNameDraft(null)}>
+            <button
+              type="button"
+              className="quiet"
+              disabled={renaming}
+              onClick={() => setNameDraft(null)}
+            >
               取消
             </button>
           </form>
@@ -1381,7 +1386,7 @@ export function BoardPage({
    */
   const footerUI = useMemo(
     () => (
-      <div className="board-context">
+      <div className="board-context etoki-ui">
         {/*
         自分が何をできるのかは、操作して断られる前に見えている必要がある。
         共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
@@ -1698,6 +1703,7 @@ export function BoardPage({
             </button>
             <button
               type="button"
+              className="quiet"
               onClick={() => setDeletion(null)}
               disabled={deletion.status === "deleting"}
             >
