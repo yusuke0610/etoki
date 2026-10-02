@@ -408,6 +408,28 @@ body {
 }
 
 /*
+ * 狭い画面では、モバイルのツールバーの行に載る（`MobileMenu` が
+ * `renderTopRightUI` をその行へ足す）。横に並べたままだと、ツールバーと島の
+ * 最小幅の合計が画面を越えて行ごと右へはみ出し、親の `overflow: hidden` に
+ * 切られて保存が画面の外に出る。**島だけを専用の行に下ろす。**
+ * 名前を縮めて省略する規則（上の h1）はそのまま効く。
+ */
+@media (max-width: 600px) {
+  .excalidraw .App-toolbar-container:has(> .board-status) {
+    /* `Stack` は grid で、子を 1 行に並べる（`grid-auto-flow: column`）。行に
+       積み直すと、島が下の行に回る。 */
+    grid-auto-flow: row;
+    justify-items: end;
+  }
+
+  .excalidraw .App-toolbar-container > .board-status {
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+/*
  * 下（`Footer`）。ロール・作成先・大きさ。**読むだけで、押すものは置かない**
  * （作成先がリンクのときだけ例外、ADR 0025）。
  */
