@@ -149,4 +149,45 @@ test.describe("右のパネル", () => {
     await expect(panel.getByRole("alert")).toBeVisible();
     await expect(panel.getByRole("button", { name: "再試行" })).toHaveCount(0);
   });
+
+  // 切れると: 取得の失敗のあとで招待の確認も失敗すると、再試行が確認の失敗の隣に
+  // 並び、押すと確認ではなく一覧を取り直す。取得の失敗と操作の失敗は別に出す。
+  test("取得の失敗のあとで確認が失敗しても、再試行は取得の失敗にだけ添う", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.members = { [BOARD_ID]: [] };
+    mock.membersListError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+    mock.lookupInviteeError = {
+      status: 400,
+      body: {
+        code: "invalid_input",
+        error: 'etoki: invalid input: "carol" has not signed in to etoki yet',
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const panel = await openPanelTab(page, "メンバー");
+    await panel.getByLabel("招待する login").fill("carol");
+    await panel.getByRole("button", { name: "確認する" }).click();
+
+    const alerts = panel.getByRole("alert");
+    await expect(alerts).toHaveCount(2);
+    await expect(
+      alerts.filter({ hasText: "メンバーを取得できませんでした" }),
+    ).toHaveCount(1);
+    await expect(
+      alerts.filter({ hasText: "招待する相手を確認できませんでした" }),
+    ).toHaveCount(1);
+
+    // 取り直せたら取得の失敗だけが消え、確認の失敗は残る。
+    delete mock.membersListError;
+    await panel.getByRole("button", { name: "再試行" }).click();
+    await expect(alerts).toHaveCount(1);
+    await expect(alerts).toContainText("招待する相手を確認できませんでした");
+    await expect(panel.getByRole("button", { name: "再試行" })).toHaveCount(0);
+  });
 });
