@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { openBoardWithMock } from "./helpers/board";
+import { openBoardWithMock, openPanelTab } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -13,7 +13,7 @@ import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /** チャットを開く。 */
 async function openChat(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+  await openPanelTab(page, "図のドラフト");
   await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
 }
 
@@ -276,8 +276,11 @@ test.describe("図のドラフト", () => {
     mock.boards = [{ ...(mock.boards[0] ?? {}), ...viewer, role: "viewer" }];
     await openBoardWithMock(page, mock);
 
+    // タブごと出さない。**タブの並びが出ていることを先に見る。** 並びが
+    // 描かれていないだけなら、出していても「無い」で通る。
+    await expect(page.getByRole("tab", { name: "注釈", exact: true })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "図のドラフト", exact: true }),
+      page.getByRole("tab", { name: "図のドラフト", exact: true }),
     ).toHaveCount(0);
   });
 });

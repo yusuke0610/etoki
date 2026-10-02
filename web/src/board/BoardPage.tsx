@@ -1,6 +1,11 @@
-import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
+import {
+  CaptureUpdateAction,
+  Excalidraw,
+  Footer,
+  MainMenu,
+} from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { boardsApi, githubApi } from "../api/boards";
 import {
@@ -74,7 +79,9 @@ import {
   type InterpretationState,
 } from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
+import { DiagramTab, type DiagramMode } from "./DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
+import { SidePanel, type SidePanelTab } from "./SidePanel";
 import type { CreationState, RunHistoryState } from "./panelShared";
 import { projectLink } from "./projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
@@ -94,7 +101,7 @@ const DIAGRAM_KEY = "diagram";
 /**
  * ライブラリのメニューから閉じるもの（ADR 0045）。
  *
- * **持ち出しと取り込みの口は etoki のヘッダー 1 つに寄せる。** ライブラリ側を
+ * **持ち出しと取り込みの口は etoki のメニュー 1 つに寄せる。** ライブラリ側を
  * 残すと、同じ画面に意味の違う「保存」が 2 つ並び、片方だけが etoki のボード名と
  * 未保存の確認を知っている形になる。
  *
@@ -153,7 +160,7 @@ type Props = {
    * ボードを閉じて一覧へ戻る（ADR 0064）。未保存の確認は親が通す。
    *
    * **一覧はボードと同じ画面に無い。** これが無いと、開いたボードから出る
-   * 手段がブラウザの「戻る」しか無くなる。
+   * 手段がブラウザの「戻る」しか無くなる。口はキャンバスのメニューの先頭。
    */
   onClose: () => void;
   /** 作成先を選び直す。固定済みなら呼ばれない。 */
@@ -308,23 +315,18 @@ export function BoardPage({
   // 履歴の読み込みも別の世代で持つ。作成すると履歴は 1 件増えるので、走って
   // いる読み込みは古くなる。
   const [runGenerations] = useState(createGenerations);
-  // メンバーの一覧を開いているかどうか。
-  const [showingMembers, setShowingMembers] = useState(false);
-  // キャンバスの左に開いているパネル。**枠は 1 つ**で、図のドラフトと
-  // mermaid の貼り付けのどちらか一方だけを開く。並べるとキャンバスが狭まり、
-  // 置いた図がどこに出るかを見ながら直す、という左に置いた理由が崩れる。
-  const [leftPanel, setLeftPanel] = useState<"chat" | "paste" | null>(null);
-  const showingChat = leftPanel === "chat";
-  const toggleLeftPanel = (panel: "chat" | "paste") =>
-    setLeftPanel((open) => (open === panel ? null : panel));
+  // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
+  const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
+  // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
+  const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
-  // 持つ。** パネルは図のドラフトへ切り替えたときや閉じたときに外れるので、
-  // そちらで持つと構文エラーを直している途中の入力が消える。消すのは置けた
-  // ときだけ。ボードを切り替えれば BoardPage ごと作り直されるので残らない。
+  // 持つ。** 置けたときに消すのはここ（`pasteMermaid`）で、パネルは落ちたときに
+  // 境界で作り直される（ADR 0027）。そちらで持つと、構文エラーを直している
+  // 途中の入力が消える。ボードを切り替えれば BoardPage ごと作り直されるので
+  // 残らない。
   const [pasteText, setPasteText] = useState("");
   // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
   // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
-  // パネルを閉じても（貼り付けに切り替えても）会話は残る。
   const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
   // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
   // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
@@ -1213,7 +1215,14 @@ export function BoardPage({
   const unmarkable = selectedFrames.filter((f) => annotationIdsOnCanvas.has(f.id));
 
   // 作った draft issue を確かめにいく先。未選択のボードでは null（ADR 0025）。
+  //
+  // **中身をプリミティブに落として持つ。** `projectLink` は呼ぶたびに新しい
+  // オブジェクトを返すので、そのまま下の `useMemo` の依存に入れると毎回作り直しに
+  // なり、キャンバスとの描き直しの輪が閉じなくなる（`footerUI` を参照）。
   const link = projectLink(board);
+  const linkHref = link?.href ?? null;
+  const linkExact = link?.exact ?? false;
+  const running = exclusive.running;
 
   // 作成先を変更できない理由。押せるなら null（ADR 0039）。
   //
@@ -1227,328 +1236,394 @@ export function BoardPage({
     ? "保存してから作成先を変更できます"
     : exclusive.reasonFor("changeTarget");
 
-  return (
-    <div className="board">
-      <header className="board-header">
-        {/*
-          戻る口とボード名は 1 組にして左に寄せる。ヘッダーは左右に振り分けて
-          いるので、組にしないと戻る口だけが名前から離れて宙に浮く。
-        */}
-        <div className="board-title">
-          <button type="button" className="back" onClick={onClose}>
-            {/* 矢印は飾り。押すものの名前は文字が持つ。 */}
-            <span aria-hidden="true">←</span>
-            ボード一覧
-          </button>
-          {nameDraft === null ? (
-            <h1>
-              {board.name}
-              {/*
-              名前はブレストの中身に属する表示物なので、editor にも直させる
-              （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
-            */}
-              {canEdit && (
-                <button
-                  type="button"
-                  className="rename"
-                  onClick={() => setNameDraft(board.name)}
-                >
-                  名前を変更
-                </button>
-              )}
-            </h1>
-          ) : (
-            <form
-              className="rename-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void rename();
-              }}
-            >
-              {/*
-              ラベルは一覧の画面の「ボード名」（新規作成の入力）と分ける。
-              入れるものが違う（作るボードの名前か、開いているボードの名前か）。
-            */}
-              <input
-                aria-label="ボードの名前"
-                value={nameDraft}
-                disabled={renaming}
-                onChange={(e) => setNameDraft(e.target.value)}
-                /*
-                jsx-a11y が禁じているのは「開いた瞬間に勝手に焦点が移る」
-                autoFocus で、ここはそれに当たらない。押した「名前を変更」が
-                この入力に差し替わるので、移さないとキーボードの利用者の焦点は
-                body に落ちる。**外すほうが a11y は悪くなる。** 規則が見て
-                いるのは属性で、押した結果として現れたかどうかは見られない
-                （ADR 0039）。
-              */
-                // eslint-disable-next-line jsx-a11y/no-autofocus
-                autoFocus
-              />
-              {/*
-              「保存」とは書かない。ヘッダーにはシーンの保存ボタンが並んで
-              いるので、同じ文言だと何を保存するのかが読めない。
-            */}
-              <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
-                {renaming ? "変更中…" : "名前を保存"}
-              </button>
-              <button
-                type="button"
-                disabled={renaming}
-                onClick={() => setNameDraft(null)}
-              >
-                取消
-              </button>
-            </form>
-          )}
-        </div>
-        <div className="board-actions">
-          {/*
-            自分が何をできるのかは、操作して断られる前に見えている必要がある。
-            共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
+  /*
+   * 右上に出す。ボード名と、未保存かどうかと、保存（ADR 0065）。
+   *
+   * **保存だけは拡張点のメニューに入れない。** いちばん押すものであり、作成中や
+   * 取り込み中に止まる理由（一時的な理由）がいちばん出る場所でもある。待たされて
+   * いる本人が見ている場所で理由が読めないと意味が無い（ADR 0066）。
+   *
+   * **ボード名を隣に置く。** 何を保存するのかが、ボタンの隣で読める。
+   */
+  const topRightUI = useMemo(
+    () => (
+      <div className="board-status">
+        {nameDraft === null ? (
+          <h1>{board.name}</h1>
+        ) : (
+          <form
+            className="rename-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void rename();
+            }}
+          >
+            {/*
+            ラベルは一覧の画面の「ボード名」（新規作成の入力）と分ける。
+            入れるものが違う（作るボードの名前か、開いているボードの名前か）。
           */}
-          <span className="badge badge-role">{ROLE_LABELS[board.role]}</span>
-          {/*
-            共有が組み立てられていない構成では、押しても 503 しか返らない。
-            ボタンを黙って消さず、代わりに理由を出す（中核思想 3）。作成先の
-            変更を owner 以外に出さないのと同じ形。
+            <input
+              aria-label="ボードの名前"
+              value={nameDraft}
+              disabled={renaming}
+              onChange={(e) => setNameDraft(e.target.value)}
+              /*
+              jsx-a11y が禁じているのは「開いた瞬間に勝手に焦点が移る」
+              autoFocus で、ここはそれに当たらない。メニューの「名前を変更」を
+              押した結果としてこの入力が現れるので、移さないとキーボードの
+              利用者の焦点は body に落ちる。**外すほうが a11y は悪くなる。**
+              規則が見ているのは属性で、押した結果として現れたかどうかは
+              見られない（ADR 0039）。
+            */
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+            />
+            {/*
+            「保存」とは書かない。隣にシーンの保存ボタンが並んでいるので、
+            同じ文言だと何を保存するのかが読めない。
           */}
-          {sharingUnavailable !== null ? (
-            <span className="hint">{sharingUnavailable}</span>
-          ) : (
-            <button type="button" onClick={() => setShowingMembers((v) => !v)}>
-              {showingMembers ? "メンバーを閉じる" : "メンバー"}
+            <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
+              {renaming ? "変更中…" : "名前を保存"}
             </button>
-          )}
-          {/*
-            図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
-            叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。
-
-            LLM が未設定でもボタンは出す。**黙って消さず、開いた先で理由を
-            見せる**（ADR 0030、中核思想 3）。
-          */}
-          {canEdit && (
-            <button type="button" onClick={() => toggleLeftPanel("chat")}>
-              {showingChat ? "図のドラフトを閉じる" : "図のドラフト"}
+            <button type="button" disabled={renaming} onClick={() => setNameDraft(null)}>
+              取消
             </button>
-          )}
-          {/*
-            既存の設計（mermaid）を写しとして貼る（ADR 0062）。**LLM を通さない
-            ので、未設定でも使える。** viewer には出さない。描かせないのと同じ
-            理由で、置いても保存できない（ADR 0017）。
+          </form>
+        )}
+        {dirty && <span className="dirty">未保存</span>}
+        {canEdit && (
+          <>
+            {/*
+            取り消せない操作と保存は相互に排他する。**押せない理由を title に
+            隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
+            フォーカスも当たらないので、キーボードと読み上げには届かない。
           */}
-          {canEdit && (
-            <button type="button" onClick={() => toggleLeftPanel("paste")}>
-              {leftPanel === "paste" ? "貼り付けを閉じる" : "mermaid を貼る"}
-            </button>
-          )}
-          {/*
-            どこに作られるのかは、作る直前ではなく常に見えている必要がある。
-            作った draft issue は取り消せない（ADR 0009）。
-
-            飛び先が組めるならリンクにする。取り消せない操作の結果を確かめる
-            導線がここから始まる（ADR 0025）。組めないのは作成先が未選択の
-            ボードだけなので、そのときはこれまでどおり文字のまま出す。
-          */}
-          {link ? (
-            <a
-              className="badge badge-target"
-              href={link.href}
-              target="_blank"
-              rel="noreferrer"
-              title={
-                link.exact
-                  ? "作成先の Project を GitHub で開く"
-                  : "リポジトリの Projects を GitHub で開く"
-              }
-            >
-              {board.repositoryOwner}/{board.repositoryName}
-            </a>
-          ) : (
-            <span className="badge badge-target">
-              {board.repositoryOwner}/{board.repositoryName}
-            </span>
-          )}
-          {/*
-            押せない理由は title に隠さず、本文として出す。title はホバーでしか
-            読めず、disabled なボタンはフォーカスも当たらないので、キーボードと
-            読み上げの利用者には理由が届かない。
-          */}
-          {!isOwner(board.role) ? (
-            // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
-            // 断るより、押せないことを見せるほうが状態として正しい。
-            <span className="hint">作成先を変えられるのはオーナーだけです</span>
-          ) : board.targetLocked ? (
-            // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
-            // 押せないことを見せるほうが状態として正しい。
-            //
-            // **名前の取り直しだけは出す。** 固定するのは作成先そのもので
-            // あって、表示用のスナップショットではない（ADR 0037）。ここが
-            // 無いと、GitHub 側で改名されたボードは古い名前を出し続ける。
-            <>
-              <span className="hint">作成先は確定（draft issue を作成済み）</span>
-              {/*
-                GitHub が組み立てられていない構成では、押しても Project の
-                一覧を引けない。ボタンを黙って消さず、代わりに理由を出す
-                （ADR 0030）。メンバーの口と同じ形。
-              */}
-              {creationUnavailable !== null ? (
-                <span className="hint">{creationUnavailable}</span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void refreshTargetDisplay()}
-                  disabled={refreshingTarget}
-                >
-                  {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={onChangeTarget}
-                // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
-                // 黙って捨てずに、保存してからにしてもらう。
-                disabled={targetChangeBlocked !== null}
-                aria-describedby={
-                  targetChangeBlocked !== null ? "target-change-blocked" : undefined
-                }
-              >
-                作成先を変更
-              </button>
-              {targetChangeBlocked !== null && (
-                <span className="hint" id="target-change-blocked">
-                  {targetChangeBlocked}
-                </span>
-              )}
-            </>
-          )}
-          {/*
-            持ち出しと取り込みの口はここ 1 つ（ADR 0045）。ライブラリのメニュー
-            からは外してある（`UI_OPTIONS`）。
-
-            書き出しは viewer にも出す。見えているものを出すだけなので、
-            共有した相手に新しく見せるものが無い（ADR 0017）。
-          */}
-          <button type="button" onClick={exportScene} disabled={!api}>
-            書き出し
-          </button>
-          {canEdit && (
-            <>
-              <button
-                type="button"
-                onClick={() => fileInput.current?.click()}
-                // **作成中は取り込ませない。** キャンバスを置き換えるので、
-                // 保存を止めているのと同じ理由で止める（作られた内容と記録
-                // されるハッシュが食い違いうる）。
-                disabled={!api || exclusive.running !== null}
-                aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
-              >
-                {importing ? "取り込み中…" : "取り込み"}
-              </button>
-              {importBlocked !== null && (
-                <span className="hint" id="import-blocked">
-                  {importBlocked}
-                </span>
-              )}
-              {/*
-                入力そのものは出さない。**押す口はボタン 1 つ**で、ここは
-                ファイルを選ばせるためだけに置いてある。
-              */}
-              <input
-                ref={fileInput}
-                type="file"
-                aria-label="取り込む .excalidraw ファイル"
-                accept=".excalidraw,application/json"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  // 選び直しで同じファイルをもう一度選べるようにする。値を
-                  // 残すと、2 回目の選択で change が発火しない。
-                  e.target.value = "";
-                  if (file) void importScene(file);
-                }}
-              />
-            </>
-          )}
-          {/*
-            いまの大きさを出す。**上限との比は出さない。** 比を出すには上限を
-            フロントが知る必要があり、それは判定を 2 箇所に持つのと同じこと
-            になる（ADR 0018 / 0038）。「大きいときだけ」出さないのも同じ
-            理由で、上限を知らない以上どこからが大きいのかを決められない。
-          */}
-          {sceneBytes !== null && (
-            <span className="badge badge-size" title="保存に送るシーンの大きさ">
-              {formatSceneSize(sceneBytes)}
-            </span>
-          )}
-          {dirty && <span className="dirty">未保存</span>}
-          {canEdit && (
-            <>
-              {/*
-                取り消せない操作と保存は相互に排他する。**押せない理由を title に
-                隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
-                フォーカスも当たらないので、キーボードと読み上げには届かない。
-                「作成先を変更」と同じ形で本文に出して aria-describedby で結ぶ。
-              */}
-              <button
-                type="button"
-                onClick={() => void save()}
-                disabled={!canSave}
-                aria-describedby={
-                  saveBlocked !== null ? "save-shortcut save-blocked" : "save-shortcut"
-                }
-              >
-                {saving ? "保存中…" : "保存"}
-              </button>
-              {/*
-                ショートカットの存在を画面に出す。**`title` に隠さない**
-                （ADR 0039）。ホバーでしか読めず、disabled なボタンはフォーカスも
-                当たらないので、キーボードと読み上げには届かない。
-
-                **ボタンの中には置かない。** 中に置くと読み上げる名前が
-                「保存 Ctrl / ⌘ + S」になり、名前で引いている E2E が全部ずれる。
-                外に出して `aria-describedby` で結ぶ。
-
-                修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
-                それを見ていないので、片方だけ出すともう片方の利用者には嘘になる。
-              */}
-              <kbd className="hint shortcut" id="save-shortcut">
-                ⌘/Ctrl+S
-              </kbd>
-              {saveBlocked !== null && (
-                <span className="hint" id="save-blocked">
-                  {saveBlocked}
-                </span>
-              )}
-            </>
-          )}
-          {/*
-            ボードごと畳むのは owner だけ（ADR 0042）。押せる人にだけ出すのは
-            「作成先を変更」と同じ形。**押した時点では消さない。** 何が残るのかを
-            引いてから確認を出す。
-
-            **消すなら理由を出す**（ADR 0017 / 0030）。権限で押せない操作は、
-            ボタンを黙って消さずに押せない理由のほうを見せる。disabled にせず
-            文だけにするのも「作成先を変更」と揃えている。ロールは開いている
-            あいだ変わらないので、押せる見込みの無いボタンを置く相手がいない。
-          */}
-          {isOwner(board.role) ? (
             <button
               type="button"
-              className="danger"
-              onClick={() => void askDelete()}
-              disabled={deletion !== null}
+              className="primary"
+              onClick={() => void save()}
+              disabled={!canSave}
+              aria-describedby={
+                saveBlocked !== null ? "save-shortcut save-blocked" : "save-shortcut"
+              }
             >
-              {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
+              {saving ? "保存中…" : "保存"}
             </button>
-          ) : (
-            <span className="hint">ボードを削除できるのはオーナーだけです</span>
-          )}
-        </div>
-      </header>
+            {/*
+            ショートカットの存在を画面に出す。**`title` に隠さない**
+            （ADR 0039）。**ボタンの中には置かない。** 中に置くと読み上げる名前が
+            「保存 Ctrl / ⌘ + S」になり、名前で引いている E2E が全部ずれる。
+            外に出して `aria-describedby` で結ぶ。
+
+            修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
+            それを見ていないので、片方だけ出すともう片方の利用者には嘘になる。
+          */}
+            <kbd className="hint shortcut" id="save-shortcut">
+              ⌘/Ctrl+S
+            </kbd>
+            {saveBlocked !== null && (
+              <span className="hint" id="save-blocked">
+                {saveBlocked}
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    ),
+    [
+      board.name,
+      nameDraft,
+      renaming,
+      rename,
+      dirty,
+      canEdit,
+      save,
+      canSave,
+      saveBlocked,
+      saving,
+    ],
+  );
+
+  /*
+   * 下に出す。**常に見えている状態だけ**（ADR 0064 / 0065）。押すものは置かない。
+   */
+  const footerUI = useMemo(
+    () => (
+      <div className="board-context">
+        {/*
+        自分が何をできるのかは、操作して断られる前に見えている必要がある。
+        共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
+      */}
+        <span className="badge badge-role">{ROLE_LABELS[board.role]}</span>
+        {/*
+        どこに作られるのかは、作る直前ではなく常に見えている必要がある。
+        作った draft issue は取り消せない（ADR 0009）。
+
+        飛び先が組めるならリンクにする。取り消せない操作の結果を確かめる
+        導線がここから始まる（ADR 0025）。組めないのは作成先が未選択の
+        ボードだけなので、そのときはこれまでどおり文字のまま出す。
+      */}
+        {linkHref !== null ? (
+          <a
+            className="badge badge-target"
+            href={linkHref}
+            target="_blank"
+            rel="noreferrer"
+            title={
+              linkExact
+                ? "作成先の Project を GitHub で開く"
+                : "リポジトリの Projects を GitHub で開く"
+            }
+          >
+            {board.repositoryOwner}/{board.repositoryName}
+          </a>
+        ) : (
+          <span className="badge badge-target">
+            {board.repositoryOwner}/{board.repositoryName}
+          </span>
+        )}
+        {/*
+        作成先が固定済みかは**状態**なので、ここにも出す（#62 が読めなければ
+        ならないものとして挙げている）。メニューの中の文は「作成先を変更」が
+        無い理由で、閉じているあいだは読めない。役目が違うので両方に置く。
+      */}
+        {board.targetLocked && <span className="badge badge-locked">作成先は確定</span>}
+        {/*
+        いまの大きさを出す。**上限との比は出さない。** 比を出すには上限を
+        フロントが知る必要があり、それは判定を 2 箇所に持つのと同じこと
+        になる（ADR 0018 / 0038）。「大きいときだけ」出さないのも同じ
+        理由で、上限を知らない以上どこからが大きいのかを決められない。
+      */}
+        {sceneBytes !== null && (
+          <span className="badge badge-size" title="保存に送るシーンの大きさ">
+            {formatSceneSize(sceneBytes)}
+          </span>
+        )}
+      </div>
+    ),
+    [
+      board.role,
+      board.repositoryOwner,
+      board.repositoryName,
+      board.targetLocked,
+      linkHref,
+      linkExact,
+      sceneBytes,
+    ],
+  );
+
+  /*
+   * たまに押す操作はキャンバスのメニューにしまう（ADR 0065）。
+   *
+   * **押せない理由は、しまった先で本文として出す**（ADR 0066）。メニューは
+   * 開けばフォーカスが入るので、キーボードと読み上げには届く。形はヘッダーに
+   * あったころと同じで、権限や設定で押せない操作はボタンごと出さずに理由の文を
+   * 出し、一時的に押せない操作は押せないボタンと理由を `aria-describedby` で結ぶ。
+   *
+   * **独自のメニューを渡すと既定の中身は丸ごと置き換わる。** 残すものは
+   * `MainMenu.DefaultItems` で並べ直してある。**etoki の項目には
+   * `etoki-menu-item` を付ける。** axe はライブラリの DOM を外して掛けており、
+   * この印で etoki の項目だけを検査に戻している（`web/e2e/helpers/a11y.ts`）。
+   * テーマの切り替えはここに残す
+   * （ADR 0055 / 0065 の「口は 1 つ」）。Excalidraw 自身へのリンク
+   * （`Socials`）は etoki の利用者に向けたものではないので置かない。
+   */
+  const boardMenu = useMemo(
+    () => (
+      <MainMenu>
+        <MainMenu.Item className="etoki-menu-item" onSelect={onClose}>
+          ボード一覧へ戻る
+        </MainMenu.Item>
+        <MainMenu.Separator />
+        {/*
+        名前はブレストの中身に属する表示物なので、editor にも直させる
+        （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
+      */}
+        {canEdit && (
+          <MainMenu.Item
+            className="etoki-menu-item"
+            onSelect={() => setNameDraft(board.name)}
+          >
+            名前を変更
+          </MainMenu.Item>
+        )}
+        <MainMenu.Separator />
+        {!isOwner(board.role) ? (
+          // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
+          // 断るより、押せないことを見せるほうが状態として正しい。
+          <MenuNote>作成先を変えられるのはオーナーだけです</MenuNote>
+        ) : board.targetLocked ? (
+          // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
+          // 押せないことを見せるほうが状態として正しい。
+          //
+          // **名前の取り直しだけは出す。** 固定するのは作成先そのもので
+          // あって、表示用のスナップショットではない（ADR 0037）。
+          <>
+            <MenuNote>作成先は確定（draft issue を作成済み）</MenuNote>
+            {/*
+            GitHub が組み立てられていない構成では、押しても Project の
+            一覧を引けない。ボタンを黙って消さず、代わりに理由を出す
+            （ADR 0030）。
+          */}
+            {creationUnavailable !== null ? (
+              <MenuNote>{creationUnavailable}</MenuNote>
+            ) : (
+              <MainMenu.Item
+                className="etoki-menu-item"
+                onSelect={() => void refreshTargetDisplay()}
+                disabled={refreshingTarget}
+              >
+                {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
+              </MainMenu.Item>
+            )}
+          </>
+        ) : (
+          <>
+            <MainMenu.Item
+              className="etoki-menu-item"
+              onSelect={onChangeTarget}
+              // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
+              // 黙って捨てずに、保存してからにしてもらう。
+              disabled={targetChangeBlocked !== null}
+              aria-describedby={
+                targetChangeBlocked !== null ? "target-change-blocked" : undefined
+              }
+            >
+              作成先を変更
+            </MainMenu.Item>
+            {targetChangeBlocked !== null && (
+              <MenuNote id="target-change-blocked">{targetChangeBlocked}</MenuNote>
+            )}
+          </>
+        )}
+        <MainMenu.Separator />
+        {/*
+        持ち出しと取り込みの口はここ 1 つ（ADR 0045）。ライブラリの既定の
+        項目（開く・保存）はこのメニューに並べていない。
+
+        書き出しは viewer にも出す。見えているものを出すだけなので、
+        共有した相手に新しく見せるものが無い（ADR 0017）。
+      */}
+        <MainMenu.Item className="etoki-menu-item" onSelect={exportScene} disabled={!api}>
+          書き出し
+        </MainMenu.Item>
+        {canEdit && (
+          <>
+            <MainMenu.Item
+              className="etoki-menu-item"
+              onSelect={() => fileInput.current?.click()}
+              // **作成中は取り込ませない。** キャンバスを置き換えるので、
+              // 保存を止めているのと同じ理由で止める（作られた内容と記録
+              // されるハッシュが食い違いうる）。
+              disabled={!api || running !== null}
+              aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
+            >
+              {importing ? "取り込み中…" : "取り込み"}
+            </MainMenu.Item>
+            {importBlocked !== null && (
+              <MenuNote id="import-blocked">{importBlocked}</MenuNote>
+            )}
+          </>
+        )}
+        <MainMenu.Separator />
+        <MainMenu.DefaultItems.SaveAsImage />
+        <MainMenu.DefaultItems.SearchMenu />
+        <MainMenu.DefaultItems.Help />
+        {canEdit && <MainMenu.DefaultItems.ClearCanvas />}
+        <MainMenu.Separator />
+        <MainMenu.DefaultItems.ToggleTheme />
+        {canEdit && <MainMenu.DefaultItems.ChangeCanvasBackground />}
+        <MainMenu.Separator />
+        {/*
+        ボードごと畳むのは owner だけ（ADR 0042）。**押した時点では消さない。**
+        何が残るのかを引いてから確認を出す。
+
+        **消すなら理由を出す**（ADR 0017 / 0030）。権限で押せない操作は、
+        ボタンを黙って消さずに押せない理由のほうを見せる。
+
+        **最後に区切って置く。** 取り消せない操作を、日常の操作と同じ並びの
+        途中に置かない。
+      */}
+        {isOwner(board.role) ? (
+          <MainMenu.Item
+            className="etoki-menu-item danger"
+            onSelect={() => void askDelete()}
+            disabled={deletion !== null}
+          >
+            {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
+          </MainMenu.Item>
+        ) : (
+          <MenuNote>ボードを削除できるのはオーナーだけです</MenuNote>
+        )}
+      </MainMenu>
+    ),
+    [
+      onClose,
+      canEdit,
+      board.name,
+      board.role,
+      board.targetLocked,
+      api,
+      creationUnavailable,
+      refreshTargetDisplay,
+      refreshingTarget,
+      onChangeTarget,
+      targetChangeBlocked,
+      exportScene,
+      fileInput,
+      running,
+      importBlocked,
+      importing,
+      askDelete,
+      deletion,
+    ],
+  );
+
+  /*
+   * **キャンバスに渡すものは、中身が変わったときだけ作り直す。**
+   *
+   * Excalidraw は props が変わると描き直し、そのたびに `onChange` を呼ぶ。
+   * `handleChange` は毎回新しい配列で state を置くので、ここを描くたびに新しく
+   * 作ると「描き直す → onChange → state が変わる → 描き直す」の輪が閉じず、
+   * 更新の上限で落ちる。子要素（メニュー・下の帯）とこの関数を安定させておけば、
+   * state が変わってもキャンバスは描き直さない。
+   */
+  const renderTopRightUI = useCallback(() => topRightUI, [topRightUI]);
+  // **子要素は配列ごと 1 つにまとめて持つ。** `{boardMenu}<Footer>…</Footer>` を
+  // その場で並べると、中身が同じでも `children` は描くたびに新しい配列になり、
+  // Excalidraw の `memo` が効かない。
+  const canvasChildren = useMemo(
+    () => (
+      <>
+        {boardMenu}
+        <Footer>{footerUI}</Footer>
+      </>
+    ),
+    [boardMenu, footerUI],
+  );
+
+  return (
+    <div className="board">
+      {canEdit && (
+        // **入力そのものは出さない。** 押す口はメニューの「取り込み」1 つで、
+        // ここはファイルを選ばせるためだけに置いてある。**メニューの中に
+        // 置かない。** メニューは押すと閉じて中身ごと外れるので、選んだ
+        // ファイルを受け取る前に入力が消える。
+        <input
+          ref={fileInput}
+          type="file"
+          aria-label="取り込む .excalidraw ファイル"
+          accept=".excalidraw,application/json"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            // 選び直しで同じファイルをもう一度選べるようにする。値を
+            // 残すと、2 回目の選択で change が発火しない。
+            e.target.value = "";
+            if (file) void importScene(file);
+          }}
+        />
+      )}
 
       {/*
         **何が残るのかを見せてから確認させる**（ADR 0042、中核思想 3）。
@@ -1627,53 +1702,7 @@ export function BoardPage({
         </p>
       )}
 
-      {/*
-        パネルは境界で包み、キャンバスを巻き込ませない。落ちたのがパネルでも、
-        外側の 1 枚だけで受けるとツリーごと外れ、保存していないブレストが
-        その場で消える（ADR 0027）。
-      */}
-      {showingMembers && (
-        <ErrorBoundary name="メンバーパネル" recovery="remount">
-          <MemberPanel
-            boardId={board.id}
-            role={board.role}
-            onClose={() => setShowingMembers(false)}
-          />
-        </ErrorBoundary>
-      )}
-
       <div className="board-body">
-        {/*
-          チャットはキャンバスの左に置く。**キャンバスを覆わない。** 置いた図が
-          どこに出るかを見ながら直す道具なので、隠すと「置く」を押した結果が
-          確かめられない。メンバーのように上に敷かないのもそのため。
-
-          **パネルは境界で包む**（ADR 0027）。落ちたのがここでも外側の 1 枚で
-          受けると、キャンバスごと外れて未保存のブレストが消える。
-        */}
-        {showingChat && canEdit && (
-          <ErrorBoundary name="図のドラフト" recovery="remount">
-            <DiagramChatPanel
-              chat={chat}
-              onChangeKind={handleChangeKind}
-              onSend={generateDiagram}
-              onPlace={() => void placeDraft()}
-              onClose={() => setLeftPanel(null)}
-              unavailable={diagramUnavailable}
-            />
-          </ErrorBoundary>
-        )}
-        {leftPanel === "paste" && canEdit && (
-          <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
-            <MermaidPastePanel
-              text={pasteText}
-              onChangeText={setPasteText}
-              onPlace={pasteMermaid}
-              onClose={() => setLeftPanel(null)}
-            />
-          </ErrorBoundary>
-        )}
-
         <div className="canvas">
           <Excalidraw
             excalidrawAPI={setApi}
@@ -1681,7 +1710,7 @@ export function BoardPage({
             onChange={handleChange as never}
             langCode="ja-JP"
             theme={theme}
-            // 持ち出しと取り込みの口は etoki のヘッダーに寄せてある（ADR 0045）。
+            // 持ち出しと取り込みの口は etoki のメニューに寄せてある（ADR 0045）。
             UIOptions={UI_OPTIONS}
             // Excalidraw の AI の口を閉じる（ADR 0067）。コマンドパレットの
             // 「Mermaid to Excalidraw」はこれで出し分けられている。0.18.1 は
@@ -1693,7 +1722,10 @@ export function BoardPage({
             // viewer には描かせない。描けるのに保存できないと、描いた内容を
             // 黙って捨てることになる（ADR 0017）。
             viewModeEnabled={!canEdit}
-          />
+            renderTopRightUI={renderTopRightUI}
+          >
+            {canvasChildren}
+          </Excalidraw>
           {/*
             注釈の frame を見分けられるようにする。Excalidraw の外に重ねる
             だけで、要素には触らない（AnnotationOverlay の doc）。
@@ -1706,43 +1738,133 @@ export function BoardPage({
           </ErrorBoundary>
         </div>
 
-        <ErrorBoundary name="注釈パネル" recovery="remount">
-          <AnnotationPanel
-            annotations={annotations}
-            detached={detached}
-            frames={{
-              markable,
-              unmarkable,
-              canvasIds: canvasFrameIds,
-              selectedIds: selectedFrames.map((f) => f.id),
-              onFocus: focusFrame,
-              onMark: handleMark,
-              onUnmark: handleUnmark,
-              onChangeGranularity: handleMark,
-              onChangeKind: handleChangeAnnotationKind,
-            }}
-            interpretation={{
-              states: interpretations,
-              onInterpret: (id) => void interpret(id),
-              onSelect: showInterpretation,
-              unavailable: interpretationUnavailable,
-            }}
-            creation={{
-              states: creations,
-              saving,
-              blocked: exclusive.reasonFor("creating"),
-              onCreate: (id, interpretationId, result) =>
-                void create(id, interpretationId, result),
-              projectAccess,
-              unavailable: creationUnavailable,
-            }}
-            runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
-            stale={dirty}
-            canEdit={canEdit}
-            projectLink={link}
-          />
-        </ErrorBoundary>
+        {/*
+          注釈・図のドラフト・メンバーは右の 1 か所にタブで並べる（ADR 0065）。
+          **キャンバスを覆わない。** 図のドラフトは置いた図がどこに出るかを
+          見ながら直す道具なので、上に敷くと「置く」を押した結果が確かめられない。
+
+          **パネルは 1 枚ずつ境界で包む**（ADR 0027）。落ちたのが 1 枚でも外側で
+          受けると、キャンバスごと外れて未保存のブレストが消える。
+        */}
+        <SidePanel
+          active={panelTab}
+          onSelect={setPanelTab}
+          tabs={[
+            {
+              id: "annotations",
+              label: "注釈",
+              content: (
+                <ErrorBoundary name="注釈パネル" recovery="remount">
+                  <AnnotationPanel
+                    annotations={annotations}
+                    detached={detached}
+                    frames={{
+                      markable,
+                      unmarkable,
+                      canvasIds: canvasFrameIds,
+                      selectedIds: selectedFrames.map((f) => f.id),
+                      onFocus: focusFrame,
+                      onMark: handleMark,
+                      onUnmark: handleUnmark,
+                      onChangeGranularity: handleMark,
+                      onChangeKind: handleChangeAnnotationKind,
+                    }}
+                    interpretation={{
+                      states: interpretations,
+                      onInterpret: (id) => void interpret(id),
+                      onSelect: showInterpretation,
+                      unavailable: interpretationUnavailable,
+                    }}
+                    creation={{
+                      states: creations,
+                      saving,
+                      blocked: exclusive.reasonFor("creating"),
+                      onCreate: (id, interpretationId, result) =>
+                        void create(id, interpretationId, result),
+                      projectAccess,
+                      unavailable: creationUnavailable,
+                    }}
+                    runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
+                    stale={dirty}
+                    canEdit={canEdit}
+                    projectLink={link}
+                  />
+                </ErrorBoundary>
+              ),
+            },
+            // 図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
+            // 叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。LLM が
+            // 未設定でもタブは出す。**黙って消さず、開いた先で理由を見せる**
+            // （ADR 0030、中核思想 3）。mermaid を貼る口（ADR 0062）も同じタブに
+            // 置く。LLM を通さないので未設定でも使えるが、描かせないのと同じ
+            // 理由で viewer には出さない。
+            ...(canEdit
+              ? [
+                  {
+                    id: "diagram" as const,
+                    label: "図のドラフト",
+                    content: (
+                      <DiagramTab
+                        mode={diagramMode}
+                        onModeChange={setDiagramMode}
+                        generate={
+                          <ErrorBoundary name="図のドラフト" recovery="remount">
+                            <DiagramChatPanel
+                              chat={chat}
+                              onChangeKind={handleChangeKind}
+                              onSend={generateDiagram}
+                              onPlace={() => void placeDraft()}
+                              unavailable={diagramUnavailable}
+                            />
+                          </ErrorBoundary>
+                        }
+                        paste={
+                          <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
+                            <MermaidPastePanel
+                              text={pasteText}
+                              onChangeText={setPasteText}
+                              onPlace={pasteMermaid}
+                            />
+                          </ErrorBoundary>
+                        }
+                      />
+                    ),
+                  },
+                ]
+              : []),
+            {
+              id: "members",
+              label: "メンバー",
+              // 共有が組み立てられていない構成では、押しても 503 しか返らない。
+              // タブは黙って消さず、開いた先で理由を出す（中核思想 3）。
+              content:
+                sharingUnavailable !== null ? (
+                  <p className="hint side-panel-note">{sharingUnavailable}</p>
+                ) : (
+                  <ErrorBoundary name="メンバーパネル" recovery="remount">
+                    <MemberPanel boardId={board.id} role={board.role} />
+                  </ErrorBoundary>
+                ),
+            },
+          ]}
+        />
       </div>
     </div>
+  );
+}
+
+/**
+ * メニューの中に出す、押せない理由の文（ADR 0066）。
+ *
+ * **ボタンとして描かない。** 押しても何も起きないものを項目の形で置くと、
+ * 押せるように見える。`ItemCustom` は項目と同じ並びに置けて、押せない。
+ */
+function MenuNote({ id, children }: { id?: string; children: ReactNode }) {
+  return (
+    <MainMenu.ItemCustom className="menu-note">
+      <span className="hint" id={id}>
+        {children}
+      </span>
+    </MainMenu.ItemCustom>
   );
 }

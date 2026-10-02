@@ -1,12 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { expectBlockedReason, expectNoAxeViolations } from "./helpers/a11y";
 import { holdCreate, holdSave, installApi } from "./helpers/api";
 import {
   annotationCard,
+  chooseFromMenu,
   drawRectangle,
   openBoard,
+  openBoardMenu,
   openBoardWithMock,
+  openMermaidPaste,
+  openPanelTab,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -70,7 +74,7 @@ test.describe("押せない理由が本文として読める", () => {
       body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
     };
     await openBoardWithMock(page, mock);
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await openPanelTab(page, "図のドラフト");
 
     await expectBlockedReason(
       page.getByRole("button", { name: "生成", exact: true }),
@@ -101,8 +105,10 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
+    // メニューの中の理由も本文で読める（ADR 0066）。開かないと DOM に無い。
+    const menu = await openBoardMenu(page);
     await expectBlockedReason(
-      page.getByRole("button", { name: "作成先を変更" }),
+      menu.getByRole("button", { name: "作成先を変更" }),
       "保存してから作成先を変更できます",
     );
   });
@@ -132,8 +138,9 @@ test.describe("押せない理由が本文として読める", () => {
     await card.getByRole("button", { name: "解釈する" }).click();
     await card.getByRole("button", { name: "GitHub に作成する" }).click();
 
+    const menu = await openBoardMenu(page);
     await expectBlockedReason(
-      page.getByRole("button", { name: "取り込み" }),
+      menu.getByRole("button", { name: "取り込み", exact: true }),
       "作成が終わるまで取り込めません",
     );
   });
@@ -210,13 +217,14 @@ test.describe("押せない理由が本文として読める", () => {
     // **描かない。** 描くと未保存の理由のほうが出て、保存中の経路を通らない。
     await page.getByRole("button", { name: "保存", exact: true }).click();
 
-    await expectBlockedReason(
-      page.getByRole("button", { name: "作成先を変更" }),
-      "保存が終わるまで作成先を変更できません",
-    );
+    // **保存を押してから開く。** 開いてから外を押すと、メニューは閉じる。
+    const menu = await openBoardMenu(page);
+    const change = menu.getByRole("button", { name: "作成先を変更" });
+    await expectBlockedReason(change, "保存が終わるまで作成先を変更できません");
 
+    // 開いたまま待つ。閉じた後に見ると、理由が消えていなくても通る。
     release();
-    await expect(page.getByRole("button", { name: "作成先を変更" })).toBeEnabled();
+    await expect(change).toBeEnabled();
   });
 
   test("取り込み：保存中のとき", async ({ page }) => {
@@ -233,13 +241,14 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoard(page, BOARD_NAME);
     await page.getByRole("button", { name: "保存", exact: true }).click();
 
-    await expectBlockedReason(
-      page.getByRole("button", { name: "取り込み", exact: true }),
-      "保存が終わるまで取り込めません",
-    );
+    const menu = await openBoardMenu(page);
+    const importButton = menu.getByRole("button", { name: "取り込み", exact: true });
+    await expectBlockedReason(importButton, "保存が終わるまで取り込めません");
 
+    // 開いたまま待つ。閉じた後に見ると、理由が消えていなくても通る。
     release();
-    await expect(page.getByText("保存が終わるまで取り込めません")).toBeHidden();
+    await expect(importButton).toBeEnabled();
+    await expect(menu.getByText("保存が終わるまで取り込めません")).toBeHidden();
   });
 
   test("保存：取り込み中のとき", async ({ page }) => {
@@ -394,7 +403,8 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
-    const button = page.getByRole("button", { name: "作成先を変更" });
+    const menu = await openBoardMenu(page);
+    const button = menu.getByRole("button", { name: "作成先を変更" });
     await expectBlockedReason(button, "保存してから作成先を変更できます");
 
     // 理由の本文だけを消す。ボタンは押せないまま、指す先が無くなる。
@@ -434,6 +444,21 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    /*
+     * キャンバスのメニュー（ADR 0065）。**開かないと DOM に出ない**ので、他の
+     * 検査では一度も掛かっていない。etoki の項目と、押せない理由の文
+     * （ADR 0066）が両方出る状態にして掛ける。未保存にしておけば「作成先を変更」
+     * が押せなくなり、理由の文がメニューの中に出る。
+     */
+    test("メニューを開いた状態", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+      await drawRectangle(page);
+      const menu = await openBoardMenu(page);
+      await menu.getByText("保存してから作成先を変更できます").waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     test("ボードの一覧", async ({ page }) => {
       await installApi(page, baseMock());
 
@@ -449,14 +474,14 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    // 図のドラフトのチャットは、キャンバスの左に開く独立した領域（ADR 0041）。
+    // 図のドラフトのチャットは、右のパネルのタブの 1 つ（ADR 0041 / 0065）。
     // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
     // 生成結果を出したところまで開けて、`.diagram-mermaid` と
     // 「ここまでのやりとり」まで含めて見る。
     test("図のドラフトを生成した状態", async ({ page }) => {
       await openBoardWithMock(page, baseMock());
 
-      await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+      await openPanelTab(page, "図のドラフト");
       await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
       await page.getByRole("button", { name: "生成", exact: true }).click();
       await page.locator(".diagram-mermaid").waitFor();
@@ -464,12 +489,13 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    // mermaid の貼り付けも、キャンバスの左に開く領域（ADR 0062）。**開かないと
-    // DOM に出ない。** 構文エラーまで出して、失敗の帯と畳んだ本文を含めて見る。
+    // mermaid の貼り付けは、図のドラフトのタブの中で切り替えて出す（ADR 0062、
+    // `DiagramTab`）。**開かないと DOM に出ない。** 構文エラーまで出して、失敗の
+    // 帯と畳んだ本文を含めて見る。
     test("mermaid の貼り付けで構文エラーを出した状態", async ({ page }) => {
       await openBoardWithMock(page, baseMock());
 
-      await page.getByRole("button", { name: "mermaid を貼る" }).click();
+      await openMermaidPaste(page);
       await page.getByLabel("貼る mermaid").fill("flowchart TD\n  A[[[[ -->");
       await page.getByRole("button", { name: "キャンバスに置く" }).click();
       await page.locator(".mermaid-paste .error").waitFor();
@@ -543,7 +569,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
       await openBoardWithMock(page, mock);
 
-      await page.getByRole("button", { name: "ボードを削除" }).click();
+      await chooseFromMenu(page, "ボードを削除");
       await page.getByRole("alertdialog").waitFor();
 
       await expectNoAxeViolations(page);
@@ -574,7 +600,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       };
       await openBoardWithMock(page, mock);
 
-      await page.getByRole("button", { name: "メンバー", exact: true }).click();
+      await openPanelTab(page, "メンバー");
       await page.getByText("Bob").waitFor();
 
       await expectNoAxeViolations(page);
@@ -620,4 +646,56 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
   });
+}
+
+/**
+ * キャンバスの中に置いた etoki の部品が、etoki の色を読んでいるか（ADR 0065）。
+ *
+ * **axe では見えない。** ライブラリの層に重なっていて背景が決まらないので、
+ * 色の検査は違反ではなく判定不能になる（`helpers/a11y.ts`）。一方でライブラリは
+ * `.excalidraw` に `--color-warning` などを自前で持っていて、中に置いた部品は
+ * そちらの薄い色を読む。実際に、右上の「未保存」がほぼ読めない色になっていた。
+ *
+ * **値ではなく、外で同じ変数を読んだ色と比べる。** 値を書き写すと、配色を
+ * 変えた日にここだけが古くなる。
+ */
+for (const colorScheme of ["light", "dark"] as const) {
+  test.describe(`キャンバスの中の etoki の部品（${colorScheme}）`, () => {
+    test.use({ colorScheme });
+
+    test("ライブラリと名前がぶつかる色も、外と同じ色で読む", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+      await drawRectangle(page);
+
+      // 右上の「未保存」は --color-warning を読む。
+      const dirty = page.locator(".excalidraw .board-status .dirty");
+      await expect(dirty).toBeVisible();
+      expect(await colorOf(dirty)).toBe(
+        await colorOutsideCanvas(page, "--color-warning"),
+      );
+
+      // メニューの「ボードを削除」は --color-danger を読む。
+      const menu = await openBoardMenu(page);
+      const deleteItem = menu.getByRole("button", { name: "ボードを削除" });
+      expect(await colorOf(deleteItem)).toBe(
+        await colorOutsideCanvas(page, "--color-danger"),
+      );
+    });
+  });
+}
+
+async function colorOf(locator: Locator): Promise<string> {
+  return locator.evaluate((el) => getComputedStyle(el).color);
+}
+
+/** キャンバスの外（body 直下）で、その変数を文字色に使ったときの色。 */
+async function colorOutsideCanvas(page: Page, variable: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.body.appendChild(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, variable);
 }

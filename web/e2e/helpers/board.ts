@@ -4,14 +4,65 @@ import { installApi, type ApiMock } from "./api";
 import { BOARD_NAME } from "./fixtures";
 
 /**
+ * キャンバスのメニューを開いて、その枠を返す（ADR 0065）。開いていれば開き直さない。
+ *
+ * **閉じたメニューの中身は DOM に無い。** 「出さない」を `toHaveCount(0)` で
+ * 見るときも、先にここを通す。開かずに見ると、出していても常に通る。
+ */
+export async function openBoardMenu(page: Page): Promise<Locator> {
+  const menu = page.locator(".excalidraw .dropdown-menu");
+  if (!(await menu.isVisible())) {
+    await page.locator('[data-testid="main-menu-trigger"]').click();
+  }
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/**
+ * キャンバスのメニューの項目を押す。押すとメニューは閉じる。
+ *
+ * **名前は完全一致で引く。** 「作成先を変更」と「作成先の名前を取り直す」の
+ * ように、前方が同じ項目がある。
+ */
+export async function chooseFromMenu(page: Page, name: string): Promise<void> {
+  const menu = await openBoardMenu(page);
+  await menu.getByRole("button", { name, exact: true }).click();
+}
+
+/**
+ * 右のパネルのタブを開き、その中身の枠を返す（`SidePanel`、ADR 0065）。
+ *
+ * **初めて開くまで中身は DOM に無い。** 1 度開いたタブは、ほかを開いても隠す
+ * だけで残る。「出さない」を見るときは、開いてから中を見る。
+ */
+export async function openPanelTab(page: Page, name: string): Promise<Locator> {
+  await page.getByRole("tab", { name, exact: true }).click();
+  const panel = page.getByRole("tabpanel", { name, exact: true });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/**
+ * mermaid の貼り付けを開き、その枠を返す（ADR 0062）。図のドラフトのタブの中で、
+ * LLM に作らせる口と切り替えて出す（`DiagramTab`）。
+ */
+export async function openMermaidPaste(page: Page): Promise<Locator> {
+  const panel = await openPanelTab(page, "図のドラフト");
+  await panel.getByRole("button", { name: "mermaid を貼る", exact: true }).click();
+  const paste = page.locator(".mermaid-paste");
+  await expect(paste).toBeVisible();
+  return paste;
+}
+
+/**
  * 開いているボードを閉じて一覧へ戻る（ADR 0064）。
  *
  * **一覧はボードと別の画面にある。** 別のボードを開くのも、一覧の中身を
  * 確かめるのも、ここを通ってから。未保存なら確認が出るので、それを見る spec は
- * 先に `dialog` を拾っておく。
+ * 先に `dialog` を拾っておく。戻る口はキャンバスのメニューの先頭（ADR 0065）。
  */
 export async function backToList(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "ボード一覧", exact: true }).click();
+  await chooseFromMenu(page, "ボード一覧へ戻る");
   // **見出しは完全一致で引く。** 同じ画面に「新しいボード」の見出しも並ぶ。
   await expect(
     page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),

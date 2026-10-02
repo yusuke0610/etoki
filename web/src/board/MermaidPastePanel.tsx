@@ -15,19 +15,20 @@ export type PasteOutcome = { placed: true } | { placed: false; failure: Failure 
 
 type Props = {
   /**
-   * 貼られている文字列。**持つのは `BoardPage`。** パネルは図のドラフトへ
-   * 切り替えたときや「閉じる」で外れるので、ここで持つと直している途中の
-   * 入力が消える。
+   * 貼られている文字列。**持つのは `BoardPage`。** 置けたときに消すのが
+   * あちらで、パネルは落ちたときに境界で作り直される（ADR 0027）。ここで
+   * 持つと、直している途中の入力が消える。
    */
   text: string;
   onChangeText: (text: string) => void;
   /** 貼られた文字列を変換して置く。置けたら入力を消すのもこちら。 */
   onPlace: (text: string) => Promise<PasteOutcome>;
-  onClose: () => void;
 };
 
 /**
  * 既存の設計（mermaid）を写しとして貼り、図形にして置くパネル（ADR 0062）。
+ * 右のパネルの「図のドラフト」タブの中で、LLM に作らせる口と切り替えて出す
+ * （`DiagramTab`）。
  *
  * **LLM を通さない。** なので LLM を設定していなくても使える
  * （`capabilities` で止めない）。viewer には出さない（描いても保存できない）。
@@ -36,7 +37,7 @@ type Props = {
  * 種別（`kind`）も付けない。`erDiagram` を貼っても、ER 図だと決めるのは
  * 注釈パネルで種別を選ぶ人（ADR 0047）。
  */
-export function MermaidPastePanel({ text, onChangeText, onPlace, onClose }: Props) {
+export function MermaidPastePanel({ text, onChangeText, onPlace }: Props) {
   const [placing, setPlacing] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
 
@@ -48,8 +49,8 @@ export function MermaidPastePanel({ text, onChangeText, onPlace, onClose }: Prop
     // 前の失敗は押した時点で消す。新しい結果の隣に古い理由が残らないように。
     setFailure(null);
     try {
-      // 置けたら入力を消すのは `onPlace`（`BoardPage`）。待っているあいだに
-      // 閉じて開き直せば書き換えられるので、送った文字列のままのときだけ消す。
+      // 置けたら入力を消すのは `onPlace`（`BoardPage`）。待っているあいだにも
+      // 書き換えられるので、送った文字列のままのときだけ消す。
       const outcome = await onPlace(text);
       if (!outcome.placed) setFailure(outcome.failure);
     } finally {
@@ -59,12 +60,11 @@ export function MermaidPastePanel({ text, onChangeText, onPlace, onClose }: Prop
 
   return (
     <section className="panel mermaid-paste" aria-label="mermaid を貼る">
-      <div className="diagram-chat-header">
-        <h2>mermaid を貼る</h2>
-        <button type="button" onClick={onClose}>
-          閉じる
-        </button>
-      </div>
+      {/*
+        見出しは見た目だけ隠す。上の切り替え（`DiagramTab`）に同じ名前が出ている。
+        読み上げの見出しの移動には残す（図のドラフトと同じ）。
+      */}
+      <h2 className="visually-hidden">mermaid を貼る</h2>
 
       <div className="panel-section">
         {/*

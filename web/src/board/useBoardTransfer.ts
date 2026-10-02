@@ -36,7 +36,7 @@ export type BoardTransfer = {
 /**
  * ボードの持ち出しと取り込み（ADR 0045、#146 で `BoardPage` から切り出し）。
  *
- * **口は etoki のヘッダー 1 つに寄せる。** ライブラリのメニュー側は閉じてある
+ * **口は etoki のメニュー 1 つに寄せる。** ライブラリのメニュー側は閉じてある
  * （`BoardPage` の `UI_OPTIONS`）。
  */
 export function useBoardTransfer({
@@ -60,7 +60,7 @@ export function useBoardTransfer({
   const exportScene = useCallback(() => {
     if (!api) return;
 
-    // 保存が送るのと同じバイト列。ヘッダーに出ている大きさが、そのまま
+    // 保存が送るのと同じバイト列。下の帯に出ている大きさが、そのまま
     // 書き出したファイルの大きさになる。
     const url = URL.createObjectURL(
       new Blob([sceneJSON(api)], { type: "application/json" }),

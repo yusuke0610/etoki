@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import type { ApiMock } from "./helpers/api";
-import { openBoardWithMock } from "./helpers/board";
+import { openBoardWithMock, openMermaidPaste, openPanelTab } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -28,7 +28,7 @@ type SavedElement = {
 
 /** パネルを開く。 */
 async function openPaste(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "mermaid を貼る" }).click();
+  await openMermaidPaste(page);
   await expect(page.getByRole("heading", { name: "mermaid を貼る" })).toBeVisible();
 }
 
@@ -282,24 +282,26 @@ test.describe("mermaid を貼る", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 
-  // 左の枠は 1 つ。並べるとキャンバスが狭まり、置いた図を見ながら直せない。
+  // 図のドラフトのタブの中で、作る口と貼る口はどちらか一方だけを出す
+  // （`DiagramTab`）。縦に並べると、押した「置く」がどちらのものかが紛れる。
   test("図のドラフトと貼り付けは、どちらか一方だけを開く", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    const tab = await openPanelTab(page, "図のドラフト");
     await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "mermaid を貼る" })).toHaveCount(0);
 
     await openPaste(page);
     await expect(page.getByRole("heading", { name: "図のドラフト" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await tab.getByRole("button", { name: "LLM で作る", exact: true }).click();
     await expect(page.getByRole("heading", { name: "mermaid を貼る" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
   });
 
-  // 構文エラーを直している途中で図のドラフトを見に行ったり閉じたりしても、
-  // 入力は残る。パネルは外れるので、文字列は BoardPage が持つ。
-  test("置けなかった入力は、パネルを切り替えても閉じても残る", async ({ page }) => {
+  // 構文エラーを直している途中で図のドラフトを見に行ったり、ほかのタブへ
+  // 移ったりしても、入力は残る。
+  test("置けなかった入力と理由は、切り替えてもタブを移っても残る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
     await openPaste(page);
 
@@ -307,11 +309,14 @@ test.describe("mermaid を貼る", () => {
     await paste(page, broken);
     await expect(page.locator(".mermaid-paste .error")).toBeVisible();
 
-    await page.getByRole("button", { name: "図のドラフト", exact: true }).click();
+    await page.getByRole("button", { name: "LLM で作る", exact: true }).click();
     await openPaste(page);
     await expect(page.getByLabel("貼る mermaid")).toHaveValue(broken);
+    // **置けなかった理由も残る。** 入力は BoardPage が持つので、こちらは
+    // 切り替えのたびにパネルを外す作りだと消える（`DiagramTab`）。
+    await expect(page.locator(".mermaid-paste .error")).toBeVisible();
 
-    await page.locator(".mermaid-paste").getByRole("button", { name: "閉じる" }).click();
+    await openPanelTab(page, "注釈");
     await openPaste(page);
     await expect(page.getByLabel("貼る mermaid")).toHaveValue(broken);
   });
@@ -324,6 +329,8 @@ test.describe("mermaid を貼る", () => {
     mock.boards = [{ ...(mock.boards[0] ?? {}), ...viewer, role: "viewer" }];
     await openBoardWithMock(page, mock);
 
+    // 貼る口は図のドラフトのタブの中にあり、そのタブが viewer には無い。
+    await expect(page.getByRole("tab", { name: "図のドラフト" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "mermaid を貼る" })).toHaveCount(0);
   });
 });

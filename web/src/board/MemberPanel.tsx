@@ -10,24 +10,27 @@ type Props = {
   boardId: string;
   /** 見ている人のロール。owner だけが招待と解除を触れる。 */
   role: BoardRole;
-  onClose: () => void;
 };
 
 /**
  * ボードを誰と共有しているかを見せ、owner なら招待と解除をさせる。
  *
  * **招待される側にリポジトリのアクセス権は要らない**（ADR 0017）。ブレストに
- * 呼ぶ相手と GitHub に書ける相手は同じではない。書けるかどうかはボードの
- * ヘッダに別に出る。
+ * 呼ぶ相手と GitHub に書ける相手は同じではない。書けるかどうかは注釈
+ * パネルに別に出る。
  *
  * 一覧は owner でなくても見られる。誰と共有しているかを owner だけが知って
  * いる状態にすると、招待された側は自分が何に呼ばれたのか分からない。
  */
-export function MemberPanel({ boardId, role, onClose }: Props) {
+export function MemberPanel({ boardId, role }: Props) {
   const [members, setMembers] = useState<BoardMember[] | null>(null);
   const [login, setLogin] = useState("");
   const [inviteRole, setInviteRole] = useState<BoardRole>("editor");
   const [error, setError] = useState<Failure | null>(null);
+  // 一覧の取得の失敗。操作の失敗（`error`）とは別に持ち、再試行の口はこちらにだけ
+  // 添える。同じ state にすると、取得の失敗のあとで招待の確認が失敗したとき、確認の
+  // 失敗の隣に出た再試行が一覧を取り直してしまう。
+  const [listError, setListError] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   // 招待する前に見せている相手（ADR 0053）。確かめるまでは招待を送らない。
   const [invitee, setInvitee] = useState<Invitee | null>(null);
@@ -35,10 +38,22 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
   const reload = useCallback(async () => {
     try {
       setMembers(await membersApi.list(boardId));
+      setListError(null);
     } catch (e) {
-      setError(describeFailure("メンバーを取得できませんでした", e));
+      setListError(describeFailure("メンバーを取得できませんでした", e));
     }
   }, [boardId]);
+
+  /**
+   * 一覧の取り直し。**取得の effect は `boardId` でしか走らない。** パネルは開いた
+   * タブを隠したまま残す（`SidePanel`）ので、同じボードのままタブを切り替えても
+   * 再取得されず、失敗したままボードを開き直すまで復旧できなかった。
+   * 始めに失敗を下げる。残すと、直ったあとも赤いまま並ぶ。
+   */
+  const retry = useCallback(() => {
+    setListError(null);
+    void reload();
+  }, [reload]);
 
   useEffect(() => {
     // 一覧は開いた時点で要る。読みにいくのは await の後で state を置く非同期
@@ -132,13 +147,20 @@ export function MemberPanel({ boardId, role, onClose }: Props) {
 
   return (
     <section className="member-panel" aria-label="メンバー">
-      <header className="member-panel-header">
-        <h2>メンバー</h2>
-        <button type="button" onClick={onClose}>
-          閉じる
-        </button>
-      </header>
+      {/*
+        見出しは見た目だけ隠す。右のパネルのタブに同じ名前が出ている
+        （`SidePanel`）。**閉じる口は置かない。** 開閉はタブが持つ。
+      */}
+      <h2 className="visually-hidden">メンバー</h2>
 
+      {listError && (
+        <>
+          <ErrorNotice failure={listError} />
+          <button type="button" onClick={retry}>
+            再試行
+          </button>
+        </>
+      )}
       {error && <ErrorNotice failure={error} />}
 
       {owner && (
