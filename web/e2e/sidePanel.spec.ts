@@ -77,4 +77,74 @@ test.describe("右のパネル", () => {
     await page.keyboard.press("ArrowLeft");
     await expect(page.getByRole("tab", { name: "メンバー", exact: true })).toBeFocused();
   });
+
+  // 畳める（#202）。**畳んでも中身は外さない。** 外すと、図への指示の書きかけが
+  // 畳んだだけで消える（タブを切り替えたときと同じ理由）。
+  test("畳むと帯が残り、開き直すと書きかけが残っている", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const chat = await openPanelTab(page, "図のドラフト");
+    await chat.getByLabel("図への指示").fill("返金の分岐も足して");
+
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+    await expect(page.getByRole("tablist", { name: "パネル" })).toBeHidden();
+    const rail = page.getByRole("navigation", { name: "パネル" });
+    await expect(rail).toBeVisible();
+    // 畳んだら焦点は帯の「いまのタブ」へ。押したボタンが消えるので、移さないと
+    // body に落ちる。
+    await expect(rail.getByRole("button", { name: "図のドラフト" })).toBeFocused();
+
+    await rail.getByRole("button", { name: "図のドラフト" }).click();
+    await expect(rail).toBeHidden();
+    await expect(
+      page.getByRole("tab", { name: "図のドラフト", exact: true }),
+    ).toBeFocused();
+    await expect(chat.getByLabel("図への指示")).toHaveValue("返金の分岐も足して");
+  });
+
+  // 畳んでいるあいだも状態を隠さない（ADR 0064）。添えるのは手を打つ必要が
+  // あるものだけで、作成済みは出さない。**名前まで見る。** 縦書きの見た目の
+  // 区切りでは、読み上げに件数の切れ目が伝わらない。
+  test("畳んだ帯の注釈に、未作成と変更ありの件数が出る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+
+    const rail = page.getByRole("navigation", { name: "パネル" });
+    await expect(
+      rail.getByRole("button", { name: "注釈、未作成 1 件、変更あり 1 件", exact: true }),
+    ).toBeVisible();
+    await expect(rail.getByText("作成済み")).toHaveCount(0);
+    // 件数の無いタブは名前だけ。
+    await expect(
+      rail.getByRole("button", { name: "メンバー", exact: true }),
+    ).toBeVisible();
+  });
+
+  // 開閉は端末ごとに覚え、ボードをまたいで同じにする。
+  test("読み込み直しても畳んだまま", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+
+    await page.reload();
+    await expect(page.getByRole("navigation", { name: "パネル" })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "パネル" })).toBeHidden();
+  });
+
+  // サイトデータを遮断した環境では、`localStorage` に触れただけで投げる。開閉は
+  // 好みでしかないので、そのせいで画面を落とさず、開いた状態で始める。
+  test("保存先が使えなくても、開いた状態で始まり畳める", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", {
+        get() {
+          throw new Error("denied");
+        },
+      });
+    });
+    await openBoardWithMock(page, baseMock());
+
+    await expect(page.getByRole("tablist", { name: "パネル" })).toBeVisible();
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+    await expect(page.getByRole("navigation", { name: "パネル" })).toBeVisible();
+  });
 });

@@ -84,6 +84,7 @@ import { DiagramTab, type DiagramMode } from "./DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import type { CreationState, RunHistoryState } from "./panelShared";
+import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
 import { projectLink } from "./projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
 import { useBoardTransfer } from "./useBoardTransfer";
@@ -318,6 +319,12 @@ export function BoardPage({
   const [runGenerations] = useState(createGenerations);
   // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
   const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
+  // 右のパネルを畳んでいるか（#202）。端末ごとに覚えた値で始める。
+  const [panelCollapsed, setPanelCollapsed] = useState(() => readPanelCollapsed());
+  const changePanelCollapsed = useCallback((collapsed: boolean) => {
+    setPanelCollapsed(collapsed);
+    writePanelCollapsed(collapsed);
+  }, []);
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
@@ -1795,10 +1802,15 @@ export function BoardPage({
         <SidePanel
           active={panelTab}
           onSelect={setPanelTab}
+          collapsed={panelCollapsed}
+          onCollapsedChange={changePanelCollapsed}
           tabs={[
             {
               id: "annotations",
               label: "注釈",
+              // 畳んでいるあいだに知りたいのは、手を打つ必要があるものだけ。
+              // 数えるのは注釈の一覧と同じく保存済みシーンが基準。
+              railBadges: railBadgesOf(annotations),
               content: (
                 <ErrorBoundary name="注釈パネル" recovery="remount">
                   <AnnotationPanel
