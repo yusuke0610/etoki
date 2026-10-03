@@ -115,6 +115,8 @@ test.describe("注釈の詳細", () => {
     );
 
     await detail.getByLabel("粒度").selectOption("epic");
+    // 保存済みの粒度は保存するまで古い。選んだ値が選択欄に残っていること（#214）。
+    await expect(detail.getByLabel("粒度")).toHaveValue("epic");
     await expect(button).toBeDisabled();
     await expect(button).toHaveAccessibleDescription(/保存してから解釈できます/);
 
