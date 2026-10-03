@@ -13,6 +13,7 @@ import {
   annotationLabels,
   frameLabel,
 } from "./annotationLabel";
+import { sortByState } from "./annotationOrder";
 import { DetachedSection } from "./DetachedSection";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { InterpretControl } from "./InterpretationSection";
@@ -226,7 +227,7 @@ export function AnnotationPanel({
           <p className="hint">保存済みの注釈はありません。</p>
         ) : (
           <ul className="annotation-list">
-            {annotations.map((a) => {
+            {sortByState(annotations).map((a) => {
               const onCanvas =
                 frames.canvasIds === null || frames.canvasIds.includes(a.id);
               const selected = frames.selectedIds.includes(a.id);
