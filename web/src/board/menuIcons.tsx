@@ -122,6 +122,15 @@ export const importIcon = menuIcon(
   </>,
 );
 
+/** 表を置く（`table`、#208）。 */
+export const tableIcon = menuIcon(
+  <>
+    <path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14" />
+    <path d="M3 10h18" />
+    <path d="M10 3v18" />
+  </>,
+);
+
 /**
  * ボードを削除（`trash-x`）。**キャンバスのリセットとは違う絵にする。** あちらは
  * ごみ箱（`trash`）で、同じ絵だと、キャンバスの中身を消す操作とボードごと消す

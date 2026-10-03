@@ -93,6 +93,7 @@ import {
   importIcon,
   refreshTargetIcon,
   renameIcon,
+  tableIcon,
 } from "./menuIcons";
 import { DiagramTab, type DiagramMode } from "./DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
@@ -1666,6 +1667,7 @@ export function BoardPage({
             )}
             <MainMenu.Item
               className="etoki-menu-item"
+              icon={tableIcon}
               onSelect={addTable}
               disabled={!api}
             >

@@ -36,6 +36,7 @@ test.describe("メニューのアイコン", () => {
       "作成先を変更",
       "書き出し",
       "取り込み",
+      "表",
       "ボードを削除",
     ]) {
       const icon = item(menu, name).locator(".dropdown-menu-item__icon svg");
