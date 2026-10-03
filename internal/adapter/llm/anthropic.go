@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yusuke0610/etoki/internal/loopback"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -129,6 +130,19 @@ func New(cfg Config) (*Client, error) {
 	// "no Host in request URL" として初めて失敗する。検証を置いた意味がなくなる。
 	if u.Hostname() == "" {
 		return nil, fmt.Errorf("etoki: invalid llm base url %q: host is missing", u.Redacted())
+	}
+	// **鍵を持つときだけ、http はループバックに限る**（#64）。鍵は x-api-key
+	// ヘッダで毎回送るので、http で外へ向けると平文で流れる。綴りの誤り 1 つで
+	// そうならないようにする（github 側と同じ理由）。
+	//
+	// github 側と違って一律には禁じない。LAN 内のローカル LLM に http で向ける
+	// 使い方があり（ADR 0008）、鍵が無ければ流れるものも無い。RoundTripper で
+	// 認証を付け替える構成（ADR 0008）は、何を載せるかをここから知れないので
+	// 見ない。
+	if cfg.APIKey != "" && u.Scheme == "http" && !loopback.Hostname(u.Hostname()) {
+		return nil, fmt.Errorf(
+			"etoki: invalid llm base url %q: http is allowed only for loopback when an api key is set",
+			u.Redacted())
 	}
 	// クエリと fragment は弾く。送り先は base に "/v1/messages" を足した文字列
 	// なので、"?x=1" が付いていると足したぶんが path ではなくクエリの一部に
