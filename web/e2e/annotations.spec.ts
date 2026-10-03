@@ -117,7 +117,7 @@ test.describe("注釈の状態", () => {
     const card = annotationCard(page, "注釈 2");
     await expect(card).not.toHaveAttribute("aria-current", "true");
 
-    await card.getByRole("button", { name: "注釈 2" }).click();
+    await card.getByRole("button", { name: "注釈 2", exact: true }).click();
 
     await expect(card).toHaveAttribute("aria-current", "true");
     await expect(annotationCard(page, "ログイン")).not.toHaveAttribute(
@@ -167,7 +167,7 @@ test.describe("注釈の状態", () => {
 
     // カードを押すとキャンバスでそのフレームが選ばれ、パネルに外す口が出る。
     await annotationCard(page, "ログイン")
-      .getByRole("button", { name: "ログイン" })
+      .getByRole("button", { name: "ログイン", exact: true })
       .click();
     await page.getByRole("button", { name: /の注釈を外す/ }).click();
 

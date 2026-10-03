@@ -4,6 +4,7 @@ import { expectBlockedReason, expectNoAxeViolations } from "./helpers/a11y";
 import { holdCreate, holdSave, installApi } from "./helpers/api";
 import {
   annotationCard,
+  annotationDetail,
   chooseFromMenu,
   drawRectangle,
   newBoardDialog,
@@ -90,14 +91,15 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     // epic を外すと、それを親に持つ issue も一緒に外れる。3 件とも外れる。
-    await card.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("e1 を作成する").uncheck();
 
     await expectBlockedReason(
-      card.getByRole("button", { name: "GitHub に作成する" }),
+      detail.getByRole("button", { name: "GitHub に作成する" }),
       "作るものが 1 件も選ばれていません。",
     );
   });
@@ -154,8 +156,9 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     const menu = await openBoardMenu(page);
     await expectBlockedReason(
@@ -178,6 +181,7 @@ test.describe("押せない理由が本文として読める", () => {
     await expectBlockedReason(
       annotationCard(page, "消したフレーム").getByRole("button", {
         name: "消したフレーム",
+        exact: true,
       }),
       "このフレームはキャンバスにありません。",
     );
@@ -202,13 +206,14 @@ test.describe("押せない理由が本文として読める", () => {
     // 解釈してからでないと作成ボタンが出ない。保存は解釈結果を捨てるが、
     // 捨てるのは応答が返ってからなので、止めているあいだは並んでいる。
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     await page.getByRole("button", { name: "保存", exact: true }).click();
 
     await expectBlockedReason(
-      card.getByRole("button", { name: "GitHub に作成する" }),
+      detail.getByRole("button", { name: "GitHub に作成する" }),
       "保存が終わるまで作成できません",
     );
 
@@ -311,8 +316,9 @@ test.describe("押せない理由が本文として読める", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
-    const createButton = card.getByRole("button", { name: "GitHub に作成する" });
+    const createButton = detail.getByRole("button", { name: "GitHub に作成する" });
     await createButton.waitFor();
 
     // loadFromBlob が使う FileReader を止め、ファイルを読んでいる状態を作る。
@@ -370,8 +376,9 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     await expectBlockedReason(
       page.getByRole("button", { name: "保存", exact: true }),
@@ -408,12 +415,13 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await card.locator(".unconfirmed-items").waitFor();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.locator(".unconfirmed-items").waitFor();
 
     await expectBlockedReason(
-      card.getByLabel("i1 を作成する"),
+      detail.getByLabel("i1 を作成する"),
       /この下書きからは送り直せません/,
     );
   });
@@ -555,16 +563,19 @@ for (const colorScheme of ["light", "dark"] as const) {
       await openBoard(page, BOARD_NAME);
 
       const card = annotationCard(page, "ログイン");
+      const detail = annotationDetail(page, "ログイン");
       await card.getByRole("button", { name: "解釈する" }).click();
-      await card.getByRole("button", { name: "GitHub に作成する" }).click();
-      await card.getByText("3 件を作成しました。").waitFor();
+      await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+      await detail.getByText("3 件を作成しました。").waitFor();
       // 検査したいのは作成済みの印が付いた下書き。完了の文言は作成結果だけで
       // 出るので、下書きへの反映まで待たないと通常の下書きを検査して通る。
-      await expect(card.locator(".badge-created", { hasText: "作成した" })).toHaveCount(
+      await expect(detail.locator(".badge-created", { hasText: "作成した" })).toHaveCount(
         3,
       );
       await expect(
-        card.getByText("作成しました。選び直すと、作成した draft issue を書き換えます。"),
+        detail.getByText(
+          "作成しました。選び直すと、作成した draft issue を書き換えます。",
+        ),
       ).toHaveCount(3);
 
       await expectNoAxeViolations(page);
@@ -618,6 +629,17 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    // 右のパネルを畳んだ帯（#202）。開くまで DOM に出ない。件数を添えた縦書きの
+    // ボタンが並ぶ唯一の場所。
+    test("右のパネルを畳んだ状態", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+
+      await page.getByRole("button", { name: "パネルを閉じる" }).click();
+      await page.getByRole("navigation", { name: "パネル" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     // メンバーのパネルも独立した領域で、開くまで DOM に出ない。行ごとのボタンが
     // 並ぶ唯一の画面でもある（`.claude/rules/async-ui.md` の「行固有の
     // accessible name」）。
@@ -662,10 +684,11 @@ for (const colorScheme of ["light", "dark"] as const) {
       await openBoardWithMock(page, baseMock());
 
       const card = annotationCard(page, "ログイン");
+      const detail = annotationDetail(page, "ログイン");
       await card.getByRole("button", { name: "解釈する" }).click();
-      await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+      await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
       // 畳んだままでは中を見られない。作成前に読ませる本文まで含めて掛ける。
-      for (const summary of await card.getByText("本文", { exact: true }).all()) {
+      for (const summary of await detail.getByText("本文", { exact: true }).all()) {
         await summary.click();
       }
 

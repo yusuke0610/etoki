@@ -35,7 +35,7 @@ export function ErrorNotice({ failure, onClose, live = true }: Props) {
         )}
       </div>
       {onClose && (
-        <button type="button" onClick={onClose}>
+        <button type="button" className="quiet" onClick={onClose}>
           閉じる
         </button>
       )}

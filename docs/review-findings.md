@@ -54,6 +54,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#183](https://github.com/yusuke0610/etoki/pull/183) |        8 |      7 |        1 |      0 | docs-consistency（エージェント定義の `tools` と手順を対応させる）。取り下げは ADR 0009 / 0052 の読み違い                                                                                                                                                                                                                       |
 | [#188](https://github.com/yusuke0610/etoki/pull/188) |        5 |      5 |        0 |      0 | async-ui（外れるパネルの入力は親で持ち、送った値のままのときだけ消す）/ validation-boundaries（外から来る文字列の正規表現は線形か確かめる）。ADR と実装のずれは docs-consistency に既にある                                                                                                                                    |
 | [#208](https://github.com/yusuke0610/etoki/pull/208) |        4 |      4 |        0 |      0 | 還さず。`crypto.randomUUID` が secure context 専用の件は lint（`no-restricted-properties`）で塞ぐ候補だが、**まだ設定していない**。`transfer.ts` に同じ形が残るので、規則の追加と一緒に別の PR で直す。ADR の番号の衝突は CONTRIBUTING に既にある。選択ツールへの切り替えと、この行の書き違い（lint を設定済みと読めた）は単発 |
+| [#220](https://github.com/yusuke0610/etoki/pull/220) |        2 |      1 |        1 |      0 | async-ui（閉じた面から焦点を戻す先は、隠しうる操作をすべて数える）。取り下げは電話幅の置き方（#199 の担当）                                                                                                                                                                                                                    |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。

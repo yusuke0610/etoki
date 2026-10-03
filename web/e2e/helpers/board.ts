@@ -33,9 +33,16 @@ export async function chooseFromMenu(page: Page, name: string): Promise<void> {
  * 右のパネルのタブを開き、その中身の枠を返す（`SidePanel`、ADR 0065）。
  *
  * **初めて開くまで中身は DOM に無い。** 1 度開いたタブは、ほかを開いても隠す
- * だけで残る。「出さない」を見るときは、開いてから中を見る。
+ * だけで残る。「出さない」を見るときは、開いてから中を見る。パネルを畳んで
+ * いれば、右端の帯から開き直す。
  */
 export async function openPanelTab(page: Page, name: string): Promise<Locator> {
+  // 畳んでいれば帯から開く（#202）。帯のボタンの名前は件数まで含むので、
+  // タブの名前で始まるものを引く。
+  const rail = page.locator(".side-panel-rail");
+  if (await rail.isVisible()) {
+    await rail.getByRole("button", { name: new RegExp(`^${name}(、|$)`) }).click();
+  }
   await page.getByRole("tab", { name, exact: true }).click();
   const panel = page.getByRole("tabpanel", { name, exact: true });
   await expect(panel).toBeVisible();
@@ -173,6 +180,19 @@ export async function chooseTarget(
 /** 注釈 1 つぶんのカード。名前で絞り込む。 */
 export function annotationCard(page: Page, name: string): Locator {
   return page.locator("li.annotation").filter({ hasText: name });
+}
+
+/**
+ * 注釈 1 つぶんの詳細（解釈の結果と下書き）。**開いているものだけ**を返す。
+ *
+ * 閉じた詳細も、手直しを残すために描いたまま隠してある（`AnnotationDetail`）。
+ * 隠れているものまで拾うと、閉じたあとの「見えない」が別の注釈の詳細で
+ * 満たされてしまう。
+ */
+export function annotationDetail(page: Page, name: string): Locator {
+  return page
+    .locator("section.annotation-detail:not([hidden])")
+    .filter({ has: page.getByRole("heading", { level: 2, name }) });
 }
 
 /**

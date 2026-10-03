@@ -610,14 +610,14 @@ export function App() {
   // 問い合わせ中は何も出さない。ログイン画面を一瞬見せてから消すと、
   // 認証を設定していない構成でもちらつく。
   if (session === null) {
-    return <div className="app" />;
+    return <div className="app etoki-ui" />;
   }
 
   if (session.authRequired && !session.authenticated) {
     return (
       // 地を沈めるためだけの印。ログインはカード 1 枚しか置かないので、
       // 他の画面と同じ地にすると、置いたものが浮いて見えない。
-      <div className="app app-signed-out">
+      <div className="app app-signed-out etoki-ui">
         <main className="main">
           <LoginPage />
         </main>
@@ -626,7 +626,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app etoki-ui">
       <main className="main">
         {/*
           失敗の通知はフローの外に出す（position: fixed）。帯としてここに置くと、
