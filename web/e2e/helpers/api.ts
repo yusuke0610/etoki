@@ -6,6 +6,7 @@ import type {
   BoardAnnotations,
   BoardDeletion,
   BoardDetail,
+  BoardListEntry,
   BoardMember,
   BoardRole,
   BoardSummary,
@@ -129,6 +130,8 @@ export type ApiMock = {
   access?: Record<string, Reply<BoardAccess>>;
   /** ボード ID をキーにしたメンバー一覧。 */
   members?: Record<string, BoardMember[]>;
+  /** メンバー一覧の取得を失敗させたいときに指定する。 */
+  membersListError?: Reply<never>;
   /** 招待を失敗させたいときに指定する。 */
   inviteError?: Reply<never>;
   /**
@@ -262,7 +265,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
         await json(route, mock.boardsError.status, mock.boardsError.body);
         return;
       }
-      await json(route, 200, mock.boards);
+      await json(
+        route,
+        200,
+        mock.boards.map((b) => listEntry(b, mock.annotations[b.id] ?? [])),
+      );
     },
   );
 
@@ -605,6 +612,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       // メソッドで叩いていても緑になる。
       if (route.request().method() !== "GET") {
         await route.fallback();
+        return;
+      }
+
+      if (mock.membersListError) {
+        await json(route, mock.membersListError.status, mock.membersListError.body);
         return;
       }
 
@@ -957,6 +969,29 @@ export function summarize(b: BoardDetail): BoardSummary {
     projectNumber: b.projectNumber,
     projectTitle: b.projectTitle,
     projectUrl: b.projectUrl,
+  };
+}
+
+/**
+ * 一覧の 1 件。注釈の 3 状態の件数を `mock.annotations` から数えて足す（#200）。
+ *
+ * **控えずに、返すたびに数える。** サーバーも一覧を返すたびに保存済みシーンから
+ * 数える。控えにすると、テストの途中で注釈の状態を書き換えたときに、一覧だけが
+ * 古い件数を返す。
+ */
+export function listEntry(
+  b: BoardSummary,
+  annotations: AnnotationStatus[],
+): BoardListEntry {
+  const count = (state: AnnotationStatus["state"]) =>
+    annotations.filter((a) => a.state === state).length;
+  return {
+    ...b,
+    annotationCounts: {
+      uncreated: count("uncreated"),
+      created: count("created"),
+      changed: count("changed"),
+    },
   };
 }
 

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { holdBoardDetail, installApi, summarize, type ApiMock } from "./helpers/api";
-import { backToList, drawRectangle, openBoard } from "./helpers/board";
+import { backToList, chooseFromMenu, drawRectangle, openBoard } from "./helpers/board";
 import {
   authRequiredMock,
   baseMock,
@@ -195,13 +195,59 @@ test.describe("ボードの URL", () => {
     await expect.poll(() => search(page)).toBe(`?board=${OTHER_ID}`);
   });
 
+  // 読み込み中に戻ると、戻った先（一覧）のまま（#205）。画面に出ている場所と
+  // 比べて「同じだから何もしない」で抜けると、走っている取得が着いてボードを
+  // 開き、URL まで書き換える。**アドレスバーは一覧の履歴にいるのに、ボードが
+  // 開く。**
+  test("読み込み中に戻ると、あとから着いたボードは開かない", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+
+    // 進む先にボードを残す。**一覧へ戻るボタンは使わない。** あちらは履歴を
+    // 積むので、進む先が消える。
+    await openBoard(page, BOARD_NAME);
+    await page.goBack();
+    await expect(
+      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
+    ).toBeVisible();
+
+    let release = (): void => {};
+    await holdBoardDetail(
+      page,
+      BOARD_ID,
+      new Promise<void>((r) => (release = () => r())),
+    );
+    const detailOf = (r: { method(): string; url(): string }) =>
+      r.method() === "GET" && new URL(r.url()).pathname === `/api/boards/${BOARD_ID}`;
+
+    // 進む。取得が止まるので、画面は一覧のまま。
+    const requested = page.waitForRequest(detailOf);
+    await page.goForward();
+    await requested;
+    await page.goBack();
+
+    const arrived = page.waitForResponse((r) => detailOf(r.request()));
+    release();
+    await arrived;
+    // 応答を受けた処理が画面を変えるまでの間を置いてから、変わっていないことを見る。
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+
+    await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
+    ).toBeVisible();
+    expect(search(page)).toBe("");
+  });
+
   test.describe("作成先の選び直し", () => {
     test("選択画面も URL に出て、リロードで戻る", async ({ page }) => {
       await installApi(page, baseMock());
       await page.goto("/");
       await openBoard(page, BOARD_NAME);
 
-      await page.getByRole("button", { name: "作成先を変更" }).click();
+      await chooseFromMenu(page, "作成先を変更");
       await expect(page.locator(".picker")).toBeVisible();
       expect(search(page)).toBe(`?board=${BOARD_ID}&picking=1`);
 

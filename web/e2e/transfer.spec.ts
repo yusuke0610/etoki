@@ -5,6 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { holdCreate, installApi } from "./helpers/api";
 import {
   annotationCard,
+  chooseFromMenu,
   drawRectangle,
   openBoard,
   openBoardWithMock,
@@ -142,7 +143,7 @@ test.describe("書き出し", () => {
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "書き出し" }).click(),
+      chooseFromMenu(page, "書き出し"),
     ]);
 
     // どのボードのものか読める名前で出る。
@@ -180,7 +181,7 @@ test.describe("書き出し", () => {
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "書き出し" }).click(),
+      chooseFromMenu(page, "書き出し"),
     ]);
 
     const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
@@ -274,7 +275,7 @@ test.describe("取り込み", () => {
     // 直列化（`sceneJSON`）を通る。
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "書き出し" }).click(),
+      chooseFromMenu(page, "書き出し"),
     ]);
     const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
       elements: { id: string; isDeleted?: boolean }[];
@@ -309,7 +310,7 @@ test.describe("取り込み", () => {
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "書き出し" }).click(),
+      chooseFromMenu(page, "書き出し"),
     ]);
 
     const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
@@ -353,7 +354,7 @@ test.describe("取り込み", () => {
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "書き出し" }).click(),
+      chooseFromMenu(page, "書き出し"),
     ]);
     const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
       elements: { type: string; fileId?: string }[];

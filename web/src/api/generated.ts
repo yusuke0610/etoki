@@ -874,11 +874,12 @@ export interface components {
             role: components["schemas"]["BoardRole"];
         };
         /**
-         * @description 一覧で返すボード。シーンは大きいので含めない。
+         * @description ボードの共通部分。一覧（`BoardListEntry`）と詳細（`BoardDetail`）の
+         *     両方がこれを取り込む。シーンは大きいので含めない。
          *
          *     作成先は含める。一覧をリポジトリと Project でまとめて見せるため
-         *     （ADR 0019）。含めないのは `targetLocked` だけで、これは算出に run の
-         *     照会が要り、ボード数だけ問い合わせが増える。
+         *     （ADR 0019）。`targetLocked` は含めない。一覧で使う場面が無く、作成先を
+         *     変えられるかどうかは開いたボードで決める。
          */
         BoardSummary: {
             id: string;
@@ -913,6 +914,36 @@ export interface components {
              *     知らない
              */
             projectUrl: string;
+        };
+        /**
+         * @description 注釈の 3 状態ごとの件数。保存済みシーンが基準で、注釈の状態
+         *     （`AnnotationStatus.state`）と同じ判定で数える。
+         *
+         *     キャンバスから消えた注釈（`DetachedAnnotation`）は数えない。3 状態を
+         *     持たないため（ADR 0046）。
+         */
+        AnnotationCounts: {
+            uncreated: number;
+            created: number;
+            changed: number;
+        };
+        /**
+         * @description 一覧で返すボード。ボードの共通部分に、注釈の 3 状態の件数を足したもの。
+         *     開く前にどのボードに手を打つものがあるかを見せるため（#200）。
+         *
+         *     **件数は一覧にだけ載せる。** `BoardSummary` に置くと、取り込んでいる
+         *     `BoardDetail` を返すすべての応答で数えることになる。開いたボードの
+         *     状態は注釈の一覧（`AnnotationStatus`）が持っている。
+         */
+        BoardListEntry: components["schemas"]["BoardSummary"] & {
+            /**
+             * @description 注釈の 3 状態ごとの件数。**シーンを読めなかったボードは null**。
+             *     1 枚のシーンが壊れているだけで一覧全体を失敗させない。
+             *
+             *     **required にしてある。** 省略できる形にすると、書き忘れた
+             *     返し方が「読めなかった」と同じ見え方のまま通る。
+             */
+            annotationCounts: components["schemas"]["AnnotationCounts"] | null;
         };
         /** @description シーンと作成先の固定状態を加えたボード */
         BoardDetail: components["schemas"]["BoardSummary"] & {
@@ -1826,7 +1857,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BoardSummary"][];
+                    "application/json": components["schemas"]["BoardListEntry"][];
                 };
             };
             401: components["responses"]["Unauthorized"];

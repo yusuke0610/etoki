@@ -2,7 +2,7 @@ import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 
 import type { SceneElement } from "./annotation";
 
-/** 表の列数と行数。**固定にして、ダイアログを挟まない**（ADR 0068）。 */
+/** 表の列数と行数。**固定にして、ダイアログを挟まない**（ADR 0069）。 */
 export const TABLE_COLUMNS = 3;
 export const TABLE_ROWS = 3;
 
@@ -57,7 +57,7 @@ export function tableCenter(view: ViewportBox): { x: number; y: number } {
  * 帰属判定を etoki が持つことになる（ルートの `CLAUDE.md`）。group は
  * 所属を要素自身が持つだけで、その判定を etoki は持たない。
  *
- * **`customData` は付けない。** 手で描いた矩形と区別しない（ADR 0068）。
+ * **`customData` は付けない。** 手で描いた矩形と区別しない（ADR 0069）。
  * **文字も入れない。** 空のテキストを先に置くと、書かずに消したぶんまで
  * `content_hash` の入力に並ぶ。
  */

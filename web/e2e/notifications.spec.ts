@@ -4,6 +4,7 @@ import { holdSave, installApi, summarize } from "./helpers/api";
 import {
   annotationCard,
   backToList,
+  chooseFromMenu,
   drawRectangle,
   openBoard,
   openBoardWithMock,
@@ -162,7 +163,7 @@ test.describe("通知", () => {
     await drawRectangle(page);
     await page.getByRole("button", { name: "保存" }).click();
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
-    await page.getByRole("button", { name: "作成先の名前を取り直す" }).click();
+    await chooseFromMenu(page, "作成先の名前を取り直す");
 
     const alerts = page.locator(".notifications").getByRole("alert");
     await expect(alerts).toHaveCount(2);

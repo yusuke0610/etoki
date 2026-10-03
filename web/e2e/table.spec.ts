@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { installApi, type ApiMock } from "./helpers/api";
-import { drawRectangle, openBoard, waitForBoard } from "./helpers/board";
+import { chooseFromMenu, drawRectangle, openBoard, waitForBoard } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
 
 type SavedElement = {
@@ -23,11 +23,11 @@ async function saveAndRead(page: Page, mock: ApiMock): Promise<SavedElement[]> {
 }
 
 async function placeTable(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "表", exact: true }).click();
+  await chooseFromMenu(page, "表");
   await expect(page.getByText("未保存", { exact: true })).toBeVisible();
 }
 
-// 表は矩形 9 枚を group にまとめて置く（ADR 0068）。行・列として読ませる
+// 表は矩形 9 枚を group にまとめて置く（ADR 0069）。行・列として読ませる
 // 実装は無いので、確かめるのは「置ける・まとまって動く・戻せる・残る」まで。
 test.describe("表", () => {
   test("押すと矩形が 9 枚、1 つの group で置かれる", async ({ page }) => {

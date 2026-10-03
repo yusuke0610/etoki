@@ -26,7 +26,6 @@ type Props = {
   onSend: (prompt: string) => Promise<boolean>;
   /** いまのドラフトをキャンバスに置く。 */
   onPlace: () => void;
-  onClose: () => void;
   /**
    * 生成が使えない理由。使えるなら null（ADR 0030）。
    *
@@ -51,7 +50,6 @@ export function DiagramChatPanel({
   onChangeKind,
   onSend,
   onPlace,
-  onClose,
   unavailable,
 }: Props) {
   const [prompt, setPrompt] = useState("");
@@ -70,12 +68,12 @@ export function DiagramChatPanel({
 
   return (
     <section className="panel diagram-chat" aria-label="図のドラフト">
-      <div className="diagram-chat-header">
-        <h2>図のドラフト</h2>
-        <button type="button" onClick={onClose}>
-          閉じる
-        </button>
-      </div>
+      {/*
+        見出しは見た目だけ隠す。右のパネルのタブに同じ名前が出ている
+        （`SidePanel`）。読み上げの見出しの移動には残す。**閉じる口は置かない。**
+        開閉はタブが持つ。
+      */}
+      <h2 className="visually-hidden">図のドラフト</h2>
 
       {/*
         押す前に理由を出す。**`title` に隠さない。** `disabled` なボタンは

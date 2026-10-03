@@ -4,6 +4,7 @@ import { holdCreate, holdSave, installApi, summarize, type ApiMock } from "./hel
 import {
   annotationCard,
   backToList,
+  chooseFromMenu,
   drawRectangle,
   openBoard,
   openBoardWithMock,
@@ -105,7 +106,7 @@ test.describe("シーンの保存", () => {
       messages.push(dialog.message());
       void dialog.dismiss();
     });
-    await page.getByRole("button", { name: "ボード一覧", exact: true }).click();
+    await chooseFromMenu(page, "ボード一覧へ戻る");
 
     await expect.poll(() => messages.length).toBe(1);
     expect(messages[0]).toContain("未保存の変更があります");
