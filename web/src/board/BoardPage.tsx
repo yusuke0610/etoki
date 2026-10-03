@@ -85,6 +85,16 @@ import {
   type InterpretationState,
 } from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
+import {
+  backToListIcon,
+  changeTargetIcon,
+  deleteBoardIcon,
+  exportIcon,
+  importIcon,
+  refreshTargetIcon,
+  renameIcon,
+  tableIcon,
+} from "./menuIcons";
 import { DiagramTab, type DiagramMode } from "./DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
 import { projectLabel } from "./grouping";
@@ -1542,13 +1552,19 @@ export function BoardPage({
    * `etoki-menu-item` を付ける。** axe はライブラリの DOM を外して掛けており、
    * この印で etoki の項目だけを検査に戻している（`web/e2e/helpers/a11y.ts`）。
    * テーマの切り替えはここに残す
-   * （ADR 0055 / 0065 の「口は 1 つ」）。Excalidraw 自身へのリンク
+   * （ADR 0055 / 0065 の「口は 1 つ」）。**etoki の項目にもアイコンを付ける**
+   * （`menuIcons.tsx`、#204）。既定の項目にだけあると、字下げが揃わず 2 種類の
+   * 部品が混ざって見える。Excalidraw 自身へのリンク
    * （`Socials`）は etoki の利用者に向けたものではないので置かない。
    */
   const boardMenu = useMemo(
     () => (
       <MainMenu>
-        <MainMenu.Item className="etoki-menu-item" onSelect={onClose}>
+        <MainMenu.Item
+          className="etoki-menu-item"
+          icon={backToListIcon}
+          onSelect={onClose}
+        >
           ボード一覧へ戻る
         </MainMenu.Item>
         <MainMenu.Separator />
@@ -1559,6 +1575,7 @@ export function BoardPage({
         {canEdit && (
           <MainMenu.Item
             className="etoki-menu-item"
+            icon={renameIcon}
             onSelect={() => setNameDraft(board.name)}
           >
             名前を変更
@@ -1587,6 +1604,7 @@ export function BoardPage({
             ) : (
               <MainMenu.Item
                 className="etoki-menu-item"
+                icon={refreshTargetIcon}
                 onSelect={() => void refreshTargetDisplay()}
                 disabled={refreshingTarget}
               >
@@ -1598,6 +1616,7 @@ export function BoardPage({
           <>
             <MainMenu.Item
               className="etoki-menu-item"
+              icon={changeTargetIcon}
               onSelect={onChangeTarget}
               // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
               // 黙って捨てずに、保存してからにしてもらう。
@@ -1621,13 +1640,19 @@ export function BoardPage({
         書き出しは viewer にも出す。見えているものを出すだけなので、
         共有した相手に新しく見せるものが無い（ADR 0017）。
       */}
-        <MainMenu.Item className="etoki-menu-item" onSelect={exportScene} disabled={!api}>
+        <MainMenu.Item
+          className="etoki-menu-item"
+          icon={exportIcon}
+          onSelect={exportScene}
+          disabled={!api}
+        >
           書き出し
         </MainMenu.Item>
         {canEdit && (
           <>
             <MainMenu.Item
               className="etoki-menu-item"
+              icon={importIcon}
               onSelect={() => fileInput.current?.click()}
               // **作成中は取り込ませない。** キャンバスを置き換えるので、
               // 保存を止めているのと同じ理由で止める（作られた内容と記録
@@ -1642,6 +1667,7 @@ export function BoardPage({
             )}
             <MainMenu.Item
               className="etoki-menu-item"
+              icon={tableIcon}
               onSelect={addTable}
               disabled={!api}
             >
@@ -1671,6 +1697,7 @@ export function BoardPage({
         {isOwner(board.role) ? (
           <MainMenu.Item
             className="etoki-menu-item danger"
+            icon={deleteBoardIcon}
             onSelect={() => void askDelete()}
             disabled={deletion !== null}
           >

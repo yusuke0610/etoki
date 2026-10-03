@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   AnnotationStatus,
@@ -240,8 +240,33 @@ export function AnnotationDetail({
 }
 
 /**
+ * 保存済みの値を出す選択欄に、選んだ値を保存が追いつくまで持たせる。
+ *
+ * 注釈の状態は保存済みシーンから来る。粒度や種別を変えた直後はキャンバスだけが
+ * 新しく、次の保存まで `saved` は古いので、そのあいだはここで選択値を持つ。
+ * 持たないと、選んだ直後に選択欄が古い値へ戻る（#214）。
+ * **最後に選んだ値が `saved` に追いつくまで保持する**（`.claude/rules/async-ui.md`）。
+ * 保存中に選び直すと前の選択の保存が後から追いつくことがあり、そこで「保存済みの
+ * 値が変わったから追いついた」と判定すると、追いついたのが古い選択のほうでも
+ * 選択欄がキャンバスと違う値に戻る。
+ */
+function usePendingSelection<T>(saved: T): [T, (value: T) => void] {
+  const [pending, setPending] = useState<{ value: T } | null>(null);
+  // 追いついたら手放す。持ったままだと、あとで「元に戻す」や取り込みで保存済みの
+  // 値が変わっても、選択欄が古い選択を表示し続け、同じ値を選び直しても change が
+  // 出ないので利用者が直せない。
+  // 描画中の setState は、React が派生状態の更新として認める書き方（effect だと
+  // 1 描画ぶん古い値を見せる）。
+  if (pending && pending.value === saved) setPending(null);
+  const shown = pending && pending.value !== saved ? pending.value : saved;
+  // 返す関数は同一性を保つ（`web/CLAUDE.md`「関心をフックに切り出すとき」）。
+  const hold = useCallback((value: T) => setPending({ value }), []);
+  return [shown, hold];
+}
+
+/**
  * 注釈 1 件ぶんの面。開閉の状態（GitHub にあるもの・実行の履歴）と、保存を
- * 待つあいだの種別はここで持つ。面は描いたまま隠すので、閉じても残る。
+ * 待つあいだの粒度と種別はここで持つ。面は描いたまま隠すので、閉じても残る。
  */
 function AnnotationFace({
   sectionRef,
@@ -287,22 +312,8 @@ function AnnotationFace({
   const [itemsOpen, setItemsOpen] = useState(false);
   const [runsOpen, setRunsOpen] = useState(false);
 
-  // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
-  // 新しく、次の保存まで a.kind は古いので、そのあいだはここで選択値を持つ。
-  // **最後に選んだ値が a.kind に追いつくまで保持する**（`.claude/rules/async-ui.md`）。
-  // 保存中に選び直すと前の選択の保存が後から追いつくことがあり、そこで「保存済みの
-  // 値が変わったから追いついた」と判定すると、追いついたのが古い選択のほうでも
-  // 選択欄がキャンバスと違う値に戻る。
-  const [pendingKind, setPendingKind] = useState<{
-    value: DiagramKind | undefined;
-  } | null>(null);
-  const kind = pendingKind && pendingKind.value !== a.kind ? pendingKind.value : a.kind;
-  // 追いついたら手放す。持ったままだと、あとで「元に戻す」や取り込みで保存済みの
-  // 値が変わっても、選択欄が古い選択を表示し続け、同じ値を選び直しても change が
-  // 出ないので利用者が直せない。
-  // 描画中の setState は、React が派生状態の更新として認める書き方（effect だと
-  // 1 描画ぶん古い値を見せる）。
-  if (pendingKind && pendingKind.value === a.kind) setPendingKind(null);
+  const [granularity, holdGranularity] = usePendingSelection<Granularity>(a.granularity);
+  const [kind, holdKind] = usePendingSelection<DiagramKind | undefined>(a.kind);
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape") return;
@@ -381,12 +392,14 @@ function AnnotationFace({
             粒度
             {/* 押せない理由は本文の下にある読むだけの案内を指す（ADR 0039）。 */}
             <select
-              value={a.granularity}
+              value={granularity}
               disabled={!canEdit}
               aria-describedby={canEdit ? undefined : viewerId}
-              onChange={(e) =>
-                frames.onChangeGranularity(id, e.target.value as Granularity)
-              }
+              onChange={(e) => {
+                const next = e.target.value as Granularity;
+                holdGranularity(next);
+                frames.onChangeGranularity(id, next);
+              }}
             >
               {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
                 <option key={g} value={g}>
@@ -410,7 +423,7 @@ function AnnotationFace({
               aria-describedby={canEdit ? undefined : viewerId}
               onChange={(e) => {
                 const nextKind = (e.target.value || undefined) as DiagramKind | undefined;
-                setPendingKind({ value: nextKind });
+                holdKind(nextKind);
                 frames.onChangeKind(id, nextKind);
               }}
             >

@@ -497,11 +497,20 @@ body {
 }
 
 /*
- * メニューの中の、押せない理由の文（ADR 0066）。項目と同じ字下げに揃え、
- * 押せる項目と見分けるために小さく薄く出す（色は `.hint` が持つ）。
+ * メニューの中の、押せない理由の文（ADR 0066）。押せる項目と見分けるために
+ * 小さく薄く出す（色は `.hint` が持つ）。
+ *
+ * **頭を項目の名前の頭に揃える**（#204）。項目にはアイコンがあるので、項目の
+ * 縁に揃えると理由だけがアイコンの列にはみ出す。字下げは Excalidraw 0.18.1 の
+ * 項目の寸法から取った（`.excalidraw .dropdown-menu .dropdown-menu-item` と
+ * `.dropdown-menu-item-base`、アイコンは `.dropdown-menu-item svg`）。外側の
+ * 余白 1px・枠 1px・内側の余白 0.5rem、アイコンの枠 1rem、アイコンと名前の
+ * 間 0.625rem。etoki の刻み（`--space-*`）ではなくライブラリの値なので、
+ * 変数にせずここに書く。ずれたら `web/e2e/menuIcons.spec.ts` が落ちる。
  */
 .menu-note {
-  padding: var(--space-1) var(--space-4);
+  padding: var(--space-1) calc(1px + 1px + 0.5rem) var(--space-1)
+    calc(1px + 1px + 0.5rem + 1rem + 0.625rem);
   cursor: default;
 }
 

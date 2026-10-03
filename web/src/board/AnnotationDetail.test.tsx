@@ -126,6 +126,50 @@ describe("AnnotationDetail", () => {
     expect(select).toHaveValue("");
   });
 
+  // 粒度も種別と同じく live scene にだけ先に載り、a.granularity は保存するまで
+  // 古い。保留値を持たないと、選んだ直後に選択欄が古い値へ戻る（#214）。
+  it("保存前でも選んだ粒度を表示する", () => {
+    const detailProps = props();
+    render(<AnnotationDetail {...detailProps} />);
+
+    const select = screen.getByLabelText("粒度");
+    fireEvent.change(select, { target: { value: "epic" } });
+
+    expect(detailProps.frames.onChangeGranularity).toHaveBeenCalledWith(
+      "frame-1",
+      "epic",
+    );
+    expect(select).toHaveValue("epic");
+  });
+
+  it("粒度も、古い選択の保存が追いついた時点では表示を戻さず、追いついたら手放す", () => {
+    const detailProps = props();
+    const { rerender } = render(<AnnotationDetail {...detailProps} />);
+    const select = screen.getByLabelText("粒度");
+    const withGranularity = (granularity: "" | "epic" | "issue") => (
+      <AnnotationDetail
+        {...detailProps}
+        annotations={[
+          { id: "frame-1", name: "ログイン", granularity, state: "uncreated" },
+        ]}
+      />
+    );
+
+    fireEvent.change(select, { target: { value: "epic" } });
+    fireEvent.change(select, { target: { value: "issue" } });
+
+    // 1 回目の選択（epic）の保存だけが先に追いつく。
+    rerender(withGranularity("epic"));
+    expect(select).toHaveValue("issue");
+
+    rerender(withGranularity("issue"));
+    expect(select).toHaveValue("issue");
+
+    // 追いついたあとは保存済みの値に従う（元に戻す・取り込み）。
+    rerender(withGranularity(""));
+    expect(select).toHaveValue("");
+  });
+
   // 詳細はキャンバスの中央を覆うので、開いたまま寄せても選んだ frame は裏に
   // 隠れる。閉じてから寄せる（ADR 0022）。
   it("「キャンバスで見る」は詳細を閉じてから frame へ寄せる", () => {
