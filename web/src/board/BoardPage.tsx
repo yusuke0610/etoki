@@ -340,6 +340,13 @@ export function BoardPage({
   const [pasteText, setPasteText] = useState("");
   // キャンバスの上に開いている注釈の詳細（`AnnotationDetail`）。null なら閉じている。
   const [detailId, setDetailId] = useState<string | null>(null);
+  // 詳細を開く操作の回数。開いたままの注釈を開き直しても焦点を移すために、
+  // 注釈 ID とは別に持つ（`AnnotationDetail`）。
+  const [detailRequest, setDetailRequest] = useState(0);
+  const openDetail = useCallback((id: string) => {
+    setDetailId(id);
+    setDetailRequest((n) => n + 1);
+  }, []);
   // 開いていた詳細を、注釈が消えたので閉じた回数（下の effect が焦点を移す）。
   // **ID ではなく回数で持つ。** 同じ注釈が戻ってまた消えたとき、ID だと値が
   // 変わらず effect が走らない。
@@ -1272,7 +1279,7 @@ export function BoardPage({
     // 押したら詳細を開く。結果はそこに出るので、開かないと押したあとに何が
     // 起きたかが見えない。
     onInterpret: (id) => {
-      setDetailId(id);
+      openDetail(id);
       void interpret(id);
     },
     onSelect: showInterpretation,
@@ -1821,6 +1828,7 @@ export function BoardPage({
           <ErrorBoundary name="解釈の結果" recovery="remount">
             <AnnotationDetail
               openId={detailId}
+              openRequest={detailRequest}
               onClose={() => setDetailId(null)}
               annotations={annotations}
               frames={{
@@ -1877,7 +1885,7 @@ export function BoardPage({
                     stale={dirty}
                     canEdit={canEdit}
                     projectLink={link}
-                    onOpenDetail={setDetailId}
+                    onOpenDetail={openDetail}
                   />
                 </ErrorBoundary>
               ),

@@ -30,8 +30,14 @@ export type GenerateDiagramRequest = Schemas["GenerateDiagramRequest"];
 /** 生成された図のドラフト。まだキャンバスには置かれていない。 */
 export type DiagramDraft = Schemas["DiagramDraft"];
 
-/** 一覧で返すボード。シーンは含まない。 */
+/** ボードの共通部分。一覧と詳細の両方がこれを取り込む。シーンは含まない。 */
 export type BoardSummary = Schemas["BoardSummary"];
+
+/** 一覧で返すボード。注釈の 3 状態の件数を持つ（読めなかったボードは null）。 */
+export type BoardListEntry = Schemas["BoardListEntry"];
+
+/** 注釈の 3 状態ごとの件数。 */
+export type AnnotationCounts = Schemas["AnnotationCounts"];
 
 /** シーンと作成先を含むボード。 */
 export type BoardDetail = Schemas["BoardDetail"];

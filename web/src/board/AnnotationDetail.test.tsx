@@ -7,6 +7,7 @@ import { AnnotationDetail } from "./AnnotationDetail";
 function props(): ComponentProps<typeof AnnotationDetail> {
   return {
     openId: "frame-1",
+    openRequest: 1,
     onClose: vi.fn(),
     annotations: [
       { id: "frame-1", name: "ログイン", granularity: "", state: "uncreated" },

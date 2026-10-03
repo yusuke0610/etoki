@@ -71,3 +71,4 @@
 | [0065](0065-mount-on-excalidraw-extension-points.md)             | 画面の部品は Excalidraw の拡張点に載せ、配色は変数で上書きする         | 採用                 |
 | [0066](0066-where-blocked-reasons-live.md)                       | 押せない理由はボタンの隣に置き、待たされる操作だけ外に残す             | 採用                 |
 | [0067](0067-close-excalidraw-mermaid-entrances.md)               | Excalidraw 自身の mermaid の入口を閉じる                               | 採用                 |
+| [0068](0068-count-annotation-states-in-the-board-list.md)        | ボード一覧で注釈の 3 状態の件数を返し、シーンは 1 枚ずつ読む           | 採用                 |

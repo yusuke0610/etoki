@@ -100,6 +100,12 @@ export type FrameEditProps = {
 type Props = {
   /** 開いている注釈。null なら閉じている。 */
   openId: string | null;
+  /**
+   * 開く操作が起きるたびに増える数。**注釈 ID とは別に持つ。** 開いたままの注釈の
+   * 「解釈結果を開く」や解釈し直しでは `openId` が変わらず、ID だけを見ると
+   * 焦点がカードに残る。描画ごとには移さない（下書きの入力を奪う）。
+   */
+  openRequest: number;
   onClose: () => void;
   annotations: AnnotationStatus[];
   frames: FrameEditProps;
@@ -134,6 +140,7 @@ type Props = {
  */
 export function AnnotationDetail({
   openId,
+  openRequest,
   onClose,
   annotations,
   frames,
@@ -158,13 +165,34 @@ export function AnnotationDetail({
   // 気づけない。** 見出しではなく面そのもので受ける（削除の確認と同じ形）。
   useEffect(() => {
     if (openId !== null) sections.current.get(openId)?.focus();
-  }, [openId]);
+    // `openRequest` を依存に置くのは、同じ注釈を開き直す操作でも焦点を移すため。
+  }, [openId, openRequest]);
 
   // 閉じたらその注釈のカードへ焦点を戻す。**戻さないと、焦点は隠した面の中に
   // 取り残され、次の Tab が画面の先頭から始まる。**
+  //
+  // **カードが見えていないことがある。** 開いたまま別のタブへ切り替えると、
+  // カードは DOM に残ったまま隠れる（`SidePanel`）。パネルを畳んでいれば、
+  // タブの列ごと隠れる（#202）。隠れたボタンは焦点を受けられないので、見えて
+  // いて押せるものだけを候補にし、カードが無理なら選んでいるタブ、それも
+  // 無理なら畳んだ帯の「いまのタブ」へ戻す。
   const close = (id: string) => {
     onClose();
-    document.getElementById(annotationCardButtonId(id))?.focus();
+    const candidates = [
+      document.getElementById(annotationCardButtonId(id)),
+      document.querySelector('[role="tab"][aria-selected="true"]'),
+      document.querySelector('.side-panel-rail-tab[aria-current="true"]'),
+    ];
+    for (const el of candidates) {
+      if (
+        el instanceof HTMLButtonElement &&
+        !el.disabled &&
+        el.getClientRects().length > 0
+      ) {
+        el.focus();
+        return;
+      }
+    }
   };
 
   // **1 度も開いていないうちは注釈の一覧に触らない。** 一覧が壊れていると
