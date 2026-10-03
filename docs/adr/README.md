@@ -72,3 +72,4 @@
 | [0066](0066-where-blocked-reasons-live.md)                       | 押せない理由はボタンの隣に置き、待たされる操作だけ外に残す             | 採用                 |
 | [0067](0067-close-excalidraw-mermaid-entrances.md)               | Excalidraw 自身の mermaid の入口を閉じる                               | 採用                 |
 | [0068](0068-count-annotation-states-in-the-board-list.md)        | ボード一覧で注釈の 3 状態の件数を返し、シーンは 1 枚ずつ読む           | 採用                 |
+| [0071](0071-mcp-read-only-entrance.md)                           | 既存のサーバーに MCP の入口（/mcp）を開き、読み取りだけを出す          | 採用                 |
