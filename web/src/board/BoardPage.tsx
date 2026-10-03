@@ -49,6 +49,7 @@ import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
 import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
+import { createTable, tableCenter } from "../excalidraw/table";
 import { pasteToElements } from "../excalidraw/mermaidPaste";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { log } from "../logger";
@@ -919,6 +920,39 @@ export function BoardPage({
     [api, placeElements, placing],
   );
 
+  /**
+   * 表を 1 つ置く（ADR 0069）。
+   *
+   * **ダイアログを挟まない。** 描いている最中の操作なので、手数の少なさが
+   * そのまま値打ちになる。大きさは固定で、足りなければ複製やセルの追加で
+   * 広げる。置くだけで保存はしない。確定させるのは人間の保存操作だけ。
+   *
+   * 置いた表は group ごと選んでおく。そのまま動かしたり、消したりできる。
+   */
+  const addTable = useCallback(() => {
+    if (!api) return;
+
+    const { scrollX, scrollY, zoom, width, height } = api.getAppState();
+    const table = createTable(
+      tableCenter({ scrollX, scrollY, zoom: zoom.value, width, height }),
+    );
+    updateElements([...currentElements(), ...table]);
+
+    const groupId = table[0]?.groupIds?.[0];
+    if (groupId !== undefined) {
+      // 選択を渡す `updateScene` はツールを切り替えない。矩形ツールのまま置くと、
+      // 次のポインター操作で選択が外れて新しい矩形を描いてしまい、置いた直後に
+      // 表を動かせない。
+      api.setActiveTool({ type: "selection" });
+      api.updateScene({
+        appState: {
+          selectedElementIds: Object.fromEntries(table.map((el) => [el.id, true])),
+          selectedGroupIds: { [groupId]: true },
+        },
+      } as never);
+    }
+  }, [api, currentElements, updateElements]);
+
   const handleMark = useCallback(
     (frameId: string, granularity: Granularity) => {
       updateElements(markAsAnnotation(currentElements(), frameId, granularity));
@@ -1630,6 +1664,13 @@ export function BoardPage({
             {importBlocked !== null && (
               <MenuNote id="import-blocked">{importBlocked}</MenuNote>
             )}
+            <MainMenu.Item
+              className="etoki-menu-item"
+              onSelect={addTable}
+              disabled={!api}
+            >
+              表
+            </MainMenu.Item>
           </>
         )}
         <MainMenu.Separator />
@@ -1682,6 +1723,7 @@ export function BoardPage({
       running,
       importBlocked,
       importing,
+      addTable,
       askDelete,
       deletion,
     ],
