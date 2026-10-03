@@ -7,6 +7,7 @@ import {
   annotationDetail,
   chooseFromMenu,
   drawRectangle,
+  newBoardDialog,
   openBoard,
   openBoardMenu,
   openBoardWithMock,
@@ -21,6 +22,7 @@ import {
   authRequiredMock,
   baseMock,
   createdRun,
+  signedIn,
 } from "./helpers/fixtures";
 
 /**
@@ -103,6 +105,23 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる（ADR 0021）。
+  // GitHub が未設定ならボードを作れない（作成先を選べない、ADR 0030）。名前と
+  // ひな形を決めたあとで行き止まりにしないよう、押す前に止めて理由を出す（#200）。
+  test("新しいボード：GitHub が未設定のとき", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = {
+      status: 200,
+      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "新しいボード", exact: true }),
+      "ETOKI_GITHUB_TOKEN",
+    );
+  });
+
   test("作成先を変更：未保存のとき", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
@@ -472,6 +491,30 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       await page.goto("/");
       await page.locator(".board-list").waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    /*
+     * 新しいボードのダイアログと、利用者のメニュー（#200）。**どちらも開かないと
+     * 見えない**ので、一覧の検査には中身が掛かっていない。メニューはログインした
+     * 構成にしか出ない。
+     */
+    test("新しいボードのダイアログを開いた状態", async ({ page }) => {
+      await installApi(page, baseMock());
+      await page.goto("/");
+      await newBoardDialog(page);
+
+      await expectNoAxeViolations(page);
+    });
+
+    test("利用者のメニューを開いた状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.session = { status: 200, body: signedIn() };
+      await installApi(page, mock);
+      await page.goto("/");
+      await page.getByRole("button", { name: "Octo Cat" }).click();
+      await page.getByRole("button", { name: "ログアウト" }).waitFor();
 
       await expectNoAxeViolations(page);
     });

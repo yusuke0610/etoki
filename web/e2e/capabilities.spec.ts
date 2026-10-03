@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { installApi } from "./helpers/api";
 import {
   annotationCard,
   annotationDetail,
@@ -7,7 +8,7 @@ import {
   openBoardWithMock,
   openPanelTab,
 } from "./helpers/board";
-import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
+import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
 /**
  * 設定していない機能の見せ方（ADR 0030）。
@@ -82,6 +83,42 @@ test.describe("設定していない機能", () => {
 
   // 表示名の取り直しは GitHub の Project 一覧を引く（ADR 0037）。設定して
   // いない構成では押しても引けないので、押させずに理由を出す。
+  // ボードを作るには作成先が要り、GitHub が未設定だと選べない（ADR 0017）。
+  // 名前とひな形を決めて「次へ」を押した先で知らせると、決めた手間が無駄になる。
+  // **押す前に止める**（#200、ADR 0030 の残りを決めた）。
+  test("GitHub が未設定なら、新しいボードを押させず理由を出す", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = {
+      status: 200,
+      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const button = page.getByRole("button", { name: "新しいボード", exact: true });
+    // 黙って消さない。そういう操作があることは見えている。
+    await expect(button).toBeVisible();
+    await expect(button).toBeDisabled();
+    // 押した後に 503 で返る理由と同じ文言（`capability.ts`）。
+    await expect(button).toHaveAccessibleDescription(/ETOKI_GITHUB_TOKEN/);
+    // 開けるボードは開ける。止めるのは作ることだけ。
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
+    ).toBeEnabled();
+  });
+
+  // 確かめていないことを「使えない」に倒さない（中核思想 3）。
+  test("使える機能を引けなくても、新しいボードは押せる", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = { status: 500, body: { code: "internal", error: "boom" } };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    await expect(
+      page.getByRole("button", { name: "新しいボード", exact: true }),
+    ).toBeEnabled();
+  });
+
   test("GitHub が未設定なら、作成先の名前も取り直させない", async ({ page }) => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };

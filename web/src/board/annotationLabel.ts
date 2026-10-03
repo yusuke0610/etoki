@@ -1,8 +1,8 @@
 import type { AnnotationStatus, Granularity, ItemKind, SyncState } from "../api/types";
 
 /**
- * 注釈の 3 状態の見出し。右のパネルのカードと、中央の面（解釈の結果）の両方に
- * 出す。**1 か所に置く。** 2 か所に書くと文言が割れる。
+ * 注釈の 3 状態の見出し。右のパネルのカード、中央の面（解釈の結果）、ボード
+ * 一覧のカードの件数（#200）に出す。**1 か所に置く。** 2 か所に書くと文言が割れる。
  */
 export const STATE_LABEL: Record<SyncState, string> = {
   uncreated: "未作成",
