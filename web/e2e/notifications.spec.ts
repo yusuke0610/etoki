@@ -107,8 +107,9 @@ test.describe("通知", () => {
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
 
     delete mock.saveSceneError;
-    // 通知の「閉じる」も名前に「保存」を含む（本文が入る）ので、完全一致で引く。
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    // 通知は右上に固定されるので、ヘッダーが 2 段に折れると「保存」ボタンの上に
+    // 重なりクリックが届かない。同じ保存の経路をショートカットで通す。
+    await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
