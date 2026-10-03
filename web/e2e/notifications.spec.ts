@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import { holdSave, installApi, summarize } from "./helpers/api";
 import {
@@ -25,6 +25,20 @@ function twoBoards() {
   mock.annotations[other.id] = [];
 
   return mock;
+}
+
+/** 2 つの要素の矩形が重ならないこと。 */
+async function expectApart(a: Locator, b: Locator): Promise<void> {
+  const [boxA, boxB] = await Promise.all([a.boundingBox(), b.boundingBox()]);
+  if (boxA === null || boxB === null) throw new Error("見えていない要素は比べられない");
+  const overlap =
+    boxA.x < boxB.x + boxB.width &&
+    boxB.x < boxA.x + boxA.width &&
+    boxA.y < boxB.y + boxB.height &&
+    boxB.y < boxA.y + boxA.height;
+  expect(overlap, `${JSON.stringify(boxA)} と ${JSON.stringify(boxB)} が重なる`).toBe(
+    false,
+  );
 }
 
 /**
@@ -190,6 +204,35 @@ test.describe("通知", () => {
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
 
     expect(await canvas.boundingBox()).toEqual(before);
+  });
+
+  // 切れると: 通知が右のパネルの上に出て、注釈の一覧（パネルの主題）を隠す
+  // （#216）。保存の失敗は「再試行」を持つので閉じるまで残り、そのあいだ状態が
+  // 読めない。右上の島に重なると「保存」を押せなくなる。
+  test("通知は右のパネルにも、畳んだ帯にも、右上の島にも重ならない", async ({ page }) => {
+    const mock = baseMock();
+    mock.saveSceneError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await drawRectangle(page);
+    await page.getByRole("button", { name: "保存" }).click();
+
+    const notification = page.locator(".notifications").getByRole("alert");
+    await expect(notification).toContainText("保存できませんでした");
+
+    await expectApart(notification, page.locator(".side-panel"));
+    await expectApart(notification, page.locator(".board-status"));
+
+    // 畳んでも、帯の上には出さない。
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+    const rail = page.getByRole("navigation", { name: "パネル" });
+    await expect(rail).toBeVisible();
+    await expectApart(notification, rail);
+    await expectApart(notification, page.locator(".board-status"));
   });
 
   // 切れると: 別のボードの画面に「保存できませんでした」が残る。しかも
