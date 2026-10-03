@@ -51,6 +51,18 @@ export function tableCenter(view: ViewportBox): { x: number; y: number } {
 }
 
 /**
+ * group の ID。
+ *
+ * **`crypto.randomUUID` は使わない。** secure context 専用で、認証を付けて
+ * HTTP で公開した構成（README）の別端末からは呼べず、表が置けなくなる。
+ * `getRandomValues` は secure context を要らない。
+ */
+function newGroupId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * 表を作る。空の矩形を格子に並べ、全体を 1 つの group にする。
  *
  * **frame は作らない。** frame を自前で生成すると、境界にまたがる要素の
@@ -64,7 +76,7 @@ export function tableCenter(view: ViewportBox): { x: number; y: number } {
 export function createTable(center: { x: number; y: number }): SceneElement[] {
   const left = center.x - (TABLE_COLUMNS * CELL_WIDTH) / 2;
   const top = center.y - (TABLE_ROWS * CELL_HEIGHT) / 2;
-  const groupId = crypto.randomUUID();
+  const groupId = newGroupId();
 
   const cells = [];
   for (let row = 0; row < TABLE_ROWS; row++) {

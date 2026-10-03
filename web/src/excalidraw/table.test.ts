@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SceneElement } from "./annotation";
 import {
@@ -36,6 +36,25 @@ describe("createTable", () => {
     const a = createTable({ x: 0, y: 0 })[0]?.groupIds?.[0];
     const b = createTable({ x: 0, y: 0 })[0]?.groupIds?.[0];
     expect(a).not.toBe(b);
+  });
+
+  // crypto.randomUUID は secure context 専用で、認証を付けて HTTP で公開した
+  // 構成（README）の別端末からは生えていない。そこでも表を置ける。
+  describe("randomUUID が無い（非 localhost の HTTP）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("表を作れて、group の ID も呼ぶたびに別になる", () => {
+      vi.stubGlobal("crypto", {
+        getRandomValues: crypto.getRandomValues.bind(crypto),
+      });
+      const a = createTable({ x: 0, y: 0 });
+      const b = createTable({ x: 0, y: 0 });
+      expect(a).toHaveLength(TABLE_COLUMNS * TABLE_ROWS);
+      expect(a[0]?.groupIds?.[0]).toBeTruthy();
+      expect(a[0]?.groupIds?.[0]).not.toBe(b[0]?.groupIds?.[0]);
+    });
   });
 
   it("セルは隙間も重なりもなく格子に並ぶ", () => {
