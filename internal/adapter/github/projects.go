@@ -27,7 +27,7 @@ const DefaultBaseURL = "https://api.github.com"
 
 // 環境変数名。
 const (
-	envToken   = "ETOKI_GITHUB_TOKEN"
+	envToken   = "ETOKI_GITHUB_TOKEN" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
 	envBaseURL = "ETOKI_GITHUB_BASE_URL"
 )
 

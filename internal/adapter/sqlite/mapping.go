@@ -257,6 +257,7 @@ func (r *MappingRepository) itemsByRunIDs(ctx context.Context, runIDs []int64) (
 
 	// 別名 i を付けるのは itemColumns を使うため。畳み込みの側と列の並びを
 	// 分けると、port.SyncItem に足したときに片方だけ直すことになる。
+	//nolint:gosec // 連結するのは列名の定数とプレースホルダの "?" だけで、値は引数で渡す（G202）
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT `+itemColumns+`
 		   FROM sync_items i
@@ -421,6 +422,7 @@ func foldedItemsQuery(where string) string {
 func (r *MappingRepository) ListUnconfirmedItemsByBoard(
 	ctx context.Context, boardID string,
 ) (map[string][]port.SyncItem, error) {
+	//nolint:gosec // 連結するのは列名の定数とプレースホルダの "?" だけで、値は引数で渡す（G202）
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT `+itemColumns+`, run.annotation_element_id
 		   FROM sync_items i

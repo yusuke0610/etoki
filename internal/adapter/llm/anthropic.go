@@ -57,7 +57,7 @@ const maxResponseBytes = 10 << 20 // 10 MiB
 // 環境変数名。
 const (
 	envBaseURL = "ETOKI_LLM_BASE_URL"
-	envAPIKey  = "ETOKI_LLM_API_KEY"
+	envAPIKey  = "ETOKI_LLM_API_KEY" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
 	envModel   = "ETOKI_LLM_MODEL"
 )
 

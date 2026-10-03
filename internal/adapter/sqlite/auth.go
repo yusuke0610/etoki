@@ -114,6 +114,7 @@ func (r *SessionRepository) FindUsers(ctx context.Context, ids []string) ([]port
 		args[i] = id
 	}
 
+	//nolint:gosec // 連結するのは列名の定数とプレースホルダの "?" だけで、値は引数で渡す（G202）
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT `+userColumns+` FROM users WHERE id IN (`+placeholders+`)`, args...)
 	if err != nil {

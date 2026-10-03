@@ -6,6 +6,9 @@ linters:
   enable:
     - bodyclose
     - errorlint
+    # 誤検知は行ごとに `//nolint:gosec // 理由` で外す。設定でまとめて外すと、
+    # 同じ形の本物（たとえば値を連結した SQL）まで黙って通る（#64）。
+    - gosec
     - misspell
     - noctx
     - revive
@@ -29,6 +32,9 @@ linters:
       - path: _test\.go$
         linters:
           - unparam
+          # テストの偽のトークン（G101）と、添字から文字を作る変換（G115）しか
+          # 出ない。どちらも守る対象が無い。
+          - gosec
 
 formatters:
   enable:
