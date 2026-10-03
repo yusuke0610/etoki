@@ -15,9 +15,13 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // vite.config.ts から読むビルドの道具（build/）は拡張子つきで import する。
+    // Vite は設定ファイルの拡張子なしの import に、将来の既定の読み込み方
+    // （configLoader: 'native'）では読めないと警告を出す。
+    "allowImportingTsExtensions": true,
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
   // e2e も型検査に含める。E2E のモックが契約の生成型から外れたことを tsc に
   // 見つけさせるのが狙いなので、ここから漏らすと仕組みが働かない（ADR 0012）。
-  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "e2e", "build", "vite.config.ts", "playwright.config.ts"]
 }

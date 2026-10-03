@@ -7,6 +7,8 @@ import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
 
+import { thirdPartyNotices } from "./build/thirdPartyNotices.ts";
+
 // バックエンドの既定リッスンアドレス。make dev は両者を同時に起動するため、
 // dev サーバーからは同一オリジンに見えるようプロキシしておく。
 const API_TARGET = "http://127.0.0.1:8080";
@@ -127,7 +129,13 @@ const excalidrawProd = fileURLToPath(
 );
 
 export default defineConfig({
-  plugins: [react(), excalidrawFontAssets()],
+  // 同梱したもののライセンスの表示は thirdPartyNotices が書き出す（#215）。
+  // build.license の指定もそちらが持つので、ここでは指定しない。
+  plugins: [
+    react(),
+    excalidrawFontAssets(),
+    thirdPartyNotices({ fontsDir: excalidrawFonts }),
+  ],
   server: {
     // 既定の localhost にせず IPv4 ループバックを明示する。localhost の解決は
     // 環境まかせで、IPv6 のある環境では ::1 に寄って 127.0.0.1 では届かなく
@@ -144,8 +152,9 @@ export default defineConfig({
   },
   test: {
     // e2e/ の spec は Playwright が実行する。vitest の既定の include は
-    // *.spec.ts も拾うため、明示的に src 配下だけに絞る。
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // *.spec.ts も拾うため、明示的に src 配下と、ビルドの道具（build/）だけに
+    // 絞る。
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "build/**/*.test.ts"],
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
