@@ -7,10 +7,14 @@ import type {
   Granularity,
   Interpretation,
   ProjectAccess,
-  SyncState,
 } from "../api/types";
 import type { SelectableFrame } from "../excalidraw/annotation";
-import { GRANULARITY_LABEL, annotationLabels, frameLabel } from "./annotationLabel";
+import {
+  GRANULARITY_LABEL,
+  STATE_LABEL,
+  annotationLabels,
+  frameLabel,
+} from "./annotationLabel";
 import { DetachedSection } from "./DetachedSection";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
 import { InterpretationSection } from "./InterpretationSection";
@@ -23,12 +27,6 @@ import {
 } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 import { RunHistory } from "./RunHistory";
-
-const STATE_LABEL: Record<SyncState, string> = {
-  uncreated: "未作成",
-  created: "作成済み",
-  changed: "変更あり",
-};
 
 /**
  * キャンバスの frame とのやりとり。

@@ -64,6 +64,8 @@
   --color-on-annotation: var(--on-brand);
   /* 通知のように地の上へ浮かせる面の影。 */
   --color-shadow: rgb(0 0 0 / 15%);
+  /* モーダルのダイアログの後ろを覆う色（新しいボード、#200）。 */
+  --color-backdrop: rgb(0 0 0 / 35%);
 
   /*
    * 余白・文字の大きさ・角丸。**色と違ってテーマでは変わらない**ので、ここで
@@ -151,6 +153,7 @@
   --color-annotation-bg: rgb(111 220 172 / 10%);
   /* 暗い地では薄い黒が見えないので濃くする。 */
   --color-shadow: rgb(0 0 0 / 50%);
+  --color-backdrop: rgb(0 0 0 / 60%);
 
   color-scheme: dark;
 }
@@ -216,20 +219,28 @@ body {
 /*
  * ボードの一覧。**ボードとは別の画面**（ADR 0064）。
  *
- * 幅は絞る。一覧は 1 行 1 ボードの木なので、画面いっぱいに伸ばすと行の左端の
- * 名前と、押したときに反応する範囲の右端が離れすぎる。
+ * 作成先ごとの節に、カードの格子で並べる（#200）。地を沈め、カードを浮かせる。
+ * 1 枚ずつが押せるものだと、境界線だけより見て分かる。
  */
 .board-list-page {
   overflow-y: auto;
   height: 100%;
+  background: var(--color-surface-sunken);
 }
 
+/*
+ * 上の帯。**高さは固定する。** 右の利用者のメニューは認証を設定したときにしか
+ * 出ないので、中身に任せると構成ごとに見出しの位置が動く（#200）。
+ */
 .list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-5) var(--space-8);
+  box-sizing: border-box;
+  height: 56px;
+  padding: 0 var(--space-8);
+  background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -239,29 +250,254 @@ body {
 }
 
 .list-body {
-  max-width: 720px;
-  margin: 0 auto;
   padding: var(--space-8);
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
 }
 
-.list-section h2 {
-  font-size: var(--text-lg);
-  margin: 0 0 var(--space-4);
+/* 見出しの行。左に「ボード」、右に「新しいボード」と、押せないときの理由。 */
+.list-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
 }
 
-.create-board {
+.list-title h2 {
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.list-title-action {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  gap: var(--space-5);
+}
+
+.list-title-action .hint {
+  margin: 0;
+}
+
+.board-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* 節の見出し。右に細い線を伸ばし、どこまでが同じ作成先かを示す。 */
+.board-section h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-subtle);
+}
+
+.board-section h3::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--color-border);
+}
+
+/*
+ * カードの格子。列の最小幅は、1440px の画面で 4 列になる値にしてある
+ * （#62 のアートボード「ボード一覧」）。狭い幅での列の減り方は #199。
+ */
+.board-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-6);
+}
+
+.board-card {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-card:hover {
+  background: var(--color-hover);
+}
+
+/* 作成先が未選択のカード。開くと作成先の選択から始まることを、枠で先に見せる。 */
+.board-card.unselected {
+  border-style: dashed;
+}
+
+.board-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: var(--space-4);
 }
 
-.create-board input {
-  min-width: 0;
-  flex: 1;
+.board-card-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.board-card-updated {
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+}
+
+.board-card-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.board-card-note {
+  margin: 0;
+}
+
+/* 利用者のメニュー（#200）。開いた中身はボタンの下に重ねる。 */
+.user-menu {
+  position: relative;
+}
+
+.user-menu-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.user-menu-toggle:hover {
+  background: var(--color-hover);
+}
+
+.user-menu-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--brand-bg-subtle);
+  color: var(--color-selected-fg);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.user-menu-name {
+  overflow-wrap: anywhere;
+}
+
+.user-menu-panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 10;
+  min-width: 160px;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  box-shadow: 0 4px 12px var(--color-shadow);
+}
+
+.user-menu-panel button {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-menu-panel button:hover {
+  background: var(--color-hover);
+}
+
+/*
+ * 新しいボードのダイアログ（#200）。ブラウザの `<dialog>` をモーダルで開く。
+ * 地を覆う色は変数で持つ（ダークでは濃くする）。
+ */
+.new-board-dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.new-board-dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.new-board-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.new-board-dialog h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.new-board-name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+/*
+ * ダイアログの入力欄。**地と文字色を変数で持つ**（`web/CLAUDE.md` の配色）。
+ * ブラウザ既定のままだと、ダークで入力欄だけ明るく残る。部品の高さと枠を
+ * 画面全体で揃えるのは #203 の仕事で、ここでは最低限の形だけ当てる。
+ */
+.new-board-dialog :is(input, select) {
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-base);
+}
+
+/* ダイアログの中では、ひな形も名前と同じく見出しを上に置く。 */
+.new-board-dialog .template-picker {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
 }
 
 .template-picker {
@@ -276,48 +512,17 @@ body {
   flex: 1;
 }
 
-.board-list,
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
 .plain-list,
 .annotation-list {
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.board-list button {
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: none;
-  padding: var(--space-3);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-}
-
-.board-list button:hover {
-  background: var(--color-hover);
-}
-
-/* 入れ子の一覧。ul は上で list-style を消してあるので、字下げだけ足す。 */
-.board-tree ul {
-  list-style: none;
-  margin: 0;
-  padding-left: var(--space-5);
-}
-
-/* リポジトリと Project の見出し。ボードそのものではないので弱く出す。 */
-.board-tree .tree-branch {
-  color: var(--color-text-subtle);
-  font-size: var(--text-sm);
-  /* 名前が長いと折り返して縦に伸びる。1 行に収めて省略する。 */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 畳んでいるかどうかを出す三角。名前と詰まらないよう間を空ける。 */
-.board-tree .tree-mark {
-  margin-right: var(--space-2);
 }
 
 .main {
@@ -538,7 +743,9 @@ body {
   white-space: nowrap;
 }
 
-.badge-uncreated {
+/* 「注釈なし」（ボード一覧のカード、#200）も無彩色。違いは文字が持つ。 */
+.badge-uncreated,
+.badge-none {
   background: var(--color-neutral-bg);
   color: var(--color-text-subtle);
 }
@@ -1072,20 +1279,6 @@ a.badge-target:hover {
 .plain-list button.active {
   border-color: var(--color-selected-fg);
   background: var(--color-selected-bg);
-}
-
-.account {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
-  font-size: var(--text-sm);
-}
-
-.account-name {
-  overflow-wrap: anywhere;
-  font-weight: 600;
 }
 
 /*

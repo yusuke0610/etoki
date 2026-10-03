@@ -12,10 +12,46 @@ import { BOARD_NAME } from "./fixtures";
  */
 export async function backToList(page: Page): Promise<void> {
   await page.getByRole("button", { name: "ボード一覧", exact: true }).click();
-  // **見出しは完全一致で引く。** 同じ画面に「新しいボード」の見出しも並ぶ。
+  // **見出しは完全一致で引く。** 同じ画面に「新しいボード」のボタンも並ぶ。
   await expect(
     page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
   ).toBeVisible();
+}
+
+/**
+ * 一覧の「新しいボード」からダイアログを開き、名前（とひな形）を入れて「次へ」を
+ * 押す（#200）。押した先は作成先の選択画面で、**まだボードは作られていない**。
+ *
+ * ダイアログの中身を確かめる spec（押せない「次へ」、やめたときの入力）は、
+ * これを使わずに `newBoardDialog` で開く。
+ */
+export async function startNewBoard(
+  page: Page,
+  name: string,
+  template?: string,
+): Promise<void> {
+  const dialog = await newBoardDialog(page);
+  await dialog.getByLabel("ボード名").fill(name);
+  if (template !== undefined) await dialog.getByLabel("ひな形").selectOption(template);
+  await dialog.getByRole("button", { name: "次へ" }).click();
+}
+
+/** 一覧の「新しいボード」を押して、開いたダイアログを返す。 */
+export async function newBoardDialog(page: Page): Promise<Locator> {
+  await page.getByRole("button", { name: "新しいボード", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "新しいボード" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/**
+ * 一覧の画面が出るまで待つ。**ログインの前後を見る spec の目印。**
+ *
+ * 「ボード名」の入力は、ダイアログを開くまで画面に無い（#200）。目印にすると、
+ * 一覧が出ていても見つからない。
+ */
+export function boardListHeading(page: Page): Locator {
+  return page.getByRole("heading", { name: "ボード", exact: true, level: 2 });
 }
 
 /** 一覧からボードを開き、キャンバスと注釈パネルが出るまで待つ。 */

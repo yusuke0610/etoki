@@ -111,6 +111,11 @@ export type ApiMock = {
   login: Reply<LoginResponse>;
   /** 一覧取得を失敗させたいときに指定する。 */
   boardsError?: Reply<never>;
+  /**
+   * 一覧で件数を読めなかったことにするボードの ID（#200）。サーバーはシーンを
+   * 読めなかったボードの件数を null で返す（#207）。
+   */
+  unreadableCounts?: string[];
   /** 作成先の設定を失敗させたいときに指定する。409 の見せ方を確かめる用。 */
   setTargetError?: Reply<never>;
   /** 表示名の取り直しを失敗させたいときに指定する（ADR 0037）。 */
@@ -266,7 +271,11 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
       await json(
         route,
         200,
-        mock.boards.map((b) => listEntry(b, mock.annotations[b.id] ?? [])),
+        mock.boards.map((b) =>
+          mock.unreadableCounts?.includes(b.id)
+            ? { ...b, annotationCounts: null }
+            : listEntry(b, mock.annotations[b.id] ?? []),
+        ),
       );
     },
   );
