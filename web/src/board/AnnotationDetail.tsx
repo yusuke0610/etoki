@@ -124,12 +124,16 @@ export function AnnotationDetail({
   // **開いたまま別のタブへ切り替えると、カードは DOM に残ったまま隠れる**
   // （`SidePanel`）。隠れたボタンは焦点を受けられないので、見えているものだけを
   // 候補にし、無ければ選ばれているタブへ戻す。
+  //
+  // **開いたままパネルを畳むと、カードもタブも枠ごと隠れる**（#202）。そのときは
+  // 畳んだ帯の、選んでいるタブのボタンへ戻す。
   const close = (id: string) => {
     onClose();
     const candidates = [
       document.getElementById(openDetailButtonId(id)),
       document.getElementById(interpretButtonId(id)),
       document.querySelector('[role="tab"][aria-selected="true"]'),
+      document.querySelector('.side-panel-rail [aria-current="true"]'),
     ];
     for (const el of candidates) {
       if (

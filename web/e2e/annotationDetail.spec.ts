@@ -172,4 +172,23 @@ test.describe("注釈の詳細", () => {
     await expect(detail).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "メンバー", exact: true })).toBeFocused();
   });
+
+  // 切れると: 開いたまま右のパネルを畳むと、カードもタブも枠ごと隠れる。どちらも
+  // 焦点を受けられず、閉じても焦点が隠した面の中に取り残される（#220）。
+  test("パネルを畳んでから閉じると、帯の選んでいるタブへ焦点が戻る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await card.getByRole("button", { name: "解釈する" }).click();
+    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+    await detail.focus();
+    await page.keyboard.press("Escape");
+
+    await expect(detail).toHaveCount(0);
+    const rail = page.getByRole("navigation", { name: "パネル" });
+    await expect(rail.getByRole("button", { name: /^注釈/ })).toBeFocused();
+  });
 });
