@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { annotationCard, annotationDetail, openBoardWithMock } from "./helpers/board";
+import {
+  annotationCard,
+  annotationDetail,
+  interpret,
+  openBoardWithMock,
+} from "./helpers/board";
 import { matchedInterpretationMock } from "./helpers/fixtures";
 
 // 3 状態判定の changed には、これまで「重複を作るか、何もしないか」しか出口が
@@ -11,7 +16,7 @@ test.describe("changed の注釈を更新する", () => {
 
     const card = annotationCard(page, "セッション管理");
     const detail = annotationDetail(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
     // 更新は前の内容を消す。作成と同じ見た目にしない。
     //
@@ -34,7 +39,7 @@ test.describe("changed の注釈を更新する", () => {
 
     const card = annotationCard(page, "セッション管理");
     const detail = annotationDetail(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
     const leftBehind = detail.locator(".left-behind");
     await expect(leftBehind).toContainText("1 件");
@@ -49,7 +54,7 @@ test.describe("changed の注釈を更新する", () => {
 
     const card = annotationCard(page, "セッション管理");
     const detail = annotationDetail(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
     await detail.getByLabel("i1 を作成する").uncheck();
 
@@ -67,7 +72,7 @@ test.describe("changed の注釈を更新する", () => {
 
     const card = annotationCard(page, "セッション管理");
     const detail = annotationDetail(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
     const updating = detail.locator(".draft-item").filter({
       has: page.getByLabel("i1 のタイトル"),
@@ -106,7 +111,7 @@ test.describe("changed の注釈を更新する", () => {
 
     const card = annotationCard(page, "セッション管理");
     const detail = annotationDetail(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
     await expect(detail.getByLabel("i1 を更新するか新しく作るか")).toBeVisible();
     await expect(detail.getByLabel("i2 を更新するか新しく作るか")).toBeHidden();
@@ -147,7 +152,7 @@ test.describe("changed の注釈を更新する", () => {
 
     const card = annotationCard(page, "セッション管理");
     const detail = annotationDetail(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     const result = detail.locator(".creation-result");
@@ -166,7 +171,7 @@ test.describe("changed の注釈を更新する", () => {
 
     const card = annotationCard(page, "セッション管理");
     const detail = annotationDetail(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
     await expect(detail.getByText("件を作成しました。")).toBeVisible();
 
