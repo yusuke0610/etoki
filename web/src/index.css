@@ -558,22 +558,6 @@ body {
   font-size: var(--text-sm);
 }
 
-/*
- * ダイアログの入力欄。**地と文字色を変数で持つ**（`web/CLAUDE.md` の配色）。
- * ブラウザ既定のままだと、ダークで入力欄だけ明るく残る。部品の高さと枠を
- * 画面全体で揃えるのは #203 の仕事で、ここでは最低限の形だけ当てる。
- */
-.new-board-dialog :is(input, select) {
-  box-sizing: border-box;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-base);
-}
-
 /* ダイアログの中では、ひな形も名前と同じく見出しを上に置く。 */
 .new-board-dialog .template-picker {
   flex-direction: column;

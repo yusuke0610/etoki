@@ -89,7 +89,8 @@ export function NewBoardDialog({
         */}
         <TemplatePicker value={template} onChange={onTemplateChange} />
         <div className="dialog-actions">
-          <button type="button" onClick={() => dialog.current?.close()}>
+          {/* やめるのは控えめな操作（#203）。主となる操作は「次へ」の 1 つ。 */}
+          <button type="button" className="quiet" onClick={() => dialog.current?.close()}>
             キャンセル
           </button>
           {/* 空白だけの名前では進ませない。誤って空名のボードが増えるのを防ぐ。 */}

@@ -5,6 +5,7 @@ import {
   annotationCard,
   annotationDetail,
   chooseFromMenu,
+  newBoardDialog,
   openBoardWithMock,
   openPanelTab,
 } from "./helpers/board";
@@ -34,6 +35,22 @@ test.describe("ボタンの格", () => {
 
   // 「GitHub に作成する」は取り消せないが、赤ではなく主となる操作にする。赤は
   // 「消す」操作だけに使う（#203）。
+  // ボード一覧の画面と、新しいボードのダイアログ（#200）。どちらも面ごとに主となる
+  // 操作は 1 つ。
+  test("新しいボードと次へは主となる操作、ダイアログのキャンセルは控えめ", async ({
+    page,
+  }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+
+    await expect(
+      page.getByRole("button", { name: "新しいボード", exact: true }),
+    ).toHaveClass(PRIMARY);
+    const dialog = await newBoardDialog(page);
+    await expect(dialog.getByRole("button", { name: "次へ" })).toHaveClass(PRIMARY);
+    await expect(dialog.getByRole("button", { name: "キャンセル" })).toHaveClass(QUIET);
+  });
+
   test("保存と作成は主となる操作、解釈はふつう、詳細を閉じるのは控えめ", async ({
     page,
   }) => {
