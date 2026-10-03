@@ -306,10 +306,10 @@ func (r *SessionRepository) FindCredentials(
 	if c.AccessToken, err = r.box.Open(access); err != nil {
 		// 鍵を変えた、あるいは DB を差し替えた。開けないものは無いのと同じに
 		// 扱い、再ログインに落とす。中身を推測して復旧しようとしない。
-		return nil, fmt.Errorf("open credentials for %s: %w", userID, err)
+		return nil, unreadableCredentials(userID, err)
 	}
 	if c.RefreshToken, err = r.box.Open(refresh); err != nil {
-		return nil, fmt.Errorf("open credentials for %s: %w", userID, err)
+		return nil, unreadableCredentials(userID, err)
 	}
 	if c.ExpiresAt, err = parseOptionalTime(expiresAt); err != nil {
 		return nil, err
@@ -319,6 +319,16 @@ func (r *SessionRepository) FindCredentials(
 	}
 
 	return &c, nil
+}
+
+// unreadableCredentials は開けなかった資格情報を未認証として返す。
+//
+// **再ログインに落とすには port.ErrNotAuthenticated を名乗る必要がある。** 名乗らないと
+// GitHub を叩く操作が 500 で返り、画面が再ログインに案内できない（#64）。鍵を
+// 入れ替えたあとに打てる手は再ログインだけで、再ログインすれば新しい鍵で封をし直す。
+// 開けなかった原因も包んで残す。ログで「失効」と「鍵の入れ替え」を見分けるため。
+func unreadableCredentials(userID string, err error) error {
+	return fmt.Errorf("%w: open credentials for %s: %w", port.ErrNotAuthenticated, userID, err)
 }
 
 // SaveState は発行した state を保存する。
