@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -376,6 +377,156 @@ func TestRunReportsListenFailure(t *testing.T) {
 	case errors.Is(err, http.ErrServerClosed):
 		t.Errorf("Run: unexpected ErrServerClosed: %v", err)
 	}
+}
+
+// 何も送ってこないキープアライブの接続は、期限が来たらサーバーが切る（#64）。
+// 切らないと、開いたままの接続が数の上限なく積み上がる。
+func TestRunClosesIdleConnections(t *testing.T) {
+	t.Parallel()
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := etoki.NewServerForTest(freeAddr(t), h, time.Second, time.Second)
+	srv.SetConnTimeoutsForTest(time.Second, 100*time.Millisecond)
+	runForTest(t, srv)
+
+	conn := dialForTest(t, srv.Addr())
+	if _, err := conn.Write([]byte("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// 応答の 1 つ目を読み切る（ステータス行と空行まで。本文は 204 なので無い）。
+	if _, err := readUntil(conn, "\r\n\r\n"); err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+
+	// アイドルの期限を過ぎるまで黙る。切られていれば EOF、切られていなければ
+	// こちらの読み込みの期限が先に来る。
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+	_, err := conn.Read(make([]byte, 1))
+	if ne := net.Error(nil); errors.As(err, &ne) && ne.Timeout() {
+		t.Fatal("idle connection was kept open")
+	}
+	if err == nil {
+		t.Fatal("read returned data on an idle connection")
+	}
+}
+
+// 本文を送り切らない接続も、読み込みの期限で切る（#64）。本文の大きさの上限
+// （#147）は送られてきた量を縛るだけで、送り終えるまでの長さは縛らない。
+func TestRunCutsSlowRequestBodies(t *testing.T) {
+	t.Parallel()
+
+	readErr := make(chan error, 1)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		readErr <- err
+	})
+	srv := etoki.NewServerForTest(freeAddr(t), h, time.Second, time.Second)
+	srv.SetConnTimeoutsForTest(200*time.Millisecond, time.Second)
+	runForTest(t, srv)
+
+	conn := dialForTest(t, srv.Addr())
+	// 100 バイトあると言って 10 バイトだけ送り、あとは黙る。
+	if _, err := conn.Write([]byte("POST / HTTP/1.1\r\nHost: 127.0.0.1\r\n" +
+		"Content-Length: 100\r\n\r\n0123456789")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case err := <-readErr:
+		if err == nil {
+			t.Fatal("handler read the whole body, want a timeout")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("slow body was not cut by the read timeout")
+	}
+}
+
+// **読み込みの期限は、本文を読み終えたあとのハンドラを切らない。** 解釈は分単位で
+// 待ち、作成は接続が切れたかどうかを ctx で見て止まる（ADR 0051）。期限で ctx まで
+// 切れると、接続は生きているのに作成が途中で止まる。net/http は本文を読み終えると
+// 読み込みの期限を外すので、ここで固定する。
+func TestRunReadTimeoutDoesNotCancelLongHandlers(t *testing.T) {
+	t.Parallel()
+
+	const readTimeout = 100 * time.Millisecond
+
+	canceled := make(chan bool, 1)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			canceled <- true
+		case <-time.After(4 * readTimeout):
+			canceled <- false
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := etoki.NewServerForTest(freeAddr(t), h, time.Second, time.Second)
+	srv.SetConnTimeoutsForTest(readTimeout, time.Second)
+	runForTest(t, srv)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		"http://"+srv.Addr()+"/", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if <-canceled {
+		t.Error("request ctx was canceled by the read timeout while the handler was running")
+	}
+}
+
+// runForTest は srv を走らせ、テストの終わりに止める。
+func runForTest(t *testing.T, srv *etoki.Server) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	waitForListener(t, srv.Addr())
+}
+
+// dialForTest は addr に生の TCP でつなぐ。HTTP クライアントを通すと、接続の
+// 使い回しと読み込みが隠れて、切られたかどうかを見られない。
+func dialForTest(t *testing.T, addr string) net.Conn {
+	t.Helper()
+
+	var d net.Dialer
+	conn, err := d.DialContext(t.Context(), "tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+// readUntil は sep が現れるまで読む。
+func readUntil(conn net.Conn, sep string) (string, error) {
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		return "", err
+	}
+	var got []byte
+	buf := make([]byte, 256)
+	for !strings.Contains(string(got), sep) {
+		n, err := conn.Read(buf)
+		got = append(got, buf[:n]...)
+		if err != nil {
+			return string(got), err
+		}
+	}
+	return string(got), nil
 }
 
 // freeAddr は空きポートを 1 つ確保して即座に解放し、そのアドレスを返す。
