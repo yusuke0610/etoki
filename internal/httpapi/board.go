@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -232,10 +233,24 @@ func (h *handlers) createBoard(c *gin.Context) {
 }
 
 func (h *handlers) listBoards(c *gin.Context) {
-	boards, err := h.boards.List(c.Request.Context())
+	out, err := h.boardList(c.Request.Context())
 	if err != nil {
 		h.fail(c, err)
 		return
+	}
+
+	c.JSON(http.StatusOK, out)
+}
+
+// boardList は一覧の応答を組み立てる。
+//
+// **`/api` と `/mcp` の両方がここを通る**（ADR 0071）。詰め替えを口ごとに書くと、
+// 契約に足したフィールドが片方にだけ載る。生成型は同じなので、載せ忘れた側も
+// ゼロ値のままコンパイルが通る。
+func (h *handlers) boardList(ctx context.Context) ([]apitypes.BoardListEntry, error) {
+	boards, err := h.boards.List(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// nil を返すと JSON が null になる。一覧は常に配列にする。
@@ -243,8 +258,7 @@ func (h *handlers) listBoards(c *gin.Context) {
 	for _, e := range boards {
 		out = append(out, toListEntry(e))
 	}
-
-	c.JSON(http.StatusOK, out)
+	return out, nil
 }
 
 func (h *handlers) getBoard(c *gin.Context) {
@@ -412,13 +426,24 @@ func (h *handlers) saveScene(c *gin.Context) {
 }
 
 func (h *handlers) listAnnotations(c *gin.Context) {
-	states, detached, err := h.annotations.ListStates(c.Request.Context(), c.Param("id"))
+	out, err := h.boardAnnotations(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, out)
+}
+
+// boardAnnotations は注釈の 3 状態の応答を組み立てる。`/api` と `/mcp` の両方が
+// 通る（boardList と同じ理由）。
+func (h *handlers) boardAnnotations(ctx context.Context, boardID string) (apitypes.BoardAnnotations, error) {
+	states, detached, err := h.annotations.ListStates(ctx, boardID)
 	if err != nil {
 		// ボードが無い場合と注釈が 0 件の場合は、ここで区別がついている。
 		// ListStates が引き当てられなければエラーを返すため、ボードを引き直す
 		// 必要が無くなった。
-		h.fail(c, err)
-		return
+		return apitypes.BoardAnnotations{}, err
 	}
 
 	out := apitypes.BoardAnnotations{
@@ -432,8 +457,7 @@ func (h *handlers) listAnnotations(c *gin.Context) {
 	for _, d := range detached {
 		out.Detached = append(out.Detached, toDetachedAnnotation(d))
 	}
-
-	c.JSON(http.StatusOK, out)
+	return out, nil
 }
 
 // toDetachedAnnotation はシーンから消えた注釈を境界の形にする。
@@ -461,11 +485,23 @@ func toDetachedAnnotation(d usecase.DetachedAnnotation) apitypes.DetachedAnnotat
 // **畳み込みではなく 1 回ずつの記録を返す**（ADR 0007 / 0026）。いま GitHub に
 // 在るものは listAnnotations の items が持つ。
 func (h *handlers) listAnnotationRuns(c *gin.Context) {
-	runs, err := h.annotations.ListRuns(
-		c.Request.Context(), c.Param("id"), c.Param("annotationId"))
+	out, err := h.annotationRuns(c.Request.Context(), c.Param("id"), c.Param("annotationId"))
 	if err != nil {
 		h.fail(c, err)
 		return
+	}
+
+	c.JSON(http.StatusOK, out)
+}
+
+// annotationRuns は実行の履歴の応答を組み立てる。`/api` と `/mcp` の両方が
+// 通る（boardList と同じ理由）。
+func (h *handlers) annotationRuns(
+	ctx context.Context, boardID, annotationID string,
+) ([]apitypes.SyncRun, error) {
+	runs, err := h.annotations.ListRuns(ctx, boardID, annotationID)
+	if err != nil {
+		return nil, err
 	}
 
 	// nil を返すと JSON が null になる。一覧は常に配列にする。
@@ -473,8 +509,7 @@ func (h *handlers) listAnnotationRuns(c *gin.Context) {
 	for _, r := range runs {
 		out = append(out, toSyncRun(r))
 	}
-
-	c.JSON(http.StatusOK, out)
+	return out, nil
 }
 
 func toSyncRun(r port.SyncRun) apitypes.SyncRun {
