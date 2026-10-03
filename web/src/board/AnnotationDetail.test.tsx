@@ -102,6 +102,29 @@ describe("AnnotationDetail", () => {
     expect(select).toHaveValue("er");
   });
 
+  // 追いついたあとも pending を持ち続けると、元に戻す・取り込みで保存済みの値が
+  // 変わったときに、選択欄が古い選択（er）を出し続ける。
+  it("選んだ値が保存で追いついたあと、保存済みの値が変わればそちらを表示する", () => {
+    const detailProps = props();
+    const { rerender } = render(<AnnotationDetail {...detailProps} />);
+    const select = screen.getByLabelText("種別");
+    const withKind = (kind: "er" | undefined) => (
+      <AnnotationDetail
+        {...detailProps}
+        annotations={[
+          { id: "frame-1", name: "ログイン", granularity: "", state: "uncreated", kind },
+        ]}
+      />
+    );
+
+    fireEvent.change(select, { target: { value: "er" } });
+    rerender(withKind("er"));
+    expect(select).toHaveValue("er");
+
+    rerender(withKind(undefined));
+    expect(select).toHaveValue("");
+  });
+
   // 詳細はキャンバスの中央を覆うので、開いたまま寄せても選んだ frame は裏に
   // 隠れる。閉じてから寄せる（ADR 0022）。
   it("「キャンバスで見る」は詳細を閉じてから frame へ寄せる", () => {

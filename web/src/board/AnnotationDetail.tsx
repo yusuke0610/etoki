@@ -269,6 +269,12 @@ function AnnotationFace({
     value: DiagramKind | undefined;
   } | null>(null);
   const kind = pendingKind && pendingKind.value !== a.kind ? pendingKind.value : a.kind;
+  // 追いついたら手放す。持ったままだと、あとで「元に戻す」や取り込みで保存済みの
+  // 値が変わっても、選択欄が古い選択を表示し続け、同じ値を選び直しても change が
+  // 出ないので利用者が直せない。
+  // 描画中の setState は、React が派生状態の更新として認める書き方（effect だと
+  // 1 描画ぶん古い値を見せる）。
+  if (pendingKind && pendingKind.value === a.kind) setPendingKind(null);
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape") return;
@@ -473,7 +479,7 @@ function AnnotationFace({
         */}
         {a.lastRunOutcome === "incomplete" && (
           <p className="hint">
-            前回の実行は途中で失敗しました。作れたところまでは GitHub 側に残って います。
+            前回の実行は途中で失敗しました。作れたところまでは GitHub 側に残っています。
           </p>
         )}
 
