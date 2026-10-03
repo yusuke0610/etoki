@@ -1445,6 +1445,10 @@ export function BoardPage({
         飛び先が組めるならリンクにする。取り消せない操作の結果を確かめる
         導線がここから始まる（ADR 0025）。組めないのは作成先が未選択の
         ボードだけなので、そのときはこれまでどおり文字のまま出す。
+
+        **Project まで書く**（#217）。1 つのリポジトリに Project は複数ありうる
+        ので、リポジトリ名だけでは作る先が決まらない。組み立ては詳細の帯の
+        「作る先」（`targetLabel`）と同じものを使う。
       */}
         {linkHref !== null ? (
           <a
@@ -1458,12 +1462,20 @@ export function BoardPage({
                 : "リポジトリの Projects を GitHub で開く"
             }
           >
-            {board.repositoryOwner}/{board.repositoryName}
+            {targetLabel ?? `${board.repositoryOwner}/${board.repositoryName}`}
           </a>
         ) : (
           <span className="badge badge-target">
-            {board.repositoryOwner}/{board.repositoryName}
+            {targetLabel ?? `${board.repositoryOwner}/${board.repositoryName}`}
           </span>
+        )}
+        {/*
+          作成先の Project に書けるか（ADR 0017）。**書けないと分かったときだけ
+          出す**（#217）。`unknown`（まだ確かめていない・確かめられなかった）を
+          「書けません」に見せない。なぜ書けないかの本文は詳細の帯にある。
+        */}
+        {projectAccess === "denied" && (
+          <span className="badge badge-denied">書けません</span>
         )}
         {/*
         作成先が固定済みかは**状態**なので、ここにも出す（#62 が読めなければ
@@ -1489,6 +1501,8 @@ export function BoardPage({
       board.repositoryOwner,
       board.repositoryName,
       board.targetLocked,
+      targetLabel,
+      projectAccess,
       linkHref,
       linkExact,
       sceneBytes,
