@@ -53,6 +53,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#179](https://github.com/yusuke0610/etoki/pull/179) |        3 |      3 |        0 |      0 | async-ui（画面より長く生きる通知へ、離れたあとに返った失敗を書かない）                                                                                                                      |
 | [#183](https://github.com/yusuke0610/etoki/pull/183) |        8 |      7 |        1 |      0 | docs-consistency（エージェント定義の `tools` と手順を対応させる）。取り下げは ADR 0009 / 0052 の読み違い                                                                                    |
 | [#188](https://github.com/yusuke0610/etoki/pull/188) |        5 |      5 |        0 |      0 | async-ui（外れるパネルの入力は親で持ち、送った値のままのときだけ消す）/ validation-boundaries（外から来る文字列の正規表現は線形か確かめる）。ADR と実装のずれは docs-consistency に既にある |
+| [#220](https://github.com/yusuke0610/etoki/pull/220) |        2 |      1 |        1 |      0 | async-ui（閉じた面から焦点を戻す先は、隠しうる操作をすべて数える）。取り下げは電話幅の置き方（#199 の担当）                                                                                 |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
