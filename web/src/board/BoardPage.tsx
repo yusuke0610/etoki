@@ -57,7 +57,8 @@ import { useNotify } from "../notification/NotificationProvider";
 import type { NotifyOptions } from "../notification/types";
 import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
-import { AnnotationPanel } from "./AnnotationPanel";
+import { AnnotationDetail, type CreationProps } from "./AnnotationDetail";
+import { AnnotationPanel, type InterpretationProps } from "./AnnotationPanel";
 import { DiagramChatPanel } from "./DiagramChatPanel";
 import {
   beginTurn,
@@ -84,6 +85,7 @@ import { DiagramTab, type DiagramMode } from "./DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import type { CreationState, RunHistoryState } from "./panelShared";
+import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
 import { projectLink } from "./projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
 import { useBoardTransfer } from "./useBoardTransfer";
@@ -318,6 +320,12 @@ export function BoardPage({
   const [runGenerations] = useState(createGenerations);
   // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
   const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
+  // 右のパネルを畳んでいるか（#202）。端末ごとに覚えた値で始める。
+  const [panelCollapsed, setPanelCollapsed] = useState(() => readPanelCollapsed());
+  const changePanelCollapsed = useCallback((collapsed: boolean) => {
+    setPanelCollapsed(collapsed);
+    writePanelCollapsed(collapsed);
+  }, []);
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
@@ -326,6 +334,15 @@ export function BoardPage({
   // 途中の入力が消える。ボードを切り替えれば BoardPage ごと作り直されるので
   // 残らない。
   const [pasteText, setPasteText] = useState("");
+  // キャンバスの上に開いている注釈の詳細（`AnnotationDetail`）。null なら閉じている。
+  const [detailId, setDetailId] = useState<string | null>(null);
+  // 詳細を開く操作の回数。開いたままの注釈を開き直しても焦点を移すために、
+  // 注釈 ID とは別に持つ（`AnnotationDetail`）。
+  const [detailRequest, setDetailRequest] = useState(0);
+  const openDetail = useCallback((id: string) => {
+    setDetailId(id);
+    setDetailRequest((n) => n + 1);
+  }, []);
   // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
   // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
   const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
@@ -1258,6 +1275,28 @@ export function BoardPage({
   const linkExact = link?.exact ?? false;
   const running = exclusive.running;
 
+  // 解釈の口。右のパネルのカード（押す）と詳細（結果を見る）の両方に渡す。
+  const interpretation: InterpretationProps = {
+    states: interpretations,
+    // 押したら詳細を開く。結果はそこに出るので、開かないと押したあとに何が
+    // 起きたかが見えない。
+    onInterpret: (id) => {
+      openDetail(id);
+      void interpret(id);
+    },
+    onSelect: showInterpretation,
+    unavailable: interpretationUnavailable,
+  };
+  // 作成の口。作るのは詳細の中だけ。
+  const creation: CreationProps = {
+    states: creations,
+    saving,
+    blocked: exclusive.reasonFor("creating"),
+    onCreate: (id, interpretationId, result) => void create(id, interpretationId, result),
+    projectAccess,
+    unavailable: creationUnavailable,
+  };
+
   // 作成先を変更できない理由。押せるなら null（ADR 0039）。
   //
   // **未保存が先。** `dirty` を下ろすのは応答が返ってから（`save`）なので、
@@ -1281,7 +1320,7 @@ export function BoardPage({
    */
   const topRightUI = useMemo(
     () => (
-      <div className="board-status">
+      <div className="board-status etoki-ui">
         {nameDraft === null ? (
           <h1>{board.name}</h1>
         ) : (
@@ -1319,7 +1358,12 @@ export function BoardPage({
             <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
               {renaming ? "変更中…" : "名前を保存"}
             </button>
-            <button type="button" disabled={renaming} onClick={() => setNameDraft(null)}>
+            <button
+              type="button"
+              className="quiet"
+              disabled={renaming}
+              onClick={() => setNameDraft(null)}
+            >
               取消
             </button>
           </form>
@@ -1383,7 +1427,7 @@ export function BoardPage({
    */
   const footerUI = useMemo(
     () => (
-      <div className="board-context">
+      <div className="board-context etoki-ui">
         {/*
         自分が何をできるのかは、操作して断られる前に見えている必要がある。
         共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
@@ -1708,6 +1752,7 @@ export function BoardPage({
             </button>
             <button
               type="button"
+              className="quiet"
               onClick={() => setDeletion(null)}
               disabled={deletion.status === "deleting"}
             >
@@ -1778,6 +1823,22 @@ export function BoardPage({
           <ErrorBoundary name="注釈の枠" recovery="remount">
             <AnnotationOverlay boxes={overlayBoxes} />
           </ErrorBoundary>
+          {/*
+            解釈の結果と下書きの手直しは、キャンバスの上に広く開く。
+            **`.excalidraw` の外に置く。** 中に入れると色の変数がぶつかり、
+            axe が色を判定できない（ADR 0065）。
+          */}
+          <ErrorBoundary name="解釈の結果" recovery="remount">
+            <AnnotationDetail
+              openId={detailId}
+              openRequest={detailRequest}
+              onClose={() => setDetailId(null)}
+              annotations={annotations}
+              interpretation={interpretation}
+              creation={creation}
+              projectLink={link}
+            />
+          </ErrorBoundary>
         </div>
 
         {/*
@@ -1791,10 +1852,15 @@ export function BoardPage({
         <SidePanel
           active={panelTab}
           onSelect={setPanelTab}
+          collapsed={panelCollapsed}
+          onCollapsedChange={changePanelCollapsed}
           tabs={[
             {
               id: "annotations",
               label: "注釈",
+              // 畳んでいるあいだに知りたいのは、手を打つ必要があるものだけ。
+              // 数えるのは注釈の一覧と同じく保存済みシーンが基準。
+              railBadges: railBadgesOf(annotations),
               content: (
                 <ErrorBoundary name="注釈パネル" recovery="remount">
                   <AnnotationPanel
@@ -1811,25 +1877,12 @@ export function BoardPage({
                       onChangeGranularity: handleMark,
                       onChangeKind: handleChangeAnnotationKind,
                     }}
-                    interpretation={{
-                      states: interpretations,
-                      onInterpret: (id) => void interpret(id),
-                      onSelect: showInterpretation,
-                      unavailable: interpretationUnavailable,
-                    }}
-                    creation={{
-                      states: creations,
-                      saving,
-                      blocked: exclusive.reasonFor("creating"),
-                      onCreate: (id, interpretationId, result) =>
-                        void create(id, interpretationId, result),
-                      projectAccess,
-                      unavailable: creationUnavailable,
-                    }}
+                    interpretation={interpretation}
                     runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
                     stale={dirty}
                     canEdit={canEdit}
                     projectLink={link}
+                    onOpenDetail={openDetail}
                   />
                 </ErrorBoundary>
               ),
