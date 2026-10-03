@@ -4,18 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, authApi, boardsApi, capabilitiesApi } from "./api/boards";
 import { describeFailure, type Failure } from "./api/errorMessage";
-import type {
-  BoardDetail,
-  BoardListEntry,
-  BoardTarget,
-  Capabilities,
-  SessionStatus,
-} from "./api/types";
+import type { BoardDetail, BoardTarget, Capabilities, SessionStatus } from "./api/types";
 import { LoginPage } from "./auth/LoginPage";
-import { BoardListPage } from "./board/BoardListPage";
+import { BoardListPage, type BoardList } from "./board/BoardListPage";
 import { BoardPage } from "./board/BoardPage";
 import { createGenerations } from "./board/generation";
 import { RepositoryPicker } from "./board/RepositoryPicker";
+import { unavailableReason } from "./capability";
 import {
   BLANK_TEMPLATE,
   templateScene,
@@ -50,6 +45,14 @@ const SESSION_FAILED = "session-failed";
  */
 const OPENING = "board";
 
+/**
+ * 一覧を読み込む要求の世代のキー（`.claude/rules/async-ui.md`）。
+ *
+ * 一覧へ戻るたびに読み直す（#200）ので、改名や削除の引き直しと並走しうる。
+ * 古い応答が新しい一覧を上書きすると、件数が巻き戻る。
+ */
+const LISTING = "list";
+
 /** 履歴の積み方。押した結果として戻れるべきものだけを積む。 */
 type HistoryMode = "push" | "replace";
 
@@ -74,7 +77,8 @@ function canOpenTargetPicker(board: BoardDetail): boolean {
 }
 
 export function App() {
-  const [boards, setBoards] = useState<BoardListEntry[]>([]);
+  // ボードの一覧。**null はまだ読み込んでいない。** 0 件（空の配列）と分ける。
+  const [boards, setBoards] = useState<BoardList | null>(null);
   const [current, setCurrent] = useState<BoardDetail | null>(null);
   // 画面全体に出す失敗は通知へ（ADR 0058）。1 本の state に持つと、後から
   // 来た失敗が前の失敗を黙って消していた。
@@ -90,6 +94,9 @@ export function App() {
     [notify],
   );
   const [name, setName] = useState("");
+  // 新しいボードのダイアログを開いているか（#200）。**ここで持つ。** 作成先の
+  // 選択（別の画面）から戻ったときに、入力を残したまま開き直すため。
+  const [creatingDialog, setCreatingDialog] = useState(false);
   // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
   const [picking, setPicking] = useState(false);
   // 作成しようとしているボードの名前。null なら作成中ではない。
@@ -136,6 +143,9 @@ export function App() {
   //
   // 初期化関数で 1 度だけ作る（`BoardPage` の世代と同じ形）。
   const [openings] = useState(createGenerations);
+  // 一覧を読み込む要求の世代（`LISTING`）。開く要求とは別に持つ。ボードを開いた
+  // ときに一覧の読み込みまで捨てる理由は無い。
+  const [listings] = useState(createGenerations);
   // 配色。**持つのはここだけ**で、キャンバスのメニューで切り替えても BoardPage
   // から戻ってくる（ADR 0055）。ログインや作成先の選択の画面にも効かせるため、
   // ボードより上に置く。
@@ -160,11 +170,17 @@ export function App() {
   // 時点の reload を呼ぶよう ref を介す（reload 自身の中からは自分を指せない）。
   const reloadRef = useRef<() => Promise<void>>(async () => {});
   const reload = useCallback(async () => {
+    const generation = listings.start(LISTING);
     try {
-      setBoards(await boardsApi.list());
+      const entries = await boardsApi.list();
+      // 追い越されていたら捨てる。あとから始めた読み込みのほうが新しい。
+      if (!listings.isCurrent(LISTING, generation)) return;
+      setBoards({ entries, fetchedAt: new Date() });
       // 前に読めなかったことの通知は、もう当てはまらない。
       dismissKey(BOARD_LIST_FAILED);
     } catch (e) {
+      // 追い越された読み込みの失敗は出さない。新しいほうが答えを持っている。
+      if (!listings.isCurrent(LISTING, generation)) return;
       // 使っている最中の失効はここで初めて分かる。エラーだけ出すと、画面は
       // ログイン済みのまま何も操作できず、リロードするまで戻れない。
       // 状態を読み直せばログイン画面に落ちる。
@@ -190,7 +206,7 @@ export function App() {
         action: { label: "再読み込み", run: () => void reloadRef.current() },
       });
     }
-  }, [dismissKey, showFailure]);
+  }, [dismissKey, listings, showFailure]);
   useEffect(() => {
     reloadRef.current = reload;
   }, [reload]);
@@ -305,12 +321,14 @@ export function App() {
     // 捨ててよいと言われたので、通信を待たずにここで外す。待ってから外すと、
     // 待っているあいだの描き足しを確認なしで捨てることになる。
     setCurrent(null);
-    setBoards([]);
+    setBoards(null);
     // 走っている取得を無効にする。**対象が変わるイベントは関連する世代を
     // 全部無効にする**（`.claude/rules/async-ui.md`）。React state を消しても
     // 進行中のリクエストは止まらないので、遅れて着いた応答がログイン画面の
-    // 裏でボードを開き直す。
+    // 裏でボードを開き直す。一覧も同じで、遅れて着いた応答が次にログインした
+    // 人の画面に前の人の一覧を出す。
     openings.invalidateAll();
+    listings.invalidateAll();
     // ログイン画面に残るのは URL だけ。**積まずに置き換える。** 積むと
     // 「戻る」でログアウト前の URL に戻れてしまい、画面と食い違う。
     showLocation(NO_BOARD, "replace");
@@ -325,7 +343,7 @@ export function App() {
       // 画面が残る。
       await reload();
     }
-  }, [confirmDiscard, openings, reload, showFailure, showLocation]);
+  }, [confirmDiscard, listings, openings, reload, showFailure, showLocation]);
 
   const open = useCallback(
     async (id: string, options: OpenOptions = {}) => {
@@ -358,6 +376,11 @@ export function App() {
    *
    * **履歴に積む。** 一覧は押して移った先なので、「戻る」で閉じたボードへ
    * 引き返せるべき（ADR 0059）。
+   *
+   * **一覧を読み直す**（#200）。カードの件数と更新時刻は、開いていたあいだの
+   * 保存や作成で変わっている。読み直さないと、作ったのに「未作成 1」が残る。
+   * 読むのは etoki 自身の状態で、GitHub との同期ではない。届くまでは前の
+   * 一覧を出したままにする。
    */
   const closeBoard = useCallback(() => {
     if (!confirmDiscard()) return;
@@ -368,7 +391,8 @@ export function App() {
     setPicking(false);
     setCreating(null);
     showLocation(NO_BOARD, "push");
-  }, [confirmDiscard, openings, showLocation]);
+    void reload();
+  }, [confirmDiscard, openings, reload, showLocation]);
 
   /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
   const startCreating = useCallback(() => {
@@ -377,15 +401,38 @@ export function App() {
     // 「作成先を変更」を dirty で止めてあるのと揃える。
     if (!confirmDiscard()) return;
 
+    // 入力は残したまま閉じる。作成先の選択から戻ったら、同じ入力で開き直す。
+    setCreatingDialog(false);
     setCurrent(null);
     setPicking(false);
     setCreating(name.trim());
     // **作成中は URL に載せない。** 載る材料（名前とひな形）が URL に無いので、
     // 載せても読み込み直した先で復元できない。**積まずに置き換える**のは、
-    // 開いていたボードをここで外すのと形を揃えるため。引き返す先はもともと
-    // 無い（`onCancel` は案内文の画面に落ちる）。
+    // 開いていたボードをここで外すのと形を揃えるため。引き返すのは履歴では
+    // なく選択画面の「やめる」で、一覧の上にダイアログを開き直す
+    // （`backToCreatingDialog`）。
     showLocation(NO_BOARD, "replace");
   }, [confirmDiscard, name, showLocation]);
+
+  /**
+   * 新しいボードのダイアログをやめる。名前とひな形は既定（空・空白）に戻す
+   * （#200）。次に開いたとき、やめたはずの入力が残っていると、別のボードの
+   * つもりで同じ名前を作りうる。
+   */
+  const cancelCreating = useCallback(() => {
+    setCreatingDialog(false);
+    setName("");
+    setTemplate(BLANK_TEMPLATE);
+  }, []);
+
+  /**
+   * 作成先の選択をやめて一覧へ戻る。**ダイアログを入力ごと開き直す**（#200）。
+   * 選び直すために戻った人に、名前を打ち直させない。
+   */
+  const backToCreatingDialog = useCallback(() => {
+    setCreating(null);
+    setCreatingDialog(true);
+  }, []);
 
   /** 作成先が決まったのでボードを作る。失敗は picker が表示する。 */
   const createWithTarget = useCallback(
@@ -417,7 +464,7 @@ export function App() {
    * 遅れて届いた応答が今のボードを外し、確認（confirmDiscard）を通さずに
    * 未保存の編集を捨てることになる。
    *
-   * **一覧も引き直す。** 木は作成先でまとめて見せる（ADR 0019）ので、
+   * **一覧も引き直す。** 一覧は作成先でまとめて見せる（ADR 0019）ので、
    * 名前が古いままでは差し替えた意味が無い。
    */
   const replaceBoard = useCallback(
@@ -435,7 +482,7 @@ export function App() {
    * どうかを訊いても戻せる先が無い。確認は削除の手前で済んでいる（ADR 0042）。
    * `unsaved` は BoardPage が外れるときに自分で下ろす。
    *
-   * **一覧も引き直す。** 木は作成先でまとめて見せる（ADR 0019）ので、消えた
+   * **一覧も引き直す。** 一覧は作成先でまとめて見せる（ADR 0019）ので、消えた
    * ボードが残っていると開けない行が並ぶ。
    *
    * **引き直しを待たずに手元からも外す。** `reload()` が失敗しても一覧は
@@ -445,7 +492,10 @@ export function App() {
    */
   const handleDeleted = useCallback(
     (id: string) => {
-      setBoards((listed) => listed.filter((b) => b.id !== id));
+      setBoards(
+        (listed) =>
+          listed && { ...listed, entries: listed.entries.filter((b) => b.id !== id) },
+      );
       setCurrent(null);
       // 走っている取得を無効にする（ログアウトと同じ理由）。
       openings.invalidateAll();
@@ -539,6 +589,8 @@ export function App() {
           setCurrent(null);
           setPicking(false);
           showLocation(NO_BOARD, "replace");
+          // 一覧へ戻ったので読み直す（`closeBoard` と同じ理由、#200）。
+          void reload();
           return;
         }
 
@@ -553,7 +605,7 @@ export function App() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [confirmDiscard, loadBoard, openings, showLocation, signedIn]);
+  }, [confirmDiscard, loadBoard, openings, reload, showLocation, signedIn]);
 
   // 問い合わせ中は何も出さない。ログイン画面を一瞬見せてから消すと、
   // 認証を設定していない構成でもちらつく。
@@ -596,7 +648,7 @@ export function App() {
             key="creating"
             title={creating}
             onSelected={createWithTarget}
-            onCancel={() => setCreating(null)}
+            onCancel={backToCreatingDialog}
           />
         ) : current === null ? (
           <BoardListPage
@@ -604,11 +656,17 @@ export function App() {
             onLogout={() => void logout()}
             boards={boards}
             onOpen={(id) => void open(id)}
-            name={name}
-            onNameChange={setName}
-            template={template}
-            onTemplateChange={setTemplate}
-            onCreate={startCreating}
+            creationUnavailable={unavailableReason(capabilities, "creation")}
+            dialog={{
+              open: creatingDialog,
+              name,
+              template,
+              onOpen: () => setCreatingDialog(true),
+              onNameChange: setName,
+              onTemplateChange: setTemplate,
+              onNext: startCreating,
+              onCancel: cancelCreating,
+            }}
           />
         ) : picking || current.projectId === "" ? (
           <RepositoryPicker

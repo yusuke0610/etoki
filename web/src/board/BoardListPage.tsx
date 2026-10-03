@@ -1,21 +1,50 @@
-import type { BoardSummary, SessionStatus } from "../api/types";
+import { useMemo, useRef } from "react";
+
+import type { BoardListEntry, SessionStatus } from "../api/types";
+import { UserMenu } from "../auth/UserMenu";
 import type { TemplateChoice } from "../excalidraw/template";
-import { BoardTree } from "./BoardTree";
-import { TemplatePicker } from "./TemplatePicker";
+import { BoardCard } from "./BoardCard";
+import { boardSections } from "./grouping";
+import { NewBoardDialog } from "./NewBoardDialog";
+
+/**
+ * 読み込んだ一覧と、読み込んだ時刻。
+ *
+ * **時刻は一覧と一緒に持つ。** カードの更新時刻（「2 時間前」）は読み込んだ時点を
+ * 基準に書く。描くたびに時計を読むと、同じ一覧が描き直しのたびに違う文になる。
+ */
+export type BoardList = {
+  entries: BoardListEntry[];
+  fetchedAt: Date;
+};
+
+/** 「新しいボード」を押せない理由の id。理由は 1 つしか出さないので固定でよい。 */
+const NEW_BOARD_BLOCKED_ID = "new-board-blocked";
 
 type Props = {
   /** ログインしている相手。認証を設定していない構成では無い。 */
   user: SessionStatus["user"];
   onLogout: () => void;
-  boards: BoardSummary[];
+  /** まだ読み込んでいなければ null。0 件（空の配列）とは分ける。 */
+  boards: BoardList | null;
   onOpen: (id: string) => void;
-  /** 新しく作るボードの名前。確定するまで App が持つ。 */
-  name: string;
-  onNameChange: (name: string) => void;
-  template: TemplateChoice;
-  onTemplateChange: (template: TemplateChoice) => void;
-  /** 名前を確定して作成先の選択に進む。ここではまだ作らない。 */
-  onCreate: () => void;
+  /**
+   * 新しいボードを作れない理由（GitHub が未設定）。作れるなら、または
+   * まだ確かめていなければ null（ADR 0030）。
+   */
+  creationUnavailable: string | null;
+  /** 新しいボードのダイアログ。開閉と入力は App が持つ（`NewBoardDialog`）。 */
+  dialog: {
+    open: boolean;
+    name: string;
+    template: TemplateChoice;
+    onOpen: () => void;
+    onNameChange: (name: string) => void;
+    onTemplateChange: (template: TemplateChoice) => void;
+    /** 名前を確定して作成先の選択に進む。ここではまだ作らない。 */
+    onNext: () => void;
+    onCancel: () => void;
+  };
 };
 
 /**
@@ -25,76 +54,118 @@ type Props = {
  * どこに属するかが視界に残っていた。ブレスト中に構造を意識させないために
  * （中核思想 1）、ボードを開いたらこの画面ごと外す。
  *
- * **状態は App が持つ。** ここは並べて、押されたことを返すだけ。作成の途中の
- * 名前やひな形も App に置くのは、作成先の選択（別の画面）に進んでから引き
- * 返しても消さないため。
+ * **ボードは作成先ごとの節に、カードの格子で並べる**（#200）。カードには更新
+ * 時刻と注釈の 3 状態の件数を出す。開く前に、どのボードに手を打つものがあるかが
+ * 分かる（中核思想 3）。
+ *
+ * **状態は App が持つ。** ここは並べて、押されたことを返すだけ。
  */
 export function BoardListPage({
   user,
   onLogout,
   boards,
   onOpen,
-  name,
-  onNameChange,
-  template,
-  onTemplateChange,
-  onCreate,
+  creationUnavailable,
+  dialog,
 }: Props) {
+  const newBoard = useRef<HTMLButtonElement>(null);
+  const sections = useMemo(
+    () => (boards === null ? [] : boardSections(boards.entries)),
+    [boards],
+  );
+
   return (
     <div className="board-list-page">
+      {/*
+        上の帯の高さは認証の有無で変えない（#200）。右に置くものが無い構成でも、
+        見出しの位置が構成ごとに動かないようにする。
+      */}
       <header className="list-header">
         <h1 className="brand">etoki</h1>
-
-        {user && (
-          <div className="account">
-            <span className="account-name">{user.displayName}</span>
-            <button type="button" onClick={onLogout}>
-              ログアウト
-            </button>
-          </div>
-        )}
+        {user && <UserMenu user={user} onLogout={onLogout} />}
       </header>
 
       <div className="list-body">
-        <section className="list-section" aria-labelledby="create-board-heading">
-          <h2 id="create-board-heading">新しいボード</h2>
-          <form
-            className="create-board"
-            onSubmit={(e) => {
-              e.preventDefault();
-              onCreate();
-            }}
-          >
-            <input
-              aria-label="ボード名"
-              placeholder="新しいボード名"
-              value={name}
-              onChange={(e) => onNameChange(e.target.value)}
-            />
+        <div className="list-title">
+          <h2>ボード</h2>
+          <div className="list-title-action">
             {/*
-              何から始めるかをここで選ばせる（#52）。**画面を 1 枚増やさない。**
-              増やすと、空白で始めたい人にも通り抜けるだけの手順が要る。
+              作れないことは押す前に見せる（ADR 0030）。押してから作成先の選択
+              画面で知らせると、名前とひな形を決めたあとで行き止まりになる。
+              **理由はボタンの隣に置く**（ADR 0066）。
             */}
-            <TemplatePicker value={template} onChange={onTemplateChange} />
-            <button type="submit" className="primary" disabled={!name.trim()}>
-              次へ
+            {creationUnavailable !== null && (
+              <p className="hint" id={NEW_BOARD_BLOCKED_ID}>
+                {creationUnavailable}
+              </p>
+            )}
+            <button
+              ref={newBoard}
+              type="button"
+              className="primary"
+              onClick={dialog.onOpen}
+              disabled={creationUnavailable !== null}
+              aria-describedby={
+                creationUnavailable !== null ? NEW_BOARD_BLOCKED_ID : undefined
+              }
+            >
+              新しいボード
             </button>
-          </form>
-        </section>
+          </div>
+        </div>
 
-        <section className="list-section" aria-labelledby="boards-heading">
-          <h2 id="boards-heading">ボード</h2>
-          {boards.length === 0 ? (
-            <p className="hint">
-              まだボードがありません。上で名前を付けて作成してください。
-            </p>
-          ) : (
-            // 一覧はリポジトリと Project でまとめる（ADR 0019）。作成先はボードの
-            // 属性なので、開くまで分からないままだと取り違えたまま作成に進める。
-            <BoardTree boards={boards} onOpen={onOpen} />
-          )}
-        </section>
+        {/*
+          読み込む前は何も出さない。空の文を出すと、ボードを持っている人にも
+          一瞬「まだボードがありません」が見える。
+        */}
+        {boards !== null && boards.entries.length === 0 && (
+          <p className="hint">
+            まだボードがありません。「新しいボード」から作成してください。
+          </p>
+        )}
+        {sections.length > 0 && boards !== null && (
+          // 一覧は作成先でまとめる（ADR 0019）。作成先はボードの属性なので、
+          // 開くまで分からないままだと取り違えたまま作成に進める。
+          <div className="board-list">
+            {sections.map((section, i) => {
+              const headingId = `board-section-${i}`;
+              return (
+                <section
+                  key={section.key}
+                  className="board-section"
+                  aria-labelledby={headingId}
+                >
+                  <h3 id={headingId}>{section.heading}</h3>
+                  <ul className="board-grid">
+                    {section.boards.map((board) => (
+                      <BoardCard
+                        key={board.id}
+                        board={board}
+                        now={boards.fetchedAt}
+                        onOpen={onOpen}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      <NewBoardDialog
+        open={dialog.open}
+        name={dialog.name}
+        onNameChange={dialog.onNameChange}
+        template={dialog.template}
+        onTemplateChange={dialog.onTemplateChange}
+        onNext={dialog.onNext}
+        onCancel={dialog.onCancel}
+        // 閉じたら「新しいボード」へ焦点を戻す。作成先の選択から戻って開き
+        // 直したときは、開く前の焦点がどこにも無いので、ブラウザに任せると
+        // 画面の先頭へ落ちる。
+        onClosed={() => newBoard.current?.focus()}
+      />
     </div>
   );
 }
