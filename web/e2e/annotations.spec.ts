@@ -13,6 +13,18 @@ import {
 } from "./helpers/fixtures";
 
 test.describe("注釈の状態", () => {
+  // 変更ありは作り直すかを決める材料なので、作成済みの下に埋もれさせない。
+  // fixture は保存順に 未作成・作成済み・変更あり で返す。
+  test("手を打つ必要があるものから並ぶ", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const cards = page.locator("li.annotation");
+    await expect(cards).toHaveCount(3);
+    await expect(cards.nth(0)).toContainText("セッション管理");
+    await expect(cards.nth(1)).toContainText("ログイン");
+    await expect(cards.nth(2)).toContainText("パスワード再設定");
+  });
+
   test("3 状態がバッジとして出る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
