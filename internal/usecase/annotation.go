@@ -159,21 +159,59 @@ func (s *AnnotationService) ListStates(
 		return nil, nil, err
 	}
 
-	latestByAnnotation := make(map[string]port.SyncRun, len(runs))
-	for _, r := range runs {
-		latestByAnnotation[r.AnnotationID] = r
-	}
-
-	annotations := scene.Annotations()
-	states := make([]AnnotationState, 0, len(annotations))
+	latestByAnnotation := latestRunsByAnnotation(runs)
+	judged := judgeAnnotations(scene, latestByAnnotation)
+	states := make([]AnnotationState, 0, len(judged))
 	// シーンに残っている注釈を控える。畳み込みに在ってここに無いものが、
 	// frame を消したまま保存された注釈。
-	inScene := make(map[string]struct{}, len(annotations))
+	inScene := make(map[string]struct{}, len(judged))
+
+	for _, j := range judged {
+		id := j.annotation.ID
+		inScene[id] = struct{}{}
+		states = append(states, AnnotationState{
+			Annotation:  j.annotation,
+			State:       j.state,
+			LatestRun:   j.latestRun,
+			Items:       itemsByAnnotation[id],
+			Unconfirmed: unconfirmedByAnnotation[id],
+		})
+	}
+
+	detached := detachedAnnotations(
+		itemsByAnnotation, unconfirmedByAnnotation, latestByAnnotation, inScene)
+
+	return states, detached, nil
+}
+
+// judgedAnnotation は注釈 1 つと、その 3 状態の判定。
+type judgedAnnotation struct {
+	annotation domain.Annotation
+	state      domain.SyncState
+	// latestRun は判定に使った最新の run。一度も作っていなければ nil。
+	latestRun *port.SyncRun
+}
+
+// latestRunsByAnnotation は最新の run を注釈 ID で引けるようにする。
+func latestRunsByAnnotation(runs []port.SyncRun) map[string]port.SyncRun {
+	out := make(map[string]port.SyncRun, len(runs))
+	for _, r := range runs {
+		out[r.AnnotationID] = r
+	}
+	return out
+}
+
+// judgeAnnotations はシーンに残っている注釈ごとに 3 状態を決める。
+//
+// **注釈の状態の一覧（ListStates）と、ボードの一覧の件数（BoardService.List）が
+// ここを通る。** 別々に判定すると、同じ注釈がパネルと一覧で違う状態に見えうる。
+func judgeAnnotations(
+	scene domain.Scene, latestByAnnotation map[string]port.SyncRun,
+) []judgedAnnotation {
+	annotations := scene.Annotations()
+	out := make([]judgedAnnotation, 0, len(annotations))
 
 	for _, a := range annotations {
-		inScene[a.ID] = struct{}{}
-		current := scene.AnnotationHash(a)
-
 		var (
 			latestHash *domain.ContentHash
 			latestRun  *port.SyncRun
@@ -186,19 +224,13 @@ func (s *AnnotationService) ListStates(
 			latestHash = &h
 		}
 
-		states = append(states, AnnotationState{
-			Annotation:  a,
-			State:       domain.DecideState(latestHash, current),
-			LatestRun:   latestRun,
-			Items:       itemsByAnnotation[a.ID],
-			Unconfirmed: unconfirmedByAnnotation[a.ID],
+		out = append(out, judgedAnnotation{
+			annotation: a,
+			state:      domain.DecideState(latestHash, scene.AnnotationHash(a)),
+			latestRun:  latestRun,
 		})
 	}
-
-	detached := detachedAnnotations(
-		itemsByAnnotation, unconfirmedByAnnotation, latestByAnnotation, inScene)
-
-	return states, detached, nil
+	return out
 }
 
 // detachedAnnotations は畳み込みに在ってシーンに無い注釈を組み立てる。

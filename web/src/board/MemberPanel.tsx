@@ -27,6 +27,10 @@ export function MemberPanel({ boardId, role }: Props) {
   const [login, setLogin] = useState("");
   const [inviteRole, setInviteRole] = useState<BoardRole>("editor");
   const [error, setError] = useState<Failure | null>(null);
+  // 一覧の取得の失敗。操作の失敗（`error`）とは別に持ち、再試行の口はこちらにだけ
+  // 添える。同じ state にすると、取得の失敗のあとで招待の確認が失敗したとき、確認の
+  // 失敗の隣に出た再試行が一覧を取り直してしまう。
+  const [listError, setListError] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   // 招待する前に見せている相手（ADR 0053）。確かめるまでは招待を送らない。
   const [invitee, setInvitee] = useState<Invitee | null>(null);
@@ -34,10 +38,22 @@ export function MemberPanel({ boardId, role }: Props) {
   const reload = useCallback(async () => {
     try {
       setMembers(await membersApi.list(boardId));
+      setListError(null);
     } catch (e) {
-      setError(describeFailure("メンバーを取得できませんでした", e));
+      setListError(describeFailure("メンバーを取得できませんでした", e));
     }
   }, [boardId]);
+
+  /**
+   * 一覧の取り直し。**取得の effect は `boardId` でしか走らない。** パネルは開いた
+   * タブを隠したまま残す（`SidePanel`）ので、同じボードのままタブを切り替えても
+   * 再取得されず、失敗したままボードを開き直すまで復旧できなかった。
+   * 始めに失敗を下げる。残すと、直ったあとも赤いまま並ぶ。
+   */
+  const retry = useCallback(() => {
+    setListError(null);
+    void reload();
+  }, [reload]);
 
   useEffect(() => {
     // 一覧は開いた時点で要る。読みにいくのは await の後で state を置く非同期
@@ -137,6 +153,14 @@ export function MemberPanel({ boardId, role }: Props) {
       */}
       <h2 className="visually-hidden">メンバー</h2>
 
+      {listError && (
+        <>
+          <ErrorNotice failure={listError} />
+          <button type="button" onClick={retry}>
+            再試行
+          </button>
+        </>
+      )}
       {error && <ErrorNotice failure={error} />}
 
       {owner && (

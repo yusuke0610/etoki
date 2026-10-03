@@ -71,6 +71,38 @@ func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
 	}
 }
 
+// toListEntry は一覧の 1 件を詰め替える。共通部分は toSummary から受け取る
+// （toDetail と同じ理由。写し漏れは TestToDetail_CarriesEverySummaryField が
+// 一覧と詳細を突き合わせて落とす）。
+//
+// **件数が nil なら null のまま返す。** 0 件に丸めると、シーンを読めなかった
+// ボードが「注釈なし」に見える。
+func toListEntry(e usecase.BoardListEntry) apitypes.BoardListEntry {
+	s := toSummary(e.BoardAccess)
+
+	out := apitypes.BoardListEntry{
+		ID:              s.ID,
+		Name:            s.Name,
+		Role:            s.Role,
+		CreatedAt:       s.CreatedAt,
+		UpdatedAt:       s.UpdatedAt,
+		RepositoryOwner: s.RepositoryOwner,
+		RepositoryName:  s.RepositoryName,
+		ProjectID:       s.ProjectID,
+		ProjectNumber:   s.ProjectNumber,
+		ProjectTitle:    s.ProjectTitle,
+		ProjectURL:      s.ProjectURL,
+	}
+	if e.Counts != nil {
+		out.AnnotationCounts = &apitypes.AnnotationCounts{
+			Uncreated: e.Counts.Uncreated,
+			Created:   e.Counts.Created,
+			Changed:   e.Counts.Changed,
+		}
+	}
+	return out
+}
+
 // toSyncItem は保存済みの draft issue 1 件を境界の DTO に詰め替える。
 // 注釈の状態と作成結果の両方で返すので 1 箇所に置く。
 func toSyncItem(it port.SyncItem) apitypes.SyncItem {
@@ -207,9 +239,9 @@ func (h *handlers) listBoards(c *gin.Context) {
 	}
 
 	// nil を返すと JSON が null になる。一覧は常に配列にする。
-	out := make([]apitypes.BoardSummary, 0, len(boards))
-	for _, a := range boards {
-		out = append(out, toSummary(a))
+	out := make([]apitypes.BoardListEntry, 0, len(boards))
+	for _, e := range boards {
+		out = append(out, toListEntry(e))
 	}
 
 	c.JSON(http.StatusOK, out)

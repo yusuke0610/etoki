@@ -231,7 +231,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/BoardSummary"
+                  $ref: "#/components/schemas/BoardListEntry"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1601,11 +1601,12 @@ components:
     BoardSummary:
       type: object
       description: |
-        一覧で返すボード。シーンは大きいので含めない。
+        ボードの共通部分。一覧（`BoardListEntry`）と詳細（`BoardDetail`）の
+        両方がこれを取り込む。シーンは大きいので含めない。
 
         作成先は含める。一覧をリポジトリと Project でまとめて見せるため
-        （ADR 0019）。含めないのは `targetLocked` だけで、これは算出に run の
-        照会が要り、ボード数だけ問い合わせが増える。
+        （ADR 0019）。`targetLocked` は含めない。一覧で使う場面が無く、作成先を
+        変えられるかどうかは開いたボードで決める。
       required:
         [
           id,
@@ -1661,6 +1662,50 @@ components:
             番号から組み立てたものではなく GitHub が返したもの。Projects v2 の
             URL は owner が user か org かで形が変わり、etoki はどちらなのかを
             知らない
+
+    AnnotationCounts:
+      type: object
+      description: |
+        注釈の 3 状態ごとの件数。保存済みシーンが基準で、注釈の状態
+        （`AnnotationStatus.state`）と同じ判定で数える。
+
+        キャンバスから消えた注釈（`DetachedAnnotation`）は数えない。3 状態を
+        持たないため（ADR 0046）。
+      required: [uncreated, created, changed]
+      properties:
+        uncreated:
+          type: integer
+          minimum: 0
+        created:
+          type: integer
+          minimum: 0
+        changed:
+          type: integer
+          minimum: 0
+
+    BoardListEntry:
+      description: |
+        一覧で返すボード。ボードの共通部分に、注釈の 3 状態の件数を足したもの。
+        開く前にどのボードに手を打つものがあるかを見せるため（#200）。
+
+        **件数は一覧にだけ載せる。** `BoardSummary` に置くと、取り込んでいる
+        `BoardDetail` を返すすべての応答で数えることになる。開いたボードの
+        状態は注釈の一覧（`AnnotationStatus`）が持っている。
+      allOf:
+        - $ref: "#/components/schemas/BoardSummary"
+        - type: object
+          required: [annotationCounts]
+          properties:
+            annotationCounts:
+              description: |
+                注釈の 3 状態ごとの件数。**シーンを読めなかったボードは null**。
+                1 枚のシーンが壊れているだけで一覧全体を失敗させない。
+
+                **required にしてある。** 省略できる形にすると、書き忘れた
+                返し方が「読めなかった」と同じ見え方のまま通る。
+              nullable: true
+              allOf:
+                - $ref: "#/components/schemas/AnnotationCounts"
 
     BoardDetail:
       description: シーンと作成先の固定状態を加えたボード

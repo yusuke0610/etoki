@@ -8,6 +8,7 @@ import {
   openAnnotationDetail,
   openBoard,
   openBoardWithMock,
+  openPanelTab,
 } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, annotations, baseMock } from "./helpers/fixtures";
 
@@ -164,5 +165,82 @@ test.describe("注釈の詳細", () => {
 
     release();
     await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+  });
+
+  // 切れると: 詳細が開いているあいだに同じ注釈のカードをキーボードで押しても、
+  // 焦点がカードに残る。開いたことに気づけない。注釈 ID だけを見ていると、
+  // 開いたままの注釈では effect が走り直さない。
+  test("開いたままの注釈のカードを押し直しても、焦点が詳細へ移る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const card = annotationCard(page, "ログイン");
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await expect(detail).toBeFocused();
+
+    await card.getByRole("button", { name: "ログイン", exact: true }).focus();
+    await page.keyboard.press("Enter");
+
+    await expect(detail).toBeFocused();
+  });
+
+  // 開いたまま保存すると解釈は捨てられる。カードは解釈の有無に関わらず残るので、
+  // 閉じたらそこへ戻る（#198 のころは戻り先のボタンごと消えた）。
+  test("保存で解釈が捨てられても、閉じるとカードへ焦点が戻る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+
+    // 詳細はキャンバスの上に開いているので、開いたまま描き足せない。保存は未保存
+    // でなくても押せ、どの保存でも解釈は捨てられる。
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(
+      detail.getByText("まだ解釈していません", { exact: false }),
+    ).toBeVisible();
+
+    await detail.focus();
+    await page.keyboard.press("Escape");
+
+    await expect(detail).toHaveCount(0);
+    await expect(
+      card.getByRole("button", { name: "ログイン", exact: true }),
+    ).toBeFocused();
+  });
+
+  // 切れると: 開いたまま別のタブへ切り替えると、カードは DOM に残ったまま隠れる。
+  // 隠れたボタンは焦点を受けられず、閉じても焦点が隠した面の中に取り残される。
+  test("別のタブへ切り替えてから閉じると、選んでいるタブへ焦点が戻る", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await openPanelTab(page, "メンバー");
+    await detail.focus();
+    await page.keyboard.press("Escape");
+
+    await expect(detail).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "メンバー", exact: true })).toBeFocused();
+  });
+
+  // 切れると: パネルを畳むとタブの列ごと隠れる（#202）。カードにもタブにも戻れず、
+  // 焦点が隠した面の中に取り残される。
+  test("パネルを畳んでから閉じると、畳んだ帯のいまのタブへ焦点が戻る", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+    const rail = page.getByRole("navigation", { name: "パネル" });
+    await expect(rail).toBeVisible();
+
+    await detail.focus();
+    await page.keyboard.press("Escape");
+
+    await expect(detail).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: /^注釈/ })).toBeFocused();
   });
 });

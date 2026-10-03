@@ -200,6 +200,12 @@ export function SidePanel({
             aria-labelledby={`side-tab-${tab.id}`}
             className="side-panel-body"
             hidden={tab.id !== active}
+            // 中にフォーカスできるものが無いタブ（共有が未設定のメンバーなど）でも、
+            // タブから Tab キーでパネルへ移れるようにする。WAI-ARIA の tabs
+            // パターンの推奨。外すと、キーボードだけの人はそのパネルの理由に
+            // 届かない。
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+            tabIndex={0}
           >
             {visited.has(tab.id) && tab.content}
           </div>

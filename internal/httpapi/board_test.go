@@ -67,6 +67,10 @@ func TestToDetail_CarriesEverySummaryField(t *testing.T) {
 	detail := decode[map[string]any](t, detailRec)
 
 	for key, want := range summary {
+		// 件数は一覧にしか載せない（`BoardListEntry`）。詳細には無いのが正しい。
+		if key == "annotationCounts" {
+			continue
+		}
 		if isZeroJSON(want) {
 			t.Errorf("summary の %s がゼロ値。写し漏れを見逃すので、"+
 				"作成のボディで値を入れること", key)
@@ -80,6 +84,63 @@ func TestToDetail_CarriesEverySummaryField(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: detail = %v, summary = %v", key, got, want)
+		}
+	}
+}
+
+// 一覧は注釈の 3 状態の件数を載せる（#200）。**シーンを読めないボードは null**
+// で返し、一覧全体は失敗させない。
+//
+// 0 件（注釈なし）と null（読めなかった）を取り違えると、画面は壊れたボードを
+// 「注釈なし」と見せる。**null はキーごと落とさずに返す**ことまで見る。契約で
+// required にしてあり、落とすと画面は「書き忘れ」と区別できない。
+func TestListBoards_CarriesAnnotationCounts(t *testing.T) {
+	t.Parallel()
+
+	r, mappings, db := newRouterWithDB(t)
+
+	created := createBoard(t, r, "作成済み")
+	saveAnnotatedScene(t, r, created)
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID: created, AnnotationID: "annot-1", ContentHash: currentHash(t, r, created),
+		CreatedAt: fixedTime, Outcome: port.OutcomeComplete,
+		Items: []port.SyncItem{{
+			ItemID: "PVTI_e1", Kind: port.KindEpic, Title: "決済API",
+			LocalID: "e1", Action: port.ActionCreated, Confirmed: true, CreatedAt: fixedTime,
+		}},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	uncreated := createBoard(t, r, "未作成")
+	saveAnnotatedScene(t, r, uncreated)
+
+	// API 経由では壊れたシーンを保存できないので、DB に直接書く。
+	broken := createBoard(t, r, "壊れたシーン")
+	if _, err := db.ExecContext(t.Context(),
+		`UPDATE boards SET scene = ? WHERE id = ?`, "{", broken); err != nil {
+		t.Fatalf("update scene: %v", err)
+	}
+
+	list := decodeOK[[]map[string]any](t, do(t, r, http.MethodGet, "/api/boards", nil))
+	if len(list) != 3 {
+		t.Fatalf("件数 = %d, want 3（壊れたボードも一覧には残す）", len(list))
+	}
+
+	want := map[string]any{
+		created:   map[string]any{"uncreated": float64(0), "created": float64(1), "changed": float64(0)},
+		uncreated: map[string]any{"uncreated": float64(1), "created": float64(0), "changed": float64(0)},
+		broken:    nil,
+	}
+	for _, e := range list {
+		id, _ := e["id"].(string)
+		got, ok := e["annotationCounts"]
+		if !ok {
+			t.Errorf("%s: annotationCounts のキーが無い。null でもキーは返す", id)
+			continue
+		}
+		if !reflect.DeepEqual(got, want[id]) {
+			t.Errorf("%s: annotationCounts = %v, want %v", id, got, want[id])
 		}
 	}
 }

@@ -292,6 +292,17 @@ func (e SyncState) Valid() bool {
 	}
 }
 
+// AnnotationCounts 注釈の 3 状態ごとの件数。保存済みシーンが基準で、注釈の状態
+// （`AnnotationStatus.state`）と同じ判定で数える。
+//
+// キャンバスから消えた注釈（`DetachedAnnotation`）は数えない。3 状態を
+// 持たないため（ADR 0046）。
+type AnnotationCounts struct {
+	Changed   int `json:"changed"`
+	Created   int `json:"created"`
+	Uncreated int `json:"uncreated"`
+}
+
 // AnnotationImage 注釈の frame 範囲だけを写した画像。frame の外にある要素は含めない。
 //
 // サーバーは保存しない。解釈 1 回のあいだ LLM へ渡すためだけに使う
@@ -486,6 +497,59 @@ type BoardDetail struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+// BoardListEntry 一覧で返すボード。ボードの共通部分に、注釈の 3 状態の件数を足したもの。
+// 開く前にどのボードに手を打つものがあるかを見せるため（#200）。
+//
+// **件数は一覧にだけ載せる。** `BoardSummary` に置くと、取り込んでいる
+// `BoardDetail` を返すすべての応答で数えることになる。開いたボードの
+// 状態は注釈の一覧（`AnnotationStatus`）が持っている。
+type BoardListEntry struct {
+	// AnnotationCounts 注釈の 3 状態ごとの件数。**シーンを読めなかったボードは null**。
+	// 1 枚のシーンが壊れているだけで一覧全体を失敗させない。
+	//
+	// **required にしてある。** 省略できる形にすると、書き忘れた
+	// 返し方が「読めなかった」と同じ見え方のまま通る。
+	AnnotationCounts *AnnotationCounts `json:"annotationCounts"`
+	CreatedAt        time.Time         `json:"createdAt"`
+	ID               string            `json:"id"`
+	Name             string            `json:"name"`
+
+	// ProjectID draft issue を作る Projects v2 の node ID。未選択なら空文字
+	ProjectID string `json:"projectId"`
+
+	// ProjectNumber 作成先 Project の番号。作成先を選んだ時点のスナップショット
+	// （ADR 0019）。取得していなければ 0
+	ProjectNumber int `json:"projectNumber"`
+
+	// ProjectTitle 作成先 Project の名前。作成先を選んだ時点のスナップショット
+	// （ADR 0019）。取得していなければ空文字
+	ProjectTitle string `json:"projectTitle"`
+
+	// ProjectURL 作成先 Project の URL。作成先を選んだ時点のスナップショット
+	// （ADR 0025）。取得していなければ空文字。
+	//
+	// 番号から組み立てたものではなく GitHub が返したもの。Projects v2 の
+	// URL は owner が user か org かで形が変わり、etoki はどちらなのかを
+	// 知らない
+	ProjectURL string `json:"projectUrl"`
+
+	// RepositoryName 作成先リポジトリの名前。未選択なら空文字
+	RepositoryName string `json:"repositoryName"`
+
+	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
+	RepositoryOwner string `json:"repositoryOwner"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role      BoardRole `json:"role"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // BoardMember ボードのメンバー 1 人
 type BoardMember struct {
 	CreatedAt   time.Time `json:"createdAt"`
@@ -517,11 +581,12 @@ type BoardMember struct {
 //     あり、閲覧者に許すのは「閲覧」ではない
 type BoardRole string
 
-// BoardSummary 一覧で返すボード。シーンは大きいので含めない。
+// BoardSummary ボードの共通部分。一覧（`BoardListEntry`）と詳細（`BoardDetail`）の
+// 両方がこれを取り込む。シーンは大きいので含めない。
 //
 // 作成先は含める。一覧をリポジトリと Project でまとめて見せるため
-// （ADR 0019）。含めないのは `targetLocked` だけで、これは算出に run の
-// 照会が要り、ボード数だけ問い合わせが増える。
+// （ADR 0019）。`targetLocked` は含めない。一覧で使う場面が無く、作成先を
+// 変えられるかどうかは開いたボードで決める。
 type BoardSummary struct {
 	CreatedAt time.Time `json:"createdAt"`
 	ID        string    `json:"id"`
