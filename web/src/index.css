@@ -1531,6 +1531,15 @@ button.danger:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hove
 }
 
 /*
+ * 作成先の Project に書けない（#217）。取り消せない作成ができないことなので
+ * 危険の色で出す。**文字を添える**ので、色だけで伝えてはいない。
+ */
+.badge-denied {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/*
  * 作成先バッジは飛び先が組めるときだけリンクになる（ADR 0025）。
  *
  * 下線は既定のままにせず、ホバーで出す。常時引くと、隣に並ぶ他のバッジと
