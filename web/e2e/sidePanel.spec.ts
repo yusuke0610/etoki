@@ -93,6 +93,10 @@ test.describe("右のパネル", () => {
     await expect(panel.getByText("共有には認証の設定が必要です")).toBeVisible();
 
     await page.getByRole("tab", { name: "メンバー", exact: true }).focus();
+    // タブの列の右に「パネルを閉じる」がある（#202）。焦点の順は見た目の並びの
+    // まま（タブ → 閉じる → 中身）にし、入れ替えない。
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "パネルを閉じる" })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(panel).toBeFocused();
   });
