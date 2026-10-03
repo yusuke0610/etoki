@@ -93,6 +93,43 @@ func TestNew_RejectsInvalidBaseURL(t *testing.T) {
 	}
 }
 
+// 鍵を持つときだけ、http はループバックに限る（#64）。綴りの誤り 1 つで鍵を
+// 平文で外へ送らない。鍵の無い http は LAN 内のローカル LLM に向ける使い方
+// （ADR 0008）があるので通す。
+func TestNew_HTTPBaseURLNeedsLoopbackWhenKeyIsSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		base    string
+		apiKey  string
+		wantErr bool
+	}{
+		{"鍵つきで外への http", "http://llm.example.test", testAPIKey, true},
+		{"鍵つきで LAN への http", "http://192.168.1.10:11434", testAPIKey, true},
+		{"鍵なしで LAN への http", "http://192.168.1.10:11434", "", false},
+		{"鍵つきでループバックへの http", "http://127.0.0.1:11434", testAPIKey, false},
+		{"鍵つきで localhost への http", "http://localhost:11434", testAPIKey, false},
+		{"鍵つきで IPv6 のループバックへの http", "http://[::1]:11434", testAPIKey, false},
+		{"鍵つきで外への https", "https://llm.example.test", testAPIKey, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := llm.New(llm.Config{BaseURL: tt.base, APIKey: tt.apiKey})
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Fatalf("New(%q, key=%v) error = %v, wantErr %v", tt.base, tt.apiKey != "", err, tt.wantErr)
+			}
+			// 鍵は伏せたまま返す。設定の誤りを知らせるエラーが鍵を運ばない。
+			if err != nil && strings.Contains(err.Error(), tt.apiKey) {
+				t.Errorf("error leaks the api key: %v", err)
+			}
+		})
+	}
+}
+
 // 認証方式が違う基盤に載せ替えるときは、RoundTripper で付け替える（ADR 0008）。
 func TestComplete_AllowsAuthViaRoundTripper(t *testing.T) {
 	t.Parallel()

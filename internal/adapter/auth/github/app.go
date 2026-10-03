@@ -37,7 +37,7 @@ const (
 // 環境変数名。
 const (
 	EnvClientID     = "ETOKI_GITHUB_APP_CLIENT_ID"
-	EnvClientSecret = "ETOKI_GITHUB_APP_CLIENT_SECRET"
+	EnvClientSecret = "ETOKI_GITHUB_APP_CLIENT_SECRET" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
 )
 
 // defaultTimeout は 1 回の呼び出しを待つ上限。

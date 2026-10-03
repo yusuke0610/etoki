@@ -77,6 +77,29 @@ const cancelRequestsAfter = 5 * time.Second
 // 動かすなら、あちらも一緒に見る。**
 const shutdownTimeout = cancelRequestsAfter + usecase.MaxCreationDrain
 
+// readTimeout はリクエストのヘッダと本文を読み終えるまでの上限（#64）。
+//
+// **本文をゆっくり送る接続を切るため。** 本文の大きさの上限（#147）は量を縛る
+// だけで、送り終えるまでの長さは縛らない。ヘッダだけを縛る ReadHeaderTimeout
+// では、ヘッダを送ったあと本文を少しずつ送る接続が残り続ける。
+//
+// **長さは保存できる最大のシーンから決める**（usecase.MaxSceneBytes の 8 MiB）。
+// 0.6 Mbps 程度の上りでも送り切れる。短くすると、遅い回線から大きなボードを
+// 保存できなくなる。
+//
+// **読み終えたあとのハンドラは切らない。** net/http は本文を読み終えると読み
+// 込みの期限を外すので、分単位で待つ解釈や、ctx で接続断を見る作成（ADR 0051）は
+// この期限で止まらない。`TestRunReadTimeoutDoesNotCancelLongHandlers` が固定
+// している。WriteTimeout は同じ理由では置けない（応答を書き終えるまでの上限に
+// なるので、長い解釈が途中で切れる）。
+const readTimeout = 2 * time.Minute
+
+// idleTimeout はキープアライブの接続を、次のリクエストを待って開けておく上限（#64）。
+//
+// 置かないと ReadTimeout の値が使われる。分けて持つのは、本文を送るための長さと
+// 何もしない接続を残す長さが別の問いだから。
+const idleTimeout = 2 * time.Minute
+
 // Options は Server の組み立てに必要な設定と依存を束ねる。
 //
 // リポジトリを引数で受け取るのは、利用者が独自の実装を差し込めるようにする
@@ -185,6 +208,11 @@ type Server struct {
 	// 停止の猶予。テストで短くするためにフィールドで持つ。
 	shutdownTimeout     time.Duration
 	cancelRequestsAfter time.Duration
+
+	// 接続の読み込みとアイドルの期限。理由は readTimeout / idleTimeout の定数。
+	// テストで短くするためにフィールドで持つ。
+	readTimeout time.Duration
+	idleTimeout time.Duration
 }
 
 // log は記録先を返す。未設定なら slog の既定（Options.Logger と同じ扱い）。
@@ -279,6 +307,8 @@ func New(opts Options) (*Server, error) {
 		logger:              opts.Logger,
 		shutdownTimeout:     shutdownTimeout,
 		cancelRequestsAfter: cancelRequestsAfter,
+		readTimeout:         readTimeout,
+		idleTimeout:         idleTimeout,
 	}, nil
 }
 
@@ -363,6 +393,8 @@ func (s *Server) Run(ctx context.Context) error {
 		Addr:              s.addr,
 		Handler:           s.handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       s.readTimeout,
+		IdleTimeout:       s.idleTimeout,
 		BaseContext:       func(net.Listener) context.Context { return requests },
 	}
 

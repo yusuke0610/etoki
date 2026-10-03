@@ -187,6 +187,9 @@ type SessionRepository interface {
 	// 暗号化は実装の責務。平文で置いてはならない（ADR 0015）。
 	SaveCredentials(ctx context.Context, userID string, c Credentials, now time.Time) error
 	// FindCredentials は利用者の資格情報を返す。無ければ (nil, nil)。
+	//
+	// 保存はあるが開けない（暗号化の鍵を入れ替えた、など）ときは
+	// ErrNotAuthenticated を包んで返す。再ログインに落ち、封をし直される。
 	FindCredentials(ctx context.Context, userID string) (*Credentials, error)
 
 	// ConsumeState は state を照合して削除し、保存してあった内容を返す。

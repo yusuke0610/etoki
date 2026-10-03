@@ -53,26 +53,26 @@ direnv allow
 エンドポイントだけが「設定されていない」と返し、ボードの編集と注釈の状態表示は
 そのまま使えます。ブレストだけ先にやる、という使い方を潰さないためです。
 
-| 変数                             | 既定値                      | 用途                                                             |
-| -------------------------------- | --------------------------- | ---------------------------------------------------------------- |
-| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                                 |
-| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す       |
-| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                            |
-| `ETOKI_WEB_DIR`                  | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない     |
-| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント                                             |
-| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                        |
-| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                        |
-| `ETOKI_LLM_MAX_CONCURRENT`       | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                       |
-| `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい |
-| `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）         |
-| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                  |
-| `ETOKI_GITHUB_BASE_URL`          | `https://api.github.com`    | GitHub API のルート。http はループバックだけ。GHES は未確認      |
-| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する            |
-| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                 |
-| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                |
-| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                 |
-| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                       |
-| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                         |
+| 変数                             | 既定値                      | 用途                                                               |
+| -------------------------------- | --------------------------- | ------------------------------------------------------------------ |
+| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                                   |
+| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す         |
+| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                              |
+| `ETOKI_WEB_DIR`                  | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない       |
+| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント。鍵を設定しているなら http はループバックだけ |
+| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                          |
+| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                          |
+| `ETOKI_LLM_MAX_CONCURRENT`       | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                         |
+| `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい   |
+| `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）           |
+| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                    |
+| `ETOKI_GITHUB_BASE_URL`          | `https://api.github.com`    | GitHub API のルート。http はループバックだけ。GHES は未確認        |
+| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する              |
+| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                   |
+| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                  |
+| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                   |
+| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                         |
+| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                           |
 
 解釈と図のドラフト生成は LLM を叩くので課金を伴います。**上限は利用者ごとに
 効き、2 つで 1 つの枠を共有します**（ADR 0044）。既定で効くのは同時実行だけで、
@@ -316,6 +316,20 @@ export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき（上の表
 鍵は保存するトークンの暗号化に使います。**未設定だと起動時に落ちます。**
 黙って平文で保存しないためです。鍵を変えると保存済みのトークンは開けなくなり、
 再ログインが必要になります。
+
+鍵を入れ替える手順は次のとおりです。
+
+1. 新しい鍵を作って `ETOKI_TOKEN_ENCRYPTION_KEY` を差し替え、再起動する
+2. 各利用者は、GitHub を使う操作（作成先の候補や作成）でログインを求められる
+   ので、ログインし直す。そのとき新しい鍵で封をし直します
+
+**ログイン状態そのもの（セッション）は鍵を使わないので、再起動しても切れません。**
+GitHub を使わない操作（描く・保存する・解釈する）はそのまま続けられます。
+
+鍵が漏れたときは、鍵の入れ替えだけでは足りません。DB も一緒に漏れていれば、
+保存されていたトークンは古い鍵で読めてしまいます。GitHub 側でもトークンを
+失効させてください。各利用者が GitHub の Settings → Applications →
+Authorized GitHub Apps から取り消すか、App の設定でまとめて取り消します。
 
 トークンは既定で 8 時間で失効しますが、`refresh_token` で自動更新するので
 再ログインは要りません。App の設定で「Expire user authorization tokens」を
