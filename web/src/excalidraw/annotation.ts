@@ -50,6 +50,8 @@ export type SceneElement = {
   versionNonce?: number;
   /** 画像の実体を files から引く ID。未保存の判定にも使う（dirty.ts）。 */
   fileId?: string | null;
+  /** 所属する group。表（table.ts）が 9 枚を 1 つにまとめるのに使う。 */
+  groupIds?: readonly string[];
 };
 
 /**
