@@ -35,17 +35,29 @@ export function UserMenu({ user, onLogout }: Props) {
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
     // Esc は焦点をボタンへ戻す。開いた中身の中で押されると、閉じた瞬間に
-    // 焦点の行き場が無くなる。
+    // 焦点の行き場が無くなる。**メニューの外で押された Esc は拾わない。** 外の
+    // Esc は外のもの（新しいボードのダイアログなど）のためのもので、拾うと
+    // 焦点をボタンへ引き戻して横取りする。
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (!root.current?.contains(document.activeElement)) return;
       setOpen(false);
       toggle.current?.focus();
     };
+    // Tab で外へ出たら閉じる。外側を押したときと同じく、焦点は動かさない
+    // （移った先がそのまま焦点を持つ）。開いたまま残すと、外で操作しているあいだも
+    // 中身が上に重なったままになる。
+    const onFocusOut = (e: FocusEvent) => {
+      if (!root.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+    };
+    const el = root.current;
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
+    el?.addEventListener("focusout", onFocusOut);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
+      el?.removeEventListener("focusout", onFocusOut);
     };
   }, [open]);
 

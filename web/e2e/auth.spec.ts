@@ -101,6 +101,36 @@ test.describe("ログイン", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
+  // 開いたまま外へ出ると、外で押した Esc までメニューが拾い、焦点をボタンへ
+  // 引き戻す。新しいボードのダイアログを Esc で閉じても、焦点が「新しいボード」へ
+  // 戻らなくなる（#219）。**外へ出たら、焦点は動かさずに閉じる**（外側を押した
+  // ときと同じ）。
+  test("利用者のメニューから Tab で外へ出たら閉じ、外の Esc で焦点を奪わない", async ({
+    page,
+  }) => {
+    const mock = authRequiredMock();
+    mock.session = { status: 200, body: signedIn() };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const toggle = page.getByRole("button", { name: "Octo Cat" });
+    const logout = page.getByRole("button", { name: "ログアウト" });
+    const newBoard = page.getByRole("button", { name: "新しいボード" });
+
+    await toggle.click();
+    await logout.focus();
+    await page.keyboard.press("Tab");
+    await expect(newBoard).toBeFocused();
+    await expect(logout).toBeHidden();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: "新しいボード" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "新しいボード" })).toBeHidden();
+    await expect(newBoard).toBeFocused();
+  });
+
   test("ログアウトするとログイン画面に戻る", async ({ page }) => {
     const mock = authRequiredMock();
     mock.session = { status: 200, body: signedIn() };

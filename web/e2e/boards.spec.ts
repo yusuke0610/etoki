@@ -61,6 +61,9 @@ test.describe("ボード", () => {
 
     // 開いたら名前の欄から始める。
     await expect(name).toBeFocused();
+    // 必須であることは支援技術にも伝える。「次へ」が押せないだけでは、読み上げで
+    // 欄を移っている人には届かない。
+    await expect(name).toHaveJSProperty("required", true);
     // 空白だけでは進ませない。誤って空名のボードが増えるのを防いでいる。
     await expect(submit).toBeDisabled();
     await name.fill("   ");

@@ -77,8 +77,14 @@ export function NewBoardDialog({
         <h2 id="new-board-heading">新しいボード</h2>
         <label className="new-board-name">
           ボード名
+          {/*
+            必須であることは支援技術にも伝える。「次へ」が押せないだけでは、読み上げで
+            欄を移っている人には届かない。空白だけの名前は `required` を通るので、
+            進ませない判定は「次へ」の側に残す。
+          */}
           <input
             ref={input}
+            required
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
           />
