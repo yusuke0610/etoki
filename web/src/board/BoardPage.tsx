@@ -30,12 +30,14 @@ import type {
 } from "../api/types";
 import { unavailableReason } from "../capability";
 import {
+  annotationMetas,
   frameIds,
   isAnnotation,
   markAsAnnotation,
   setAnnotationKind,
   selectableFrames,
   unmarkAnnotation,
+  type AnnotationMeta,
   type SceneElement,
   type SelectableFrame,
 } from "../excalidraw/annotation";
@@ -300,6 +302,11 @@ export function BoardPage({
   // null は「Excalidraw からまだ聞いていない」。空配列と混ぜると、マウント直後の
   // 一瞬だけ全部のカードが「キャンバスにありません」になる。
   const [canvasFrameIds, setCanvasFrameIds] = useState<string[] | null>(null);
+  // キャンバスにいま在る注釈の粒度と種別。注釈の詳細の選択欄が出す値で、保存済み
+  // の値（`annotations`）とは次の保存までずれる。null の意味は上と同じ。
+  const [canvasMetas, setCanvasMetas] = useState<Record<string, AnnotationMeta> | null>(
+    null,
+  );
   // 注釈にした frame に重ねる枠。キャンバスの見え方が変わるたびに引き直す。
   const [overlayBoxes, setOverlayBoxes] = useState<AnnotationBox[]>([]);
   // 未保存かどうかを決めるのはここだけ（`useDirtyScene`）。
@@ -706,6 +713,7 @@ export function BoardPage({
       scheduleMeasure();
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
       setCanvasFrameIds(frameIds(els));
+      setCanvasMetas(annotationMetas(els));
 
       // スクロールとズームは onChange でしか届かない。要素が変わっていなくても
       // 引き直す必要があるので、ここでまとめて拾う。
@@ -1902,6 +1910,7 @@ export function BoardPage({
               annotations={annotations}
               frames={{
                 canvasIds: canvasFrameIds,
+                metas: canvasMetas,
                 onFocus: focusFrame,
                 onChangeGranularity: handleMark,
                 onChangeKind: handleChangeAnnotationKind,
