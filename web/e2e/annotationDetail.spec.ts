@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { holdInterpret, installApi } from "./helpers/api";
+import { holdInterpret, holdSave, installApi } from "./helpers/api";
 import {
   annotationCard,
   annotationDetail,
@@ -115,6 +115,8 @@ test.describe("注釈の詳細", () => {
     );
 
     await detail.getByLabel("粒度").selectOption("epic");
+    // 保存済みの粒度は保存するまで古い。選んだ値が選択欄に残っていること（#214）。
+    await expect(detail.getByLabel("粒度")).toHaveValue("epic");
     await expect(button).toBeDisabled();
     await expect(button).toHaveAccessibleDescription(/保存してから解釈できます/);
 
@@ -124,6 +126,57 @@ test.describe("注釈の詳細", () => {
     await expect(
       detail.getByText("保存してから解釈できます", { exact: false }),
     ).toHaveCount(0);
+  });
+
+  // 粒度と種別の選択欄が出すのはキャンバスに書いた値。保存済みの値に「選んだ
+  // 値」を重ねて出す作りだと、保存中に元の値へ選び直したところで重ねた値を
+  // 手放し、遅れて届いた前の保存（epic）を出してしまう（#214）。キャンバスは
+  // 「指定なし」なのに選択欄だけが epic になる。
+  test("保存中に元の粒度へ選び直したら、前の保存が届いても選び直した値を出す", async ({
+    page,
+  }) => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const mock = await installApi(page, baseMock());
+    await holdSave(page, held);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const select = detail.getByLabel("粒度");
+    await select.selectOption("epic");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    // 保存が epic のシーンを送ったあとで、元の「指定なし」へ選び直す。
+    await select.selectOption({ label: "指定なし" });
+    await expect(select).toHaveValue("");
+
+    // 届くのは epic で保存した結果。
+    mock.annotations[BOARD_ID] = annotations().map((a) =>
+      a.name === "ログイン" ? { ...a, granularity: "epic" } : a,
+    );
+    release();
+    await expect(page.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+    await expect(
+      annotationCard(page, "ログイン").getByText("粒度 epic", { exact: false }),
+    ).toBeVisible();
+
+    await expect(select).toHaveValue("");
+    // 保存したあとで選び直したので、キャンバスは保存済みと違う。
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  });
+
+  // 「元に戻す」はキャンバスの要素を戻すだけで、保存済みの値は変わらない。
+  // 選択欄がキャンバスを見ていないと、戻したあとも選んだ値を出し続ける。
+  test("粒度を選んで元に戻したら、選択欄も戻る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const select = detail.getByLabel("粒度");
+    await select.selectOption("epic");
+    await expect(select).toHaveValue("epic");
+
+    await page.getByRole("button", { name: "元に戻す" }).click();
+    await expect(select).toHaveValue("");
   });
 
   // 状態は保存済みシーンが基準なので、フレームを消して保存すると注釈ごと一覧から

@@ -14,6 +14,7 @@ function props(): ComponentProps<typeof AnnotationDetail> {
     ],
     frames: {
       canvasIds: ["frame-1"],
+      metas: { "frame-1": { granularity: "", kind: undefined } },
       onFocus: vi.fn(),
       onChangeGranularity: vi.fn(),
       onChangeKind: vi.fn(),
@@ -41,52 +42,40 @@ function props(): ComponentProps<typeof AnnotationDetail> {
 }
 
 describe("AnnotationDetail", () => {
-  // 種別の更新は live scene にだけ先に反映され、annotations は保存するまで古い。
-  // ここで選択値を直接見ることで、古い a.kind を表示し続ける回帰を検知する。
-  it("保存前でも選んだ種別を表示する", () => {
+  // 選択欄が書く先はキャンバスの要素で、保存済みの値（annotations）は次の保存
+  // まで古い。保存済みの値に「選んだ値」を重ねて出す作りは、保存中の選び直しや
+  // 「元に戻す」でキャンバスと食い違った（#124、#214）。
+  it("粒度と種別は、保存済みの値ではなくキャンバスの値を出す", () => {
     const detailProps = props();
-    render(<AnnotationDetail {...detailProps} />);
-
-    const select = screen.getByLabelText("種別");
-    fireEvent.change(select, { target: { value: "sequence" } });
-
-    expect(detailProps.frames.onChangeKind).toHaveBeenCalledWith("frame-1", "sequence");
-    expect(select).toHaveValue("sequence");
-  });
-
-  // 前の選択（sequence）の保存だけが後から追いつくと、「保存済みの値が変わった
-  // から追いついた」という判定では、追いついたのが古い選択のほうでも pending を
-  // 消してしまい、選択欄がキャンバスと食い違う値（sequence）に戻ってしまう。
-  it("保存中に選び直しても、古い選択の保存が追いついた時点で表示を戻さない", () => {
-    const detailProps = props();
-    const { rerender } = render(<AnnotationDetail {...detailProps} />);
-
-    const select = screen.getByLabelText("種別");
-    fireEvent.change(select, { target: { value: "sequence" } });
-    fireEvent.change(select, { target: { value: "er" } });
-
-    expect(detailProps.frames.onChangeKind).toHaveBeenLastCalledWith("frame-1", "er");
-    expect(select).toHaveValue("er");
-
-    // 1 回目の選択（sequence）の保存だけが先に追いつく。2 回目（er）はまだ未保存。
-    rerender(
+    render(
       <AnnotationDetail
         {...detailProps}
         annotations={[
+          // 遅れて届いた前の保存。キャンバスはもう別の値になっている。
           {
             id: "frame-1",
             name: "ログイン",
-            granularity: "",
+            granularity: "epic",
             state: "uncreated",
-            kind: "sequence",
+            kind: "er",
           },
         ]}
+        frames={{
+          ...detailProps.frames,
+          metas: { "frame-1": { granularity: "issue", kind: "sequence" } },
+        }}
       />,
     );
-    expect(select).toHaveValue("er");
 
-    // 2 回目の選択（er）の保存が追いつく。ここで初めて表示の根拠が a.kind に戻る。
-    rerender(
+    expect(screen.getByLabelText("粒度")).toHaveValue("issue");
+    expect(screen.getByLabelText("種別")).toHaveValue("sequence");
+  });
+
+  // キャンバスの注釈に種別が無いことと、キャンバスに注釈が無いことを取り違えると、
+  // 「指定なし」に選び直した直後に保存済みの種別が出る。
+  it("キャンバスの注釈が種別を持たなければ、保存済みの種別ではなく「指定なし」を出す", () => {
+    const detailProps = props();
+    render(
       <AnnotationDetail
         {...detailProps}
         annotations={[
@@ -100,30 +89,67 @@ describe("AnnotationDetail", () => {
         ]}
       />,
     );
-    expect(select).toHaveValue("er");
+
+    expect(screen.getByLabelText("種別")).toHaveValue("");
   });
 
-  // 追いついたあとも pending を持ち続けると、元に戻す・取り込みで保存済みの値が
-  // 変わったときに、選択欄が古い選択（er）を出し続ける。
-  it("選んだ値が保存で追いついたあと、保存済みの値が変わればそちらを表示する", () => {
+  // 未保存で消した frame の注釈は一覧に残る。キャンバスに値が無いので保存済みを出す。
+  // Excalidraw からまだ聞いていない（null）ときも同じ。
+  it("キャンバスに無い注釈は、保存済みの値を出す", () => {
     const detailProps = props();
-    const { rerender } = render(<AnnotationDetail {...detailProps} />);
-    const select = screen.getByLabelText("種別");
-    const withKind = (kind: "er" | undefined) => (
+    const saved = [
+      {
+        id: "frame-1",
+        name: "ログイン",
+        granularity: "epic" as const,
+        state: "uncreated" as const,
+        kind: "er" as const,
+      },
+    ];
+    const { rerender } = render(
       <AnnotationDetail
         {...detailProps}
-        annotations={[
-          { id: "frame-1", name: "ログイン", granularity: "", state: "uncreated", kind },
-        ]}
-      />
+        annotations={saved}
+        frames={{ ...detailProps.frames, metas: {} }}
+      />,
     );
+    expect(screen.getByLabelText("粒度")).toHaveValue("epic");
+    expect(screen.getByLabelText("種別")).toHaveValue("er");
 
-    fireEvent.change(select, { target: { value: "er" } });
-    rerender(withKind("er"));
-    expect(select).toHaveValue("er");
+    rerender(
+      <AnnotationDetail
+        {...detailProps}
+        annotations={saved}
+        frames={{ ...detailProps.frames, metas: null }}
+      />,
+    );
+    expect(screen.getByLabelText("粒度")).toHaveValue("epic");
+    expect(screen.getByLabelText("種別")).toHaveValue("er");
+  });
 
-    rerender(withKind(undefined));
-    expect(select).toHaveValue("");
+  it("選んだ粒度と種別はキャンバスへ書く", () => {
+    const detailProps = props();
+    render(<AnnotationDetail {...detailProps} />);
+
+    fireEvent.change(screen.getByLabelText("粒度"), { target: { value: "epic" } });
+    fireEvent.change(screen.getByLabelText("種別"), { target: { value: "sequence" } });
+    fireEvent.change(screen.getByLabelText("種別"), { target: { value: "" } });
+
+    expect(detailProps.frames.onChangeGranularity).toHaveBeenCalledWith(
+      "frame-1",
+      "epic",
+    );
+    expect(detailProps.frames.onChangeKind).toHaveBeenNthCalledWith(
+      1,
+      "frame-1",
+      "sequence",
+    );
+    // 「指定なし」は種別の語彙に無いので undefined で渡す（customData からキーごと落ちる）。
+    expect(detailProps.frames.onChangeKind).toHaveBeenNthCalledWith(
+      2,
+      "frame-1",
+      undefined,
+    );
   });
 
   // 詳細はキャンバスの中央を覆うので、開いたまま寄せても選んだ frame は裏に
