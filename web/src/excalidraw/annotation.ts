@@ -224,3 +224,21 @@ export function selectableFrames(
 export function frameIds(elements: readonly SceneElement[]): string[] {
   return elements.filter((el) => el.type === "frame" && !el.isDeleted).map((el) => el.id);
 }
+
+/**
+ * シーンにいま在る注釈の粒度と種別を、frame の ID で引けるようにする。
+ *
+ * 注釈の詳細の選択欄がキャンバスに書いた値を出すために使う。注釈の状態は保存済み
+ * シーンが基準なので、選び直した値は次の保存まで状態の側には出てこない。
+ */
+export function annotationMetas(
+  elements: readonly SceneElement[],
+): Record<string, AnnotationMeta> {
+  const metas: Record<string, AnnotationMeta> = {};
+  for (const el of elements) {
+    const granularity = granularityOf(el);
+    if (granularity === undefined) continue;
+    metas[el.id] = { granularity, kind: kindOf(el) };
+  }
+  return metas;
+}

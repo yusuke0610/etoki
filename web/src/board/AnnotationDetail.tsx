@@ -7,6 +7,7 @@ import type {
   Interpretation,
   ProjectAccess,
 } from "../api/types";
+import type { AnnotationMeta } from "../excalidraw/annotation";
 import { GRANULARITY_LABEL, STATE_LABEL, annotationLabels } from "./annotationLabel";
 import { annotationCardButtonId } from "./AnnotationPanel";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
@@ -90,6 +91,11 @@ export type FrameEditProps = {
    * うちは無いことにしない**（右のパネルと同じ）。
    */
   canvasIds: string[] | null;
+  /**
+   * キャンバスにいま在る注釈の粒度と種別（frame の ID で引く）。まだ分からなければ
+   * null。**粒度と種別の選択欄はここを出す**（保存済みの値ではなく）。
+   */
+  metas: Record<string, AnnotationMeta> | null;
   /** キャンバスをそのフレームへ寄せて選択する（ADR 0022）。 */
   onFocus: (frameId: string) => void;
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
@@ -240,8 +246,8 @@ export function AnnotationDetail({
 }
 
 /**
- * 注釈 1 件ぶんの面。開閉の状態（GitHub にあるもの・実行の履歴）と、保存を
- * 待つあいだの種別はここで持つ。面は描いたまま隠すので、閉じても残る。
+ * 注釈 1 件ぶんの面。開閉の状態（GitHub にあるもの・実行の履歴）はここで持つ。
+ * 面は描いたまま隠すので、閉じても残る。
  */
 function AnnotationFace({
   sectionRef,
@@ -287,22 +293,16 @@ function AnnotationFace({
   const [itemsOpen, setItemsOpen] = useState(false);
   const [runsOpen, setRunsOpen] = useState(false);
 
-  // 注釈の状態は保存済みシーンから来る。種別を変えた直後はキャンバスだけが
-  // 新しく、次の保存まで a.kind は古いので、そのあいだはここで選択値を持つ。
-  // **最後に選んだ値が a.kind に追いつくまで保持する**（`.claude/rules/async-ui.md`）。
-  // 保存中に選び直すと前の選択の保存が後から追いつくことがあり、そこで「保存済みの
-  // 値が変わったから追いついた」と判定すると、追いついたのが古い選択のほうでも
-  // 選択欄がキャンバスと違う値に戻る。
-  const [pendingKind, setPendingKind] = useState<{
-    value: DiagramKind | undefined;
-  } | null>(null);
-  const kind = pendingKind && pendingKind.value !== a.kind ? pendingKind.value : a.kind;
-  // 追いついたら手放す。持ったままだと、あとで「元に戻す」や取り込みで保存済みの
-  // 値が変わっても、選択欄が古い選択を表示し続け、同じ値を選び直しても change が
-  // 出ないので利用者が直せない。
-  // 描画中の setState は、React が派生状態の更新として認める書き方（effect だと
-  // 1 描画ぶん古い値を見せる）。
-  if (pendingKind && pendingKind.value === a.kind) setPendingKind(null);
+  // 粒度と種別の選択欄が出すのは**キャンバスに書いた値**。選ぶと書き換わるのは
+  // キャンバスの要素で、保存済みの値（a）は次の保存まで古い。保存済みの値に
+  // 「選んだ値」を重ねて出す作りは、保存中に元の値へ選び直す・「元に戻す」で
+  // キャンバスと食い違った（#124、#214）。
+  // キャンバスに無い注釈（未保存で消した frame）だけは保存済みの値を出す。
+  // **「キャンバスの注釈に種別が無い」とは分ける。** 混ぜると「指定なし」に
+  // 選び直した直後に保存済みの種別が出る。
+  const onCanvasMeta = frames.metas?.[id];
+  const granularity = onCanvasMeta ? onCanvasMeta.granularity : a.granularity;
+  const kind = onCanvasMeta ? onCanvasMeta.kind : a.kind;
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape") return;
@@ -381,7 +381,7 @@ function AnnotationFace({
             粒度
             {/* 押せない理由は本文の下にある読むだけの案内を指す（ADR 0039）。 */}
             <select
-              value={a.granularity}
+              value={granularity}
               disabled={!canEdit}
               aria-describedby={canEdit ? undefined : viewerId}
               onChange={(e) =>
@@ -410,7 +410,6 @@ function AnnotationFace({
               aria-describedby={canEdit ? undefined : viewerId}
               onChange={(e) => {
                 const nextKind = (e.target.value || undefined) as DiagramKind | undefined;
-                setPendingKind({ value: nextKind });
                 frames.onChangeKind(id, nextKind);
               }}
             >
