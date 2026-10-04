@@ -33,9 +33,16 @@ export async function chooseFromMenu(page: Page, name: string): Promise<void> {
  * 右のパネルのタブを開き、その中身の枠を返す（`SidePanel`、ADR 0065）。
  *
  * **初めて開くまで中身は DOM に無い。** 1 度開いたタブは、ほかを開いても隠す
- * だけで残る。「出さない」を見るときは、開いてから中を見る。
+ * だけで残る。「出さない」を見るときは、開いてから中を見る。パネルを畳んで
+ * いれば、右端の帯から開き直す。
  */
 export async function openPanelTab(page: Page, name: string): Promise<Locator> {
+  // 畳んでいれば帯から開く（#202）。帯のボタンの名前は件数まで含むので、
+  // タブの名前で始まるものを引く。
+  const rail = page.locator(".side-panel-rail");
+  if (await rail.isVisible()) {
+    await rail.getByRole("button", { name: new RegExp(`^${name}(、|$)`) }).click();
+  }
   await page.getByRole("tab", { name, exact: true }).click();
   const panel = page.getByRole("tabpanel", { name, exact: true });
   await expect(panel).toBeVisible();
@@ -137,6 +144,44 @@ export async function chooseTarget(
 /** 注釈 1 つぶんのカード。名前で絞り込む。 */
 export function annotationCard(page: Page, name: string): Locator {
   return page.locator("li.annotation").filter({ hasText: name });
+}
+
+/**
+ * カードを押して注釈の詳細を開き、その面を返す（#201）。カードはボタン 1 つで、
+ * 押すと詳細が開く。粒度と種別、GitHub にあるもの、実行の履歴、解釈と作成は
+ * 詳細にある。
+ */
+export async function openAnnotationDetail(page: Page, name: string): Promise<Locator> {
+  await annotationCard(page, name).locator(".annotation-open").click();
+  const detail = annotationDetail(page, name);
+  await expect(detail).toBeVisible();
+  return detail;
+}
+
+/**
+ * カードから詳細を開き、下端の帯の「解釈する」を押す（#201）。1 度解釈して
+ * いれば「解釈をやり直す」を押す。**解釈の口はカードには無い。**
+ */
+export async function interpret(card: Locator): Promise<void> {
+  await card.locator(".annotation-open").click();
+  await card
+    .page()
+    .locator("section.annotation-detail:not([hidden])")
+    .getByRole("button", { name: /^解釈(する|をやり直す)$/ })
+    .click();
+}
+
+/**
+ * 注釈 1 つぶんの詳細（解釈の結果と下書き）。**開いているものだけ**を返す。
+ *
+ * 閉じた詳細も、手直しを残すために描いたまま隠してある（`AnnotationDetail`）。
+ * 隠れているものまで拾うと、閉じたあとの「見えない」が別の注釈の詳細で
+ * 満たされてしまう。
+ */
+export function annotationDetail(page: Page, name: string): Locator {
+  return page
+    .locator("section.annotation-detail:not([hidden])")
+    .filter({ has: page.getByRole("heading", { level: 2, name }) });
 }
 
 /**

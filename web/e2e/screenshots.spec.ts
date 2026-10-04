@@ -9,9 +9,12 @@ import {
 } from "./helpers/api";
 import {
   annotationCard,
+  annotationDetail,
   chooseFromMenu,
   chooseTarget,
   drawRectangle,
+  interpret,
+  openAnnotationDetail,
   openBoard,
   openBoardMenu,
   openBoardWithMock,
@@ -69,13 +72,11 @@ test.describe("スクリーンショット", () => {
     await shot(page, "02-board-states");
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
-    // 本文が読めることがこの画面の要点なので、開いた状態で撮る。作成は
-    // 取り消せない（ADR 0009）。
-    for (const summary of await card.getByText("本文", { exact: true }).all()) {
-      await summary.click();
-    }
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    // 本文が読めることがこの画面の要点。本文は畳まずに出している（#201）ので、
+    // 開く手順は要らない。作成は取り消せない（ADR 0009）。
     await shot(page, "03-interpretation");
 
     mock.annotations[BOARD_ID] = [
@@ -87,17 +88,17 @@ test.describe("スクリーンショット", () => {
         lastSyncedAt: "2026-08-05T10:00:00Z",
       },
     ];
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await card.getByText("3 件を作成しました。").waitFor();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.getByText("3 件を作成しました。").waitFor();
     // 結果はパネルの下端に出る。寄せずに撮ると、この画面の要点である作成結果と
     // GitHub へ辿るリンク（ADR 0025）が画面の外に残る。
-    await card.locator(".creation-result").scrollIntoViewIfNeeded();
+    await detail.locator(".creation-result").scrollIntoViewIfNeeded();
     await shot(page, "04-created");
 
     // 作れた項目は選択が外れ、同じ解釈からは新規に作れない（ADR 0052）。
     // 選び直すと書き換えになることを、下書きの側で読める画面を撮る。
-    await card.getByLabel("e1 を作成する").check();
-    await card.getByLabel("e1 を作成する").scrollIntoViewIfNeeded();
+    await detail.getByLabel("e1 を作成する").check();
+    await detail.getByLabel("e1 を作成する").scrollIntoViewIfNeeded();
     await shot(page, "04-created-draft");
   });
 
@@ -107,8 +108,9 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.locator(".left-behind").scrollIntoViewIfNeeded();
+    const detail = annotationDetail(page, "セッション管理");
+    await interpret(card);
+    await detail.locator(".left-behind").scrollIntoViewIfNeeded();
     await shot(page, "19-update-and-left-behind");
   });
 
@@ -117,19 +119,20 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     // 親を外して子だけ戻した状態。構造が変わったことが出ているかを見る。
-    await card.getByLabel("e1 を作成する").uncheck();
-    await card.getByLabel("i1 を作成する").check();
+    await detail.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("i1 を作成する").check();
     await shot(page, "17-interpretation-selected");
 
     // 1 件も選ばれていないと押せない。理由が読めるかを見る。
-    await card.getByLabel("i1 を作成する").uncheck();
+    await detail.getByLabel("i1 を作成する").uncheck();
     // 理由が出るのを待ってから撮る。待たないと、まだ止まっていない画面が
     // 写る。
-    await card.getByText("作るものが 1 件も選ばれていません。").waitFor();
+    await detail.getByText("作るものが 1 件も選ばれていません。").waitFor();
     await shot(page, "18-creation-blocked");
   });
 
@@ -138,7 +141,9 @@ test.describe("スクリーンショット", () => {
   test("カードとフレームの対応を撮る", async ({ page }) => {
     await openBoardWithMock(page, multiFrameMock());
 
-    await annotationCard(page, "注釈 2").getByRole("button", { name: "注釈 2" }).click();
+    // 寄せる口は詳細の「キャンバスで見る」。押すと詳細を閉じてフレームを選ぶ（#201）。
+    const detail = await openAnnotationDetail(page, "注釈 2");
+    await detail.getByRole("button", { name: "キャンバスで見る" }).click();
     // 寄せる動きはアニメーションする。終わる前に撮ると、途中の位置が写る。
     await page.waitForTimeout(1000);
     await shot(page, "16-frame-focused");
@@ -158,9 +163,9 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
-    await annotationCard(page, "ログイン")
-      .getByText("保存してから解釈できます", { exact: false })
-      .waitFor();
+    // 理由は詳細の帯に出る（#201）。
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByText("保存してから解釈できます", { exact: false }).waitFor();
     await shot(page, "05-interpret-blocked");
   });
 
@@ -360,8 +365,9 @@ test.describe("スクリーンショット", () => {
     };
 
     await openBoardWithMock(page, mock);
-    // 理由はパネルに 1 つだけ出る（注釈ごとには並べない）。
-    await page.getByText("ETOKI_LLM_API_KEY").waitFor();
+    // 解釈できない理由は詳細の帯に出る（#201）。
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByText("ETOKI_LLM_API_KEY").waitFor();
     await shot(page, "21-not-configured");
   });
 
@@ -447,9 +453,7 @@ test.describe("スクリーンショット", () => {
     };
 
     await openBoardWithMock(page, mock);
-    await annotationCard(page, "ログイン")
-      .getByRole("button", { name: "解釈する" })
-      .click();
+    await interpret(annotationCard(page, "ログイン"));
     await page.getByText("この Project に書き込む権限がありません。").waitFor();
     await shot(page, "12-creation-denied");
   });
@@ -565,6 +569,32 @@ test.describe("スクリーンショット", () => {
     await shot(page, "23-scene-size");
   });
 
+  // 右のパネルを畳んだ帯（#202）。縦書きの名前と件数が読めるか、キャンバスが
+  // 帯のぶんまで広がるかを見る。
+  test("右のパネルを畳んだ状態を撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await page.getByRole("button", { name: "パネルを閉じる" }).click();
+    await page.getByRole("navigation", { name: "パネル" }).waitFor();
+    await shot(page, "41-side-panel-collapsed");
+  });
+
+  // 注釈の詳細（#201）。カードを押すとキャンバスの上に開く。**解釈する前でも
+  // 粒度と種別を選べて、帯に「解釈する」だけが出ている**ことを画像で見る。
+  // GitHub にあるものを開いた側は、作成済みの注釈で撮る。
+  test("注釈の詳細を撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "解釈する" }).waitFor();
+    await shot(page, "42-annotation-detail");
+
+    await detail.getByRole("button", { name: "閉じる" }).click();
+    const created = await openAnnotationDetail(page, "パスワード再設定");
+    await created.getByRole("button", { name: "GitHub にある 2 件" }).click();
+    await created.getByText("再設定メールを送る").first().waitFor();
+    await shot(page, "43-annotation-detail-items");
+  });
+
   // 置いた表。空の矩形が格子に並び、group ごと選ばれている見た目を見る。
   test("表を置いた状態を撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
@@ -578,15 +608,16 @@ test.describe("スクリーンショット", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     mock.interpret = {
       status: 200,
       body: { ...interpretation(), summary: "粒度を変えてもう一度読み解きました。" },
     };
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByLabel("解釈結果").waitFor();
+    await interpret(card);
+    await detail.getByLabel("解釈結果").waitFor();
     await shot(page, "24-interpretation-history");
   });
 
@@ -597,10 +628,10 @@ test.describe("スクリーンショット", () => {
     mock.runs = { [ANNOTATION_IDS.created]: { status: 200, body: historyRuns() } };
     await openBoardWithMock(page, mock);
 
-    const card = annotationCard(page, "パスワード再設定");
-    await card.getByText("実行の履歴").click();
-    await card.getByRole("button", { name: "履歴を読み込む" }).click();
-    await card.locator(".run-history").getByText("再設定メールを送る").waitFor();
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await detail.getByRole("button", { name: "実行の履歴" }).click();
+    await detail.getByRole("button", { name: "履歴を読み込む" }).click();
+    await detail.locator(".run-history").getByText("再設定メールを送る").waitFor();
     await shot(page, "25-run-history");
   });
 
@@ -628,10 +659,10 @@ test.describe("スクリーンショット", () => {
     };
     await openBoardWithMock(page, mock);
 
-    const card = annotationCard(page, "パスワード再設定");
-    await card.getByText("実行の履歴").click();
-    await card.getByRole("button", { name: "履歴を読み込む" }).click();
-    await card.locator(".run-history .error").waitFor();
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await detail.getByRole("button", { name: "実行の履歴" }).click();
+    await detail.getByRole("button", { name: "履歴を読み込む" }).click();
+    await detail.locator(".run-history .error").waitFor();
     await shot(page, "27-run-incomplete");
   });
 
@@ -665,8 +696,12 @@ test.describe("スクリーンショット", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
-    const card = annotationCard(page, "パスワード再設定");
-    await card.locator(".unconfirmed-items").waitFor();
+    // カードには件数を、詳細には一覧を出す（#201）。両方が見える形で撮る。
+    await annotationCard(page, "パスワード再設定")
+      .locator(".annotation-warning")
+      .waitFor();
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await detail.locator(".unconfirmed-items").waitFor();
     await shot(page, "36-unconfirmed-items");
   });
 
@@ -771,8 +806,9 @@ test.describe("スクリーンショット", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     await page.getByRole("button", { name: "保存", exact: true }).click();
     await page.getByText("保存が終わるまで作成できません").waitFor();
@@ -788,11 +824,12 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, matchedInterpretationMock());
 
     const card = annotationCard(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card
+    const detail = annotationDetail(page, "セッション管理");
+    await interpret(card);
+    await detail
       .getByLabel("i1 を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
-    await card.getByText("解釈では既存の draft issue の更新でした").waitFor();
+    await detail.getByText("解釈では既存の draft issue の更新でした").waitFor();
     await shot(page, "31-update-to-create");
   });
 
@@ -830,8 +867,9 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     // loadFromBlob が使う FileReader を止め、取り込み中の表示を撮れるようにする。
     await page.evaluate(() => {
@@ -939,8 +977,9 @@ test.describe("スクリーンショット", () => {
     await shot(page, "34-dark-board-states");
 
     const card = annotationCard(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.locator(".left-behind").scrollIntoViewIfNeeded();
+    const detail = annotationDetail(page, "セッション管理");
+    await interpret(card);
+    await detail.locator(".left-behind").scrollIntoViewIfNeeded();
     await shot(page, "35-dark-update-and-left-behind");
   });
 });
