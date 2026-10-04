@@ -2,10 +2,9 @@ import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
 import {
-  annotationCard,
-  annotationDetail,
   chooseFromMenu,
   newBoardDialog,
+  openAnnotationDetail,
   openBoardWithMock,
   openPanelTab,
 } from "./helpers/board";
@@ -60,13 +59,16 @@ test.describe("ボタンの格", () => {
       PRIMARY,
     );
 
-    const interpret = annotationCard(page, "ログイン").getByRole("button", {
-      name: "解釈する",
-    });
+    // 詳細の面の主となる操作は「GitHub に作成する」の 1 つ。解釈は帯の左に並ぶ
+    // ふつうの操作で、ヘッダーの「キャンバスで見る」と「閉じる」は控えめ（#201）。
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const interpret = detail.getByRole("button", { name: "解釈する" });
     await expect(interpret).not.toHaveClass(ANY_TIER);
+    await expect(detail.getByRole("button", { name: "キャンバスで見る" })).toHaveClass(
+      QUIET,
+    );
     await interpret.click();
 
-    const detail = annotationDetail(page, "ログイン");
     await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveClass(
       PRIMARY,
     );

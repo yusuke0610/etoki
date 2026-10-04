@@ -820,34 +820,90 @@ body {
   display: none;
 }
 
+/*
+ * 見出しは 2 段（#201）。1 段目が名前・状態・キャンバスで見る・閉じる、2 段目が
+ * 粒度と種別の選択と、GitHub にあるもの・実行の履歴の開閉。**ここはスクロール
+ * させない。** 開いた中身（一覧）は長くなりうるので、本文の頭に出す。
+ */
 .annotation-detail-header {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-5) var(--space-5) var(--space-5) var(--space-7);
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
-.annotation-detail-header h2 {
+.annotation-detail-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.annotation-detail-title h2 {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   overflow-wrap: anywhere;
 }
 
+.annotation-detail-close {
+  font-size: var(--text-xl);
+}
+
+.annotation-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/*
+ * 本文。ここだけスクロールする。**下の余白は持たない。** 帯（下）が本文の
+ * 最後に貼り付くので、余白を置くと帯の下に隙間が空く。
+ */
 .annotation-detail-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-6) var(--space-7);
+  padding: var(--space-6) var(--space-7) 0;
 }
 
-/* カードの「解釈する」と「解釈結果を開く」。狭いカードでは折り返す。 */
-.interpretation-actions {
+/* 見出しの開閉で開く、GitHub にあるもの・実行の履歴。 */
+.annotation-detail-region {
+  margin-bottom: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * 下端の帯（`DetailBand`）。左に解釈、右に作成、間に押せない理由や作る先の文。
+ *
+ * **本文の最後に置き、`sticky` で下端に貼り付ける。** 本文が短ければ中身の
+ * 直後に、長ければスクロールしても下端に残る。帯を本文の外に出すと、作成の口を
+ * 組める下書き（`DraftEditor`）の外で描くことになる。左右は本文の余白の外まで
+ * 伸ばして、面の幅いっぱいに区切る。
+ */
+.annotation-detail-band {
+  position: sticky;
+  bottom: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-5);
+  margin: var(--space-6) calc(-1 * var(--space-7)) 0;
+  padding: var(--space-5) var(--space-7);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.annotation-detail-band-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.annotation-detail-band-text .hint {
+  margin: 0;
 }
 
 /*
@@ -1033,35 +1089,63 @@ body {
   background: var(--color-selected-bg);
 }
 
-.annotation-head {
+/*
+ * カード全体を覆うボタン（#201）。押すと注釈の詳細を開く。中身は名前・状態・
+ * 要約 1 行と、開くことを示す `›` だけ。
+ */
+.annotation-open {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0 var(--space-6) 0 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.annotation:has(.annotation-open:hover) {
+  background: var(--color-hover);
+}
+
+.annotation-open-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
 }
 
-/* 押すとキャンバスがそのフレームへ寄る。見た目は見出しのまま保つ。 */
-.annotation-name {
-  flex: 1;
-  font: inherit;
+.annotation-open-name {
+  font-size: var(--text-lg);
   font-weight: 600;
   overflow-wrap: anywhere;
-  text-align: left;
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  cursor: pointer;
 }
 
-.annotation-name:hover:not(:disabled) {
-  text-decoration: underline;
-}
-
-.annotation-name:disabled {
+.annotation-open-summary {
+  font-size: var(--text-sm);
   color: var(--color-text-muted);
-  cursor: default;
+}
+
+.annotation-open-chevron {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  font-size: var(--text-xl);
+  color: var(--color-text-muted);
+}
+
+/* ボタンの外に畳まずに出すもの。 */
+.annotation > .hint {
+  margin: var(--space-3) 0 0;
+}
+
+/* 届いたか分からない書き込みがあること（ADR 0056）。文字でも言っている。 */
+.annotation-warning {
+  color: var(--color-warning);
 }
 
 .badge {
@@ -1102,9 +1186,9 @@ body {
 }
 
 /*
- * draft issue の本文。作成は取り消せないので、押す前に読めている必要がある
- * （ADR 0009）。ただし既定で開くと一覧が縦に伸びて全体像が追えなくなるため
- * 畳んでおく。
+ * GitHub にある draft issue の本文。既定で開くと一覧が縦に伸びて全体像が追えなく
+ * なるため畳んでおく。**これから作る下書きの本文は畳まない**（`.draft-body`、
+ * #201）。詳細は広い面なので、その理由が無い。
  */
 .item-body > summary {
   font-size: var(--text-xs);
@@ -1131,12 +1215,15 @@ body {
 /*
  * 作る前に手直しする本文。読むときの pre と同じ見え方にする（ADR 0024）。
  * 揃えないと、確認した本文と作られる本文が別物に見える。
+ *
+ * **開いたまま出し、高さは中身に合わせる**（#201）。12 行を超えたぶんは欄の中で
+ * スクロールする。中身に合わせられないブラウザでは `rows` の高さのまま。
  */
-.item-body > textarea {
+.draft-body {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  margin: var(--space-2) 0 var(--space-4);
+  margin: var(--space-3) 0 0;
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface-sunken);
   border: 1px solid var(--color-border);
@@ -1145,11 +1232,33 @@ body {
   font-size: var(--text-sm);
   line-height: 1.6;
   resize: vertical;
+  field-sizing: content;
+  max-height: calc(12lh + 2 * var(--space-3));
 }
 
-/* 解釈結果の 1 件。作るかどうかと、作られる中身をひとまとめに出す。 */
+/* 解釈結果の要約。地の色で区切り、作るものの一覧と分ける（#201）。 */
+.interpretation-result .summary {
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+
+/* 取り残しの見出しも同じ段にする。作るものと並べて読む内訳なので、片方だけ
+   大きいと別の節に見える。 */
+.interpretation-result h3,
+.left-behind h3 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-md);
+  color: var(--color-text-subtle);
+}
+
+/* 解釈結果の 1 件。作るかどうかと、作られる中身を枠でひとまとめに出す。 */
 .draft-item {
-  margin: var(--space-1) 0 var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 
 /*
@@ -1181,7 +1290,7 @@ body {
  * **地もブラウザに任せない**（web/CLAUDE.md の「配色」）。select の既定の地は
  * プラットフォームで違い、Linux の Chromium はボタン地を敷く。ダークでは中間の
  * 灰色になり、その上で薄い文字が 4.5:1 を切る。地は本文
- * （`.item-body > textarea`）と同じにして、行の中で揃える。
+ * （`.draft-body`）と同じにして、行の中で揃える。
  */
 .draft-item.unselected :is(select, input:not([type="checkbox"]), textarea) {
   color: var(--color-text-muted);
@@ -1864,6 +1973,12 @@ a.badge-target:hover {
 .badge-updated {
   background: var(--color-warning-bg);
   color: var(--color-warning);
+}
+
+/* 新しく作る項目の印（#201）。書き換えではないので、注意の色にしない。 */
+.badge-new {
+  background: var(--color-neutral-bg);
+  color: var(--color-text-subtle);
 }
 
 /*

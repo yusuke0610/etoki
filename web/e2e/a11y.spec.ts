@@ -7,7 +7,9 @@ import {
   annotationDetail,
   chooseFromMenu,
   drawRectangle,
+  interpret,
   newBoardDialog,
+  openAnnotationDetail,
   openBoard,
   openBoardMenu,
   openBoardWithMock,
@@ -21,7 +23,9 @@ import {
   annotations,
   authRequiredMock,
   baseMock,
+  board,
   createdRun,
+  historyRuns,
   signedIn,
 } from "./helpers/fixtures";
 
@@ -44,15 +48,16 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
+    // 解釈の口は注釈の詳細の帯にある（#201）。
+    const detail = await openAnnotationDetail(page, "ログイン");
     await expectBlockedReason(
-      annotationCard(page, "ログイン").getByRole("button", { name: "解釈する" }),
+      detail.getByRole("button", { name: "解釈する" }),
       "保存してから解釈できます",
     );
   });
 
-  // LLM が未設定の構成（ADR 0030）。理由はパネルに 1 つだけ置いて、各カードの
-  // ボタンがそこを指す。**capabilities.spec.ts は id の値を見ている。**
-  // こちらが見るのは、その先が実在して読めること。
+  // LLM が未設定の構成（ADR 0030）。理由は詳細の帯に出して、ボタンがそこを指す。
+  // パネルの上の文を指さないのは、パネルが畳まれていることがあるから（#202）。
   test("解釈する：LLM が未設定のとき", async ({ page }) => {
     const mock = baseMock();
     mock.capabilities = {
@@ -61,8 +66,9 @@ test.describe("押せない理由が本文として読める", () => {
     };
     await openBoardWithMock(page, mock);
 
+    const detail = await openAnnotationDetail(page, "ログイン");
     await expectBlockedReason(
-      annotationCard(page, "ログイン").getByRole("button", { name: "解釈する" }),
+      detail.getByRole("button", { name: "解釈する" }),
       "ETOKI_LLM_API_KEY",
     );
   });
@@ -92,7 +98,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     // epic を外すと、それを親に持つ issue も一緒に外れる。3 件とも外れる。
@@ -157,7 +163,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     const menu = await openBoardMenu(page);
@@ -168,8 +174,9 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   // 状態は保存済みシーンが基準なので、未保存で消したフレームの注釈が一覧に
-  // 残る（ADR 0022）。押しても飛び先が無い。
-  test("注釈の見出し：フレームがキャンバスに無いとき", async ({ page }) => {
+  // 残る（ADR 0022）。寄せる先が無い。**カードは押せる**（詳細で GitHub に
+  // あるものを読むため）ので、押せないのは詳細の「キャンバスで見る」（#201）。
+  test("キャンバスで見る：フレームがキャンバスに無いとき", async ({ page }) => {
     const mock = baseMock();
     mock.annotations[BOARD_ID] = [
       ...annotations(),
@@ -178,13 +185,25 @@ test.describe("押せない理由が本文として読める", () => {
     ];
     await openBoardWithMock(page, mock);
 
+    const detail = await openAnnotationDetail(page, "消したフレーム");
     await expectBlockedReason(
-      annotationCard(page, "消したフレーム").getByRole("button", {
-        name: "消したフレーム",
-        exact: true,
-      }),
+      detail.getByRole("button", { name: "キャンバスで見る" }),
       "このフレームはキャンバスにありません。",
     );
+  });
+
+  // 読むだけの参加者（ADR 0017）。粒度と種別は見えるが変えられない。何も
+  // 言わずに灰色にすると、壊れているのか権限なのかが分からない。
+  test("粒度と種別：読むだけの権限のとき", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
+    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
+    await openBoardWithMock(page, mock);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    for (const name of ["粒度", "種別"]) {
+      await expectBlockedReason(detail.getByLabel(name), "読むだけの権限で開いています");
+    }
   });
 
   // 取り消せない操作と保存は相互に排他する（`.claude/rules/async-ui.md`）。
@@ -207,7 +226,7 @@ test.describe("押せない理由が本文として読める", () => {
     // 捨てるのは応答が返ってからなので、止めているあいだは並んでいる。
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     await page.getByRole("button", { name: "保存", exact: true }).click();
@@ -317,7 +336,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     const createButton = detail.getByRole("button", { name: "GitHub に作成する" });
     await createButton.waitFor();
 
@@ -377,7 +396,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     await expectBlockedReason(
@@ -416,7 +435,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
     await detail.locator(".unconfirmed-items").waitFor();
 
@@ -564,7 +583,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       const card = annotationCard(page, "ログイン");
       const detail = annotationDetail(page, "ログイン");
-      await card.getByRole("button", { name: "解釈する" }).click();
+      await interpret(card);
       await detail.getByRole("button", { name: "GitHub に作成する" }).click();
       await detail.getByText("3 件を作成しました。").waitFor();
       // 検査したいのは作成済みの印が付いた下書き。完了の文言は作成結果だけで
@@ -608,9 +627,12 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       await page.goto("/");
       await openBoard(page, BOARD_NAME);
+      // カードには件数を、詳細には一覧を出す（#201）。両方が描かれた状態で掛ける。
       await annotationCard(page, "パスワード再設定")
-        .locator(".unconfirmed-items")
+        .locator(".annotation-warning")
         .waitFor();
+      const detail = await openAnnotationDetail(page, "パスワード再設定");
+      await detail.locator(".unconfirmed-items").waitFor();
 
       await expectNoAxeViolations(page);
     });
@@ -636,6 +658,23 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       await page.getByRole("button", { name: "パネルを閉じる" }).click();
       await page.getByRole("navigation", { name: "パネル" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 注釈の詳細（#201）。**GitHub にあるものと実行の履歴は押すまで DOM の上で
+    // 隠れていて**、解釈の検査ではどちらも開かない。両方を開き、詳細を開いた
+    // 直後の焦点（面そのもの）も含めて掛ける。
+    test("注釈の詳細で GitHub にあるものと実行の履歴を開いた状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.runs = { [ANNOTATION_IDS.created]: { status: 200, body: historyRuns() } };
+      await openBoardWithMock(page, mock);
+
+      const detail = await openAnnotationDetail(page, "パスワード再設定");
+      await detail.getByRole("button", { name: "GitHub にある 2 件" }).click();
+      await detail.getByRole("button", { name: "実行の履歴" }).click();
+      await detail.getByRole("button", { name: "履歴を読み込む" }).click();
+      await detail.locator(".run-history").getByText("再設定メールを送る").waitFor();
 
       await expectNoAxeViolations(page);
     });
@@ -685,7 +724,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       const card = annotationCard(page, "ログイン");
       const detail = annotationDetail(page, "ログイン");
-      await card.getByRole("button", { name: "解釈する" }).click();
+      await interpret(card);
       await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
       // 畳んだままでは中を見られない。作成前に読ませる本文まで含めて掛ける。
       for (const summary of await detail.getByText("本文", { exact: true }).all()) {

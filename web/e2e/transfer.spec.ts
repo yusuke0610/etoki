@@ -8,6 +8,7 @@ import {
   annotationDetail,
   chooseFromMenu,
   drawRectangle,
+  interpret,
   openBoard,
   openBoardWithMock,
 } from "./helpers/board";
@@ -212,7 +213,7 @@ test.describe("取り込み", () => {
 
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
     await expect(detail.getByRole("button", { name: "作成中…" })).toBeVisible();
 

@@ -183,6 +183,31 @@ export function annotationCard(page: Page, name: string): Locator {
 }
 
 /**
+ * カードを押して注釈の詳細を開き、その面を返す（#201）。カードはボタン 1 つで、
+ * 押すと詳細が開く。粒度と種別、GitHub にあるもの、実行の履歴、解釈と作成は
+ * 詳細にある。
+ */
+export async function openAnnotationDetail(page: Page, name: string): Promise<Locator> {
+  await annotationCard(page, name).locator(".annotation-open").click();
+  const detail = annotationDetail(page, name);
+  await expect(detail).toBeVisible();
+  return detail;
+}
+
+/**
+ * カードから詳細を開き、下端の帯の「解釈する」を押す（#201）。1 度解釈して
+ * いれば「解釈をやり直す」を押す。**解釈の口はカードには無い。**
+ */
+export async function interpret(card: Locator): Promise<void> {
+  await card.locator(".annotation-open").click();
+  await card
+    .page()
+    .locator("section.annotation-detail:not([hidden])")
+    .getByRole("button", { name: /^解釈(する|をやり直す)$/ })
+    .click();
+}
+
+/**
  * 注釈 1 つぶんの詳細（解釈の結果と下書き）。**開いているものだけ**を返す。
  *
  * 閉じた詳細も、手直しを残すために描いたまま隠してある（`AnnotationDetail`）。
