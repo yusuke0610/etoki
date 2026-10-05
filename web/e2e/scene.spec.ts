@@ -7,6 +7,8 @@ import {
   backToList,
   chooseFromMenu,
   drawRectangle,
+  interpret,
+  openAnnotationDetail,
   openBoard,
   openBoardWithMock,
   waitForBoard,
@@ -154,7 +156,7 @@ test.describe("シーンの保存", () => {
 
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
     await expect(detail.getByRole("button", { name: "作成中…" })).toBeVisible();
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
@@ -314,8 +316,10 @@ test.describe("シーンの保存", () => {
 
     await drawRectangle(page);
 
+    // 理由は詳細の帯に出る（#201）。
+    const detail = await openAnnotationDetail(page, "ログイン");
     await expect(
-      page.getByText("保存してから解釈できます", { exact: false }).first(),
+      detail.getByText("保存してから解釈できます", { exact: false }),
     ).toBeVisible();
   });
 
@@ -476,25 +480,26 @@ test.describe("シーンの保存", () => {
 
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
     await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
 
     // 描くには詳細を閉じてキャンバスを空ける。描いたら開き直し、**開いたまま**
     // 保存する。閉じてから保存すると、見えない詳細の中を確かめることになる。
     await detail.getByRole("button", { name: "閉じる" }).click();
     await drawRectangle(page);
-    await card.getByRole("button", { name: "解釈結果を開く" }).click();
+    await card.locator(".annotation-open").click();
     await page.getByRole("button", { name: "保存" }).click();
 
     // 解釈は保存済みシーンに対する結果。保存したら対象が変わっているので、
     // 古い結果のまま作成させてはならない。
     await expect(
-      detail.getByText("解釈の結果はありません", { exact: false }),
+      detail.getByText("まだ解釈していません", { exact: false }),
     ).toBeVisible();
     await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
       0,
     );
-    // 開き直す口も消える。残すと、中身の無い詳細を開かせることになる。
-    await expect(card.getByRole("button", { name: "解釈結果を開く" })).toHaveCount(0);
+    // 引いた解釈も捨てるので、帯は「やり直す」ではなく「解釈する」に戻る。
+    // 「やり直す」のままだと、捨てた結果がまだどこかにあるように読める。
+    await expect(detail.getByRole("button", { name: "解釈する" })).toBeEnabled();
   });
 });

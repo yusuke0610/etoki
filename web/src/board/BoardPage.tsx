@@ -30,12 +30,14 @@ import type {
 } from "../api/types";
 import { unavailableReason } from "../capability";
 import {
+  annotationMetas,
   frameIds,
   isAnnotation,
   markAsAnnotation,
   setAnnotationKind,
   selectableFrames,
   unmarkAnnotation,
+  type AnnotationMeta,
   type SceneElement,
   type SelectableFrame,
 } from "../excalidraw/annotation";
@@ -57,8 +59,12 @@ import { useNotify } from "../notification/NotificationProvider";
 import type { NotifyOptions } from "../notification/types";
 import type { Theme } from "../theme";
 import { AnnotationOverlay } from "./AnnotationOverlay";
-import { AnnotationDetail, type CreationProps } from "./AnnotationDetail";
-import { AnnotationPanel, type InterpretationProps } from "./AnnotationPanel";
+import {
+  AnnotationDetail,
+  type CreationProps,
+  type InterpretationProps,
+} from "./AnnotationDetail";
+import { ANNOTATION_LIST_HEADING_ID, AnnotationPanel } from "./AnnotationPanel";
 import { DiagramChatPanel } from "./DiagramChatPanel";
 import {
   beginTurn,
@@ -81,8 +87,19 @@ import {
   type InterpretationState,
 } from "./interpretationHistory";
 import { MemberPanel } from "./MemberPanel";
+import {
+  backToListIcon,
+  changeTargetIcon,
+  deleteBoardIcon,
+  exportIcon,
+  importIcon,
+  refreshTargetIcon,
+  renameIcon,
+  tableIcon,
+} from "./menuIcons";
 import { DiagramTab, type DiagramMode } from "./DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
+import { projectLabel } from "./grouping";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import type { CreationState, RunHistoryState } from "./panelShared";
 import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
@@ -285,6 +302,11 @@ export function BoardPage({
   // null は「Excalidraw からまだ聞いていない」。空配列と混ぜると、マウント直後の
   // 一瞬だけ全部のカードが「キャンバスにありません」になる。
   const [canvasFrameIds, setCanvasFrameIds] = useState<string[] | null>(null);
+  // キャンバスにいま在る注釈の粒度と種別。注釈の詳細の選択欄が出す値で、保存済み
+  // の値（`annotations`）とは次の保存までずれる。null の意味は上と同じ。
+  const [canvasMetas, setCanvasMetas] = useState<Record<string, AnnotationMeta> | null>(
+    null,
+  );
   // 注釈にした frame に重ねる枠。キャンバスの見え方が変わるたびに引き直す。
   const [overlayBoxes, setOverlayBoxes] = useState<AnnotationBox[]>([]);
   // 未保存かどうかを決めるのはここだけ（`useDirtyScene`）。
@@ -343,6 +365,10 @@ export function BoardPage({
     setDetailId(id);
     setDetailRequest((n) => n + 1);
   }, []);
+  // 開いていた詳細を、注釈が消えたので閉じた回数（下の effect が焦点を移す）。
+  // **ID ではなく回数で持つ。** 同じ注釈が戻ってまた消えたとき、ID だと値が
+  // 変わらず effect が走らない。
+  const [detailVanished, setDetailVanished] = useState(0);
   // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
   // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
   const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
@@ -687,6 +713,7 @@ export function BoardPage({
       scheduleMeasure();
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
       setCanvasFrameIds(frameIds(els));
+      setCanvasMetas(annotationMetas(els));
 
       // スクロールとズームは onChange でしか届かない。要素が変わっていなくても
       // 引き直す必要があるので、ここでまとめて拾う。
@@ -1275,7 +1302,30 @@ export function BoardPage({
   const linkExact = link?.exact ?? false;
   const running = exclusive.running;
 
-  // 解釈の口。右のパネルのカード（押す）と詳細（結果を見る）の両方に渡す。
+  // **開いていた詳細の注釈が保存で消えたら、詳細を閉じる。** 描いたまま残すと、
+  // 同じ注釈が戻ったとき（元に戻して保存したとき）に、閉じたはずの詳細が開き直る。
+  // 描いている最中に置く。前の値と違うときだけ置く形なので React が許している。
+  //
+  // **一覧が壊れていても投げない。** ここはパネルの境界の外なので、投げると画面
+  // ごと落ちる（ADR 0027、`railBadgesOf` と同じ）。
+  if (
+    detailId !== null &&
+    !(annotations as readonly (AnnotationStatus | null)[]).some((a) => a?.id === detailId)
+  ) {
+    setDetailVanished((n) => n + 1);
+    setDetailId(null);
+  }
+  // 閉じた詳細の中に焦点があったなら、一覧の見出しへ移す。**焦点が行き場を
+  // 失ったときだけ。** キャンバスで描いている最中に保存して消えたなら、焦点は
+  // キャンバスにあるので動かさない。
+  useEffect(() => {
+    if (detailVanished === 0) return;
+    if (document.activeElement === null || document.activeElement === document.body) {
+      document.getElementById(ANNOTATION_LIST_HEADING_ID)?.focus();
+    }
+  }, [detailVanished]);
+
+  // 解釈の口。詳細の帯に渡す（#201）。
   const interpretation: InterpretationProps = {
     states: interpretations,
     // 押したら詳細を開く。結果はそこに出るので、開かないと押したあとに何が
@@ -1287,6 +1337,13 @@ export function BoardPage({
     onSelect: showInterpretation,
     unavailable: interpretationUnavailable,
   };
+  // 作る先の見出し。帯の「選んだ N 件を … に作ります」に出す。作成先が未選択の
+  // ボードでは作成まで進めないので null。
+  const targetLabel =
+    board.projectId === ""
+      ? null
+      : `${board.repositoryOwner}/${board.repositoryName} › ${projectLabel(board)}`;
+
   // 作成の口。作るのは詳細の中だけ。
   const creation: CreationProps = {
     states: creations,
@@ -1503,13 +1560,19 @@ export function BoardPage({
    * `etoki-menu-item` を付ける。** axe はライブラリの DOM を外して掛けており、
    * この印で etoki の項目だけを検査に戻している（`web/e2e/helpers/a11y.ts`）。
    * テーマの切り替えはここに残す
-   * （ADR 0055 / 0065 の「口は 1 つ」）。Excalidraw 自身へのリンク
+   * （ADR 0055 / 0065 の「口は 1 つ」）。**etoki の項目にもアイコンを付ける**
+   * （`menuIcons.tsx`、#204）。既定の項目にだけあると、字下げが揃わず 2 種類の
+   * 部品が混ざって見える。Excalidraw 自身へのリンク
    * （`Socials`）は etoki の利用者に向けたものではないので置かない。
    */
   const boardMenu = useMemo(
     () => (
       <MainMenu>
-        <MainMenu.Item className="etoki-menu-item" onSelect={onClose}>
+        <MainMenu.Item
+          className="etoki-menu-item"
+          icon={backToListIcon}
+          onSelect={onClose}
+        >
           ボード一覧へ戻る
         </MainMenu.Item>
         <MainMenu.Separator />
@@ -1520,6 +1583,7 @@ export function BoardPage({
         {canEdit && (
           <MainMenu.Item
             className="etoki-menu-item"
+            icon={renameIcon}
             onSelect={() => setNameDraft(board.name)}
           >
             名前を変更
@@ -1548,6 +1612,7 @@ export function BoardPage({
             ) : (
               <MainMenu.Item
                 className="etoki-menu-item"
+                icon={refreshTargetIcon}
                 onSelect={() => void refreshTargetDisplay()}
                 disabled={refreshingTarget}
               >
@@ -1559,6 +1624,7 @@ export function BoardPage({
           <>
             <MainMenu.Item
               className="etoki-menu-item"
+              icon={changeTargetIcon}
               onSelect={onChangeTarget}
               // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
               // 黙って捨てずに、保存してからにしてもらう。
@@ -1582,13 +1648,19 @@ export function BoardPage({
         書き出しは viewer にも出す。見えているものを出すだけなので、
         共有した相手に新しく見せるものが無い（ADR 0017）。
       */}
-        <MainMenu.Item className="etoki-menu-item" onSelect={exportScene} disabled={!api}>
+        <MainMenu.Item
+          className="etoki-menu-item"
+          icon={exportIcon}
+          onSelect={exportScene}
+          disabled={!api}
+        >
           書き出し
         </MainMenu.Item>
         {canEdit && (
           <>
             <MainMenu.Item
               className="etoki-menu-item"
+              icon={importIcon}
               onSelect={() => fileInput.current?.click()}
               // **作成中は取り込ませない。** キャンバスを置き換えるので、
               // 保存を止めているのと同じ理由で止める（作られた内容と記録
@@ -1603,6 +1675,7 @@ export function BoardPage({
             )}
             <MainMenu.Item
               className="etoki-menu-item"
+              icon={tableIcon}
               onSelect={addTable}
               disabled={!api}
             >
@@ -1632,6 +1705,7 @@ export function BoardPage({
         {isOwner(board.role) ? (
           <MainMenu.Item
             className="etoki-menu-item danger"
+            icon={deleteBoardIcon}
             onSelect={() => void askDelete()}
             disabled={deletion !== null}
           >
@@ -1834,9 +1908,20 @@ export function BoardPage({
               openRequest={detailRequest}
               onClose={() => setDetailId(null)}
               annotations={annotations}
+              frames={{
+                canvasIds: canvasFrameIds,
+                metas: canvasMetas,
+                onFocus: focusFrame,
+                onChangeGranularity: handleMark,
+                onChangeKind: handleChangeAnnotationKind,
+              }}
               interpretation={interpretation}
               creation={creation}
+              runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
+              stale={dirty}
+              canEdit={canEdit}
               projectLink={link}
+              targetLabel={targetLabel}
             />
           </ErrorBoundary>
         </div>
@@ -1871,13 +1956,9 @@ export function BoardPage({
                       unmarkable,
                       canvasIds: canvasFrameIds,
                       selectedIds: selectedFrames.map((f) => f.id),
-                      onFocus: focusFrame,
                       onMark: handleMark,
                       onUnmark: handleUnmark,
-                      onChangeGranularity: handleMark,
-                      onChangeKind: handleChangeAnnotationKind,
                     }}
-                    interpretation={interpretation}
                     runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
                     stale={dirty}
                     canEdit={canEdit}
