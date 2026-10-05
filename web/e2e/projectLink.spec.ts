@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { summarize } from "./helpers/api";
+import { summarize } from "./helpers/boardData";
 import {
   annotationCard,
   annotationDetail,

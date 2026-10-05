@@ -1,12 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import {
-  breakAnnotations,
-  breakBoards,
-  holdSave,
-  installApi,
-  summarize,
-} from "./helpers/api";
+import { breakAnnotations, breakBoards, holdSave, installApi } from "./helpers/api";
+import { summarize } from "./helpers/boardData";
 import {
   annotationCard,
   annotationDetail,

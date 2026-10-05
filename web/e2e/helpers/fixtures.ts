@@ -11,7 +11,8 @@ import type {
   SessionStatus,
   SyncRun,
 } from "../../src/api/types";
-import { summarize, type ApiMock } from "./api";
+import type { ApiMock } from "./api";
+import { summarize } from "./boardData";
 
 export const BOARD_ID = "board-1";
 

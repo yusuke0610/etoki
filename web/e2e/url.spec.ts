@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { holdBoardDetail, installApi, summarize, type ApiMock } from "./helpers/api";
+import { holdBoardDetail, installApi, type ApiMock } from "./helpers/api";
+import { summarize } from "./helpers/boardData";
 import { backToList, chooseFromMenu, drawRectangle, openBoard } from "./helpers/board";
 import {
   authRequiredMock,

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { holdCreate, holdSave, installApi, summarize, type ApiMock } from "./helpers/api";
+import { holdCreate, holdSave, installApi, type ApiMock } from "./helpers/api";
+import { summarize } from "./helpers/boardData";
 import {
   annotationCard,
   annotationDetail,

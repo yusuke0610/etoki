@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import type { BoardDetail } from "../src/api/types";
-import { installApi, summarize } from "./helpers/api";
+import { installApi } from "./helpers/api";
+import { summarize } from "./helpers/boardData";
 import {
   backToList,
   chooseFromMenu,
