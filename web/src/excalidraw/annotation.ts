@@ -50,6 +50,8 @@ export type SceneElement = {
   versionNonce?: number;
   /** 画像の実体を files から引く ID。未保存の判定にも使う（dirty.ts）。 */
   fileId?: string | null;
+  /** 所属する group。表（table.ts）が 9 枚を 1 つにまとめるのに使う。 */
+  groupIds?: readonly string[];
 };
 
 /**
@@ -221,4 +223,22 @@ export function selectableFrames(
 /** シーンにいま在る frame の ID。パネルが「押しても飛べない」項目を出すために使う。 */
 export function frameIds(elements: readonly SceneElement[]): string[] {
   return elements.filter((el) => el.type === "frame" && !el.isDeleted).map((el) => el.id);
+}
+
+/**
+ * シーンにいま在る注釈の粒度と種別を、frame の ID で引けるようにする。
+ *
+ * 注釈の詳細の選択欄がキャンバスに書いた値を出すために使う。注釈の状態は保存済み
+ * シーンが基準なので、選び直した値は次の保存まで状態の側には出てこない。
+ */
+export function annotationMetas(
+  elements: readonly SceneElement[],
+): Record<string, AnnotationMeta> {
+  const metas: Record<string, AnnotationMeta> = {};
+  for (const el of elements) {
+    const granularity = granularityOf(el);
+    if (granularity === undefined) continue;
+    metas[el.id] = { granularity, kind: kindOf(el) };
+  }
+  return metas;
 }

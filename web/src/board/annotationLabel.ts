@@ -1,4 +1,15 @@
-import type { AnnotationStatus, Granularity, ItemKind } from "../api/types";
+import type { AnnotationStatus, Granularity, ItemKind, SyncState } from "../api/types";
+import { DIAGRAM_KIND_LABELS } from "./diagramLabels";
+
+/**
+ * 注釈の 3 状態の見出し。右のパネルのカード、中央の面（解釈の結果）、ボード
+ * 一覧のカードの件数（#200）に出す。**1 か所に置く。** 2 か所に書くと文言が割れる。
+ */
+export const STATE_LABEL: Record<SyncState, string> = {
+  uncreated: "未作成",
+  created: "作成済み",
+  changed: "変更あり",
+};
 
 /**
  * 粒度の見出し。
@@ -67,4 +78,21 @@ export function annotationLabels(annotations: AnnotationStatus[]): Map<string, s
  */
 export function frameLabel(name: string): string {
   return name.trim() === "" ? "名前のないフレーム" : name;
+}
+
+/**
+ * 注釈のカードに出す要約 1 行（#201）。`粒度 epic · 種別 未指定 · GitHub に 2 件`。
+ *
+ * 粒度と種別はどちらも、選んでいなければ「未指定」と書く。粒度の選択肢の
+ * 「指定なし」と語を変えるのは、ここが選ぶ場所ではなく、まだ選んでいないことを
+ * 知らせる場所だから。**GitHub の件数は 1 件以上のときだけ添える。** 0 件を
+ * 並べると、未作成のカードがどれも同じ長さの行で埋まる。
+ */
+export function annotationSummary(a: AnnotationStatus): string {
+  const granularity = a.granularity === "" ? "未指定" : GRANULARITY_LABEL[a.granularity];
+  const kind = a.kind === undefined ? "未指定" : DIAGRAM_KIND_LABELS[a.kind];
+  const parts = [`粒度 ${granularity}`, `種別 ${kind}`];
+  const created = a.items?.length ?? 0;
+  if (created > 0) parts.push(`GitHub に ${created} 件`);
+  return parts.join(" · ");
 }

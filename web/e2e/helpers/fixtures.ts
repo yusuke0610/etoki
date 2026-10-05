@@ -4,6 +4,7 @@ import type {
   CreatedRun,
   DiagramKind,
   DiagramDraft,
+  Granularity,
   Interpretation,
   Project,
   RepositoryList,
@@ -76,7 +77,12 @@ const ELEMENT_BASE = {
  * `name` に null を渡せるのは、Excalidraw が作る frame の既定がそれだから
  * （ADR 0022）。名前なしの見え方は既定の再現でしか確かめられない。
  */
-function annotationFrame(id: string, name: string | null, x: number, kind?: DiagramKind) {
+function annotationFrame(
+  id: string,
+  name: string | null,
+  x: number,
+  { granularity = "", kind }: { granularity?: Granularity; kind?: DiagramKind } = {},
+) {
   return {
     ...ELEMENT_BASE,
     id,
@@ -92,7 +98,7 @@ function annotationFrame(id: string, name: string | null, x: number, kind?: Diag
     //
     // `kind` はひな形から始めた囲みだけが持つ。**キーごと省く。** 空文字を
     // 置くと `DiagramKind` に無い値がシーンに載り、実物と違う形になる。
-    customData: { etoki: { granularity: "", ...(kind ? { kind } : {}) } },
+    customData: { etoki: { granularity, ...(kind ? { kind } : {}) } },
   };
 }
 
@@ -146,11 +152,18 @@ export function annotatedScene(): string {
  */
 function statesScene(): string {
   return sceneOf([
+    // 粒度と種別は `annotations()` と揃える。注釈の詳細の選択欄はキャンバスの
+    // 値を出すので、食い違うと実際には起きない画面になる（#214）。
     annotationFrame(ANNOTATION_IDS.uncreated, "ログイン", 0),
-    annotationFrame(ANNOTATION_IDS.created, "パスワード再設定", 600),
+    annotationFrame(ANNOTATION_IDS.created, "パスワード再設定", 600, {
+      granularity: "epic",
+    }),
     // 1 つだけひな形から始めた囲みにしてある。種別を出す約束は、種別のある
     // 囲みと無い囲みが並んだ状態でしか確かめられない。
-    annotationFrame(ANNOTATION_IDS.changed, "セッション管理", 1200, "sequence"),
+    annotationFrame(ANNOTATION_IDS.changed, "セッション管理", 1200, {
+      granularity: "issue",
+      kind: "sequence",
+    }),
   ]);
 }
 
