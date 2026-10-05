@@ -132,7 +132,7 @@ func New(cfg Config) (*Client, error) {
 	}
 	// クエリと fragment は弾く。送り先は base に "/v1/messages" を足した文字列
 	// なので、"?x=1" が付いていると足したぶんが path ではなくクエリの一部に
-	// なる。github 側（projects.go）と同じ理由で、同じ形で見る。
+	// なる。github 側（client.go の New）と同じ理由で、同じ形で見る。
 	if u.RawQuery != "" || u.ForceQuery || strings.Contains(base, "#") {
 		return nil, fmt.Errorf(
 			"etoki: invalid llm base url %q: query and fragment are not allowed", u.Redacted())
