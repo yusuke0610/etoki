@@ -5,28 +5,29 @@ import type { BoardSummary } from "../api/types";
  *
  * **これは実体の包含ではなく射影。** 利用者とボードは多対多だし、Projects v2 は
  * リポジトリに含まれるのではなくリンクされるだけ。1 つの Project に複数のボードが
- * ぶら下がる。木にするのは見せ方の選択であって、GitHub の構造を写したものではない。
+ * ぶら下がる。節に分けるのは見せ方の選択であって、GitHub の構造を写したもの
+ * ではない。
  */
 
-/** 1 つの Project と、そこに作るボード。 */
-export type ProjectGroup = {
-  projectId: string;
-  /** 見出しに出す名前。`projectLabel` の結果。 */
-  label: string;
-  boards: BoardSummary[];
-};
-
-/** 1 つのリポジトリと、その中の Project。 */
-export type RepositoryGroup = {
-  repositoryOwner: string;
-  repositoryName: string;
+/**
+ * 一覧の 1 節。作成先 1 つ（リポジトリ × Project）と、そこに作るボード（#200）。
+ *
+ * **節は平らに並べる。** 木（リポジトリ → Project）にしていたころは、リポジトリの
+ * 枝が 1 段増えるぶん畳む口が要った。カードの格子にすると 1 つの節は 1〜2 行に
+ * 収まるので、見出しに両方を書けば足りる。
+ */
+export type BoardSection<T extends BoardSummary> = {
+  /** 節を見分ける値。同じ Project が別のリポジトリにもリンクされうるので両方で作る。 */
+  key: string;
+  /** 見出し。`acme/web › #1 ロードマップ`、未選択の節は `UNSELECTED_LABEL`。 */
+  heading: string;
   /** 作成先が選ばれているかどうか。false は移行前のボードだけ（ADR 0017）。 */
   selected: boolean;
-  projects: ProjectGroup[];
+  boards: T[];
 };
 
-/** 作成先が未選択のボードをまとめる枝の見出し。 */
-export const UNSELECTED_LABEL = "作成先なし";
+/** 作成先が未選択のボードをまとめる節の見出し。 */
+export const UNSELECTED_LABEL = "作成先が未選択";
 
 /**
  * Project の表示名を組み立てる。
@@ -42,15 +43,20 @@ export function projectLabel(board: BoardSummary): string {
 }
 
 /**
- * 一覧をリポジトリ → Project の 2 段にまとめる。
+ * 一覧を作成先ごとの節にまとめる。
  *
  * **並べ替えはしない。** 入力の順（API は updatedAt の降順で返す）をそのまま
- * 保ち、枝は最初に現れた順に並べる。名前順にすると、使っていないリポジトリが
- * 頭に居座る。作成先が未選択のボードは末尾に 1 つの枝としてまとめる。
+ * 保つ。節はリポジトリが最初に現れた順に並べ、同じリポジトリの Project はその
+ * 中で最初に現れた順に続ける。名前順にすると、使っていないリポジトリが頭に
+ * 居座る。作成先が未選択のボードは末尾に 1 つの節としてまとめる。
+ *
+ * 型は呼ぶ側の要素のまま返す。一覧の要素（`BoardListEntry`）が持つ件数を、
+ * まとめ直しで落とさないため。
  */
-export function groupBoards(boards: BoardSummary[]): RepositoryGroup[] {
-  const groups = new Map<string, RepositoryGroup>();
-  const unselected: BoardSummary[] = [];
+export function boardSections<T extends BoardSummary>(boards: T[]): BoardSection<T>[] {
+  // リポジトリごとに、Project の節を最初に現れた順で持つ。
+  const repositories = new Map<string, Map<string, BoardSection<T>>>();
+  const unselected: T[] = [];
 
   for (const board of boards) {
     if (board.projectId === "") {
@@ -58,38 +64,29 @@ export function groupBoards(boards: BoardSummary[]): RepositoryGroup[] {
       continue;
     }
 
-    const key = `${board.repositoryOwner}/${board.repositoryName}`;
-    let group = groups.get(key);
-    if (!group) {
-      group = {
-        repositoryOwner: board.repositoryOwner,
-        repositoryName: board.repositoryName,
-        selected: true,
-        projects: [],
-      };
-      groups.set(key, group);
+    const repository = `${board.repositoryOwner}/${board.repositoryName}`;
+    let projects = repositories.get(repository);
+    if (!projects) {
+      projects = new Map();
+      repositories.set(repository, projects);
     }
 
-    const project = group.projects.find((p) => p.projectId === board.projectId);
-    if (project) {
-      project.boards.push(board);
+    const section = projects.get(board.projectId);
+    if (section) {
+      section.boards.push(board);
       continue;
     }
-    group.projects.push({
-      projectId: board.projectId,
-      label: projectLabel(board),
+    projects.set(board.projectId, {
+      key: `${repository}/${board.projectId}`,
+      heading: `${repository} › ${projectLabel(board)}`,
+      selected: true,
       boards: [board],
     });
   }
 
-  const out = [...groups.values()];
+  const out = [...repositories.values()].flatMap((projects) => [...projects.values()]);
   if (unselected.length > 0) {
-    out.push({
-      repositoryOwner: "",
-      repositoryName: "",
-      selected: false,
-      projects: [{ projectId: "", label: UNSELECTED_LABEL, boards: unselected }],
-    });
+    out.push({ key: "", heading: UNSELECTED_LABEL, selected: false, boards: unselected });
   }
   return out;
 }

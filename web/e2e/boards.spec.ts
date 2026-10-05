@@ -1,17 +1,21 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, summarize } from "./helpers/api";
+import { installApi, listEntry, summarize } from "./helpers/api";
 import {
   backToList,
   chooseFromMenu,
   chooseTarget,
   drawRectangle,
+  newBoardDialog,
   openBoard,
   openBoardWithMock,
+  picker,
+  startNewBoard,
 } from "./helpers/board";
 import {
   BOARD_ID,
   BOARD_NAME,
+  annotations,
   baseMock,
   board,
   unselectedBoard,
@@ -38,7 +42,7 @@ test.describe("ボード", () => {
   // 作成先を選ぶまでボードは作られない。書ける Project を 1 つも持たない人は
   // ここで先に進めず、それが「作成にはリポジトリへのアクセス権が要る」ことの
   // 表れになる（ADR 0017）。
-  test("名前を入れて作成先を選ぶと、そのボードが開く", async ({ page }) => {
+  test("ダイアログで名前を入れて作成先を選ぶと、そのボードが開く", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
 
@@ -51,15 +55,24 @@ test.describe("ボード", () => {
       }
     });
 
-    const name = page.getByLabel("ボード名");
-    const submit = page.getByRole("button", { name: "次へ" });
+    const dialog = await newBoardDialog(page);
+    const name = dialog.getByLabel("ボード名");
+    const submit = dialog.getByRole("button", { name: "次へ" });
 
-    // 空のまま進ませない。誤って空名のボードが増えるのを防いでいる。
+    // 開いたら名前の欄から始める。
+    await expect(name).toBeFocused();
+    // 必須であることは支援技術にも伝える。「次へ」が押せないだけでは、読み上げで
+    // 欄を移っている人には届かない。
+    await expect(name).toHaveJSProperty("required", true);
+    // 空白だけでは進ませない。誤って空名のボードが増えるのを防いでいる。
+    await expect(submit).toBeDisabled();
+    await name.fill("   ");
     await expect(submit).toBeDisabled();
 
     await name.fill("決済フローのブレスト");
     await expect(submit).toBeEnabled();
-    await submit.click();
+    // Enter でも進める。
+    await name.press("Enter");
 
     // まだ作られていない。先に作成先を選ばせる。
     await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
@@ -72,12 +85,12 @@ test.describe("ボード", () => {
     ).toBeVisible();
     expect(created).toHaveLength(1);
 
-    // 作成したら入力欄は空に戻り、一覧にも並ぶ。一覧は別の画面なので戻って見る。
+    // 作成したら一覧に並び、ダイアログの入力は空に戻る。
     await backToList(page);
-    await expect(name).toHaveValue("");
     await expect(
       page.locator(".board-list").getByRole("button", { name: "決済フローのブレスト" }),
     ).toBeVisible();
+    await expect((await newBoardDialog(page)).getByLabel("ボード名")).toHaveValue("");
   });
 
   // ひな形は選ばせるもので、勝手に適用しない（中核思想 3）。既定が空白で
@@ -86,11 +99,12 @@ test.describe("ボード", () => {
     await installApi(page, baseMock());
     await page.goto("/");
 
-    const template = page.getByLabel("ひな形");
+    const dialog = await newBoardDialog(page);
+    const template = dialog.getByLabel("ひな形");
     // 既定は空白。開いた直後に何かが選ばれていると、選んだ覚えのない絵が出る。
     await expect(template).toHaveValue("");
 
-    await page.getByLabel("ボード名").fill("注文フローのブレスト");
+    await dialog.getByLabel("ボード名").fill("注文フローのブレスト");
     await template.selectOption("sequence");
 
     // 作成のリクエストを捕まえる。**シーンが載っていることを直接見る。**
@@ -100,7 +114,7 @@ test.describe("ボード", () => {
         (req) => req.url().endsWith("/api/boards") && req.method() === "POST",
       ),
       (async () => {
-        await page.getByRole("button", { name: "次へ" }).click();
+        await dialog.getByRole("button", { name: "次へ" }).click();
         await chooseTarget(page, "acme/web", "#1 ロードマップ");
       })(),
     ]);
@@ -121,14 +135,60 @@ test.describe("ボード", () => {
     // 囲むのは人なので、開いた時点では注釈が無い。
     await expect(page.getByText("保存済みの注釈はありません。")).toBeVisible();
     // 作ったあとは空白に戻す。次のボードが前の選択を引き継ぐと、選んだ覚えの
-    // ない絵が出る。選ぶ欄は一覧の画面にあるので、戻って見る。
+    // ない絵が出る。
     await backToList(page);
-    await expect(page.getByLabel("ひな形")).toHaveValue("");
+    await expect((await newBoardDialog(page)).getByLabel("ひな形")).toHaveValue("");
+  });
+
+  // 選び直すために戻った人に、名前を打ち直させない（#200）。
+  test("作成先の選択から戻ると、入力を残したままダイアログが開き直す", async ({
+    page,
+  }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+
+    await startNewBoard(page, "やり直すブレスト", "sequence");
+    await picker(page).getByRole("button", { name: "やめる" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "新しいボード" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("ボード名")).toHaveValue("やり直すブレスト");
+    await expect(dialog.getByLabel("ひな形")).toHaveValue("sequence");
+    await expect(dialog.getByLabel("ボード名")).toBeFocused();
+  });
+
+  // やめた入力が次に開いたときに残っていると、別のボードのつもりで同じ名前を
+  // 作りうる。
+  test("キャンセルと Esc は入力を消し、焦点を「新しいボード」へ戻す", async ({
+    page,
+  }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    const open = page.getByRole("button", { name: "新しいボード", exact: true });
+
+    for (const close of ["キャンセル", "Escape"] as const) {
+      const dialog = await newBoardDialog(page);
+      await dialog.getByLabel("ボード名").fill("やめるブレスト");
+      await dialog.getByLabel("ひな形").selectOption("sequence");
+
+      if (close === "Escape") {
+        await page.keyboard.press("Escape");
+      } else {
+        await dialog.getByRole("button", { name: "キャンセル" }).click();
+      }
+
+      await expect(dialog, close).toBeHidden();
+      await expect(open, close).toBeFocused();
+      const reopened = await newBoardDialog(page);
+      await expect(reopened.getByLabel("ボード名"), close).toHaveValue("");
+      await expect(reopened.getByLabel("ひな形"), close).toHaveValue("");
+      await reopened.getByRole("button", { name: "キャンセル" }).click();
+    }
   });
 
   // 作成先はボードの属性なので、開くまで分からないと取り違えたまま作成に
-  // 進める。一覧をリポジトリ → Project でまとめて見せる（ADR 0019）。
-  test("一覧は作成先ごとにまとまり、未選択は末尾に出る", async ({ page }) => {
+  // 進める。一覧を作成先ごとの節に分けて見せる（ADR 0019）。
+  test("一覧は作成先ごとの節に分かれ、未選択は末尾に出る", async ({ page }) => {
     const mock = baseMock();
     const other = {
       ...board(),
@@ -149,39 +209,187 @@ test.describe("ボード", () => {
     await installApi(page, mock);
     await page.goto("/");
 
-    const tree = page.locator(".board-tree");
-    // 枝はリポジトリ、その下が Project、その下がボード。同じリポジトリの
-    // Project 違いは 1 つの枝にまとまる。
-    await expect(tree.getByRole("button", { name: "acme/web" })).toHaveCount(1);
+    // 見出しに作成先（リポジトリと Project）を書く。並びは一覧に最初に現れた順で、
+    // 作成先が未選択の節は末尾。
+    const headings = page.locator(".board-list").getByRole("heading", { level: 3 });
+    await expect(headings).toHaveText([
+      "acme/web › #4 技術的負債",
+      "acme/web › #1 ロードマップ",
+      "作成先が未選択",
+    ]);
+    const unselected = page.getByRole("region", { name: "作成先が未選択" });
+    await expect(unselected.getByRole("button", { name: legacy.name })).toBeVisible();
+    // 開くと作成先の選択から始まることを、押す前に言う（オーナーなので選べる）。
     await expect(
-      tree.getByRole("button", { name: "#4 技術的負債", exact: true }),
-    ).toBeVisible();
-
-    // 作成先が未選択なのは移行前のボードだけ。末尾にまとめる。
-    // 三角は装飾なので読み上げ名には出ない。名前で確かめる。
-    const branches = tree.getByRole("button", { expanded: true });
-    await expect(branches.last()).toHaveAccessibleName("作成先なし");
-    await expect(tree.getByRole("button", { name: legacy.name })).toBeVisible();
+      unselected.getByRole("button", { name: legacy.name }),
+    ).toHaveAccessibleDescription(/開くと作成先を選べます/);
   });
 
-  // 既定は開いた状態。畳むのは利用者が押したときだけ（中核思想 3）。
-  test("枝を畳むとボードが隠れ、もう一度押すと戻る", async ({ page }) => {
-    await installApi(page, baseMock());
+  // 作成先を選べるのはオーナーだけ（ADR 0017）。押した先で選べないのに
+  // 「選べます」と書くと、案内が嘘になる。
+  test("オーナーでなければ、未選択のカードは作成先をオーナーが選ぶと書く", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    const legacy = { ...unselectedBoard(), role: "editor" as const };
+    mock.boards = [...mock.boards, summarize(legacy)];
+    mock.details[legacy.id] = legacy;
+    mock.annotations[legacy.id] = [];
+
+    await installApi(page, mock);
     await page.goto("/");
 
-    const tree = page.locator(".board-tree");
-    const branch = tree.getByRole("button", { name: "acme/web" });
-    const boardButton = tree.getByRole("button", { name: BOARD_NAME });
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: legacy.name }),
+    ).toHaveAccessibleDescription(/作成先はオーナーが選びます/);
+  });
 
-    await expect(branch).toHaveAttribute("aria-expanded", "true");
-    await expect(boardButton).toBeVisible();
+  // 開く前に、どのボードに手を打つものがあるかが分かる（#200、中核思想 3）。
+  // **0 件の状態は出さない。** 3 つとも並べると、手を打つものが無いボードも
+  // 同じ長さの行で埋まる。
+  test("カードには 0 件でない状態の件数だけが出る", async ({ page }) => {
+    const mock = baseMock();
+    const only = (id: string, name: string) => ({ ...board(), id, name });
+    const partial = only("board-partial", "未作成だけのブレスト");
+    const empty = only("board-empty", "囲んでいないブレスト");
+    const broken = only("board-broken", "読めないブレスト");
+    for (const b of [partial, empty, broken]) {
+      mock.boards.push(summarize(b));
+      mock.details[b.id] = b;
+    }
+    mock.annotations[partial.id] = annotations().filter((a) => a.state === "uncreated");
+    mock.annotations[empty.id] = [];
+    mock.annotations[broken.id] = annotations();
+    mock.unreadableCounts = [broken.id];
 
-    await branch.click();
-    await expect(branch).toHaveAttribute("aria-expanded", "false");
-    await expect(boardButton).toHaveCount(0);
+    await installApi(page, mock);
+    await page.goto("/");
 
-    await branch.click();
-    await expect(boardButton).toBeVisible();
+    const card = (name: string) =>
+      page.locator(".board-list").getByRole("button", { name, exact: true });
+    // 3 状態とも 1 件ずつあるボード。並びは未作成・作成済み・変更あり。
+    await expect(card(BOARD_NAME).locator(".badge:not(.badge-role)")).toHaveText([
+      "未作成 1",
+      "作成済み 1",
+      "変更あり 1",
+    ]);
+    await expect(card(partial.name).locator(".badge:not(.badge-role)")).toHaveText([
+      "未作成 1",
+    ]);
+    // すべて 0 件なら「注釈なし」。何も出さないと、読めなかったのと区別できない。
+    await expect(card(empty.name).locator(".badge:not(.badge-role)")).toHaveText([
+      "注釈なし",
+    ]);
+    // 読めなかったボードは 0 件に化けさせない。一覧のほかのボードは出る（#207）。
+    await expect(card(broken.name)).toContainText("注釈の状態を読めません");
+    await expect(card(broken.name).locator(".badge:not(.badge-role)")).toHaveCount(0);
+  });
+
+  // 自分が何をできるのかは、開く前から見えている（ADR 0017、#200）。
+  test("カードには自分のロールと更新時刻が出る", async ({ page }) => {
+    const mock = baseMock();
+    for (const role of ["editor", "viewer"] as const) {
+      const b = { ...board(), id: `board-${role}`, name: `${role} のブレスト`, role };
+      mock.boards.push(summarize(b));
+      mock.details[b.id] = b;
+    }
+
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const card = (name: string) =>
+      page.locator(".board-list").getByRole("button", { name, exact: true });
+    await expect(card(BOARD_NAME).locator(".badge-role")).toHaveText("オーナー");
+    await expect(card("editor のブレスト").locator(".badge-role")).toHaveText(
+      "編集できる",
+    );
+    await expect(card("viewer のブレスト").locator(".badge-role")).toHaveText("読むだけ");
+
+    // 更新時刻は経過で書き、機械が読める形も添える。経過の書き方の境目は
+    // vitest（`updatedLabel.test.ts`）が見ている。
+    const updated = card(BOARD_NAME).locator("time");
+    await expect(updated).toHaveAttribute("datetime", board().updatedAt);
+    await expect(updated).toHaveText(/^更新: /);
+    // 名前はボード名だけ。ロール・更新時刻・状態は説明として結ぶ。
+    await expect(card(BOARD_NAME)).toHaveAccessibleName(BOARD_NAME);
+    await expect(card(BOARD_NAME)).toHaveAccessibleDescription(
+      /オーナー 更新: .* 未作成 1/,
+    );
+  });
+
+  // ボードで作成してから戻ると、件数が変わっている。読み直さないと「未作成 1」が
+  // 残り、作ったのに作っていないように見える（#200）。
+  test("ボードから一覧へ戻ると、一覧を読み直す", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+
+    // 開いているあいだに状態が変わった（作成した）ことにする。
+    mock.annotations[BOARD_ID] = annotations().map((a) => ({
+      ...a,
+      state: "created" as const,
+    }));
+
+    const listed = page.waitForRequest(
+      (r) => r.method() === "GET" && new URL(r.url()).pathname === "/api/boards",
+    );
+    await backToList(page);
+    await listed;
+
+    await expect(
+      page
+        .locator(".board-list")
+        .getByRole("button", { name: BOARD_NAME, exact: true })
+        .locator(".badge:not(.badge-role)"),
+    ).toHaveText(["作成済み 3"]);
+  });
+
+  // 一覧の読み込みは、戻るたびと改名・削除の引き直しで並走しうる（#200）。
+  // 遅れて届いた古い応答で上書きすると、件数が巻き戻る。
+  test("追い越された一覧の応答で、新しい一覧を上書きしない", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+
+    // 最初の戻りでは読み込みを止め、止めた時点の（古い）件数を返させる。
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let first = true;
+    await page.route(
+      (url) => url.pathname === "/api/boards",
+      async (route) => {
+        if (route.request().method() !== "GET" || !first) {
+          await route.fallback();
+          return;
+        }
+        first = false;
+        const stale = mock.boards.map((b) => listEntry(b, mock.annotations[b.id] ?? []));
+        await held;
+        await route.fulfill({ json: stale });
+      },
+    );
+    await backToList(page);
+
+    // 開いているあいだに作成したことにして、もう一度開いて戻る。こちらの
+    // 読み込みは止めないので、先に届く。
+    mock.annotations[BOARD_ID] = annotations().map((a) => ({
+      ...a,
+      state: "created" as const,
+    }));
+    await openBoard(page, BOARD_NAME);
+    await backToList(page);
+    const badges = page
+      .locator(".board-list")
+      .getByRole("button", { name: BOARD_NAME, exact: true })
+      .locator(".badge:not(.badge-role)");
+    await expect(badges).toHaveText(["作成済み 3"]);
+
+    // 止めていた古い応答を、ここで届ける。
+    const late = page.waitForResponse(
+      (r) =>
+        r.request().method() === "GET" && new URL(r.url()).pathname === "/api/boards",
+    );
+    release();
+    await late;
+    // 届いた応答を画面が受け取るまで 1 回だけ描画を待つ。
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
+    await expect(badges).toHaveText(["作成済み 3"]);
   });
 
   // 打ち間違えたボードがそのまま残らないようにする。**改名でキャンバスは
@@ -199,7 +407,7 @@ test.describe("ボード", () => {
     // キャンバスは外れない。
     await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
 
-    // 木は作成先でまとめて見せる（ADR 0019）。一覧が古い名前のままだと、
+    // 一覧は作成先でまとめて見せる（ADR 0019）。一覧が古い名前のままだと、
     // 開くまでどれがどれか分からない。
     await backToList(page);
     await expect(
@@ -280,15 +488,15 @@ test.describe("ボード", () => {
     await chooseFromMenu(page, "ボードを削除");
     await page.getByRole("alertdialog").getByRole("button", { name: "削除する" }).click();
 
-    // 木は作成先でまとめて見せる（ADR 0019）。消したボードが残っていると、
+    // 一覧は作成先でまとめて見せる（ADR 0019）。消したボードが残っていると、
     // 開けない行が並ぶ。
     await expect(
       page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
     ).toHaveCount(0);
     // 閉じた先は一覧の画面。1 枚しか無かったので空の案内になる。**案内が出る
-    // こと自体が、一覧から外れた証拠。** 木は 1 件でもあれば描かれる。
+    // こと自体が、一覧から外れた証拠。** 節は 1 件でもあれば描かれる。
     await expect(
-      page.getByText("まだボードがありません。上で名前を付けて作成してください。"),
+      page.getByText("まだボードがありません。「新しいボード」から作成してください。"),
     ).toBeVisible();
     expect(mock.details[BOARD_ID]).toBeUndefined();
   });
