@@ -1,5 +1,5 @@
 import type { AnnotationStatus } from "../api/types";
-import { safeLocalStorage } from "../storage";
+import { safeLocalStorage } from "../app/storage";
 import type { RailBadge } from "./SidePanel";
 
 const STORAGE_KEY = "etoki.sidePanel.collapsed";

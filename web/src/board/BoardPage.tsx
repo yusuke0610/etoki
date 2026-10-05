@@ -28,7 +28,7 @@ import type {
   Interpretation,
   ProjectAccess,
 } from "../api/types";
-import { unavailableReason } from "../capability";
+import { unavailableReason } from "../app/capability";
 import {
   annotationMetas,
   frameIds,
@@ -53,19 +53,22 @@ import { formatSceneSize } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
 import { createTable, tableCenter } from "../excalidraw/table";
 import { pasteToElements } from "../excalidraw/mermaidPaste";
-import { ErrorBoundary } from "../ErrorBoundary";
-import { log } from "../logger";
+import { ErrorBoundary } from "../app/ErrorBoundary";
+import { log } from "../app/logger";
 import { useNotify } from "../notification/NotificationProvider";
 import type { NotifyOptions } from "../notification/types";
-import type { Theme } from "../theme";
-import { AnnotationOverlay } from "./AnnotationOverlay";
+import type { Theme } from "../app/theme";
+import { AnnotationOverlay } from "./annotations/AnnotationOverlay";
 import {
   AnnotationDetail,
   type CreationProps,
   type InterpretationProps,
-} from "./AnnotationDetail";
-import { ANNOTATION_LIST_HEADING_ID, AnnotationPanel } from "./AnnotationPanel";
-import { DiagramChatPanel } from "./DiagramChatPanel";
+} from "./annotations/AnnotationDetail";
+import {
+  ANNOTATION_LIST_HEADING_ID,
+  AnnotationPanel,
+} from "./annotations/AnnotationPanel";
+import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
 import {
   beginTurn,
   changeKind,
@@ -75,7 +78,7 @@ import {
   historyOf,
   startChat,
   type DiagramChat,
-} from "./diagramChat";
+} from "./diagram/diagramChat";
 import { useExclusion, useReentryGuard } from "./exclusion";
 import { createGenerations } from "./generation";
 import {
@@ -85,8 +88,8 @@ import {
   selectInterpretation,
   startInterpretation,
   type InterpretationState,
-} from "./interpretationHistory";
-import { MemberPanel } from "./MemberPanel";
+} from "./annotations/interpretationHistory";
+import { MemberPanel } from "./members/MemberPanel";
 import {
   backToListIcon,
   changeTargetIcon,
@@ -97,14 +100,14 @@ import {
   renameIcon,
   tableIcon,
 } from "./menuIcons";
-import { DiagramTab, type DiagramMode } from "./DiagramTab";
-import { MermaidPastePanel, type PasteOutcome } from "./MermaidPastePanel";
-import { projectLabel } from "./grouping";
+import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
+import { MermaidPastePanel, type PasteOutcome } from "./diagram/MermaidPastePanel";
+import { projectLabel } from "../boards/grouping";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
-import type { CreationState, RunHistoryState } from "./panelShared";
+import type { CreationState, RunHistoryState } from "./annotations/panelShared";
 import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
-import { projectLink } from "./projectLink";
-import { canEditBoard, isOwner, ROLE_LABELS } from "./roles";
+import { projectLink } from "./target/projectLink";
+import { canEditBoard, isOwner, ROLE_LABELS } from "./members/roles";
 import { useBoardTransfer } from "./useBoardTransfer";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";

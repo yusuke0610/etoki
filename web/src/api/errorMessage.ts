@@ -14,7 +14,7 @@
  */
 import { MERMAID_MAX_TEXT_SIZE } from "../excalidraw/mermaid";
 import { ACCEPTED_KINDS_LABEL, type PasteFailure } from "../excalidraw/mermaidPaste";
-import { log } from "../logger";
+import { log } from "../app/logger";
 import { ApiError } from "./boards";
 import type { ErrorCode } from "./types";
 
@@ -23,7 +23,7 @@ import type { ErrorCode } from "./types";
  *
  * **`Record` にすることが担保。** `ErrorCode` は `api/openapi.yaml` からの
  * 生成物なので、契約に code を足して文言を書き忘れると `tsc` が落ちる
- * （`web/src/board/roles.ts` の ROLE_LABELS と同じ形）。
+ * （`web/src/board/members/roles.ts` の ROLE_LABELS と同じ形）。
  *
  * 書くのは**次に何をすればよいか**。同じステータスでも打ち手が違うから code を
  * 分けたのであって、原因の言い換えだけでは分けた意味が無い。

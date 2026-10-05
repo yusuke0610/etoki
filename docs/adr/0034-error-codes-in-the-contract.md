@@ -70,7 +70,7 @@ Go の内部文言（`etoki: ...`）は**書き換えない**。表示に出な�
 ### 画面は code → 日本語を 1 モジュールで持つ
 
 `web/src/api/errorMessage.ts` に `Record<ErrorCode, string>` と純関数を置いた。
-`web/src/board/roles.ts` の `ROLE_LABELS` と同じ形で、**`Record` にすることが
+`web/src/board/members/roles.ts` の `ROLE_LABELS` と同じ形で、**`Record` にすることが
 担保**になる。`ErrorCode` は生成物なので、契約に code を足して文言を書き忘れると
 `tsc` が落ちる。
 

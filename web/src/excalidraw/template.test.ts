@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { diagramKinds } from "../board/diagramLabels";
+import { diagramKinds } from "../board/diagram/diagramLabels";
 import {
   ETOKI_NAMESPACE,
   isAnnotation,
