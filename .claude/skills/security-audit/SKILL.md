@@ -66,7 +66,8 @@ gh api --paginate repos/yusuke0610/etoki/security-advisories \
 
 ## 3. 測る
 
-出力は `tmp/`（`.gitignore` 済み）に落とす。読み方は 3 通りある。
+出力は `tmp/`（`.gitignore` 済み）に落とす。切り出したばかりの worktree には無いので、
+測る前に `mkdir -p tmp` で作る。読み方は 3 通りある。
 
 - **`make vulncheck` と golangci-lint は終了コードだけ見る。** 通ったものの
   出力は読まない（`/rv` と同じ理由、#125）。
