@@ -31,7 +31,7 @@ export function DetachedSection({
 
   return (
     <section className="panel-section">
-      <h3>キャンバスに無い注釈</h3>
+      <h3>キャンバスに無い注釈 {annotations.length} 件</h3>
       <p className="hint">
         囲みは消えていますが、そこから作った draft issue は GitHub に残っています。
         囲みを引き直しても、これらとは繋がりません。

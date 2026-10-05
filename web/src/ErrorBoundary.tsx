@@ -75,7 +75,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const { recovery } = this.props;
 
     return (
-      <div className="error-boundary" role="alert">
+      <div className="error-boundary etoki-ui" role="alert">
         {/*
           例外の中身はそのまま出さない。利用者に読めないものを見せることになり、
           出せる手も変わらない。行き先は console に固定して、そこを教える。

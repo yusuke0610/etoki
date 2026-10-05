@@ -1,7 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { emptyScene } from "./helpers/api";
-import { annotationCard, drawRectangle, openBoardWithMock } from "./helpers/board";
+import {
+  annotationCard,
+  annotationDetail,
+  drawRectangle,
+  interpret,
+  openAnnotationDetail,
+  openBoardWithMock,
+} from "./helpers/board";
 import {
   annotatedScene,
   baseMock,
@@ -19,9 +26,10 @@ test.describe("解釈と作成", () => {
     await expect(page.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(0);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
   });
 
   // 解釈はテキストを保存済みシーンから、画像を画面から取る。揃っていないと
@@ -29,17 +37,20 @@ test.describe("解釈と作成", () => {
   test("未保存の変更があるあいだは解釈できない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    const card = annotationCard(page, "ログイン");
-    const button = card.getByRole("button", { name: "解釈する" });
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const button = detail.getByRole("button", { name: "解釈する" });
     await expect(button).toBeEnabled();
 
+    // 詳細はキャンバスの中央を覆うので、閉じてから描く。
+    await page.keyboard.press("Escape");
     await drawRectangle(page);
+    await openAnnotationDetail(page, "ログイン");
 
     await expect(button).toBeDisabled();
     // 押せない理由は title に隠さない。disabled なボタンはフォーカスも当たらず、
-    // キーボードと読み上げの利用者に理由が届かない。
+    // キーボードと読み上げの利用者に理由が届かない。理由は帯に出す（#201）。
     await expect(
-      card.getByText("保存してから解釈できます", { exact: false }),
+      detail.getByText("保存してから解釈できます", { exact: false }),
     ).toBeVisible();
   });
 
@@ -50,9 +61,10 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
     await expect(
-      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+      detail.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
 
     // 矢印やグルーピングはテキストに現れない。画像でしか渡せない（中核思想 2）。
@@ -70,10 +82,11 @@ test.describe("解釈と作成", () => {
     const mock = await openBoardWithMock(page, empty);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
     await expect(
-      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+      detail.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
     expect(mock.interpretRequests[0]?.image).toBeUndefined();
   });
@@ -82,50 +95,57 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
     // summary は GitHub には作らない。どう読んだかを見せるためだけに出す。
     await expect(
-      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+      detail.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
 
     // タイトルは手直しできるので入力欄に出る（ADR 0024）。
-    await expect(card.getByLabel("e1 の種別")).toHaveValue("epic");
-    await expect(card.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
-    await expect(card.getByLabel("i1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("e1 の種別")).toHaveValue("epic");
+    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue(
       "メールとパスワードでログインする",
     );
-    await expect(card.getByLabel("i2 のタイトル")).toHaveValue("ログイン失敗を数える");
+    await expect(detail.getByLabel("i2 のタイトル")).toHaveValue("ログイン失敗を数える");
 
     // 親子は epic の下に issue が入る形で出る（ADR 0006）。
-    const epic = card.locator("li").filter({ has: page.getByLabel("e1 のタイトル") });
+    const epic = detail.locator("li").filter({ has: page.getByLabel("e1 のタイトル") });
     await expect(epic.getByLabel("i1 のタイトル")).toBeVisible();
   });
 
   // 作成は取り消せない（ADR 0009）。押す前に本文が読めていなければならない。
-  test("解釈結果の本文は畳まれていて、開くと読める", async ({ page }) => {
+  // **開いたまま出す**（#201）。畳んでいたのは狭いパネルで全体が追えなくなる
+  // からで、詳細は広い面なのでその理由が無い。
+  test("解釈結果の本文は開いたまま読める", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    const epicBody = card.getByLabel("e1 の本文");
+    await expect(detail.getByLabel("e1 の本文")).toBeVisible();
+    await expect(detail.getByLabel("e1 の本文")).toHaveValue("入口をまとめる");
+    await expect(detail.getByLabel("i1 の本文")).toBeVisible();
+    await expect(detail.getByLabel("i1 の本文")).toHaveValue("フォームと検証");
+  });
 
-    // 既定は畳む。全部開くと一覧が縦に伸びて、作られるものの全体像が追えない。
-    await expect(epicBody).toBeHidden();
+  // 作るのか書き換えるのかは、どの項目でも押す前に読める（ADR 0026、#201）。
+  // 印が「更新」にしか無いと、印の無い項目が何になるのかを読み手が補うことになる。
+  test("新しく作る項目には「新規」の印が付く", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
 
-    const epic = card.locator("li").filter({ has: page.getByLabel("e1 のタイトル") });
-    await epic.getByText("本文", { exact: true }).first().click();
-    await expect(epicBody).toBeVisible();
-    await expect(epicBody).toHaveValue("入口をまとめる");
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    // issue の側も同じように開ける。epic の li も i1 を含むので、内側を取る。
-    const issue = card
-      .locator("li")
-      .filter({ has: page.getByLabel("i1 のタイトル") })
-      .last();
-    await issue.getByText("本文", { exact: true }).click();
-    await expect(card.getByLabel("i1 の本文")).toHaveValue("フォームと検証");
+    const epic = detail
+      .locator(".draft-item")
+      .filter({ has: page.getByLabel("e1 のタイトル") });
+    await expect(epic.getByText("新規", { exact: true })).toBeVisible();
+    await expect(detail.getByText("作るもの（3 件を選択中）")).toBeVisible();
   });
 
   // ここから下は「何を作るか」を開発者に選ばせる約束（ADR 0024）。
@@ -134,14 +154,15 @@ test.describe("解釈と作成", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    await card.getByLabel("i2 を作成する").uncheck();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.getByLabel("i2 を作成する").uncheck();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     // モックの応答は固定なので、この件数は「作成が終わった」ことの目印。
     // 何を作らせたのかはリクエストボディにしか現れない。
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
     expect(mock.createRequests).toHaveLength(1);
     expect(mock.createRequests[0]?.items.map((it) => it.localId)).toEqual(["e1", "i1"]);
 
@@ -156,12 +177,13 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    await card.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("e1 を作成する").uncheck();
 
-    await expect(card.getByLabel("i1 を作成する")).not.toBeChecked();
-    await expect(card.getByLabel("i2 を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("i1 を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("i2 を作成する")).not.toBeChecked();
   });
 
   // 親を失ったことは黙って起こさない。作られるものが変わっている。
@@ -169,21 +191,22 @@ test.describe("解釈と作成", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    await card.getByLabel("e1 を作成する").uncheck();
-    await card.getByLabel("i1 を作成する").check();
+    await detail.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("i1 を作成する").check();
 
     await expect(
-      card.getByText("epic に属さない issue として作られます。"),
+      detail.getByText("epic に属さない issue として作られます。"),
     ).toBeVisible();
 
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     // ボディが積まれるのは応答が返ってから。押した直後に読むと、まだ空の
     // createRequests を見て通ることがある。件数は「作成が終わった」ことの
     // 目印で、送った件数ではない（モックの応答は固定）。
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
     // parentLocalId を残すとサーバーが 400 で弾く。
     expect(mock.createRequests[0]?.items).toHaveLength(1);
@@ -195,22 +218,17 @@ test.describe("解釈と作成", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    await card.getByLabel("i1 のタイトル").fill("OAuth でログインする");
+    await detail.getByLabel("i1 のタイトル").fill("OAuth でログインする");
+    await detail.getByLabel("i1 の本文").fill("認可コードフローで受ける");
 
-    const issue = card
-      .locator("li")
-      .filter({ has: page.getByLabel("i1 のタイトル") })
-      .last();
-    await issue.getByText("本文", { exact: true }).click();
-    await card.getByLabel("i1 の本文").fill("認可コードフローで受ける");
-
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     // 押した直後に読むと、まだ積まれていない createRequests を見て通ることが
     // ある。
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
     const sent = mock.createRequests[0]?.items.find((it) => it.localId === "i1");
     expect(sent?.title).toBe("OAuth でログインする");
@@ -221,14 +239,17 @@ test.describe("解釈と作成", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
     // epic を外すと配下も外れるので、これで 3 件とも外れる。
-    await card.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("e1 を作成する").uncheck();
 
-    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toBeDisabled();
+    await expect(
+      detail.getByRole("button", { name: "GitHub に作成する" }),
+    ).toBeDisabled();
     // 押せない理由は title に隠さない。disabled なボタンには理由が届かない。
-    await expect(card.getByText("作るものが 1 件も選ばれていません。")).toBeVisible();
+    await expect(detail.getByText("作るものが 1 件も選ばれていません。")).toBeVisible();
     expect(mock.createRequests).toHaveLength(0);
   });
 
@@ -249,10 +270,11 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "セッション管理");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "セッション管理");
+    await interpret(card);
 
-    await expect(card.getByLabel("i1 のタイトル")).toHaveValue("期限切れを弾く");
-    await expect(card.getByLabel("i1 の種別")).toHaveCount(0);
+    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue("期限切れを弾く");
+    await expect(detail.getByLabel("i1 の種別")).toHaveCount(0);
   });
 
   // 解釈をやり直したら、前の結果に対する手直しは捨てる。残すと、いま画面に
@@ -261,17 +283,18 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    await card.getByLabel("i1 のタイトル").fill("書き換えたタイトル");
-    await card.getByLabel("i2 を作成する").uncheck();
+    await detail.getByLabel("i1 のタイトル").fill("書き換えたタイトル");
+    await detail.getByLabel("i2 を作成する").uncheck();
 
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
-    await expect(card.getByLabel("i1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue(
       "メールとパスワードでログインする",
     );
-    await expect(card.getByLabel("i2 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("i2 を作成する")).toBeChecked();
   });
 
   // LLM の出力は同じ入力でも揺れる。引き直した結果が前より悪かったときに
@@ -280,26 +303,27 @@ test.describe("解釈と作成", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     const first = "ログインの入口まわりを 1 つの epic として読みました。";
 
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await expect(card.getByText(first)).toBeVisible();
+    await interpret(card);
+    await expect(detail.getByText(first)).toBeVisible();
 
     mock.interpret = {
       status: 200,
       body: { ...interpretation(), summary: "2 回目の読み解き" },
     };
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await expect(card.getByText("2 回目の読み解き")).toBeVisible();
+    await interpret(card);
+    await expect(detail.getByText("2 回目の読み解き")).toBeVisible();
 
     // 並ぶのは 2 件。引き直した直後は新しいほうが出ている。
-    const history = card.getByLabel("解釈結果");
+    const history = detail.getByLabel("解釈結果");
     await expect(history.locator("option")).toHaveCount(2);
 
     // 選び直すと前の結果に戻る。
     await history.selectOption({ index: 1 });
-    await expect(card.getByText(first)).toBeVisible();
-    await expect(card.getByText("2 回目の読み解き")).toBeHidden();
+    await expect(detail.getByText(first)).toBeVisible();
+    await expect(detail.getByText("2 回目の読み解き")).toBeHidden();
   });
 
   // 1 件しか無いうちは選ばせない。選択肢が 1 つだけ並ぶと、選ぶ余地があるように
@@ -308,19 +332,21 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await expect(card.getByText("ログインの入口")).toBeVisible();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await expect(detail.getByText("ログインの入口")).toBeVisible();
 
-    await expect(card.getByLabel("解釈結果")).toHaveCount(0);
+    await expect(detail.getByLabel("解釈結果")).toHaveCount(0);
   });
 
   test("作成すると件数が出て、状態が作成済みに変わる", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
     await expect(card.getByText("未作成")).toBeVisible();
 
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
     // 作成後の再取得で返る状態を先に差し替えておく。
     mock.annotations[BOARD_ID] = [
@@ -334,9 +360,9 @@ test.describe("解釈と作成", () => {
       },
     ];
 
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
     await expect(card.getByText("作成済み")).toBeVisible();
   });
 
@@ -354,11 +380,12 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     // 何も作られていないと誤解させると、再実行で draft issue が重複する。
-    const result = card.locator(".creation-result");
+    const result = detail.locator(".creation-result");
     await expect(result.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
     // 理由は既定で畳む。捨てはしない（#86）。開けば読める。
     await expect(result.getByText("github: rate limited")).toBeHidden();
@@ -391,10 +418,11 @@ test.describe("解釈と作成", () => {
     const installed = await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
-    const result = card.locator(".creation-result");
+    const result = detail.locator(".creation-result");
     // **件数には数えない。** 数えると「2 件は作成済み」が嘘になる。
     await expect(result.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
 
@@ -409,17 +437,17 @@ test.describe("解釈と作成", () => {
 
     // 下書き側でも、その項目は選び直せない。送り先の ID が分からないので、
     // もう一度送ると重複する。
-    const checkbox = card.getByLabel("i1 を作成する");
+    const checkbox = detail.getByLabel("i1 を作成する");
     await expect(checkbox).not.toBeChecked();
     await expect(checkbox).toBeDisabled();
     // 押せない理由は本文に出す（ADR 0039）。title に隠さない。
     await expect(
-      card.getByText("この下書きからは送り直せません", { exact: false }),
+      detail.getByText("この下書きからは送り直せません", { exact: false }),
     ).toBeVisible();
 
     // 確定した 1 件のほうは、これまでどおり「作成した」。バッジで引く。同じ
     // 語が案内の本文にも出るので、文字だけで引くと 2 つに当たる。
-    await expect(card.locator(".badge-created")).toHaveText("作成した");
+    await expect(detail.locator(".badge-created")).toHaveText("作成した");
 
     // 送り直していないことまで見る。画面の文言だけでは、押せてしまう実装でも
     // 「押していない」ことを確かめられない。
@@ -432,15 +460,16 @@ test.describe("解釈と作成", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
-    const button = card.getByRole("button", { name: "GitHub に作成する" });
+    const button = detail.getByRole("button", { name: "GitHub に作成する" });
     await expect(button).toBeDisabled();
-    await expect(card.getByText("作るものが 1 件も選ばれていません。")).toBeVisible();
+    await expect(detail.getByText("作るものが 1 件も選ばれていません。")).toBeVisible();
     for (const id of ["e1", "i1", "i2"]) {
-      await expect(card.getByLabel(`${id} を作成する`)).not.toBeChecked();
+      await expect(detail.getByLabel(`${id} を作成する`)).not.toBeChecked();
     }
     expect(mock.createRequests).toHaveLength(1);
   });
@@ -451,19 +480,20 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
-    await card.getByRole("button", { name: "解釈する" }).click();
-    const history = card.getByLabel("解釈結果");
+    await interpret(card);
+    const history = detail.getByLabel("解釈結果");
     await expect(history.locator("option")).toHaveCount(2);
     // 引き直した解釈は別の下書き。こちらから作ったものは無い。
-    await expect(card.getByLabel("e1 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("e1 を作成する")).toBeChecked();
 
     await history.selectOption({ index: 1 });
     for (const id of ["e1", "i1", "i2"]) {
-      await expect(card.getByLabel(`${id} を作成する`)).not.toBeChecked();
+      await expect(detail.getByLabel(`${id} を作成する`)).not.toBeChecked();
     }
   });
 
@@ -484,27 +514,28 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
 
-    await expect(card.getByLabel("e1 を作成する")).not.toBeChecked();
-    await expect(card.getByLabel("i1 を作成する")).toBeChecked();
-    await expect(card.getByLabel("i2 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("e1 を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("i1 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("i2 を作成する")).toBeChecked();
     // epic が外れたままなら、子は親なしで作られることを先に見せる。
-    await expect(card.getByText("epic に属さない issue として作られます。")).toHaveCount(
-      2,
-    );
+    await expect(
+      detail.getByText("epic に属さない issue として作られます。"),
+    ).toHaveCount(2);
 
-    await card.getByLabel("e1 を作成する").check();
-    await expect(card.getByText("作成した draft issue を書き換えます。")).toBeVisible();
-    await expect(card.getByText("epic に属さない issue として作られます。")).toHaveCount(
-      0,
-    );
+    await detail.getByLabel("e1 を作成する").check();
+    await expect(detail.getByText("作成した draft issue を書き換えます。")).toBeVisible();
+    await expect(
+      detail.getByText("epic に属さない issue として作られます。"),
+    ).toHaveCount(0);
 
     mock.createItems = { status: 201, body: createdRun() };
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
     expect(mock.createRequests).toHaveLength(2);
 
     const second = mock.createRequests[1];
@@ -528,11 +559,14 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
     // 出すのは code から引いた打ち手。サーバーの内部文言は前に出さない（#86）。
-    await expect(card.getByText("LLM が未設定です", { exact: false })).toBeVisible();
-    await expect(card.getByText("llm is not configured", { exact: false })).toBeHidden();
+    await expect(detail.getByText("LLM が未設定です", { exact: false })).toBeVisible();
+    await expect(
+      detail.getByText("llm is not configured", { exact: false }),
+    ).toBeHidden();
     // 画面全体の通知に流すと、どの注釈で起きたか分からなくなる（ADR 0058）。
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
@@ -552,12 +586,13 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
-    await expect(card.getByText("上限に達しました", { exact: false })).toBeVisible();
+    await expect(detail.getByText("上限に達しました", { exact: false })).toBeVisible();
     // 内部文言は前に出さない（#86）。畳んだ側にだけ置く。
     await expect(
-      card.getByText("llm call rate limit reached", { exact: false }),
+      detail.getByText("llm call rate limit reached", { exact: false }),
     ).toBeHidden();
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
@@ -571,13 +606,14 @@ test.describe("解釈と作成", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     // 解釈のやり直しは開発者が決める。ここで勝手に解釈し直して作成を続けない。
     // 409 は 6 つの原因が同居するので、打ち手は code から引いて出す（#86）。
     await expect(
-      card.getByText("解釈のあとにボードが変わりました", { exact: false }),
+      detail.getByText("解釈のあとにボードが変わりました", { exact: false }),
     ).toBeVisible();
     await expect(card.getByText("未作成")).toBeVisible();
   });

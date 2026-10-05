@@ -3,9 +3,11 @@ import { expect, test } from "@playwright/test";
 import { holdSave, installApi, summarize } from "./helpers/api";
 import {
   annotationCard,
+  annotationDetail,
   backToList,
   chooseFromMenu,
   drawRectangle,
+  interpret,
   openBoard,
   openBoardWithMock,
 } from "./helpers/board";
@@ -106,8 +108,9 @@ test.describe("通知", () => {
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
 
     delete mock.saveSceneError;
-    // 通知の「閉じる」も名前に「保存」を含む（本文が入る）ので、完全一致で引く。
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    // 通知は右上に固定されるので、ヘッダーが 2 段に折れると「保存」ボタンの上に
+    // 重なりクリックが届かない。同じ保存の経路をショートカットで通す。
+    await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
@@ -129,7 +132,7 @@ test.describe("通知", () => {
   });
 
   // 切れると: どの注釈で失敗したのかが分からなくなる。
-  test("解釈の失敗は通知に流さず、注釈のパネルに残す", async ({ page }) => {
+  test("解釈の失敗は通知に流さず、注釈の詳細に残す", async ({ page }) => {
     const mock = baseMock();
     mock.interpret = { status: 500, body: { code: "internal", error: "boom" } };
     await installApi(page, mock);
@@ -137,9 +140,9 @@ test.describe("通知", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    await interpret(card);
 
-    await expect(card.getByRole("alert")).toBeVisible();
+    await expect(annotationDetail(page, "ログイン").getByRole("alert")).toBeVisible();
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 

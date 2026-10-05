@@ -341,6 +341,7 @@ test.describe("ボードの URL", () => {
 
       const before = await page.evaluate(() => window.history.length);
       mock.session = { status: 200, body: signedOut() };
+      await page.getByRole("button", { name: "Octo Cat" }).click();
       await page.getByRole("button", { name: "ログアウト" }).click();
 
       await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
