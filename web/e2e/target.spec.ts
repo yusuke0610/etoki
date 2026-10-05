@@ -11,6 +11,7 @@ import {
   openBoardMenu,
   openBoardWithMock,
   picker,
+  startNewBoard,
 } from "./helpers/board";
 import {
   BOARD_ID,
@@ -349,13 +350,13 @@ test.describe("作成先の選択", () => {
     await expect(menu.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
     await page.keyboard.press("Escape");
 
-    // 一覧は作成先でまとめて見せる（ADR 0019）。取り直した名前が木に出る。
+    // 一覧は作成先でまとめて見せる（ADR 0019）。取り直した名前が節の見出しに出る。
     // 一覧は別の画面なので戻って見る（ADR 0064）。
     await backToList(page);
     await expect(
       page
         .locator(".board-list")
-        .getByRole("button", { name: "#1 改名後のロードマップ" }),
+        .getByRole("heading", { name: "acme/web › #1 改名後のロードマップ", level: 3 }),
     ).toBeVisible();
   });
 
@@ -427,13 +428,13 @@ test.describe("作成先の選択", () => {
       0,
     );
 
-    // 一覧を引き直したことは、取り直した後の名前が木に出ることで見る
+    // 一覧を引き直したことは、取り直した後の名前が節の見出しに出ることで見る
     // （ADR 0019）。
     await backToList(page);
     await expect(
       page
         .locator(".board-list")
-        .getByRole("button", { name: "#1 改名後のロードマップ" }),
+        .getByRole("heading", { name: "acme/web › #1 改名後のロードマップ", level: 3 }),
     ).toBeVisible();
   });
 
@@ -476,8 +477,7 @@ test.describe("作成先の選択", () => {
     await installApi(page, baseMock());
     await page.goto("/");
 
-    await page.getByLabel("ボード名").fill("決済まわり");
-    await page.getByRole("button", { name: "次へ" }).click();
+    await startNewBoard(page, "決済まわり");
 
     await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
     await expect(page.locator(".excalidraw canvas")).toHaveCount(0);

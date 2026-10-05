@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
-import { chooseTarget } from "./helpers/board";
+import { boardListHeading, chooseTarget, startNewBoard } from "./helpers/board";
 import {
   AUTHORIZE_URL,
   BOARD_NAME,
@@ -18,7 +18,11 @@ test.describe("ログイン", () => {
     await page.goto("/");
 
     await expect(page.getByRole("button", { name: "GitHub でログイン" })).toHaveCount(0);
-    await expect(page.getByLabel("ボード名")).toBeVisible();
+    await expect(boardListHeading(page)).toBeVisible();
+    // 誰でもないので、利用者のメニューは出さない。**帯の高さは変えない**（#200）。
+    // 変えると、構成ごとに一覧の見出しの位置が動く。
+    await expect(page.locator(".user-menu")).toHaveCount(0);
+    expect((await page.locator(".list-header").boundingBox())?.height).toBe(56);
   });
 
   test("認証を設定していて未ログインなら、ログイン画面を出す", async ({ page }) => {
@@ -27,7 +31,7 @@ test.describe("ログイン", () => {
 
     await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
     // ボードには触らせない。裏で 401 が出るだけになる。
-    await expect(page.getByLabel("ボード名")).toHaveCount(0);
+    await expect(boardListHeading(page)).toHaveCount(0);
   });
 
   // 認可画面そのものは外部。遷移したことだけを確かめる（ADR 0012）。
@@ -61,9 +65,70 @@ test.describe("ログイン", () => {
     await installApi(page, mock);
     await page.goto("/");
 
-    await expect(page.getByLabel("ボード名")).toBeVisible();
-    await expect(page.getByText("Octo Cat")).toBeVisible();
+    await expect(boardListHeading(page)).toBeVisible();
+    // 誰としてログインしているかは、メニューを開かなくても読める。
+    await expect(page.getByRole("button", { name: "Octo Cat" })).toBeVisible();
     await expect(page.getByRole("button", { name: BOARD_NAME })).toBeVisible();
+    expect((await page.locator(".list-header").boundingBox())?.height).toBe(56);
+  });
+
+  // ログアウトは毎回押すものではないので、利用者のメニューにしまう（#200）。
+  test("利用者のメニューは Esc と外側のクリックで閉じる", async ({ page }) => {
+    const mock = authRequiredMock();
+    mock.session = { status: 200, body: signedIn() };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const toggle = page.getByRole("button", { name: "Octo Cat" });
+    const logout = page.getByRole("button", { name: "ログアウト" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(logout).toBeHidden();
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(logout).toBeVisible();
+
+    // Esc は焦点をボタンへ戻す。開いた中身の中で押されると、閉じた瞬間に
+    // 焦点の行き場が無くなる。
+    await logout.focus();
+    await page.keyboard.press("Escape");
+    await expect(logout).toBeHidden();
+    await expect(toggle).toBeFocused();
+
+    await toggle.click();
+    await boardListHeading(page).click();
+    await expect(logout).toBeHidden();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  // 開いたまま外へ出ると、外で押した Esc までメニューが拾い、焦点をボタンへ
+  // 引き戻す。新しいボードのダイアログを Esc で閉じても、焦点が「新しいボード」へ
+  // 戻らなくなる（#219）。**外へ出たら、焦点は動かさずに閉じる**（外側を押した
+  // ときと同じ）。
+  test("利用者のメニューから Tab で外へ出たら閉じ、外の Esc で焦点を奪わない", async ({
+    page,
+  }) => {
+    const mock = authRequiredMock();
+    mock.session = { status: 200, body: signedIn() };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const toggle = page.getByRole("button", { name: "Octo Cat" });
+    const logout = page.getByRole("button", { name: "ログアウト" });
+    const newBoard = page.getByRole("button", { name: "新しいボード" });
+
+    await toggle.click();
+    await logout.focus();
+    await page.keyboard.press("Tab");
+    await expect(newBoard).toBeFocused();
+    await expect(logout).toBeHidden();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: "新しいボード" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "新しいボード" })).toBeHidden();
+    await expect(newBoard).toBeFocused();
   });
 
   test("ログアウトするとログイン画面に戻る", async ({ page }) => {
@@ -72,12 +137,14 @@ test.describe("ログイン", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await expect(page.getByLabel("ボード名")).toBeVisible();
+    await expect(boardListHeading(page)).toBeVisible();
 
+    // ログアウトは利用者のメニューの中にある（#200）。
+    await page.getByRole("button", { name: "Octo Cat" }).click();
     await page.getByRole("button", { name: "ログアウト" }).click();
 
     await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
-    await expect(page.getByLabel("ボード名")).toHaveCount(0);
+    await expect(boardListHeading(page)).toHaveCount(0);
   });
 
   // 状態が分からないならログインを求めない側に倒す。求める側に倒すと、認証を
@@ -92,7 +159,7 @@ test.describe("ログイン", () => {
     await expect(page.getByRole("alert")).toContainText(
       "ログイン状態を取得できませんでした",
     );
-    await expect(page.getByLabel("ボード名")).toBeVisible();
+    await expect(boardListHeading(page)).toBeVisible();
   });
 
   test("ログインを開始できなければ、その旨をログイン画面に出す", async ({ page }) => {
@@ -120,8 +187,8 @@ test.describe("ログイン", () => {
 
     // まずログイン済みで入れること。ここを確かめないと、最初から未ログイン
     // だっただけのテストになる。
-    await expect(page.getByLabel("ボード名")).toBeVisible();
-    // **一覧が読めたことまで待つ。** フォームは一覧の取得を待たずに出るので、
+    await expect(boardListHeading(page)).toBeVisible();
+    // **一覧が読めたことまで待つ。** 見出しは一覧の取得を待たずに出るので、
     // ここで待たないと最初の取得が下の失効の後に着地しうる。そうなると
     // ログイン画面へ落ちるのは「読み直す操作をさせたから」ではなくなり、
     // このテストが見たい経路を通らないまま緑にも赤にもなる。
@@ -146,8 +213,7 @@ test.describe("ログイン", () => {
 
     // 一覧を読み直す操作をさせる。作成そのものは通り、続く再取得で失効に気づく。
     // 作成先を選ばないとボードは作られないので、選択まで進める（ADR 0017）。
-    await page.getByLabel("ボード名").fill("失効の確認");
-    await page.getByRole("button", { name: "次へ" }).click();
+    await startNewBoard(page, "失効の確認");
     await chooseTarget(page, "acme/web", "#1 ロードマップ");
     await sessionRefetch;
 
