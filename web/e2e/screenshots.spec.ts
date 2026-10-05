@@ -14,6 +14,7 @@ import {
   chooseTarget,
   drawRectangle,
   interpret,
+  newBoardDialog,
   openAnnotationDetail,
   openBoard,
   openBoardMenu,
@@ -22,6 +23,7 @@ import {
   openPanelTab,
   pasteOnCanvas,
   picker,
+  startNewBoard,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -66,6 +68,7 @@ test.describe("スクリーンショット", () => {
     const mock = await installApi(page, baseMock());
 
     await page.goto("/");
+    await page.locator(".board-list").waitFor();
     await shot(page, "01-boards-empty");
 
     await openBoard(page, BOARD_NAME);
@@ -483,8 +486,10 @@ test.describe("スクリーンショット", () => {
     await shot(page, "13-viewer");
   });
 
-  // 一覧をリポジトリと Project でまとめた姿（ADR 0019）。ボードが 1 枚の
-  // 01 では枝が 1 本しか出ず、まとまっていることが見えない。
+  // 一覧を作成先ごとの節に分けた姿（ADR 0019、#200）。ボードが 1 枚の 01 では
+  // 節が 1 つしか出ず、まとまっていることが見えない。カードの件数とロールの
+  // 出し分け（0 件の状態は出さない、注釈なし、読めない、未選択の破線）も
+  // 1 枚に並べる。
   test("作成先ごとにまとまった一覧を撮る", async ({ page }) => {
     const mock = baseMock();
     const another = {
@@ -512,16 +517,29 @@ test.describe("スクリーンショット", () => {
       ...mock.boards,
       summarize(legacy),
     ];
-    for (const b of [another, otherRepo, legacy]) {
+    const shared = {
+      ...board(),
+      id: "board-shared",
+      name: "共有された通知の設計",
+      role: "viewer" as const,
+    };
+    mock.boards.splice(2, 0, summarize(shared));
+    for (const b of [another, otherRepo, legacy, shared]) {
       mock.details[b.id] = b;
       mock.annotations[b.id] = [];
     }
+    mock.annotations[another.id] = annotations().filter((a) => a.state !== "changed");
+    mock.unreadableCounts = [otherRepo.id];
 
-    // 木は一覧の画面にある（ADR 0064）。ボードは開かない。
+    // 一覧の画面にある（ADR 0064）。ボードは開かない。
     await installApi(page, mock);
     await page.goto("/");
-    await page.locator(".board-tree").waitFor();
-    await shot(page, "14-board-tree");
+    await page.locator(".board-list").waitFor();
+    await shot(page, "14-board-list");
+
+    // 新しいボードのダイアログ（#200）。
+    await newBoardDialog(page);
+    await shot(page, "14-new-board-dialog");
   });
 
   // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。
@@ -764,11 +782,13 @@ test.describe("スクリーンショット", () => {
     await installApi(page, baseMock());
 
     await page.goto("/");
-    await page.getByLabel("ボード名").fill("注文フローのブレスト");
-    await page.getByLabel("ひな形").selectOption("sequence");
+    // 選ぶ場所は「新しいボード」のダイアログ（#200）。
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("注文フローのブレスト");
+    await dialog.getByLabel("ひな形").selectOption("sequence");
     await shot(page, "31-template-choice");
 
-    await page.getByRole("button", { name: "次へ" }).click();
+    await dialog.getByRole("button", { name: "次へ" }).click();
     await chooseTarget(page, "acme/web", "#1 ロードマップ");
     await page.getByRole("heading", { name: "注文フローのブレスト", level: 1 }).waitFor();
     await page.locator(".excalidraw canvas").first().waitFor();
@@ -791,9 +811,7 @@ test.describe("スクリーンショット", () => {
       await installApi(page, baseMock());
       await page.goto("/");
 
-      await page.getByLabel("ボード名").fill(`${label}のボード`);
-      await page.getByLabel("ひな形").selectOption(kind);
-      await page.getByRole("button", { name: "次へ" }).click();
+      await startNewBoard(page, `${label}のボード`, kind);
       await chooseTarget(page, "acme/web", "#1 ロードマップ");
 
       await page.getByRole("heading", { name: `${label}のボード`, level: 1 }).waitFor();
@@ -982,7 +1000,7 @@ test.describe("スクリーンショット", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
-    await page.locator(".board-tree").waitFor();
+    await page.locator(".board-list").waitFor();
     await shot(page, "34-dark-board-list");
 
     await openBoard(page, BOARD_NAME);
