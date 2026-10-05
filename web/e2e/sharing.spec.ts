@@ -2,6 +2,9 @@ import { expect, test } from "@playwright/test";
 
 import {
   annotationCard,
+  annotationDetail,
+  interpret,
+  openAnnotationDetail,
   openBoardMenu,
   openBoardWithMock,
   openPanelTab,
@@ -117,17 +120,20 @@ test.describe("共有", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
     // 解釈まではできる。GitHub は要らない。
     await expect(
-      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+      detail.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
 
     // 作成だけができない。押させずに理由を出す。
-    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
+      0,
+    );
     await expect(
-      card.getByText("この Project に書き込む権限がありません。"),
+      detail.getByText("この Project に書き込む権限がありません。"),
     ).toBeVisible();
   });
 
@@ -142,9 +148,22 @@ test.describe("共有", () => {
       page.getByText("読むだけの権限で開いています。編集・解釈・作成はできません。"),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "保存" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "解釈する" })).toHaveCount(0);
     // 状態は読める。何が作成済みかは、読むだけの人にも見える必要がある。
     await expect(page.locator(".annotation").first()).toBeVisible();
+
+    // 詳細は開ける（GitHub にあるものを読むため）が、解釈の口は無い。
+    // **開いてから「無い」を見る。** 解釈の口は詳細の中にあるので、開かずに
+    // 見ると出していても通る（#201）。
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await expect(
+      detail.getByRole("button", { name: "GitHub にある 2 件" }),
+    ).toBeVisible();
+    await expect(detail.getByRole("button", { name: /^解釈/ })).toHaveCount(0);
+    await expect(
+      detail.getByText(
+        "読むだけの権限で開いています。粒度と種別は変えられず、解釈と作成もできません。",
+      ),
+    ).toBeVisible();
   });
 
   test("オーナー以外には作成先の変更を出さない", async ({ page }) => {

@@ -5,8 +5,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { holdCreate, installApi } from "./helpers/api";
 import {
   annotationCard,
+  annotationDetail,
   chooseFromMenu,
   drawRectangle,
+  interpret,
   openBoard,
   openBoardWithMock,
 } from "./helpers/board";
@@ -210,9 +212,10 @@ test.describe("取り込み", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByRole("button", { name: "作成中…" })).toBeVisible();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByRole("button", { name: "作成中…" })).toBeVisible();
 
     // 表のボタンだけでなく処理の入口でも排他する。隠した input はテストや
     // ブラウザの API から直接変更できるので、ボタンの disabled だけでは足りない。
@@ -221,7 +224,7 @@ test.describe("取り込み", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
     release();
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
   });
 
   // **載せるだけで、確定させるのは人間の保存操作だけ**（ADR 0045、中核思想 3）。

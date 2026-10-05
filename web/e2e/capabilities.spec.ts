@@ -1,12 +1,16 @@
 import { expect, test } from "@playwright/test";
 
+import { installApi } from "./helpers/api";
 import {
   annotationCard,
+  annotationDetail,
+  interpret,
+  openAnnotationDetail,
   openBoardMenu,
   openBoardWithMock,
   openPanelTab,
 } from "./helpers/board";
-import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
+import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
 /**
  * 設定していない機能の見せ方（ADR 0030）。
@@ -35,23 +39,22 @@ test.describe("設定していない機能", () => {
     };
     await openBoardWithMock(page, mock);
 
-    const card = annotationCard(page, "ログイン");
-    const interpret = card.getByRole("button", { name: "解釈する" });
+    // 解釈の口は注釈の詳細の帯にある（#201）。
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const interpret = detail.getByRole("button", { name: "解釈する" });
 
     // 黙って消さない。押せないことと、何を設定すればよいかを両方出す。
     await expect(interpret).toBeVisible();
     await expect(interpret).toBeDisabled();
 
-    // 理由はパネルに 1 つ。注釈の数だけ並べない。
+    // 理由は開いた詳細の帯に 1 つ。詳細は 1 つずつしか開かないので、注釈の
+    // 数だけ並ばない。
     const reason = page.getByText("ETOKI_LLM_API_KEY");
     await expect(reason).toBeVisible();
     await expect(reason).toHaveCount(1);
     // 押せないボタンはフォーカスも当たらない。読み上げに理由が届くよう、
     // ボタンからこの文を指しておく（既存の「保存してから」と同じ形）。
-    await expect(interpret).toHaveAttribute(
-      "aria-describedby",
-      "interpretation-unavailable",
-    );
+    await expect(interpret).toHaveAccessibleDescription(/ETOKI_LLM_API_KEY/);
   });
 
   test("GitHub が未設定なら、作成の代わりに理由を出す", async ({ page }) => {
@@ -63,19 +66,60 @@ test.describe("設定していない機能", () => {
     await openBoardWithMock(page, mock);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
 
     // 解釈はできる。**ブレストと解釈まで進めることが読めている**必要がある。
     await expect(
-      card.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
+      detail.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
-    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(0);
-    await expect(card.getByText("ETOKI_GITHUB_TOKEN")).toBeVisible();
-    await expect(card.getByText("ブレストと解釈はこのまま続けられます。")).toBeVisible();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
+      0,
+    );
+    await expect(detail.getByText("ETOKI_GITHUB_TOKEN")).toBeVisible();
+    await expect(
+      detail.getByText("ブレストと解釈はこのまま続けられます。"),
+    ).toBeVisible();
   });
 
   // 表示名の取り直しは GitHub の Project 一覧を引く（ADR 0037）。設定して
   // いない構成では押しても引けないので、押させずに理由を出す。
+  // ボードを作るには作成先が要り、GitHub が未設定だと選べない（ADR 0017）。
+  // 名前とひな形を決めて「次へ」を押した先で知らせると、決めた手間が無駄になる。
+  // **押す前に止める**（#200、ADR 0030 の残りを決めた）。
+  test("GitHub が未設定なら、新しいボードを押させず理由を出す", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = {
+      status: 200,
+      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const button = page.getByRole("button", { name: "新しいボード", exact: true });
+    // 黙って消さない。そういう操作があることは見えている。
+    await expect(button).toBeVisible();
+    await expect(button).toBeDisabled();
+    // 押した後に 503 で返る理由と同じ文言（`capability.ts`）。
+    await expect(button).toHaveAccessibleDescription(/ETOKI_GITHUB_TOKEN/);
+    // 開けるボードは開ける。止めるのは作ることだけ。
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
+    ).toBeEnabled();
+  });
+
+  // 確かめていないことを「使えない」に倒さない（中核思想 3）。
+  test("使える機能を引けなくても、新しいボードは押せる", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = { status: 500, body: { code: "internal", error: "boom" } };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    await expect(
+      page.getByRole("button", { name: "新しいボード", exact: true }),
+    ).toBeEnabled();
+  });
+
   test("GitHub が未設定なら、作成先の名前も取り直させない", async ({ page }) => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };
@@ -120,8 +164,9 @@ test.describe("設定していない機能", () => {
     mock.capabilities = { status: 500, body: { code: "internal", error: "boom" } };
     await openBoardWithMock(page, mock);
 
-    const card = annotationCard(page, "ログイン");
-    await expect(card.getByRole("button", { name: "解釈する" })).toBeEnabled();
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await expect(detail.getByRole("button", { name: "解釈する" })).toBeEnabled();
+    await detail.getByRole("button", { name: "閉じる" }).click();
     await openPanelTab(page, "メンバー");
     await expect(page.getByRole("region", { name: "メンバー" })).toBeVisible();
   });

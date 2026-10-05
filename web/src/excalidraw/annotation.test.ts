@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  annotationMetas,
   frameIds,
   granularityOf,
   isAnnotation,
@@ -270,5 +271,24 @@ describe("frameIds", () => {
 
   it("削除済みは除く", () => {
     expect(frameIds([{ ...plainFrame, isDeleted: true }])).toEqual([]);
+  });
+});
+
+describe("annotationMetas", () => {
+  // 注釈の詳細の選択欄が出す値。保存済みの値ではなく、キャンバスにいま在る値。
+  it("注釈の frame だけを、粒度と種別で引けるようにする", () => {
+    expect(annotationMetas([plainFrame, annotation, text, templated])).toEqual({
+      f2: { granularity: "epic", kind: undefined },
+      f3: { granularity: "", kind: "sequence" },
+    });
+  });
+
+  it("粒度が無ければ指定なし、削除済みは除く", () => {
+    expect(
+      annotationMetas([
+        { ...plainFrame, customData: { etoki: {} } },
+        { ...annotation, isDeleted: true },
+      ]),
+    ).toEqual({ f1: { granularity: "", kind: undefined } });
   });
 });

@@ -128,7 +128,7 @@ test.describe("キャンバスに無い注釈", () => {
     await openBoardWithMock(page, withDetached());
 
     const states = page.locator(".panel-section").filter({
-      has: page.getByRole("heading", { name: "状態" }),
+      has: page.getByRole("heading", { name: /^注釈 \d+ 件/ }),
     });
 
     await expect(states.getByText("消した囲みで作った epic")).toBeHidden();

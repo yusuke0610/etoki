@@ -3,9 +3,12 @@ import { expect, test } from "@playwright/test";
 import { holdCreate, holdSave, installApi, summarize, type ApiMock } from "./helpers/api";
 import {
   annotationCard,
+  annotationDetail,
   backToList,
   chooseFromMenu,
   drawRectangle,
+  interpret,
+  openAnnotationDetail,
   openBoard,
   openBoardWithMock,
   waitForBoard,
@@ -152,9 +155,10 @@ test.describe("シーンの保存", () => {
     await openBoard(page, BOARD_NAME);
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByRole("button", { name: "作成中…" })).toBeVisible();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByRole("button", { name: "作成中…" })).toBeVisible();
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
     const types: string[] = [];
@@ -312,8 +316,10 @@ test.describe("シーンの保存", () => {
 
     await drawRectangle(page);
 
+    // 理由は詳細の帯に出る（#201）。
+    const detail = await openAnnotationDetail(page, "ログイン");
     await expect(
-      page.getByText("保存してから解釈できます", { exact: false }).first(),
+      detail.getByText("保存してから解釈できます", { exact: false }),
     ).toBeVisible();
   });
 
@@ -472,15 +478,28 @@ test.describe("シーンの保存", () => {
   test("保存すると、それまでの解釈結果は捨てられる", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    const card = page.locator("li.annotation").filter({ hasText: "ログイン" });
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
 
+    // 描くには詳細を閉じてキャンバスを空ける。描いたら開き直し、**開いたまま**
+    // 保存する。閉じてから保存すると、見えない詳細の中を確かめることになる。
+    await detail.getByRole("button", { name: "閉じる" }).click();
     await drawRectangle(page);
+    await card.locator(".annotation-open").click();
     await page.getByRole("button", { name: "保存" }).click();
 
     // 解釈は保存済みシーンに対する結果。保存したら対象が変わっているので、
     // 古い結果のまま作成させてはならない。
-    await expect(card.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(0);
+    await expect(
+      detail.getByText("まだ解釈していません", { exact: false }),
+    ).toBeVisible();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
+      0,
+    );
+    // 引いた解釈も捨てるので、帯は「やり直す」ではなく「解釈する」に戻る。
+    // 「やり直す」のままだと、捨てた結果がまだどこかにあるように読める。
+    await expect(detail.getByRole("button", { name: "解釈する" })).toBeEnabled();
   });
 });

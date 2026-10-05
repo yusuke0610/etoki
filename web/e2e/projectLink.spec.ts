@@ -1,7 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 import { summarize } from "./helpers/api";
-import { annotationCard, openBoardWithMock } from "./helpers/board";
+import {
+  annotationCard,
+  annotationDetail,
+  interpret,
+  openAnnotationDetail,
+  openBoardWithMock,
+} from "./helpers/board";
 import { BOARD_ID, baseMock, board, matchedInterpretationMock } from "./helpers/fixtures";
 
 /** 作成先の URL を控えていないボード。URL を保存する前に選んだものが該当する。 */
@@ -44,11 +50,11 @@ test.describe("GitHub へ辿る導線", () => {
   test("GitHub にある項目から Project へ飛べる", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    const card = annotationCard(page, "パスワード再設定");
-    await card.getByText("GitHub にある 2 件").click();
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await detail.getByRole("button", { name: "GitHub にある 2 件" }).click();
 
     await expect(
-      card.getByRole("link", { name: "GitHub でこの Project を開く" }),
+      detail.getByRole("link", { name: "GitHub でこの Project を開く" }),
     ).toHaveAttribute("href", "https://github.com/orgs/acme/projects/1");
   });
 
@@ -56,12 +62,13 @@ test.describe("GitHub へ辿る導線", () => {
     await openBoardWithMock(page, baseMock());
 
     const card = annotationCard(page, "ログイン");
-    await card.getByRole("button", { name: "解釈する" }).click();
-    await card.getByRole("button", { name: "GitHub に作成する" }).click();
-    await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
     await expect(
-      card
+      detail
         .locator(".creation-result")
         .getByRole("link", { name: "GitHub でこの Project を開く" }),
     ).toHaveAttribute("href", "https://github.com/orgs/acme/projects/1");
@@ -72,11 +79,11 @@ test.describe("GitHub へ辿る導線", () => {
   test("一覧止まりのときは飛び先をそう書く", async ({ page }) => {
     await openBoardWithMock(page, withoutProjectUrl());
 
-    const card = annotationCard(page, "パスワード再設定");
-    await card.getByText("GitHub にある 2 件").click();
+    const detail = await openAnnotationDetail(page, "パスワード再設定");
+    await detail.getByRole("button", { name: "GitHub にある 2 件" }).click();
 
     await expect(
-      card.getByRole("link", { name: "GitHub でリポジトリの Projects を開く" }),
+      detail.getByRole("link", { name: "GitHub でリポジトリの Projects を開く" }),
     ).toBeVisible();
   });
 
@@ -86,12 +93,12 @@ test.describe("GitHub へ辿る導線", () => {
     test("GitHub にある項目から 1 件ずつ開ける", async ({ page }) => {
       await openBoardWithMock(page, baseMock());
 
-      const card = annotationCard(page, "パスワード再設定");
-      await card.getByText("GitHub にある 2 件").click();
+      const detail = await openAnnotationDetail(page, "パスワード再設定");
+      await detail.getByRole("button", { name: "GitHub にある 2 件" }).click();
 
       // 同じ文言のリンクが行の数だけ並ぶので、名前にタイトルを含める。
       await expect(
-        card.getByRole("link", { name: "「パスワード再設定」を GitHub で開く" }),
+        detail.getByRole("link", { name: "「パスワード再設定」を GitHub で開く" }),
       ).toHaveAttribute(
         "href",
         "https://github.com/orgs/acme/projects/1?pane=issue&itemId=101",
@@ -100,12 +107,12 @@ test.describe("GitHub へ辿る導線", () => {
       // 識別子を控えていなかった頃の item にはリンクを出さない。番号や node ID
       // から推測して組まない。
       await expect(
-        card.getByRole("link", { name: "「再設定メールを送る」を GitHub で開く" }),
+        detail.getByRole("link", { name: "「再設定メールを送る」を GitHub で開く" }),
       ).toHaveCount(0);
 
       // リストごとの 1 本は残る。Project 全体を見にいくのは別の用事。
       await expect(
-        card.getByRole("link", { name: "GitHub でこの Project を開く" }),
+        detail.getByRole("link", { name: "GitHub でこの Project を開く" }),
       ).toBeVisible();
     });
 
@@ -113,11 +120,12 @@ test.describe("GitHub へ辿る導線", () => {
       await openBoardWithMock(page, baseMock());
 
       const card = annotationCard(page, "ログイン");
-      await card.getByRole("button", { name: "解釈する" }).click();
-      await card.getByRole("button", { name: "GitHub に作成する" }).click();
-      await expect(card.getByText("3 件を作成しました。")).toBeVisible();
+      const detail = annotationDetail(page, "ログイン");
+      await interpret(card);
+      await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+      await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
-      const result = card.locator(".creation-result");
+      const result = detail.locator(".creation-result");
       for (const [title, id] of [
         ["ログイン基盤", 201],
         ["メールとパスワードでログインする", 202],
@@ -138,10 +146,11 @@ test.describe("GitHub へ辿る導線", () => {
       await openBoardWithMock(page, matchedInterpretationMock());
 
       const card = annotationCard(page, "セッション管理");
-      await card.getByRole("button", { name: "解釈する" }).click();
+      const detail = annotationDetail(page, "セッション管理");
+      await interpret(card);
 
       await expect(
-        card
+        detail
           .locator(".left-behind")
           .getByRole("link", { name: "「触らないほう」を GitHub で開く" }),
       ).toHaveAttribute(
@@ -154,10 +163,12 @@ test.describe("GitHub へ辿る導線", () => {
     test("URL を控えていないボードでは item ごとのリンクを出さない", async ({ page }) => {
       await openBoardWithMock(page, withoutProjectUrl());
 
-      const card = annotationCard(page, "パスワード再設定");
-      await card.getByText("GitHub にある 2 件").click();
+      const detail = await openAnnotationDetail(page, "パスワード再設定");
+      await detail.getByRole("button", { name: "GitHub にある 2 件" }).click();
 
-      await expect(card.getByRole("link", { name: /を GitHub で開く$/ })).toHaveCount(0);
+      await expect(detail.getByRole("link", { name: /を GitHub で開く$/ })).toHaveCount(
+        0,
+      );
     });
   });
 });

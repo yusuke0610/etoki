@@ -8,7 +8,8 @@ import {
   type InterpretationRun,
   type InterpretationState,
 } from "./interpretationHistory";
-import { INTERPRETATION_UNAVAILABLE_ID, type CreationState } from "./panelShared";
+import { DetailBand, type InterpretControl } from "./DetailBand";
+import type { CreationState } from "./panelShared";
 import type { ProjectLink } from "./projectLink";
 
 type InterpretationSectionProps = {
@@ -18,45 +19,57 @@ type InterpretationSectionProps = {
   granularity: Granularity;
   state?: InterpretationState;
   creation?: CreationState;
-  /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
-  stale: boolean;
   /** 保存中は下書きの編集も止める。 */
   saving: boolean;
   /** いま作成を始められない理由。押せるなら null（表は `exclusion.ts`）。 */
   creationBlocked: string | null;
   projectAccess: ProjectAccess;
-  /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
-  interpretationUnavailable: string | null;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
   creationUnavailable: string | null;
   /** この注釈が GitHub に在らしめているもの（ADR 0026）。 */
   previous: SyncItem[];
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
   projectLink: ProjectLink | null;
+  /** 作る先の見出し（`acme/web › #1 ロードマップ`）。帯の文に出す。 */
+  targetLabel: string | null;
+  /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
+  stale: boolean;
+  /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
+  interpretationUnavailable: string | null;
   onInterpret: () => void;
   onSelectInterpretation: (runId: number) => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
 };
 
 /**
- * 解釈の実行と結果表示。
+ * 未保存のあいだ「解釈する」を押せない理由。テキストは保存済みシーンから、
+ * 画像は画面から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
+ */
+const STALE_REASON =
+  "保存してから解釈できます。テキストは保存済みのシーンから、画像は画面から取るためです。";
+
+/**
+ * 解釈の結果と、下端の帯（`DetailBand`）。注釈の詳細（`AnnotationDetail`）の
+ * 本文に出す。
  *
- * 結果を見せるだけで、ここから GitHub には何も作らない。何を作るかは
- * 開発者が別途トリガーする。
+ * 解釈を 1 件選んでいれば、帯は下書きの手直し（`DraftEditor`）が描く。作成の
+ * 口は下書きを持つ側にしか組めないため。まだ選べるものが無いうちは、ここで
+ * 「解釈する」だけの帯を描く（**解釈するまで作成のボタンは出さない**）。
  */
 export function InterpretationSection({
   annotationId,
   granularity,
   state,
   creation,
-  stale,
   saving,
   creationBlocked,
   projectAccess,
-  interpretationUnavailable,
   creationUnavailable,
   previous,
   projectLink,
+  targetLabel,
+  stale,
+  interpretationUnavailable,
   onInterpret,
   onSelectInterpretation,
   onCreate,
@@ -65,40 +78,31 @@ export function InterpretationSection({
   const runs = state?.runs ?? [];
   // いま見ている解釈。1 件も返っていなければ undefined。
   const selected = selectedInterpretation(state);
-  // 押せない理由は title に隠さず本文として出す。disabled なボタンはフォーカスも
-  // 当たらないので、title ではキーボードと読み上げの利用者に理由が届かない。
-  const blockedId = `interpret-blocked-${annotationId}`;
-  // **設定の不足が先。** 保存しても状況は変わらないので、「保存してから」を
-  // 先に出すと、保存した人がもう一度同じところで止まる（ADR 0030）。
-  //
-  // 未設定の理由はパネルの上に 1 つだけ出ているので、ここでは指すだけにする。
-  // 注釈の数だけ同じ文を並べない。
-  const unavailable = interpretationUnavailable !== null;
-  const describedBy = unavailable
-    ? INTERPRETATION_UNAVAILABLE_ID
-    : stale
-      ? blockedId
-      : undefined;
+
+  const interpret: InterpretControl = {
+    annotationId,
+    label:
+      runs.length > 0 || state?.failure !== undefined ? "解釈をやり直す" : "解釈する",
+    running,
+    // **設定の不足が先。** 保存しても状況は変わらないので、「保存してから」を
+    // 先に出すと、保存した人がもう一度同じところで止まる（ADR 0030）。
+    blocked: interpretationUnavailable ?? (stale ? STALE_REASON : null),
+    onInterpret,
+  };
 
   return (
-    <div className="interpretation">
-      {/*
-        未保存のあいだは押させない。テキストは保存済みシーンから、画像は画面
-        から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
-      */}
-      <button
-        type="button"
-        onClick={onInterpret}
-        disabled={running || unavailable || stale}
-        aria-describedby={describedBy}
-      >
-        {running ? "解釈中…" : "解釈する"}
-      </button>
+    <div className="interpretation-result-area">
+      {running && <p className="hint">解釈しています…</p>}
 
-      {!unavailable && stale && (
-        <p className="hint" id={blockedId}>
-          保存してから解釈できます。テキストは保存済みのシーンから、
-          画像は画面から取るためです。
+      {/*
+        解釈の前でも詳細は開ける（粒度と種別を選ぶ場所がここなので）。何を押すと
+        何が起きるかを出す。保存すると解釈は捨てる（前提のシーンが変わる、
+        web/CLAUDE.md）ので、開いたまま保存したときも同じ文に戻る。
+      */}
+      {!running && runs.length === 0 && !state?.failure && (
+        <p className="hint">
+          まだ解釈していません。「解釈する」を押すと、この注釈を読んで、作るものの
+          下書きを出します。保存すると、前に解釈した結果は捨てます。
         </p>
       )}
 
@@ -121,7 +125,7 @@ export function InterpretationSection({
         />
       )}
 
-      {selected && (
+      {selected ? (
         <DraftEditor
           // 選び直したら手直しは引き継がない。別の解釈に対する編集が
           // 混ざると、何を作るのかが読めなくなる（解釈し直したときと同じ）。
@@ -137,8 +141,12 @@ export function InterpretationSection({
           creationUnavailable={creationUnavailable}
           previous={previous}
           projectLink={projectLink}
+          targetLabel={targetLabel}
+          interpret={interpret}
           onCreate={(interpretation) => onCreate(selected.id, interpretation)}
         />
+      ) : (
+        <DetailBand interpret={interpret} />
       )}
     </div>
   );
