@@ -136,6 +136,13 @@
   --control-height: 36px;
 
   /*
+   * 右のパネルと、畳んだときに残す帯の幅（#202）。**画面全体の通知の位置も
+   * ここから引く**（#216）。パネルの幅だけ変えると、通知がパネルに重なる。
+   */
+  --side-panel-width: 320px;
+  --side-panel-rail-width: 40px;
+
+  /*
    * 書体。**Excalidraw の UI の並び（`--ui-font`）を写してある。** キャンバスの
    * メニューの中で、ライブラリの項目と etoki の項目の英数字が同じ字形になる。
    * Assistant はライブラリが同梱していて、`App.tsx` が読む CSS の `@font-face`
@@ -920,7 +927,7 @@ body {
  * （ADR 0065）。**幅と境界線はここが持つ。** 中に入る各パネルは幅を持たない。
  */
 .side-panel {
-  width: 320px;
+  width: var(--side-panel-width);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -963,7 +970,7 @@ body {
  * （ADR 0064）。
  */
 .side-panel-rail {
-  width: 40px;
+  width: var(--side-panel-rail-width);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1385,22 +1392,37 @@ body {
  *
  * **フローの外に出す。** 帯としてフローに入れると、出た瞬間にキャンバスの
  * 高さが削られて Excalidraw が描き直され、描いている最中に描画位置が動く。
- * 右上に置くのは、Excalidraw 自身の UI（左下のズームと取り消し、右下の
- * ヘルプ、上中央のツールバー）と重ならない位置だから。
+ *
+ * **キャンバスの右上、右上の島の下に置く**（#216）。Excalidraw 自身の UI
+ * （左下のズームと取り消し、右下のヘルプ、上中央のツールバー）とも、etoki の
+ * 右上の島（ボード名・未保存・保存）とも重ならない。**右のパネルの上には
+ * 出さない。** パネルの主題は注釈の状態で、閉じるまで残る通知がそれを隠す。
+ * 開いていればパネルの幅だけ、畳んでいれば帯の幅だけ左へずらす（下の 2 つ）。
  *
  * 入れ物は 0 件でも DOM に残る（読み上げのため）。何も無いときにクリックを
  * 奪わないよう、入れ物は pointer-events を切り、通知だけが受ける。
  */
 .notifications {
+  /* 右端からの距離。ボードの画面では、右のパネルか畳んだ帯の幅を足す。 */
+  --notifications-right: var(--space-6);
   position: fixed;
-  top: 56px;
-  right: 16px;
-  width: min(420px, calc(100vw - 32px));
+  /* 右上の島（上端 16px・高さ 40px 前後）の下から始める。 */
+  top: 72px;
+  right: var(--notifications-right);
+  width: min(420px, calc(100vw - var(--notifications-right) - var(--space-6)));
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   z-index: 100;
   pointer-events: none;
+}
+
+.app:has(.side-panel:not([hidden])) .notifications {
+  --notifications-right: calc(var(--side-panel-width) + var(--space-6));
+}
+
+.app:has(.side-panel-rail) .notifications {
+  --notifications-right: calc(var(--side-panel-rail-width) + var(--space-6));
 }
 
 .notification {
