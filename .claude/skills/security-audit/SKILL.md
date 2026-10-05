@@ -52,7 +52,7 @@ worktree の中で `make` を叩くときは `env -u ETOKI_DEVSHELL -u IN_NIX_SH
 
 ```sh
 gh issue view 64 --json body,comments
-gh api repos/yusuke0610/etoki/security-advisories \
+gh api --paginate repos/yusuke0610/etoki/security-advisories \
   -q '.[] | "\(.ghsa_id) [\(.state)] \(.severity) \(.summary)"'
 ```
 
@@ -66,18 +66,23 @@ gh api repos/yusuke0610/etoki/security-advisories \
 
 ## 3. 測る
 
-出力は `tmp/`（`.gitignore` 済み）に落とし、終了コードだけ見る。通ったものの
-出力は読まない（`/rv` と同じ理由、#125）。
+出力は `tmp/`（`.gitignore` 済み）に落とす。読み方は 2 通りある。
 
-| 測るもの                        | コマンド                                                                                              |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Go の依存と Go 本体             | `make vulncheck`                                                                                      |
-| web の依存                      | `cd web && bun install --frozen-lockfile && bun audit`（集計に `--json`）                             |
-| Go の静的解析                   | `golangci-lint run --default=none --enable=gosec --max-issues-per-linter=0 --max-same-issues=0 ./...` |
-| Dependabot alerts               | `gh api 'repos/yusuke0610/etoki/dependabot/alerts?state=open' -q length`                              |
-| Dependabot が見ている依存の範囲 | `gh api repos/yusuke0610/etoki/dependency-graph/sbom`（npm が直接依存だけか）                         |
-| リポジトリ設定                  | `gh api repos/yusuke0610/etoki -q .security_and_analysis`                                             |
-| code scanning                   | `gh api repos/yusuke0610/etoki/code-scanning/alerts`（404 は「解析なし」）                            |
+- **検査の道具（`make vulncheck` / `bun audit` / golangci-lint）は終了コードだけ
+  見る。** 通ったものの出力は読まない（`/rv` と同じ理由、#125）。
+- **`gh api` は応答そのものが測った結果なので読む。** 件数・依存の範囲・設定値は
+  成功した応答の中にしか無い。一覧は `--paginate` で全ページを取る。取らないと
+  1 ページ目（既定 30 件）で止まり、件数が少なく出る。
+
+| 測るもの                        | コマンド                                                                                                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Go の依存と Go 本体             | `make vulncheck`                                                                                                                                                                                                         |
+| web の依存                      | `cd web && bun install --frozen-lockfile && bun audit`（集計に `--json`）                                                                                                                                                |
+| Go の静的解析                   | `nix develop --command golangci-lint run --default=none --enable=gosec --max-issues-per-linter=0 --max-same-issues=0 ./...`（worktree の `flake.lock` の版で回す）                                                       |
+| Dependabot alerts               | `gh api --paginate 'repos/yusuke0610/etoki/dependabot/alerts?state=open' -q '.[].number' > tmp/dependabot-alerts.txt && wc -l < tmp/dependabot-alerts.txt`（`wc` へ直に流すと、失敗したときのエラー本文も 1 件と数える） |
+| Dependabot が見ている依存の範囲 | `gh api repos/yusuke0610/etoki/dependency-graph/sbom`（npm が直接依存だけか）                                                                                                                                            |
+| リポジトリ設定                  | `gh api repos/yusuke0610/etoki -q .security_and_analysis`                                                                                                                                                                |
+| code scanning                   | `gh api --paginate repos/yusuke0610/etoki/code-scanning/alerts`（404 は「解析なし」）                                                                                                                                    |
 
 - **`bun audit` は、画面に同梱されるものと開発時だけのものに分けて数える。**
   依存の経路（`bun audit` の出力の `>` の並び）で分ける。受け入れ済みのもの
