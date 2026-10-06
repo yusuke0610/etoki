@@ -137,6 +137,43 @@ test.describe("共有", () => {
     ).toBeVisible();
   });
 
+  // 作成先の Project に書けるかは、解釈まで進まなくても読める（#217）。
+  // **書けないと分かったときだけ出す。** unknown（確かめていない・確かめられ
+  // なかった）を「書けません」に見せない（ADR 0017）。
+  for (const [projectAccess, shown] of [
+    ["denied", true],
+    ["allowed", false],
+    ["unknown", false],
+  ] as const) {
+    test(`下の帯の「書けません」：${projectAccess}`, async ({ page }) => {
+      const mock = baseMock();
+      mock.access = {
+        [BOARD_ID]: { status: 200, body: { role: "owner", projectAccess } },
+      };
+      const accessed = page.waitForResponse((r) =>
+        /^\/api\/boards\/[^/]+\/access$/.test(new URL(r.url()).pathname),
+      );
+      await openBoardWithMock(page, mock);
+      await accessed;
+
+      const footer = page.locator(".board-context");
+      // 作成先は Project まで書く。リポジトリ名だけでは作る先が決まらない。
+      await expect(footer.locator(".badge-target")).toHaveText(
+        "acme/web › #1 ロードマップ",
+      );
+      const denied = footer.getByText("書けません", { exact: true });
+      if (shown) {
+        await expect(denied).toBeVisible();
+      } else {
+        // 応答を受けてから 1 回描かれるのを待ち、出ていないことを見る。
+        await page.evaluate(
+          () => new Promise((resolve) => requestAnimationFrame(() => resolve(null))),
+        );
+        await expect(denied).toHaveCount(0);
+      }
+    });
+  }
+
   test("viewer は編集も解釈もできない", async ({ page }) => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), role: "viewer" };
