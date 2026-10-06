@@ -69,6 +69,8 @@ gh api --paginate repos/yusuke0610/etoki/security-advisories \
 - **本文の「分かっている穴」を 1 件ずつ測り直す。** 手当てされたものは本文から
   外し、コメントに「外したもの」として理由（閉じた issue / PR）を残す。
 - **下書きの advisory も 1 件ずつ、いまの main でまだ当てはまるかを見る。**
+  一覧は概要しか出さないので、本文は
+  `gh api repos/yusuke0610/etoki/security-advisories/<ghsa_id>` で 1 件ずつ取る。
   直っていたらユーザーに伝える。**公開・クローズはユーザーが決める。**
 
 ## 3. 測る
@@ -92,7 +94,7 @@ gh api --paginate repos/yusuke0610/etoki/security-advisories \
 | Dependabot alerts               | `gh api --paginate 'repos/yusuke0610/etoki/dependabot/alerts?state=open' -q '.[].number' > tmp/dependabot-alerts.txt && wc -l < tmp/dependabot-alerts.txt`（`wc` へ直に流すと、失敗したときのエラー本文も 1 件と数える） |
 | Dependabot が見ている依存の範囲 | `gh api repos/yusuke0610/etoki/dependency-graph/sbom`（npm が直接依存だけか）                                                                                                                                            |
 | リポジトリ設定                  | `gh api repos/yusuke0610/etoki -q .security_and_analysis`                                                                                                                                                                |
-| code scanning                   | `gh api --paginate repos/yusuke0610/etoki/code-scanning/alerts`（404 は「解析なし」）                                                                                                                                    |
+| code scanning                   | `gh api --paginate repos/yusuke0610/etoki/code-scanning/alerts`（404 は「取得できなかった」と記録する。解析が無いという意味には決まっていない）                                                                          |
 
 - **`bun audit` は、画面に同梱されるものと開発時だけのものに分けて数える。**
   依存の経路（`bun audit` の出力の `>` の並び）で分ける。受け入れ済みのもの
