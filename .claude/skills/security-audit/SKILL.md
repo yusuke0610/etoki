@@ -39,8 +39,8 @@ main の最新を相手に、**いま何が穴で、何が手当て済みか**�
 セッションが使っているかもしれないので切り替えない。
 
 ```sh
-git fetch origin
-git worktree add --detach .claude/worktrees/security-audit-$(date +%Y%m%d-%H%M%S) origin/main
+git fetch origin &&
+  git worktree add --detach .claude/worktrees/security-audit-$(date +%Y%m%d-%H%M%S) origin/main
 ```
 
 名前に時刻まで入れるのは、同じ日にやり直したときに前の worktree とぶつけない
