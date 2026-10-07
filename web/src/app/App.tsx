@@ -9,15 +9,11 @@ import { LoginPage } from "../auth/LoginPage";
 import { useSession } from "../auth/useSession";
 import { BoardListPage } from "../boards/BoardListPage";
 import { useBoardList } from "../boards/useBoardList";
+import { useNewBoardFlow } from "../boards/useNewBoardFlow";
 import { BoardPage } from "../board/BoardPage";
 import { createGenerations } from "../board/generation";
 import { RepositoryPicker } from "../board/target/RepositoryPicker";
 import { unavailableReason } from "./capability";
-import {
-  BLANK_TEMPLATE,
-  templateScene,
-  type TemplateChoice,
-} from "../excalidraw/template";
 import {
   boardLocationUrl,
   NO_BOARD,
@@ -75,21 +71,24 @@ export function App() {
       }),
     [notify],
   );
-  const [name, setName] = useState("");
-  // 新しいボードのダイアログを開いているか（#200）。**ここで持つ。** 作成先の
-  // 選択（別の画面）から戻ったときに、入力を残したまま開き直すため。
-  const [creatingDialog, setCreatingDialog] = useState(false);
   // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
   const [picking, setPicking] = useState(false);
-  // 作成しようとしているボードの名前。null なら作成中ではない。
-  //
-  // **作成先はボードを作る前に選ばせる**（ADR 0017）。書ける Project を持たない
-  // 人はここで先へ進めず、それが「作成にはリポジトリへのアクセス権が要る」
-  // ことの表れになる。
-  const [creating, setCreating] = useState<string | null>(null);
-  // 何から始めるか。**既定は空白**（中核思想 3）。テンプレートは選ばせるもので、
-  // 勝手に適用しない。
-  const [template, setTemplate] = useState<TemplateChoice>(BLANK_TEMPLATE);
+  // 新しいボードを作るまでの流れ（`useNewBoardFlow`）。ダイアログの開閉と入力、
+  // 作成先を選んでいる最中のボードの名前を持つ。
+  const {
+    dialogOpen: creatingDialog,
+    name,
+    template,
+    creating,
+    openDialog: openCreatingDialog,
+    setName,
+    setTemplate,
+    start: startNewBoard,
+    cancel: cancelCreating,
+    backToDialog: backToCreatingDialog,
+    leave: leaveCreating,
+    create: createBoard,
+  } = useNewBoardFlow();
   // ログイン状態（`useSession`）。session が null のあいだは問い合わせ中。
   const {
     session,
@@ -293,11 +292,11 @@ export function App() {
 
       const picking = wanted && canOpenTargetPicker(next);
       setPicking(picking);
-      setCreating(null);
+      leaveCreating();
       setCurrent(next);
       showLocation({ boardId: next.id, picking }, mode);
     },
-    [confirmDiscard, loadBoard, showLocation],
+    [confirmDiscard, leaveCreating, loadBoard, showLocation],
   );
 
   /**
@@ -321,62 +320,32 @@ export function App() {
     openings.invalidateAll();
     setCurrent(null);
     setPicking(false);
-    setCreating(null);
+    leaveCreating();
     showLocation(NO_BOARD, "push");
     void reload();
-  }, [confirmDiscard, openings, reload, showLocation]);
+  }, [confirmDiscard, leaveCreating, openings, reload, showLocation]);
 
   /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
   const startCreating = useCallback(() => {
-    if (!name.trim()) return;
     // 作成先の選択画面に移ると、開いていたボードのキャンバスが外れる。
     // 「作成先を変更」を dirty で止めてあるのと揃える。
-    if (!confirmDiscard()) return;
+    if (!startNewBoard(confirmDiscard)) return;
 
-    // 入力は残したまま閉じる。作成先の選択から戻ったら、同じ入力で開き直す。
-    setCreatingDialog(false);
     setCurrent(null);
     setPicking(false);
-    setCreating(name.trim());
     // **作成中は URL に載せない。** 載る材料（名前とひな形）が URL に無いので、
     // 載せても読み込み直した先で復元できない。**積まずに置き換える**のは、
     // 開いていたボードをここで外すのと形を揃えるため。引き返すのは履歴では
     // なく選択画面の「やめる」で、一覧の上にダイアログを開き直す
     // （`backToCreatingDialog`）。
     showLocation(NO_BOARD, "replace");
-  }, [confirmDiscard, name, showLocation]);
+  }, [confirmDiscard, showLocation, startNewBoard]);
 
-  /**
-   * 新しいボードのダイアログをやめる。名前とひな形は既定（空・空白）に戻す
-   * （#200）。次に開いたとき、やめたはずの入力が残っていると、別のボードの
-   * つもりで同じ名前を作りうる。
-   */
-  const cancelCreating = useCallback(() => {
-    setCreatingDialog(false);
-    setName("");
-    setTemplate(BLANK_TEMPLATE);
-  }, []);
-
-  /**
-   * 作成先の選択をやめて一覧へ戻る。**ダイアログを入力ごと開き直す**（#200）。
-   * 選び直すために戻った人に、名前を打ち直させない。
-   */
-  const backToCreatingDialog = useCallback(() => {
-    setCreating(null);
-    setCreatingDialog(true);
-  }, []);
-
-  /** 作成先が決まったのでボードを作る。失敗は picker が表示する。 */
+  /** 作成先が決まったのでボードを作る。失敗は picker が表示する（`useNewBoardFlow`）。 */
   const createWithTarget = useCallback(
     async (target: BoardTarget) => {
-      if (creating === null) return;
-
-      // シーンを組み立てるのは押されたこの時点。選んだ時点で作ると、作成先を
-      // 選ばずに引き返した回数だけ使わないシーンを持つことになる。
-      const board = await boardsApi.create(creating, target, templateScene(template));
-      setName("");
-      setTemplate(BLANK_TEMPLATE);
-      setCreating(null);
+      const board = await createBoard(target);
+      if (board === null) return;
       await reload();
       // 走っている取得を無効にする（ログアウトと同じ理由）。作ったボードを
       // 開いた直後に、前のボードの応答が着いて上書きするのを止める。
@@ -385,7 +354,7 @@ export function App() {
       // 作ったボードを開いた状態。**積む。** 「戻る」で作成の手前に戻れる。
       showLocation({ boardId: board.id, picking: false }, "push");
     },
-    [creating, openings, reload, showLocation, template],
+    [createBoard, openings, reload, showLocation],
   );
 
   /**
@@ -511,7 +480,7 @@ export function App() {
           return;
         }
 
-        setCreating(null);
+        leaveCreating();
         if (board === null) {
           // 走っていた取得は頭で無効にしてある。一覧で始めた取得が遅れて着いても、
           // 「離れたはずのボード」は開き直さない。
@@ -534,7 +503,15 @@ export function App() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [confirmDiscard, loadBoard, openings, reload, showLocation, signedIn]);
+  }, [
+    confirmDiscard,
+    leaveCreating,
+    loadBoard,
+    openings,
+    reload,
+    showLocation,
+    signedIn,
+  ]);
 
   // 問い合わせ中は何も出さない。ログイン画面を一瞬見せてから消すと、
   // 認証を設定していない構成でもちらつく。
@@ -590,7 +567,7 @@ export function App() {
               open: creatingDialog,
               name,
               template,
-              onOpen: () => setCreatingDialog(true),
+              onOpen: openCreatingDialog,
               onNameChange: setName,
               onTemplateChange: setTemplate,
               onNext: startCreating,

@@ -33,7 +33,7 @@ type Props = {
    * まだ確かめていなければ null（ADR 0030）。
    */
   creationUnavailable: string | null;
-  /** 新しいボードのダイアログ。開閉と入力は App が持つ（`NewBoardDialog`）。 */
+  /** 新しいボードのダイアログ（`NewBoardDialog`）。開閉と入力は App が `useNewBoardFlow` で持つ。 */
   dialog: {
     open: boolean;
     name: string;
