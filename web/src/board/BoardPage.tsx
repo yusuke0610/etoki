@@ -48,7 +48,6 @@ import {
 } from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
 import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
-import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize } from "../excalidraw/size";
 import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
 import { createTable, tableCenter } from "../excalidraw/table";
@@ -81,14 +80,7 @@ import {
 } from "./diagram/diagramChat";
 import { useExclusion, useReentryGuard } from "./exclusion";
 import { createGenerations } from "./generation";
-import {
-  addInterpretation,
-  failInterpretation,
-  recordCreated,
-  selectInterpretation,
-  startInterpretation,
-  type InterpretationState,
-} from "./annotations/interpretationHistory";
+import { useInterpretations } from "./annotations/useInterpretations";
 import { MemberPanel } from "./members/MemberPanel";
 import {
   backToListIcon,
@@ -332,12 +324,16 @@ export function BoardPage({
   // `handleChange` は `scheduleMeasure` を依存に置くので、束で受けると
   // バイト数が変わるたびに `onChange` ごと差し替わる。
   const { bytes: sceneBytes, schedule: scheduleMeasure } = useSceneSize(api);
-  const [interpretations, setInterpretations] = useState<
-    Record<string, InterpretationState>
-  >({});
+  // 引いた解釈（`useInterpretations`）。束のまま持たない理由は上の `useSceneSize` と
+  // 同じで、`create` と `discardAfterSave` が中の関数を依存に置く。
+  const {
+    states: interpretations,
+    interpret,
+    select: showInterpretation,
+    recordCreated,
+    discardAll: discardInterpretations,
+  } = useInterpretations({ api, boardId: board.id, annotations });
   const [creations, setCreations] = useState<Record<string, CreationState>>({});
-  // 実行中の解釈を無効にするための世代。useState の初期化関数で 1 度だけ作る。
-  const [generations] = useState(createGenerations);
   // 作成は解釈とは別の世代で管理する。共有すると、片方の実行がもう片方の
   // 応答まで無効にしてしまう。
   const [creationGenerations] = useState(createGenerations);
@@ -995,12 +991,11 @@ export function BoardPage({
    * GitHub への同期ではない**（`.claude/rules/async-ui.md`）。
    */
   const discardAfterSave = useCallback(async () => {
-    generations.invalidateAll();
+    discardInterpretations();
     creationGenerations.invalidateAll();
-    setInterpretations({});
     setCreations({});
     await refreshAnnotations();
-  }, [creationGenerations, generations, refreshAnnotations]);
+  }, [creationGenerations, discardInterpretations, refreshAnnotations]);
 
   const { conflicted, overLimit, save } = useSceneSave({
     api,
@@ -1036,76 +1031,6 @@ export function BoardPage({
   );
 
   /**
-   * 注釈を解釈させる。
-   *
-   * エラーはパネル内に残す。どの注釈で何が起きたか分からなくなるので、
-   * 画面全体のエラー表示には流さない。
-   */
-  const interpret = useCallback(
-    async (annotationId: string) => {
-      // 応答を受け取ったとき、これがまだ最新の要求かを判断できるようにする。
-      // 履歴に積むかどうかもこれで決める。**捨てるべき応答を捨てる責任は
-      // 世代側にあり、履歴は返ってきたものを積むだけ。**
-      const generation = generations.start(annotationId);
-      // 実行したときの粒度を控える。並べて見比べるとき、同じ指定で引き直した
-      // のか指定を変えたのかが読めないと選ぶ理由が無い。判定に使う粒度は
-      // これまでどおり保存済みシーン側（AnnotationStatus）のもの。
-      const granularity =
-        annotations.find((a) => a.id === annotationId)?.granularity ?? "";
-
-      setInterpretations((prev) => ({
-        ...prev,
-        [annotationId]: startInterpretation(prev[annotationId]),
-      }));
-
-      try {
-        // 画像は画面から書き出す。テキストは保存済みシーンから取るので、
-        // 未保存のあいだは押させない（ADR 0018）。ここに来た時点で両者は
-        // 揃っている。
-        const image = api ? await exportAnnotationImage(api, annotationId) : undefined;
-        if (!generations.isCurrent(annotationId, generation)) return;
-
-        const result = await boardsApi.interpret(board.id, annotationId, image);
-        if (!generations.isCurrent(annotationId, generation)) return;
-        setInterpretations((prev) => ({
-          ...prev,
-          [annotationId]: addInterpretation(prev[annotationId], {
-            id: generation,
-            at: new Date().toISOString(),
-            granularity,
-            result,
-          }),
-        }));
-      } catch (e) {
-        if (!generations.isCurrent(annotationId, generation)) return;
-        setInterpretations((prev) => ({
-          ...prev,
-          [annotationId]: failInterpretation(
-            prev[annotationId],
-            describeFailure("解釈できませんでした", e),
-          ),
-        }));
-      }
-    },
-    [annotations, api, board.id, generations],
-  );
-
-  /**
-   * 見る解釈を選び直す。
-   *
-   * 画面の中だけの操作なので、サーバーにも世代にも触らない。実行中の解釈が
-   * 返ってきたら、そちらが選ばれ直す（`addInterpretation`）。引き直した直後に
-   * 前の結果が出ていると、押した操作と画面が食い違うため。
-   */
-  const showInterpretation = useCallback((annotationId: string, runId: number) => {
-    setInterpretations((prev) => {
-      const state = prev[annotationId];
-      if (!state) return prev;
-      return { ...prev, [annotationId]: selectInterpretation(state, runId) };
-    });
-  }, []);
-
-  /**
    * 解釈結果から draft issue を作る。
    *
    * 作成後は状態が created に変わるので、注釈の状態を取り直す。
@@ -1131,14 +1056,7 @@ export function BoardPage({
           // 作ったものを解釈に結びつける。下書きはこれを見て、作れた項目を
           // 同じ下書きから新規に作らせない（ADR 0052）。応答を受けた時点で
           // 入れる。実行中は下書きが止まっているので、ここで外れても押せない。
-          setInterpretations((prev) => {
-            const state = prev[annotationId];
-            if (!state) return prev;
-            return {
-              ...prev,
-              [annotationId]: recordCreated(state, interpretationId, run.items),
-            };
-          });
+          recordCreated(annotationId, interpretationId, run.items);
           // 履歴は 1 件増えたので、引いてあるものは捨てる（`useRunHistories`）。
           discardRuns(annotationId);
           await refreshAnnotations();
@@ -1163,7 +1081,14 @@ export function BoardPage({
         }
       });
     },
-    [board.id, creationGenerations, discardRuns, exclusive, refreshAnnotations],
+    [
+      board.id,
+      creationGenerations,
+      discardRuns,
+      exclusive,
+      recordCreated,
+      refreshAnnotations,
+    ],
   );
 
   // 未保存のあいだと、作成の実行中は離脱を確認する（ADR 0021 / 0051）。
