@@ -104,7 +104,8 @@ import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./diagram/MermaidPastePanel";
 import { projectLabel } from "../boards/grouping";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
-import type { CreationState, RunHistoryState } from "./annotations/panelShared";
+import type { CreationState } from "./annotations/panelShared";
+import { useRunHistories } from "./annotations/useRunHistories";
 import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
 import { projectLink } from "./target/projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./members/roles";
@@ -340,9 +341,6 @@ export function BoardPage({
   // 作成は解釈とは別の世代で管理する。共有すると、片方の実行がもう片方の
   // 応答まで無効にしてしまう。
   const [creationGenerations] = useState(createGenerations);
-  // 履歴の読み込みも別の世代で持つ。作成すると履歴は 1 件増えるので、走って
-  // いる読み込みは古くなる。
-  const [runGenerations] = useState(createGenerations);
   // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
   const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
   // 右のパネルを畳んでいるか（#202）。端末ごとに覚えた値で始める。
@@ -378,8 +376,8 @@ export function BoardPage({
   // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
   // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
   const [diagramGenerations] = useState(createGenerations);
-  // 置いている最中か。**走っているあいだの二重押しは弾く**（`loadingRuns` と
-  // 同じ形）。**排他の表とは別物**で、止めるのは同じ操作の連打だけ。理由と
+  // 置いている最中か。**走っているあいだの二重押しは弾く**（実行の履歴の読み込み
+  // と同じ形）。**排他の表とは別物**で、止めるのは同じ操作の連打だけ。理由と
   // 仕組みは `exclusion.ts` の `useReentryGuard`。**図のドラフトと貼り付けで
   // 1 つにする。** どちらも同じ `draftOrigin` を読むので、分けると両方が同じ
   // 場所に置かれうる。
@@ -402,8 +400,13 @@ export function BoardPage({
   // **失われるものを引き終わるまで確認を出さない。** 件数を伏せたまま
   // 「削除しますか」と訊くと、何を失うのかを知らないまま押させることになる。
   const [deletion, setDeletion] = useState<DeletionState | null>(null);
-  // 注釈 ID をキーにした実行履歴。開いていない注釈は入っていない。
-  const [runHistories, setRunHistories] = useState<Record<string, RunHistoryState>>({});
+  // 注釈ごとの実行履歴（`useRunHistories`）。**束のまま持たない。** `create` は
+  // `discardRuns` を依存に置くので、束で受けると履歴を引くたびに作り直される。
+  const {
+    states: runHistories,
+    load: loadRuns,
+    discard: discardRuns,
+  } = useRunHistories(board.id);
 
   /**
    * 名前を変える。
@@ -488,50 +491,6 @@ export function BoardPage({
   const focusDeleteConfirm = useCallback((node: HTMLElement | null) => {
     node?.focus();
   }, []);
-
-  /**
-   * その注釈の実行履歴を引く。
-   *
-   * **押されたときだけ引く。** 開いただけで全注釈ぶん引くと、注釈の数だけ
-   * 問い合わせが増える（中核思想 3、作成先の名前の取り直しと同じ形）。
-   *
-   * 走っているあいだの二重押しは注釈ごとに弾く（`exclusion.ts`）。
-   */
-  const loadingRuns = useReentryGuard();
-
-  const loadRuns = useCallback(
-    async (annotationId: string) => {
-      if (!loadingRuns.enter(annotationId)) return;
-
-      // 走っているあいだに作成が終わると、この応答は 1 件足りない履歴になる。
-      // 世代で照合して捨てる（`.claude/rules/async-ui.md`）。
-      const generation = runGenerations.start(annotationId);
-
-      setRunHistories((prev) => ({ ...prev, [annotationId]: { status: "loading" } }));
-      try {
-        const runs = await boardsApi.runs(board.id, annotationId);
-        if (!runGenerations.isCurrent(annotationId, generation)) return;
-        setRunHistories((prev) => ({
-          ...prev,
-          [annotationId]: { status: "done", runs },
-        }));
-      } catch (e) {
-        if (!runGenerations.isCurrent(annotationId, generation)) return;
-        // パネル内に残す。どの注釈の履歴で失敗したかが情報の一部なので、
-        // 画面全体のエラー表示には流さない（解釈の失敗と同じ扱い）。
-        setRunHistories((prev) => ({
-          ...prev,
-          [annotationId]: {
-            status: "error",
-            failure: describeFailure("履歴を読み込めませんでした", e),
-          },
-        }));
-      } finally {
-        loadingRuns.leave(annotationId);
-      }
-    },
-    [board.id, loadingRuns, runGenerations],
-  );
 
   /**
    * 作成先の表示名を GitHub から取り直す。
@@ -1180,17 +1139,8 @@ export function BoardPage({
               [annotationId]: recordCreated(state, interpretationId, run.items),
             };
           });
-          // 履歴は 1 件増えたので、引いてあるものは捨てる。**黙って古いまま
-          // 出さない。** 読み直すかどうかは、これまでどおり押した人が決める。
-          // 走っている読み込みも無効にする。捨てた直後に古い応答が入ると、
-          // 作ったばかりの run が抜けた履歴が残る。
-          runGenerations.start(annotationId);
-          setRunHistories((prev) => {
-            if (!(annotationId in prev)) return prev;
-            const next = { ...prev };
-            delete next[annotationId];
-            return next;
-          });
+          // 履歴は 1 件増えたので、引いてあるものは捨てる（`useRunHistories`）。
+          discardRuns(annotationId);
           await refreshAnnotations();
           // **状態を取り直してから done にする。** 先に done にすると、作ったばかりの
           // item が畳み込みに入る前の隙間で、保存や押し直しと競合する
@@ -1213,7 +1163,7 @@ export function BoardPage({
         }
       });
     },
-    [board.id, creationGenerations, exclusive, refreshAnnotations, runGenerations],
+    [board.id, creationGenerations, discardRuns, exclusive, refreshAnnotations],
   );
 
   // 未保存のあいだと、作成の実行中は離脱を確認する（ADR 0021 / 0051）。
