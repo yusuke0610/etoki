@@ -11,5 +11,5 @@
 --
 -- 空文字は「URL を知らない」を表す。移行前のボードと、URL を送らずに API を
 -- 直接叩いて設定した作成先が該当する。そのときフロントはリポジトリの Projects
--- タブへ落とす（web/src/board/projectLink.ts）。
+-- タブへ落とす（web/src/board/target/projectLink.ts）。
 ALTER TABLE boards ADD COLUMN project_url TEXT NOT NULL DEFAULT '';
