@@ -170,6 +170,7 @@ func (h *handlers) secureCookie(c *gin.Context) bool {
 
 // setSessionCookie はセッション token を cookie に載せる。
 func (h *handlers) setSessionCookie(c *gin.Context, token string) {
+	//nolint:gosec // Secure は https のときだけ付ける。理由は secureCookie（G124）
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,
@@ -184,6 +185,7 @@ func (h *handlers) setSessionCookie(c *gin.Context, token string) {
 }
 
 func (h *handlers) clearSessionCookie(c *gin.Context) {
+	//nolint:gosec // Secure は https のときだけ付ける。理由は secureCookie（G124）
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    "",
