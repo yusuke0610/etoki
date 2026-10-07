@@ -332,7 +332,7 @@
 
 **組み立てと解釈は `web/src/app/location.ts` の純関数 2 つに閉じる。** 散らすと
 読む側と書く側で別の形を持ち、自分で書いた URL を自分で開けなくなる
-（`board/target/projectLink.ts` と同じ形）。
+（`web/src/board/target/projectLink.ts` と同じ形）。
 
 - **state から URL を導く `useEffect` を置かない。** effect では「積むのか
   置き換えるのか」を区別できず、戻る / 進むで URL が先に動いたときの書き戻しとも
