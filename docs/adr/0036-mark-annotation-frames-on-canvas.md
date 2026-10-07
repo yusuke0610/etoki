@@ -23,7 +23,7 @@ frame まで注釈と誤認するので、この規則自体は動かせない�
 - **キャンバスに重ねて見せる。要素には触らない。** 注釈にした frame の位置と
   大きさから矩形を割り出し、Excalidraw の外側に DOM で重ねる
   （`web/src/excalidraw/annotationOverlay.ts` と
-  `web/src/board/AnnotationOverlay.tsx`）。粒度もバッジに出す。
+  `web/src/board/annotations/AnnotationOverlay.tsx`）。粒度もバッジに出す。
 - **座標変換はライブラリの `sceneCoordsToViewportCoords` に任せる。** 同じ式を
   書き写すと、ズームの扱いが変わったときに枠だけが取り残される。
 - **重ねる枠は押せない。** `pointer-events` を切ってある。飛び先はパネルの

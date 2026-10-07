@@ -3,11 +3,11 @@ import "./index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { App } from "./App";
-import { ErrorBoundary } from "./ErrorBoundary";
-import { logUncaught } from "./logger";
+import { App } from "./app/App";
+import { ErrorBoundary } from "./app/ErrorBoundary";
+import { logUncaught } from "./app/logger";
 import { NotificationProvider } from "./notification/NotificationProvider";
-import { applyTheme, initialTheme } from "./theme";
+import { applyTheme, initialTheme } from "./app/theme";
 
 const container = document.getElementById("root");
 if (!container) {

@@ -12,7 +12,7 @@ import {
   sceneJSON,
   type ImportedScene,
 } from "../excalidraw/transfer";
-import { log } from "../logger";
+import { log } from "../app/logger";
 import type { Exclusion } from "./exclusion";
 
 type Options = {

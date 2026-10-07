@@ -46,7 +46,7 @@ ADR 0025 が禁じたのは「URL を組み立てること」そのものでは�
   同じ。
 - **文字列連結ではなく `URL` で組む。** 控えた URL にクエリや fragment が付いて
   いても壊れず、既に `itemId` があれば置き換える。
-- 組み立ては `web/src/board/projectLink.ts` の `projectItemLink` 1 つに閉じる。
+- 組み立ては `web/src/board/target/projectLink.ts` の `projectItemLink` 1 つに閉じる。
 - **この形が成り立つのは作成先が最初の run で固定されるから**（ADR 0014）。
   作成先が後から変わりうるなら、古い item のリンクが別の Project を指しうる。
   固定を緩めるときは、ここも一緒に見直す。

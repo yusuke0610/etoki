@@ -4,6 +4,30 @@
 パスはリポジトリルートからで書く。作業ディレクトリがルートのままでも辿れる
 ようにするため。
 
+## ファイルの置き場所（ADR 0072）
+
+**機能ごとに分け、単体テストは対象の隣に置く。** 種類（コンポーネント・フック・
+関数）では分けない。
+
+| ディレクトリ                           | 置くもの                                                 |
+| -------------------------------------- | -------------------------------------------------------- |
+| `web/src/app/`                         | アプリの殻（`App`）と、画面をまたいで使う道具            |
+| `web/src/boards/`                      | ボードの一覧と、新しいボードのダイアログ                 |
+| `web/src/board/`                       | 1 枚のボードの画面、そのフック、排他の表、右のパネルの枠 |
+| `web/src/board/annotations/`           | 注釈のパネルと詳細、解釈・作成・実行の履歴               |
+| `web/src/board/diagram/`               | 図のドラフトのチャットと mermaid の貼り付け              |
+| `web/src/board/members/`               | メンバーとロール                                         |
+| `web/src/board/target/`                | 作成先の選択と、GitHub へ辿るリンク                      |
+| `web/src/excalidraw/`                  | キャンバスに置くものと、シーンを読む純関数               |
+| `web/src/api/` `auth/` `notification/` | 契約の型と呼び出し、ログイン、通知                       |
+
+- **入口と設定が指すファイルは `web/src/` の直下に置く**（`main.tsx` /
+  `test-setup.ts` / `index.css`）。
+- **`index.ts` で束ねない。** どこから来た名前かを import の行で読めるように
+  しておく。
+- **2 つの画面が使うものは、先に使い始めた側に置いたままにする。** 置き場所の
+  ためだけに共通のディレクトリを作らない。
+
 ## バックエンドと揃える必要がある約束
 
 片方だけ変えると壊れるもの。**理由の本文は、注釈の判定規則とメタデータの形が
@@ -124,7 +148,7 @@
   プラットフォームで違い、Linux の Chromium は `select` にもボタン地を敷く
   （ダークでは中間の灰色）。文字色だけ変えると、手元（macOS）の axe が通っても
   CI（Linux）で AA を切って落ちうる。
-- **テーマを持つのは App の `useTheme`（`web/src/theme.ts`）だけ。** Excalidraw
+- **テーマを持つのは App の `useTheme`（`web/src/app/theme.ts`）だけ。** Excalidraw
   には `theme` として渡し、メニューで切り替えられたら `onChange` から返す。
   BoardPage で持ち直さない。**返すのはキャンバスが前回と違うテーマを言ってきた
   ときだけ。** 渡している `theme` と比べると、OS の設定が変わった直後の古い
@@ -306,9 +330,9 @@
 
 ## 開いているボードと URL（ADR 0059）
 
-**組み立てと解釈は `web/src/location.ts` の純関数 2 つに閉じる。** 散らすと
+**組み立てと解釈は `web/src/app/location.ts` の純関数 2 つに閉じる。** 散らすと
 読む側と書く側で別の形を持ち、自分で書いた URL を自分で開けなくなる
-（`board/projectLink.ts` と同じ形）。
+（`web/src/board/target/projectLink.ts` と同じ形）。
 
 - **state から URL を導く `useEffect` を置かない。** effect では「積むのか
   置き換えるのか」を区別できず、戻る / 進むで URL が先に動いたときの書き戻しとも
@@ -339,7 +363,7 @@
   通し、履歴に積む**（`App` の `closeBoard`、ADR 0021 / 0059）。
 - **一覧は作成先でまとめて見せる**（ADR 0019）。節は実体の包含ではなく射影。
   1 つの Project に複数のボードがぶら下がる。組み立ては
-  `web/src/board/grouping.ts` の純関数にある。**節は畳まない**（#200）。畳むと、
+  `web/src/boards/grouping.ts` の純関数にある。**節は畳まない**（#200）。畳むと、
   畳んだ節のボードの状態が見えなくなる。
 - **カードの件数は、一覧へ戻るたびに読み直す**（#200、`App` の `closeBoard` と
   戻る / 進む）。開いていたあいだの保存や作成で変わっているため。読むのは etoki
@@ -355,7 +379,7 @@
 ## GitHub へ辿るリンク（ADR 0025 / 0057）
 
 - **URL を組み立てない**（理由は `internal/CLAUDE.md`）。規則は
-  `web/src/board/projectLink.ts` の純関数 1 つに閉じてある。**番号から
+  `web/src/board/target/projectLink.ts` の純関数 1 つに閉じてある。**番号から
   `/orgs/{owner}/projects/{n}` を組まないこと。** 保存された URL が無いときは
   リポジトリの Projects へ落とす。
 - **一覧止まりであることを隠さない。** Project 本体に着地しないときは文言を
@@ -376,7 +400,7 @@
 | いつ捨てるか | 保存したとき（前提のシーンが変わる） | 捨てない                    |
 | いつ引くか   | 解釈を押したとき                     | **履歴を押したとき**        |
 
-- **解釈は `web/src/board/interpretationHistory.ts` が上限つきで積む。** 保存が
+- **解釈は `web/src/board/annotations/interpretationHistory.ts` が上限つきで積む。** 保存が
   すべて捨てる約束（`generations.invalidateAll` と `setInterpretations({})`）は
   崩さない。捨てないと、保存前のシーンに対する解釈がいまの内容の解釈として
   読まれる。**失敗しても過去の結果は消さない。** 引き直しの失敗で前の結果まで
@@ -481,7 +505,7 @@
 
 - **押す前に見せる。** `GET /api/capabilities` を App が 1 度だけ引き、使えない
   機能は押させずに理由を出す。**ボタンを黙って消さない**（中核思想 3）。
-- **文言を新しく書かない。** `web/src/capability.ts` が capability → `ErrorCode`
+- **文言を新しく書かない。** `web/src/app/capability.ts` が capability → `ErrorCode`
   を引き、文言は `ERROR_MESSAGES` から取る。押した後に 503 で返る理由と同じ文に
   なる。別々に持つと片方だけ古くなる。
 - **`capabilities` が null のうちは止めない。** 「まだ確かめていない」を「使え

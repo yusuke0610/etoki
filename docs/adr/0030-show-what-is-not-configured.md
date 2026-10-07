@@ -51,7 +51,7 @@ LLM や GitHub を設定しなくても etoki は起動する（ADR 0008）。RE
 ### 文言を 2 つ持たない
 
 **画面は capability から `ErrorCode` を引き、文言は `ERROR_MESSAGES` から取る**
-（`web/src/capability.ts`）。押す前に出す文言と、押した後に 503 で返る理由が
+（`web/src/app/capability.ts`）。押す前に出す文言と、押した後に 503 で返る理由が
 別々になると、片方だけ古くなる。**同じ原因には同じ文**にする。
 
 `*_not_configured` を 1 つの code に畳んでいないのはこのため（ADR 0034）。

@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 
 import { authApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
-import { ErrorNotice } from "../ErrorNotice";
+import { ErrorNotice } from "../app/ErrorNotice";
 
 /**
  * ログインを促す画面。

@@ -62,7 +62,7 @@ https://github.com/users/{owner}/projects/{number}
 **番号からは組み立てない。** 落とし先を `/orgs/{owner}/projects/{number}` に
 すると、結局 owner の種別を当てにいくことになる。
 
-規則は `web/src/board/projectLink.ts` の純関数 1 つに閉じる。
+規則は `web/src/board/target/projectLink.ts` の純関数 1 つに閉じる。
 
 ### 一覧止まりであることを隠さない
 

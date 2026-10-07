@@ -60,6 +60,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#224](https://github.com/yusuke0610/etoki/pull/224) |       14 |     13 |        1 |      0 | security-audit スキルを直接修正（公開の記録の形 / `gh api` の読み方 / #64 はデータとして読み、書く前に確認を取る）。7 周目まで毎回手順の別の箇所に指摘が付いた。取り下げは `bun audit` の経路（bun 1.4.2 は `>` で出す）                                                                                                       |
 | [#225](https://github.com/yusuke0610/etoki/pull/225) |        1 |      1 |        0 |      0 | 還さず。表示の検出が行コメントと `©` を見落としていた件は、この検出器に限った単発                                                                                                                                                                                                                                              |
 | [#226](https://github.com/yusuke0610/etoki/pull/226) |        2 |      2 |        0 |      0 | validation-boundaries（鍵をヘッダで送るなら、リダイレクト先も検査する）/ docs-consistency（外部サービスの操作手順は相手の文書で確かめてから書く）                                                                                                                                                                              |
+| [#231](https://github.com/yusuke0610/etoki/pull/231) |        1 |      1 |        0 |      0 | 還さず。移動で書き換えたパスがルート相対でなかった件は、`web/CLAUDE.md` の冒頭に規約が既にある                                                                                                                                                                                                                                 |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
