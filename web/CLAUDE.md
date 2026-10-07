@@ -718,6 +718,24 @@ cd web && bunx playwright test --ui
   （frame だけ）では 1 つも要求が出ない。**画面の書体（Assistant）は別の経路**
   で、`App.tsx` が読む Excalidraw の CSS の `@font-face` を Vite が束ねて配る
   （#203）。こちらも外へ出ていないことを同じ spec が一覧とログインの画面で見る。
+- **`web/build/thirdPartyNotices.ts`** — 同梱したもののライセンスの表示を
+  `web/dist/third-party-notices.txt` に書き出す（ADR 0070）。**表示が欠けると
+  ビルドが落ちる。** 落ちたらメッセージが指すファイルを直す。
+  - **ソースに第三者のものを写したら、そのファイルの先頭に表示をブロック
+    コメントで置き、`/*!` で始めるか `@license` を含める。** 説明のコメント
+    とは分ける。同じコメントにすると説明まで表示に出るので、印の無い
+    コメントに著作権の表示があるとビルドを止めている。行コメントに置いた
+    表示も止める。一覧を別に持たないので、置けばそれだけで載る。
+  - **Excalidraw を上げてフォントの家族が変わったら `web/build/fontNotices.ts`
+    を直す。** 著作権の行は、配っているファイルの name テーブルと配布元の
+    ライセンスのファイルから写す。推測で書かない。
+  - **本文を同梱していないパッケージは `web/build/packageNotices.ts` で補う。**
+    配布元のリポジトリのライセンスのファイルから写す。
+  - **ビルドの道具（`web/build/`）は拡張子つきで import する**
+    （`tsconfig.json` の `allowImportingTsExtensions`）。`vite.config.ts` から
+    読むので、拡張子が無いと Vite が将来の既定の読み込み方では読めないと
+    警告する。テストは jsdom で回るので、`new URL(相対, import.meta.url)` で
+    パスを組まない（jsdom の `URL` では `http://localhost` に化ける）。
 - **`web/vite.config.ts` の test セクション** — excalidraw を vitest で読むのに
   3 つ必要。prod バンドルへの `alias`、`open-color`（実体が JSON）の `inline`、
   そして `src/test-setup.ts` の canvas スタブ（import 時に 2D コンテキストの

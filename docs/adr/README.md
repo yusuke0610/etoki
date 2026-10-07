@@ -73,5 +73,6 @@
 | [0067](0067-close-excalidraw-mermaid-entrances.md)               | Excalidraw 自身の mermaid の入口を閉じる                               | 採用                 |
 | [0068](0068-count-annotation-states-in-the-board-list.md)        | ボード一覧で注釈の 3 状態の件数を返し、シーンは 1 枚ずつ読む           | 採用                 |
 | [0069](0069-place-tables-as-grouped-rectangles.md)               | 表は空の矩形を group にして置き、行と列としては読ませない              | 採用                 |
+| [0070](0070-third-party-notices-in-the-build.md)                 | ビルドした画面に、同梱したものの表示を 1 つのファイルで残す            | 採用                 |
 | [0071](0071-mcp-read-only-entrance.md)                           | 既存のサーバーに MCP の入口（/mcp）を開き、読み取りだけを出す          | 採用                 |
 | [0072](0072-web-source-by-feature.md)                            | フロントエンドのソースは機能ごとのディレクトリに置く                   | 採用                 |
