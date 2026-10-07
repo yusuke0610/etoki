@@ -444,6 +444,34 @@ etoki が知っているのは「最後にその login でログインした人�
 そのボードから作成したと記録している draft issue の件数を先に出します。何を
 失うかを見せてから選ばせる、という形にしてあります。
 
+### MCP クライアントから読む
+
+etoki を起動しておくと、`/mcp` に MCP（Streamable HTTP）の入口が開きます。
+Claude Code なら次のように登録します。
+
+```sh
+claude mcp add --transport http etoki http://127.0.0.1:8080/mcp
+```
+
+**向ける先はバックエンド（:8080）です。** `make dev` でも同じで、Vite の
+開発サーバー（:5173）は `/mcp` を転送しません。
+
+公開しているのは読み取りの道具だけです。返す JSON は `/api` と同じ形です。
+
+| 道具                   | 返すもの                                               | 同じ形の API                                           |
+| ---------------------- | ------------------------------------------------------ | ------------------------------------------------------ |
+| `list_boards`          | ボードの一覧と、注釈の 3 状態の件数（`boards` で包む） | `GET /api/boards`                                      |
+| `list_annotations`     | 注釈ごとの 3 状態と、GitHub に作った draft issue       | `GET /api/boards/{id}/annotations`                     |
+| `list_annotation_runs` | 注釈 1 つの実行の履歴（`runs` で包む）                 | `GET /api/boards/{id}/annotations/{annotationId}/runs` |
+
+**解釈と作成はできません。** 作るものを選んで手直しするのは、画面の前にいる
+開発者の役目のままです（[ADR 0071](docs/adr/0071-mcp-read-only-entrance.md)）。
+
+**GitHub App でログインを要求している構成では開きません**（503 を返します）。
+MCP のクライアントが誰なのかを決める手段（OAuth）をまだ持っていないためです。
+認証なしの構成で `ETOKI_ADDR` を広げると、`/mcp` も `/api` と同じく届く範囲の
+誰でも読めます。
+
 ### 別の基盤に載せ替える
 
 差し替えの継ぎ目は 2 段あります。詳細は

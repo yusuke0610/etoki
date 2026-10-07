@@ -111,7 +111,8 @@ test.describe("作成先の選択", () => {
     await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
     // どこに作られるのかは常に見えている必要がある。作った draft issue は
     // 取り消せない。
-    await expect(page.locator(".badge-target")).toHaveText("acme/web");
+    // **Project まで書く**（#217）。リポジトリ名だけでは作る先が決まらない。
+    await expect(page.locator(".badge-target")).toHaveText("acme/web › #1 ロードマップ");
   });
 
   // 1 件しか無くても自動で確定しない。作成先は取り返しがつかないので、
