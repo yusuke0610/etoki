@@ -7,17 +7,15 @@ import {
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { boardsApi, githubApi } from "../api/boards";
+import { boardsApi } from "../api/boards";
 import {
   canvasMermaidPasteFailure,
   describeFailure,
   sceneUnreadableFailure,
-  targetProjectMissingFailure,
   type Failure,
 } from "../api/errorMessage";
 import type {
   AnnotationStatus,
-  BoardDeletion,
   BoardDetail,
   Capabilities,
   DetachedAnnotation,
@@ -85,6 +83,7 @@ import { useRunHistories } from "./annotations/useRunHistories";
 import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
 import { projectLink } from "./target/projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./members/roles";
+import { useBoardDeletion, useRename, useTargetRefresh } from "./useBoardManagement";
 import { useBoardTransfer } from "./useBoardTransfer";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
@@ -117,17 +116,6 @@ const UI_OPTIONS = {
     toggleTheme: true,
   },
 } as const;
-
-/**
- * 削除の確認がいまどこにいるか（ADR 0042）。
- *
- * **`losing` を持たない状態と持つ状態を型で分ける。** 件数が無いまま確認を
- * 出せる形にすると、何を失うのかを見せずに押させる画面が書ける。
- */
-type DeletionState =
-  | { status: "loading" }
-  | { status: "confirming"; losing: BoardDeletion }
-  | { status: "deleting"; losing: BoardDeletion };
 
 /**
  * 開いたときに effect から出る失敗の通知。
@@ -337,19 +325,26 @@ export function BoardPage({
   // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
   // あるため（ADR 0017）。
   const [projectAccess, setProjectAccess] = useState<ProjectAccess>("unknown");
-  // 作成先の表示名を取り直している最中かどうか。
-  const [refreshingTarget, setRefreshingTarget] = useState(false);
-  // 名前を編集中なら、その下書き。null なら編集していない。
-  //
-  // **開いているあいだだけ入力を出す。** 常に入力欄にすると、見出しとして
-  // 読むところが編集欄になり、押し間違いで名前が変わる。
-  const [nameDraft, setNameDraft] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  // 削除の確認。null なら押されていない（ADR 0042）。
-  //
-  // **失われるものを引き終わるまで確認を出さない。** 件数を伏せたまま
-  // 「削除しますか」と訊くと、何を失うのかを知らないまま押させることになる。
-  const [deletion, setDeletion] = useState<DeletionState | null>(null);
+  // ボードそのものの管理（`useBoardManagement`）。改名・削除・作成先の名前の
+  // 取り直しは互いに関わらないので、フックも分けてある。
+  const {
+    draft: nameDraft,
+    setDraft: setNameDraft,
+    renaming,
+    rename,
+  } = useRename({ board, onRenamed, onError });
+  const {
+    state: deletion,
+    ask: askDelete,
+    confirm: deleteBoard,
+    cancel: cancelDelete,
+  } = useBoardDeletion({ boardId: board.id, onDeleted, onError });
+  const { refreshing: refreshingTarget, refresh: refreshTargetDisplay } =
+    useTargetRefresh({
+      board,
+      onTargetRefreshed,
+      onError,
+    });
   // 注釈ごとの実行履歴（`useRunHistories`）。**束のまま持たない。** `useCreation` は
   // `discardRuns` を依存に置くので、束で受けると履歴を引くたびに作り直される。
   const {
@@ -357,79 +352,6 @@ export function BoardPage({
     load: loadRuns,
     discard: discardRuns,
   } = useRunHistories(board.id);
-
-  /**
-   * 名前を変える。
-   *
-   * 画面の見出しをその場で書き換えるだけの操作なので、キャンバスは外れない。
-   * 空白だけの名前はサーバーが弾くが、押させないほうが早いのでここでも止める
-   * （**判定を持つのではなく、押せない理由を見せる側**）。
-   */
-  const rename = useCallback(async () => {
-    if (nameDraft === null) return;
-
-    const next = nameDraft.trim();
-    if (next === "" || next === board.name) {
-      setNameDraft(null);
-      return;
-    }
-
-    setRenaming(true);
-    try {
-      onRenamed(await boardsApi.rename(board.id, next));
-      setNameDraft(null);
-    } catch (e) {
-      // 編集中の下書きは残す。閉じると、入力し直しからやり直しになる。
-      onError(describeFailure("名前を変更できませんでした", e));
-    } finally {
-      setRenaming(false);
-    }
-  }, [board.id, board.name, nameDraft, onError, onRenamed]);
-
-  /**
-   * 削除で失われるものを引き、確認を出す。
-   *
-   * **押されたときだけ引く。** 開いたときに数えると、削除するまで要らない
-   * 畳み込みをボードを開くたびに引くことになる（中核思想 3、ADR 0037 の
-   * 取り直しと同じ形）。
-   *
-   * 世代は持たない。ボードを切り替えると BoardPage ごと作り直される
-   * （App が `key={current.id}` を渡している）ので、遅れて届いた応答が別の
-   * ボードの確認として出ることはない。
-   */
-  const askDelete = useCallback(async () => {
-    setDeletion({ status: "loading" });
-    try {
-      setDeletion({ status: "confirming", losing: await boardsApi.deletion(board.id) });
-    } catch (e) {
-      // 確認を出さずに閉じる。件数を知らないまま「削除しますか」と訊くと、
-      // 見せてから選ばせるという約束（ADR 0042）が守れない。
-      setDeletion(null);
-      onError(describeFailure("削除で失われるものを確かめられませんでした", e));
-    }
-  }, [board.id, onError]);
-
-  /**
-   * ボードを消す。**取り消せない。**
-   *
-   * GitHub に作った draft issue は消えない。消えるのは etoki 側の記録の
-   * ほうで、残った draft issue の出どころが辿れなくなる（ADR 0042）。
-   */
-  const deleteBoard = useCallback(async () => {
-    if (deletion?.status !== "confirming") return;
-    const losing = deletion.losing;
-
-    setDeletion({ status: "deleting", losing });
-    try {
-      await boardsApi.delete(board.id);
-      onDeleted(board.id);
-    } catch (e) {
-      // 確認は開いたまま戻す。閉じると、押し直すのに引き直しからになる
-      // （改名が下書きを残すのと同じ）。
-      setDeletion({ status: "confirming", losing });
-      onError(describeFailure("ボードを削除できませんでした", e));
-    }
-  }, [board.id, deletion, onDeleted, onError]);
 
   /**
    * 確認が出たら、そこへフォーカスを移す。
@@ -441,52 +363,6 @@ export function BoardPage({
   const focusDeleteConfirm = useCallback((node: HTMLElement | null) => {
     node?.focus();
   }, []);
-
-  /**
-   * 作成先の表示名を GitHub から取り直す。
-   *
-   * **押されたときだけ引く。** 開いただけで取りにいくと、ボードを開くたびに
-   * GitHub を叩くうえ、名前が変わったことに気づく機会が消える（中核思想 3、
-   * ADR 0037）。作成先そのものは固定されたままで、送るのは表示用の 3 つだけ。
-   */
-  const refreshTargetDisplay = useCallback(async () => {
-    setRefreshingTarget(true);
-    try {
-      const projects = await githubApi.projects(
-        board.repositoryOwner,
-        board.repositoryName,
-      );
-      const project = projects.find((p) => p.id === board.projectId);
-      if (!project) {
-        // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので
-        // 選び直しでは直せない。分かったことをそのまま出す。
-        onError(targetProjectMissingFailure());
-        return;
-      }
-
-      // 番号も名前も URL も、この画面が GitHub から受け取ったものをそのまま
-      // 送る。組み立てない（ADR 0025）。
-      onTargetRefreshed(
-        await boardsApi.refreshTargetDisplay(board.id, {
-          projectId: board.projectId,
-          projectNumber: project.number,
-          projectTitle: project.title,
-          projectUrl: project.url,
-        }),
-      );
-    } catch (e) {
-      onError(describeFailure("作成先の名前を取り直せませんでした", e));
-    } finally {
-      setRefreshingTarget(false);
-    }
-  }, [
-    board.id,
-    board.projectId,
-    board.repositoryName,
-    board.repositoryOwner,
-    onError,
-    onTargetRefreshed,
-  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1107,6 +983,7 @@ export function BoardPage({
     [
       board.name,
       nameDraft,
+      setNameDraft,
       renaming,
       rename,
       dirty,
@@ -1374,6 +1251,7 @@ export function BoardPage({
       canEdit,
       board.name,
       board.role,
+      setNameDraft,
       board.targetLocked,
       api,
       creationUnavailable,
@@ -1480,7 +1358,7 @@ export function BoardPage({
             <button
               type="button"
               className="quiet"
-              onClick={() => setDeletion(null)}
+              onClick={cancelDelete}
               disabled={deletion.status === "deleting"}
             >
               やめる
