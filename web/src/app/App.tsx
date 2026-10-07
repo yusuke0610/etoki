@@ -2,20 +2,18 @@ import "@excalidraw/excalidraw/index.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, authApi, boardsApi, capabilitiesApi } from "../api/boards";
+import { authApi, boardsApi, capabilitiesApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
-import type { BoardDetail, BoardTarget, Capabilities, SessionStatus } from "../api/types";
+import type { BoardDetail, BoardTarget, Capabilities } from "../api/types";
 import { LoginPage } from "../auth/LoginPage";
-import { BoardListPage, type BoardList } from "../boards/BoardListPage";
+import { useSession } from "../auth/useSession";
+import { BoardListPage } from "../boards/BoardListPage";
+import { useBoardList } from "../boards/useBoardList";
+import { useNewBoardFlow } from "../boards/useNewBoardFlow";
 import { BoardPage } from "../board/BoardPage";
 import { createGenerations } from "../board/generation";
 import { RepositoryPicker } from "../board/target/RepositoryPicker";
 import { unavailableReason } from "./capability";
-import {
-  BLANK_TEMPLATE,
-  templateScene,
-  type TemplateChoice,
-} from "../excalidraw/template";
 import {
   boardLocationUrl,
   NO_BOARD,
@@ -27,16 +25,6 @@ import { Notifications } from "../notification/Notifications";
 import type { NotifyOptions } from "../notification/types";
 import { useTheme } from "./theme";
 
-/** ボード一覧の取得失敗の通知。続けて失敗しても 1 件に畳み、読めたら下げる。 */
-const BOARD_LIST_FAILED = "board-list-failed";
-/**
- * ログイン状態の取得失敗の通知。
- *
- * 取りにいくのは起動時の effect で、開発時の StrictMode では 2 回走る。key で
- * 畳まないと、同じ失敗が 2 件並ぶ（1 本の state だった頃は上書きで隠れていた）。
- */
-const SESSION_FAILED = "session-failed";
-
 /**
  * ボードを開く要求の世代のキー。
  *
@@ -44,14 +32,6 @@ const SESSION_FAILED = "session-failed";
  * 「世代で守る」の実装をリポジトリに 2 つ持たないため。
  */
 const OPENING = "board";
-
-/**
- * 一覧を読み込む要求の世代のキー（`.claude/rules/async-ui.md`）。
- *
- * 一覧へ戻るたびに読み直す（#200）ので、改名や削除の引き直しと並走しうる。
- * 古い応答が新しい一覧を上書きすると、件数が巻き戻る。
- */
-const LISTING = "list";
 
 /** 履歴の積み方。押した結果として戻れるべきものだけを積む。 */
 type HistoryMode = "push" | "replace";
@@ -77,8 +57,6 @@ function canOpenTargetPicker(board: BoardDetail): boolean {
 }
 
 export function App() {
-  // ボードの一覧。**null はまだ読み込んでいない。** 0 件（空の配列）と分ける。
-  const [boards, setBoards] = useState<BoardList | null>(null);
   const [current, setCurrent] = useState<BoardDetail | null>(null);
   // 画面全体に出す失敗は通知へ（ADR 0058）。1 本の state に持つと、後から
   // 来た失敗が前の失敗を黙って消していた。
@@ -93,23 +71,38 @@ export function App() {
       }),
     [notify],
   );
-  const [name, setName] = useState("");
-  // 新しいボードのダイアログを開いているか（#200）。**ここで持つ。** 作成先の
-  // 選択（別の画面）から戻ったときに、入力を残したまま開き直すため。
-  const [creatingDialog, setCreatingDialog] = useState(false);
   // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
   const [picking, setPicking] = useState(false);
-  // 作成しようとしているボードの名前。null なら作成中ではない。
-  //
-  // **作成先はボードを作る前に選ばせる**（ADR 0017）。書ける Project を持たない
-  // 人はここで先へ進めず、それが「作成にはリポジトリへのアクセス権が要る」
-  // ことの表れになる。
-  const [creating, setCreating] = useState<string | null>(null);
-  // 何から始めるか。**既定は空白**（中核思想 3）。テンプレートは選ばせるもので、
-  // 勝手に適用しない。
-  const [template, setTemplate] = useState<TemplateChoice>(BLANK_TEMPLATE);
-  // ログイン状態。null は問い合わせ中。
-  const [session, setSession] = useState<SessionStatus | null>(null);
+  // 新しいボードを作るまでの流れ（`useNewBoardFlow`）。ダイアログの開閉と入力、
+  // 作成先を選んでいる最中のボードの名前を持つ。
+  const {
+    dialogOpen: creatingDialog,
+    name,
+    template,
+    creating,
+    openDialog: openCreatingDialog,
+    setName,
+    setTemplate,
+    start: startNewBoard,
+    cancel: cancelCreating,
+    backToDialog: backToCreatingDialog,
+    leave: leaveCreating,
+    create: createBoard,
+  } = useNewBoardFlow();
+  // ログイン状態（`useSession`）。session が null のあいだは問い合わせ中。
+  const {
+    session,
+    signedIn,
+    reread: rereadSession,
+    replace: replaceSession,
+  } = useSession(showFailure);
+  // ボードの一覧（`useBoardList`）。
+  const {
+    boards,
+    reload,
+    remove: removeBoard,
+    clear: clearBoards,
+  } = useBoardList({ showFailure, dismissKey, onLoginRequired: rereadSession });
   // いま使える機能。**null は「まだ確かめていない」。**
   //
   // LLM や GitHub を設定しなくても etoki は起動する（ADR 0008）。設定していない
@@ -143,84 +136,14 @@ export function App() {
   //
   // 初期化関数で 1 度だけ作る（`BoardPage` の世代と同じ形）。
   const [openings] = useState(createGenerations);
-  // 一覧を読み込む要求の世代（`LISTING`）。開く要求とは別に持つ。ボードを開いた
-  // ときに一覧の読み込みまで捨てる理由は無い。
-  const [listings] = useState(createGenerations);
   // 配色。**持つのはここだけ**で、キャンバスのメニューで切り替えても BoardPage
   // から戻ってくる（ADR 0055）。ログインや作成先の選択の画面にも効かせるため、
   // ボードより上に置く。
   const [theme, setTheme] = useTheme();
 
   useEffect(() => {
-    void (async () => {
-      try {
-        setSession(await authApi.session());
-      } catch (e) {
-        // 状態が分からないなら、ログインを求めない側に倒す。求める側に倒すと、
-        // 認証を設定していない構成が API の一時的な失敗で使えなくなる。
-        showFailure(describeFailure("ログイン状態を取得できませんでした", e), {
-          key: SESSION_FAILED,
-        });
-        setSession({ authRequired: false, authenticated: false });
-      }
-    })();
-  }, [showFailure]);
-
-  // 通知の「再読み込み」から呼ぶ。通知は失敗した時点で作られるので、押された
-  // 時点の reload を呼ぶよう ref を介す（reload 自身の中からは自分を指せない）。
-  const reloadRef = useRef<() => Promise<void>>(async () => {});
-  const reload = useCallback(async () => {
-    const generation = listings.start(LISTING);
-    try {
-      const entries = await boardsApi.list();
-      // 追い越されていたら捨てる。あとから始めた読み込みのほうが新しい。
-      if (!listings.isCurrent(LISTING, generation)) return;
-      setBoards({ entries, fetchedAt: new Date() });
-      // 前に読めなかったことの通知は、もう当てはまらない。
-      dismissKey(BOARD_LIST_FAILED);
-    } catch (e) {
-      // 追い越された読み込みの失敗は出さない。新しいほうが答えを持っている。
-      if (!listings.isCurrent(LISTING, generation)) return;
-      // 使っている最中の失効はここで初めて分かる。エラーだけ出すと、画面は
-      // ログイン済みのまま何も操作できず、リロードするまで戻れない。
-      // 状態を読み直せばログイン画面に落ちる。
-      if (e instanceof ApiError && e.code === "login_required") {
-        // 読み直しにも失敗したら、初回と同じ側に倒す。ここで投げると、
-        // 呼び出し側は void reload() なので誰も受けず、画面はログイン済みの
-        // ままボード一覧だけが空という、戻れない状態で止まる。
-        try {
-          setSession(await authApi.session());
-        } catch (sessionError) {
-          showFailure(
-            describeFailure("ログイン状態を取得できませんでした", sessionError),
-            { key: SESSION_FAILED },
-          );
-          setSession({ authRequired: false, authenticated: false });
-        }
-        return;
-      }
-      // その場から読み直せるようにする。一覧が空のまま残ると、リロード以外に
-      // 戻る手が画面に無い。
-      showFailure(describeFailure("ボード一覧を取得できませんでした", e), {
-        key: BOARD_LIST_FAILED,
-        action: { label: "再読み込み", run: () => void reloadRef.current() },
-      });
-    }
-  }, [dismissKey, listings, showFailure]);
-  useEffect(() => {
-    reloadRef.current = reload;
-  }, [reload]);
-
-  // ログインが要る構成では、済むまで読みにいかない。先に叩くと 401 が
-  // エラー表示に出て、ログイン画面の上に無関係な失敗が重なる。
-  const signedIn = session !== null && (!session.authRequired || session.authenticated);
-
-  useEffect(() => {
     if (!signedIn) return;
-    // 一覧は開いた時点で要る。読みにいくのは await の後で state を置く非同期
-    // 関数なので描画の連鎖は起きないが、規則が見ているのは effect から
-    // setState を含む関数を呼ぶこと自体なので、ここは外す。
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // 一覧は開いた時点で要る。
     void reload();
 
     void (async () => {
@@ -321,14 +244,14 @@ export function App() {
     // 捨ててよいと言われたので、通信を待たずにここで外す。待ってから外すと、
     // 待っているあいだの描き足しを確認なしで捨てることになる。
     setCurrent(null);
-    setBoards(null);
+    // 一覧も捨てる。走っている読み込みも一緒に無効になる（`useBoardList` の
+    // `clear`）。
+    clearBoards();
     // 走っている取得を無効にする。**対象が変わるイベントは関連する世代を
     // 全部無効にする**（`.claude/rules/async-ui.md`）。React state を消しても
     // 進行中のリクエストは止まらないので、遅れて着いた応答がログイン画面の
-    // 裏でボードを開き直す。一覧も同じで、遅れて着いた応答が次にログインした
-    // 人の画面に前の人の一覧を出す。
+    // 裏でボードを開き直す。
     openings.invalidateAll();
-    listings.invalidateAll();
     // ログイン画面に残るのは URL だけ。**積まずに置き換える。** 積むと
     // 「戻る」でログアウト前の URL に戻れてしまい、画面と食い違う。
     showLocation(NO_BOARD, "replace");
@@ -336,14 +259,22 @@ export function App() {
     try {
       await authApi.logout();
       // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
-      setSession(await authApi.session());
+      replaceSession(await authApi.session());
     } catch (e) {
       showFailure(describeFailure("ログアウトできませんでした", e));
       // 失敗したらログインしたまま。一覧を空のままにすると、何も操作できない
       // 画面が残る。
       await reload();
     }
-  }, [confirmDiscard, listings, openings, reload, showFailure, showLocation]);
+  }, [
+    clearBoards,
+    confirmDiscard,
+    openings,
+    reload,
+    replaceSession,
+    showFailure,
+    showLocation,
+  ]);
 
   const open = useCallback(
     async (id: string, options: OpenOptions = {}) => {
@@ -361,11 +292,11 @@ export function App() {
 
       const picking = wanted && canOpenTargetPicker(next);
       setPicking(picking);
-      setCreating(null);
+      leaveCreating();
       setCurrent(next);
       showLocation({ boardId: next.id, picking }, mode);
     },
-    [confirmDiscard, loadBoard, showLocation],
+    [confirmDiscard, leaveCreating, loadBoard, showLocation],
   );
 
   /**
@@ -389,62 +320,32 @@ export function App() {
     openings.invalidateAll();
     setCurrent(null);
     setPicking(false);
-    setCreating(null);
+    leaveCreating();
     showLocation(NO_BOARD, "push");
     void reload();
-  }, [confirmDiscard, openings, reload, showLocation]);
+  }, [confirmDiscard, leaveCreating, openings, reload, showLocation]);
 
   /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
   const startCreating = useCallback(() => {
-    if (!name.trim()) return;
     // 作成先の選択画面に移ると、開いていたボードのキャンバスが外れる。
     // 「作成先を変更」を dirty で止めてあるのと揃える。
-    if (!confirmDiscard()) return;
+    if (!startNewBoard(confirmDiscard)) return;
 
-    // 入力は残したまま閉じる。作成先の選択から戻ったら、同じ入力で開き直す。
-    setCreatingDialog(false);
     setCurrent(null);
     setPicking(false);
-    setCreating(name.trim());
     // **作成中は URL に載せない。** 載る材料（名前とひな形）が URL に無いので、
     // 載せても読み込み直した先で復元できない。**積まずに置き換える**のは、
     // 開いていたボードをここで外すのと形を揃えるため。引き返すのは履歴では
     // なく選択画面の「やめる」で、一覧の上にダイアログを開き直す
     // （`backToCreatingDialog`）。
     showLocation(NO_BOARD, "replace");
-  }, [confirmDiscard, name, showLocation]);
+  }, [confirmDiscard, showLocation, startNewBoard]);
 
-  /**
-   * 新しいボードのダイアログをやめる。名前とひな形は既定（空・空白）に戻す
-   * （#200）。次に開いたとき、やめたはずの入力が残っていると、別のボードの
-   * つもりで同じ名前を作りうる。
-   */
-  const cancelCreating = useCallback(() => {
-    setCreatingDialog(false);
-    setName("");
-    setTemplate(BLANK_TEMPLATE);
-  }, []);
-
-  /**
-   * 作成先の選択をやめて一覧へ戻る。**ダイアログを入力ごと開き直す**（#200）。
-   * 選び直すために戻った人に、名前を打ち直させない。
-   */
-  const backToCreatingDialog = useCallback(() => {
-    setCreating(null);
-    setCreatingDialog(true);
-  }, []);
-
-  /** 作成先が決まったのでボードを作る。失敗は picker が表示する。 */
+  /** 作成先が決まったのでボードを作る。失敗は picker が表示する（`useNewBoardFlow`）。 */
   const createWithTarget = useCallback(
     async (target: BoardTarget) => {
-      if (creating === null) return;
-
-      // シーンを組み立てるのは押されたこの時点。選んだ時点で作ると、作成先を
-      // 選ばずに引き返した回数だけ使わないシーンを持つことになる。
-      const board = await boardsApi.create(creating, target, templateScene(template));
-      setName("");
-      setTemplate(BLANK_TEMPLATE);
-      setCreating(null);
+      const board = await createBoard(target);
+      if (board === null) return;
       await reload();
       // 走っている取得を無効にする（ログアウトと同じ理由）。作ったボードを
       // 開いた直後に、前のボードの応答が着いて上書きするのを止める。
@@ -453,7 +354,7 @@ export function App() {
       // 作ったボードを開いた状態。**積む。** 「戻る」で作成の手前に戻れる。
       showLocation({ boardId: board.id, picking: false }, "push");
     },
-    [creating, openings, reload, showLocation, template],
+    [createBoard, openings, reload, showLocation],
   );
 
   /**
@@ -492,10 +393,7 @@ export function App() {
    */
   const handleDeleted = useCallback(
     (id: string) => {
-      setBoards(
-        (listed) =>
-          listed && { ...listed, entries: listed.entries.filter((b) => b.id !== id) },
-      );
+      removeBoard(id);
       setCurrent(null);
       // 走っている取得を無効にする（ログアウトと同じ理由）。
       openings.invalidateAll();
@@ -504,7 +402,7 @@ export function App() {
       showLocation(NO_BOARD, "replace");
       void reload();
     },
-    [openings, reload, showLocation],
+    [openings, reload, removeBoard, showLocation],
   );
 
   /** 既存ボードの作成先を選び直す。最初の作成より前だけ通る（ADR 0014）。 */
@@ -540,7 +438,7 @@ export function App() {
 
     // 読みにいくのは await の後で state を置く非同期関数なので描画の連鎖は
     // 起きないが、規則が見ているのは effect から setState を含む関数を呼ぶこと
-    // 自体なので、ここは外す（`reload` と同じ）。
+    // 自体なので、ここは外す（`useSession` の起動時の読み込みと同じ）。
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void open(initial.boardId, { mode: "replace", picking: initial.picking });
   }, [open, showLocation, signedIn]);
@@ -582,7 +480,7 @@ export function App() {
           return;
         }
 
-        setCreating(null);
+        leaveCreating();
         if (board === null) {
           // 走っていた取得は頭で無効にしてある。一覧で始めた取得が遅れて着いても、
           // 「離れたはずのボード」は開き直さない。
@@ -605,7 +503,15 @@ export function App() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [confirmDiscard, loadBoard, openings, reload, showLocation, signedIn]);
+  }, [
+    confirmDiscard,
+    leaveCreating,
+    loadBoard,
+    openings,
+    reload,
+    showLocation,
+    signedIn,
+  ]);
 
   // 問い合わせ中は何も出さない。ログイン画面を一瞬見せてから消すと、
   // 認証を設定していない構成でもちらつく。
@@ -661,7 +567,7 @@ export function App() {
               open: creatingDialog,
               name,
               template,
-              onOpen: () => setCreatingDialog(true),
+              onOpen: openCreatingDialog,
               onNameChange: setName,
               onTemplateChange: setTemplate,
               onNext: startCreating,
