@@ -43,6 +43,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `.claude/rules/`                   | レビュー由来の落とし穴集（テーマ別。対象ファイルを読むと読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
+| `.claude/skills/security-audit/`   | 定期のセキュリティ点検（`/security-audit`）と #64 の更新               |
 | `.claude/agents/`                  | 用途別のサブエージェント（ADR 照合、レビュー、デバッグなど）           |
 
 `CONTRIBUTING.md` だけは**ディレクトリに紐づかないので自動では読み込まれない**。
@@ -198,6 +199,9 @@ GitHub の形しか差せなくなる。
 - **利用者は `context.Context` で運ぶ。** 出入口は `port.ContextWithUserID` /
   `port.UserIDFromContext`。`port/` に置いてあるのは、外部リポジトリが
   `GitHubTokenSource` を自前実装するときに読む必要があるため。
+- **MCP の入口（`/mcp`）は認証なしの構成でだけ開く**（ADR 0071）。認証を
+  設定すると 503 を返し、道具を組み立てない。利用者を決める手段（OAuth、#185）を
+  持つまで、認証ありの構成で開かないこと。
 
 配線（`cmd/etoki`）の約束:
 
@@ -210,8 +214,8 @@ GitHub の形しか差せなくなる。
 - **OAuth を設定したら PAT は無視する。** フォールバックにすると作成の主体が
   リクエストごとに変わり、誰が作ったのか追えなくなる。
 
-ボードのメンバーと権限は `internal/CLAUDE.md`。Gin ハンドラの約束と Origin 検証は
-`.claude/rules/http-handlers.md`。
+ボードのメンバーと権限は `internal/CLAUDE.md`。Gin ハンドラと MCP の入口の約束、
+Origin 検証は `.claude/rules/http-handlers.md`。
 
 ## ツールチェーン上の非自明な設定
 
