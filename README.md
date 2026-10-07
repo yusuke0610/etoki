@@ -328,8 +328,12 @@ GitHub を使わない操作（描く・保存する・解釈する）はその�
 
 鍵が漏れたときは、鍵の入れ替えだけでは足りません。DB も一緒に漏れていれば、
 保存されていたトークンは古い鍵で読めてしまいます。GitHub 側でもトークンを
-失効させてください。各利用者が GitHub の Settings → Applications →
-Authorized GitHub Apps から取り消すか、App の設定でまとめて取り消します。
+失効させてください。**App の設定に、全員の認可をまとめて取り消す手段は
+ありません。** 各利用者が GitHub の Settings → Applications → Authorized
+GitHub Apps から取り消すか、App の所有者が利用者ごとに REST API の
+[Delete an app authorization](https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization)
+で取り消します（client ID と client secret で認証し、その利用者のアクセス
+トークンを渡す）。
 
 トークンは既定で 8 時間で失効しますが、`refresh_token` で自動更新するので
 再ログインは要りません。App の設定で「Expire user authorization tokens」を
