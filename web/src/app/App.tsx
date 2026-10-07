@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { authApi, boardsApi, capabilitiesApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
-import type { BoardDetail, BoardTarget, Capabilities } from "../api/types";
+import type {
+  BoardDetail,
+  BoardTarget,
+  BoardWithFiles,
+  Capabilities,
+} from "../api/types";
 import { LoginPage } from "../auth/LoginPage";
 import { useSession } from "../auth/useSession";
 import { BoardListPage } from "../boards/BoardListPage";
@@ -57,7 +62,9 @@ function canOpenTargetPicker(board: BoardDetail): boolean {
 }
 
 export function App() {
-  const [current, setCurrent] = useState<BoardDetail | null>(null);
+  // 開いているボード。**貼った画像も持つ**（ADR 0074）。キャンバスは作成先の
+  // 選択から戻るたびに作り直されるので、そのときに渡す画像をここに残す。
+  const [current, setCurrent] = useState<BoardWithFiles | null>(null);
   // 画面全体に出す失敗は通知へ（ADR 0058）。1 本の state に持つと、後から
   // 来た失敗が前の失敗を黙って消していた。
   const { notify, dismissKey } = useNotify();
@@ -218,7 +225,7 @@ export function App() {
    * ボードの存在を確かめられる。
    */
   const loadBoard = useCallback(
-    async (id: string): Promise<BoardDetail | null> => {
+    async (id: string): Promise<BoardWithFiles | null> => {
       const generation = openings.start(OPENING);
       try {
         const board = await boardsApi.get(id);
@@ -350,7 +357,9 @@ export function App() {
       // 走っている取得を無効にする（ログアウトと同じ理由）。作ったボードを
       // 開いた直後に、前のボードの応答が着いて上書きするのを止める。
       openings.invalidateAll();
-      setCurrent(board);
+      // 作ったばかりのボードに画像は無い。作成の口は画像を受け取らない
+      // （ADR 0074）ので、取り直さずに空で開いてよい。
+      setCurrent({ ...board, files: {} });
       // 作ったボードを開いた状態。**積む。** 「戻る」で作成の手前に戻れる。
       showLocation({ boardId: board.id, picking: false }, "push");
     },
@@ -370,7 +379,11 @@ export function App() {
    */
   const replaceBoard = useCallback(
     (board: BoardDetail) => {
-      setCurrent((open) => (open?.id === board.id ? board : open));
+      // **画像は持ち越す。** 応答（`BoardDetail`）は画像を運ばない（ADR 0074）。
+      // この経路ではキャンバスを作り直さないので、画像はキャンバスが持っている。
+      setCurrent((open) =>
+        open?.id === board.id ? { ...board, files: open.files } : open,
+      );
       void reload();
     },
     [reload],
@@ -410,12 +423,21 @@ export function App() {
     async (target: BoardTarget) => {
       if (current === null) return;
 
-      const board = await boardsApi.setTarget(current.id, target);
+      await boardsApi.setTarget(current.id, target);
+
+      // **画像ごと開き直す。** 選択画面から戻るとキャンバスを作り直すが、設定の
+      // 応答（`BoardDetail`）は画像を運ばない（ADR 0074）。開いた時点の画像を
+      // 持ち越すと、開いてから貼って保存した画像が欠ける。取れなければ選択画面に
+      // 残る（失敗は `loadBoard` が出す）。作成先はもう変わっているので、選び
+      // 直せば同じ設定で通る。
+      const board = await loadBoard(current.id);
+      if (board === null) return;
+
       setPicking(false);
       setCurrent(board);
       showLocation({ boardId: board.id, picking: false }, "replace");
     },
-    [current, showLocation],
+    [current, loadBoard, showLocation],
   );
 
   /**

@@ -5,6 +5,8 @@ import {
   readSceneFile,
   remapImportedAnnotationIds,
   remapImportedFileIds,
+  savedSceneJSON,
+  sceneJSON,
   type ImportedScene,
   type LoadFromBlob,
 } from "./transfer";
@@ -253,5 +255,56 @@ describe("remapImportedFileIds", () => {
       },
       same: { id: "same", dataURL: "data:image/png;base64,same" },
     });
+  });
+});
+
+/**
+ * 保存に送るシーンと、書き出すシーン（ADR 0045 / 0074）。
+ *
+ * **直列化はライブラリの実物を通す。** `serializeAsJSON` は jsdom でも動く。
+ */
+describe("savedSceneJSON", () => {
+  const image = {
+    id: "img-1",
+    type: "image",
+    fileId: "file-1",
+    x: 0,
+    y: 0,
+    width: 10,
+    height: 10,
+    isDeleted: false,
+  };
+  const api: SceneSource = {
+    getSceneElements: () => [image],
+    getAppState: () => ({ viewBackgroundColor: "#ffffff" }),
+    getFiles: () => ({
+      "file-1": {
+        id: "file-1",
+        mimeType: "image/png",
+        dataURL: "data:image/png;base64,AAAA",
+        created: 1,
+      },
+    }),
+  };
+
+  // 画像の実体はシーンに入れない。入れて送るとサーバーが 400 で弾く。画像の
+  // 要素（fileId）は残す。抜くと、開き直したときに画像の置き場所が消える。
+  it("画像の実体を抜き、画像の要素は残す", () => {
+    const saved = JSON.parse(savedSceneJSON(api)) as {
+      elements: { fileId?: string }[];
+      files?: Record<string, unknown>;
+    };
+
+    expect(saved.files ?? {}).toEqual({});
+    expect(saved.elements[0]?.fileId).toBe("file-1");
+  });
+
+  // 書き出しは画像込みのまま。ファイル単体で開けないと持ち出す意味が無い。
+  it("書き出すシーンは画像を持ったまま", () => {
+    const exported = JSON.parse(sceneJSON(api)) as {
+      files?: Record<string, { dataURL?: string }>;
+    };
+
+    expect(exported.files?.["file-1"]?.dataURL).toBe("data:image/png;base64,AAAA");
   });
 });

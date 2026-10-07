@@ -7,10 +7,12 @@ import {
   annotationCard,
   annotationDetail,
   chooseFromMenu,
+  chooseTarget,
   drawRectangle,
   interpret,
   openBoard,
   openBoardWithMock,
+  waitForBoard,
 } from "./helpers/board";
 import { ANNOTATION_IDS, BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
 
@@ -123,6 +125,24 @@ function rectangleFile(x: number): string {
     appState: { viewBackgroundColor: "#ffffff" },
     files: {},
   });
+}
+
+/**
+ * `.excalidraw` の中身を、サーバーが持つ形（画像を抜いたシーンと画像）に分ける。
+ *
+ * 実物は画像をシーンとは別に持つ（ADR 0074）。モックのシーンに画像を入れたまま
+ * 開くと、開く口から画像を受け取れないフロントでも緑になる。
+ */
+function storedForm(content: string): { scene: string; files: Record<string, string> } {
+  const { files, ...scene } = JSON.parse(content) as {
+    files?: Record<string, unknown>;
+  };
+  return {
+    scene: JSON.stringify(scene),
+    files: Object.fromEntries(
+      Object.entries(files ?? {}).map(([id, file]) => [id, JSON.stringify(file)]),
+    ),
+  };
 }
 
 /** ファイルを選ぶ。入力は隠してあるので、ボタンではなく入力に直接渡す。 */
@@ -346,10 +366,9 @@ test.describe("取り込み", () => {
     const mock = baseMock();
     const detail = mock.details[BOARD_ID];
     if (detail === undefined) throw new Error("テスト用のボードが無い");
-    mock.details[BOARD_ID] = {
-      ...detail,
-      scene: importedFile("#ffffff", EXISTING_IMAGE_DATA_URL),
-    };
+    const stored = storedForm(importedFile("#ffffff", EXISTING_IMAGE_DATA_URL));
+    mock.details[BOARD_ID] = { ...detail, scene: stored.scene };
+    mock.files[BOARD_ID] = stored.files;
     await openBoardWithMock(page, mock);
 
     await chooseFile(page, importedFile());
@@ -478,5 +497,105 @@ test.describe("取り込み", () => {
     await expect(menu.getByText("名前を付けて保存...")).toHaveCount(0);
     // 画像のエクスポートは閉じない。答えている問いが違う。
     await expect(menu.getByText("画像のエクスポート...")).toHaveCount(1);
+  });
+});
+
+/**
+ * 貼った画像はシーンとは別に保存する（#102、ADR 0074）。
+ *
+ * **送った本文を見るのはここだけ。** どの画像を送ったか、送り直していないかは
+ * リクエストボディにしか現れない。キャンバスに画像を入れる手段として取り込みを
+ * 使うので、このファイルに置く。
+ */
+test.describe("貼った画像の保存", () => {
+  /** 保存して、未保存が消えるまで待つ。 */
+  async function save(page: Page): Promise<void> {
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  }
+
+  test("最初の保存で 1 度だけ送り、開き直すとキャンバスに戻る", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+
+    await chooseFile(page, importedFile());
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+    await save(page);
+
+    // 1 回目は画像を送る。シーンには実体を入れない（入れるとサーバーが 400）。
+    const first = mock.saveRequests[0];
+    const sent = JSON.parse(first?.files?.[IMAGE_FILE_ID] ?? "{}") as {
+      dataURL?: string;
+    };
+    expect(sent.dataURL).toBe(IMAGE_DATA_URL);
+    expect((JSON.parse(first?.scene ?? "{}") as { files?: unknown }).files).toEqual({});
+
+    // **これが分けた意味そのもの。** 描き足しただけの保存では画像を送らない。
+    await drawRectangle(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+    await save(page);
+    expect(mock.saveRequests).toHaveLength(2);
+    expect(mock.saveRequests[1]?.files).toEqual({});
+
+    // 開き直すと、開く口が返した画像がキャンバスに戻る。書き出しに載ることで
+    // 見る（キャンバスの中の画像は DOM に出ない）。
+    await page.reload();
+    await waitForBoard(page, BOARD_NAME);
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      chooseFromMenu(page, "書き出し"),
+    ]);
+    const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
+      files?: Record<string, { dataURL?: string }>;
+    };
+    expect(scene.files?.[IMAGE_FILE_ID]?.dataURL).toBe(IMAGE_DATA_URL);
+  });
+
+  // 作成先の選択画面から戻るとキャンバスを作り直す。設定の応答は画像を運ばない
+  // ので、開いてから貼って保存した画像は、画像ごと開き直さないと欠ける。開いた
+  // 時点の画像を持ち越す実装でもここで落ちる（開いた時点には無かった画像）。
+  test("作成先を選び直してキャンバスが作り直されても、画像が残る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    await chooseFile(page, importedFile());
+    await save(page);
+
+    await chooseFromMenu(page, "作成先を変更");
+    await chooseTarget(page, "acme/web", "#4 技術的負債");
+    await waitForBoard(page, BOARD_NAME);
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      chooseFromMenu(page, "書き出し"),
+    ]);
+    const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
+      files?: Record<string, { dataURL?: string }>;
+    };
+    expect(scene.files?.[IMAGE_FILE_ID]?.dataURL).toBe(IMAGE_DATA_URL);
+  });
+
+  // 保存に失敗したら、サーバーが持っている画像の把握を進めない。進めると、
+  // 届かなかった画像を以後の保存で送らなくなり、開き直したときに欠ける。
+  test("保存に失敗したら、次の保存で画像を送り直す", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+
+    await chooseFile(page, importedFile());
+    mock.saveSceneError = {
+      status: 413,
+      body: { code: "scene_too_large", error: "pasted images are too large" },
+    };
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    // 断られたことは通知で分かる。応答のあとにしか出ないので、ここで待てば
+    // リクエストはもう積まれている。
+    await expect(page.getByRole("alert")).toContainText("保存できませんでした");
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+    expect(mock.saveRequests).toHaveLength(1);
+    expect(Object.keys(mock.saveRequests[0]?.files ?? {})).toEqual([IMAGE_FILE_ID]);
+
+    delete mock.saveSceneError;
+    await save(page);
+
+    expect(mock.saveRequests).toHaveLength(2);
+    expect(Object.keys(mock.saveRequests[1]?.files ?? {})).toEqual([IMAGE_FILE_ID]);
+    expect(Object.keys(mock.files[BOARD_ID] ?? {})).toEqual([IMAGE_FILE_ID]);
   });
 });

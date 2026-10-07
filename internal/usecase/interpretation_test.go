@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +31,10 @@ type fakeBoards struct {
 	writes  int
 	// display は最後に書かれた表示用スナップショット。
 	display port.BoardTargetDisplay
+	// files はボードが持っている画像（ADR 0074）。ID → 中身。
+	files map[string]string
+	// saved は最後に書かれた保存。何を足して何を参照として渡したかを見る。
+	saved *port.SceneWrite
 }
 
 // Find は操作者も突き合わせる。実装と同じ形にしておかないと、絞り忘れを
@@ -52,17 +58,63 @@ func (f *fakeBoards) Create(context.Context, port.Board, string) error {
 
 // UpdateScene は版の照合まで真似る。素通しにすると、ユースケースが基準を
 // 渡し忘れても緑のままになる（ADR 0020）。
+//
+// 画像も実装と同じく、照合に通ったときだけ足して、参照から外れたものを消す
+// （ADR 0074）。返す ID は昇順。
 func (f *fakeBoards) UpdateScene(
-	_ context.Context, _, _, _ string, base, updatedAt time.Time,
-) error {
+	_ context.Context, _, _ string, w port.SceneWrite, base, updatedAt time.Time,
+) ([]string, error) {
 	if f.board != nil && !base.Equal(f.board.UpdatedAt) {
-		return port.ErrConflict
+		return nil, port.ErrConflict
 	}
 	f.writes++
+	f.saved = &w
 	if f.board != nil {
+		f.board.Scene = w.Scene
 		f.board.UpdatedAt = updatedAt
 	}
-	return nil
+
+	if f.files == nil {
+		f.files = map[string]string{}
+	}
+	for _, file := range w.Added {
+		f.files[file.ID] = file.Data
+	}
+	for id := range f.files {
+		if !slices.Contains(w.Referenced, id) {
+			delete(f.files, id)
+		}
+	}
+	return slices.Sorted(maps.Keys(f.files)), nil
+}
+
+// FindWithFiles は Find と同じ絞り方で、画像も返す。
+func (f *fakeBoards) FindWithFiles(
+	ctx context.Context, actor, id string,
+) (*port.BoardAccess, []port.BoardFile, error) {
+	a, err := f.Find(ctx, actor, id)
+	if a == nil || err != nil {
+		return nil, nil, err
+	}
+
+	files := []port.BoardFile{}
+	for _, fileID := range slices.Sorted(maps.Keys(f.files)) {
+		files = append(files, port.BoardFile{ID: fileID, Data: f.files[fileID]})
+	}
+	return a, files, nil
+}
+
+// FileSizes はボードの画像の大きさを返す。別のボードの ID では空を返す
+// （実装と同じく boardID で絞る）。
+func (f *fakeBoards) FileSizes(_ context.Context, boardID string) (map[string]int64, error) {
+	sizes := map[string]int64{}
+	if f.board == nil || f.board.ID != boardID {
+		return sizes, nil
+	}
+	for id, data := range f.files {
+		sizes[id] = int64(len(data))
+	}
+	return sizes, nil
 }
 
 // UpdateName は名前だけを書く。**更新時刻は動かさない。** 実装と揃えて

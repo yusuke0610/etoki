@@ -817,16 +817,19 @@ func TestSaveScene_RejectsSceneOverTheLimit(t *testing.T) {
 // 歯止めが効いたことそのものはここからは見えない（歯止めが無くても
 // validateScene が同じ 413 を返す）。このテストが落ちるのは、歯止めに当たった
 // ボディを 400 に写す実装にしたとき。
-func TestSaveScene_RejectsOversizedBody(t *testing.T) {
+//
+// **作成の口で当てる。** 写し替えは作成と保存で共有している（bindSceneBody）。
+// 保存の歯止めは貼った画像のぶんまで広げてあり（maxSaveBody、ADR 0074）、
+// 当てるには数百 MiB を送ることになる。
+func TestCreateBoard_RejectsOversizedBody(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newRouter(t)
-	id := createBoard(t, r, "ボード")
 
 	// 歯止めは上限の 6 倍に取ってある（エスケープでシーンが膨らむため）。
 	// 7 倍を送れば、エスケープの要らない文字で埋めても必ず当たる。
-	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
-		saveSceneBody(sceneOfSize(t, usecase.MaxSceneBytes*7), fixedTime))
+	rec := do(t, r, http.MethodPost, "/api/boards",
+		withScene(newBoardBody("ボード"), sceneOfSize(t, usecase.MaxSceneBytes*7)))
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want %d (%s)",
 			rec.Code, http.StatusRequestEntityTooLarge, rec.Body)
@@ -856,8 +859,8 @@ func TestSaveScene_AcceptsSceneAtTheLimitThatEscapesLong(t *testing.T) {
 
 // sceneOfSize は指定したバイト数ちょうどの、読めるシーン JSON を作る。
 //
-// 実際に大きさを押し上げるのは貼った画像（base64 でシーンに乗る）だが、ここで
-// 要るのはバイト数だけなのでテキスト要素の本文で埋める。
+// 貼った画像はシーンに乗らない（ADR 0074）ので、大きさはテキスト要素の本文で
+// 埋める。
 func sceneOfSize(t *testing.T, size int) string {
 	t.Helper()
 

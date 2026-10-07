@@ -156,6 +156,16 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 実装だけ規則を変えると落ちる。まとめられない代わりに、ずれたことに気づける
 形にしてある。**判定を変えるなら、まずこのファイルに case を足す。**
 
+**貼った画像を「参照している」かの規則も 2 箇所にある**（ADR 0074）。Go は
+`internal/domain/scene.go` の `Scene.FileIDs`、TypeScript は
+`web/src/excalidraw/files.ts` の `referencedFileIds`。規則は「削除されていない
+要素の `fileId` が空でなければ参照している。要素の種類は見ない」（Excalidraw の
+直列化が保存する画像を選ぶ規則と同じ）。フロントはこれで送る画像を、サーバーは
+消す画像を決めるので、**ずれると送らなかった画像が欠けるか、送った画像が
+400 で弾かれる。** 判定対象は `testdata/file-reference-rule.json` に置き、
+`internal/domain/file_rule_test.go` と `web/src/excalidraw/fileReferenceRule.test.ts`
+が読む。
+
 注釈の frame 自体は **Excalidraw のフレームツールで作らせる**。etoki は
 `customData` を付けるだけ。frame を自前で生成すると、境界にまたがる要素の
 帰属判定を自分で持つことになり、frame を選んだ理由が消える。

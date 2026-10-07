@@ -6,7 +6,8 @@ import { ApiError, boardsApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
 import { sceneSignature } from "../excalidraw/dirty";
 import type { SceneElement } from "../excalidraw/annotation";
-import { sceneJSON } from "../excalidraw/transfer";
+import { filesToSave } from "../excalidraw/files";
+import { savedSceneJSON } from "../excalidraw/transfer";
 import type { NotifyOptions } from "../notification/types";
 import type { Exclusion } from "./exclusion";
 
@@ -23,6 +24,13 @@ type Options = {
    * 操作でずれた版のせいで以後の保存が必ず衝突する。
    */
   updatedAt: string;
+  /**
+   * 開いた時点でサーバーが持っていた画像の ID（`BoardWithFiles.files` のキー）。
+   *
+   * 保存はこれに無い画像だけを送る（ADR 0074）。**開き直すまで読み直さない。**
+   * 以後は保存の応答（`fileIds`）で差し替える。
+   */
+  fileIds: readonly string[];
   /**
    * 開いた時点で、保存済みシーンが上限を超えているとサーバーが判定していたか
    * （ADR 0048、issue #103）。
@@ -65,6 +73,7 @@ export function useSceneSave({
   api,
   boardId,
   updatedAt,
+  fileIds,
   sceneOverLimit,
   exclusive,
   currentBackground,
@@ -89,6 +98,12 @@ export function useSceneSave({
   // 署名が「何を描いたか」を持つのに対して、こちらは「何の上に描いたか」。
   const baseUpdatedAt = useRef(updatedAt);
 
+  // サーバーが持っている画像（ADR 0074）。**サーバーが返したものだけで決める。**
+  // 送ったものから手元で導くと、何が残って何が消えるかの規則が 2 箇所になる。
+  // 衝突や失敗では動かさない。書けていないので、サーバーの持ち物も変わって
+  // いない。
+  const heldFileIds = useRef<ReadonlySet<string>>(new Set(fileIds));
+
   // 作成先の変更などでボードを取り直したら基準も差し替える。据え置くと、
   // 自分の操作でずれた版のせいで以後の保存が必ず衝突する。
   useEffect(() => {
@@ -108,7 +123,10 @@ export function useSceneSave({
     await exclusive.run("saving", async () => {
       try {
         const elements = api.getSceneElements();
-        const scene = sceneJSON(api);
+        // 画像は抜いて、サーバーがまだ持っていないものだけを添える（ADR 0074）。
+        // 図形を動かしただけの保存で画像を送り直さない。
+        const scene = savedSceneJSON(api);
+        const files = filesToSave(api, heldFileIds.current);
         // 送った内容そのものを新しい基準にする。保存の待ち時間に編集されていたら
         // 未保存のまま残す必要があるので、`markSaved` が比べ直す。
         // **背景色も `scene` に載っている**ので、基準にも同じものを含める。
@@ -117,9 +135,16 @@ export function useSceneSave({
           currentBackground(),
         );
 
-        const saved = await boardsApi.saveScene(boardId, scene, baseUpdatedAt.current);
+        const saved = await boardsApi.saveScene(
+          boardId,
+          scene,
+          files,
+          baseUpdatedAt.current,
+        );
         // 返った版が次の基準。捨てると 2 回目の保存が必ず衝突する。
         baseUpdatedAt.current = saved.updatedAt;
+        // 返った画像が次の保存で送らなくてよいもの。捨てると毎回送り直す。
+        heldFileIds.current = new Set(saved.fileIds);
         setConflictedFor(null);
         // 前の保存の失敗はもう当てはまらない。残すと、保存できているのに
         // 「保存できませんでした」が読める。

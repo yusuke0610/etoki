@@ -28,6 +28,12 @@ func TestRolePermissions(t *testing.T) {
 			_, err := newBoardService(boards).Find(ctx, "board-1")
 			return err
 		}},
+		// 開く口は Find とは別の引き当て（FindWithFiles）を通る（ADR 0074）。
+		// 判定を写し損ねると、画像だけ他人に読ませることになる。
+		{"開く", func(ctx context.Context, boards *fakeBoards) error {
+			_, err := newBoardService(boards).Open(ctx, "board-1")
+			return err
+		}},
 		{"注釈の状態", func(ctx context.Context, boards *fakeBoards) error {
 			_, _, err := usecase.NewAnnotationService(boards, &fakeMappings{}).
 				ListStates(ctx, "board-1")
@@ -42,7 +48,7 @@ func TestRolePermissions(t *testing.T) {
 			return newBoardService(boards).Rename(ctx, "board-1", "新しい名前")
 		}},
 		{"シーン保存", func(ctx context.Context, boards *fakeBoards) error {
-			_, err := newBoardService(boards).SaveScene(ctx, "board-1", emptyScene, baseTime)
+			_, err := newBoardService(boards).SaveScene(ctx, "board-1", emptyScene, nil, baseTime)
 			return err
 		}},
 		{"解釈", func(ctx context.Context, boards *fakeBoards) error {
@@ -79,6 +85,7 @@ func TestRolePermissions(t *testing.T) {
 	// allowed はその操作を通せる最小のロール。表の本体。
 	allowed := map[string]port.BoardRole{
 		"閲覧":    port.RoleViewer,
+		"開く":    port.RoleViewer,
 		"注釈の状態": port.RoleViewer,
 		"実行履歴":  port.RoleViewer,
 		// 名前はブレストの中身に属する表示物で、取り消せない作成の行き先を

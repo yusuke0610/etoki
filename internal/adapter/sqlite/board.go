@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -34,8 +35,8 @@ const summaryColumns = `b.id, b.name,
 // boardColumns は Find が SELECT する列。シーンを末尾に足す。
 //
 // **一覧はこれを使わない。** BoardSummary はシーンを含まないので、List が
-// 読んでも捨てるだけになる。シーンには画像が base64 で入りうるため、
-// 捨てるために全ボードぶんをメモリに載せることになる。
+// 読んでも捨てるだけになる。捨てるために全ボードぶんをメモリに載せることに
+// なる。
 //
 // 足す位置が末尾なのは、summaryColumns の並びを Find と List で崩さないため。
 // 途中に入れると、共有している側の受け皿とずれる。
@@ -87,12 +88,23 @@ func (r *BoardRepository) Create(ctx context.Context, b port.Board, owner string
 	return nil
 }
 
-// UpdateScene はシーンと更新時刻だけを更新する。
+// UpdateScene はシーンと画像と更新時刻を更新し、書いたあとにボードが持って
+// いる画像の ID を返す。
 //
 // base がいまの版と違えば何も書かず port.ErrConflict を返す（ADR 0020）。
+//
+// **シーンと画像は 1 トランザクションで書く**（ADR 0074）。照合に負けたら
+// 画像も足さず消さない。分けると、照合に負けた保存の画像だけが残ったり、
+// シーンが指す画像が消えたりする。
 func (r *BoardRepository) UpdateScene(
-	ctx context.Context, actor, id, scene string, base, updatedAt time.Time,
-) error {
+	ctx context.Context, actor, id string, w port.SceneWrite, base, updatedAt time.Time,
+) ([]string, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin update board %s: %w", id, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	// メンバーであることを WHERE に入れる。ここは Find を通らずに直接 UPDATE
 	// する経路なので、絞り忘れると他人のボードを書き換えられる（ADR 0016）。
 	//
@@ -102,26 +114,74 @@ func (r *BoardRepository) UpdateScene(
 	// 版の照合も同じ 1 文に置く。先に SELECT して比べる形にすると、比べてから
 	// 書くまでの隙間に入った保存を上書きする。照合したい相手はその隙間に
 	// 現れるので、隙間を作った時点で守れない。
-	res, err := r.db.ExecContext(ctx,
+	//
+	// **画像はこの文の後に書く。** 照合に通った保存だけが画像に触れる。
+	res, err := tx.ExecContext(ctx,
 		`UPDATE boards SET scene = ?, updated_at = ?
 		 WHERE id = ? AND updated_at = ? AND `+memberExists,
-		scene, formatTime(updatedAt), id, formatTime(base), actor)
+		w.Scene, formatTime(updatedAt), id, formatTime(base), actor)
 	if err != nil {
-		return fmt.Errorf("update board %s: %w", id, err)
+		return nil, fmt.Errorf("update board %s: %w", id, err)
 	}
 
 	n, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("rows affected for board %s: %w", id, err)
+		return nil, fmt.Errorf("rows affected for board %s: %w", id, err)
 	}
-	if n > 0 {
-		return nil
+	if n == 0 {
+		// 何も書いていないので、ここで閉じてから理由を引き直す。
+		_ = tx.Rollback()
+		return nil, r.updateMissed(ctx, actor, id)
 	}
 
-	// 0 行の理由は 2 つある。触れないボードなのか、版が古いのか。UPDATE は
-	// どちらかを返さないので、触れるかどうかだけを引き直して分ける。この 2 文の
-	// 間にボードが消される（Delete、ADR 0042）ことはありうるが、そのときは
-	// 「触れなくなった」が正しい答えなので、引き直しの結果をそのまま採ってよい。
+	for _, f := range w.Added {
+		// 同じ ID がすでにあれば置き換える。保存はその時点のボードの姿を
+		// 決めるもので、送られてきたものが正しい（ADR 0074）。
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO board_files (board_id, id, bytes, data) VALUES (?, ?, ?, ?)
+			 ON CONFLICT (board_id, id) DO UPDATE
+			 SET bytes = excluded.bytes, data = excluded.data`,
+			id, f.ID, len(f.Data), f.Data,
+		); err != nil {
+			return nil, fmt.Errorf("put file %s of board %s: %w", f.ID, id, err)
+		}
+	}
+
+	// シーンから外れた画像を消す。ID の集合は JSON の配列 1 つで渡す。
+	// プレースホルダを ID の数だけ並べると、画像の多いボードで変数の上限に
+	// 当たりうる。
+	referenced, err := json.Marshal(nonNil(w.Referenced))
+	if err != nil {
+		return nil, fmt.Errorf("encode referenced files of board %s: %w", id, err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM board_files
+		 WHERE board_id = ? AND id NOT IN (SELECT value FROM json_each(?))`,
+		id, string(referenced),
+	); err != nil {
+		return nil, fmt.Errorf("delete unreferenced files of board %s: %w", id, err)
+	}
+
+	// 書いたあとに持っている画像を、同じトランザクションの中で読む。
+	// 呼び出し側はこれを次の保存の基準にする（何を送らなくてよいか）。
+	held, err := fileIDs(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit update board %s: %w", id, err)
+	}
+	return held, nil
+}
+
+// updateMissed は照合つきの UPDATE が 0 行だった理由を返す。
+//
+// 0 行の理由は 2 つある。触れないボードなのか、版が古いのか。UPDATE は
+// どちらかを返さないので、触れるかどうかだけを引き直して分ける。この 2 文の
+// 間にボードが消される（Delete、ADR 0042）ことはありうるが、そのときは
+// 「触れなくなった」が正しい答えなので、引き直しの結果をそのまま採ってよい。
+func (r *BoardRepository) updateMissed(ctx context.Context, actor, id string) error {
 	ok, err := r.readable(ctx, actor, id)
 	if err != nil {
 		return err
@@ -130,6 +190,44 @@ func (r *BoardRepository) UpdateScene(
 		return fmt.Errorf("update board %s: %w", id, port.ErrConflict)
 	}
 	return fmt.Errorf("update board %s: %w", id, port.ErrNotFound)
+}
+
+// nonNil は nil のスライスを空のスライスにする。JSON で null ではなく [] に
+// するため。json_each(null) は何も返さないので、NOT IN が空集合と比べる
+// 形にならない。
+func nonNil(ids []string) []string {
+	if ids == nil {
+		return []string{}
+	}
+	return ids
+}
+
+// queryer は *sql.DB と *sql.Tx の共通部分。
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// fileIDs はボードが持っている画像の ID を昇順で返す。
+func fileIDs(ctx context.Context, q queryer, boardID string) ([]string, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT id FROM board_files WHERE board_id = ? ORDER BY id`, boardID)
+	if err != nil {
+		return nil, fmt.Errorf("list file ids of board %s: %w", boardID, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan file id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate file ids: %w", err)
+	}
+	return ids, nil
 }
 
 // readable は操作者がそのボードを読めるかどうかを返す。
@@ -364,6 +462,84 @@ func (r *BoardRepository) Find(
 	}
 
 	return &a, nil
+}
+
+// FindWithFiles は Find に加えて、そのボードの画像をすべて返す。
+//
+// **シーンと画像は同じトランザクションで読む**（ADR 0074）。WAL では
+// トランザクションの中の読み取りは同じ時点を見るので、間に保存が入っても
+// シーンが指す画像が欠けない。
+func (r *BoardRepository) FindWithFiles(
+	ctx context.Context, actor, id string,
+) (*port.BoardAccess, []port.BoardFile, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin find board %s: %w", id, err)
+	}
+	// 読むだけなので、閉じ方は Rollback で足りる。
+	defer func() { _ = tx.Rollback() }()
+
+	a, err := scanBoard(tx.QueryRowContext(ctx,
+		`SELECT `+boardColumns+` `+memberJoin+` WHERE b.id = ?`, actor, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		// Find と同じく「無い」と「メンバーでない」を区別しない。
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("find board %s: %w", id, err)
+	}
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, data FROM board_files WHERE board_id = ? ORDER BY id`, id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list files of board %s: %w", id, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	files := []port.BoardFile{}
+	for rows.Next() {
+		var f port.BoardFile
+		if err := rows.Scan(&f.ID, &f.Data); err != nil {
+			return nil, nil, fmt.Errorf("scan file: %w", err)
+		}
+		files = append(files, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate files: %w", err)
+	}
+
+	return &a, files, nil
+}
+
+// FileSizes はボードが持っている画像の ID ごとのバイト数を返す。
+//
+// **data の列は読まない。** bytes は data より前の列に置いてあるので、画像の
+// 中身が載っているページに触らずに済む（マイグレーション 0015）。
+func (r *BoardRepository) FileSizes(
+	ctx context.Context, boardID string,
+) (map[string]int64, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, bytes FROM board_files WHERE board_id = ?`, boardID)
+	if err != nil {
+		return nil, fmt.Errorf("list file sizes of board %s: %w", boardID, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	sizes := map[string]int64{}
+	for rows.Next() {
+		var (
+			id    string
+			bytes int64
+		)
+		if err := rows.Scan(&id, &bytes); err != nil {
+			return nil, fmt.Errorf("scan file size: %w", err)
+		}
+		sizes[id] = bytes
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate file sizes: %w", err)
+	}
+	return sizes, nil
 }
 
 // List は操作者がメンバーであるボードを更新時刻の降順で返す。

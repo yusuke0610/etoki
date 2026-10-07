@@ -285,7 +285,7 @@ func TestSaveScene_RejectsStaleBase(t *testing.T) {
 	// 相手が先に保存した後の姿。こちらが開いたときの版はもう古い。
 	stale := boards.board.UpdatedAt.Add(-time.Hour)
 
-	_, err := svc.SaveScene(t.Context(), "board-1", emptyScene, stale)
+	_, err := svc.SaveScene(t.Context(), "board-1", emptyScene, nil, stale)
 	if !errors.Is(err, usecase.ErrSceneConflict) {
 		t.Fatalf("SaveScene() = %v, want ErrSceneConflict", err)
 	}
@@ -304,16 +304,16 @@ func TestSaveScene_ReturnsNextBase(t *testing.T) {
 	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
 		usecase.WithClock(func() time.Time { return saved }))
 
-	got, err := svc.SaveScene(t.Context(), "board-1", emptyScene, boards.board.UpdatedAt)
+	got, err := svc.SaveScene(t.Context(), "board-1", emptyScene, nil, boards.board.UpdatedAt)
 	if err != nil {
 		t.Fatalf("SaveScene() = %v", err)
 	}
-	if !got.Equal(saved) {
-		t.Errorf("返った版 = %v, want %v", got, saved)
+	if !got.UpdatedAt.Equal(saved) {
+		t.Errorf("返った版 = %v, want %v", got.UpdatedAt, saved)
 	}
 
 	// 返った版で続けて保存できる。ここが食い違うと、2 回目の保存が必ず衝突する。
-	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, got); err != nil {
+	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, nil, got.UpdatedAt); err != nil {
 		t.Errorf("返った版で保存できない: %v", err)
 	}
 }
@@ -330,20 +330,20 @@ func TestSaveScene_AdvancesVersionWhenTheClockDoesNot(t *testing.T) {
 	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
 		usecase.WithClock(func() time.Time { return stopped }))
 
-	saved, err := svc.SaveScene(t.Context(), "board-1", emptyScene, stopped)
+	saved, err := svc.SaveScene(t.Context(), "board-1", emptyScene, nil, stopped)
 	if err != nil {
 		t.Fatalf("SaveScene() = %v", err)
 	}
-	if !saved.After(stopped) {
-		t.Errorf("版 = %v, want %v より後（時計が止まっていても進める）", saved, stopped)
+	if !saved.UpdatedAt.After(stopped) {
+		t.Errorf("版 = %v, want %v より後（時計が止まっていても進める）", saved.UpdatedAt, stopped)
 	}
 
 	// 同じ基準での 2 回目は、時計が動いていなくても弾かれる。
-	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, stopped); !errors.Is(err, usecase.ErrSceneConflict) {
+	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, nil, stopped); !errors.Is(err, usecase.ErrSceneConflict) {
 		t.Fatalf("SaveScene() = %v, want ErrSceneConflict", err)
 	}
 	// 返った版では続けて保存できる。進めた版が次の基準として使える。
-	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, saved); err != nil {
+	if _, err := svc.SaveScene(t.Context(), "board-1", emptyScene, nil, saved.UpdatedAt); err != nil {
 		t.Errorf("進めた版で保存できない: %v", err)
 	}
 }
@@ -355,7 +355,7 @@ func TestSaveScene_RequiresBase(t *testing.T) {
 
 	boards := &fakeBoards{board: newBoard(interpretScene)}
 
-	_, err := newBoardService(boards).SaveScene(t.Context(), "board-1", emptyScene, time.Time{})
+	_, err := newBoardService(boards).SaveScene(t.Context(), "board-1", emptyScene, nil, time.Time{})
 	if !errors.Is(err, usecase.ErrInvalidInput) {
 		t.Fatalf("SaveScene() = %v, want ErrInvalidInput", err)
 	}
@@ -373,7 +373,7 @@ func TestSaveScene_AcceptsSceneAtTheLimit(t *testing.T) {
 	scene := sceneOfSize(t, usecase.MaxSceneBytes)
 
 	if _, err := newBoardService(boards).SaveScene(
-		t.Context(), "board-1", scene, boards.board.UpdatedAt); err != nil {
+		t.Context(), "board-1", scene, nil, boards.board.UpdatedAt); err != nil {
 		t.Fatalf("SaveScene() = %v", err)
 	}
 	if boards.writes != 1 {
@@ -391,7 +391,7 @@ func TestSaveScene_RejectsSceneOverTheLimit(t *testing.T) {
 	scene := sceneOfSize(t, usecase.MaxSceneBytes+1)
 
 	_, err := newBoardService(boards).SaveScene(
-		t.Context(), "board-1", scene, boards.board.UpdatedAt)
+		t.Context(), "board-1", scene, nil, boards.board.UpdatedAt)
 	if !errors.Is(err, usecase.ErrSceneTooLarge) {
 		t.Fatalf("SaveScene() = %v, want ErrSceneTooLarge", err)
 	}
@@ -440,8 +440,8 @@ func TestSceneExceedsLimit(t *testing.T) {
 
 // sceneOfSize は指定したバイト数ちょうどの、読めるシーン JSON を作る。
 //
-// 実際に大きさを押し上げるのは貼った画像（base64 でシーンに乗る）だが、ここで
-// 要るのはバイト数だけなのでテキスト要素の本文で埋める。
+// 貼った画像はシーンに乗らない（ADR 0074）ので、大きさはテキスト要素の本文で
+// 埋める。
 func sceneOfSize(t *testing.T, size int) string {
 	t.Helper()
 
