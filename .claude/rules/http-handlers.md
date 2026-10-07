@@ -66,6 +66,23 @@ paths:
   配るパスは `/` のまま。配信は `requireAuth` の**外**に置く。ログイン画面
   そのものがここから配られる。
 
+## MCP の入口（ADR 0071）
+
+- **道具の出力は `/api` のハンドラと同じ組み立て関数を通す**（`boardList` /
+  `boardAnnotations` / `annotationRuns`）。道具の中で詰め替えを書き直さない。
+  契約に足したフィールドが片方にだけ載り、生成型が同じなのでゼロ値のまま通る。
+  `mcp_test.go` が `/api` の応答と突き合わせている。
+- **道具を足すなら読み取りだけ。** 解釈と作成を出すなら ADR 0071 の判断ごと
+  見直す。足した道具には `readOnlyHint` を立てる（`TestMCP_ListsOnlyReadOnlyTools`）。
+- **失敗は `toolError` で返す。** 写し替えは `errors.go` の表を引き、404 で理由を
+  載せない規則も `/api` と同じにする。
+- **Host の検証は originGuard だけ。** SDK の `DisableLocalhostProtection` を
+  戻さない。戻すと `ETOKI_ALLOWED_ORIGINS` で許したホストが `/mcp` だけで落ちる。
+- **認証ありの構成の 503 は text/plain で返す**（上の「エラー本文も
+  `ErrorResponse` に揃える」の例外）。`/mcp` で SDK 自身が返すエラーが
+  text/plain で、`ErrorResponse` の code は画面のための列挙（ADR 0034）。画面は
+  `/mcp` を叩かないので、code を足すと読まれない文言が 1 つ増える。
+
 ## cross-site リクエストの拒否（ADR 0013）
 
 **バインド先を絞るだけでは足りない。** ループバックにバインドしていても、

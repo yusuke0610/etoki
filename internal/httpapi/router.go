@@ -104,6 +104,11 @@ func NewRouter(deps Deps) *gin.Engine {
 	// ここでは載せるだけ。/api/auth/session は未ログインでも 200 を返す。
 	r.Use(resolveSession(deps.Auth, logger))
 
+	// MCP の入口（ADR 0071）。`/api` の外に置くが、**Host と Origin の検証
+	// （originGuard）の内側にある。** 道具は `/api` と同じ組み立て（h）を通る。
+	// 認証ありの構成では 503 を返すだけで、道具は組み立てない。
+	r.Any(mcpPath, gin.WrapH(newMCPHandler(h, deps.Auth != nil)))
+
 	// キャッシュ禁止と本文の上限は `/api` の入口 1 箇所で掛ける。認証の要否で
 	// 分かれる **前**に置くのは、あとから増やしたグループだけが漏れるのを防ぐため
 	// （`/api/auth` が実際にそうなっていた）。
