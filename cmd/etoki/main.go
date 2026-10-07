@@ -59,6 +59,7 @@ environment:
   ETOKI_WEB_DIR         ビルド済みフロントエンドの置き場所（例: web/dist）
                         未設定なら画面を配らない（make dev では Vite が配る）
   ETOKI_LLM_BASE_URL    LLM のエンドポイント（既定: ` + llm.DefaultBaseURL + `）
+                        鍵を設定しているなら、http はループバックだけ
   ETOKI_LLM_API_KEY     LLM の API キー（認証不要なら未設定でよい）
   ETOKI_LLM_MODEL       モデル ID（既定: ` + llm.DefaultModel + `）
   ETOKI_LLM_MAX_CONCURRENT     1 人が同時に走らせられる解釈・図の生成の数

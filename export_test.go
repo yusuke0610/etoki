@@ -26,3 +26,12 @@ func NewServerForTest(addr string, h http.Handler, shutdown, cancelAfter time.Du
 func ShutdownBudgetForTest() (shutdown, cancelAfter time.Duration) {
 	return shutdownTimeout, cancelRequestsAfter
 }
+
+// SetConnTimeoutsForTest は接続の読み込みとアイドルの期限を差し替える。
+//
+// 実際の値（分単位）を待つテストは書けない。期限が効いていることと、効いても
+// 長いハンドラを切らないことを、短い値で確かめる。
+func (s *Server) SetConnTimeoutsForTest(read, idle time.Duration) {
+	s.readTimeout = read
+	s.idleTimeout = idle
+}

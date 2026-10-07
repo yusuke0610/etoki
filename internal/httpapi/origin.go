@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
+	"github.com/yusuke0610/etoki/internal/loopback"
 )
 
 // originGuard はブラウザ由来の cross-site リクエストを弾く。
@@ -89,15 +90,10 @@ func IsLoopbackHost(host string) bool {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		hostname = h
 	}
-	hostname = strings.ToLower(strings.Trim(hostname, "[]"))
 
-	if hostname == "localhost" {
-		return true
-	}
-	if ip := net.ParseIP(hostname); ip != nil {
-		return ip.IsLoopback()
-	}
-	return false
+	// 判定そのものは外へ出る側（GitHub と LLM のアダプタ）と共有する。ここで
+	// 剥がすのはポートと角括弧だけ。
+	return loopback.Hostname(strings.Trim(hostname, "[]"))
 }
 
 func (g originGuard) allowsHost(host string) bool {

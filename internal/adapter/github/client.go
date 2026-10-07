@@ -11,13 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/yusuke0610/etoki/internal/loopback"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -26,7 +26,7 @@ const DefaultBaseURL = "https://api.github.com"
 
 // 環境変数名。
 const (
-	envToken   = "ETOKI_GITHUB_TOKEN"
+	envToken   = "ETOKI_GITHUB_TOKEN" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
 	envBaseURL = "ETOKI_GITHUB_BASE_URL"
 )
 
@@ -132,7 +132,7 @@ func New(cfg Config) (*Client, error) {
 	// **http はループバックにだけ許す。** この口を開けたのは手元の偽物に向ける
 	// ため（ADR 0050）で、http で届く GitHub は無い。綴りの誤り 1 つで本物の
 	// トークンを平文で外へ送らない。
-	if u.Scheme == "http" && !isLoopbackHostname(u.Hostname()) {
+	if u.Scheme == "http" && !loopback.Hostname(u.Hostname()) {
 		return nil, fmt.Errorf("etoki: invalid github base url %q: http is allowed only for loopback", u.Redacted())
 	}
 	// クエリと fragment は弾く。送り先は base に "/graphql" を足した文字列
@@ -155,18 +155,6 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	return c, nil
-}
-
-// isLoopbackHostname はホスト名（ポートを含まない）がループバックを指すかを返す。
-//
-// httpapi の判定（Host ヘッダの host[:port] を読む）は使わない。アダプタが
-// httpapi に依存する向きを作らないため。
-func isLoopbackHostname(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // nextCursor は次のページのカーソルを返す。次が無ければ (nil, nil)。

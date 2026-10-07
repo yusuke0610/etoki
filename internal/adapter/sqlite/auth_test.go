@@ -222,6 +222,11 @@ func TestSaveCredentials_StoresCiphertext(t *testing.T) {
 }
 
 // 鍵を変えたら開けない。中身を推測して復旧しようとせず、エラーにする。
+//
+// **エラーは未認証として返す。** 鍵を入れ替えたあとに打てる手は再ログインだけで、
+// 再ログインすれば新しい鍵で封をし直される。未認証に寄せないと GitHub を叩く
+// 操作が 500 になり、画面が再ログインに案内できない（#64）。原因（開けなかった
+// こと）も包んだまま残し、ログで読めるようにする。
 func TestFindCredentials_FailsWithDifferentKey(t *testing.T) {
 	t.Parallel()
 
@@ -234,8 +239,15 @@ func TestFindCredentials_FailsWithDifferentKey(t *testing.T) {
 	}
 
 	other := sqlite.NewSessionRepository(db, newBox(t, 200))
-	if _, err := other.FindCredentials(t.Context(), u.ID); err == nil {
+	_, err := other.FindCredentials(t.Context(), u.ID)
+	if err == nil {
 		t.Fatal("FindCredentials() = nil, want error")
+	}
+	if !errors.Is(err, port.ErrNotAuthenticated) {
+		t.Errorf("FindCredentials() = %v, want port.ErrNotAuthenticated", err)
+	}
+	if !errors.Is(err, secret.ErrMalformed) {
+		t.Errorf("FindCredentials() = %v, want the cause secret.ErrMalformed kept", err)
 	}
 }
 
