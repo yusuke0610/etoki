@@ -49,7 +49,7 @@ paths:
   守りはロジック側に置く（#108、ADR 0039）。
 - **`void f()` で呼ぶ非同期は、`f` 自身が失敗状態を更新する。** `void` は
   返り値を捨てるので、戻り値だけで失敗を返しても呼び出し側には届かない
-  （`generateDiagram` は `false` を返すが、`void generateDiagram(...)` で
+  （`useDiagramDraft` の `generate` は `false` を返すが、`void generate(...)` で
   呼ぶ側はそれを捨てるので、失敗表示は `f` の中の `setChat` が担う）。投げる
   だけでも同じで、呼び出し側が捕まえないので rejected Promise になり、
   **失敗表示なしで操作が終わる。** 例外を投げうる詰め替え（変換器など）も

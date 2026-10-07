@@ -11,8 +11,6 @@ import { boardsApi, githubApi } from "../api/boards";
 import {
   canvasMermaidPasteFailure,
   describeFailure,
-  diagramNotPlaceableFailure,
-  mermaidPasteFailure,
   sceneUnreadableFailure,
   targetProjectMissingFailure,
   type Failure,
@@ -48,11 +46,8 @@ import {
 import { sceneSignature } from "../excalidraw/dirty";
 import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
 import { formatSceneSize } from "../excalidraw/size";
-import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
 import { createTable, tableCenter } from "../excalidraw/table";
-import { pasteToElements } from "../excalidraw/mermaidPaste";
 import { ErrorBoundary } from "../app/ErrorBoundary";
-import { log } from "../app/logger";
 import { useNotify } from "../notification/NotificationProvider";
 import type { NotifyOptions } from "../notification/types";
 import type { Theme } from "../app/theme";
@@ -67,18 +62,7 @@ import {
   AnnotationPanel,
 } from "./annotations/AnnotationPanel";
 import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
-import {
-  beginTurn,
-  changeKind,
-  completeTurn,
-  conversionRetryPrompt,
-  failTurn,
-  historyOf,
-  startChat,
-  type DiagramChat,
-} from "./diagram/diagramChat";
-import { useExclusion, useReentryGuard } from "./exclusion";
-import { createGenerations } from "./generation";
+import { useExclusion } from "./exclusion";
 import { useInterpretations } from "./annotations/useInterpretations";
 import { MemberPanel } from "./members/MemberPanel";
 import {
@@ -92,7 +76,8 @@ import {
   tableIcon,
 } from "./menuIcons";
 import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
-import { MermaidPastePanel, type PasteOutcome } from "./diagram/MermaidPastePanel";
+import { MermaidPastePanel } from "./diagram/MermaidPastePanel";
+import { useDiagramDraft } from "./diagram/useDiagramDraft";
 import { projectLabel } from "../boards/grouping";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import { useCreation } from "./annotations/useCreation";
@@ -104,14 +89,6 @@ import { useBoardTransfer } from "./useBoardTransfer";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
-
-/**
- * 図のドラフト生成の世代キー。
- *
- * 会話は 1 つしか持たないので 1 本でよい。解釈が注釈ごとに採番するのとは
- * 違って、区別する相手がいない。
- */
-const DIAGRAM_KEY = "diagram";
 
 /**
  * ライブラリのメニューから閉じるもの（ADR 0045）。
@@ -342,12 +319,6 @@ export function BoardPage({
   }, []);
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
-  // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
-  // 持つ。** 置けたときに消すのはここ（`pasteMermaid`）で、パネルは落ちたときに
-  // 境界で作り直される（ADR 0027）。そちらで持つと、構文エラーを直している
-  // 途中の入力が消える。ボードを切り替えれば BoardPage ごと作り直されるので
-  // 残らない。
-  const [pasteText, setPasteText] = useState("");
   // キャンバスの上に開いている注釈の詳細（`AnnotationDetail`）。null なら閉じている。
   const [detailId, setDetailId] = useState<string | null>(null);
   // 詳細を開く操作の回数。開いたままの注釈を開き直しても焦点を移すために、
@@ -361,18 +332,6 @@ export function BoardPage({
   // **ID ではなく回数で持つ。** 同じ注釈が戻ってまた消えたとき、ID だと値が
   // 変わらず effect が走らない。
   const [detailVanished, setDetailVanished] = useState(0);
-  // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
-  // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
-  const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
-  // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
-  // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
-  const [diagramGenerations] = useState(createGenerations);
-  // 置いている最中か。**走っているあいだの二重押しは弾く**（実行の履歴の読み込み
-  // と同じ形）。**排他の表とは別物**で、止めるのは同じ操作の連打だけ。理由と
-  // 仕組みは `exclusion.ts` の `useReentryGuard`。**図のドラフトと貼り付けで
-  // 1 つにする。** どちらも同じ `draftOrigin` を読むので、分けると両方が同じ
-  // 場所に置かれうる。
-  const placing = useReentryGuard();
   // 作成先の Project に書けるかどうか。確かめるまでは unknown。
   //
   // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
@@ -593,7 +552,12 @@ export function BoardPage({
     }
   }, [board.id, dismissHere, onError]);
 
+  // 開いたら注釈の状態を引く。**`set-state-in-effect` の対象外。** state を置くのは
+  // 応答が届いてから（`await` の後）で、effect の本体からは置かない。BoardPage が
+  // 大きかったうちは解析が諦めていて出ていなかった（`web/CLAUDE.md` の「関心を
+  // フックに切り出すとき」）。
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshAnnotations();
   }, [refreshAnnotations]);
 
@@ -722,165 +686,16 @@ export function BoardPage({
     [api],
   );
 
-  /**
-   * プロンプトから図のドラフトを生成する。
-   *
-   * **キャンバスには何も置かない。** 置くのは `placeDraft` で、そこを人が
-   * 押すまでキャンバスは変わらない（#58 の原則、中核思想 3）。
-   *
-   * **未保存でも呼ぶ。** 保存済みシーンを読まないので、解釈のような
-   * 「保存してから」の制約が要らない（ADR 0041）。
-   */
-  const generateDiagram = useCallback(
-    async (prompt: string, internal = false): Promise<boolean> => {
-      const generation = diagramGenerations.start(DIAGRAM_KEY);
-      // 送るのはいまの会話。**成立した往復だけがここに積まれている**ので、
-      // 失敗した指示を「返した図」つきで送ることにはならない。
-      const { kind } = chat;
-      const history = historyOf(chat);
-      setChat((prev) => beginTurn(prev, prompt, internal));
-
-      try {
-        const draft = await boardsApi.generateDiagram(board.id, kind, prompt, history);
-        // 遅れて届いた応答を今の会話に混ぜない。種類を変えると会話ごと
-        // 捨てるので、そのあとに古い図が積まれると土台が食い違う。
-        if (!diagramGenerations.isCurrent(DIAGRAM_KEY, generation)) return false;
-        setChat((prev) => completeTurn(prev, draft));
-        return true;
-      } catch (e) {
-        if (!diagramGenerations.isCurrent(DIAGRAM_KEY, generation)) return false;
-        // **パネルの中に出す。** 会話の続きで直せる失敗なので、画面上部の
-        // 通知に出すと、直す場所と理由が離れる。
-        setChat((prev) => failTurn(prev, describeFailure("生成できませんでした", e)));
-        return false;
-      }
-    },
-    [board.id, chat, diagramGenerations],
-  );
-
-  /**
-   * 図の種類を変える。**捨てたときだけ、走っている生成も無効にする。**
-   *
-   * 種類を変えると会話ごと捨てる（`changeKind`）ので、あとから古い図が
-   * 積まれると、いまの種類の会話に前の記法の図が土台として載る。パネルは
-   * 生成中の選択を止めているが、**止めているのが UI だけだと、そこを外した
-   * ときに黙って壊れる**（`.claude/rules/async-ui.md`）。
-   *
-   * **捨てていないのに世代を進めない。** 同じ種類なら `changeKind` は会話を
-   * そのまま返すので `pending` が残る。そこで世代だけ進めると、走っている
-   * 生成の応答が捨てられて `pending` を null にする経路が消え、パネルが
-   * 「生成中…」のまま戻らなくなる。**捨てたかどうかは `changeKind` の
-   * 返り値で決める。** 同じ条件をここにも書くと判定が 2 箇所になる。
-   */
-  const handleChangeKind = useCallback(
-    (kind: DiagramKind) => {
-      const next = changeKind(chat, kind);
-      if (next === chat) return;
-
-      diagramGenerations.start(DIAGRAM_KEY);
-      setChat(next);
-    },
-    [chat, diagramGenerations],
-  );
-
-  /**
-   * 変換した要素をキャンバスに置く。図のドラフトと貼り付けで共有する。
-   *
-   * **既存の要素には一切触らない。追加するだけ**（#58 の原則）。置き場所は
-   * 既存の絵の右外で、重ねない（ADR 0040）。**保存はしない。**
-   */
-  const placeElements = useCallback(
-    (elements: readonly SceneElement[]) => {
-      if (!api) return;
-      const existing = currentElements();
-      const placed = moveDraft(elements, draftOrigin(existing));
-      updateElements([...existing, ...placed]);
-
-      // 置いた先へ寄せる。既存の絵の外に置くので、寄せないと押したのに何も
-      // 起きていないように見える（ADR 0040）。
-      api.scrollToContent(placed as never, { fitToContent: true, animate: true });
-    },
-    [api, currentElements, updateElements],
-  );
-
-  /**
-   * いまのドラフトをキャンバスに置く。
-   *
-   * **既存の要素には一切触らない。追加するだけ**（#58 の原則）。置き場所は
-   * 既存の絵の右外で、重ねない（ADR 0040）。**保存はしない。** 確定させるのは
-   * 人間の保存操作だけ。
-   *
-   * 変換に失敗したら、会話の次の 1 往復として投げ直す。mermaid として読める
-   * かではなく Excalidraw の要素として置けるかを知っているのは変換器だけ
-   * なので、投げ直せるのはここしかない（ADR 0041）。
-   */
-  const placeDraft = useCallback(async () => {
-    // 変換は非同期。**押した時点で弾かないと、2 回目が同じ `draftOrigin` を
-    // 得て、同じ図が同じ場所に重なる。** 取り消しで戻すしかなくなる。
-    if (!api || chat.draft === null || !placing.enter()) return;
-
-    try {
-      const converted = await mermaidToElements(chat.draft.mermaid);
-      if (!converted.ok) {
-        if (converted.reason === "syntax") {
-          // 直せる失敗。会話の次の 1 往復にして投げ直す。
-          // **利用者が打った指示ではない**ので、そう印を付けて積む。画面には
-          // 固定文で出る（`turnLabel`）。
-          void generateDiagram(conversionRetryPrompt(converted.detail), true);
-          return;
-        }
-        // 置ける形にならない種類だった。投げ直しても同じものが返るので、
-        // 種類を変えてもらう（ADR 0040）。
-        setChat((prev) => failTurn(prev, diagramNotPlaceableFailure()));
-        return;
-      }
-
-      placeElements(converted.elements);
-    } finally {
-      placing.leave();
-    }
-  }, [api, chat.draft, generateDiagram, placeElements, placing]);
-
-  /**
-   * 貼られた mermaid を変換して置く（ADR 0062）。
-   *
-   * 置き方は図のドラフトと同じ（`placeElements`）。違うのは**失敗したときに
-   * 頼み直す相手がいない**ことで、構文エラーも種類違いも、理由を返して貼った
-   * 人に直してもらう。
-   *
-   * **LLM を通さないので `capabilities` を見ない。** 止めると LLM を設定して
-   * いない人が使えなくなる。
-   */
-  const pasteMermaid = useCallback(
-    async (text: string): Promise<PasteOutcome> => {
-      if (!api || !placing.enter()) return { placed: false, failure: null };
-
-      try {
-        const converted = await pasteToElements(text);
-        if (!converted.ok) {
-          // 変換器が返した理由は console にも残す。画面に畳んで出すのは
-          // 構文エラーのときだけ（`mermaidPasteFailure`）。
-          if (converted.reason === "syntax" || converted.reason === "unsupported") {
-            log.warn("貼られた mermaid を置けませんでした", converted.detail);
-          }
-          return {
-            placed: false,
-            failure: mermaidPasteFailure(converted.reason, converted.detail),
-          };
-        }
-
-        placeElements(converted.elements);
-        // 置けたら入力を消す。残すと同じ図を 2 度置きやすい。**送った文字列の
-        // ままのときだけ。** 変換を待つあいだにパネルを閉じて開き直すと入力を
-        // 書き換えられるので、無条件に消すと新しい入力を捨てる。
-        setPasteText((current) => (current === text ? "" : current));
-        return { placed: true };
-      } finally {
-        placing.leave();
-      }
-    },
-    [api, placeElements, placing],
-  );
+  // 図のドラフト（LLM に作らせる・mermaid を貼る・置く）。`useDiagramDraft`。
+  const {
+    chat,
+    generate: generateDiagram,
+    changeKind: handleChangeKind,
+    placeDraft,
+    pasteText,
+    setPasteText,
+    pasteMermaid,
+  } = useDiagramDraft({ api, boardId: board.id, currentElements, updateElements });
 
   /**
    * 表を 1 つ置く（ADR 0069）。
