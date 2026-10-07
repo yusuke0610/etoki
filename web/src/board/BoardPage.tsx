@@ -25,7 +25,6 @@ import type {
   DetachedAnnotation,
   DiagramKind,
   Granularity,
-  Interpretation,
   ProjectAccess,
 } from "../api/types";
 import { unavailableReason } from "../app/capability";
@@ -96,7 +95,7 @@ import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
 import { MermaidPastePanel, type PasteOutcome } from "./diagram/MermaidPastePanel";
 import { projectLabel } from "../boards/grouping";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
-import type { CreationState } from "./annotations/panelShared";
+import { useCreation } from "./annotations/useCreation";
 import { useRunHistories } from "./annotations/useRunHistories";
 import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
 import { projectLink } from "./target/projectLink";
@@ -325,7 +324,7 @@ export function BoardPage({
   // バイト数が変わるたびに `onChange` ごと差し替わる。
   const { bytes: sceneBytes, schedule: scheduleMeasure } = useSceneSize(api);
   // 引いた解釈（`useInterpretations`）。束のまま持たない理由は上の `useSceneSize` と
-  // 同じで、`create` と `discardAfterSave` が中の関数を依存に置く。
+  // 同じで、`useCreation` と `discardAfterSave` が中の関数を依存に置く。
   const {
     states: interpretations,
     interpret,
@@ -333,10 +332,6 @@ export function BoardPage({
     recordCreated,
     discardAll: discardInterpretations,
   } = useInterpretations({ api, boardId: board.id, annotations });
-  const [creations, setCreations] = useState<Record<string, CreationState>>({});
-  // 作成は解釈とは別の世代で管理する。共有すると、片方の実行がもう片方の
-  // 応答まで無効にしてしまう。
-  const [creationGenerations] = useState(createGenerations);
   // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
   const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
   // 右のパネルを畳んでいるか（#202）。端末ごとに覚えた値で始める。
@@ -396,7 +391,7 @@ export function BoardPage({
   // **失われるものを引き終わるまで確認を出さない。** 件数を伏せたまま
   // 「削除しますか」と訊くと、何を失うのかを知らないまま押させることになる。
   const [deletion, setDeletion] = useState<DeletionState | null>(null);
-  // 注釈ごとの実行履歴（`useRunHistories`）。**束のまま持たない。** `create` は
+  // 注釈ごとの実行履歴（`useRunHistories`）。**束のまま持たない。** `useCreation` は
   // `discardRuns` を依存に置くので、束で受けると履歴を引くたびに作り直される。
   const {
     states: runHistories,
@@ -976,6 +971,19 @@ export function BoardPage({
     onError,
   });
 
+  // 解釈結果から draft issue を作る（`useCreation`）。
+  const {
+    states: creations,
+    create,
+    discardAll: discardCreations,
+  } = useCreation({
+    boardId: board.id,
+    exclusive,
+    recordCreated,
+    discardRuns,
+    refreshAnnotations,
+  });
+
   /**
    * 保存が済んだら捨てるもの。**一覧はここ 1 箇所にある**（#146）。
    *
@@ -992,10 +1000,9 @@ export function BoardPage({
    */
   const discardAfterSave = useCallback(async () => {
     discardInterpretations();
-    creationGenerations.invalidateAll();
-    setCreations({});
+    discardCreations();
     await refreshAnnotations();
-  }, [creationGenerations, discardInterpretations, refreshAnnotations]);
+  }, [discardCreations, discardInterpretations, refreshAnnotations]);
 
   const { conflicted, overLimit, save } = useSceneSave({
     api,
@@ -1028,67 +1035,6 @@ export function BoardPage({
         dismissKey(key);
     },
     [board.id, dismissKey],
-  );
-
-  /**
-   * 解釈結果から draft issue を作る。
-   *
-   * 作成後は状態が created に変わるので、注釈の状態を取り直す。
-   */
-  const create = useCallback(
-    async (
-      annotationId: string,
-      interpretationId: number,
-      interpretation: Interpretation,
-    ) => {
-      // disabled は表示の約束。保存や取り込みの最中、または別の注釈を作成中に
-      // 直接呼ばれても、取り消せない GitHub への作成を並走させない
-      // （表は `exclusion.ts`）。
-      await exclusive.run("creating", async () => {
-        const generation = creationGenerations.start(annotationId);
-        setCreations((prev) => ({ ...prev, [annotationId]: { status: "running" } }));
-
-        try {
-          const run = await boardsApi.createItems(board.id, annotationId, interpretation);
-          // 保存が挟まっていたら、この結果は保存前の解釈に対するもの。表示すると
-          // いまの内容に対して作られたと誤読される。
-          if (!creationGenerations.isCurrent(annotationId, generation)) return;
-          // 作ったものを解釈に結びつける。下書きはこれを見て、作れた項目を
-          // 同じ下書きから新規に作らせない（ADR 0052）。応答を受けた時点で
-          // 入れる。実行中は下書きが止まっているので、ここで外れても押せない。
-          recordCreated(annotationId, interpretationId, run.items);
-          // 履歴は 1 件増えたので、引いてあるものは捨てる（`useRunHistories`）。
-          discardRuns(annotationId);
-          await refreshAnnotations();
-          // **状態を取り直してから done にする。** 先に done にすると、作ったばかりの
-          // item が畳み込みに入る前の隙間で、保存や押し直しと競合する
-          // （.claude/rules/async-ui.md）。取り直しの失敗は refreshAnnotations が
-          // 自分で出すので、ここでは待つだけ。
-          if (!creationGenerations.isCurrent(annotationId, generation)) return;
-          setCreations((prev) => ({
-            ...prev,
-            [annotationId]: { status: "done", run },
-          }));
-        } catch (e) {
-          if (!creationGenerations.isCurrent(annotationId, generation)) return;
-          setCreations((prev) => ({
-            ...prev,
-            [annotationId]: {
-              status: "error",
-              failure: describeFailure("作成できませんでした", e),
-            },
-          }));
-        }
-      });
-    },
-    [
-      board.id,
-      creationGenerations,
-      discardRuns,
-      exclusive,
-      recordCreated,
-      refreshAnnotations,
-    ],
   );
 
   // 未保存のあいだと、作成の実行中は離脱を確認する（ADR 0021 / 0051）。
