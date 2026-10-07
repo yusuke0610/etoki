@@ -1,0 +1,96 @@
+/*
+ * 画面全体に出す失敗の通知（ADR 0058）。
+ *
+ * **フローの外に出す。** 帯としてフローに入れると、出た瞬間にキャンバスの
+ * 高さが削られて Excalidraw が描き直され、描いている最中に描画位置が動く。
+ *
+ * **キャンバスの右上、右上の島の下に置く**（#216）。Excalidraw 自身の UI
+ * （左下のズームと取り消し、右下のヘルプ、上中央のツールバー）とも、etoki の
+ * 右上の島（ボード名・未保存・保存）とも重ならない。**右のパネルの上には
+ * 出さない。** パネルの主題は注釈の状態で、閉じるまで残る通知がそれを隠す。
+ * 開いていればパネルの幅だけ、畳んでいれば帯の幅だけ左へずらす（下の 2 つ）。
+ *
+ * 入れ物は 0 件でも DOM に残る（読み上げのため）。何も無いときにクリックを
+ * 奪わないよう、入れ物は pointer-events を切り、通知だけが受ける。
+ */
+.notifications {
+  /* 右端からの距離。ボードの画面では、右のパネルか畳んだ帯の幅を足す。 */
+  --notifications-right: var(--space-6);
+  position: fixed;
+  /* 右上の島（上端 16px・高さ 40px 前後）の下から始める。 */
+  top: 72px;
+  right: var(--notifications-right);
+  width: min(420px, calc(100vw - var(--notifications-right) - var(--space-6)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.app:has(.side-panel:not([hidden])) .notifications {
+  --notifications-right: calc(var(--side-panel-width) + var(--space-6));
+}
+
+.app:has(.side-panel-rail) .notifications {
+  --notifications-right: calc(var(--side-panel-rail-width) + var(--space-6));
+}
+
+.notification {
+  pointer-events: auto;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 2px 8px var(--color-shadow);
+}
+
+.notification-error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+.notification-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.notification-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.notification-message {
+  margin: 0;
+}
+
+/* 色だけで種別を伝えない（#62）。本文の前に文字で添える。 */
+.notification-kind {
+  font-weight: 600;
+  margin-right: var(--space-4);
+}
+
+.notification-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* 位置は動かさない。フェードだけにし、動きを減らす設定では何もしない。 */
+@media (prefers-reduced-motion: no-preference) {
+  .notification {
+    animation: notification-in 150ms ease-out;
+  }
+}
+
+@keyframes notification-in {
+  from {
+    opacity: 0;
+  }
+}

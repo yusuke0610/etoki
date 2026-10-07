@@ -1,0 +1,148 @@
+/*
+ * ボタンと入力欄の土台（#203）。**etoki が描いた部品にだけ当てる。**
+ *
+ * 当てる範囲は、どの規則も末尾の `:where(…)` で同じ形に絞る。
+ *
+ * - 印（`etoki-ui`）の下だけ。`button` に素で当てると、キャンバスのツールバーや
+ *   ライブラリのダイアログの見た目まで変わる。**`.excalidraw` の中は除き**、拡張点に
+ *   載せた部品（右上の島・下の帯）には印を付け直して含める。**メニューの etoki の
+ *   項目はライブラリの項目の部品なので含めない**（印の付いた要素の下に無い）。
+ * - 土台を当てるボタンは、**クラスを持たないもの**（ふつうの操作）と、格のクラス
+ *   （`primary` / `quiet` / `danger`）を持つものだけ。部品ごとのクラスを持つ
+ *   ボタン（文字のように見せる名前、木の枝など）とタブは、その部品の規則に任せる。
+ * - 土台の特異性は 0（`:where`）。部品ごとの規則で上書きできる。
+ */
+/*
+ * ブラウザが描く部品も、地の文の書体を受け継ぐ。既定では受け継がず、OS の部品の
+ * 書体で出るので、部品ごとのクラスを持つボタン（木の枝など）だけ字形が変わる。
+ */
+:where(button, input, select, textarea):where(
+  .etoki-ui :not(.excalidraw *),
+  .excalidraw .etoki-ui *
+) {
+  font: inherit;
+}
+
+:where(button:not([class], [role]), button.primary, button.quiet, button.danger):where(
+  .etoki-ui :not(.excalidraw *),
+  .excalidraw .etoki-ui *
+) {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 0 var(--space-6);
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+:where(button:not([class], [role])):where(
+    .etoki-ui :not(.excalidraw *),
+    .excalidraw .etoki-ui *
+  ):hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+:where(
+  input:not([type]),
+  input[type="text"],
+  input[type="search"],
+  input[type="url"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  select
+):where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+}
+
+/*
+ * 主となる操作のボタン。**1 つの面（画面・ダイアログ・詳細）に 1 つだけ。**
+ * 押せるものを全部これにすると、どれが本筋なのかが色では読めなくなる。詳細を
+ * 開くと右上の「保存」と詳細の「GitHub に作成する」が同時に見えるが、面が違う。
+ *
+ * 「GitHub に作成する」は取り消せないが、赤ではなくこれにする（#203）。取り
+ * 消せないことは押す手前の文で伝える。**赤は「消す」操作だけに使い、2 つの
+ * 意味を持たせない。**
+ */
+button.primary:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
+  /* マーク（GitHub の印など）とラベルを横に並べる。 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 600;
+}
+
+button.primary:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
+    :disabled
+  ) {
+  border-color: var(--brand-hover);
+  background: var(--brand-hover);
+}
+
+/* マークはラベルの高さに合わせる。名前は文字が持つので、色も文字に従わせる。 */
+button.primary svg {
+  width: 1.2em;
+  height: 1.2em;
+  flex-shrink: 0;
+  fill: currentcolor;
+}
+
+/* 控えめな操作。閉じる・やめる・取り消すのように、作業から離れる操作。 */
+button.quiet:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
+  padding: 0 var(--space-5);
+  border-color: transparent;
+  background: transparent;
+}
+
+button.quiet:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
+    :disabled
+  ) {
+  background: var(--color-hover);
+}
+
+/*
+  取り消せない操作のボタン。ボードの削除と、メンバーを外すが使う（ADR 0042）。
+
+  **消さず、押しにくくもしない。** 押す前に何が失われるかを見せる形で守って
+  いるので（中核思想 3）、ここは「他と違う」と分かれば足りる。
+*/
+button.danger:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
+  border-color: var(--color-danger-border);
+  background: var(--color-bg);
+  color: var(--color-danger);
+}
+
+button.danger:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
+    :disabled
+  ) {
+  background: var(--color-danger-bg);
+}
+
+/*
+ * 押せないボタン。**格を問わず同じ見た目にする。** 押せない理由は本文で別に
+ * 出すが（ADR 0039 / 0066）、**ラベルは薄くしすぎない。** ラベル自体が読めないと
+ * 何が押せないのかが分からない。
+ */
+:is(button:not([class], [role]), button.primary, button.quiet, button.danger):where(
+    .etoki-ui :not(.excalidraw *),
+    .excalidraw .etoki-ui *
+  ):disabled {
+  border-color: var(--color-control-border);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-subtle);
+  cursor: default;
+}

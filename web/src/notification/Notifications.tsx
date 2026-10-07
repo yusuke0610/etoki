@@ -16,7 +16,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
  *
  * **キャンバスのレイアウトを動かさない。** 帯としてフローに入れると、出た
  * 瞬間にキャンバスの高さが削られて Excalidraw が描き直され、ブレストの最中に
- * 描画位置が動く。`position: fixed` でフローの外に出す（`index.css`）。
+ * 描画位置が動く。`position: fixed` でフローの外に出す（`notification.css`）。
  *
  * **入れ物は 0 件のときも DOM に置いたままにする。** 通知と一緒に入れ物ごと
  * 差し込むと、読み上げソフトが変化として拾わないことがある。
