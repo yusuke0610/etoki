@@ -54,6 +54,10 @@ const defaultTimeout = 5 * time.Minute
 // maxResponseBytes は応答ボディを読む上限。
 const maxResponseBytes = 10 << 20 // 10 MiB
 
+// maxRedirects はリダイレクトを追う上限。net/http の既定と同じ値。
+// CheckRedirect を差すと既定の打ち切りも外れるので、自分で持つ。
+const maxRedirects = 10
+
 // 環境変数名。
 const (
 	envBaseURL = "ETOKI_LLM_BASE_URL"
@@ -165,8 +169,46 @@ func New(cfg Config) (*Client, error) {
 	if c.http == nil {
 		c.http = &http.Client{Timeout: defaultTimeout}
 	}
+	if c.apiKey != "" {
+		c.http = keepKeyWithinOrigin(c.http)
+	}
 
 	return c, nil
+}
+
+// keepKeyWithinOrigin は、リダイレクトで鍵が別のオリジンへ運ばれないようにした
+// hc の写しを返す。
+//
+// net/http はリダイレクト先へ元のヘッダを写す。別のホストへ移るときに落とす
+// のは Authorization と Cookie だけで、x-api-key は写したまま送る。https から
+// http への移動も止めない。New で BaseURL を検査しても、リダイレクト先は検査を
+// すり抜ける。
+//
+// 追ってよいのは、最初のリクエストと同じスキームとホスト（ポートを含む）だけ。
+// 鍵を外しつつ追う形にはしない。鍵の要る相手が別のオリジンへ向けたなら、鍵を
+// 外して送っても届くのは 401 で、本文（ボードの画像）だけが渡る。
+//
+// hc は呼び出し元のものなので書き換えない。呼び出し元の CheckRedirect は、
+// こちらの検査を通ったあとに呼ぶ。
+func keepKeyWithinOrigin(hc *http.Client) *http.Client {
+	guarded := *hc
+	next := hc.CheckRedirect
+	guarded.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		first := via[0].URL
+		if req.URL.Scheme != first.Scheme || req.URL.Host != first.Host {
+			return fmt.Errorf(
+				"etoki: llm endpoint redirected to %s://%s; redirects to another origin are not followed while an api key is set",
+				req.URL.Scheme, req.URL.Host)
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+		return nil
+	}
+	return &guarded
 }
 
 // orDefault は s が空なら fallback を返す。
