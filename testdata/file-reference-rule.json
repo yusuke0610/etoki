@@ -1,0 +1,60 @@
+{
+  "rule": "削除されていない要素の fileId が空でなければ、その画像を参照している。要素の種類は見ない（Excalidraw の filterOutDeletedFiles と同じ）",
+  "why": "この判定は Go（internal/domain/scene.go の FileIDs）と TypeScript（web/src/excalidraw/files.ts の referencedFileIds）の 2 箇所にある。フロントは参照している画像のうちサーバーがまだ持っていないものを送り、サーバーは参照していない画像を消す（ADR 0074）。片方だけ規則を変えると、送らなかった画像が欠けるか、送った画像が弾かれる。判定対象をここに置いて両方から読ませる。",
+  "cases": [
+    {
+      "name": "画像の要素は fileId の画像を参照する",
+      "fileIds": ["file-1"],
+      "element": {
+        "id": "img-1",
+        "type": "image",
+        "fileId": "file-1"
+      }
+    },
+    {
+      "name": "削除済みの要素は参照しない。保存で画像ごと消える",
+      "fileIds": [],
+      "element": {
+        "id": "img-2",
+        "type": "image",
+        "fileId": "file-2",
+        "isDeleted": true
+      }
+    },
+    {
+      "name": "fileId が null の画像は参照しない。貼っている途中の要素",
+      "fileIds": [],
+      "element": {
+        "id": "img-3",
+        "type": "image",
+        "fileId": null
+      }
+    },
+    {
+      "name": "fileId が空文字なら参照しない",
+      "fileIds": [],
+      "element": {
+        "id": "img-4",
+        "type": "image",
+        "fileId": ""
+      }
+    },
+    {
+      "name": "fileId を持たない要素は参照しない",
+      "fileIds": [],
+      "element": {
+        "id": "rect-1",
+        "type": "rectangle"
+      }
+    },
+    {
+      "name": "種類は見ない。fileId を持てば画像以外でも参照する",
+      "fileIds": ["file-5"],
+      "element": {
+        "id": "embed-1",
+        "type": "embeddable",
+        "fileId": "file-5"
+      }
+    }
+  ]
+}
