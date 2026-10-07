@@ -2,12 +2,13 @@ import "@excalidraw/excalidraw/index.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, authApi, boardsApi, capabilitiesApi } from "../api/boards";
+import { authApi, boardsApi, capabilitiesApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
 import type { BoardDetail, BoardTarget, Capabilities } from "../api/types";
 import { LoginPage } from "../auth/LoginPage";
 import { useSession } from "../auth/useSession";
-import { BoardListPage, type BoardList } from "../boards/BoardListPage";
+import { BoardListPage } from "../boards/BoardListPage";
+import { useBoardList } from "../boards/useBoardList";
 import { BoardPage } from "../board/BoardPage";
 import { createGenerations } from "../board/generation";
 import { RepositoryPicker } from "../board/target/RepositoryPicker";
@@ -28,9 +29,6 @@ import { Notifications } from "../notification/Notifications";
 import type { NotifyOptions } from "../notification/types";
 import { useTheme } from "./theme";
 
-/** ボード一覧の取得失敗の通知。続けて失敗しても 1 件に畳み、読めたら下げる。 */
-const BOARD_LIST_FAILED = "board-list-failed";
-
 /**
  * ボードを開く要求の世代のキー。
  *
@@ -38,14 +36,6 @@ const BOARD_LIST_FAILED = "board-list-failed";
  * 「世代で守る」の実装をリポジトリに 2 つ持たないため。
  */
 const OPENING = "board";
-
-/**
- * 一覧を読み込む要求の世代のキー（`.claude/rules/async-ui.md`）。
- *
- * 一覧へ戻るたびに読み直す（#200）ので、改名や削除の引き直しと並走しうる。
- * 古い応答が新しい一覧を上書きすると、件数が巻き戻る。
- */
-const LISTING = "list";
 
 /** 履歴の積み方。押した結果として戻れるべきものだけを積む。 */
 type HistoryMode = "push" | "replace";
@@ -71,8 +61,6 @@ function canOpenTargetPicker(board: BoardDetail): boolean {
 }
 
 export function App() {
-  // ボードの一覧。**null はまだ読み込んでいない。** 0 件（空の配列）と分ける。
-  const [boards, setBoards] = useState<BoardList | null>(null);
   const [current, setCurrent] = useState<BoardDetail | null>(null);
   // 画面全体に出す失敗は通知へ（ADR 0058）。1 本の state に持つと、後から
   // 来た失敗が前の失敗を黙って消していた。
@@ -109,6 +97,13 @@ export function App() {
     reread: rereadSession,
     replace: replaceSession,
   } = useSession(showFailure);
+  // ボードの一覧（`useBoardList`）。
+  const {
+    boards,
+    reload,
+    remove: removeBoard,
+    clear: clearBoards,
+  } = useBoardList({ showFailure, dismissKey, onLoginRequired: rereadSession });
   // いま使える機能。**null は「まだ確かめていない」。**
   //
   // LLM や GitHub を設定しなくても etoki は起動する（ADR 0008）。設定していない
@@ -142,57 +137,14 @@ export function App() {
   //
   // 初期化関数で 1 度だけ作る（`BoardPage` の世代と同じ形）。
   const [openings] = useState(createGenerations);
-  // 一覧を読み込む要求の世代（`LISTING`）。開く要求とは別に持つ。ボードを開いた
-  // ときに一覧の読み込みまで捨てる理由は無い。
-  const [listings] = useState(createGenerations);
   // 配色。**持つのはここだけ**で、キャンバスのメニューで切り替えても BoardPage
   // から戻ってくる（ADR 0055）。ログインや作成先の選択の画面にも効かせるため、
   // ボードより上に置く。
   const [theme, setTheme] = useTheme();
 
-  // 通知の「再読み込み」から呼ぶ。通知は失敗した時点で作られるので、押された
-  // 時点の reload を呼ぶよう ref を介す（reload 自身の中からは自分を指せない）。
-  const reloadRef = useRef<() => Promise<void>>(async () => {});
-  const reload = useCallback(async () => {
-    const generation = listings.start(LISTING);
-    try {
-      const entries = await boardsApi.list();
-      // 追い越されていたら捨てる。あとから始めた読み込みのほうが新しい。
-      if (!listings.isCurrent(LISTING, generation)) return;
-      setBoards({ entries, fetchedAt: new Date() });
-      // 前に読めなかったことの通知は、もう当てはまらない。
-      dismissKey(BOARD_LIST_FAILED);
-    } catch (e) {
-      // 追い越された読み込みの失敗は出さない。新しいほうが答えを持っている。
-      if (!listings.isCurrent(LISTING, generation)) return;
-      // 使っている最中の失効はここで初めて分かる。エラーだけ出すと、画面は
-      // ログイン済みのまま何も操作できず、リロードするまで戻れない。
-      // 状態を読み直せばログイン画面に落ちる。
-      if (e instanceof ApiError && e.code === "login_required") {
-        // 読み直しの失敗は `useSession` が自分で倒して知らせる。ここで投げると、
-        // 呼び出し側は void reload() なので誰も受けず、画面はログイン済みの
-        // ままボード一覧だけが空という、戻れない状態で止まる。
-        await rereadSession();
-        return;
-      }
-      // その場から読み直せるようにする。一覧が空のまま残ると、リロード以外に
-      // 戻る手が画面に無い。
-      showFailure(describeFailure("ボード一覧を取得できませんでした", e), {
-        key: BOARD_LIST_FAILED,
-        action: { label: "再読み込み", run: () => void reloadRef.current() },
-      });
-    }
-  }, [dismissKey, listings, rereadSession, showFailure]);
-  useEffect(() => {
-    reloadRef.current = reload;
-  }, [reload]);
-
   useEffect(() => {
     if (!signedIn) return;
-    // 一覧は開いた時点で要る。読みにいくのは await の後で state を置く非同期
-    // 関数なので描画の連鎖は起きないが、規則が見ているのは effect から
-    // setState を含む関数を呼ぶこと自体なので、ここは外す。
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // 一覧は開いた時点で要る。
     void reload();
 
     void (async () => {
@@ -293,14 +245,14 @@ export function App() {
     // 捨ててよいと言われたので、通信を待たずにここで外す。待ってから外すと、
     // 待っているあいだの描き足しを確認なしで捨てることになる。
     setCurrent(null);
-    setBoards(null);
+    // 一覧も捨てる。走っている読み込みも一緒に無効になる（`useBoardList` の
+    // `clear`）。
+    clearBoards();
     // 走っている取得を無効にする。**対象が変わるイベントは関連する世代を
     // 全部無効にする**（`.claude/rules/async-ui.md`）。React state を消しても
     // 進行中のリクエストは止まらないので、遅れて着いた応答がログイン画面の
-    // 裏でボードを開き直す。一覧も同じで、遅れて着いた応答が次にログインした
-    // 人の画面に前の人の一覧を出す。
+    // 裏でボードを開き直す。
     openings.invalidateAll();
-    listings.invalidateAll();
     // ログイン画面に残るのは URL だけ。**積まずに置き換える。** 積むと
     // 「戻る」でログアウト前の URL に戻れてしまい、画面と食い違う。
     showLocation(NO_BOARD, "replace");
@@ -316,8 +268,8 @@ export function App() {
       await reload();
     }
   }, [
+    clearBoards,
     confirmDiscard,
-    listings,
     openings,
     reload,
     replaceSession,
@@ -472,10 +424,7 @@ export function App() {
    */
   const handleDeleted = useCallback(
     (id: string) => {
-      setBoards(
-        (listed) =>
-          listed && { ...listed, entries: listed.entries.filter((b) => b.id !== id) },
-      );
+      removeBoard(id);
       setCurrent(null);
       // 走っている取得を無効にする（ログアウトと同じ理由）。
       openings.invalidateAll();
@@ -484,7 +433,7 @@ export function App() {
       showLocation(NO_BOARD, "replace");
       void reload();
     },
-    [openings, reload, showLocation],
+    [openings, reload, removeBoard, showLocation],
   );
 
   /** 既存ボードの作成先を選び直す。最初の作成より前だけ通る（ADR 0014）。 */
@@ -520,7 +469,7 @@ export function App() {
 
     // 読みにいくのは await の後で state を置く非同期関数なので描画の連鎖は
     // 起きないが、規則が見ているのは effect から setState を含む関数を呼ぶこと
-    // 自体なので、ここは外す（`reload` と同じ）。
+    // 自体なので、ここは外す（`useSession` の起動時の読み込みと同じ）。
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void open(initial.boardId, { mode: "replace", picking: initial.picking });
   }, [open, showLocation, signedIn]);
