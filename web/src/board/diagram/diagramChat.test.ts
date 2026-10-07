@@ -90,7 +90,7 @@ describe("種類を変える", () => {
     expect(next.draft).toBeNull();
   });
 
-  // **同じものを返すことが契約。** `BoardPage.handleChangeKind` は返り値が
+  // **同じものを返すことが契約。** `useDiagramDraft` の `changeKind` は返り値が
   // 変わったかどうかで「会話を捨てたか」を決め、捨てたときだけ走っている生成を
   // 無効にする。新しいオブジェクトを返す形にすると、捨てていないのに世代が
   // 進み、`pending` を null にする経路が消えてパネルが「生成中…」で固まる。

@@ -7,25 +7,20 @@ import {
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { boardsApi, githubApi } from "../api/boards";
+import { boardsApi } from "../api/boards";
 import {
   canvasMermaidPasteFailure,
   describeFailure,
-  diagramNotPlaceableFailure,
-  mermaidPasteFailure,
   sceneUnreadableFailure,
-  targetProjectMissingFailure,
   type Failure,
 } from "../api/errorMessage";
 import type {
   AnnotationStatus,
-  BoardDeletion,
   BoardDetail,
   Capabilities,
   DetachedAnnotation,
   DiagramKind,
   Granularity,
-  Interpretation,
   ProjectAccess,
 } from "../api/types";
 import { unavailableReason } from "../app/capability";
@@ -48,13 +43,9 @@ import {
 } from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
 import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
-import { exportAnnotationImage } from "../excalidraw/image";
 import { formatSceneSize } from "../excalidraw/size";
-import { draftOrigin, mermaidToElements, moveDraft } from "../excalidraw/mermaid";
 import { createTable, tableCenter } from "../excalidraw/table";
-import { pasteToElements } from "../excalidraw/mermaidPaste";
 import { ErrorBoundary } from "../app/ErrorBoundary";
-import { log } from "../app/logger";
 import { useNotify } from "../notification/NotificationProvider";
 import type { NotifyOptions } from "../notification/types";
 import type { Theme } from "../app/theme";
@@ -69,26 +60,8 @@ import {
   AnnotationPanel,
 } from "./annotations/AnnotationPanel";
 import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
-import {
-  beginTurn,
-  changeKind,
-  completeTurn,
-  conversionRetryPrompt,
-  failTurn,
-  historyOf,
-  startChat,
-  type DiagramChat,
-} from "./diagram/diagramChat";
-import { useExclusion, useReentryGuard } from "./exclusion";
-import { createGenerations } from "./generation";
-import {
-  addInterpretation,
-  failInterpretation,
-  recordCreated,
-  selectInterpretation,
-  startInterpretation,
-  type InterpretationState,
-} from "./annotations/interpretationHistory";
+import { useExclusion } from "./exclusion";
+import { useInterpretations } from "./annotations/useInterpretations";
 import { MemberPanel } from "./members/MemberPanel";
 import {
   backToListIcon,
@@ -101,25 +74,20 @@ import {
   tableIcon,
 } from "./menuIcons";
 import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
-import { MermaidPastePanel, type PasteOutcome } from "./diagram/MermaidPastePanel";
+import { MermaidPastePanel } from "./diagram/MermaidPastePanel";
+import { useDiagramDraft } from "./diagram/useDiagramDraft";
 import { projectLabel } from "../boards/grouping";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
-import type { CreationState, RunHistoryState } from "./annotations/panelShared";
+import { useCreation } from "./annotations/useCreation";
+import { useRunHistories } from "./annotations/useRunHistories";
 import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
 import { projectLink } from "./target/projectLink";
 import { canEditBoard, isOwner, ROLE_LABELS } from "./members/roles";
+import { useBoardDeletion, useRename, useTargetRefresh } from "./useBoardManagement";
 import { useBoardTransfer } from "./useBoardTransfer";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
-
-/**
- * 図のドラフト生成の世代キー。
- *
- * 会話は 1 つしか持たないので 1 本でよい。解釈が注釈ごとに採番するのとは
- * 違って、区別する相手がいない。
- */
-const DIAGRAM_KEY = "diagram";
 
 /**
  * ライブラリのメニューから閉じるもの（ADR 0045）。
@@ -148,17 +116,6 @@ const UI_OPTIONS = {
     toggleTheme: true,
   },
 } as const;
-
-/**
- * 削除の確認がいまどこにいるか（ADR 0042）。
- *
- * **`losing` を持たない状態と持つ状態を型で分ける。** 件数が無いまま確認を
- * 出せる形にすると、何を失うのかを見せずに押させる画面が書ける。
- */
-type DeletionState =
-  | { status: "loading" }
-  | { status: "confirming"; losing: BoardDeletion }
-  | { status: "deleting"; losing: BoardDeletion };
 
 /**
  * 開いたときに effect から出る失敗の通知。
@@ -331,18 +288,15 @@ export function BoardPage({
   // `handleChange` は `scheduleMeasure` を依存に置くので、束で受けると
   // バイト数が変わるたびに `onChange` ごと差し替わる。
   const { bytes: sceneBytes, schedule: scheduleMeasure } = useSceneSize(api);
-  const [interpretations, setInterpretations] = useState<
-    Record<string, InterpretationState>
-  >({});
-  const [creations, setCreations] = useState<Record<string, CreationState>>({});
-  // 実行中の解釈を無効にするための世代。useState の初期化関数で 1 度だけ作る。
-  const [generations] = useState(createGenerations);
-  // 作成は解釈とは別の世代で管理する。共有すると、片方の実行がもう片方の
-  // 応答まで無効にしてしまう。
-  const [creationGenerations] = useState(createGenerations);
-  // 履歴の読み込みも別の世代で持つ。作成すると履歴は 1 件増えるので、走って
-  // いる読み込みは古くなる。
-  const [runGenerations] = useState(createGenerations);
+  // 引いた解釈（`useInterpretations`）。束のまま持たない理由は上の `useSceneSize` と
+  // 同じで、`useCreation` と `discardAfterSave` が中の関数を依存に置く。
+  const {
+    states: interpretations,
+    interpret,
+    select: showInterpretation,
+    recordCreated,
+    discardAll: discardInterpretations,
+  } = useInterpretations({ api, boardId: board.id, annotations });
   // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
   const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
   // 右のパネルを畳んでいるか（#202）。端末ごとに覚えた値で始める。
@@ -353,12 +307,6 @@ export function BoardPage({
   }, []);
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
-  // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
-  // 持つ。** 置けたときに消すのはここ（`pasteMermaid`）で、パネルは落ちたときに
-  // 境界で作り直される（ADR 0027）。そちらで持つと、構文エラーを直している
-  // 途中の入力が消える。ボードを切り替えれば BoardPage ごと作り直されるので
-  // 残らない。
-  const [pasteText, setPasteText] = useState("");
   // キャンバスの上に開いている注釈の詳細（`AnnotationDetail`）。null なら閉じている。
   const [detailId, setDetailId] = useState<string | null>(null);
   // 詳細を開く操作の回数。開いたままの注釈を開き直しても焦点を移すために、
@@ -372,111 +320,38 @@ export function BoardPage({
   // **ID ではなく回数で持つ。** 同じ注釈が戻ってまた消えたとき、ID だと値が
   // 変わらず effect が走らない。
   const [detailVanished, setDetailVanished] = useState(0);
-  // 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。ボードを
-  // 切り替えると BoardPage ごと作り直される（App の key）ので、持ち越されない。
-  const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
-  // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
-  // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
-  const [diagramGenerations] = useState(createGenerations);
-  // 置いている最中か。**走っているあいだの二重押しは弾く**（`loadingRuns` と
-  // 同じ形）。**排他の表とは別物**で、止めるのは同じ操作の連打だけ。理由と
-  // 仕組みは `exclusion.ts` の `useReentryGuard`。**図のドラフトと貼り付けで
-  // 1 つにする。** どちらも同じ `draftOrigin` を読むので、分けると両方が同じ
-  // 場所に置かれうる。
-  const placing = useReentryGuard();
   // 作成先の Project に書けるかどうか。確かめるまでは unknown。
   //
   // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
   // あるため（ADR 0017）。
   const [projectAccess, setProjectAccess] = useState<ProjectAccess>("unknown");
-  // 作成先の表示名を取り直している最中かどうか。
-  const [refreshingTarget, setRefreshingTarget] = useState(false);
-  // 名前を編集中なら、その下書き。null なら編集していない。
-  //
-  // **開いているあいだだけ入力を出す。** 常に入力欄にすると、見出しとして
-  // 読むところが編集欄になり、押し間違いで名前が変わる。
-  const [nameDraft, setNameDraft] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  // 削除の確認。null なら押されていない（ADR 0042）。
-  //
-  // **失われるものを引き終わるまで確認を出さない。** 件数を伏せたまま
-  // 「削除しますか」と訊くと、何を失うのかを知らないまま押させることになる。
-  const [deletion, setDeletion] = useState<DeletionState | null>(null);
-  // 注釈 ID をキーにした実行履歴。開いていない注釈は入っていない。
-  const [runHistories, setRunHistories] = useState<Record<string, RunHistoryState>>({});
-
-  /**
-   * 名前を変える。
-   *
-   * 画面の見出しをその場で書き換えるだけの操作なので、キャンバスは外れない。
-   * 空白だけの名前はサーバーが弾くが、押させないほうが早いのでここでも止める
-   * （**判定を持つのではなく、押せない理由を見せる側**）。
-   */
-  const rename = useCallback(async () => {
-    if (nameDraft === null) return;
-
-    const next = nameDraft.trim();
-    if (next === "" || next === board.name) {
-      setNameDraft(null);
-      return;
-    }
-
-    setRenaming(true);
-    try {
-      onRenamed(await boardsApi.rename(board.id, next));
-      setNameDraft(null);
-    } catch (e) {
-      // 編集中の下書きは残す。閉じると、入力し直しからやり直しになる。
-      onError(describeFailure("名前を変更できませんでした", e));
-    } finally {
-      setRenaming(false);
-    }
-  }, [board.id, board.name, nameDraft, onError, onRenamed]);
-
-  /**
-   * 削除で失われるものを引き、確認を出す。
-   *
-   * **押されたときだけ引く。** 開いたときに数えると、削除するまで要らない
-   * 畳み込みをボードを開くたびに引くことになる（中核思想 3、ADR 0037 の
-   * 取り直しと同じ形）。
-   *
-   * 世代は持たない。ボードを切り替えると BoardPage ごと作り直される
-   * （App が `key={current.id}` を渡している）ので、遅れて届いた応答が別の
-   * ボードの確認として出ることはない。
-   */
-  const askDelete = useCallback(async () => {
-    setDeletion({ status: "loading" });
-    try {
-      setDeletion({ status: "confirming", losing: await boardsApi.deletion(board.id) });
-    } catch (e) {
-      // 確認を出さずに閉じる。件数を知らないまま「削除しますか」と訊くと、
-      // 見せてから選ばせるという約束（ADR 0042）が守れない。
-      setDeletion(null);
-      onError(describeFailure("削除で失われるものを確かめられませんでした", e));
-    }
-  }, [board.id, onError]);
-
-  /**
-   * ボードを消す。**取り消せない。**
-   *
-   * GitHub に作った draft issue は消えない。消えるのは etoki 側の記録の
-   * ほうで、残った draft issue の出どころが辿れなくなる（ADR 0042）。
-   */
-  const deleteBoard = useCallback(async () => {
-    if (deletion?.status !== "confirming") return;
-    const losing = deletion.losing;
-
-    setDeletion({ status: "deleting", losing });
-    try {
-      await boardsApi.delete(board.id);
-      onDeleted(board.id);
-    } catch (e) {
-      // 確認は開いたまま戻す。閉じると、押し直すのに引き直しからになる
-      // （改名が下書きを残すのと同じ）。
-      setDeletion({ status: "confirming", losing });
-      onError(describeFailure("ボードを削除できませんでした", e));
-    }
-  }, [board.id, deletion, onDeleted, onError]);
+  // ボードそのものの管理（`useBoardManagement`）。改名・削除・作成先の名前の
+  // 取り直しは互いに関わらないので、フックも分けてある。
+  const {
+    draft: nameDraft,
+    setDraft: setNameDraft,
+    renaming,
+    rename,
+  } = useRename({ board, onRenamed, onError });
+  const {
+    state: deletion,
+    ask: askDelete,
+    confirm: deleteBoard,
+    cancel: cancelDelete,
+  } = useBoardDeletion({ boardId: board.id, onDeleted, onError });
+  const { refreshing: refreshingTarget, refresh: refreshTargetDisplay } =
+    useTargetRefresh({
+      board,
+      onTargetRefreshed,
+      onError,
+    });
+  // 注釈ごとの実行履歴（`useRunHistories`）。**束のまま持たない。** `useCreation` は
+  // `discardRuns` を依存に置くので、束で受けると履歴を引くたびに作り直される。
+  const {
+    states: runHistories,
+    load: loadRuns,
+    discard: discardRuns,
+  } = useRunHistories(board.id);
 
   /**
    * 確認が出たら、そこへフォーカスを移す。
@@ -488,96 +363,6 @@ export function BoardPage({
   const focusDeleteConfirm = useCallback((node: HTMLElement | null) => {
     node?.focus();
   }, []);
-
-  /**
-   * その注釈の実行履歴を引く。
-   *
-   * **押されたときだけ引く。** 開いただけで全注釈ぶん引くと、注釈の数だけ
-   * 問い合わせが増える（中核思想 3、作成先の名前の取り直しと同じ形）。
-   *
-   * 走っているあいだの二重押しは注釈ごとに弾く（`exclusion.ts`）。
-   */
-  const loadingRuns = useReentryGuard();
-
-  const loadRuns = useCallback(
-    async (annotationId: string) => {
-      if (!loadingRuns.enter(annotationId)) return;
-
-      // 走っているあいだに作成が終わると、この応答は 1 件足りない履歴になる。
-      // 世代で照合して捨てる（`.claude/rules/async-ui.md`）。
-      const generation = runGenerations.start(annotationId);
-
-      setRunHistories((prev) => ({ ...prev, [annotationId]: { status: "loading" } }));
-      try {
-        const runs = await boardsApi.runs(board.id, annotationId);
-        if (!runGenerations.isCurrent(annotationId, generation)) return;
-        setRunHistories((prev) => ({
-          ...prev,
-          [annotationId]: { status: "done", runs },
-        }));
-      } catch (e) {
-        if (!runGenerations.isCurrent(annotationId, generation)) return;
-        // パネル内に残す。どの注釈の履歴で失敗したかが情報の一部なので、
-        // 画面全体のエラー表示には流さない（解釈の失敗と同じ扱い）。
-        setRunHistories((prev) => ({
-          ...prev,
-          [annotationId]: {
-            status: "error",
-            failure: describeFailure("履歴を読み込めませんでした", e),
-          },
-        }));
-      } finally {
-        loadingRuns.leave(annotationId);
-      }
-    },
-    [board.id, loadingRuns, runGenerations],
-  );
-
-  /**
-   * 作成先の表示名を GitHub から取り直す。
-   *
-   * **押されたときだけ引く。** 開いただけで取りにいくと、ボードを開くたびに
-   * GitHub を叩くうえ、名前が変わったことに気づく機会が消える（中核思想 3、
-   * ADR 0037）。作成先そのものは固定されたままで、送るのは表示用の 3 つだけ。
-   */
-  const refreshTargetDisplay = useCallback(async () => {
-    setRefreshingTarget(true);
-    try {
-      const projects = await githubApi.projects(
-        board.repositoryOwner,
-        board.repositoryName,
-      );
-      const project = projects.find((p) => p.id === board.projectId);
-      if (!project) {
-        // GitHub 側から消えた（あるいは見えなくなった）。作成先は固定なので
-        // 選び直しでは直せない。分かったことをそのまま出す。
-        onError(targetProjectMissingFailure());
-        return;
-      }
-
-      // 番号も名前も URL も、この画面が GitHub から受け取ったものをそのまま
-      // 送る。組み立てない（ADR 0025）。
-      onTargetRefreshed(
-        await boardsApi.refreshTargetDisplay(board.id, {
-          projectId: board.projectId,
-          projectNumber: project.number,
-          projectTitle: project.title,
-          projectUrl: project.url,
-        }),
-      );
-    } catch (e) {
-      onError(describeFailure("作成先の名前を取り直せませんでした", e));
-    } finally {
-      setRefreshingTarget(false);
-    }
-  }, [
-    board.id,
-    board.projectId,
-    board.repositoryName,
-    board.repositoryOwner,
-    onError,
-    onTargetRefreshed,
-  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -643,7 +428,12 @@ export function BoardPage({
     }
   }, [board.id, dismissHere, onError]);
 
+  // 開いたら注釈の状態を引く。**`set-state-in-effect` の対象外。** state を置くのは
+  // 応答が届いてから（`await` の後）で、effect の本体からは置かない。BoardPage が
+  // 大きかったうちは解析が諦めていて出ていなかった（`web/CLAUDE.md` の「関心を
+  // フックに切り出すとき」）。
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshAnnotations();
   }, [refreshAnnotations]);
 
@@ -772,165 +562,16 @@ export function BoardPage({
     [api],
   );
 
-  /**
-   * プロンプトから図のドラフトを生成する。
-   *
-   * **キャンバスには何も置かない。** 置くのは `placeDraft` で、そこを人が
-   * 押すまでキャンバスは変わらない（#58 の原則、中核思想 3）。
-   *
-   * **未保存でも呼ぶ。** 保存済みシーンを読まないので、解釈のような
-   * 「保存してから」の制約が要らない（ADR 0041）。
-   */
-  const generateDiagram = useCallback(
-    async (prompt: string, internal = false): Promise<boolean> => {
-      const generation = diagramGenerations.start(DIAGRAM_KEY);
-      // 送るのはいまの会話。**成立した往復だけがここに積まれている**ので、
-      // 失敗した指示を「返した図」つきで送ることにはならない。
-      const { kind } = chat;
-      const history = historyOf(chat);
-      setChat((prev) => beginTurn(prev, prompt, internal));
-
-      try {
-        const draft = await boardsApi.generateDiagram(board.id, kind, prompt, history);
-        // 遅れて届いた応答を今の会話に混ぜない。種類を変えると会話ごと
-        // 捨てるので、そのあとに古い図が積まれると土台が食い違う。
-        if (!diagramGenerations.isCurrent(DIAGRAM_KEY, generation)) return false;
-        setChat((prev) => completeTurn(prev, draft));
-        return true;
-      } catch (e) {
-        if (!diagramGenerations.isCurrent(DIAGRAM_KEY, generation)) return false;
-        // **パネルの中に出す。** 会話の続きで直せる失敗なので、画面上部の
-        // 通知に出すと、直す場所と理由が離れる。
-        setChat((prev) => failTurn(prev, describeFailure("生成できませんでした", e)));
-        return false;
-      }
-    },
-    [board.id, chat, diagramGenerations],
-  );
-
-  /**
-   * 図の種類を変える。**捨てたときだけ、走っている生成も無効にする。**
-   *
-   * 種類を変えると会話ごと捨てる（`changeKind`）ので、あとから古い図が
-   * 積まれると、いまの種類の会話に前の記法の図が土台として載る。パネルは
-   * 生成中の選択を止めているが、**止めているのが UI だけだと、そこを外した
-   * ときに黙って壊れる**（`.claude/rules/async-ui.md`）。
-   *
-   * **捨てていないのに世代を進めない。** 同じ種類なら `changeKind` は会話を
-   * そのまま返すので `pending` が残る。そこで世代だけ進めると、走っている
-   * 生成の応答が捨てられて `pending` を null にする経路が消え、パネルが
-   * 「生成中…」のまま戻らなくなる。**捨てたかどうかは `changeKind` の
-   * 返り値で決める。** 同じ条件をここにも書くと判定が 2 箇所になる。
-   */
-  const handleChangeKind = useCallback(
-    (kind: DiagramKind) => {
-      const next = changeKind(chat, kind);
-      if (next === chat) return;
-
-      diagramGenerations.start(DIAGRAM_KEY);
-      setChat(next);
-    },
-    [chat, diagramGenerations],
-  );
-
-  /**
-   * 変換した要素をキャンバスに置く。図のドラフトと貼り付けで共有する。
-   *
-   * **既存の要素には一切触らない。追加するだけ**（#58 の原則）。置き場所は
-   * 既存の絵の右外で、重ねない（ADR 0040）。**保存はしない。**
-   */
-  const placeElements = useCallback(
-    (elements: readonly SceneElement[]) => {
-      if (!api) return;
-      const existing = currentElements();
-      const placed = moveDraft(elements, draftOrigin(existing));
-      updateElements([...existing, ...placed]);
-
-      // 置いた先へ寄せる。既存の絵の外に置くので、寄せないと押したのに何も
-      // 起きていないように見える（ADR 0040）。
-      api.scrollToContent(placed as never, { fitToContent: true, animate: true });
-    },
-    [api, currentElements, updateElements],
-  );
-
-  /**
-   * いまのドラフトをキャンバスに置く。
-   *
-   * **既存の要素には一切触らない。追加するだけ**（#58 の原則）。置き場所は
-   * 既存の絵の右外で、重ねない（ADR 0040）。**保存はしない。** 確定させるのは
-   * 人間の保存操作だけ。
-   *
-   * 変換に失敗したら、会話の次の 1 往復として投げ直す。mermaid として読める
-   * かではなく Excalidraw の要素として置けるかを知っているのは変換器だけ
-   * なので、投げ直せるのはここしかない（ADR 0041）。
-   */
-  const placeDraft = useCallback(async () => {
-    // 変換は非同期。**押した時点で弾かないと、2 回目が同じ `draftOrigin` を
-    // 得て、同じ図が同じ場所に重なる。** 取り消しで戻すしかなくなる。
-    if (!api || chat.draft === null || !placing.enter()) return;
-
-    try {
-      const converted = await mermaidToElements(chat.draft.mermaid);
-      if (!converted.ok) {
-        if (converted.reason === "syntax") {
-          // 直せる失敗。会話の次の 1 往復にして投げ直す。
-          // **利用者が打った指示ではない**ので、そう印を付けて積む。画面には
-          // 固定文で出る（`turnLabel`）。
-          void generateDiagram(conversionRetryPrompt(converted.detail), true);
-          return;
-        }
-        // 置ける形にならない種類だった。投げ直しても同じものが返るので、
-        // 種類を変えてもらう（ADR 0040）。
-        setChat((prev) => failTurn(prev, diagramNotPlaceableFailure()));
-        return;
-      }
-
-      placeElements(converted.elements);
-    } finally {
-      placing.leave();
-    }
-  }, [api, chat.draft, generateDiagram, placeElements, placing]);
-
-  /**
-   * 貼られた mermaid を変換して置く（ADR 0062）。
-   *
-   * 置き方は図のドラフトと同じ（`placeElements`）。違うのは**失敗したときに
-   * 頼み直す相手がいない**ことで、構文エラーも種類違いも、理由を返して貼った
-   * 人に直してもらう。
-   *
-   * **LLM を通さないので `capabilities` を見ない。** 止めると LLM を設定して
-   * いない人が使えなくなる。
-   */
-  const pasteMermaid = useCallback(
-    async (text: string): Promise<PasteOutcome> => {
-      if (!api || !placing.enter()) return { placed: false, failure: null };
-
-      try {
-        const converted = await pasteToElements(text);
-        if (!converted.ok) {
-          // 変換器が返した理由は console にも残す。画面に畳んで出すのは
-          // 構文エラーのときだけ（`mermaidPasteFailure`）。
-          if (converted.reason === "syntax" || converted.reason === "unsupported") {
-            log.warn("貼られた mermaid を置けませんでした", converted.detail);
-          }
-          return {
-            placed: false,
-            failure: mermaidPasteFailure(converted.reason, converted.detail),
-          };
-        }
-
-        placeElements(converted.elements);
-        // 置けたら入力を消す。残すと同じ図を 2 度置きやすい。**送った文字列の
-        // ままのときだけ。** 変換を待つあいだにパネルを閉じて開き直すと入力を
-        // 書き換えられるので、無条件に消すと新しい入力を捨てる。
-        setPasteText((current) => (current === text ? "" : current));
-        return { placed: true };
-      } finally {
-        placing.leave();
-      }
-    },
-    [api, placeElements, placing],
-  );
+  // 図のドラフト（LLM に作らせる・mermaid を貼る・置く）。`useDiagramDraft`。
+  const {
+    chat,
+    generate: generateDiagram,
+    changeKind: handleChangeKind,
+    placeDraft,
+    pasteText,
+    setPasteText,
+    pasteMermaid,
+  } = useDiagramDraft({ api, boardId: board.id, currentElements, updateElements });
 
   /**
    * 表を 1 つ置く（ADR 0069）。
@@ -1021,6 +662,19 @@ export function BoardPage({
     onError,
   });
 
+  // 解釈結果から draft issue を作る（`useCreation`）。
+  const {
+    states: creations,
+    create,
+    discardAll: discardCreations,
+  } = useCreation({
+    boardId: board.id,
+    exclusive,
+    recordCreated,
+    discardRuns,
+    refreshAnnotations,
+  });
+
   /**
    * 保存が済んだら捨てるもの。**一覧はここ 1 箇所にある**（#146）。
    *
@@ -1036,12 +690,10 @@ export function BoardPage({
    * GitHub への同期ではない**（`.claude/rules/async-ui.md`）。
    */
   const discardAfterSave = useCallback(async () => {
-    generations.invalidateAll();
-    creationGenerations.invalidateAll();
-    setInterpretations({});
-    setCreations({});
+    discardInterpretations();
+    discardCreations();
     await refreshAnnotations();
-  }, [creationGenerations, generations, refreshAnnotations]);
+  }, [discardCreations, discardInterpretations, refreshAnnotations]);
 
   const { conflicted, overLimit, save } = useSceneSave({
     api,
@@ -1074,146 +726,6 @@ export function BoardPage({
         dismissKey(key);
     },
     [board.id, dismissKey],
-  );
-
-  /**
-   * 注釈を解釈させる。
-   *
-   * エラーはパネル内に残す。どの注釈で何が起きたか分からなくなるので、
-   * 画面全体のエラー表示には流さない。
-   */
-  const interpret = useCallback(
-    async (annotationId: string) => {
-      // 応答を受け取ったとき、これがまだ最新の要求かを判断できるようにする。
-      // 履歴に積むかどうかもこれで決める。**捨てるべき応答を捨てる責任は
-      // 世代側にあり、履歴は返ってきたものを積むだけ。**
-      const generation = generations.start(annotationId);
-      // 実行したときの粒度を控える。並べて見比べるとき、同じ指定で引き直した
-      // のか指定を変えたのかが読めないと選ぶ理由が無い。判定に使う粒度は
-      // これまでどおり保存済みシーン側（AnnotationStatus）のもの。
-      const granularity =
-        annotations.find((a) => a.id === annotationId)?.granularity ?? "";
-
-      setInterpretations((prev) => ({
-        ...prev,
-        [annotationId]: startInterpretation(prev[annotationId]),
-      }));
-
-      try {
-        // 画像は画面から書き出す。テキストは保存済みシーンから取るので、
-        // 未保存のあいだは押させない（ADR 0018）。ここに来た時点で両者は
-        // 揃っている。
-        const image = api ? await exportAnnotationImage(api, annotationId) : undefined;
-        if (!generations.isCurrent(annotationId, generation)) return;
-
-        const result = await boardsApi.interpret(board.id, annotationId, image);
-        if (!generations.isCurrent(annotationId, generation)) return;
-        setInterpretations((prev) => ({
-          ...prev,
-          [annotationId]: addInterpretation(prev[annotationId], {
-            id: generation,
-            at: new Date().toISOString(),
-            granularity,
-            result,
-          }),
-        }));
-      } catch (e) {
-        if (!generations.isCurrent(annotationId, generation)) return;
-        setInterpretations((prev) => ({
-          ...prev,
-          [annotationId]: failInterpretation(
-            prev[annotationId],
-            describeFailure("解釈できませんでした", e),
-          ),
-        }));
-      }
-    },
-    [annotations, api, board.id, generations],
-  );
-
-  /**
-   * 見る解釈を選び直す。
-   *
-   * 画面の中だけの操作なので、サーバーにも世代にも触らない。実行中の解釈が
-   * 返ってきたら、そちらが選ばれ直す（`addInterpretation`）。引き直した直後に
-   * 前の結果が出ていると、押した操作と画面が食い違うため。
-   */
-  const showInterpretation = useCallback((annotationId: string, runId: number) => {
-    setInterpretations((prev) => {
-      const state = prev[annotationId];
-      if (!state) return prev;
-      return { ...prev, [annotationId]: selectInterpretation(state, runId) };
-    });
-  }, []);
-
-  /**
-   * 解釈結果から draft issue を作る。
-   *
-   * 作成後は状態が created に変わるので、注釈の状態を取り直す。
-   */
-  const create = useCallback(
-    async (
-      annotationId: string,
-      interpretationId: number,
-      interpretation: Interpretation,
-    ) => {
-      // disabled は表示の約束。保存や取り込みの最中、または別の注釈を作成中に
-      // 直接呼ばれても、取り消せない GitHub への作成を並走させない
-      // （表は `exclusion.ts`）。
-      await exclusive.run("creating", async () => {
-        const generation = creationGenerations.start(annotationId);
-        setCreations((prev) => ({ ...prev, [annotationId]: { status: "running" } }));
-
-        try {
-          const run = await boardsApi.createItems(board.id, annotationId, interpretation);
-          // 保存が挟まっていたら、この結果は保存前の解釈に対するもの。表示すると
-          // いまの内容に対して作られたと誤読される。
-          if (!creationGenerations.isCurrent(annotationId, generation)) return;
-          // 作ったものを解釈に結びつける。下書きはこれを見て、作れた項目を
-          // 同じ下書きから新規に作らせない（ADR 0052）。応答を受けた時点で
-          // 入れる。実行中は下書きが止まっているので、ここで外れても押せない。
-          setInterpretations((prev) => {
-            const state = prev[annotationId];
-            if (!state) return prev;
-            return {
-              ...prev,
-              [annotationId]: recordCreated(state, interpretationId, run.items),
-            };
-          });
-          // 履歴は 1 件増えたので、引いてあるものは捨てる。**黙って古いまま
-          // 出さない。** 読み直すかどうかは、これまでどおり押した人が決める。
-          // 走っている読み込みも無効にする。捨てた直後に古い応答が入ると、
-          // 作ったばかりの run が抜けた履歴が残る。
-          runGenerations.start(annotationId);
-          setRunHistories((prev) => {
-            if (!(annotationId in prev)) return prev;
-            const next = { ...prev };
-            delete next[annotationId];
-            return next;
-          });
-          await refreshAnnotations();
-          // **状態を取り直してから done にする。** 先に done にすると、作ったばかりの
-          // item が畳み込みに入る前の隙間で、保存や押し直しと競合する
-          // （.claude/rules/async-ui.md）。取り直しの失敗は refreshAnnotations が
-          // 自分で出すので、ここでは待つだけ。
-          if (!creationGenerations.isCurrent(annotationId, generation)) return;
-          setCreations((prev) => ({
-            ...prev,
-            [annotationId]: { status: "done", run },
-          }));
-        } catch (e) {
-          if (!creationGenerations.isCurrent(annotationId, generation)) return;
-          setCreations((prev) => ({
-            ...prev,
-            [annotationId]: {
-              status: "error",
-              failure: describeFailure("作成できませんでした", e),
-            },
-          }));
-        }
-      });
-    },
-    [board.id, creationGenerations, exclusive, refreshAnnotations, runGenerations],
   );
 
   // 未保存のあいだと、作成の実行中は離脱を確認する（ADR 0021 / 0051）。
@@ -1471,6 +983,7 @@ export function BoardPage({
     [
       board.name,
       nameDraft,
+      setNameDraft,
       renaming,
       rename,
       dirty,
@@ -1738,6 +1251,7 @@ export function BoardPage({
       canEdit,
       board.name,
       board.role,
+      setNameDraft,
       board.targetLocked,
       api,
       creationUnavailable,
@@ -1844,7 +1358,7 @@ export function BoardPage({
             <button
               type="button"
               className="quiet"
-              onClick={() => setDeletion(null)}
+              onClick={cancelDelete}
               disabled={deletion.status === "deleting"}
             >
               やめる
