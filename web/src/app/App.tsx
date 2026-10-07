@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, authApi, boardsApi, capabilitiesApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
-import type { BoardDetail, BoardTarget, Capabilities, SessionStatus } from "../api/types";
+import type { BoardDetail, BoardTarget, Capabilities } from "../api/types";
 import { LoginPage } from "../auth/LoginPage";
+import { useSession } from "../auth/useSession";
 import { BoardListPage, type BoardList } from "../boards/BoardListPage";
 import { BoardPage } from "../board/BoardPage";
 import { createGenerations } from "../board/generation";
@@ -29,13 +30,6 @@ import { useTheme } from "./theme";
 
 /** ボード一覧の取得失敗の通知。続けて失敗しても 1 件に畳み、読めたら下げる。 */
 const BOARD_LIST_FAILED = "board-list-failed";
-/**
- * ログイン状態の取得失敗の通知。
- *
- * 取りにいくのは起動時の effect で、開発時の StrictMode では 2 回走る。key で
- * 畳まないと、同じ失敗が 2 件並ぶ（1 本の state だった頃は上書きで隠れていた）。
- */
-const SESSION_FAILED = "session-failed";
 
 /**
  * ボードを開く要求の世代のキー。
@@ -108,8 +102,13 @@ export function App() {
   // 何から始めるか。**既定は空白**（中核思想 3）。テンプレートは選ばせるもので、
   // 勝手に適用しない。
   const [template, setTemplate] = useState<TemplateChoice>(BLANK_TEMPLATE);
-  // ログイン状態。null は問い合わせ中。
-  const [session, setSession] = useState<SessionStatus | null>(null);
+  // ログイン状態（`useSession`）。session が null のあいだは問い合わせ中。
+  const {
+    session,
+    signedIn,
+    reread: rereadSession,
+    replace: replaceSession,
+  } = useSession(showFailure);
   // いま使える機能。**null は「まだ確かめていない」。**
   //
   // LLM や GitHub を設定しなくても etoki は起動する（ADR 0008）。設定していない
@@ -151,21 +150,6 @@ export function App() {
   // ボードより上に置く。
   const [theme, setTheme] = useTheme();
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        setSession(await authApi.session());
-      } catch (e) {
-        // 状態が分からないなら、ログインを求めない側に倒す。求める側に倒すと、
-        // 認証を設定していない構成が API の一時的な失敗で使えなくなる。
-        showFailure(describeFailure("ログイン状態を取得できませんでした", e), {
-          key: SESSION_FAILED,
-        });
-        setSession({ authRequired: false, authenticated: false });
-      }
-    })();
-  }, [showFailure]);
-
   // 通知の「再読み込み」から呼ぶ。通知は失敗した時点で作られるので、押された
   // 時点の reload を呼ぶよう ref を介す（reload 自身の中からは自分を指せない）。
   const reloadRef = useRef<() => Promise<void>>(async () => {});
@@ -185,18 +169,10 @@ export function App() {
       // ログイン済みのまま何も操作できず、リロードするまで戻れない。
       // 状態を読み直せばログイン画面に落ちる。
       if (e instanceof ApiError && e.code === "login_required") {
-        // 読み直しにも失敗したら、初回と同じ側に倒す。ここで投げると、
+        // 読み直しの失敗は `useSession` が自分で倒して知らせる。ここで投げると、
         // 呼び出し側は void reload() なので誰も受けず、画面はログイン済みの
         // ままボード一覧だけが空という、戻れない状態で止まる。
-        try {
-          setSession(await authApi.session());
-        } catch (sessionError) {
-          showFailure(
-            describeFailure("ログイン状態を取得できませんでした", sessionError),
-            { key: SESSION_FAILED },
-          );
-          setSession({ authRequired: false, authenticated: false });
-        }
+        await rereadSession();
         return;
       }
       // その場から読み直せるようにする。一覧が空のまま残ると、リロード以外に
@@ -206,14 +182,10 @@ export function App() {
         action: { label: "再読み込み", run: () => void reloadRef.current() },
       });
     }
-  }, [dismissKey, listings, showFailure]);
+  }, [dismissKey, listings, rereadSession, showFailure]);
   useEffect(() => {
     reloadRef.current = reload;
   }, [reload]);
-
-  // ログインが要る構成では、済むまで読みにいかない。先に叩くと 401 が
-  // エラー表示に出て、ログイン画面の上に無関係な失敗が重なる。
-  const signedIn = session !== null && (!session.authRequired || session.authenticated);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -336,14 +308,22 @@ export function App() {
     try {
       await authApi.logout();
       // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
-      setSession(await authApi.session());
+      replaceSession(await authApi.session());
     } catch (e) {
       showFailure(describeFailure("ログアウトできませんでした", e));
       // 失敗したらログインしたまま。一覧を空のままにすると、何も操作できない
       // 画面が残る。
       await reload();
     }
-  }, [confirmDiscard, listings, openings, reload, showFailure, showLocation]);
+  }, [
+    confirmDiscard,
+    listings,
+    openings,
+    reload,
+    replaceSession,
+    showFailure,
+    showLocation,
+  ]);
 
   const open = useCallback(
     async (id: string, options: OpenOptions = {}) => {
