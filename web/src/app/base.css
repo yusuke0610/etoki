@@ -1,0 +1,152 @@
+/*
+ * 見た目だけ隠す。読み上げと見出しの移動には残る。タブと同じ名前の見出し
+ * （`SidePanel` の中の各パネル）のように、画面に 2 つ並ぶと重いが構造としては
+ * 要るものに使う。`display: none` にすると読み上げからも消える。
+ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+body {
+  margin: 0;
+  /* 塗らないとブラウザの既定（白）が透けて、ダークでも地が明るいまま残る。 */
+  background: var(--color-bg);
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ログインのときだけ地を沈める。置いてあるカードが 1 枚だと見せるため。 */
+.app-signed-out {
+  background: var(--color-surface-sunken);
+}
+
+.plain-list,
+.annotation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel {
+  padding: var(--space-5);
+}
+
+.panel h3 {
+  font-size: var(--text-md);
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-subtle);
+}
+
+.panel-section {
+  margin-bottom: var(--space-7);
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.badge {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.dirty,
+.stale {
+  color: var(--color-warning);
+  font-size: var(--text-sm);
+}
+
+.error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* 読むべき文（次に何をすればよいか）と、畳んだ手掛かりを縦に積む。
+   min-width: 0 が無いと、長い 1 語の詳細が帯を押し広げる。 */
+.error-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.error-message {
+  margin: 0;
+}
+
+/*
+ * サーバーが返した本文は既定で畳む。`etoki: insufficient role` のような内部
+ * 文言を前に出すと、読むべき文が埋もれる。捨てはしない。GitHub や LLM の
+ * 本文が実際の手掛かりになる経路がある。
+ */
+.error-detail > summary {
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.error-detail > pre {
+  margin: var(--space-2) 0 0;
+  /* pre の既定は等幅。周りと書体が変わると、同じ文が別物に見える。 */
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/*
+  描画に失敗した範囲に出る（ADR 0027）。パネルの中にも、アプリ全体の代わりにも
+  出るので、幅は置かれた場所に合わせる。
+*/
+.error-boundary {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-5);
+  margin: var(--space-5);
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+.error-boundary p {
+  margin: 0 0 var(--space-4);
+}
+.error-boundary .hint {
+  color: var(--color-danger);
+  opacity: 0.8;
+}
+
+/*
+ * 本文中のリンク。ブラウザ既定の青は、この画面のどの色とも揃わない。
+ * 下線は残す。色だけで押せることを示すと、色が読めない環境で手掛かりが消える。
+ */
+.hint a {
+  color: var(--color-link);
+}

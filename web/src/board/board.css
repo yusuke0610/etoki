@@ -1,0 +1,324 @@
+.board {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/*
+ * ボードの画面にヘッダーは置かない（ADR 0064）。etoki のものはキャンバスの
+ * 上に浮かせる。載せる先は Excalidraw の拡張点で（ADR 0065）、ここはその中身の
+ * 形だけを決める。
+ *
+ * 右上（`renderTopRightUI`）。ボード名・未保存・保存。
+ *
+ * **島の見た目はライブラリの変数から引く**（`--island-bg-color` /
+ * `--shadow-island`）。隣に並ぶライブラリの島（ライブラリのボタン）と、地も影も
+ * 揃う。テーマもライブラリが差し替える。
+ */
+.board-status {
+  display: flex;
+  /* 折り返さない。折れると名前と保存が上下に割れ、島がキャンバスを覆う。
+     長い名前のほうを省略する（下の h1）。 */
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3) var(--space-4);
+  max-width: 560px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--island-bg-color);
+  box-shadow: var(--shadow-island);
+  color: var(--color-text);
+}
+
+/* 縮めるのは名前だけ。未保存や保存の文字まで縮めると、1 文字ずつ縦に折れる。 */
+.board-status > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.board-status h1 {
+  flex-shrink: 1;
+  font-size: var(--text-base);
+  margin: 0;
+  max-width: 280px;
+  /* 長い名前は 1 行に収めて省略する。折り返すと島が縦に伸び、キャンバスを覆う。 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 狭い画面では、モバイルのツールバーの行に載る（`MobileMenu` が
+ * `renderTopRightUI` をその行へ足す）。横に並べたままだと、ツールバーと島の
+ * 最小幅の合計が画面を越えて行ごと右へはみ出し、親の `overflow: hidden` に
+ * 切られて保存が画面の外に出る。**島だけを専用の行に下ろす。**
+ * 名前を縮めて省略する規則（上の h1）はそのまま効く。
+ */
+@media (max-width: 600px) {
+  .excalidraw .App-toolbar-container:has(> .board-status) {
+    /* `Stack` は grid で、子を 1 行に並べる（`grid-auto-flow: column`）。行に
+       積み直すと、島が下の行に回る。 */
+    grid-auto-flow: row;
+    justify-items: end;
+  }
+
+  .excalidraw .App-toolbar-container > .board-status {
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+/*
+ * 下（`Footer`）。ロール・作成先・大きさ。**読むだけで、押すものは置かない**
+ * （作成先がリンクのときだけ例外、ADR 0025）。
+ */
+.board-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--island-bg-color);
+  box-shadow: var(--shadow-island);
+}
+
+/*
+ * メニューの中の、押せない理由の文（ADR 0066）。押せる項目と見分けるために
+ * 小さく薄く出す（色は `.hint` が持つ）。
+ *
+ * **頭を項目の名前の頭に揃える**（#204）。項目にはアイコンがあるので、項目の
+ * 縁に揃えると理由だけがアイコンの列にはみ出す。字下げは Excalidraw 0.18.1 の
+ * 項目の寸法から取った（`.excalidraw .dropdown-menu .dropdown-menu-item` と
+ * `.dropdown-menu-item-base`、アイコンは `.dropdown-menu-item svg`）。外側の
+ * 余白 1px・枠 1px・内側の余白 0.5rem、アイコンの枠 1rem、アイコンと名前の
+ * 間 0.625rem。etoki の刻み（`--space-*`）ではなくライブラリの値なので、
+ * 変数にせずここに書く。ずれたら `web/e2e/menuIcons.spec.ts` が落ちる。
+ */
+.menu-note {
+  padding: var(--space-1) calc(1px + 1px + 0.5rem) var(--space-1)
+    calc(1px + 1px + 0.5rem + 1rem + 0.625rem);
+  cursor: default;
+}
+
+.menu-note .hint {
+  display: block;
+  font-size: var(--text-sm);
+}
+
+/*
+ * 取り消せない操作の項目。他の項目と違うと分かれば足りる（`button.danger` と同じ）。
+ *
+ * **`.dropdown-menu` を挟む。** ライブラリは項目の文字色を
+ * `.excalidraw .dropdown-menu .dropdown-menu-item-base` で決めていて、挟まないと
+ * 特異性で負けて赤くならない。
+ */
+.excalidraw .dropdown-menu .dropdown-menu-item.danger {
+  color: var(--color-danger);
+}
+
+.board-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.canvas {
+  flex: 1;
+  min-width: 0;
+  /* 注釈の枠を重ねる基準。枠はこの矩形の左上からの座標で置く。 */
+  position: relative;
+}
+
+/*
+ * ツールバー「その他」の「Mermaid to Excalidraw」を隠す（ADR 0067）。
+ *
+ * ここから貼った mermaid は etoki の守り（受け付ける種類・`secure`・大きさの
+ * 上限・画像を置かない）を通らずに描かれる。Excalidraw 0.18.1 はこの項目を
+ * props で消させない（`aiEnabled` でも残る）。
+ *
+ * **セレクタは脆い。** 項目の `data-testid` は Web 埋め込みと同じ
+ * `toolbar-embeddable` なので使えず、mermaid のアイコンだけが持つ `viewBox` で
+ * 見分けている。上の「Generate」見出しは class を持たない唯一の子で、
+ * `aiEnabled={false}` のもとではこの項目のためだけに残る。ライブラリを上げて
+ * 形が変わると黙って戻るので、`web/e2e/excalidrawMermaid.spec.ts` が
+ * 出ていないことを見ている。
+ *
+ * `:root` を前に付けるのは、この CSS が Excalidraw の CSS より先に読まれるため。
+ */
+:root
+  .excalidraw
+  .App-toolbar__extra-tools-dropdown
+  .dropdown-menu-item:has(svg[viewBox="0 0 512 512"]),
+:root
+  .excalidraw
+  .App-toolbar__extra-tools-dropdown
+  .dropdown-menu-container
+  > div:not([class]) {
+  display: none;
+}
+
+/*
+ * 他の人が先に保存していて、こちらの保存を拒んだ状態（ADR 0020）。
+ *
+ * バッジではなく帯で出す。上書きしていないことと、この後どうすれば
+ * よいかを続けて読ませる必要があり、バッジに収まる長さにならない。
+ */
+.conflict {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  padding: var(--space-4) var(--space-5);
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+/*
+ * 保存済みシーンが保存できる上限を超えている状態（issue #103、ADR 0038）。
+ *
+ * .conflict と同じ「注意の帯」なので見た目も揃える。**失敗ではない。**
+ * 描いたものは残っており、保存だけがこのままでは通らない。
+ */
+.scene-limit-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  padding: var(--space-4) var(--space-5);
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+/*
+  削除の確認（ADR 0042）。ボードの上端に帯で出す。
+
+  **ブラウザの confirm を使わない。** GitHub 側に何件残るのかを見せる場所が
+  無いため。衝突の知らせ（.conflict）と同じ位置に出るが、こちらは押すまで
+  何も起きていない状態なので、色は失敗ではなく注意として扱う。
+*/
+.delete-confirm {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-bottom: 1px solid var(--color-danger-border);
+  padding: var(--space-5);
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+
+/*
+  確認が出たときにフォーカスを受ける枠（`tabIndex={-1}`）。既定の focus ring は
+  枠いっぱいに出て「押せる」ように見えるので、輪郭ではなく差し色で示す。
+*/
+.delete-confirm:focus-visible {
+  outline: none;
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+.delete-confirm h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+}
+
+.delete-confirm p {
+  margin: 0 0 var(--space-4);
+}
+
+.delete-confirm-actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+/*
+ * ボードの文脈を出すバッジ（作成先・ロール・大きさ）は、地も文字も無彩色で
+ * 揃える。**緑にしない。**
+ *
+ * 緑はブランドの色で、注釈の 3 状態のうち「作成済み」もそれを使う。文脈の
+ * バッジまで緑にすると、下の帯の「オーナー」「acme/web」とパネルの
+ * 「作成済み」が同じ色になり、**このパネルの主題（3 状態）がいちばん埋もれる。**
+ * 見分けるための色は、見分けたいものにだけ使う（中核思想 3）。
+ */
+.badge-target {
+  background: var(--color-surface-cool);
+  color: var(--color-text-subtle);
+}
+
+/*
+ * 作成先の Project に書けない（#217）。取り消せない作成ができないことなので
+ * 危険の色で出す。**文字を添える**ので、色だけで伝えてはいない。
+ */
+.badge-denied {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/*
+ * 作成先バッジは飛び先が組めるときだけリンクになる（ADR 0025）。
+ *
+ * 下線は既定のままにせず、ホバーで出す。常時引くと、隣に並ぶ他のバッジと
+ * 形が揃わず、状態を示すバッジと押せるバッジの区別がかえって付きにくい。
+ * 押せることはカーソルとホバーで示す（`.annotation-name` と同じ扱い）。
+ */
+/* 飛べるときだけリンクの色にする。span のまま緑にすると、押せないものが
+   押せるように見える。
+
+   **下の帯の中では `.board-context` を前に付ける。** ライブラリの
+   `.excalidraw a` と特異性が並び、後に読まれるライブラリ側の青が勝つ。ここは
+   axe が色を判定できない場所（`web/e2e/helpers/a11y.ts`）なので、崩れても
+   検査では気づけない。 */
+a.badge-target,
+.board-context a.badge-target {
+  color: var(--color-link);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.badge-target:hover {
+  text-decoration: underline;
+}
+
+/* 自分のロールはボードのヘッダに常に出す。操作して断られる前に、何ができる
+   のかが見えている必要がある（ADR 0017）。 */
+.badge-role {
+  background: var(--color-surface-cool);
+  color: var(--color-text-subtle);
+}
+
+/*
+ * ボード名の変更。**見出しは見出しのまま置き、押したときだけ入力に変える。**
+ * 常に入力欄にすると、読むところが編集欄になり、押し間違いで名前が変わる。
+ * 変える口はメニューの「名前を変更」。
+ */
+.rename-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.rename-form input {
+  font-size: var(--text-base);
+  padding: var(--space-1) var(--space-3);
+}
+
+/*
+ * ボタンに添えるショートカットの表示。**`title` ではなく本文で出す**（ADR 0039）。
+ *
+ * 色と大きさは `.hint` に預ける（両方のクラスを付ける）。押せない理由と同じ
+ * 「本文で出す手掛かり」なので、片方だけ濃さが違う理由が無い。ここが持つのは
+ * 等幅と折り返さないことだけ。
+ */
+.shortcut {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+/*
+ * 保存に送るシーンの大きさ。**上限との比は出さない**（ADR 0018 / 0038）ので、
+ * 減らせという催促には見えないよう、状態を並べる他のバッジと同じ扱いにする。
+ */
+/* 作成先が固定済み（ADR 0014）。文脈のバッジと同じく無彩色で出す。 */
+.badge-locked,
+.badge-size {
+  background: var(--color-surface-cool);
+  color: var(--color-text-subtle);
+}

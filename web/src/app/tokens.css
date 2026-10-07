@@ -1,0 +1,280 @@
+/*
+ * 配色の変数（ADR 0055）。**色はここでだけ決め、各領域の規則は変数を読む。**
+ * 直書きの色が 1 つでも残ると、ダークでそこだけ明るいまま残る。
+ *
+ * 名前は色味ではなく役割で付ける。`.hint` が読むのは「薄い文字」であって
+ * 「灰色」ではなく、ダークでは明るい灰色になる。
+ *
+ * 文字色を変えるときは、どちらのテーマでも AA の 4.5:1 を切らせない
+ * （web/CLAUDE.md の「アクセシビリティ」）。
+ */
+:root {
+  /*
+   * 無彩色は #62 のアートボード「トークンと部品」の値（#203）。地（パネル・島・
+   * カード）と沈んだ地（画面の地・タブの行）の明暗の順は、ライトとダークで
+   * 揃える。**沈んだ地は、どちらのテーマでも地より暗い。**
+   */
+  --color-bg: #fff;
+  --color-text: #1b1b1f;
+  --color-text-muted: #5c5c5c;
+  --color-text-subtle: #555;
+  --color-border: #ebebeb;
+  --color-border-subtle: #ededf0;
+  /*
+   * ボタンと入力欄の枠。**境界（`--color-border`）と分けて持つ。** 境界を
+   * ここまで薄くすると、部品の輪郭が地に溶ける。
+   */
+  --color-control-border: #d6d6d6;
+  --color-surface-muted: #fafafa;
+  --color-surface-sunken: #f2f2f7;
+  --color-surface-cool: #eef1f4;
+  --color-hover: #f5f5f5;
+  --color-neutral-bg: #eee;
+  /*
+   * ブランドの緑。**この画面で緑はこれ 1 つ。** etoki の操作（押すもの・
+   * リンク・注釈の印）と、その結果である「作成済み」を同じ色で指す。近い緑を
+   * 2 つ置くと、状態なのか操作なのかが色では読めなくなる。
+   *
+   * 「変更あり」は琥珀、「未作成」は無彩色で、色相と地の明るさの両方で分かれる。
+   * そのうえでバッジには必ず文字を添える（各領域の `.badge-*`）。
+   *
+   * **ここだけ `--color-` を付けない。** Excalidraw が `--color-brand-hover` と
+   * `--color-brand-active` を自前で使っているので、同じ名前にすると
+   * `.excalidraw` の中と外で別の値になり、下の上書きが自分自身を指して壊れる。
+   */
+  --brand: #0f6446;
+  --brand-hover: #0c5238;
+  --brand-active: #08432d;
+  --brand-bg: #dcf3e8;
+  --brand-bg-subtle: #e6f6ee;
+  --on-brand: #fff;
+  /*
+   * **ライブラリと名前がぶつかる 3 つは、値を `--etoki-*` に持つ。** Excalidraw も
+   * `.excalidraw` に `--color-success` / `--color-warning` / `--color-danger` を
+   * 自前で持っていて（薄い黄色や薄い緑）、キャンバスの中に置いた etoki の部品は
+   * そちらを読む。右上の「未保存」がほぼ読めなくなった。中に置いた部品では
+   * `--etoki-*` から戻している（下の「キャンバスの中の etoki の部品」）。
+   *
+   * **外では今までどおり `--color-*` を読めばよい。** 別名は戻すためだけにある。
+   */
+  --etoki-success: var(--brand);
+  --etoki-warning: #8a5a00;
+  --etoki-danger: #8a1c12;
+  --color-selected-bg: var(--brand-bg-subtle);
+  --color-selected-fg: #0a4a32;
+  --color-link: var(--brand-hover);
+  --color-success: var(--etoki-success);
+  --color-success-bg: var(--brand-bg);
+  --color-warning: var(--etoki-warning);
+  --color-warning-bg: #fdf0d5;
+  --color-danger: var(--etoki-danger);
+  --color-danger-bg: #fdecea;
+  --color-danger-border: #f3c5c0;
+  /*
+   * 注釈の印。Excalidraw の選択色に合わせてある。**選択色のほうも
+   * `--color-selection` で同じ値に差し替える**（下の `:root:root .excalidraw`）。
+   * 片方だけ変えると、合わせた理由がその場で消える（ADR 0065）。
+   *
+   * 透かしだけは `--brand` から導けないので値を書く。**ブランドを
+   * 変えたらここも変える。**
+   */
+  --color-annotation: var(--brand);
+  --color-annotation-bg: rgb(15 100 70 / 8%);
+  --color-on-annotation: var(--on-brand);
+  /* 通知のように地の上へ浮かせる面の影。 */
+  --color-shadow: rgb(0 0 0 / 15%);
+  /* モーダルのダイアログの後ろを覆う色（新しいボード、#200）。 */
+  --color-backdrop: rgb(0 0 0 / 35%);
+  /*
+   * キャンバスの上に浮かせる面（注釈の詳細）の影。**`.excalidraw` の外に置く
+   * ので、ライブラリの `--shadow-island` は読めない。** 地の明るさで効き方が
+   * 変わるので、テーマごとに値を持つ。
+   */
+  --shadow-raised: 0 12px 32px rgb(0 0 0 / 14%), 0 2px 6px rgb(0 0 0 / 8%);
+
+  /*
+   * 余白・文字の大きさ・角丸。**色と違ってテーマでは変わらない**ので、ここで
+   * 1 回だけ決める。
+   *
+   * **段を増やさない。** 直書きしていたころは 11〜20px の文字が 8 段あり、
+   * 16px の見出しと 15px の見出しが並んでいた。近い段は「揃えそこねた」のか
+   * 「意図して分けた」のかが読めないので、段そのものを減らしてある。
+   *
+   * 刻みは 4px。Excalidraw の `--space-factor`（.25rem）と同じにして、拡張点に
+   * 載せた部品とキャンバス側の部品で余白のリズムを揃える（ADR 0065）。
+   */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --text-2xl: 24px;
+
+  /*
+   * 角丸は Excalidraw の 2 段（`--border-radius-md` .375rem /
+   * `--border-radius-lg` .5rem）に合わせる。バッジだけは文字の高さで決まるので
+   * 固定値ではなく丸め切る。
+   */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-pill: 999px;
+
+  /*
+   * ボタンと入力欄の高さ。Excalidraw の部品（36px）に合わせる。指で押す端末
+   * では下の `@media (pointer: coarse)` で広げる。
+   */
+  --control-height: 36px;
+
+  /*
+   * 右のパネルと、畳んだときに残す帯の幅（#202）。**画面全体の通知の位置も
+   * ここから引く**（#216）。パネルの幅だけ変えると、通知がパネルに重なる。
+   */
+  --side-panel-width: 320px;
+  --side-panel-rail-width: 40px;
+
+  /*
+   * 書体。**Excalidraw の UI の並び（`--ui-font`）を写してある。** キャンバスの
+   * メニューの中で、ライブラリの項目と etoki の項目の英数字が同じ字形になる。
+   * Assistant はライブラリが同梱していて、`App.tsx` が読む CSS の `@font-face`
+   * から etoki 自身の配信元で配られる（外へ取りにいかない）。**日本語の字形は
+   * 無い**ので、日本語は後ろの OS の書体で出る。
+   */
+  --font-ui:
+    Assistant, system-ui, BlinkMacSystemFont, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+
+  /* ボタンや入力欄などブラウザが描く部品も、テーマに合わせて描かせる。 */
+  color-scheme: light;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  color: var(--color-text);
+}
+
+/*
+ * ダーク。**変数だけを差し替える。** 規則ごとにダーク用の上書きを書くと、
+ * 規則を足した日にダークだけ抜ける。
+ */
+:root[data-theme="dark"] {
+  /*
+   * 地は Excalidraw のダークの島と同じ色にする。キャンバスの上の島と etoki の面の
+   * 地が揃う。沈んだ地はそれより暗い（ライトと同じ向き）。hover は地より明るい
+   * ほうへ動く。
+   */
+  --color-bg: #232329;
+  --color-text: #e3e3e8;
+  --color-text-muted: #b8b8b8;
+  --color-text-subtle: #c2c2c8;
+  --color-border: #3d3d45;
+  --color-border-subtle: #33333b;
+  --color-control-border: #4a4a53;
+  --color-surface-muted: #1c1c21;
+  --color-surface-sunken: #121212;
+  --color-surface-cool: #2b2b33;
+  --color-hover: #2e2e36;
+  --color-neutral-bg: #34343c;
+  /*
+   * ブランドの緑。**ライトで `var(--brand-*)` を指しているものは、ここを
+   * 差し替えるだけで付いてくる**（`--color-selected-bg` / `--color-link` /
+   * `--color-success` / `--color-annotation`）。
+   * 同じ値をもう一度並べない。並べると、片方だけ直した日に食い違う。
+   *
+   * 濃い側と薄い側はライトと逆になる。地が暗いので、hover は明るいほうへ動く。
+   */
+  --brand: #6fdcac;
+  --brand-hover: #86e2b4;
+  --brand-active: #a3ecc7;
+  --brand-bg: #1e4636;
+  --brand-bg-subtle: #1c3a2e;
+  --on-brand: #06251a;
+  --color-selected-fg: #a3ecc7;
+  --etoki-warning: #ffbe6b;
+  --color-warning-bg: #3b2a12;
+  --etoki-danger: #ff9a90;
+  --color-danger-bg: #3a1a17;
+  --color-danger-border: #6b2c27;
+  /* 透かしだけはブランドから導けないので、ここでも値を書く。 */
+  --color-annotation-bg: rgb(111 220 172 / 10%);
+  /* 暗い地では薄い黒が見えないので濃くする。 */
+  --color-shadow: rgb(0 0 0 / 50%);
+  --color-backdrop: rgb(0 0 0 / 60%);
+  /* 暗い地では薄い影が見えないので、濃くして縁を立てる。 */
+  --shadow-raised: 0 12px 32px rgb(0 0 0 / 55%), 0 2px 6px rgb(0 0 0 / 40%);
+
+  color-scheme: dark;
+}
+
+/* 指で押す端末では、押す部品を広げる（#199）。 */
+@media (pointer: coarse) {
+  :root {
+    --control-height: 44px;
+  }
+}
+
+/*
+ * Excalidraw 自身の配色を etoki のブランドに合わせる（ADR 0065）。
+ *
+ * **`:root:root` を前に置いて、特異性を 2 段上げてある。** このファイルは
+ * ライブラリの CSS より先に読まれる（`main.tsx` が `./index.css` を読み、その
+ * `@import` でこのファイル、そのあと `App.tsx` が
+ * `@excalidraw/excalidraw/index.css`）ので、特異性が同じなら
+ * 後に読まれたライブラリ側が勝つ。ライブラリはライトを `.excalidraw`、ダークを
+ * `.excalidraw.theme--dark` で定義していて、**後者は擬似クラス 1 つぶんでは
+ * 並ぶだけ**（どちらもクラス 2 つぶん）。並ぶと順序で負けるので、**ダークだけ
+ * 紫に戻る。** 2 つ重ねて超えさせる。
+ *
+ * ダークの値をここに書かないのは、読んでいる `--brand-*` がテーマで
+ * 差し替わるため。1 つ書けば両方に効く。
+ *
+ * **`--color-selection` はキャンバスの選択枠。** ライブラリは CSS 変数として
+ * 読んでいるので、ここで差し替わる。注釈の印（`--color-annotation`）と同じ値に
+ * するための片側で、**片方だけ変えると合わせた理由が消える。**
+ *
+ * ライブラリが変数を増やしたり名前を変えたりすると、**色だけが元に戻り、テストは
+ * 緑のまま通る。** 更新で上がってきたときは画面を開いて確かめる（ADR 0035）。
+ */
+:root:root .excalidraw {
+  --color-primary: var(--brand);
+  --color-primary-darker: var(--brand-hover);
+  --color-primary-darkest: var(--brand-active);
+  --color-primary-hover: var(--brand-hover);
+  --color-primary-light: var(--brand-bg);
+  --color-primary-light-darker: var(--brand-bg-subtle);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-active: var(--brand-active);
+  --color-surface-primary-container: var(--brand-bg);
+  --color-on-primary-container: var(--color-selected-fg);
+  --color-selection: var(--color-annotation);
+  /*
+   * この 3 つは `--color-primary` から導かれていないので、別に書かないと
+   * **ここだけ元の色が残る。** スライダーの軌道は透明度の調整に、ロゴの文字は
+   * 空のキャンバスに出る案内（WelcomeScreen）に、リンクの色はライブラリの
+   * `.excalidraw a` に効く（下の帯の作成先のリンクもこれを読む）。
+   */
+  --color-slider-track: var(--brand-bg);
+  --color-logo-text: var(--color-text);
+  --link-color: var(--color-link);
+}
+
+/*
+ * キャンバスの中に置いた etoki の部品（ADR 0065）では、ライブラリと名前が
+ * ぶつかる変数を etoki の値に戻す（`--etoki-*` の説明を参照）。
+ *
+ * **拡張点に部品を足したら、ここにも足す。** 足さないと、その部品だけライブラリの
+ * 薄い色を読む。**axe はこの場所の色を判定できない**ので、検査では気づけない
+ * （`web/e2e/a11y.spec.ts` の「キャンバスの中の etoki の部品」が色を比べている）。
+ */
+.excalidraw :is(.board-status, .board-context, .etoki-menu-item, .menu-note) {
+  --color-success: var(--etoki-success);
+  --color-warning: var(--etoki-warning);
+  --color-danger: var(--etoki-danger);
+}

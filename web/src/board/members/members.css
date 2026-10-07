@@ -1,0 +1,53 @@
+/* メンバーは右のパネルのタブの 1 つ（`SidePanel`）。キャンバスの上に重ねると、
+   ブレスト中の絵が隠れる。 */
+.member-panel {
+  padding: var(--space-5);
+}
+
+.invite-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin: var(--space-4) 0;
+}
+
+/* plain-list は選択肢を全幅のボタンで並べるためのもの。メンバーは 1 行に
+   名前とロールと解除が並ぶので、共有すると名前が潰れる。 */
+.member-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.member-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+}
+
+.member-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 招待する前に見せる相手（ADR 0053）。ID は長いので折り返させる。 */
+.invitee dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-4) 0;
+}
+
+.invitee dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.invitee-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}

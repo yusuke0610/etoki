@@ -1,0 +1,217 @@
+/*
+ * ボードの一覧。**ボードとは別の画面**（ADR 0064）。
+ *
+ * 作成先ごとの節に、カードの格子で並べる（#200）。地を沈め、カードを浮かせる。
+ * 1 枚ずつが押せるものだと、境界線だけより見て分かる。
+ */
+.board-list-page {
+  overflow-y: auto;
+  height: 100%;
+  background: var(--color-surface-sunken);
+}
+
+/*
+ * 上の帯。**高さは固定する。** 右の利用者のメニューは認証を設定したときにしか
+ * 出ないので、中身に任せると構成ごとに見出しの位置が動く（#200）。
+ */
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  height: 56px;
+  padding: 0 var(--space-8);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.brand {
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.list-body {
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* 見出しの行。左に「ボード」、右に「新しいボード」と、押せないときの理由。 */
+.list-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.list-title h2 {
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.list-title-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.list-title-action .hint {
+  margin: 0;
+}
+
+.board-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* 節の見出し。右に細い線を伸ばし、どこまでが同じ作成先かを示す。 */
+.board-section h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-subtle);
+}
+
+.board-section h3::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--color-border);
+}
+
+/*
+ * カードの格子。列の最小幅は、1440px の画面で 4 列になる値にしてある
+ * （#62 のアートボード「ボード一覧」）。狭い幅での列の減り方は #199。
+ */
+.board-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-6);
+}
+
+.board-card {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-card:hover {
+  background: var(--color-hover);
+}
+
+/* 作成先が未選択のカード。開くと作成先の選択から始まることを、枠で先に見せる。 */
+.board-card.unselected {
+  border-style: dashed;
+}
+
+.board-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.board-card-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.board-card-updated {
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+}
+
+.board-card-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.board-card-note {
+  margin: 0;
+}
+
+/*
+ * 新しいボードのダイアログ（#200）。ブラウザの `<dialog>` をモーダルで開く。
+ * 地を覆う色は変数で持つ（ダークでは濃くする）。
+ */
+.new-board-dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.new-board-dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.new-board-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.new-board-dialog h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.new-board-name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+/* ダイアログの中では、ひな形も名前と同じく見出しを上に置く。 */
+.new-board-dialog .template-picker {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.template-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.template-picker select {
+  min-width: 0;
+  flex: 1;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}

@@ -1,0 +1,469 @@
+/*
+ * 注釈にした frame に重ねる枠。
+ *
+ * キャンバスの上に出すが、Excalidraw の UI（ツールバーやパネル）より下に置く。
+ * ライブラリ側の UI は z-index 4 以上を使うので、間の 3 に入れる。
+ * pointer-events を切ってあるので、枠の上でも普段どおり描ける。
+ */
+.annotation-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.annotation-overlay-frame {
+  position: absolute;
+  border: 2px dashed var(--color-annotation);
+  border-radius: var(--radius-md);
+  background: var(--color-annotation-bg);
+}
+
+.annotation-overlay-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-annotation);
+  color: var(--color-on-annotation);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/*
+ * 注釈 1 件の解釈の結果と下書きの手直し（`AnnotationDetail`）。キャンバスの
+ * 上に広く開く。
+ *
+ * **Excalidraw の UI より下（z-index 3）に置く。** 上に置くと、左上から開く
+ * メニューがこの面の下に潜る。上下はツールバーと下の帯の分だけ空けて、
+ * 重ならないようにする。上はツールバーの下に出る操作の案内（2 行まで折れる）
+ * の分も空ける。
+ *
+ * **高さは中身に合わせ、上限だけ決める。** 下まで伸ばしておくと、下書きが
+ * 数件のときに空の面がキャンバスを覆う。
+ */
+.annotation-detail {
+  position: absolute;
+  top: 104px;
+  max-height: calc(100% - 104px - 72px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 2 * var(--space-6)));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-raised);
+}
+
+/* `display: flex` が `hidden` 属性の既定（display: none）に勝つので戻す。
+   戻さないと、閉じた詳細が全部重なって出る。 */
+.annotation-detail[hidden] {
+  display: none;
+}
+
+/*
+ * 見出しは 2 段（#201）。1 段目が名前・状態・キャンバスで見る・閉じる、2 段目が
+ * 粒度と種別の選択と、GitHub にあるもの・実行の履歴の開閉。**ここはスクロール
+ * させない。** 開いた中身（一覧）は長くなりうるので、本文の頭に出す。
+ */
+.annotation-detail-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-7);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.annotation-detail-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.annotation-detail-title h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-xl);
+  overflow-wrap: anywhere;
+}
+
+.annotation-detail-close {
+  font-size: var(--text-xl);
+}
+
+.annotation-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/*
+ * 本文。ここだけスクロールする。**下の余白は持たない。** 帯（下）が本文の
+ * 最後に貼り付くので、余白を置くと帯の下に隙間が空く。
+ */
+.annotation-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-7) 0;
+}
+
+/* 見出しの開閉で開く、GitHub にあるもの・実行の履歴。 */
+.annotation-detail-region {
+  margin-bottom: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * 下端の帯（`DetailBand`）。左に解釈、右に作成、間に押せない理由や作る先の文。
+ *
+ * **本文の最後に置き、`sticky` で下端に貼り付ける。** 本文が短ければ中身の
+ * 直後に、長ければスクロールしても下端に残る。帯を本文の外に出すと、作成の口を
+ * 組める下書き（`DraftEditor`）の外で描くことになる。左右は本文の余白の外まで
+ * 伸ばして、面の幅いっぱいに区切る。
+ */
+.annotation-detail-band {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin: var(--space-6) calc(-1 * var(--space-7)) 0;
+  padding: var(--space-5) var(--space-7);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.annotation-detail-band-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.annotation-detail-band-text .hint {
+  margin: 0;
+}
+
+.annotation {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+/* キャンバスで選択中のフレームに対応するカード。作成先の選択と同じ色を使う。 */
+.annotation.selected {
+  border-color: var(--color-selected-fg);
+  background: var(--color-selected-bg);
+}
+
+/*
+ * カード全体を覆うボタン（#201）。押すと注釈の詳細を開く。中身は名前・状態・
+ * 要約 1 行と、開くことを示す `›` だけ。
+ */
+.annotation-open {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0 var(--space-6) 0 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.annotation:has(.annotation-open:hover) {
+  background: var(--color-hover);
+}
+
+.annotation-open-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.annotation-open-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.annotation-open-summary {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.annotation-open-chevron {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  font-size: var(--text-xl);
+  color: var(--color-text-muted);
+}
+
+/* ボタンの外に畳まずに出すもの。 */
+.annotation > .hint {
+  margin: var(--space-3) 0 0;
+}
+
+/* 届いたか分からない書き込みがあること（ADR 0056）。文字でも言っている。 */
+.annotation-warning {
+  color: var(--color-warning);
+}
+
+/* 「注釈なし」（ボード一覧のカード、#200）も無彩色。違いは文字が持つ。 */
+.badge-uncreated,
+.badge-none {
+  background: var(--color-neutral-bg);
+  color: var(--color-text-subtle);
+}
+
+.badge-created {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.badge-changed {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.granularity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.kind {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/*
+ * GitHub にある draft issue の本文。既定で開くと一覧が縦に伸びて全体像が追えなく
+ * なるため畳んでおく。**これから作る下書きの本文は畳まない**（`.draft-body`、
+ * #201）。詳細は広い面なので、その理由が無い。
+ */
+.item-body > summary {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.item-body > pre {
+  margin: var(--space-2) 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-sm);
+  /* pre の既定は等幅。textarea 側と揃えないと、読むときと直すときで書体が
+     変わり、同じ本文が別物に見える。 */
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  /* 改行は残したまま、長い行は折り返す。横に流すと、作られる本文の右端が
+     スクロールしないと読めない。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 作る前に手直しする本文。読むときの pre と同じ見え方にする（ADR 0024）。
+ * 揃えないと、確認した本文と作られる本文が別物に見える。
+ *
+ * **開いたまま出し、高さは中身に合わせる**（#201）。12 行を超えたぶんは欄の中で
+ * スクロールする。中身に合わせられないブラウザでは `rows` の高さのまま。
+ */
+.draft-body {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  resize: vertical;
+  field-sizing: content;
+  max-height: calc(12lh + 2 * var(--space-3));
+}
+
+/* 解釈結果の要約。地の色で区切り、作るものの一覧と分ける（#201）。 */
+.interpretation-result .summary {
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+
+/* 取り残しの見出しも同じ段にする。作るものと並べて読む内訳なので、片方だけ
+   大きいと別の節に見える。 */
+.interpretation-result h3,
+.left-behind h3 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-md);
+  color: var(--color-text-subtle);
+}
+
+/* 解釈結果の 1 件。作るかどうかと、作られる中身を枠でひとまとめに出す。 */
+.draft-item {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * epic の下に入る issue を下げる。作るのは epic ← issue の 2 階層だけなので
+ * （ADR 0006）、どちらに属するのかが見えていないと、外したときに何が一緒に
+ * 外れるのかが読めない。
+ */
+.interpretation-result .plain-list .plain-list {
+  padding-left: var(--space-5);
+}
+
+.draft-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/*
+ * 外した項目も残して薄くする。消すと、何を外したのかが確かめられない
+ * （中核思想 3）。
+ *
+ * **薄くするのは入力欄だけ。** 行ごと薄くすると、その中に出す説明（作成した
+ * 項目の案内、ADR 0052）や本文の開閉まで AA の 4.5:1 を切る。外した行でも
+ * 読ませる文があるので、文字の色は落とさない（ADR 0039）。
+ *
+ * **入力欄も `opacity` では薄くしない。** 中の文字ごと透けて、選び直す前に
+ * 読む種別やタイトルが 4.5:1 を切る。薄さは AA を満たす灰色の文字で出す。
+ *
+ * **地もブラウザに任せない**（web/CLAUDE.md の「配色」）。select の既定の地は
+ * プラットフォームで違い、Linux の Chromium はボタン地を敷く。ダークでは中間の
+ * 灰色になり、その上で薄い文字が 4.5:1 を切る。地は本文
+ * （`.draft-body`）と同じにして、行の中で揃える。
+ */
+.draft-item.unselected :is(select, input:not([type="checkbox"]), textarea) {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  background: var(--color-surface-sunken);
+}
+
+.draft-kind,
+.draft-previous select,
+.draft-title {
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+}
+
+/*
+ * 更新するか新しく作るかの切り替え（ADR 0026、#112）。**見出しの行には
+ * 置かない。** 同じ行に足すと、そのぶんタイトルの入力欄が縮む。
+ */
+.draft-previous {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.draft-title {
+  /* 余った幅は全部タイトルに渡す。いちばん読んで直すのがタイトル。 */
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * 書き換える項目の印（ADR 0026）。作るのか書き換えるのかは押す前に見えている
+ * 必要がある。どちらも取り消せないが、書き換えは前の内容を消す。
+ */
+.badge-updated {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+/* 新しく作る項目の印（#201）。書き換えではないので、注意の色にしない。 */
+.badge-new {
+  background: var(--color-neutral-bg);
+  color: var(--color-text-subtle);
+}
+
+/*
+ * GitHub に届いたか分からない書き込み（ADR 0056）。
+ *
+ * **「作れた」とも「失敗した」とも見えない色にする。** 成功の側に寄せると
+ * 確かめずに済ませてしまい、失敗の側に寄せると押し直して重複を作る。打ち手が
+ * 「GitHub を見る」しかないので、注意を引く帯で出して畳まない。
+ *
+ * 色だけに頼らない。文言（「確認できていません」）とバッジの文字が同じことを
+ * 言っている。
+ */
+.unconfirmed-items {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-warning);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badge-unconfirmed {
+  background: var(--color-warning);
+  color: var(--color-warning-bg);
+}
+
+/*
+ * 今回の作成で置き去りになるもの。作成ボタンの手前に置く。押したあとに
+ * 気づいても、draft issue は削除できない。
+ */
+.left-behind {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-border);
+}
+
+/*
+ * 引いた解釈の選択。2 件以上あるときだけ出る。
+ */
+.interpretation-history {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  margin: var(--space-3) 0;
+}
+
+.interpretation-history select {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * 実行の履歴（ADR 0007）。畳み込み（「GitHub にある N 件」）の下に並ぶので、
+ * 見た目を揃えて「別のもの」に見せない。
+ */
+.run-history {
+  font-size: var(--text-sm);
+}
+
+.run-history > summary {
+  cursor: pointer;
+}
