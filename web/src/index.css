@@ -213,6 +213,13 @@
   color-scheme: dark;
 }
 
+/* 指で押す端末では、押す部品を広げる（#199）。 */
+@media (pointer: coarse) {
+  :root {
+    --control-height: 44px;
+  }
+}
+
 /*
  * Excalidraw 自身の配色を etoki のブランドに合わせる（ADR 0065）。
  *
@@ -302,6 +309,275 @@ body {
 /* ログインのときだけ地を沈める。置いてあるカードが 1 枚だと見せるため。 */
 .app-signed-out {
   background: var(--color-surface-sunken);
+}
+
+.plain-list,
+.annotation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel {
+  padding: var(--space-5);
+}
+
+.panel h3 {
+  font-size: var(--text-md);
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-subtle);
+}
+
+.panel-section {
+  margin-bottom: var(--space-7);
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.badge {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.dirty,
+.stale {
+  color: var(--color-warning);
+  font-size: var(--text-sm);
+}
+
+.error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* 読むべき文（次に何をすればよいか）と、畳んだ手掛かりを縦に積む。
+   min-width: 0 が無いと、長い 1 語の詳細が帯を押し広げる。 */
+.error-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.error-message {
+  margin: 0;
+}
+
+/*
+ * サーバーが返した本文は既定で畳む。`etoki: insufficient role` のような内部
+ * 文言を前に出すと、読むべき文が埋もれる。捨てはしない。GitHub や LLM の
+ * 本文が実際の手掛かりになる経路がある。
+ */
+.error-detail > summary {
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.error-detail > pre {
+  margin: var(--space-2) 0 0;
+  /* pre の既定は等幅。周りと書体が変わると、同じ文が別物に見える。 */
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/*
+  描画に失敗した範囲に出る（ADR 0027）。パネルの中にも、アプリ全体の代わりにも
+  出るので、幅は置かれた場所に合わせる。
+*/
+.error-boundary {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-5);
+  margin: var(--space-5);
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+.error-boundary p {
+  margin: 0 0 var(--space-4);
+}
+.error-boundary .hint {
+  color: var(--color-danger);
+  opacity: 0.8;
+}
+
+/*
+ * 本文中のリンク。ブラウザ既定の青は、この画面のどの色とも揃わない。
+ * 下線は残す。色だけで押せることを示すと、色が読めない環境で手掛かりが消える。
+ */
+.hint a {
+  color: var(--color-link);
+}
+
+/*
+ * ボタンと入力欄の土台（#203）。**etoki が描いた部品にだけ当てる。**
+ *
+ * 当てる範囲は、どの規則も末尾の `:where(…)` で同じ形に絞る。
+ *
+ * - 印（`etoki-ui`）の下だけ。`button` に素で当てると、キャンバスのツールバーや
+ *   ライブラリのダイアログの見た目まで変わる。**`.excalidraw` の中は除き**、拡張点に
+ *   載せた部品（右上の島・下の帯）には印を付け直して含める。**メニューの etoki の
+ *   項目はライブラリの項目の部品なので含めない**（印の付いた要素の下に無い）。
+ * - 土台を当てるボタンは、**クラスを持たないもの**（ふつうの操作）と、格のクラス
+ *   （`primary` / `quiet` / `danger`）を持つものだけ。部品ごとのクラスを持つ
+ *   ボタン（文字のように見せる名前、木の枝など）とタブは、その部品の規則に任せる。
+ * - 土台の特異性は 0（`:where`）。部品ごとの規則で上書きできる。
+ */
+/*
+ * ブラウザが描く部品も、地の文の書体を受け継ぐ。既定では受け継がず、OS の部品の
+ * 書体で出るので、部品ごとのクラスを持つボタン（木の枝など）だけ字形が変わる。
+ */
+:where(button, input, select, textarea):where(
+  .etoki-ui :not(.excalidraw *),
+  .excalidraw .etoki-ui *
+) {
+  font: inherit;
+}
+
+:where(button:not([class], [role]), button.primary, button.quiet, button.danger):where(
+  .etoki-ui :not(.excalidraw *),
+  .excalidraw .etoki-ui *
+) {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 0 var(--space-6);
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+:where(button:not([class], [role])):where(
+    .etoki-ui :not(.excalidraw *),
+    .excalidraw .etoki-ui *
+  ):hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+:where(
+  input:not([type]),
+  input[type="text"],
+  input[type="search"],
+  input[type="url"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  select
+):where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+}
+
+/*
+ * 主となる操作のボタン。**1 つの面（画面・ダイアログ・詳細）に 1 つだけ。**
+ * 押せるものを全部これにすると、どれが本筋なのかが色では読めなくなる。詳細を
+ * 開くと右上の「保存」と詳細の「GitHub に作成する」が同時に見えるが、面が違う。
+ *
+ * 「GitHub に作成する」は取り消せないが、赤ではなくこれにする（#203）。取り
+ * 消せないことは押す手前の文で伝える。**赤は「消す」操作だけに使い、2 つの
+ * 意味を持たせない。**
+ */
+button.primary:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
+  /* マーク（GitHub の印など）とラベルを横に並べる。 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 600;
+}
+
+button.primary:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
+    :disabled
+  ) {
+  border-color: var(--brand-hover);
+  background: var(--brand-hover);
+}
+
+/* マークはラベルの高さに合わせる。名前は文字が持つので、色も文字に従わせる。 */
+button.primary svg {
+  width: 1.2em;
+  height: 1.2em;
+  flex-shrink: 0;
+  fill: currentcolor;
+}
+
+/* 控えめな操作。閉じる・やめる・取り消すのように、作業から離れる操作。 */
+button.quiet:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
+  padding: 0 var(--space-5);
+  border-color: transparent;
+  background: transparent;
+}
+
+button.quiet:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
+    :disabled
+  ) {
+  background: var(--color-hover);
+}
+
+/*
+  取り消せない操作のボタン。ボードの削除と、メンバーを外すが使う（ADR 0042）。
+
+  **消さず、押しにくくもしない。** 押す前に何が失われるかを見せる形で守って
+  いるので（中核思想 3）、ここは「他と違う」と分かれば足りる。
+*/
+button.danger:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
+  border-color: var(--color-danger-border);
+  background: var(--color-bg);
+  color: var(--color-danger);
+}
+
+button.danger:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
+    :disabled
+  ) {
+  background: var(--color-danger-bg);
+}
+
+/*
+ * 押せないボタン。**格を問わず同じ見た目にする。** 押せない理由は本文で別に
+ * 出すが（ADR 0039 / 0066）、**ラベルは薄くしすぎない。** ラベル自体が読めないと
+ * 何が押せないのかが分からない。
+ */
+:is(button:not([class], [role]), button.primary, button.quiet, button.danger):where(
+    .etoki-ui :not(.excalidraw *),
+    .excalidraw .etoki-ui *
+  ):disabled {
+  border-color: var(--color-control-border);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-subtle);
+  cursor: default;
 }
 
 /*
@@ -460,6 +736,68 @@ body {
   margin: 0;
 }
 
+/*
+ * 新しいボードのダイアログ（#200）。ブラウザの `<dialog>` をモーダルで開く。
+ * 地を覆う色は変数で持つ（ダークでは濃くする）。
+ */
+.new-board-dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.new-board-dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.new-board-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.new-board-dialog h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.new-board-name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+/* ダイアログの中では、ひな形も名前と同じく見出しを上に置く。 */
+.new-board-dialog .template-picker {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.template-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.template-picker select {
+  min-width: 0;
+  flex: 1;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
 /* 利用者のメニュー（#200）。開いた中身はボタンの下に重ねる。 */
 .user-menu {
   position: relative;
@@ -529,79 +867,87 @@ body {
 }
 
 /*
- * 新しいボードのダイアログ（#200）。ブラウザの `<dialog>` をモーダルで開く。
- * 地を覆う色は変数で持つ（ダークでは濃くする）。
+ * ログイン画面。ここだけは中身が数行しか無いので、左上に寄せると
+ * 読み込みに失敗した画面に見える。**画面の真ん中に 1 枚だけ置く。**
+ *
+ * この画面は GitHub App を設定した構成でしか出ない（ADR 0004 / 0015）。
  */
-.new-board-dialog {
-  box-sizing: border-box;
-  width: min(440px, calc(100vw - 32px));
+.login {
+  margin: auto;
   padding: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+}
+
+/* 地から浮かせて、押すものが 1 つであることを見せる。 */
+.login-card {
+  padding: var(--space-8);
   background: var(--color-bg);
-  color: var(--color-text);
-  box-shadow: 0 8px 24px var(--color-shadow);
-}
-
-.new-board-dialog::backdrop {
-  background: var(--color-backdrop);
-}
-
-.new-board-dialog form {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
-.new-board-dialog h2 {
+.login-mark {
+  font-size: var(--text-2xl);
   margin: 0;
-  font-size: var(--text-xl);
 }
 
-.new-board-name {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-}
-
-/* ダイアログの中では、ひな形も名前と同じく見出しを上に置く。 */
-.new-board-dialog .template-picker {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-2);
-}
-
-.template-picker {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-size: var(--text-sm);
-}
-
-.template-picker select {
-  min-width: 0;
-  flex: 1;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-4);
-}
-
-.plain-list,
-.annotation-list {
-  list-style: none;
+.login-lead {
   margin: 0;
-  padding: 0;
+  line-height: 1.7;
 }
 
-.main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+/*
+ * 何をする道具かの絵。**色は変数から引く。** 直書きすると、ここだけダークで
+ * 明るいまま残る。線の太さは 1 つに揃えて、絵が主張しすぎないようにする。
+ */
+.login-art {
+  width: 100%;
+  height: auto;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.login-art .art-line {
+  stroke: var(--color-border);
+}
+
+.login-art .art-shape {
+  stroke: var(--color-text-muted);
+}
+
+/* 囲った範囲＝注釈。キャンバス上の印と同じ色にする（ADR 0036）。 */
+.login-art .art-frame {
+  stroke: var(--color-annotation);
+  stroke-dasharray: 5 4;
+}
+
+.login-art .art-text {
+  stroke: var(--color-border);
+}
+
+/* 作られた draft issue。「作成済み」のバッジと同じ色にする。 */
+.login-art .art-done {
+  stroke: var(--color-success);
+}
+
+.login-start {
+  justify-content: center;
+  width: 100%;
+}
+
+.login-note {
+  margin: 0;
+}
+
+.login .error {
+  border-radius: var(--radius-sm);
 }
 
 .board {
@@ -768,6 +1114,297 @@ body {
 }
 
 /*
+ * 他の人が先に保存していて、こちらの保存を拒んだ状態（ADR 0020）。
+ *
+ * バッジではなく帯で出す。上書きしていないことと、この後どうすれば
+ * よいかを続けて読ませる必要があり、バッジに収まる長さにならない。
+ */
+.conflict {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  padding: var(--space-4) var(--space-5);
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+/*
+ * 保存済みシーンが保存できる上限を超えている状態（issue #103、ADR 0038）。
+ *
+ * .conflict と同じ「注意の帯」なので見た目も揃える。**失敗ではない。**
+ * 描いたものは残っており、保存だけがこのままでは通らない。
+ */
+.scene-limit-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  padding: var(--space-4) var(--space-5);
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+/*
+  削除の確認（ADR 0042）。ボードの上端に帯で出す。
+
+  **ブラウザの confirm を使わない。** GitHub 側に何件残るのかを見せる場所が
+  無いため。衝突の知らせ（.conflict）と同じ位置に出るが、こちらは押すまで
+  何も起きていない状態なので、色は失敗ではなく注意として扱う。
+*/
+.delete-confirm {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-bottom: 1px solid var(--color-danger-border);
+  padding: var(--space-5);
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+
+/*
+  確認が出たときにフォーカスを受ける枠（`tabIndex={-1}`）。既定の focus ring は
+  枠いっぱいに出て「押せる」ように見えるので、輪郭ではなく差し色で示す。
+*/
+.delete-confirm:focus-visible {
+  outline: none;
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+.delete-confirm h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+}
+
+.delete-confirm p {
+  margin: 0 0 var(--space-4);
+}
+
+.delete-confirm-actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+/*
+ * ボードの文脈を出すバッジ（作成先・ロール・大きさ）は、地も文字も無彩色で
+ * 揃える。**緑にしない。**
+ *
+ * 緑はブランドの色で、注釈の 3 状態のうち「作成済み」もそれを使う。文脈の
+ * バッジまで緑にすると、下の帯の「オーナー」「acme/web」とパネルの
+ * 「作成済み」が同じ色になり、**このパネルの主題（3 状態）がいちばん埋もれる。**
+ * 見分けるための色は、見分けたいものにだけ使う（中核思想 3）。
+ */
+.badge-target {
+  background: var(--color-surface-cool);
+  color: var(--color-text-subtle);
+}
+
+/*
+ * 作成先の Project に書けない（#217）。取り消せない作成ができないことなので
+ * 危険の色で出す。**文字を添える**ので、色だけで伝えてはいない。
+ */
+.badge-denied {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/*
+ * 作成先バッジは飛び先が組めるときだけリンクになる（ADR 0025）。
+ *
+ * 下線は既定のままにせず、ホバーで出す。常時引くと、隣に並ぶ他のバッジと
+ * 形が揃わず、状態を示すバッジと押せるバッジの区別がかえって付きにくい。
+ * 押せることはカーソルとホバーで示す（`.annotation-name` と同じ扱い）。
+ */
+/* 飛べるときだけリンクの色にする。span のまま緑にすると、押せないものが
+   押せるように見える。
+
+   **下の帯の中では `.board-context` を前に付ける。** ライブラリの
+   `.excalidraw a` と特異性が並び、後に読まれるライブラリ側の青が勝つ。ここは
+   axe が色を判定できない場所（`web/e2e/helpers/a11y.ts`）なので、崩れても
+   検査では気づけない。 */
+a.badge-target,
+.board-context a.badge-target {
+  color: var(--color-link);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.badge-target:hover {
+  text-decoration: underline;
+}
+
+/* 自分のロールはボードのヘッダに常に出す。操作して断られる前に、何ができる
+   のかが見えている必要がある（ADR 0017）。 */
+.badge-role {
+  background: var(--color-surface-cool);
+  color: var(--color-text-subtle);
+}
+
+/*
+ * ボード名の変更。**見出しは見出しのまま置き、押したときだけ入力に変える。**
+ * 常に入力欄にすると、読むところが編集欄になり、押し間違いで名前が変わる。
+ * 変える口はメニューの「名前を変更」。
+ */
+.rename-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.rename-form input {
+  font-size: var(--text-base);
+  padding: var(--space-1) var(--space-3);
+}
+
+/*
+ * ボタンに添えるショートカットの表示。**`title` ではなく本文で出す**（ADR 0039）。
+ *
+ * 色と大きさは `.hint` に預ける（両方のクラスを付ける）。押せない理由と同じ
+ * 「本文で出す手掛かり」なので、片方だけ濃さが違う理由が無い。ここが持つのは
+ * 等幅と折り返さないことだけ。
+ */
+.shortcut {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+/*
+ * 保存に送るシーンの大きさ。**上限との比は出さない**（ADR 0018 / 0038）ので、
+ * 減らせという催促には見えないよう、状態を並べる他のバッジと同じ扱いにする。
+ */
+/* 作成先が固定済み（ADR 0014）。文脈のバッジと同じく無彩色で出す。 */
+.badge-locked,
+.badge-size {
+  background: var(--color-surface-cool);
+  color: var(--color-text-subtle);
+}
+
+/*
+ * 右のパネル（`SidePanel`）。注釈・図のドラフト・メンバーをタブで並べる
+ * （ADR 0065）。**幅と境界線はここが持つ。** 中に入る各パネルは幅を持たない。
+ */
+.side-panel {
+  width: var(--side-panel-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--color-border);
+}
+
+/*
+ * 畳んでも中身は外さない（`SidePanel`）。**`hidden` は上の `display: flex` に
+ * 負ける**ので、ここで戻す。
+ */
+.side-panel[hidden] {
+  display: none;
+}
+
+/* タブの行と、その右の「パネルを閉じる」。 */
+.side-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) var(--space-4) 0;
+}
+
+.side-panel-tabs {
+  display: flex;
+  flex: 1;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+
+.side-panel-close {
+  flex-shrink: 0;
+}
+
+/*
+ * 畳んだときに右端に残す縦の帯（#202）。タブの名前を縦書きで並べ、注釈には
+ * 手を打つ必要がある件数を添える。**畳んでいるあいだも状態を隠さない**
+ * （ADR 0064）。
+ */
+.side-panel-rail {
+  width: var(--side-panel-rail-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.side-panel-rail-tab {
+  writing-mode: vertical-rl;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-subtle);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.side-panel-rail-tab:hover {
+  background: var(--color-hover);
+}
+
+/* 開いたときに戻る先。色だけで示さない。`aria-current` を読み上げが伝える。 */
+.side-panel-rail-tab[aria-current="true"] {
+  background: var(--color-selected-bg);
+  color: var(--color-selected-fg);
+}
+
+/* 縦書きの中の数字は横に寝かせず、立てて 1 字に収める。 */
+.upright {
+  text-combine-upright: all;
+}
+
+.side-panel-tabs [role="tab"] {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-subtle);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 選んでいるタブは色だけで示さない。`aria-selected` を読み上げが伝える。 */
+.side-panel-tabs [role="tab"][aria-selected="true"] {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+
+.side-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 開いた先に出す、使えない理由（共有が未設定など、ADR 0030）。 */
+.side-panel-note {
+  margin: 0;
+  padding: var(--space-5);
+}
+
+/*
+  パネルの代わりに出るときは、右のパネルの中に収める。広がるに任せると、
+  落ちたのはパネルだけなのに、失われた範囲が実際より大きく見える。幅は右の
+  パネル（`.side-panel`）が持つ。
+*/
+.side-panel-body > .error-boundary {
+  margin: var(--space-4);
+}
+
+/*
  * 注釈にした frame に重ねる枠。
  *
  * キャンバスの上に出すが、Excalidraw の UI（ツールバーやパネル）より下に置く。
@@ -922,176 +1559,6 @@ body {
   margin: 0;
 }
 
-/*
- * 右のパネル（`SidePanel`）。注釈・図のドラフト・メンバーをタブで並べる
- * （ADR 0065）。**幅と境界線はここが持つ。** 中に入る各パネルは幅を持たない。
- */
-.side-panel {
-  width: var(--side-panel-width);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border-left: 1px solid var(--color-border);
-}
-
-/*
- * 畳んでも中身は外さない（`SidePanel`）。**`hidden` は上の `display: flex` に
- * 負ける**ので、ここで戻す。
- */
-.side-panel[hidden] {
-  display: none;
-}
-
-/* タブの行と、その右の「パネルを閉じる」。 */
-.side-panel-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: var(--space-4) var(--space-4) 0;
-}
-
-.side-panel-tabs {
-  display: flex;
-  flex: 1;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-sunken);
-}
-
-.side-panel-close {
-  flex-shrink: 0;
-}
-
-/*
- * 畳んだときに右端に残す縦の帯（#202）。タブの名前を縦書きで並べ、注釈には
- * 手を打つ必要がある件数を添える。**畳んでいるあいだも状態を隠さない**
- * （ADR 0064）。
- */
-.side-panel-rail {
-  width: var(--side-panel-rail-width);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-4) 0;
-  border-left: 1px solid var(--color-border);
-  background: var(--color-bg);
-}
-
-.side-panel-rail-tab {
-  writing-mode: vertical-rl;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-2);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-subtle);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.side-panel-rail-tab:hover {
-  background: var(--color-hover);
-}
-
-/* 開いたときに戻る先。色だけで示さない。`aria-current` を読み上げが伝える。 */
-.side-panel-rail-tab[aria-current="true"] {
-  background: var(--color-selected-bg);
-  color: var(--color-selected-fg);
-}
-
-/* 縦書きの中の数字は横に寝かせず、立てて 1 字に収める。 */
-.upright {
-  text-combine-upright: all;
-}
-
-.side-panel-tabs [role="tab"] {
-  flex: 1;
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-subtle);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-/* 選んでいるタブは色だけで示さない。`aria-selected` を読み上げが伝える。 */
-.side-panel-tabs [role="tab"][aria-selected="true"] {
-  background: var(--brand);
-  color: var(--on-brand);
-}
-
-.side-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/*
- * 図のドラフトのタブの中の切り替え（`DiagramTab`）。右のパネルのタブと同じ
- * 塗りにすると入れ子のタブに見えるので、枠で囲んだ控えめな形にする。
- * 選んでいるほうは色だけで示さない。`aria-pressed` を読み上げが伝える。
- */
-.diagram-tab-switch {
-  display: flex;
-  gap: var(--space-2);
-  margin: var(--space-5) var(--space-5) 0;
-}
-
-.diagram-tab-switch button {
-  flex: 1;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-subtle);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.diagram-tab-switch button[aria-pressed="true"] {
-  border-color: var(--brand);
-  background: var(--color-selected-bg);
-  color: var(--color-selected-fg);
-}
-
-/* 開いた先に出す、使えない理由（共有が未設定など、ADR 0030）。 */
-.side-panel-note {
-  margin: 0;
-  padding: var(--space-5);
-}
-
-.panel {
-  padding: var(--space-5);
-}
-
-.panel h3 {
-  font-size: var(--text-md);
-  margin: 0 0 var(--space-3);
-  color: var(--color-text-subtle);
-}
-
-.panel-section {
-  margin-bottom: var(--space-7);
-}
-
-.hint {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  line-height: 1.6;
-}
-
 .annotation {
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
@@ -1162,14 +1629,6 @@ body {
 /* 届いたか分からない書き込みがあること（ADR 0056）。文字でも言っている。 */
 .annotation-warning {
   color: var(--color-warning);
-}
-
-.badge {
-  flex-shrink: 0;
-  font-size: var(--text-xs);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
 }
 
 /* 「注釈なし」（ボード一覧のカード、#200）も無彩色。違いは文字が持つ。 */
@@ -1339,52 +1798,286 @@ body {
   min-width: 0;
 }
 
-.dirty,
-.stale {
+/*
+ * 書き換える項目の印（ADR 0026）。作るのか書き換えるのかは押す前に見えている
+ * 必要がある。どちらも取り消せないが、書き換えは前の内容を消す。
+ */
+.badge-updated {
+  background: var(--color-warning-bg);
   color: var(--color-warning);
-  font-size: var(--text-sm);
 }
 
-.error {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  padding: var(--space-4) var(--space-5);
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-/* 読むべき文（次に何をすればよいか）と、畳んだ手掛かりを縦に積む。
-   min-width: 0 が無いと、長い 1 語の詳細が帯を押し広げる。 */
-.error-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.error-message {
-  margin: 0;
+/* 新しく作る項目の印（#201）。書き換えではないので、注意の色にしない。 */
+.badge-new {
+  background: var(--color-neutral-bg);
+  color: var(--color-text-subtle);
 }
 
 /*
- * サーバーが返した本文は既定で畳む。`etoki: insufficient role` のような内部
- * 文言を前に出すと、読むべき文が埋もれる。捨てはしない。GitHub や LLM の
- * 本文が実際の手掛かりになる経路がある。
+ * GitHub に届いたか分からない書き込み（ADR 0056）。
+ *
+ * **「作れた」とも「失敗した」とも見えない色にする。** 成功の側に寄せると
+ * 確かめずに済ませてしまい、失敗の側に寄せると押し直して重複を作る。打ち手が
+ * 「GitHub を見る」しかないので、注意を引く帯で出して畳まない。
+ *
+ * 色だけに頼らない。文言（「確認できていません」）とバッジの文字が同じことを
+ * 言っている。
  */
-.error-detail > summary {
-  font-size: var(--text-xs);
+.unconfirmed-items {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-warning);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badge-unconfirmed {
+  background: var(--color-warning);
+  color: var(--color-warning-bg);
+}
+
+/*
+ * 今回の作成で置き去りになるもの。作成ボタンの手前に置く。押したあとに
+ * 気づいても、draft issue は削除できない。
+ */
+.left-behind {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-border);
+}
+
+/*
+ * 引いた解釈の選択。2 件以上あるときだけ出る。
+ */
+.interpretation-history {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  margin: var(--space-3) 0;
+}
+
+.interpretation-history select {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * 実行の履歴（ADR 0007）。畳み込み（「GitHub にある N 件」）の下に並ぶので、
+ * 見た目を揃えて「別のもの」に見せない。
+ */
+.run-history {
+  font-size: var(--text-sm);
+}
+
+.run-history > summary {
   cursor: pointer;
 }
 
-.error-detail > pre {
-  margin: var(--space-2) 0 0;
-  /* pre の既定は等幅。周りと書体が変わると、同じ文が別物に見える。 */
-  font-family: inherit;
+/*
+ * 図のドラフトのタブの中の切り替え（`DiagramTab`）。右のパネルのタブと同じ
+ * 塗りにすると入れ子のタブに見えるので、枠で囲んだ控えめな形にする。
+ * 選んでいるほうは色だけで示さない。`aria-pressed` を読み上げが伝える。
+ */
+.diagram-tab-switch {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-5) var(--space-5) 0;
+}
+
+.diagram-tab-switch button {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-subtle);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.diagram-tab-switch button[aria-pressed="true"] {
+  border-color: var(--brand);
+  background: var(--color-selected-bg);
+  color: var(--color-selected-fg);
+}
+
+/*
+ * 図のドラフトのチャット（ADR 0041）。右のパネルのタブの 1 つ（`SidePanel`）。
+ *
+ * **キャンバスを覆わない。** 置いた図がどこに出るかを見ながら直す道具なので、
+ * 上に敷くと「置く」を押した結果が確かめられない。.panel を共有しているので
+ * 余白は注釈パネルと揃う。
+ */
+/*
+ * 貼る mermaid は字下げと列が意味を持つ（ER 図の属性、sequence の並び）。
+ * プロポーショナルな字面だと、どこがずれているかが読めない。構文エラーの
+ * 詳細も同じで、パーサは `^` で列を指すので、揃わないと指す先がずれる。
+ */
+.mermaid-paste .diagram-chat-form textarea,
+.mermaid-paste .error-detail pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.diagram-chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.diagram-chat-form textarea {
+  resize: vertical;
+  font: inherit;
+}
+
+/*
+ * 生成された mermaid。**そのまま見せる**（変換後の図を先に見せるには、置か
+ * ないままキャンバスに描く道具が要る）。長い行は折らずに横スクロールさせる。
+ * 折ると、mermaid の 1 行と折り返しの区別が付かなくなる。
+ */
+.diagram-mermaid {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.diagram-turns {
+  margin: 0;
+  padding-left: var(--space-7);
   font-size: var(--text-sm);
   line-height: 1.6;
-  white-space: pre-wrap;
+  color: var(--color-text-subtle);
+}
+
+/* メンバーは右のパネルのタブの 1 つ（`SidePanel`）。キャンバスの上に重ねると、
+   ブレスト中の絵が隠れる。 */
+.member-panel {
+  padding: var(--space-5);
+}
+
+.invite-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin: var(--space-4) 0;
+}
+
+/* plain-list は選択肢を全幅のボタンで並べるためのもの。メンバーは 1 行に
+   名前とロールと解除が並ぶので、共有すると名前が潰れる。 */
+.member-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.member-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+}
+
+.member-name {
+  flex: 1;
+  min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* 招待する前に見せる相手（ADR 0053）。ID は長いので折り返させる。 */
+.invitee dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-4) 0;
+}
+
+.invitee dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.invitee-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+/*
+ * 作成先を選ぶ画面。ブレストに入る前に挟まるので、キャンバスと同じ幅を使う。
+ */
+.picker {
+  padding: var(--space-6);
+  overflow-y: auto;
+  /* 選択肢は 1 行 1 件。横に伸ばすと行の左右が離れすぎて対応が追えない。 */
+  max-width: 640px;
+}
+
+.picker h1 {
+  font-size: var(--text-xl);
+  margin: 0 0 var(--space-4);
+}
+
+.picker h2 {
+  font-size: var(--text-md);
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-subtle);
+}
+
+.picker .error {
+  margin: var(--space-5) 0;
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * 候補の絞り込み（issue #150）。**ラベルは置く。** placeholder だけにすると、
+ * 打ち始めた時点で何の欄なのかが画面から消える。
+ */
+.filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+}
+
+.filter input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.plain-list button {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+
+.plain-list button:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.plain-list button.active {
+  border-color: var(--color-selected-fg);
+  background: var(--color-selected-bg);
 }
 
 /*
@@ -1482,697 +2175,4 @@ body {
   from {
     opacity: 0;
   }
-}
-
-/*
- * 他の人が先に保存していて、こちらの保存を拒んだ状態（ADR 0020）。
- *
- * バッジではなく帯で出す。上書きしていないことと、この後どうすれば
- * よいかを続けて読ませる必要があり、バッジに収まる長さにならない。
- */
-.conflict {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-  padding: var(--space-4) var(--space-5);
-  margin: 0;
-  font-size: var(--text-md);
-}
-
-/*
- * 保存済みシーンが保存できる上限を超えている状態（issue #103、ADR 0038）。
- *
- * .conflict と同じ「注意の帯」なので見た目も揃える。**失敗ではない。**
- * 描いたものは残っており、保存だけがこのままでは通らない。
- */
-.scene-limit-warning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-  padding: var(--space-4) var(--space-5);
-  margin: 0;
-  font-size: var(--text-md);
-}
-
-/*
- * ボタンと入力欄の土台（#203）。**etoki が描いた部品にだけ当てる。**
- *
- * 当てる範囲は、どの規則も末尾の `:where(…)` で同じ形に絞る。
- *
- * - 印（`etoki-ui`）の下だけ。`button` に素で当てると、キャンバスのツールバーや
- *   ライブラリのダイアログの見た目まで変わる。**`.excalidraw` の中は除き**、拡張点に
- *   載せた部品（右上の島・下の帯）には印を付け直して含める。**メニューの etoki の
- *   項目はライブラリの項目の部品なので含めない**（印の付いた要素の下に無い）。
- * - 土台を当てるボタンは、**クラスを持たないもの**（ふつうの操作）と、格のクラス
- *   （`primary` / `quiet` / `danger`）を持つものだけ。部品ごとのクラスを持つ
- *   ボタン（文字のように見せる名前、木の枝など）とタブは、その部品の規則に任せる。
- * - 土台の特異性は 0（`:where`）。部品ごとの規則で上書きできる。
- */
-/*
- * ブラウザが描く部品も、地の文の書体を受け継ぐ。既定では受け継がず、OS の部品の
- * 書体で出るので、部品ごとのクラスを持つボタン（木の枝など）だけ字形が変わる。
- */
-:where(button, input, select, textarea):where(
-  .etoki-ui :not(.excalidraw *),
-  .excalidraw .etoki-ui *
-) {
-  font: inherit;
-}
-
-:where(button:not([class], [role]), button.primary, button.quiet, button.danger):where(
-  .etoki-ui :not(.excalidraw *),
-  .excalidraw .etoki-ui *
-) {
-  box-sizing: border-box;
-  min-height: var(--control-height);
-  padding: 0 var(--space-6);
-  border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font: inherit;
-  cursor: pointer;
-}
-
-:where(button:not([class], [role])):where(
-    .etoki-ui :not(.excalidraw *),
-    .excalidraw .etoki-ui *
-  ):hover:not(:disabled) {
-  background: var(--color-hover);
-}
-
-:where(
-  input:not([type]),
-  input[type="text"],
-  input[type="search"],
-  input[type="url"],
-  input[type="email"],
-  input[type="password"],
-  input[type="number"],
-  select
-):where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
-  box-sizing: border-box;
-  min-height: var(--control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font: inherit;
-}
-
-/* 指で押す端末では、押す部品を広げる（#199）。 */
-@media (pointer: coarse) {
-  :root {
-    --control-height: 44px;
-  }
-}
-
-/*
- * 主となる操作のボタン。**1 つの面（画面・ダイアログ・詳細）に 1 つだけ。**
- * 押せるものを全部これにすると、どれが本筋なのかが色では読めなくなる。詳細を
- * 開くと右上の「保存」と詳細の「GitHub に作成する」が同時に見えるが、面が違う。
- *
- * 「GitHub に作成する」は取り消せないが、赤ではなくこれにする（#203）。取り
- * 消せないことは押す手前の文で伝える。**赤は「消す」操作だけに使い、2 つの
- * 意味を持たせない。**
- */
-button.primary:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
-  /* マーク（GitHub の印など）とラベルを横に並べる。 */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  border-color: var(--brand);
-  background: var(--brand);
-  color: var(--on-brand);
-  font-weight: 600;
-}
-
-button.primary:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
-    :disabled
-  ) {
-  border-color: var(--brand-hover);
-  background: var(--brand-hover);
-}
-
-/* マークはラベルの高さに合わせる。名前は文字が持つので、色も文字に従わせる。 */
-button.primary svg {
-  width: 1.2em;
-  height: 1.2em;
-  flex-shrink: 0;
-  fill: currentcolor;
-}
-
-/* 控えめな操作。閉じる・やめる・取り消すのように、作業から離れる操作。 */
-button.quiet:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
-  padding: 0 var(--space-5);
-  border-color: transparent;
-  background: transparent;
-}
-
-button.quiet:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
-    :disabled
-  ) {
-  background: var(--color-hover);
-}
-
-/*
-  取り消せない操作のボタン。ボードの削除と、メンバーを外すが使う（ADR 0042）。
-
-  **消さず、押しにくくもしない。** 押す前に何が失われるかを見せる形で守って
-  いるので（中核思想 3）、ここは「他と違う」と分かれば足りる。
-*/
-button.danger:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *) {
-  border-color: var(--color-danger-border);
-  background: var(--color-bg);
-  color: var(--color-danger);
-}
-
-button.danger:where(.etoki-ui :not(.excalidraw *), .excalidraw .etoki-ui *):hover:not(
-    :disabled
-  ) {
-  background: var(--color-danger-bg);
-}
-
-/*
- * 押せないボタン。**格を問わず同じ見た目にする。** 押せない理由は本文で別に
- * 出すが（ADR 0039 / 0066）、**ラベルは薄くしすぎない。** ラベル自体が読めないと
- * 何が押せないのかが分からない。
- */
-:is(button:not([class], [role]), button.primary, button.quiet, button.danger):where(
-    .etoki-ui :not(.excalidraw *),
-    .excalidraw .etoki-ui *
-  ):disabled {
-  border-color: var(--color-control-border);
-  background: var(--color-surface-sunken);
-  color: var(--color-text-subtle);
-  cursor: default;
-}
-
-/*
-  削除の確認（ADR 0042）。ボードの上端に帯で出す。
-
-  **ブラウザの confirm を使わない。** GitHub 側に何件残るのかを見せる場所が
-  無いため。衝突の知らせ（.conflict）と同じ位置に出るが、こちらは押すまで
-  何も起きていない状態なので、色は失敗ではなく注意として扱う。
-*/
-.delete-confirm {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  border-bottom: 1px solid var(--color-danger-border);
-  padding: var(--space-5);
-  font-size: var(--text-md);
-  line-height: 1.6;
-}
-
-/*
-  確認が出たときにフォーカスを受ける枠（`tabIndex={-1}`）。既定の focus ring は
-  枠いっぱいに出て「押せる」ように見えるので、輪郭ではなく差し色で示す。
-*/
-.delete-confirm:focus-visible {
-  outline: none;
-  box-shadow: inset 3px 0 0 var(--color-danger);
-}
-
-.delete-confirm h2 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-base);
-}
-
-.delete-confirm p {
-  margin: 0 0 var(--space-4);
-}
-
-.delete-confirm-actions {
-  display: flex;
-  gap: var(--space-4);
-}
-
-/*
-  描画に失敗した範囲に出る（ADR 0027）。パネルの中にも、アプリ全体の代わりにも
-  出るので、幅は置かれた場所に合わせる。
-*/
-.error-boundary {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  border: 1px solid var(--color-danger-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-5);
-  margin: var(--space-5);
-  font-size: var(--text-md);
-  line-height: 1.6;
-}
-.error-boundary p {
-  margin: 0 0 var(--space-4);
-}
-.error-boundary .hint {
-  color: var(--color-danger);
-  opacity: 0.8;
-}
-
-/*
-  パネルの代わりに出るときは、右のパネルの中に収める。広がるに任せると、
-  落ちたのはパネルだけなのに、失われた範囲が実際より大きく見える。幅は右の
-  パネル（`.side-panel`）が持つ。
-*/
-.side-panel-body > .error-boundary {
-  margin: var(--space-4);
-}
-
-/*
- * ボードの文脈を出すバッジ（作成先・ロール・大きさ）は、地も文字も無彩色で
- * 揃える。**緑にしない。**
- *
- * 緑はブランドの色で、注釈の 3 状態のうち「作成済み」もそれを使う。文脈の
- * バッジまで緑にすると、下の帯の「オーナー」「acme/web」とパネルの
- * 「作成済み」が同じ色になり、**このパネルの主題（3 状態）がいちばん埋もれる。**
- * 見分けるための色は、見分けたいものにだけ使う（中核思想 3）。
- */
-.badge-target {
-  background: var(--color-surface-cool);
-  color: var(--color-text-subtle);
-}
-
-/*
- * 作成先の Project に書けない（#217）。取り消せない作成ができないことなので
- * 危険の色で出す。**文字を添える**ので、色だけで伝えてはいない。
- */
-.badge-denied {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-/*
- * 作成先バッジは飛び先が組めるときだけリンクになる（ADR 0025）。
- *
- * 下線は既定のままにせず、ホバーで出す。常時引くと、隣に並ぶ他のバッジと
- * 形が揃わず、状態を示すバッジと押せるバッジの区別がかえって付きにくい。
- * 押せることはカーソルとホバーで示す（`.annotation-name` と同じ扱い）。
- */
-/* 飛べるときだけリンクの色にする。span のまま緑にすると、押せないものが
-   押せるように見える。
-
-   **下の帯の中では `.board-context` を前に付ける。** ライブラリの
-   `.excalidraw a` と特異性が並び、後に読まれるライブラリ側の青が勝つ。ここは
-   axe が色を判定できない場所（`web/e2e/helpers/a11y.ts`）なので、崩れても
-   検査では気づけない。 */
-a.badge-target,
-.board-context a.badge-target {
-  color: var(--color-link);
-  text-decoration: none;
-  cursor: pointer;
-}
-
-a.badge-target:hover {
-  text-decoration: underline;
-}
-
-/*
- * 本文中のリンク。ブラウザ既定の青は、この画面のどの色とも揃わない。
- * 下線は残す。色だけで押せることを示すと、色が読めない環境で手掛かりが消える。
- */
-.hint a {
-  color: var(--color-link);
-}
-
-/*
- * 作成先を選ぶ画面。ブレストに入る前に挟まるので、キャンバスと同じ幅を使う。
- */
-.picker {
-  padding: var(--space-6);
-  overflow-y: auto;
-  /* 選択肢は 1 行 1 件。横に伸ばすと行の左右が離れすぎて対応が追えない。 */
-  max-width: 640px;
-}
-
-.picker h1 {
-  font-size: var(--text-xl);
-  margin: 0 0 var(--space-4);
-}
-
-.picker h2 {
-  font-size: var(--text-md);
-  margin: 0 0 var(--space-3);
-  color: var(--color-text-subtle);
-}
-
-.picker .error {
-  margin: var(--space-5) 0;
-  border-radius: var(--radius-sm);
-}
-
-/*
- * 候補の絞り込み（issue #150）。**ラベルは置く。** placeholder だけにすると、
- * 打ち始めた時点で何の欄なのかが画面から消える。
- */
-.filter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--color-text-subtle);
-}
-
-.filter input {
-  flex: 1;
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-}
-
-.plain-list button {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  width: 100%;
-  text-align: left;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  background: none;
-  cursor: pointer;
-}
-
-.plain-list button:hover:not(:disabled) {
-  background: var(--color-hover);
-}
-
-.plain-list button.active {
-  border-color: var(--color-selected-fg);
-  background: var(--color-selected-bg);
-}
-
-/*
- * ログイン画面。ここだけは中身が数行しか無いので、左上に寄せると
- * 読み込みに失敗した画面に見える。**画面の真ん中に 1 枚だけ置く。**
- *
- * この画面は GitHub App を設定した構成でしか出ない（ADR 0004 / 0015）。
- */
-.login {
-  margin: auto;
-  padding: var(--space-8);
-  width: 100%;
-  max-width: 420px;
-  box-sizing: border-box;
-}
-
-/* 地から浮かせて、押すものが 1 つであることを見せる。 */
-.login-card {
-  padding: var(--space-8);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-
-.login-mark {
-  font-size: var(--text-2xl);
-  margin: 0;
-}
-
-.login-lead {
-  margin: 0;
-  line-height: 1.7;
-}
-
-/*
- * 何をする道具かの絵。**色は変数から引く。** 直書きすると、ここだけダークで
- * 明るいまま残る。線の太さは 1 つに揃えて、絵が主張しすぎないようにする。
- */
-.login-art {
-  width: 100%;
-  height: auto;
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.login-art .art-line {
-  stroke: var(--color-border);
-}
-
-.login-art .art-shape {
-  stroke: var(--color-text-muted);
-}
-
-/* 囲った範囲＝注釈。キャンバス上の印と同じ色にする（ADR 0036）。 */
-.login-art .art-frame {
-  stroke: var(--color-annotation);
-  stroke-dasharray: 5 4;
-}
-
-.login-art .art-text {
-  stroke: var(--color-border);
-}
-
-/* 作られた draft issue。「作成済み」のバッジと同じ色にする。 */
-.login-art .art-done {
-  stroke: var(--color-success);
-}
-
-.login-start {
-  justify-content: center;
-  width: 100%;
-}
-
-.login-note {
-  margin: 0;
-}
-
-.login .error {
-  border-radius: var(--radius-sm);
-}
-
-/* 自分のロールはボードのヘッダに常に出す。操作して断られる前に、何ができる
-   のかが見えている必要がある（ADR 0017）。 */
-.badge-role {
-  background: var(--color-surface-cool);
-  color: var(--color-text-subtle);
-}
-
-/* メンバーは右のパネルのタブの 1 つ（`SidePanel`）。キャンバスの上に重ねると、
-   ブレスト中の絵が隠れる。 */
-.member-panel {
-  padding: var(--space-5);
-}
-
-.invite-form {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  margin: var(--space-4) 0;
-}
-
-/* plain-list は選択肢を全幅のボタンで並べるためのもの。メンバーは 1 行に
-   名前とロールと解除が並ぶので、共有すると名前が潰れる。 */
-.member-list {
-  list-style: none;
-  margin: var(--space-4) 0 0;
-  padding: 0;
-}
-
-.member-list li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-2) 0;
-}
-
-.member-name {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-/* 招待する前に見せる相手（ADR 0053）。ID は長いので折り返させる。 */
-.invitee dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--space-1) var(--space-4);
-  margin: var(--space-4) 0;
-}
-
-.invitee dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.invitee-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-}
-
-/*
- * 書き換える項目の印（ADR 0026）。作るのか書き換えるのかは押す前に見えている
- * 必要がある。どちらも取り消せないが、書き換えは前の内容を消す。
- */
-.badge-updated {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-}
-
-/* 新しく作る項目の印（#201）。書き換えではないので、注意の色にしない。 */
-.badge-new {
-  background: var(--color-neutral-bg);
-  color: var(--color-text-subtle);
-}
-
-/*
- * GitHub に届いたか分からない書き込み（ADR 0056）。
- *
- * **「作れた」とも「失敗した」とも見えない色にする。** 成功の側に寄せると
- * 確かめずに済ませてしまい、失敗の側に寄せると押し直して重複を作る。打ち手が
- * 「GitHub を見る」しかないので、注意を引く帯で出して畳まない。
- *
- * 色だけに頼らない。文言（「確認できていません」）とバッジの文字が同じことを
- * 言っている。
- */
-.unconfirmed-items {
-  margin: var(--space-4) 0;
-  padding: var(--space-3) var(--space-4);
-  border-left: 2px solid var(--color-warning);
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-}
-
-.badge-unconfirmed {
-  background: var(--color-warning);
-  color: var(--color-warning-bg);
-}
-
-/*
- * 今回の作成で置き去りになるもの。作成ボタンの手前に置く。押したあとに
- * 気づいても、draft issue は削除できない。
- */
-.left-behind {
-  margin: var(--space-4) 0;
-  padding: var(--space-3) var(--space-4);
-  border-left: 2px solid var(--color-border);
-}
-
-/*
- * ボード名の変更。**見出しは見出しのまま置き、押したときだけ入力に変える。**
- * 常に入力欄にすると、読むところが編集欄になり、押し間違いで名前が変わる。
- * 変える口はメニューの「名前を変更」。
- */
-.rename-form {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.rename-form input {
-  font-size: var(--text-base);
-  padding: var(--space-1) var(--space-3);
-}
-
-/*
- * ボタンに添えるショートカットの表示。**`title` ではなく本文で出す**（ADR 0039）。
- *
- * 色と大きさは `.hint` に預ける（両方のクラスを付ける）。押せない理由と同じ
- * 「本文で出す手掛かり」なので、片方だけ濃さが違う理由が無い。ここが持つのは
- * 等幅と折り返さないことだけ。
- */
-.shortcut {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: nowrap;
-}
-
-/*
- * 保存に送るシーンの大きさ。**上限との比は出さない**（ADR 0018 / 0038）ので、
- * 減らせという催促には見えないよう、状態を並べる他のバッジと同じ扱いにする。
- */
-/* 作成先が固定済み（ADR 0014）。文脈のバッジと同じく無彩色で出す。 */
-.badge-locked,
-.badge-size {
-  background: var(--color-surface-cool);
-  color: var(--color-text-subtle);
-}
-
-/*
- * 引いた解釈の選択。2 件以上あるときだけ出る。
- */
-.interpretation-history {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-size: var(--text-sm);
-  margin: var(--space-3) 0;
-}
-
-.interpretation-history select {
-  flex: 1;
-  min-width: 0;
-}
-
-/*
- * 実行の履歴（ADR 0007）。畳み込み（「GitHub にある N 件」）の下に並ぶので、
- * 見た目を揃えて「別のもの」に見せない。
- */
-.run-history {
-  font-size: var(--text-sm);
-}
-
-.run-history > summary {
-  cursor: pointer;
-}
-
-/*
- * 図のドラフトのチャット（ADR 0041）。右のパネルのタブの 1 つ（`SidePanel`）。
- *
- * **キャンバスを覆わない。** 置いた図がどこに出るかを見ながら直す道具なので、
- * 上に敷くと「置く」を押した結果が確かめられない。.panel を共有しているので
- * 余白は注釈パネルと揃う。
- */
-/*
- * 貼る mermaid は字下げと列が意味を持つ（ER 図の属性、sequence の並び）。
- * プロポーショナルな字面だと、どこがずれているかが読めない。構文エラーの
- * 詳細も同じで、パーサは `^` で列を指すので、揃わないと指す先がずれる。
- */
-.mermaid-paste .diagram-chat-form textarea,
-.mermaid-paste .error-detail pre {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  white-space: pre;
-  overflow-x: auto;
-}
-
-.diagram-chat-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.diagram-chat-form textarea {
-  resize: vertical;
-  font: inherit;
-}
-
-/*
- * 生成された mermaid。**そのまま見せる**（変換後の図を先に見せるには、置か
- * ないままキャンバスに描く道具が要る）。長い行は折らずに横スクロールさせる。
- * 折ると、mermaid の 1 行と折り返しの区別が付かなくなる。
- */
-.diagram-mermaid {
-  margin: 0 0 var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  overflow-x: auto;
-}
-
-.diagram-turns {
-  margin: 0;
-  padding-left: var(--space-7);
-  font-size: var(--text-sm);
-  line-height: 1.6;
-  color: var(--color-text-subtle);
 }
