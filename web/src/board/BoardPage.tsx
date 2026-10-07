@@ -1894,7 +1894,7 @@ export function BoardPage({
             // 「Mermaid to Excalidraw」はこれで出し分けられている。0.18.1 は
             // パレットを置かないので今は効いていないが、置かれたときに守りを
             // 通らない口が黙って開かないようにする。「その他」メニューの同じ
-            // 項目はこれでは消えないので、`index.css` で隠している。
+            // 項目はこれでは消えないので、`board.css` で隠している。
             aiEnabled={false}
             onPaste={handlePaste}
             // viewer には描かせない。描けるのに保存できないと、描いた内容を

@@ -1,0 +1,84 @@
+/*
+ * 図のドラフトのタブの中の切り替え（`DiagramTab`）。右のパネルのタブと同じ
+ * 塗りにすると入れ子のタブに見えるので、枠で囲んだ控えめな形にする。
+ * 選んでいるほうは色だけで示さない。`aria-pressed` を読み上げが伝える。
+ */
+.diagram-tab-switch {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-5) var(--space-5) 0;
+}
+
+.diagram-tab-switch button {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-subtle);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.diagram-tab-switch button[aria-pressed="true"] {
+  border-color: var(--brand);
+  background: var(--color-selected-bg);
+  color: var(--color-selected-fg);
+}
+
+/*
+ * 図のドラフトのチャット（ADR 0041）。右のパネルのタブの 1 つ（`SidePanel`）。
+ *
+ * **キャンバスを覆わない。** 置いた図がどこに出るかを見ながら直す道具なので、
+ * 上に敷くと「置く」を押した結果が確かめられない。.panel を共有しているので
+ * 余白は注釈パネルと揃う。
+ */
+/*
+ * 貼る mermaid は字下げと列が意味を持つ（ER 図の属性、sequence の並び）。
+ * プロポーショナルな字面だと、どこがずれているかが読めない。構文エラーの
+ * 詳細も同じで、パーサは `^` で列を指すので、揃わないと指す先がずれる。
+ */
+.mermaid-paste .diagram-chat-form textarea,
+.mermaid-paste .error-detail pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.diagram-chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.diagram-chat-form textarea {
+  resize: vertical;
+  font: inherit;
+}
+
+/*
+ * 生成された mermaid。**そのまま見せる**（変換後の図を先に見せるには、置か
+ * ないままキャンバスに描く道具が要る）。長い行は折らずに横スクロールさせる。
+ * 折ると、mermaid の 1 行と折り返しの区別が付かなくなる。
+ */
+.diagram-mermaid {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.diagram-turns {
+  margin: 0;
+  padding-left: var(--space-7);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--color-text-subtle);
+}
