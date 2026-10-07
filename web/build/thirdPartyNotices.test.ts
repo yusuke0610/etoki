@@ -15,17 +15,27 @@ import {
 } from "./thirdPartyNotices.ts";
 
 describe("leadingComments", () => {
-  it("ファイルの先頭に並んだブロックコメントを返し、行コメントは読み飛ばす", () => {
+  it("ファイルの先頭に並んだコメントを返す。行コメントは 1 行ずつ", () => {
     const code = [
       "// eslint-disable-next-line",
       "/* 1 つ目 */",
       "",
       "/*! 2 つ目 */",
+      "// 3 つ目",
       'import x from "x";',
       "/* コードの後ろは読まない */",
     ].join("\n");
 
-    expect(leadingComments(code)).toEqual(["/* 1 つ目 */", "/*! 2 つ目 */"]);
+    expect(leadingComments(code)).toEqual([
+      "// eslint-disable-next-line",
+      "/* 1 つ目 */",
+      "/*! 2 つ目 */",
+      "// 3 つ目",
+    ]);
+  });
+
+  it("改行で終わらない行コメントも拾う", () => {
+    expect(leadingComments("// 最後の行")).toEqual(["// 最後の行"]);
   });
 
   it("閉じていないコメントは拾わない", () => {
@@ -68,6 +78,30 @@ describe("sourceNotices", () => {
     expect(sourceNotices(code)).toEqual({
       notices: [],
       unmarked: [code.split("\nexport")[0]],
+    });
+  });
+
+  it("`©` だけの表示も著作権の表示として扱う", () => {
+    expect(sourceNotices("/* © 2020 Example */\nexport {};")).toEqual({
+      notices: [],
+      unmarked: ["/* © 2020 Example */"],
+    });
+  });
+
+  // 書き出せるのはブロックコメントの本文だけ。行コメントに置いた表示は、
+  // 印があっても無くても成果物に届かないので、ブロックコメントに移してもらう。
+  it("行コメントに置いた表示は、印があっても unmarked に返す", () => {
+    const code = [
+      "// eslint-disable-next-line",
+      "// Copyright (c) 2020 Someone",
+      "//! Foo — MIT",
+      "// @license MIT",
+      "export {};",
+    ].join("\n");
+
+    expect(sourceNotices(code)).toEqual({
+      notices: [],
+      unmarked: ["// Copyright (c) 2020 Someone", "//! Foo — MIT", "// @license MIT"],
     });
   });
 });

@@ -32,11 +32,12 @@ export function licenseTextPath(id: LicenseId): string {
 }
 
 /**
- * ファイルの先頭に並んだブロックコメントを返す。
+ * ファイルの先頭に並んだコメントを返す。行コメントは 1 行ずつ返す。
  *
  * **見るのは先頭だけ。** 写したものの表示はファイルの頭に置く慣習で、途中の
  * コメントまで見るには文字列やテンプレートの中を区別する字句解析が要る。
- * 行コメントは読み飛ばす（`eslint-disable` のような指示が先頭に来うる）。
+ * 行コメントも返すのは、表示が行コメントで書かれたときに見逃さないため。
+ * `eslint-disable` のような指示も来るので、どれを咎めるかは呼ぶ側が決める。
  */
 export function leadingComments(code: string): string[] {
   const out: string[] = [];
@@ -47,8 +48,9 @@ export function leadingComments(code: string): string[] {
 
     if (code.startsWith("//", i)) {
       const eol = code.indexOf("\n", i);
-      if (eol === -1) break;
-      i = eol + 1;
+      const end = eol === -1 ? code.length : eol;
+      out.push(code.slice(i, end).trimEnd());
+      i = end;
       continue;
     }
 
@@ -67,28 +69,37 @@ export function leadingComments(code: string): string[] {
 }
 
 /**
- * 表示として残すコメントか。esbuild / rolldown が「法的なコメント」と見なす
- * 形に揃える（`/*!` で始まるか、`@license` / `@preserve` を含む）。
+ * 表示の印が付いたコメントか。esbuild / rolldown が「法的なコメント」と見なす
+ * 形に揃える（`/*!` か `//!` で始まるか、`@license` / `@preserve` を含む）。
  */
 function isLegalComment(comment: string): boolean {
-  return comment.startsWith("/*!") || /@license|@preserve/.test(comment);
+  return /^\/[*/]!/.test(comment) || /@license|@preserve/.test(comment);
+}
+
+/** 著作権の表示を含むか。`Copyright` と書かず `©` だけで書く表示もある。 */
+function mentionsCopyright(comment: string): boolean {
+  return /copyright|©/i.test(comment);
 }
 
 /**
- * ソースの先頭から、写したものの表示を取り出す。
+ * ソースの先頭から、写したものの表示を取り出す。表示として拾うのは、印の
+ * 付いたブロックコメントだけ。
  *
- * `unmarked` は、著作権の表示を含むのに印が無いコメント。**表示が成果物から
- * 黙って落ちる形なので、プラグインはこれを見つけたらビルドを止める。** 説明と
- * 表示を 1 つのコメントにまとめると、説明まで表示として書き出すことになるので、
- * 表示だけを別のコメントに分けてもらう。
+ * `unmarked` は、表示を含むのに書き出せないコメント。印の無いブロック
+ * コメントのうち著作権の表示を含むものと、行コメントのうち著作権の表示か
+ * 印を含むもの。**表示が成果物から黙って落ちる形なので、プラグインはこれを
+ * 見つけたらビルドを止める。** 説明と表示を 1 つのコメントにまとめると、説明
+ * まで表示として書き出すことになるので、表示だけを別のコメントに分けてもらう。
+ * 行コメントを表示として拾わないのは、複数行の表示が 1 行ずつに割れるため。
  */
 export function sourceNotices(code: string): { notices: string[]; unmarked: string[] } {
   const notices: string[] = [];
   const unmarked: string[] = [];
 
   for (const c of leadingComments(code)) {
-    if (isLegalComment(c)) notices.push(c);
-    else if (/copyright/i.test(c)) unmarked.push(c);
+    const block = c.startsWith("/*");
+    if (block && isLegalComment(c)) notices.push(c);
+    else if (mentionsCopyright(c) || isLegalComment(c)) unmarked.push(c);
   }
 
   return { notices, unmarked };
@@ -378,9 +389,9 @@ export function thirdPartyNotices(options: { fontsDir: string }): Plugin {
           const { notices, unmarked } = sourceNotices(readFileSync(file, "utf8"));
           if (unmarked.length > 0) {
             this.error(
-              `${rel}: a leading comment mentions a copyright but is not marked as a ` +
-                "license notice. Put the notice in its own comment starting with /*! or " +
-                "containing @license, so that it reaches the build output.",
+              `${rel}: a leading comment carries a copyright or license notice but is not ` +
+                "a block comment marked as one. Put the notice in its own block comment " +
+                "starting with /*! or containing @license, so that it reaches the build output.",
             );
           }
           for (const n of notices) copied.push({ file: rel, notice: commentBody(n) });
