@@ -93,6 +93,43 @@ func TestNew_RejectsInvalidBaseURL(t *testing.T) {
 	}
 }
 
+// 鍵を持つときだけ、http はループバックに限る（#64）。綴りの誤り 1 つで鍵を
+// 平文で外へ送らない。鍵の無い http は LAN 内のローカル LLM に向ける使い方
+// （ADR 0008）があるので通す。
+func TestNew_HTTPBaseURLNeedsLoopbackWhenKeyIsSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		base    string
+		apiKey  string
+		wantErr bool
+	}{
+		{"鍵つきで外への http", "http://llm.example.test", testAPIKey, true},
+		{"鍵つきで LAN への http", "http://192.168.1.10:11434", testAPIKey, true},
+		{"鍵なしで LAN への http", "http://192.168.1.10:11434", "", false},
+		{"鍵つきでループバックへの http", "http://127.0.0.1:11434", testAPIKey, false},
+		{"鍵つきで localhost への http", "http://localhost:11434", testAPIKey, false},
+		{"鍵つきで IPv6 のループバックへの http", "http://[::1]:11434", testAPIKey, false},
+		{"鍵つきで外への https", "https://llm.example.test", testAPIKey, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := llm.New(llm.Config{BaseURL: tt.base, APIKey: tt.apiKey})
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Fatalf("New(%q, key=%v) error = %v, wantErr %v", tt.base, tt.apiKey != "", err, tt.wantErr)
+			}
+			// 鍵は伏せたまま返す。設定の誤りを知らせるエラーが鍵を運ばない。
+			if err != nil && strings.Contains(err.Error(), tt.apiKey) {
+				t.Errorf("error leaks the api key: %v", err)
+			}
+		})
+	}
+}
+
 // 認証方式が違う基盤に載せ替えるときは、RoundTripper で付け替える（ADR 0008）。
 func TestComplete_AllowsAuthViaRoundTripper(t *testing.T) {
 	t.Parallel()
@@ -459,6 +496,131 @@ func TestComplete_HonorsContextCancellation(t *testing.T) {
 }
 
 // 鍵がエラーに混ざると、ログや画面に出た時点で漏れる。
+// net/http はリダイレクト先へ元のヘッダを写す。別のホストへ移るときに落とす
+// のは Authorization と Cookie だけで、x-api-key は写したまま送る。New で
+// BaseURL を検査しても、リダイレクトで鍵が外や平文へ運ばれうる（#226）。
+func TestComplete_KeepsAPIKeyWithinOriginOnRedirect(t *testing.T) {
+	t.Parallel()
+
+	const base = "https://llm.example.test"
+	tests := []struct {
+		name    string
+		to      string
+		apiKey  string
+		wantErr bool
+	}{
+		{"鍵つきで別のホストへ", "https://other.example.test/v1/messages", testAPIKey, true},
+		{"鍵つきで同じホストの http へ", "http://llm.example.test/v1/messages", testAPIKey, true},
+		{"鍵つきで同じホストの別のポートへ", "https://llm.example.test:8443/v1/messages", testAPIKey, true},
+		{"鍵つきで同じオリジンの別の path へ", base + "/v2/messages", testAPIKey, false},
+		// 鍵が無ければ運ぶものも無い。ローカルの LLM の使い方を狭めない（ADR 0008）。
+		{"鍵なしで別のホストへ", "https://other.example.test/v1/messages", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			rt := &redirectTransport{to: tt.to}
+			c, err := llm.New(llm.Config{
+				BaseURL:    base,
+				APIKey:     tt.apiKey,
+				HTTPClient: &http.Client{Transport: rt},
+			})
+			if err != nil {
+				t.Fatalf("New() = %v", err)
+			}
+
+			_, err = c.Complete(t.Context(), port.VisionRequest{Text: "x"})
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Fatalf("Complete() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && strings.Contains(err.Error(), testAPIKey) {
+				t.Errorf("error leaks the api key: %v", err)
+			}
+
+			if tt.wantErr {
+				if len(rt.sent) != 1 {
+					t.Fatalf("リダイレクト先へ送っている: %v", rt.sent)
+				}
+				return
+			}
+			if len(rt.sent) != 2 || rt.sent[1].url != tt.to {
+				t.Fatalf("sent = %v, want 2 requests ending at %s", rt.sent, tt.to)
+			}
+			if rt.sent[1].apiKey != tt.apiKey {
+				t.Errorf("リダイレクト先の x-api-key = %q, want %q", rt.sent[1].apiKey, tt.apiKey)
+			}
+		})
+	}
+}
+
+// 差された http.Client は呼び出し元のもの。書き換えず、呼び出し元の
+// CheckRedirect も効かせたままにする。
+func TestNew_KeepsCallersRedirectPolicy(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	hc := &http.Client{
+		Transport: &redirectTransport{to: "https://llm.example.test/v2/messages"},
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			calls++
+			return nil
+		},
+	}
+	c, err := llm.New(llm.Config{BaseURL: "https://llm.example.test", APIKey: testAPIKey, HTTPClient: hc})
+	if err != nil {
+		t.Fatalf("New() = %v", err)
+	}
+	if _, err := c.Complete(t.Context(), port.VisionRequest{Text: "x"}); err != nil {
+		t.Fatalf("Complete() = %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("呼び出し元の CheckRedirect が %d 回呼ばれた, want 1", calls)
+	}
+
+	// 呼び出し元の Client に etoki の検査が差し込まれていれば、別のホストへの
+	// リダイレクトをここで断る。
+	first, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://llm.example.test/v1/messages", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://other.example.test/v1/messages", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hc.CheckRedirect(other, []*http.Request{first}); err != nil {
+		t.Errorf("呼び出し元の Client が書き換わっている: %v", err)
+	}
+}
+
+type sentRequest struct{ url, apiKey string }
+
+// redirectTransport は最初のリクエストに to への 307 を返し、2 回目からは
+// 正常な応答を返す。届いたリクエストの URL と鍵を順に残す。
+type redirectTransport struct {
+	to   string
+	sent []sentRequest
+}
+
+func (rt *redirectTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	rt.sent = append(rt.sent, sentRequest{url: r.URL.String(), apiKey: r.Header.Get("x-api-key")})
+	if len(rt.sent) == 1 {
+		return &http.Response{
+			StatusCode: http.StatusTemporaryRedirect,
+			Header:     http.Header{"Location": {rt.to}},
+			Body:       http.NoBody,
+			Request:    r,
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(okResponse)),
+		Request:    r,
+	}, nil
+}
+
 func TestComplete_DoesNotLeakAPIKey(t *testing.T) {
 	t.Parallel()
 
