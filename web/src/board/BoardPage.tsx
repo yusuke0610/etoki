@@ -1,11 +1,6 @@
-import {
-  CaptureUpdateAction,
-  Excalidraw,
-  Footer,
-  MainMenu,
-} from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, Footer } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { boardsApi } from "../api/boards";
 import {
@@ -65,26 +60,20 @@ import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
 import { useExclusion } from "./exclusion";
 import { useInterpretations } from "./annotations/useInterpretations";
 import { MemberPanel } from "./members/MemberPanel";
-import {
-  backToListIcon,
-  changeTargetIcon,
-  deleteBoardIcon,
-  exportIcon,
-  importIcon,
-  refreshTargetIcon,
-  renameIcon,
-  tableIcon,
-} from "./menuIcons";
 import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
 import { MermaidPastePanel } from "./diagram/MermaidPastePanel";
 import { useDiagramDraft } from "./diagram/useDiagramDraft";
 import { projectLabel } from "../boards/grouping";
+import { BoardContext } from "./BoardContext";
+import { BoardMenu } from "./BoardMenu";
+import { BoardStatus } from "./BoardStatus";
+import { DeleteConfirm } from "./DeleteConfirm";
 import { SidePanel, type SidePanelTab } from "./SidePanel";
 import { useCreation } from "./annotations/useCreation";
 import { useRunHistories } from "./annotations/useRunHistories";
 import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
 import { projectLink } from "./target/projectLink";
-import { canEditBoard, isOwner, ROLE_LABELS } from "./members/roles";
+import { canEditBoard } from "./members/roles";
 import { useBoardDeletion, useRename, useTargetRefresh } from "./useBoardManagement";
 import { useBoardTransfer } from "./useBoardTransfer";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
@@ -358,17 +347,6 @@ export function BoardPage({
     load: loadRuns,
     discard: discardRuns,
   } = useRunHistories(board.id);
-
-  /**
-   * 確認が出たら、そこへフォーカスを移す。
-   *
-   * **移さないとキーボードの居場所が消える。** 押した「ボードを削除」は確認が
-   * 開くと disabled になり、focus を body へ落とす。取り消せない操作の直前で
-   * 行き先を失わせない。
-   */
-  const focusDeleteConfirm = useCallback((node: HTMLElement | null) => {
-    node?.focus();
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -897,104 +875,23 @@ export function BoardPage({
     ? "保存してから作成先を変更できます"
     : exclusive.reasonFor("changeTarget");
 
-  /*
-   * 右上に出す。ボード名と、未保存かどうかと、保存（ADR 0065）。
-   *
-   * **保存だけは拡張点のメニューに入れない。** いちばん押すものであり、作成中や
-   * 取り込み中に止まる理由（一時的な理由）がいちばん出る場所でもある。待たされて
-   * いる本人が見ている場所で理由が読めないと意味が無い（ADR 0066）。
-   *
-   * **ボード名を隣に置く。** 何を保存するのかが、ボタンの隣で読める。
-   */
+  // 右上に出す。ボード名・未保存・保存（`BoardStatus`）。**描くたびに作り直さない**
+  // （ADR 0065）。依存にはプリミティブと、同一性の保たれた関数だけを置く。
   const topRightUI = useMemo(
     () => (
-      <div className="board-status etoki-ui">
-        {nameDraft === null ? (
-          <h1>{board.name}</h1>
-        ) : (
-          <form
-            className="rename-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void rename();
-            }}
-          >
-            {/*
-            ラベルは一覧の画面の「ボード名」（新規作成の入力）と分ける。
-            入れるものが違う（作るボードの名前か、開いているボードの名前か）。
-          */}
-            <input
-              aria-label="ボードの名前"
-              value={nameDraft}
-              disabled={renaming}
-              onChange={(e) => setNameDraft(e.target.value)}
-              /*
-              jsx-a11y が禁じているのは「開いた瞬間に勝手に焦点が移る」
-              autoFocus で、ここはそれに当たらない。メニューの「名前を変更」を
-              押した結果としてこの入力が現れるので、移さないとキーボードの
-              利用者の焦点は body に落ちる。**外すほうが a11y は悪くなる。**
-              規則が見ているのは属性で、押した結果として現れたかどうかは
-              見られない（ADR 0039）。
-            */
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
-            />
-            {/*
-            「保存」とは書かない。隣にシーンの保存ボタンが並んでいるので、
-            同じ文言だと何を保存するのかが読めない。
-          */}
-            <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
-              {renaming ? "変更中…" : "名前を保存"}
-            </button>
-            <button
-              type="button"
-              className="quiet"
-              disabled={renaming}
-              onClick={() => setNameDraft(null)}
-            >
-              取消
-            </button>
-          </form>
-        )}
-        {dirty && <span className="dirty">未保存</span>}
-        {canEdit && (
-          <>
-            {/*
-            取り消せない操作と保存は相互に排他する。**押せない理由を title に
-            隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
-            フォーカスも当たらないので、キーボードと読み上げには届かない。
-          */}
-            <button
-              type="button"
-              className="primary"
-              onClick={() => void save()}
-              disabled={!canSave}
-              aria-describedby={
-                saveBlocked !== null ? "save-shortcut save-blocked" : "save-shortcut"
-              }
-            >
-              {saving ? "保存中…" : "保存"}
-            </button>
-            {/*
-            ショートカットの存在を画面に出す。**`title` に隠さない**
-            （ADR 0039）。**ボタンの中には置かない。** 中に置くと読み上げる名前が
-            「保存 Ctrl / ⌘ + S」になり、名前で引いている E2E が全部ずれる。
-            外に出して `aria-describedby` で結ぶ。
-
-            修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
-            それを見ていないので、片方だけ出すともう片方の利用者には嘘になる。
-          */}
-            <kbd className="hint shortcut" id="save-shortcut">
-              ⌘/Ctrl+S
-            </kbd>
-            {saveBlocked !== null && (
-              <span className="hint" id="save-blocked">
-                {saveBlocked}
-              </span>
-            )}
-          </>
-        )}
-      </div>
+      <BoardStatus
+        name={board.name}
+        nameDraft={nameDraft}
+        onNameDraftChange={setNameDraft}
+        renaming={renaming}
+        onRename={() => void rename()}
+        dirty={dirty}
+        canEdit={canEdit}
+        onSave={() => void save()}
+        canSave={canSave}
+        saveBlocked={saveBlocked}
+        saving={saving}
+      />
     ),
     [
       board.name,
@@ -1011,74 +908,19 @@ export function BoardPage({
     ],
   );
 
-  /*
-   * 下に出す。**常に見えている状態だけ**（ADR 0064 / 0065）。押すものは置かない。
-   */
+  // 下に出す。ロール・作成先・大きさ（`BoardContext`）。作り直さない理由は上と同じ。
   const footerUI = useMemo(
     () => (
-      <div className="board-context etoki-ui">
-        {/*
-        自分が何をできるのかは、操作して断られる前に見えている必要がある。
-        共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
-      */}
-        <span className="badge badge-role">{ROLE_LABELS[board.role]}</span>
-        {/*
-        どこに作られるのかは、作る直前ではなく常に見えている必要がある。
-        作った draft issue は取り消せない（ADR 0009）。
-
-        飛び先が組めるならリンクにする。取り消せない操作の結果を確かめる
-        導線がここから始まる（ADR 0025）。組めないのは作成先が未選択の
-        ボードだけなので、そのときはこれまでどおり文字のまま出す。
-
-        **Project まで書く**（#217）。1 つのリポジトリに Project は複数ありうる
-        ので、リポジトリ名だけでは作る先が決まらない。組み立ては詳細の帯の
-        「作る先」（`targetLabel`）と同じものを使う。
-      */}
-        {linkHref !== null ? (
-          <a
-            className="badge badge-target"
-            href={linkHref}
-            target="_blank"
-            rel="noreferrer"
-            title={
-              linkExact
-                ? "作成先の Project を GitHub で開く"
-                : "リポジトリの Projects を GitHub で開く"
-            }
-          >
-            {targetLabel ?? `${board.repositoryOwner}/${board.repositoryName}`}
-          </a>
-        ) : (
-          <span className="badge badge-target">
-            {targetLabel ?? `${board.repositoryOwner}/${board.repositoryName}`}
-          </span>
-        )}
-        {/*
-          作成先の Project に書けるか（ADR 0017）。**書けないと分かったときだけ
-          出す**（#217）。`unknown`（まだ確かめていない・確かめられなかった）を
-          「書けません」に見せない。なぜ書けないかの本文は詳細の帯にある。
-        */}
-        {projectAccess === "denied" && (
-          <span className="badge badge-denied">書けません</span>
-        )}
-        {/*
-        作成先が固定済みかは**状態**なので、ここにも出す（#62 が読めなければ
-        ならないものとして挙げている）。メニューの中の文は「作成先を変更」が
-        無い理由で、閉じているあいだは読めない。役目が違うので両方に置く。
-      */}
-        {board.targetLocked && <span className="badge badge-locked">作成先は確定</span>}
-        {/*
-        いまの大きさを出す。**上限との比は出さない。** 比を出すには上限を
-        フロントが知る必要があり、それは判定を 2 箇所に持つのと同じこと
-        になる（ADR 0018 / 0038）。「大きいときだけ」出さないのも同じ
-        理由で、上限を知らない以上どこからが大きいのかを決められない。
-      */}
-        {sceneBytes !== null && (
-          <span className="badge badge-size" title="ボードの大きさ（貼った画像を含む）">
-            {formatSceneSize(sceneBytes)}
-          </span>
-        )}
-      </div>
+      <BoardContext
+        role={board.role}
+        targetLabel={targetLabel}
+        repository={`${board.repositoryOwner}/${board.repositoryName}`}
+        linkHref={linkHref}
+        linkExact={linkExact}
+        projectAccess={projectAccess}
+        targetLocked={board.targetLocked}
+        sceneBytes={sceneBytes}
+      />
     ),
     [
       board.role,
@@ -1093,174 +935,31 @@ export function BoardPage({
     ],
   );
 
-  /*
-   * たまに押す操作はキャンバスのメニューにしまう（ADR 0065）。
-   *
-   * **押せない理由は、しまった先で本文として出す**（ADR 0066）。メニューは
-   * 開けばフォーカスが入るので、キーボードと読み上げには届く。形はヘッダーに
-   * あったころと同じで、権限や設定で押せない操作はボタンごと出さずに理由の文を
-   * 出し、一時的に押せない操作は押せないボタンと理由を `aria-describedby` で結ぶ。
-   *
-   * **独自のメニューを渡すと既定の中身は丸ごと置き換わる。** 残すものは
-   * `MainMenu.DefaultItems` で並べ直してある。**etoki の項目には
-   * `etoki-menu-item` を付ける。** axe はライブラリの DOM を外して掛けており、
-   * この印で etoki の項目だけを検査に戻している（`web/e2e/helpers/a11y.ts`）。
-   * テーマの切り替えはここに残す
-   * （ADR 0055 / 0065 の「口は 1 つ」）。**etoki の項目にもアイコンを付ける**
-   * （`menuIcons.tsx`、#204）。既定の項目にだけあると、字下げが揃わず 2 種類の
-   * 部品が混ざって見える。Excalidraw 自身へのリンク
-   * （`Socials`）は etoki の利用者に向けたものではないので置かない。
-   */
+  // たまに押す操作はキャンバスのメニューにしまう（`BoardMenu`）。作り直さない
+  // 理由は上と同じ。
   const boardMenu = useMemo(
     () => (
-      <MainMenu>
-        <MainMenu.Item
-          className="etoki-menu-item"
-          icon={backToListIcon}
-          onSelect={onClose}
-        >
-          ボード一覧へ戻る
-        </MainMenu.Item>
-        <MainMenu.Separator />
-        {/*
-        名前はブレストの中身に属する表示物なので、editor にも直させる
-        （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
-      */}
-        {canEdit && (
-          <MainMenu.Item
-            className="etoki-menu-item"
-            icon={renameIcon}
-            onSelect={() => setNameDraft(board.name)}
-          >
-            名前を変更
-          </MainMenu.Item>
-        )}
-        <MainMenu.Separator />
-        {!isOwner(board.role) ? (
-          // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
-          // 断るより、押せないことを見せるほうが状態として正しい。
-          <MenuNote>作成先を変えられるのはオーナーだけです</MenuNote>
-        ) : board.targetLocked ? (
-          // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
-          // 押せないことを見せるほうが状態として正しい。
-          //
-          // **名前の取り直しだけは出す。** 固定するのは作成先そのもので
-          // あって、表示用のスナップショットではない（ADR 0037）。
-          <>
-            <MenuNote>作成先は確定（draft issue を作成済み）</MenuNote>
-            {/*
-            GitHub が組み立てられていない構成では、押しても Project の
-            一覧を引けない。ボタンを黙って消さず、代わりに理由を出す
-            （ADR 0030）。
-          */}
-            {creationUnavailable !== null ? (
-              <MenuNote>{creationUnavailable}</MenuNote>
-            ) : (
-              <MainMenu.Item
-                className="etoki-menu-item"
-                icon={refreshTargetIcon}
-                onSelect={() => void refreshTargetDisplay()}
-                disabled={refreshingTarget}
-              >
-                {refreshingTarget ? "取り直し中…" : "作成先の名前を取り直す"}
-              </MainMenu.Item>
-            )}
-          </>
-        ) : (
-          <>
-            <MainMenu.Item
-              className="etoki-menu-item"
-              icon={changeTargetIcon}
-              onSelect={onChangeTarget}
-              // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
-              // 黙って捨てずに、保存してからにしてもらう。
-              disabled={targetChangeBlocked !== null}
-              aria-describedby={
-                targetChangeBlocked !== null ? "target-change-blocked" : undefined
-              }
-            >
-              作成先を変更
-            </MainMenu.Item>
-            {targetChangeBlocked !== null && (
-              <MenuNote id="target-change-blocked">{targetChangeBlocked}</MenuNote>
-            )}
-          </>
-        )}
-        <MainMenu.Separator />
-        {/*
-        持ち出しと取り込みの口はここ 1 つ（ADR 0045）。ライブラリの既定の
-        項目（開く・保存）はこのメニューに並べていない。
-
-        書き出しは viewer にも出す。見えているものを出すだけなので、
-        共有した相手に新しく見せるものが無い（ADR 0017）。
-      */}
-        <MainMenu.Item
-          className="etoki-menu-item"
-          icon={exportIcon}
-          onSelect={exportScene}
-          disabled={!api}
-        >
-          書き出し
-        </MainMenu.Item>
-        {canEdit && (
-          <>
-            <MainMenu.Item
-              className="etoki-menu-item"
-              icon={importIcon}
-              onSelect={() => fileInput.current?.click()}
-              // **作成中は取り込ませない。** キャンバスを置き換えるので、
-              // 保存を止めているのと同じ理由で止める（作られた内容と記録
-              // されるハッシュが食い違いうる）。
-              disabled={!api || running !== null}
-              aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
-            >
-              {importing ? "取り込み中…" : "取り込み"}
-            </MainMenu.Item>
-            {importBlocked !== null && (
-              <MenuNote id="import-blocked">{importBlocked}</MenuNote>
-            )}
-            <MainMenu.Item
-              className="etoki-menu-item"
-              icon={tableIcon}
-              onSelect={addTable}
-              disabled={!api}
-            >
-              表
-            </MainMenu.Item>
-          </>
-        )}
-        <MainMenu.Separator />
-        <MainMenu.DefaultItems.SaveAsImage />
-        <MainMenu.DefaultItems.SearchMenu />
-        <MainMenu.DefaultItems.Help />
-        {canEdit && <MainMenu.DefaultItems.ClearCanvas />}
-        <MainMenu.Separator />
-        <MainMenu.DefaultItems.ToggleTheme />
-        {canEdit && <MainMenu.DefaultItems.ChangeCanvasBackground />}
-        <MainMenu.Separator />
-        {/*
-        ボードごと畳むのは owner だけ（ADR 0042）。**押した時点では消さない。**
-        何が残るのかを引いてから確認を出す。
-
-        **消すなら理由を出す**（ADR 0017 / 0030）。権限で押せない操作は、
-        ボタンを黙って消さずに押せない理由のほうを見せる。
-
-        **最後に区切って置く。** 取り消せない操作を、日常の操作と同じ並びの
-        途中に置かない。
-      */}
-        {isOwner(board.role) ? (
-          <MainMenu.Item
-            className="etoki-menu-item danger"
-            icon={deleteBoardIcon}
-            onSelect={() => void askDelete()}
-            disabled={deletion !== null}
-          >
-            {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
-          </MainMenu.Item>
-        ) : (
-          <MenuNote>ボードを削除できるのはオーナーだけです</MenuNote>
-        )}
-      </MainMenu>
+      <BoardMenu
+        onClose={onClose}
+        canEdit={canEdit}
+        role={board.role}
+        targetLocked={board.targetLocked}
+        onRename={() => setNameDraft(board.name)}
+        creationUnavailable={creationUnavailable}
+        onRefreshTarget={() => void refreshTargetDisplay()}
+        refreshingTarget={refreshingTarget}
+        onChangeTarget={onChangeTarget}
+        targetChangeBlocked={targetChangeBlocked}
+        canvasReady={api !== null}
+        onExport={exportScene}
+        onImport={() => fileInput.current?.click()}
+        running={running}
+        importBlocked={importBlocked}
+        importing={importing}
+        onAddTable={addTable}
+        deletion={deletion}
+        onAskDelete={() => void askDelete()}
+      />
     ),
     [
       onClose,
@@ -1332,55 +1031,13 @@ export function BoardPage({
         />
       )}
 
-      {/*
-        **何が残るのかを見せてから確認させる**（ADR 0042、中核思想 3）。
-        etoki は GitHub 側の draft issue を消さない（消せない）ので、消えるのは
-        出どころの記録のほうだと分けて言う。ブラウザの confirm を使わないのは、
-        件数を出す場所が無いため。
-      */}
       {deletion !== null && deletion.status !== "loading" && (
-        <section
-          className="delete-confirm"
-          role="alertdialog"
-          aria-labelledby="delete-confirm-title"
-          // 見出しではなく枠を受け皿にする。読み上げは aria-labelledby で
-          // 見出しを読み、次のタブ移動が中のボタンに入る。
-          tabIndex={-1}
-          ref={focusDeleteConfirm}
-        >
-          <h2 id="delete-confirm-title">「{board.name}」を削除しますか</h2>
-          <p>
-            {"シーンもメンバーも実行の記録も消えます。"}
-            <strong>取り消せません。</strong>
-          </p>
-          {deletion.losing.recordedItemCount > 0 ? (
-            <p>
-              {`このボードから作成した draft issue が ${deletion.losing.recordedItemCount} 件記録されています。`}
-              {"GitHub 側の draft issue は削除されません（etoki からは消せません）。"}
-              {"削除すると、その draft issue がどこから作られたのかを辿れなくなります。"}
-            </p>
-          ) : (
-            <p>このボードから作成した draft issue の記録はありません。</p>
-          )}
-          <div className="delete-confirm-actions">
-            <button
-              type="button"
-              className="danger"
-              onClick={() => void deleteBoard()}
-              disabled={deletion.status === "deleting"}
-            >
-              {deletion.status === "deleting" ? "削除中…" : "削除する"}
-            </button>
-            <button
-              type="button"
-              className="quiet"
-              onClick={cancelDelete}
-              disabled={deletion.status === "deleting"}
-            >
-              やめる
-            </button>
-          </div>
-        </section>
+        <DeleteConfirm
+          name={board.name}
+          deletion={deletion}
+          onConfirm={() => void deleteBoard()}
+          onCancel={cancelDelete}
+        />
       )}
 
       {/*
@@ -1573,21 +1230,5 @@ export function BoardPage({
         />
       </div>
     </div>
-  );
-}
-
-/**
- * メニューの中に出す、押せない理由の文（ADR 0066）。
- *
- * **ボタンとして描かない。** 押しても何も起きないものを項目の形で置くと、
- * 押せるように見える。`ItemCustom` は項目と同じ並びに置けて、押せない。
- */
-function MenuNote({ id, children }: { id?: string; children: ReactNode }) {
-  return (
-    <MainMenu.ItemCustom className="menu-note">
-      <span className="hint" id={id}>
-        {children}
-      </span>
-    </MainMenu.ItemCustom>
   );
 }

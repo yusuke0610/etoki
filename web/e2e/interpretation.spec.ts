@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { emptyScene } from "./helpers/api";
+import { emptyScene } from "./helpers/boardData";
 import {
   annotationCard,
   annotationDetail,
