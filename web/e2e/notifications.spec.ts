@@ -1,6 +1,7 @@
 import { expect, test, type Locator } from "@playwright/test";
 
-import { holdSave, installApi, summarize } from "./helpers/api";
+import { holdSave, installApi } from "./helpers/api";
+import { summarize } from "./helpers/boardData";
 import {
   annotationCard,
   annotationDetail,

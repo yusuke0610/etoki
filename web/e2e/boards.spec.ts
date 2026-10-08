@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, listEntry, summarize } from "./helpers/api";
+import { installApi } from "./helpers/api";
+import { listEntry, summarize } from "./helpers/boardData";
 import {
   backToList,
   chooseFromMenu,
