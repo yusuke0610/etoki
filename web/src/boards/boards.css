@@ -150,6 +150,18 @@
   font-size: var(--text-sm);
 }
 
+/*
+ * 注釈が 1 つも無いボード（#200）。状態ではないので無彩色にする。
+ *
+ * 「未作成」（`web/src/board/annotations/annotations.css`）と同じ色だが、
+ * 揃えているのは無彩色であることで、「未作成」の見た目ではない。違いは
+ * 文字が持つ。
+ */
+.badge-none {
+  background: var(--color-neutral-bg);
+  color: var(--color-text-subtle);
+}
+
 .board-card-note {
   margin: 0;
 }
