@@ -39,8 +39,16 @@ export type BoardListEntry = Schemas["BoardListEntry"];
 /** 注釈の 3 状態ごとの件数。 */
 export type AnnotationCounts = Schemas["AnnotationCounts"];
 
-/** シーンと作成先を含むボード。 */
+/** シーンと作成先を含むボード。貼った画像は含まない（ADR 0074）。 */
 export type BoardDetail = Schemas["BoardDetail"];
+
+/**
+ * 開いたボード。`BoardDetail` に貼った画像をすべて加えたもの（ADR 0074）。
+ *
+ * **画像を運ぶのは開く口だけ。** 改名や作成先の設定の応答は `BoardDetail` で
+ * 返る。
+ */
+export type BoardWithFiles = Schemas["BoardWithFiles"];
 
 /**
  * 削除で etoki から失われるもの。
@@ -58,10 +66,10 @@ export type BoardTargetDisplay = Schemas["BoardTargetDisplay"];
 /** 改名のリクエストボディ。名前だけを持つ。 */
 export type RenameBoardRequest = Schemas["RenameBoardRequest"];
 
-/** シーン保存のリクエストボディ。編集の基準にした版を伴う。 */
+/** シーン保存のリクエストボディ。編集の基準にした版と、足す画像を伴う。 */
 export type SaveSceneRequest = Schemas["SaveSceneRequest"];
 
-/** 保存後のボードの版。次の保存の基準になる。 */
+/** 保存後のボードの版と、サーバーが持っている画像。次の保存の基準になる。 */
 export type SaveSceneResponse = Schemas["SaveSceneResponse"];
 
 /** 作成先を選ぶときに見せるリポジトリ。 */

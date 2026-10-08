@@ -12,6 +12,7 @@ import {
 import type {
   AnnotationStatus,
   BoardDetail,
+  BoardWithFiles,
   Capabilities,
   DetachedAnnotation,
   DiagramKind,
@@ -37,6 +38,7 @@ import {
   type Viewport,
 } from "../excalidraw/annotationOverlay";
 import { sceneSignature } from "../excalidraw/dirty";
+import { openedFiles } from "../excalidraw/files";
 import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
 import { formatSceneSize } from "../excalidraw/size";
 import { createTable, tableCenter } from "../excalidraw/table";
@@ -117,7 +119,11 @@ const ANNOTATIONS_FAILED = "annotations-failed";
 const SCENE_UNREADABLE = "scene-unreadable";
 
 type Props = {
-  board: BoardDetail;
+  /**
+   * 開いたボード。**貼った画像を持つのは開いたときだけ**（ADR 0074）。キャンバスに
+   * 渡すのはマウントの 1 回きりで、以後はキャンバスが画像を持っている。
+   */
+  board: BoardWithFiles;
   /**
    * いま使える機能。null は「まだ確かめていない」（ADR 0030）。
    *
@@ -370,13 +376,22 @@ export function BoardPage({
       //
       // **要素は動かさない。** 動かすと座標の変更として未保存になり、開いた
       // だけで保存を促すことになる。動かすのは見ている位置のほう。
-      return { data: { ...scene, scrollToContent: true }, unreadable: false };
+      //
+      // 貼った画像はシーンとは別に届く（ADR 0074）。渡さないと、画像の要素だけが
+      // 空白で置かれる。
+      return {
+        data: { ...scene, files: openedFiles(board.files), scrollToContent: true },
+        unreadable: false,
+      };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
       return { data: { elements: [], appState: {} }, unreadable: true };
     }
-  }, [board.scene]);
+  }, [board.scene, board.files]);
   const initialData = initialScene.data;
+
+  // 開いた時点でサーバーが持っていた画像。保存はこれに無い画像だけを送る。
+  const openedFileIds = useMemo(() => Object.keys(board.files), [board.files]);
 
   // 読めなかったことの通知は描画の外で出す。useMemo の中で出すと、描画中に
   // 別のコンポーネント（通知）の状態を書き換えることになる。
@@ -677,6 +692,7 @@ export function BoardPage({
     api,
     boardId: board.id,
     updatedAt: board.updatedAt,
+    fileIds: openedFileIds,
     sceneOverLimit: board.sceneOverLimit,
     exclusive,
     currentBackground,

@@ -1681,8 +1681,9 @@ func TestBoard_UpdateScene(t *testing.T) {
 	seedBoard(t, db, "board-1")
 
 	later := baseTime.Add(time.Hour)
-	if err := repo.UpdateScene(
-		t.Context(), "", "board-1", `{"elements":["updated"]}`, baseTime, later,
+	if _, err := repo.UpdateScene(
+		t.Context(), "", "board-1", port.SceneWrite{Scene: `{"elements":["updated"]}`},
+		baseTime, later,
 	); err != nil {
 		t.Fatalf("UpdateScene: %v", err)
 	}
@@ -1841,7 +1842,8 @@ func TestBoard_UpdateSceneNotFound(t *testing.T) {
 	db := newDB(t)
 	repo := sqlite.NewBoardRepository(db)
 
-	err := repo.UpdateScene(t.Context(), "", "no-such-board", "{}", baseTime, baseTime)
+	_, err := repo.UpdateScene(
+		t.Context(), "", "no-such-board", port.SceneWrite{Scene: "{}"}, baseTime, baseTime)
 	if !errors.Is(err, port.ErrNotFound) {
 		t.Errorf("UpdateScene = %v, want port.ErrNotFound", err)
 	}
@@ -1858,15 +1860,17 @@ func TestBoard_UpdateSceneRejectsStaleBase(t *testing.T) {
 
 	// 先に保存した側。ここで版が baseTime から later に進む。
 	later := baseTime.Add(time.Hour)
-	if err := repo.UpdateScene(
-		t.Context(), "", "board-1", `{"elements":["first"]}`, baseTime, later,
+	if _, err := repo.UpdateScene(
+		t.Context(), "", "board-1", port.SceneWrite{Scene: `{"elements":["first"]}`},
+		baseTime, later,
 	); err != nil {
 		t.Fatalf("UpdateScene（先に保存した側）: %v", err)
 	}
 
 	// 後から保存する側は、開いたときの版のまま送ってくる。
-	err := repo.UpdateScene(
-		t.Context(), "", "board-1", `{"elements":["second"]}`, baseTime, later.Add(time.Minute))
+	_, err := repo.UpdateScene(
+		t.Context(), "", "board-1", port.SceneWrite{Scene: `{"elements":["second"]}`},
+		baseTime, later.Add(time.Minute))
 	if !errors.Is(err, port.ErrConflict) {
 		t.Fatalf("UpdateScene = %v, want port.ErrConflict", err)
 	}

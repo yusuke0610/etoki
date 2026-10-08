@@ -19,9 +19,10 @@ describe("sceneBytes", () => {
   /**
    * 画像を貼るとシーンが大きくなることを固定する。
    *
-   * **これがこの表示の存在理由。** `serializeAsJSON` は `getFiles()` ごと
-   * 直列化するので、貼った画像が base64 でシーンに乗る（ADR 0038）。ここが
-   * 切れると、いちばん効く要因を数えていないことに気づけない。
+   * **これがこの表示の存在理由。** 数えるのは書き出しと同じ直列化で、
+   * `serializeAsJSON` は `getFiles()` ごと直列化するので、貼った画像が base64 で
+   * 乗る（ADR 0074）。ここが切れると、いちばん効く要因を数えていないことに
+   * 気づけない。
    */
   it("貼った画像のぶんだけ増える", () => {
     const elements = [image()] as unknown as readonly ExcalidrawElement[];

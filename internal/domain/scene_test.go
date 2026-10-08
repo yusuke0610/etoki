@@ -366,6 +366,37 @@ func TestAnnotationHash_GranularityMatters(t *testing.T) {
 	}
 }
 
+// 貼った画像の実体（files）はハッシュの入力に入らない（#102）。
+//
+// 画像はシーンの外（board_files）へ移すので、移す前と後で同じシーンが同じ
+// ハッシュになる必要がある。入力に入っていると、移しただけで作成済みの注釈が
+// 一斉に「変更あり」に落ちる。画像の要素（fileId）は両方に残す。抜くのは実体だけ。
+func TestAnnotationHash_IgnoresFiles(t *testing.T) {
+	t.Parallel()
+
+	image := `{"id":"img-1","type":"image","fileId":"file-1","frameId":"annot-1"}`
+	elements := strings.Join([]string{annotFrame, childText, image}, ",")
+
+	parse := func(raw string) domain.Scene {
+		t.Helper()
+		s, err := domain.ParseScene([]byte(raw))
+		if err != nil {
+			t.Fatalf("ParseScene: %v", err)
+		}
+		return s
+	}
+
+	withFiles := parse(`{"type":"excalidraw","elements":[` + elements + `],
+		"files":{"file-1":{"id":"file-1","mimeType":"image/png",
+		                   "dataURL":"data:image/png;base64,AAAA","created":1}}}`)
+	withoutFiles := parse(`{"type":"excalidraw","elements":[` + elements + `]}`)
+
+	if got, want := withoutFiles.AnnotationHash(withoutFiles.Annotations()[0]),
+		withFiles.AnnotationHash(withFiles.Annotations()[0]); got != want {
+		t.Errorf("files を抜くとハッシュが変わる: got %s, want %s", got, want)
+	}
+}
+
 func TestParseScene_Invalid(t *testing.T) {
 	t.Parallel()
 

@@ -52,6 +52,32 @@ func (g boardGuard) access(
 	if err != nil {
 		return nil, err
 	}
+	return authorize(a, boardID, min)
+}
+
+// accessWithFiles は access と同じ判定のうえで、ボードを画像ごと返す。
+//
+// 画像まで要るのはボードを開くときだけ（ADR 0074）。**判定は access と同じ
+// authorize を通す。** 口が 2 つになっても、ロールの見方は 1 つのまま保つ。
+func (g boardGuard) accessWithFiles(
+	ctx context.Context, boardID string, min port.BoardRole,
+) (*port.BoardAccess, []port.BoardFile, error) {
+	a, files, err := g.boards.FindWithFiles(ctx, actorOf(ctx), boardID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if a, err = authorize(a, boardID, min); err != nil {
+		return nil, nil, err
+	}
+	return a, files, nil
+}
+
+// authorize は引き当てたボードに min 以上のロールで触れるかを確かめる。
+//
+// 引き当てられなければ ErrBoardNotFound、ロールが足りなければ ErrForbidden。
+func authorize(
+	a *port.BoardAccess, boardID string, min port.BoardRole,
+) (*port.BoardAccess, error) {
 	if a == nil {
 		return nil, fmt.Errorf("%w: %s", ErrBoardNotFound, boardID)
 	}

@@ -49,7 +49,8 @@ func toSummary(a port.BoardAccess) apitypes.BoardSummary {
 // 足しても、toDetail にだけ足しても落ちる。
 //
 // targetLocked は board だけでは決まらない。run の有無で決まるので引数で受ける。
-func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
+// overLimit も同じで、貼った画像の大きさはシーンの外にある（ADR 0074）。
+func toDetail(a port.BoardAccess, targetLocked, overLimit bool) apitypes.BoardDetail {
 	s := toSummary(a)
 
 	return apitypes.BoardDetail{
@@ -68,7 +69,41 @@ func toDetail(a port.BoardAccess, targetLocked bool) apitypes.BoardDetail {
 		// ここから下が BoardSummary に無いぶん。
 		Scene:          a.Board.Scene,
 		TargetLocked:   targetLocked,
-		SceneOverLimit: usecase.SceneExceedsLimit(a.Board.Scene),
+		SceneOverLimit: overLimit,
+	}
+}
+
+// toBoardWithFiles は開いたボードの応答を組み立てる。共通部分は toDetail から
+// 受け取る（toDetail が toSummary から受け取るのと同じ理由）。
+//
+// **写し漏れは TestGetBoard_CarriesEveryDetailField が落とす。** 改名の応答
+// （BoardDetail）と名前で突き合わせている。
+func toBoardWithFiles(d apitypes.BoardDetail, files []port.BoardFile) apitypes.BoardWithFiles {
+	// 画像が無くても空のオブジェクトで返す。null にすると契約の「ID → 画像」が
+	// 読めない。
+	out := make(map[string]string, len(files))
+	for _, f := range files {
+		out[f.ID] = f.Data
+	}
+
+	return apitypes.BoardWithFiles{
+		ID:              d.ID,
+		Name:            d.Name,
+		Role:            d.Role,
+		CreatedAt:       d.CreatedAt,
+		UpdatedAt:       d.UpdatedAt,
+		RepositoryOwner: d.RepositoryOwner,
+		RepositoryName:  d.RepositoryName,
+		ProjectID:       d.ProjectID,
+		ProjectNumber:   d.ProjectNumber,
+		ProjectTitle:    d.ProjectTitle,
+		ProjectURL:      d.ProjectURL,
+		Scene:           d.Scene,
+		TargetLocked:    d.TargetLocked,
+		SceneOverLimit:  d.SceneOverLimit,
+
+		// ここから下が BoardDetail に無いぶん。
+		Files: out,
 	}
 }
 
@@ -183,13 +218,21 @@ type handlers struct {
 // （どこをエスケープするかは送り手しだいで、こちらからは決められない）。
 const maxSceneBody = usecase.MaxSceneBytes*6 + 4<<10
 
+// maxSaveBody はシーンの保存のリクエストボディを読む上限。シーンに加えて、
+// 貼った画像を載せてくる（ADR 0074）。
+//
+// 1 回の保存で送られてくる画像は、保存したあとに残る画像に含まれるので、
+// 合計は usecase.MaxBoardFileBytes を超えない（超えたら正本が 413 で弾く）。
+// 倍率は maxSceneBody と同じ理由でエスケープの最悪値で取る。
+const maxSaveBody = (usecase.MaxSceneBytes+usecase.MaxBoardFileBytes)*6 + 4<<10
+
 // bindSceneBody はシーンを載せたリクエストを読む。
 //
 // 歯止めに引っかかったボディは 400 ではなく 413 に写す。**同じ「大きすぎる」が
 // 経路によって違うステータスで返らないようにする。** 写し替えの表は errors.go に
 // あるので、ここは sentinel を選ぶだけ。
-func (h *handlers) bindSceneBody(c *gin.Context, req any) bool {
-	widenBody(c, maxSceneBody)
+func (h *handlers) bindSceneBody(c *gin.Context, req any, limit int64) bool {
+	widenBody(c, limit)
 
 	err := c.ShouldBindJSON(req)
 	if err == nil {
@@ -199,7 +242,7 @@ func (h *handlers) bindSceneBody(c *gin.Context, req any) bool {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
 		h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
-			usecase.ErrSceneTooLarge, maxSceneBody))
+			usecase.ErrSceneTooLarge, limit))
 		return false
 	}
 
@@ -209,7 +252,8 @@ func (h *handlers) bindSceneBody(c *gin.Context, req any) bool {
 
 func (h *handlers) createBoard(c *gin.Context) {
 	var req apitypes.CreateBoardRequest
-	if !h.bindSceneBody(c, &req) {
+	// 作成は画像を受け取らない（ADR 0074）。歯止めもシーンのぶんだけでよい。
+	if !h.bindSceneBody(c, &req, maxSceneBody) {
 		return
 	}
 
@@ -227,9 +271,10 @@ func (h *handlers) createBoard(c *gin.Context) {
 	}
 
 	// 作ったばかりのボードに run はありえないので、照会せず false でよい。
-	// 作った本人は必ず owner（BoardService.Create）。
+	// 上限も同じで、シーンは上限内であることを確かめてから作り、画像はまだ
+	// 1 枚も無い。作った本人は必ず owner（BoardService.Create）。
 	c.JSON(http.StatusCreated,
-		toDetail(port.BoardAccess{Board: b, Role: port.RoleOwner}, false))
+		toDetail(port.BoardAccess{Board: b, Role: port.RoleOwner}, false, false))
 }
 
 func (h *handlers) listBoards(c *gin.Context) {
@@ -261,14 +306,23 @@ func (h *handlers) boardList(ctx context.Context) ([]apitypes.BoardListEntry, er
 	return out, nil
 }
 
+// getBoard はボードを貼った画像ごと返す。**画像を返すのはこの口だけ**
+// （ADR 0074）。
 func (h *handlers) getBoard(c *gin.Context) {
-	b, err := h.boards.Find(c.Request.Context(), c.Param("id"))
+	opened, err := h.boards.Open(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
 
-	h.respondBoard(c, *b)
+	locked, err := h.boards.TargetLocked(c.Request.Context(), opened.Board.ID)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, toBoardWithFiles(
+		toDetail(opened.BoardAccess, locked, opened.OverLimit), opened.Files))
 }
 
 // renameBoard はボードの名前を変える。
@@ -392,7 +446,8 @@ func (h *handlers) refreshBoardTargetDisplay(c *gin.Context) {
 	h.respondBoard(c, *b)
 }
 
-// respondBoard はボードを固定状態つきで 200 で返す。
+// respondBoard はボードを固定状態と上限の判定つきで 200 で返す。画像は
+// 運ばない（ADR 0074）。
 //
 // ステータスを引数で受けない。**この形で返すのは既存のボードだけ**で、
 // 作成（201）は run を照会せずに返せるので通らない（createBoard）。受けられる
@@ -403,26 +458,43 @@ func (h *handlers) respondBoard(c *gin.Context, a port.BoardAccess) {
 		h.fail(c, err)
 		return
 	}
+	overLimit, err := h.boards.OverLimit(c.Request.Context(), a)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
 
-	c.JSON(http.StatusOK, toDetail(a, locked))
+	c.JSON(http.StatusOK, toDetail(a, locked, overLimit))
 }
 
 func (h *handlers) saveScene(c *gin.Context) {
 	var req apitypes.SaveSceneRequest
-	if !h.bindSceneBody(c, &req) {
+	if !h.bindSceneBody(c, &req, maxSaveBody) {
 		return
 	}
 
-	updatedAt, err := h.boards.SaveScene(
-		c.Request.Context(), c.Param("id"), req.Scene, req.BaseUpdatedAt)
+	saved, err := h.boards.SaveScene(
+		c.Request.Context(), c.Param("id"), req.Scene, req.Files, req.BaseUpdatedAt)
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
 
 	// 保存後の版を返す。返さないと、クライアントは次の保存の基準を得るために
-	// 毎回ボードを取り直すことになり、シーンまで運ぶ（ADR 0020）。
-	c.JSON(http.StatusOK, apitypes.SaveSceneResponse{UpdatedAt: updatedAt})
+	// 毎回ボードを取り直すことになり、シーンまで運ぶ（ADR 0020）。持っている
+	// 画像も返す。次の保存で何を送らなくてよいかは、サーバーが決めた結果で
+	// 知らせる（ADR 0074）。
+	//
+	// nil は空の配列にする。null にすると契約の「持っている画像」が読めない。
+	// port は ID の並びとしか約束していないので、ここで揃える。
+	held := saved.FileIDs
+	if held == nil {
+		held = []string{}
+	}
+	c.JSON(http.StatusOK, apitypes.SaveSceneResponse{
+		UpdatedAt: saved.UpdatedAt,
+		FileIds:   held,
+	})
 }
 
 func (h *handlers) listAnnotations(c *gin.Context) {

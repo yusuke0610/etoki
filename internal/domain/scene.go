@@ -17,6 +17,12 @@ const (
 // フィールドだけを読み、残りは無視して素通しする。
 type Scene struct {
 	Elements []Element `json:"elements"`
+
+	// Files は貼った画像の実体。**保存されたシーンには入っていない**（ADR 0074）。
+	//
+	// 画像はシーンとは別に持つ（board_files）。入っているかどうかだけを見て、
+	// 入口で弾くために読む。中身は解釈しない。
+	Files map[string]json.RawMessage `json:"files"`
 }
 
 // Element は Excalidraw の要素。
@@ -40,6 +46,10 @@ type Element struct {
 
 	// Text はテキスト要素の本文。
 	Text string `json:"text"`
+
+	// FileID は画像の要素が指す、貼った画像の ID。画像でなければ空。
+	// Excalidraw は null を置くこともあるが、空文字と同じ「指していない」に読む。
+	FileID string `json:"fileId"`
 
 	// CustomData は etoki が注釈のメタデータを載せる場所。
 	CustomData *CustomData `json:"customData"`
@@ -98,6 +108,41 @@ func ParseScene(raw []byte) (Scene, error) {
 		return Scene{}, fmt.Errorf("parse scene: %w", err)
 	}
 	return s, nil
+}
+
+// HasFiles はシーンが画像の実体を抱えているかを返す。
+//
+// 空の `files`（`{}` と null）は抱えていないと読む。Excalidraw の直列化は
+// 画像が 1 枚も無くても `files` を書く。
+func (s Scene) HasFiles() bool {
+	return len(s.Files) > 0
+}
+
+// FileIDs はシーンが参照している画像の ID を、要素の並び順で重複なく返す。
+//
+// **参照しているのは、削除されていない要素の fileId。** 要素の種類は見ない。
+// Excalidraw が保存する画像を選ぶとき（`serializeAsJSON` の
+// filterOutDeletedFiles）と同じ規則にしてある。ここから外れた画像は保存で
+// 消える（ADR 0074）。
+//
+// 規則は TypeScript 側（web/src/excalidraw/files.ts の referencedFileIds）と
+// 揃える。**ずれると、フロントが送らなかった画像をサーバーが参照ありとして
+// 待つか、送った画像を参照なしとして弾く。** 判定対象は
+// testdata/file-reference-rule.json に置いて両方から読ませている。
+func (s Scene) FileIDs() []string {
+	seen := make(map[string]struct{})
+	var ids []string
+	for _, e := range s.Elements {
+		if e.IsDeleted || e.FileID == "" {
+			continue
+		}
+		if _, dup := seen[e.FileID]; dup {
+			continue
+		}
+		seen[e.FileID] = struct{}{}
+		ids = append(ids, e.FileID)
+	}
+	return ids
 }
 
 // isAnnotation は要素が etoki の注釈かどうかを返す。

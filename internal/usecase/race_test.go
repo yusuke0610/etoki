@@ -143,9 +143,19 @@ func (r *racingBoards) UpdateName(context.Context, string, string, string) error
 func (r *racingBoards) Delete(context.Context, string, string) error { return nil }
 
 func (r *racingBoards) UpdateScene(
-	context.Context, string, string, string, time.Time, time.Time,
-) error {
-	return nil
+	context.Context, string, string, port.SceneWrite, time.Time, time.Time,
+) ([]string, error) {
+	return nil, nil
+}
+
+func (r *racingBoards) FindWithFiles(
+	context.Context, string, string,
+) (*port.BoardAccess, []port.BoardFile, error) {
+	return nil, nil, nil
+}
+
+func (r *racingBoards) FileSizes(context.Context, string) (map[string]int64, error) {
+	return nil, nil
 }
 
 func (r *racingBoards) List(context.Context, string) ([]port.BoardAccess, error) { return nil, nil }

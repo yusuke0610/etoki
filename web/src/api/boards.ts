@@ -9,6 +9,7 @@ import type {
   SessionStatus,
   BoardAccess,
   BoardDetail,
+  BoardWithFiles,
   BoardMember,
   BoardRole,
   BoardListEntry,
@@ -121,7 +122,12 @@ export const boardsApi = {
       }),
     }),
 
-  get: (id: string) => request<BoardDetail>(`/api/boards/${id}`),
+  /**
+   * ボードを開く。シーンに加えて、貼った画像をすべて返す（ADR 0074）。
+   *
+   * **画像を運ぶのはこの口だけ。** 改名や作成先の設定の応答は画像を持たない。
+   */
+  get: (id: string) => request<BoardWithFiles>(`/api/boards/${id}`),
 
   /**
    * ボードの名前を変える。
@@ -161,11 +167,19 @@ export const boardsApi = {
    *
    * 返る `updatedAt` が次の保存の基準になる。捨てると、2 回目の保存が必ず
    * 409 になる。
+   *
+   * `files` はサーバーがまだ持っていない画像だけ（ADR 0074）。返る `fileIds`
+   * が、次の保存で送らなくてよい画像になる。
    */
-  saveScene: (id: string, scene: string, baseUpdatedAt: string) =>
+  saveScene: (
+    id: string,
+    scene: string,
+    files: Record<string, string>,
+    baseUpdatedAt: string,
+  ) =>
     request<SaveSceneResponse>(`/api/boards/${id}/scene`, {
       method: "PUT",
-      body: JSON.stringify({ scene, baseUpdatedAt } satisfies SaveSceneRequest),
+      body: JSON.stringify({ scene, files, baseUpdatedAt } satisfies SaveSceneRequest),
     }),
 
   /**

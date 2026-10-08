@@ -6,9 +6,12 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -120,7 +123,7 @@ func (s *BoardService) Create(
 	if scene == "" {
 		scene = emptyScene
 	}
-	if err := validateScene(scene); err != nil {
+	if _, err := validateScene(scene); err != nil {
 		return port.Board{}, err
 	}
 
@@ -148,6 +151,58 @@ func (s *BoardService) Find(ctx context.Context, id string) (*port.BoardAccess, 
 	return s.access(ctx, id, port.RoleViewer)
 }
 
+// OpenedBoard は開いたボード。シーンに加えて、貼った画像をすべて持つ。
+type OpenedBoard struct {
+	port.BoardAccess
+	// Files は貼った画像。シーンと同じ時点のもの（ADR 0074）。
+	Files []port.BoardFile
+	// OverLimit は保存済みのボードが上限を超えていて、このままでは保存し直せ
+	// ないこと（ADR 0048 / 0074）。
+	OverLimit bool
+}
+
+// Open はボードを画像ごと返す。ボードを開くときだけに使う（ADR 0074）。
+//
+// **画像を返すのはここだけ。** 改名や作成先の設定の応答は Find で引き直すので
+// 画像を運ばない。開いたあとのキャンバスはすでに画像を持っている。
+func (s *BoardService) Open(ctx context.Context, id string) (OpenedBoard, error) {
+	a, files, err := s.accessWithFiles(ctx, id, port.RoleViewer)
+	if err != nil {
+		return OpenedBoard{}, err
+	}
+
+	var total int64
+	for _, f := range files {
+		total += int64(len(f.Data))
+	}
+
+	return OpenedBoard{
+		BoardAccess: *a,
+		Files:       files,
+		// 引き当てた画像そのもので数える。大きさを別に読み直すと、間に
+		// 入った保存のぶんだけシーンと食い違う。
+		OverLimit: boardExceedsLimit(a.Board.Scene, total),
+	}, nil
+}
+
+// OverLimit は引き当て済みのボードが上限を超えていて、このままでは保存し直せ
+// ないことを返す（ADR 0048 / 0074）。
+//
+// 画像の中身は読まず、大きさだけを引く。**呼ぶ前に access で確かめること。**
+// 改名や作成先の設定の応答にも同じ値を載せるため、Open とは別に置く。
+func (s *BoardService) OverLimit(ctx context.Context, a port.BoardAccess) (bool, error) {
+	sizes, err := s.boards.FileSizes(ctx, a.Board.ID)
+	if err != nil {
+		return false, err
+	}
+
+	var total int64
+	for _, n := range sizes {
+		total += n
+	}
+	return boardExceedsLimit(a.Board.Scene, total), nil
+}
+
 // AnnotationCounts は注釈の 3 状態ごとの件数。
 type AnnotationCounts struct {
 	Uncreated int
@@ -168,9 +223,10 @@ type BoardListEntry struct {
 // （中核思想 3）。
 //
 // **シーンは 1 枚ずつ読み、数えたら手放す。** 一覧の問い合わせ
-// （BoardRepository.List）はシーンを読まない。シーンには画像が base64 で
-// 入りうるので（上限は ADR 0038）、全ボードぶんを一度に読むと、一覧を出す
-// だけでその合計がメモリに載る。**読む量そのものは減らない**（ADR 0068）。
+// （BoardRepository.List）はシーンを読まない。全ボードぶんを一度に読むと、
+// 一覧を出すだけでその合計がメモリに載る。**読む量そのものは減らない**
+// （ADR 0068）。貼った画像はシーンとは別に持つので、ここでは読まない
+// （ADR 0074）。
 //
 // **1 枚が読めなくても一覧は返す。** そのボードだけ Counts を nil にする。run を
 // 引けないのは DB の失敗なので、一覧ごと失敗にする。
@@ -332,23 +388,57 @@ func (s *BoardService) Delete(ctx context.Context, id string) error {
 	return s.boards.Delete(ctx, actorOf(ctx), id)
 }
 
-// SaveScene はボードのシーンを更新し、保存後の版を返す。
+// SavedScene は保存の結果。
+type SavedScene struct {
+	// UpdatedAt は保存後の版。次の保存の基準になる（ADR 0020）。
+	UpdatedAt time.Time
+	// FileIDs は保存後にボードが持っている画像の ID。次の保存で送らなくて
+	// よい画像の一覧になる（ADR 0074）。
+	FileIDs []string
+}
+
+// SaveScene はボードのシーンと貼った画像を更新し、保存後の版を返す。
 //
 // base は編集の基準にした更新時刻。いまの版と違えば何も書かずに
 // ErrSceneConflict を返す（ADR 0020）。返した時刻が次の保存の基準になる。
+//
+// files は画像の ID → Excalidraw の画像データ（JSON）で、**ボードがまだ
+// 持っていない画像だけ**を受け取る（ADR 0074）。シーンから参照されなくなった
+// 画像は保存で消える。
 func (s *BoardService) SaveScene(
-	ctx context.Context, id, scene string, base time.Time,
-) (time.Time, error) {
-	if err := validateScene(scene); err != nil {
-		return time.Time{}, err
+	ctx context.Context, id, scene string, files map[string]string, base time.Time,
+) (SavedScene, error) {
+	parsed, err := validateScene(scene)
+	if err != nil {
+		return SavedScene{}, err
+	}
+	referenced := parsed.FileIDs()
+	added, err := validateFiles(files, referenced)
+	if err != nil {
+		return SavedScene{}, err
 	}
 	// 未指定を「照合しない」に倒さない。倒すと API を直接叩く経路で照合を
 	// 素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
 	if base.IsZero() {
-		return time.Time{}, fmt.Errorf("%w: baseUpdatedAt is required", ErrInvalidInput)
+		return SavedScene{}, fmt.Errorf("%w: baseUpdatedAt is required", ErrInvalidInput)
 	}
 	if _, err := s.access(ctx, id, port.RoleEditor); err != nil {
-		return time.Time{}, err
+		return SavedScene{}, err
+	}
+
+	// 画像の合計は**保存したあとに残るもの**で数える。外した画像は保存で
+	// 消えるので、数えると「1 枚消して 1 枚足す」が通らなくなる。
+	//
+	// 大きさは書く前に別に読むが、**読んだ時点と書く時点の食い違いは問題に
+	// ならない。** 画像が変わるのは版を進める保存だけなので、その間に別の
+	// 保存が入っていれば、この保存は照合に負けて何も書かない（ADR 0020）。
+	sizes, err := s.boards.FileSizes(ctx, id)
+	if err != nil {
+		return SavedScene{}, err
+	}
+	if total := heldFileBytes(referenced, added, sizes); FilesExceedLimit(total) {
+		return SavedScene{}, fmt.Errorf("%w: pasted images total %d bytes, limit is %d",
+			ErrSceneTooLarge, total, MaxBoardFileBytes)
 	}
 
 	// 引き当てた Board の UpdatedAt とはここで比べない。比べてから書くまでの
@@ -363,16 +453,45 @@ func (s *BoardService) SaveScene(
 		now = base.Add(time.Nanosecond)
 	}
 
-	if err := s.boards.UpdateScene(ctx, actorOf(ctx), id, scene, base, now); err != nil {
+	held, err := s.boards.UpdateScene(ctx, actorOf(ctx), id, port.SceneWrite{
+		Scene:      scene,
+		Added:      added,
+		Referenced: referenced,
+	}, base, now)
+	if err != nil {
 		if errors.Is(err, port.ErrConflict) {
 			// 「保存に失敗した」ではなく「他の人が保存している」という状態。
 			// 呼び出し側が上書きせずに見せられるよう、専用のエラーに写す。
-			return time.Time{}, fmt.Errorf("%w: %s", ErrSceneConflict, id)
+			return SavedScene{}, fmt.Errorf("%w: %s", ErrSceneConflict, id)
 		}
-		return time.Time{}, err
+		return SavedScene{}, err
 	}
 
-	return now, nil
+	return SavedScene{UpdatedAt: now, FileIDs: held}, nil
+}
+
+// heldFileBytes は保存したあとにボードが持つ画像の合計バイト数を返す。
+//
+// 参照している画像ごとに、今回送られてきたものがあればその大きさ、無ければ
+// いま持っているものの大きさを足す。どちらにも無い画像（参照先の実体が
+// 欠けている）は 0 として数える。
+func heldFileBytes(
+	referenced []string, added []port.BoardFile, stored map[string]int64,
+) int64 {
+	sent := make(map[string]int64, len(added))
+	for _, f := range added {
+		sent[f.ID] = int64(len(f.Data))
+	}
+
+	var total int64
+	for _, id := range referenced {
+		if n, ok := sent[id]; ok {
+			total += n
+			continue
+		}
+		total += stored[id]
+	}
+	return total
 }
 
 // SetTarget は draft issue の作成先をボードに設定する。
@@ -518,7 +637,7 @@ func validateProjectURL(raw string) error {
 const emptyScene = `{"type":"excalidraw","version":2,"source":"etoki","elements":[],"appState":{}}`
 
 // validateScene は保存前にシーンが読めることと、大きさが上限に収まることを
-// 確かめる。
+// 確かめ、読んだシーンを返す。
 //
 // 壊れた JSON を保存すると、次に読み込んだときにボードごと開けなくなる。
 // 入口で弾いておく。
@@ -528,19 +647,70 @@ const emptyScene = `{"type":"excalidraw","version":2,"source":"etoki","elements"
 //
 // **超えたぶんを削って保存しない。** 保存はシーン全体を書くので、削れるのは
 // 開発者が描いたものそのものになる（ADR 0038）。
-func validateScene(scene string) error {
+//
+// **画像の実体を抱えたシーンは弾く**（ADR 0074）。画像は別に送らせる。受け
+// 付けると画像の入口が 2 つになり、シーンに乗った画像は画像の上限
+// （MaxBoardFileBytes）も、参照されなくなったら消す約束も素通りする。
+func validateScene(scene string) (domain.Scene, error) {
 	if SceneExceedsLimit(scene) {
-		return fmt.Errorf("%w: scene is %d bytes, limit is %d",
+		return domain.Scene{}, fmt.Errorf("%w: scene is %d bytes, limit is %d",
 			ErrSceneTooLarge, len(scene), MaxSceneBytes)
 	}
 	parsed, err := domain.ParseScene([]byte(scene))
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		return domain.Scene{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	for _, a := range parsed.Annotations() {
 		if !a.Kind.Valid() {
-			return fmt.Errorf("%w: unknown diagram kind %q", ErrInvalidInput, a.Kind)
+			return domain.Scene{}, fmt.Errorf("%w: unknown diagram kind %q", ErrInvalidInput, a.Kind)
 		}
 	}
-	return nil
+	if parsed.HasFiles() {
+		return domain.Scene{}, fmt.Errorf(
+			"%w: scene must not carry pasted images; send them as files", ErrInvalidInput)
+	}
+	return parsed, nil
+}
+
+// validateFiles は保存で足す画像を確かめ、ID の順に並べて返す。
+//
+// **シーンから参照されていない画像は弾く。** 受け取って捨てると、送った
+// 画像が残っていないことに呼び出し側が気づけない（validation-boundaries の
+// 「黙って空に落とさない」）。
+//
+// 中身は Excalidraw の画像データ（JSON のオブジェクト）で、**見るのは id が
+// キーと同じかどうかだけ。** Excalidraw は画像を id で引くので、食い違うと
+// 開き直したときに画像の要素が指す先が見つからない。それ以外の中身は解釈
+// しない（シーンと同じ）。
+func validateFiles(files map[string]string, referenced []string) ([]port.BoardFile, error) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+
+	refs := make(map[string]struct{}, len(referenced))
+	for _, id := range referenced {
+		refs[id] = struct{}{}
+	}
+
+	ids := slices.Sorted(maps.Keys(files))
+	added := make([]port.BoardFile, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := refs[id]; !ok {
+			return nil, fmt.Errorf("%w: file %q is not referenced by the scene", ErrInvalidInput, id)
+		}
+
+		data := files[id]
+		var head struct {
+			ID *string `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(data), &head); err != nil {
+			return nil, fmt.Errorf("%w: file %q is not a JSON object: %w", ErrInvalidInput, id, err)
+		}
+		if head.ID == nil || *head.ID != id {
+			return nil, fmt.Errorf("%w: file %q does not carry its own id", ErrInvalidInput, id)
+		}
+
+		added = append(added, port.BoardFile{ID: id, Data: data})
+	}
+	return added, nil
 }

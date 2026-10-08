@@ -18,6 +18,7 @@ import type {
   LoginResponse,
   Project,
   RepositoryList,
+  SaveSceneRequest,
   SessionStatus,
   SyncRun,
 } from "../../src/api/types";
@@ -48,6 +49,21 @@ export type ApiMock = {
   boards: BoardSummary[];
   /** ボード ID をキーにした詳細。 */
   details: Record<string, BoardDetail>;
+  /**
+   * ボード ID をキーにした、サーバーが持っている貼った画像（ADR 0074）。
+   * 画像の ID → 画像データの JSON。
+   *
+   * **`details` のシーンに入れない。** 実物は画像をシーンとは別に持ち、開く口
+   * だけが返す。シーンに入れたモックは、画像を受け取れないフロントでも緑になる。
+   */
+  files: Record<string, Record<string, string>>;
+  /**
+   * 保存で受け取ったリクエストボディ。届いた順に積む。
+   *
+   * 何の画像を送ったかはここにしか現れない。2 回目以降の保存で画像を送り直して
+   * いないかは、送ったボディを見ないと確かめられない（ADR 0074）。
+   */
+  saveRequests: SaveSceneRequest[];
   /** ボード ID をキーにした注釈の状態。 */
   annotations: Record<string, AnnotationStatus[]>;
   /**

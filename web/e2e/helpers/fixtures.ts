@@ -500,6 +500,9 @@ export function baseMock(): ApiMock {
   return {
     boards: [summarize(detail)],
     details: { [detail.id]: detail },
+    // 既定のボードに貼った画像は無い。画像を見る spec だけが足す。
+    files: {},
+    saveRequests: [],
     annotations: { [detail.id]: annotations() },
     // 既定では消えた注釈は無い。ふつうはこちらなので、出す spec だけが足す。
     detached: {},

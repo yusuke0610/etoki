@@ -521,7 +521,8 @@ func TestUpdateScene_RejectsOtherOwners(t *testing.T) {
 	seedOwnedBoard(t, db, "board-a", "user-a")
 
 	// 版は合っている。落ちる理由がメンバーでないことだけになるようにする。
-	err := repo.UpdateScene(t.Context(), "user-b", "board-a", `{"elements":["tampered"]}`,
+	_, err := repo.UpdateScene(t.Context(), "user-b", "board-a",
+		port.SceneWrite{Scene: `{"elements":["tampered"]}`},
 		baseTime, baseTime.Add(time.Hour))
 	if !errors.Is(err, port.ErrNotFound) {
 		t.Fatalf("UpdateScene = %v, want ErrNotFound", err)

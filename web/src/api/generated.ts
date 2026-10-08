@@ -178,7 +178,15 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** ボードをシーンごと返す */
+        /**
+         * ボードをシーンと貼った画像ごと返す
+         * @description **貼った画像を返すのはこの口だけ**（ADR 0074）。開いたあとのキャンバスは
+         *     すでに画像を持っているので、改名や作成先の設定の応答
+         *     （`BoardDetail`）には載せない。
+         *
+         *     シーンと画像は同じ時点のものを返す。別々に取ると、間に入った保存で
+         *     シーンが指す画像が欠ける。
+         */
         get: operations["getBoard"];
         put?: never;
         post?: never;
@@ -268,8 +276,13 @@ export interface paths {
          *     許すと失われるのは「相手が触った要素」ではなく相手の作業すべてになる。
          *     `baseUpdatedAt` が現在の版と違えば 409 を返し、何も書かない（ADR 0020）。
          *
-         *     シーンにはバイト数の上限がある。超えたら縮小も切り捨てもせず 413 を
-         *     返す（ADR 0018 と同じ扱い）。
+         *     **貼った画像はシーンとは別に送る**（ADR 0074）。送るのはボードがまだ
+         *     持っていない画像だけで、シーンから参照されなくなった画像は保存で消える。
+         *     シーンと画像は 1 つのトランザクションで書くので、409 のときは画像も
+         *     書かない。シーンに画像の実体（`files`）を入れて送ると 400。
+         *
+         *     シーンと、保存したあとに残る画像の合計にはそれぞれバイト数の上限がある。
+         *     超えたら縮小も切り捨てもせず 413 を返す（ADR 0018 と同じ扱い）。
          */
         put: operations["saveScene"];
         post?: never;
@@ -947,7 +960,11 @@ export interface components {
         };
         /** @description シーンと作成先の固定状態を加えたボード */
         BoardDetail: components["schemas"]["BoardSummary"] & {
-            /** @description Excalidraw のシーン JSON をそのまま入れた文字列 */
+            /**
+             * @description Excalidraw のシーン JSON をそのまま入れた文字列。**貼った画像の
+             *     実体（`files`）は入らない。** 画像はボードを開く口
+             *     （`getBoard` の `BoardWithFiles.files`）だけが返す（ADR 0074）
+             */
             scene: string;
             /**
              * @description 作成先を変更できないことを表す。そのボードで draft issue を
@@ -956,10 +973,10 @@ export interface components {
              */
             targetLocked: boolean;
             /**
-             * @description いま保存されているシーンが保存できる上限（ADR 0038）を超えて
-             *     いて、このままでは保存し直せないことを表す（issue #103）。
-             *     上限を導入する前に保存されたボードや、上限を引き下げた後にだけ
-             *     真になりうる。
+             * @description いま保存されているシーンか、貼った画像の合計が保存できる上限
+             *     （ADR 0038 / 0074）を超えていて、このままでは保存し直せない
+             *     ことを表す（issue #103）。上限を導入する前に保存されたボードや、
+             *     上限を引き下げた後にだけ真になりうる。
              *
              *     **上限の数値そのものは返さない。** フロントは判定結果だけを
              *     受け取り、上限を複製しない。`projectAccess` の
@@ -967,6 +984,20 @@ export interface components {
              *     持ち場のまま
              */
             sceneOverLimit: boolean;
+        };
+        /** @description 開いたボード。`BoardDetail` に、貼った画像をすべて加えたもの（ADR 0074）。 */
+        BoardWithFiles: components["schemas"]["BoardDetail"] & {
+            /**
+             * @description 画像の ID → Excalidraw の画像データ（BinaryFileData）を JSON に
+             *     した文字列。キーはシーンの画像の要素の `fileId` が指す値。
+             *     画像が無ければ空のオブジェクト。
+             *
+             *     **中身を etoki は解釈しない。** 保存で送られてきたものをそのまま
+             *     返す（`scene` と同じ）
+             */
+            files: {
+                [key: string]: string;
+            };
         };
         /**
          * @description ボードを削除したときに etoki から失われるもの（ADR 0042）。
@@ -1103,7 +1134,10 @@ export interface components {
              *     省略すると空文字（URL を知らない）で保存する
              */
             projectUrl?: string;
-            /** @description 省略すると空のシーンで作る */
+            /**
+             * @description 省略すると空のシーンで作る。画像の実体（`files`）が入っていたら 400。
+             *     作成は画像を受け取らない（ADR 0074）
+             */
             scene?: string;
         };
         /**
@@ -1123,7 +1157,27 @@ export interface components {
          *     素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
          */
         SaveSceneRequest: {
+            /**
+             * @description 画像の実体（`files`）を抜いたシーン JSON。空の `files` は構わないが、
+             *     画像が入っていたら 400（画像は `files` で送る、ADR 0074）
+             */
             scene: string;
+            /**
+             * @description ボードに足す画像。画像の ID → Excalidraw の画像データ
+             *     （BinaryFileData）を JSON にした文字列（`BoardWithFiles.files` と
+             *     同じ形）。
+             *
+             *     **ボードがまだ持っていない画像だけを送る。** 持っているものは
+             *     開いたときの `files` のキーと、保存の応答の `fileIds` で分かる。
+             *     同じ ID を送ればその画像を置き換える。
+             *
+             *     シーンから参照されていない画像と、`id` がキーと違う画像は 400。
+             *     送らなかった画像は、シーンから参照されているかぎり残る。省略すると
+             *     足す画像なし
+             */
+            files?: {
+                [key: string]: string;
+            };
             /**
              * Format: date-time
              * @description 編集の基準にしたボードの `updatedAt`。取得時に返ったものをそのまま
@@ -1144,6 +1198,14 @@ export interface components {
              * @description 保存後の `updatedAt`。次の保存の `baseUpdatedAt` になる
              */
             updatedAt: string;
+            /**
+             * @description 保存後にボードが持っている画像の ID（ADR 0074）。次の保存では、
+             *     ここにある画像を送らなくてよい。
+             *
+             *     **クライアントは自分で数え直さない。** 何が残って何が消えたかの
+             *     規則はサーバーが持つ。手元で導くと、規則が 2 箇所になる
+             */
+            fileIds: string[];
         };
         /**
          * @description 1 つの run がその item に対して何をしたか（ADR 0026）。
@@ -1543,9 +1605,10 @@ export interface components {
             };
         };
         /**
-         * @description シーンが保存できる大きさを超えている。**縮小も切り捨てもせずに弾く**
-         *     （ADR 0018 と同じ扱い）。効いてくるのはキャンバスに貼った画像で、
-         *     シーンには base64 で丸ごと乗る。
+         * @description シーンか、保存したあとに残る貼った画像の合計が、保存できる大きさを
+         *     超えている。**縮小も切り捨てもせずに弾く**（ADR 0018 と同じ扱い）。
+         *     効いてくるのはキャンバスに貼った画像で、シーンと画像のどちらで超えたかは
+         *     code で分けない（ADR 0074）。
          *
          *     400 ではないのは、中身の誤りではなく大きさだから。打ち手が「送った
          *     内容を直す」ではなく「貼った画像を減らす」になる。
@@ -1912,7 +1975,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BoardDetail"];
+                    "application/json": components["schemas"]["BoardWithFiles"];
                 };
             };
             401: components["responses"]["Unauthorized"];

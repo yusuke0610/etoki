@@ -101,19 +101,38 @@ export function exportFileName(boardName: string): string {
 }
 
 /**
- * 保存に送るのと同じシーン JSON を作る。
+ * 貼った画像ごとのシーン JSON を作る。書き出しと大きさの計測が見る。
  *
- * **保存・大きさの計測・書き出しの 3 つが同じものを見る**（ADR 0045）。別々に
- * 書くと、書き出したファイルと下の帯に出ている大きさと実際に保存される
- * バイト列が、少しずつ違うものになりうる。
+ * **書き出しと大きさの計測が同じものを見る**（ADR 0045）。下の帯に出ている
+ * 大きさが、そのまま書き出したファイルの大きさになる。
  *
- * `getFiles()` ごと直列化するので、貼った画像も base64 で乗る（ADR 0038）。
+ * `getFiles()` ごと直列化するので、貼った画像も base64 で乗る。**保存はこれを
+ * 送らない。** 画像を抜いた `savedSceneJSON` と、まだサーバーに無い画像だけを
+ * 送る（ADR 0074）。式は同じ `serializeAsJSON` で、違うのは画像を渡すかどうか
+ * だけにしてある。
  */
 export function sceneJSON(api: SceneSource): string {
   return serializeAsJSON(
     api.getSceneElements() as never,
     api.getAppState() as never,
     api.getFiles() as never,
+    "local",
+  );
+}
+
+/**
+ * 保存に送るシーン JSON を作る。`sceneJSON` から画像の実体だけを抜いたもの
+ * （ADR 0074）。
+ *
+ * **画像は `files.ts` の `filesToSave` で別に送る。** シーンに入れて送ると
+ * サーバーが 400 で弾く。図形を動かしただけの保存で画像を丸ごと送り直さない
+ * ための分け方で、画像の要素（`fileId`）はシーンに残る。
+ */
+export function savedSceneJSON(api: SceneSource): string {
+  return serializeAsJSON(
+    api.getSceneElements() as never,
+    api.getAppState() as never,
+    {} as never,
     "local",
   );
 }

@@ -5,6 +5,7 @@ import type {
   BoardDetail,
   BoardTarget,
   BoardTargetDisplay,
+  BoardWithFiles,
   ErrorResponse,
   SaveSceneRequest,
   SaveSceneResponse,
@@ -109,7 +110,11 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
       }
 
       if (method === "GET") {
-        await json(route, 200, detail);
+        // 画像を返すのは開く口だけ（ADR 0074）。改名の応答には載せない。
+        await json(route, 200, {
+          ...detail,
+          files: mock.files[id] ?? {},
+        } satisfies BoardWithFiles);
         return;
       }
 
@@ -205,6 +210,10 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
         return;
       }
 
+      // 断るものも積む。失敗した保存で何を送ったかも、次の保存と比べる材料になる。
+      const req = route.request().postDataJSON() as Partial<SaveSceneRequest>;
+      mock.saveRequests.push(req as SaveSceneRequest);
+
       if (mock.saveSceneError) {
         await json(route, mock.saveSceneError.status, mock.saveSceneError.body);
         return;
@@ -223,7 +232,6 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
       // 基準が無いのは「古い」ではなく「契約から外れている」。サーバーは 400 を
       // 返すので、モックも同じにする。409 に混ぜると、フロントが必須項目を
       // 落としても衝突のテストが通ってしまう。
-      const req = route.request().postDataJSON() as Partial<SaveSceneRequest>;
       if (typeof req.baseUpdatedAt !== "string" || req.baseUpdatedAt === "") {
         await json(route, 400, {
           code: "invalid_input",
@@ -239,6 +247,42 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
         return;
       }
 
+      // 画像はシーンとは別に送る（ADR 0074）。シーンに入れて送ってきたら
+      // 実物と同じく 400。受け付けると、画像を抜き忘れたフロントでも緑になる。
+      const scene = JSON.parse(req.scene) as {
+        elements?: { isDeleted?: boolean; fileId?: string | null }[];
+        files?: Record<string, unknown> | null;
+      };
+      if (Object.keys(scene.files ?? {}).length > 0) {
+        await json(route, 400, {
+          code: "invalid_input",
+          error: "scene must not carry pasted images; send them as files",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      // 参照の規則は実物と同じ（`testdata/file-reference-rule.json`）。
+      const referenced = new Set(
+        (scene.elements ?? [])
+          .filter(
+            (el) => !el.isDeleted && typeof el.fileId === "string" && el.fileId !== "",
+          )
+          .map((el) => el.fileId as string),
+      );
+      // 送った画像は、シーンが参照していて、自分の ID を名乗っていなければ
+      // ならない。実物はどちらも 400 で弾くので、モックも弾く。通すと、参照して
+      // いない画像まで送るフロントでも緑になる。
+      for (const [fileId, data] of Object.entries(req.files ?? {})) {
+        const named = (JSON.parse(data) as { id?: unknown }).id;
+        if (!referenced.has(fileId) || named !== fileId) {
+          await json(route, 400, {
+            code: "invalid_input",
+            error: `file ${fileId} is not referenced by the scene or misnamed`,
+          } satisfies ErrorResponse);
+          return;
+        }
+      }
+
       if (req.baseUpdatedAt !== detail.updatedAt) {
         await json(route, 409, {
           code: "scene_conflict",
@@ -246,6 +290,14 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
         } satisfies ErrorResponse);
         return;
       }
+
+      // 送られた画像を足し、シーンから外れた画像を消す。**送らなかった画像を
+      // 消さない。** 消すモックにすると、毎回送り直すフロントでしか緑にならない。
+      const held = { ...(mock.files[id] ?? {}), ...(req.files ?? {}) };
+      for (const fileId of Object.keys(held)) {
+        if (!referenced.has(fileId)) delete held[fileId];
+      }
+      mock.files[id] = held;
 
       // 版を進める。据え置くと、基準を更新し損ねたフロントでも保存し続けられて
       // しまい、照合が効いているように見えるだけになる。
@@ -259,7 +311,10 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
       };
       mock.details[id] = next;
       mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
-      await json(route, 200, { updatedAt: next.updatedAt } satisfies SaveSceneResponse);
+      await json(route, 200, {
+        updatedAt: next.updatedAt,
+        fileIds: Object.keys(held).sort(),
+      } satisfies SaveSceneResponse);
     },
   );
 

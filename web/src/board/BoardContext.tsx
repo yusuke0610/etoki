@@ -92,7 +92,7 @@ export function BoardContext({
         理由で、上限を知らない以上どこからが大きいのかを決められない。
       */}
       {sceneBytes !== null && (
-        <span className="badge badge-size" title="保存に送るシーンの大きさ">
+        <span className="badge badge-size" title="ボードの大きさ（貼った画像を含む）">
           {formatSceneSize(sceneBytes)}
         </span>
       )}

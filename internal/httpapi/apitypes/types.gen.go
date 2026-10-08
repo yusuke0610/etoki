@@ -476,13 +476,15 @@ type BoardDetail struct {
 	//   あり、閲覧者に許すのは「閲覧」ではない
 	Role BoardRole `json:"role"`
 
-	// Scene Excalidraw のシーン JSON をそのまま入れた文字列
+	// Scene Excalidraw のシーン JSON をそのまま入れた文字列。**貼った画像の
+	// 実体（`files`）は入らない。** 画像はボードを開く口
+	// （`getBoard` の `BoardWithFiles.files`）だけが返す（ADR 0074）
 	Scene string `json:"scene"`
 
-	// SceneOverLimit いま保存されているシーンが保存できる上限（ADR 0038）を超えて
-	// いて、このままでは保存し直せないことを表す（issue #103）。
-	// 上限を導入する前に保存されたボードや、上限を引き下げた後にだけ
-	// 真になりうる。
+	// SceneOverLimit いま保存されているシーンか、貼った画像の合計が保存できる上限
+	// （ADR 0038 / 0074）を超えていて、このままでは保存し直せない
+	// ことを表す（issue #103）。上限を導入する前に保存されたボードや、
+	// 上限を引き下げた後にだけ真になりうる。
 	//
 	// **上限の数値そのものは返さない。** フロントは判定結果だけを
 	// 受け取り、上限を複製しない。`projectAccess` の
@@ -666,6 +668,77 @@ type BoardTargetDisplay struct {
 	ProjectURL    string `json:"projectUrl,omitempty"`
 }
 
+// BoardWithFiles 開いたボード。`BoardDetail` に、貼った画像をすべて加えたもの（ADR 0074）。
+type BoardWithFiles struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Files 画像の ID → Excalidraw の画像データ（BinaryFileData）を JSON に
+	// した文字列。キーはシーンの画像の要素の `fileId` が指す値。
+	// 画像が無ければ空のオブジェクト。
+	//
+	// **中身を etoki は解釈しない。** 保存で送られてきたものをそのまま
+	// 返す（`scene` と同じ）
+	Files map[string]string `json:"files"`
+	ID    string            `json:"id"`
+	Name  string            `json:"name"`
+
+	// ProjectID draft issue を作る Projects v2 の node ID。未選択なら空文字
+	ProjectID string `json:"projectId"`
+
+	// ProjectNumber 作成先 Project の番号。作成先を選んだ時点のスナップショット
+	// （ADR 0019）。取得していなければ 0
+	ProjectNumber int `json:"projectNumber"`
+
+	// ProjectTitle 作成先 Project の名前。作成先を選んだ時点のスナップショット
+	// （ADR 0019）。取得していなければ空文字
+	ProjectTitle string `json:"projectTitle"`
+
+	// ProjectURL 作成先 Project の URL。作成先を選んだ時点のスナップショット
+	// （ADR 0025）。取得していなければ空文字。
+	//
+	// 番号から組み立てたものではなく GitHub が返したもの。Projects v2 の
+	// URL は owner が user か org かで形が変わり、etoki はどちらなのかを
+	// 知らない
+	ProjectURL string `json:"projectUrl"`
+
+	// RepositoryName 作成先リポジトリの名前。未選択なら空文字
+	RepositoryName string `json:"repositoryName"`
+
+	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
+	RepositoryOwner string `json:"repositoryOwner"`
+
+	// Role ボードに対する権限の強さ（ADR 0017）。
+	//
+	// - `owner` … 招待とロール変更、作成先の変更ができる
+	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+	//   最終的に決めるのは GitHub
+	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+	//   あり、閲覧者に許すのは「閲覧」ではない
+	Role BoardRole `json:"role"`
+
+	// Scene Excalidraw のシーン JSON をそのまま入れた文字列。**貼った画像の
+	// 実体（`files`）は入らない。** 画像はボードを開く口
+	// （`getBoard` の `BoardWithFiles.files`）だけが返す（ADR 0074）
+	Scene string `json:"scene"`
+
+	// SceneOverLimit いま保存されているシーンか、貼った画像の合計が保存できる上限
+	// （ADR 0038 / 0074）を超えていて、このままでは保存し直せない
+	// ことを表す（issue #103）。上限を導入する前に保存されたボードや、
+	// 上限を引き下げた後にだけ真になりうる。
+	//
+	// **上限の数値そのものは返さない。** フロントは判定結果だけを
+	// 受け取り、上限を複製しない。`projectAccess` の
+	// `unknown` / `allowed` / `denied` と同じで、判定はサーバーの
+	// 持ち場のまま
+	SceneOverLimit bool `json:"sceneOverLimit"`
+
+	// TargetLocked 作成先を変更できないことを表す。そのボードで draft issue を
+	// 1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
+	// 数えられないので、状態としてサーバーが返す
+	TargetLocked bool      `json:"targetLocked"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
 // Capabilities いま使える機能。**プロセスの設定であって、利用者ごとの権限ではない。**
 //
 // false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
@@ -720,7 +793,8 @@ type CreateBoardRequest struct {
 	RepositoryName  string `json:"repositoryName"`
 	RepositoryOwner string `json:"repositoryOwner"`
 
-	// Scene 省略すると空のシーンで作る
+	// Scene 省略すると空のシーンで作る。画像の実体（`files`）が入っていたら 400。
+	// 作成は画像を受け取らない（ADR 0074）
 	Scene string `json:"scene,omitempty"`
 }
 
@@ -1065,7 +1139,23 @@ type SaveSceneRequest struct {
 	// 送り返す。現在の版と違えば 409 になり、シーンは書き換わらない
 	// （ADR 0020）
 	BaseUpdatedAt time.Time `json:"baseUpdatedAt"`
-	Scene         string    `json:"scene"`
+
+	// Files ボードに足す画像。画像の ID → Excalidraw の画像データ
+	// （BinaryFileData）を JSON にした文字列（`BoardWithFiles.files` と
+	// 同じ形）。
+	//
+	// **ボードがまだ持っていない画像だけを送る。** 持っているものは
+	// 開いたときの `files` のキーと、保存の応答の `fileIds` で分かる。
+	// 同じ ID を送ればその画像を置き換える。
+	//
+	// シーンから参照されていない画像と、`id` がキーと違う画像は 400。
+	// 送らなかった画像は、シーンから参照されているかぎり残る。省略すると
+	// 足す画像なし
+	Files map[string]string `json:"files,omitempty"`
+
+	// Scene 画像の実体（`files`）を抜いたシーン JSON。空の `files` は構わないが、
+	// 画像が入っていたら 400（画像は `files` で送る、ADR 0074）
+	Scene string `json:"scene"`
 }
 
 // SaveSceneResponse 保存後のボードの版。
@@ -1073,6 +1163,13 @@ type SaveSceneRequest struct {
 // 返さないと、クライアントは保存のたびにボードを取り直さないと次の保存が
 // できない。取り直すとシーンまで運ぶことになる。
 type SaveSceneResponse struct {
+	// FileIds 保存後にボードが持っている画像の ID（ADR 0074）。次の保存では、
+	// ここにある画像を送らなくてよい。
+	//
+	// **クライアントは自分で数え直さない。** 何が残って何が消えたかの
+	// 規則はサーバーが持つ。手元で導くと、規則が 2 箇所になる
+	FileIds []string `json:"fileIds"`
+
 	// UpdatedAt 保存後の `updatedAt`。次の保存の `baseUpdatedAt` になる
 	UpdatedAt time.Time `json:"updatedAt"`
 }

@@ -80,7 +80,8 @@ type Board struct {
 	ID string
 	// Name は表示名。
 	Name string
-	// Scene は Excalidraw のシーン JSON。
+	// Scene は Excalidraw のシーン JSON。**貼った画像の実体は入らない。**
+	// 画像は BoardFile として別に持つ（ADR 0074）。
 	Scene string
 	// Target は draft issue の作成先。未選択ならゼロ値。
 	Target BoardTarget
@@ -88,6 +89,32 @@ type Board struct {
 	CreatedAt time.Time
 	// UpdatedAt は最終更新時刻。
 	UpdatedAt time.Time
+}
+
+// BoardFile はキャンバスに貼った画像 1 枚（ADR 0074）。
+//
+// シーンとは別に持つ。シーンに入れておくと、図形を 1 つ動かしただけの保存でも
+// 画像を丸ごと書き直し、シーンを読むたびに画像まで読むことになる。
+type BoardFile struct {
+	// ID は Excalidraw が振った画像の ID。ボードの中で一意で、画像の要素の
+	// fileId がこれを指す。
+	ID string
+	// Data は Excalidraw の画像データ（BinaryFileData）を JSON にしたもの。
+	// **etoki は中身を解釈しない。** シーンと同じく、受け取ったものを
+	// そのまま返す。
+	Data string
+}
+
+// SceneWrite はシーンの保存 1 回で書くもの（ADR 0074）。
+type SceneWrite struct {
+	// Scene は画像の実体を抜いたシーン JSON。
+	Scene string
+	// Added は今回の保存で足す画像。同じ ID がすでにあれば置き換える。
+	Added []BoardFile
+	// Referenced はシーンが参照している画像の ID。**これに入っていない画像は
+	// 消す。** シーンから外れた画像を残すと、使っていない画像のぶんだけ
+	// 上限が埋まっていく。
+	Referenced []string
 }
 
 // BoardRole はボードに対する権限の強さ（ADR 0017）。
@@ -324,12 +351,19 @@ type BoardRepository interface {
 	// ボードとメンバーは 1 トランザクションで入れる。片方だけ残ると、誰も
 	// 開けないボードか、指す先の無いメンバーができる。
 	Create(ctx context.Context, b Board, owner string) error
-	// UpdateScene はシーンと更新時刻だけを更新する。CreatedAt は変えない。
+	// UpdateScene はシーンと画像と更新時刻を更新し、書いたあとにボードが
+	// 持っている画像の ID を返す。CreatedAt は変えない。
 	//
 	// base は呼び出し側が編集の基準にした UpdatedAt。いまの版と違えば何も
 	// 書かずに ErrConflict を返す（ADR 0020）。**照合と更新は 1 文で行う。**
 	// 読んでから書く形にすると、その隙間に入った保存を上書きする。
-	UpdateScene(ctx context.Context, actor, id, scene string, base, updatedAt time.Time) error
+	//
+	// **シーンと画像は 1 トランザクションで書く**（ADR 0074）。照合に負けたら
+	// 画像も足さず消さない。途中まで進んだ状態が残ると、シーンが指す画像が
+	// 欠けるか、どのシーンからも指されない画像が残る。
+	UpdateScene(
+		ctx context.Context, actor, id string, w SceneWrite, base, updatedAt time.Time,
+	) ([]string, error)
 	// UpdateName は名前だけを更新する。
 	//
 	// **更新時刻は進めない。** `UpdatedAt` はシーンの版であり、保存の照合基準
@@ -368,11 +402,22 @@ type BoardRepository interface {
 	//
 	// 存在しない、または操作者がメンバーでなければ (nil, nil)。
 	Find(ctx context.Context, actor, id string) (*BoardAccess, error)
+	// FindWithFiles は Find に加えて、そのボードの画像をすべて返す。
+	//
+	// **シーンと画像は同じ読み取りで揃える。** 別々に読むと、間に入った保存で
+	// シーンが指す画像が欠ける（ADR 0074）。画像まで要るのはボードを開くとき
+	// だけなので、Find には混ぜない。
+	FindWithFiles(ctx context.Context, actor, id string) (*BoardAccess, []BoardFile, error)
+	// FileSizes はボードが持っている画像の ID ごとのバイト数（Data の長さ）を
+	// 返す。画像の中身は読まない。
+	//
+	// **操作者では絞らない。呼ぶ前に Find で確かめること**（ListMembers と同じ）。
+	FileSizes(ctx context.Context, boardID string) (map[string]int64, error)
 	// List は操作者がメンバーであるボードを UpdatedAt の降順で返す。
 	//
 	// **Board.Scene は空文字で返る。** 一覧はシーンを返さないので読まない。
-	// シーンには画像が base64 で入りうるため、捨てるために全ボードぶんを
-	// メモリへ載せることになる。中身が要るなら Find で 1 枚ずつ引く。
+	// 捨てるために全ボードぶんをメモリへ載せることになる。中身が要るなら
+	// Find で 1 枚ずつ引く。
 	List(ctx context.Context, actor string) ([]BoardAccess, error)
 
 	// ListMembers はボードのメンバーを返す。
