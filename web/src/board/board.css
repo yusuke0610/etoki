@@ -51,28 +51,6 @@
 }
 
 /*
- * 狭い画面では、モバイルのツールバーの行に載る（`MobileMenu` が
- * `renderTopRightUI` をその行へ足す）。横に並べたままだと、ツールバーと島の
- * 最小幅の合計が画面を越えて行ごと右へはみ出し、親の `overflow: hidden` に
- * 切られて保存が画面の外に出る。**島だけを専用の行に下ろす。**
- * 名前を縮めて省略する規則（上の h1）はそのまま効く。
- */
-@media (max-width: 600px) {
-  .excalidraw .App-toolbar-container:has(> .board-status) {
-    /* `Stack` は grid で、子を 1 行に並べる（`grid-auto-flow: column`）。行に
-       積み直すと、島が下の行に回る。 */
-    grid-auto-flow: row;
-    justify-items: end;
-  }
-
-  .excalidraw .App-toolbar-container > .board-status {
-    box-sizing: border-box;
-    max-width: 100%;
-    min-width: 0;
-  }
-}
-
-/*
  * 下（`Footer`）。ロール・作成先・大きさ。**読むだけで、押すものは置かない**
  * （作成先がリンクのときだけ例外、ADR 0025）。
  */
@@ -120,17 +98,149 @@
   color: var(--color-danger);
 }
 
+/*
+ * 注意の帯（衝突・上限超え・削除の確認）を除いた領域。**置き方はこの枠の
+ * 大きさで決める**（`useBoardLayout`、#199）。
+ */
+.board-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * スマホの上の帯の 2 段目と、キャンバス・パネル。**スマホでは全面に開く
+ * パネルと詳細の基準になる**（下の `data-layout="phone"`）。1 段目（ボード名・
+ * 未保存・保存）はこの外に置くので、覆われない（ADR 0021）。
+ */
+.board-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
 .board-body {
   flex: 1;
   min-height: 0;
   display: flex;
+  /* 重ねるときにパネルを浮かせる基準。 */
+  position: relative;
 }
 
 .canvas {
   flex: 1;
   min-width: 0;
-  /* 注釈の枠を重ねる基準。枠はこの矩形の左上からの座標で置く。 */
+  /* 注釈の詳細を開く基準。 */
   position: relative;
+}
+
+/* Excalidraw と注釈の枠。**枠はこの矩形の左上からの座標で置く。** */
+.canvas-frame {
+  position: relative;
+  height: 100%;
+}
+
+/*
+ * スマホでは、全面のパネルと詳細を上の帯の 2 段目から覆わせる。基準を
+ * `.board-stage` まで上げるため、間の 2 つは基準にならないようにする。
+ * 注釈の枠の基準（`.canvas-frame`）は動かさない。
+ */
+.board[data-layout="phone"] :is(.board-body, .canvas) {
+  position: static;
+}
+
+/*
+ * スマホの置き方で、キャンバスの上に置く etoki の帯（#199）。**Excalidraw の
+ * 外に置く。** モバイル用 UI では `Footer` が描かれず、`renderTopRightUI` は
+ * ツールバーと同じ行に詰められる。
+ *
+ * 1 段目（`.board-bar-status`）はボード名・未保存・保存、2 段目
+ * （`.board-bar-row`、`BoardBar`）はパネルを開くボタンと下の帯の中身。
+ */
+.board-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+/*
+ * 1 段目では島の見た目を外し、帯の幅いっぱいに使う。**折り返しを許す。**
+ * 押せない理由（`#save-blocked`）は長く、ボード名の隣には収まらないので、
+ * 行を改めて出す。名前は幅 0 から伸ばす。中身の幅で並べると、長い名前が
+ * 省略される前に行ごと折れる。
+ */
+.board-bar-status .board-status {
+  flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.board-bar-status .board-status h1 {
+  flex: 1 1 0;
+  max-width: none;
+}
+
+/* 名前の変更中は、入力を 1 行で取る。未保存と保存は次の行へ回る。 */
+.board-bar-status .board-status .rename-form {
+  flex: 1 1 100%;
+}
+
+.board-bar-status .board-status .rename-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-bar-status .board-status > span.hint {
+  flex-basis: 100%;
+  white-space: normal;
+  text-align: right;
+}
+
+/*
+ * 2 段目は横に流す。**はみ出したら横にスクロールさせる。** 折り返すと帯の
+ * 高さが中身で変わり、キャンバスの枠が作成先の名前の長さで伸び縮みする。
+ * どの画面も横スクロールを出さない約束（#199）の、ここだけが例外。
+ */
+.board-bar-row {
+  overflow-x: auto;
+}
+
+.board-bar-row > * {
+  flex-shrink: 0;
+}
+
+.board-bar-panels {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.board-bar-panels > button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-5);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 下の帯の中身。帯の中では島の見た目を外す。 */
+.board-bar-row .board-context {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 
 /*
@@ -217,6 +327,8 @@
 
 .delete-confirm-actions {
   display: flex;
+  /* 狭い画面（#199）では折り返す。ボタンの文言は長く、2 つ並ぶと収まらない。 */
+  flex-wrap: wrap;
   gap: var(--space-4);
 }
 

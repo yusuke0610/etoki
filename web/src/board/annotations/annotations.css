@@ -49,9 +49,13 @@
   position: absolute;
   top: 104px;
   max-height: calc(100% - 104px - 72px);
-  left: 50%;
+  /*
+   * 重ねたパネルの覆う幅（`--panel-reserve`、`sidePanel.css`）を右から除いた
+   * 残りの真ん中に開く（#199）。並べるときはパネルがキャンバスの外にあるので 0。
+   */
+  left: calc((100% - var(--panel-reserve, 0px)) / 2);
   transform: translateX(-50%);
-  width: min(760px, calc(100% - 2 * var(--space-6)));
+  width: min(760px, calc(100% - var(--panel-reserve, 0px) - 2 * var(--space-6)));
   z-index: 3;
   display: flex;
   flex-direction: column;
@@ -65,6 +69,22 @@
    戻さないと、閉じた詳細が全部重なって出る。 */
 .annotation-detail[hidden] {
   display: none;
+}
+
+/*
+ * スマホ（#199）。**全面で開く。** 基準は `.board-stage` で、上の帯の 2 段目から
+ * 下を覆う。1 段目（ボード名・未保存・保存）は覆わない（ADR 0021）。全面の
+ * パネル（z-index 5）から開くので、その上に置く。
+ */
+.board[data-layout="phone"] .annotation-detail {
+  inset: 0;
+  max-height: none;
+  width: auto;
+  transform: none;
+  z-index: 6;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 /*
@@ -142,6 +162,27 @@
   padding: var(--space-5) var(--space-7);
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
+}
+
+/*
+ * スマホでは、帯の下に端末の安全領域（ホームバーなど）を足す。**文は 1 行目に
+ * 全幅で出し、ボタンは次の行の左右に置く。** 3 つを横に並べたままだと、間の文が
+ * 1 文字ずつ縦に折れて読めない。
+ */
+.board[data-layout="phone"] .annotation-detail-band {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
+}
+
+.board[data-layout="phone"] .annotation-detail-band-text {
+  flex-basis: 100%;
+  order: -1;
+}
+
+/* 文が無いときは行ごと消す。空の行でも行間（gap）は残る。 */
+.board[data-layout="phone"] .annotation-detail-band-text:empty {
+  display: none;
 }
 
 .annotation-detail-band-text {

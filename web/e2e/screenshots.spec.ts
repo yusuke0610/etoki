@@ -1008,3 +1008,86 @@ test.describe("スクリーンショット", () => {
     await shot(page, "35-dark-update-and-left-behind");
   });
 });
+
+/**
+ * 画面の幅ごとの置き方（#199、`web/src/board/layout.ts`）。上の
+ * 「スクリーンショット」は 1440 × 900 に揃えてあるので、大きさを変えるものは
+ * ここに分ける。並べる（1440 × 900）は上の撮影がそのまま見せている。
+ */
+test.describe("幅ごとのスクリーンショット", () => {
+  test.describe("スマホ", () => {
+    test.use({ viewport: { width: 375, height: 812 } });
+
+    test("ボード・全面のパネル・詳細を撮る", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+      await drawRectangle(page);
+      await page.getByText("未保存", { exact: true }).waitFor();
+      await shot(page, "44-phone-board");
+
+      await openPanelTab(page, "注釈");
+      await shot(page, "45-phone-panel");
+
+      // 未保存のあいだは解釈できない（ADR 0018）。保存は全面のパネルを開いた
+      // まま押せる（上の帯の 1 段目は覆わない）。
+      await page.getByRole("button", { name: "保存", exact: true }).click();
+      await page.getByText("未保存", { exact: true }).waitFor({ state: "hidden" });
+      await interpret(annotationCard(page, "ログイン"));
+      await annotationDetail(page, "ログイン")
+        .getByRole("button", { name: "GitHub に作成する" })
+        .waitFor();
+      await shot(page, "46-phone-detail");
+    });
+
+    // 名前の変更中は、入力が上の帯の 1 段目を 1 行で取り、保存は次の行へ回る。
+    test("名前の変更中を撮る", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+      await chooseFromMenu(page, "名前を変更");
+      await page.getByLabel("ボードの名前").waitFor();
+      await shot(page, "53-phone-rename");
+    });
+
+    test("一覧とログインを撮る", async ({ page }) => {
+      const mock = authRequiredMock();
+      await installApi(page, mock);
+      await page.goto("/");
+      await page.getByRole("button", { name: "GitHub でログイン" }).waitFor();
+      await shot(page, "47-phone-login");
+
+      mock.session = { status: 200, body: signedIn() };
+      await page.reload();
+      await page.locator(".board-list").waitFor();
+      await shot(page, "48-phone-board-list");
+    });
+  });
+
+  test.describe("スマホの横長", () => {
+    test.use({ viewport: { width: 812, height: 375 } });
+
+    test("ボードを撮る", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+      await shot(page, "49-phone-landscape-board");
+    });
+  });
+
+  test.describe("重ねる", () => {
+    test.use({ viewport: { width: 1024, height: 768 } });
+
+    test("パネルを重ねたボードを撮る", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+      await shot(page, "50-overlay-board");
+
+      await interpret(annotationCard(page, "ログイン"));
+      await annotationDetail(page, "ログイン")
+        .getByRole("button", { name: "GitHub に作成する" })
+        .waitFor();
+      await shot(page, "51-overlay-detail");
+
+      await annotationDetail(page, "ログイン")
+        .getByRole("button", { name: "閉じる" })
+        .click();
+      await page.getByRole("button", { name: "パネルを閉じる" }).click();
+      await page.getByRole("navigation", { name: "パネル" }).waitFor();
+      await shot(page, "52-overlay-collapsed");
+    });
+  });
+});

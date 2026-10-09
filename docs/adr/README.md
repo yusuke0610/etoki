@@ -78,3 +78,4 @@
 | [0072](0072-web-source-by-feature.md)                            | フロントエンドのソースは機能ごとのディレクトリに置く                   | 採用                 |
 | [0073](0073-css-by-feature-ordered-by-imports.md)                | CSS は機能のディレクトリに置き、読む順は入口の @import で決める        | 採用                 |
 | [0074](0074-keep-pasted-images-apart-from-the-scene.md)          | 貼った画像はシーンとは別に持ち、保存ではまだ無い画像だけを書く         | 採用                 |
+| [0075](0075-board-layout-follows-excalidraw-breakpoint.md)       | ボードの置き方は Excalidraw のモバイル判定の式に揃える                 | 採用                 |

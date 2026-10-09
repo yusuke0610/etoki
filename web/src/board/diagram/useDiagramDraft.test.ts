@@ -54,10 +54,11 @@ function setup() {
   const api = { scrollToContent } as unknown as ExcalidrawImperativeAPI;
   const updateElements = vi.fn();
   const currentElements = vi.fn(() => existing);
+  const onPlaced = vi.fn();
   const hook = renderHook(() =>
-    useDiagramDraft({ api, boardId: "b1", currentElements, updateElements }),
+    useDiagramDraft({ api, boardId: "b1", currentElements, updateElements, onPlaced }),
   );
-  return { hook, scrollToContent, updateElements };
+  return { hook, scrollToContent, updateElements, onPlaced };
 }
 
 afterEach(() => {
@@ -143,7 +144,7 @@ describe("useDiagramDraft の置く", () => {
     vi.mocked(mermaidToElements).mockResolvedValue({ ok: true, elements: converted });
     vi.mocked(draftOrigin).mockReturnValue({ x: 500, y: 0 });
     vi.mocked(moveDraft).mockReturnValue(placed);
-    const { hook, updateElements, scrollToContent } = setup();
+    const { hook, updateElements, scrollToContent, onPlaced } = setup();
 
     await act(() => hook.result.current.generate("TODO を"));
     await act(() => hook.result.current.placeDraft());
@@ -157,6 +158,8 @@ describe("useDiagramDraft の置く", () => {
       fitToContent: true,
       animate: true,
     });
+    // 置けたことを知らせる（スマホではパネルを閉じて置いた図を見せる、#199）。
+    expect(onPlaced).toHaveBeenCalledTimes(1);
   });
 
   it("構文エラーなら、会話の次の 1 往復として内部の印つきで頼み直す", async () => {
@@ -169,7 +172,7 @@ describe("useDiagramDraft の置く", () => {
       reason: "syntax",
       detail: "Parse error on line 2",
     });
-    const { hook, updateElements } = setup();
+    const { hook, updateElements, onPlaced } = setup();
 
     await act(() => hook.result.current.generate("TODO を"));
     await act(() => hook.result.current.placeDraft());
@@ -183,6 +186,7 @@ describe("useDiagramDraft の置く", () => {
     await vi.waitFor(() => expect(hook.result.current.chat.turns).toHaveLength(2));
     expect(hook.result.current.chat.turns[1]?.internal).toBe(true);
     expect(updateElements).not.toHaveBeenCalled();
+    expect(onPlaced).not.toHaveBeenCalled();
   });
 
   it("置けない種類なら、頼み直さずに理由を出す", async () => {
@@ -194,7 +198,7 @@ describe("useDiagramDraft の置く", () => {
       reason: "unsupported",
       detail: "image",
     });
-    const { hook, updateElements } = setup();
+    const { hook, updateElements, onPlaced } = setup();
 
     await act(() => hook.result.current.generate("マインドマップを"));
     await act(() => hook.result.current.placeDraft());
@@ -202,6 +206,8 @@ describe("useDiagramDraft の置く", () => {
     expect(generate).toHaveBeenCalledTimes(1);
     expect(hook.result.current.chat.failure).toEqual(diagramNotPlaceableFailure());
     expect(updateElements).not.toHaveBeenCalled();
+    // 置けなかったらパネルを閉じさせない。出した理由を読ませる。
+    expect(onPlaced).not.toHaveBeenCalled();
   });
 
   it("置く・貼るの二重押しは、どちらからでも 1 回しか置かない", async () => {
@@ -236,7 +242,7 @@ describe("useDiagramDraft の貼り付け", () => {
   it("置けたら入力を消す", async () => {
     vi.mocked(pasteToElements).mockResolvedValue({ ok: true, elements: converted });
     vi.mocked(moveDraft).mockReturnValue(placed);
-    const { hook, updateElements } = setup();
+    const { hook, updateElements, onPlaced } = setup();
 
     act(() => hook.result.current.setPasteText("flowchart TD\n  X"));
     let outcome: unknown;
@@ -247,6 +253,7 @@ describe("useDiagramDraft の貼り付け", () => {
     expect(outcome).toEqual({ placed: true });
     expect(updateElements).toHaveBeenCalledWith([...existing, ...placed]);
     expect(hook.result.current.pasteText).toBe("");
+    expect(onPlaced).toHaveBeenCalledTimes(1);
   });
 
   it("変換を待つあいだに書き換えられた入力は消さない", async () => {
@@ -276,7 +283,7 @@ describe("useDiagramDraft の貼り付け", () => {
       reason: "syntax",
       detail: "Parse error on line 1",
     });
-    const { hook, updateElements } = setup();
+    const { hook, updateElements, onPlaced } = setup();
 
     act(() => hook.result.current.setPasteText("flowchart TD\n  X -->"));
     let outcome: unknown;
@@ -290,5 +297,6 @@ describe("useDiagramDraft の貼り付け", () => {
     });
     expect(hook.result.current.pasteText).toBe("flowchart TD\n  X -->");
     expect(updateElements).not.toHaveBeenCalled();
+    expect(onPlaced).not.toHaveBeenCalled();
   });
 });
