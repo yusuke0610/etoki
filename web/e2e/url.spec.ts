@@ -2,7 +2,13 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { holdBoardDetail, installApi, type ApiMock } from "./helpers/api";
 import { summarize } from "./helpers/boardData";
-import { backToList, chooseFromMenu, drawRectangle, openBoard } from "./helpers/board";
+import {
+  backToList,
+  chooseFromMenu,
+  drawRectangle,
+  openBoard,
+  waitForBoard,
+} from "./helpers/board";
 import {
   authRequiredMock,
   baseMock,
@@ -262,9 +268,9 @@ test.describe("ボードの URL", () => {
       await expect(page.locator(".picker")).toBeVisible();
 
       await page.getByRole("button", { name: "やめる" }).click();
-      await expect(
-        page.getByRole("heading", { name: BOARD_NAME, level: 1 }),
-      ).toBeVisible();
+      // **見出しでは待たない。** 選択画面も同じ名前の h1 を出すので、戻る前に
+      // 通る。戻るのはボードを取り直してから（#241）。
+      await waitForBoard(page, BOARD_NAME);
       expect(search(page)).toBe(`?board=${BOARD_ID}`);
     });
 

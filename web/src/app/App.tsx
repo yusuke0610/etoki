@@ -62,8 +62,12 @@ function canOpenTargetPicker(board: BoardDetail): boolean {
 }
 
 export function App() {
-  // 開いているボード。**貼った画像も持つ**（ADR 0074）。キャンバスは作成先の
-  // 選択から戻るたびに作り直されるので、そのときに渡す画像をここに残す。
+  // 開いているボード。キャンバスはここから作るので、**貼った画像も持つ**
+  // （ADR 0074）。
+  //
+  // **保存のたびには差し替えない。** 保存の版は `useSceneSave` が持ち回るので、
+  // ここのシーン・版・画像は最後の保存より古いことがある。キャンバスを作り直す
+  // 導線（作成先の選択から戻る）は、開く口で取り直してから作り直す（#241）。
   const [current, setCurrent] = useState<BoardWithFiles | null>(null);
   // 画面全体に出す失敗は通知へ（ADR 0058）。1 本の state に持つと、後から
   // 来た失敗が前の失敗を黙って消していた。
@@ -423,6 +427,13 @@ export function App() {
     async (target: BoardTarget) => {
       if (current === null) return;
 
+      // **設定を待つ前に、走っている取得を無効にする**（#241）。
+      // 「やめる」の取り直しを待つあいだも選択画面は残っていて、作成先を決め
+      // られる。世代を進めるのが設定のあとの取り直しだけだと、設定を待つあいだに
+      // 着いた「やめる」の応答が通り、選択画面を閉じて変える前の作成先で
+      // キャンバスを作る。あとから着く取り直しは同じ `key` なのでキャンバスを
+      // 作り直さず、作成先と版だけが入れ替わる。
+      openings.invalidateAll();
       await boardsApi.setTarget(current.id, target);
 
       // **画像ごと開き直す。** 選択画面から戻るとキャンバスを作り直すが、設定の
@@ -437,8 +448,40 @@ export function App() {
       setCurrent(board);
       showLocation({ boardId: board.id, picking: false }, "replace");
     },
-    [current, loadBoard, showLocation],
+    [current, loadBoard, openings, showLocation],
   );
+
+  /**
+   * 作成先の選び直しをやめて、選ぶ前のボードへ戻る（#241）。
+   *
+   * **開く口で取り直してから戻す。** 選択画面のあいだキャンバスは外れていて、
+   * 戻ると作り直される。手元の `current` は保存のたびには差し替えていないので、
+   * そこから作り直すと、開いてから保存したもの（貼った画像も）が画面から消え、
+   * 次の保存は自分の保存と食い違って 409 になる。画面は「他の人が保存しました」
+   * と案内するので、案内まで嘘になる（ADR 0020）。
+   *
+   * 取れなければ選択画面に残る（失敗は `loadBoard` が出す）。押し直せば戻れる。
+   * **開いた時点の値で戻す形に落とさない。** 落とすと上の食い違いがそのまま残る。
+   *
+   * 取り直しを待つあいだに作成先を決められる。設定より前に読んだボードが遅れて
+   * 届くと、変える前の作成先で上書きする。**守っているのは `loadBoard` の世代。**
+   * `changeTarget` が設定を始める時点で世代を進めるので、設定を待つあいだに
+   * 着いても、設定のあとに着いても、こちらの応答は捨てられる。設定の応答を
+   * そのまま入れる形に戻すなら、ここも見直す。
+   *
+   * 未保存の確認は要らない。「作成先を変更」は未保存のあいだ押せないので、
+   * 選択画面に来た時点で捨てるものが無い。
+   */
+  const cancelPicking = useCallback(async () => {
+    if (current === null) return;
+
+    const board = await loadBoard(current.id);
+    if (board === null) return;
+
+    setPicking(false);
+    setCurrent(board);
+    showLocation({ boardId: board.id, picking: false }, "replace");
+  }, [current, loadBoard, showLocation]);
 
   /**
    * URL に書いてあったボードを開く（ADR 0059）。ログインが済んでから 1 度だけ。
@@ -604,14 +647,7 @@ export function App() {
             // 選び直しなら、選ぶ前のボードへ戻る。**未選択のボードは一覧へ
             // 戻す。** 未選択のうちはキャンバスを出さないので引き返す先が無く、
             // 一覧が同じ画面に無くなったいま、渡さないと行き止まりになる。
-            onCancel={
-              picking
-                ? () => {
-                    setPicking(false);
-                    showLocation({ boardId: current.id, picking: false }, "replace");
-                  }
-                : closeBoard
-            }
+            onCancel={picking ? () => void cancelPicking() : closeBoard}
           />
         ) : (
           // ボードを切り替えたら Excalidraw ごと作り直す。initialData は
