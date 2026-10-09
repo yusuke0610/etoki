@@ -734,6 +734,37 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    /*
+     * スマホの置き方（#199）。右上と下の帯の中身は Excalidraw の外の帯に移り、
+     * パネルと詳細は全面に開く。**どれも広い画面の検査には一度も掛からない。**
+     * 帯は拡張点の外なので、`ETOKI_INSIDE_CANVAS` に足さなくても検査に入る。
+     */
+    test.describe("スマホの大きさ", () => {
+      test.use({ viewport: { width: 375, height: 812 } });
+
+      test("ボード", async ({ page }) => {
+        await openBoardWithMock(page, baseMock());
+        await drawRectangle(page);
+        await page.locator(".board-bar-status .dirty").waitFor();
+
+        await expectNoAxeViolations(page);
+      });
+
+      test("全面のパネルと詳細", async ({ page }) => {
+        await openBoardWithMock(page, baseMock());
+        await openPanelTab(page, "注釈");
+
+        await expectNoAxeViolations(page);
+
+        await interpret(annotationCard(page, "ログイン"));
+        await annotationDetail(page, "ログイン")
+          .getByRole("button", { name: "GitHub に作成する" })
+          .waitFor();
+
+        await expectNoAxeViolations(page);
+      });
+    });
+
     // 通知は**失敗しないと DOM に出ない**（ADR 0058）。出ている状態で axe を
     // 通さないと、role や名前が崩れても気づく経路が無い。通知には「再試行」と
     // 「閉じる」が並ぶので、名前の衝突もここで見る。

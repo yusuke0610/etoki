@@ -16,12 +16,23 @@ export type RailBadge = {
   count: number;
 };
 
-type TabSpec = {
+export type TabSpec = {
   id: SidePanelTab;
   label: string;
   content: ReactNode;
   railBadges?: RailBadge[];
 };
+
+/**
+ * 畳んだ帯（と、スマホの上の帯）でタブを開くボタンの名前と、添える件数。
+ * **件数まで名前に入れる。** 縦書きの帯では見た目の区切りに頼れず、上の帯でも
+ * 同じ名前で引けるようにしておく（#199）。
+ */
+export function panelOpener(tab: TabSpec): { name: string; badges: RailBadge[] } {
+  const badges = (tab.railBadges ?? []).filter((b) => b.count > 0);
+  const name = [tab.label, ...badges.map((b) => `${b.label} ${b.count} 件`)].join("、");
+  return { name, badges };
+}
 
 type Props = {
   /** 出すタブ。権限で使えないもの（viewer の図のドラフト）は渡さない。 */
@@ -31,10 +42,21 @@ type Props = {
   /** 畳んでいるか。覚えるのは親（端末ごと、`panelState.ts`）。 */
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  /**
+   * 畳んだときに右端の帯を出すか。**スマホの置き方では出さない**（#199）。
+   * 開く口は上の帯（`BoardBar`）にあり、画面の右端をキャンバスから取らない。
+   */
+  rail: boolean;
+  /**
+   * パネルの外から開いた回数（スマホの上の帯）。変わったら、開いたタブへ
+   * 焦点を移す。**回数で持つ。** 開いているタブを開き直しても移すため
+   * （`AnnotationDetail` の `openRequest` と同じ形）。
+   */
+  openRequest: number;
 };
 
 /** パネルの枠の id。畳む口と帯のボタンが `aria-controls` で指す。 */
-const PANEL_ID = "side-panel";
+export const SIDE_PANEL_ID = "side-panel";
 
 /**
  * 注釈・図のドラフト・メンバーを 1 か所のタブにまとめた右のパネル（ADR 0065）。
@@ -53,6 +75,10 @@ const PANEL_ID = "side-panel";
  * **畳める**（#202）。畳んだら右端に縦の帯を残し、タブを並べる。**畳んでも
  * 中身は外さない。** 枠に `hidden` を付けるだけにする。外すと、図への指示の
  * 書きかけや招待の途中が、畳んだだけで消える（タブを切り替えたときと同じ理由）。
+ *
+ * **置き方で形が変わる**（#199、`layout.ts`）。キャンバスの横に並べる・重ねる・
+ * スマホでは全面に開く。形を決めるのは CSS（`.board[data-layout]`）で、ここが
+ * 知るのは右端の帯を出すかどうかだけ。
  */
 export function SidePanel({
   tabs,
@@ -60,6 +86,8 @@ export function SidePanel({
   onSelect,
   collapsed,
   onCollapsedChange,
+  rail,
+  openRequest,
 }: Props) {
   // 1 度でも開いたタブ。持つのは描くかどうかだけで、どれを開いているかは
   // 親が持つ（メニューや E2E から開かせる口を親に残すため）。
@@ -90,8 +118,19 @@ export function SidePanel({
     target?.focus();
   }, [collapsed, active]);
 
+  // 外から開いたら、開いたタブへ焦点を移す。**移さないと、押したボタンが
+  // パネルの下に隠れるので焦点が取り残される。** 描き終えてから移すのは上と同じ。
+  const handledOpen = useRef(openRequest);
+  useEffect(() => {
+    if (handledOpen.current === openRequest) return;
+    handledOpen.current = openRequest;
+    buttons.current.get(active)?.focus();
+  }, [openRequest, active]);
+
+  // 畳んだあとの焦点は、帯があれば帯の「いまのタブ」へ。帯が無ければ親が
+  // 開いた口へ戻す（`BoardBar`）。
   const collapse = () => {
-    pendingFocus.current = "rail";
+    pendingFocus.current = rail ? "rail" : null;
     onCollapsedChange(true);
   };
 
@@ -116,15 +155,10 @@ export function SidePanel({
 
   return (
     <>
-      {collapsed && (
+      {collapsed && rail && (
         <nav className="side-panel-rail" aria-label="パネル">
           {tabs.map((tab) => {
-            const badges = (tab.railBadges ?? []).filter((b) => b.count > 0);
-            // 縦書きの見た目の区切りに頼らず、件数まで名前に入れる。
-            const name = [
-              tab.label,
-              ...badges.map((b) => `${b.label} ${b.count} 件`),
-            ].join("、");
+            const { name, badges } = panelOpener(tab);
             return (
               <button
                 key={tab.id}
@@ -136,7 +170,7 @@ export function SidePanel({
                 className="side-panel-rail-tab"
                 aria-label={name}
                 aria-expanded={false}
-                aria-controls={PANEL_ID}
+                aria-controls={SIDE_PANEL_ID}
                 // 開いたときに戻る先が見て分かるように、選んでいたタブを示す。
                 aria-current={tab.id === active ? "true" : undefined}
                 onClick={() => expand(tab.id)}
@@ -153,7 +187,7 @@ export function SidePanel({
         </nav>
       )}
 
-      <div className="side-panel" id={PANEL_ID} hidden={collapsed}>
+      <div className="side-panel" id={SIDE_PANEL_ID} hidden={collapsed}>
         <div className="side-panel-head">
           <div className="side-panel-tabs" role="tablist" aria-label="パネル">
             {tabs.map((tab) => {
@@ -185,7 +219,7 @@ export function SidePanel({
             className="quiet side-panel-close"
             aria-label="パネルを閉じる"
             aria-expanded={true}
-            aria-controls={PANEL_ID}
+            aria-controls={SIDE_PANEL_ID}
             onClick={collapse}
           >
             <span aria-hidden="true">»</span>

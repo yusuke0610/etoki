@@ -3,6 +3,12 @@
  * （ADR 0065）。**幅と境界線はここが持つ。** 中に入る各パネルは幅を持たない。
  */
 .side-panel {
+  /*
+   * 境界線まで含めて幅にする。**並べる境目はこの幅で決まる**（`layout.ts`）。
+   * 線の 1px が外に足されると、キャンバスが境目より 1px 狭くなり、境目の幅で
+   * Excalidraw だけがモバイル用 UI に切り替わる。
+   */
+  box-sizing: border-box;
   width: var(--side-panel-width);
   flex-shrink: 0;
   display: flex;
@@ -46,6 +52,7 @@
  * （ADR 0064）。
  */
 .side-panel-rail {
+  box-sizing: border-box;
   width: var(--side-panel-rail-width);
   flex-shrink: 0;
   display: flex;
@@ -125,4 +132,55 @@
 */
 .side-panel-body > .error-boundary {
   margin: var(--space-4);
+}
+
+/*
+ * 重ねる（#199、`layout.ts`）。並べるとキャンバスがモバイル用 UI になる幅では、
+ * キャンバスを押し縮めずに右へ浮かせる。畳んだ帯も同じ位置に重ねる。
+ *
+ * **上下 72px を空ける。** 上は右上の島（保存と「未保存」）を隠さないため
+ * （ADR 0021）、下は下の帯（ロール・作成先・大きさ）と Excalidraw の右下の
+ * ヘルプの行を隠さないため。
+ *
+ * **Excalidraw の UI より下（z-index 3）に置く。** 注釈の詳細と同じ。上に置くと、
+ * ライブラリのサイドバーを開いたときにこちらの下に潜る。
+ */
+.board[data-layout="overlay"] :is(.side-panel, .side-panel-rail) {
+  position: absolute;
+  top: 72px;
+  bottom: 72px;
+  right: var(--space-6);
+  z-index: 3;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-raised);
+}
+
+/*
+ * 重ねたパネルが覆う右端の幅。**注釈の詳細はこれを避けて開く**
+ * （`annotations.css`）。詳細を開いたまま、隣のカードを押せるようにする。
+ */
+.board[data-layout="overlay"] .board-body:has(> .side-panel:not([hidden])) {
+  --panel-reserve: calc(var(--side-panel-width) + var(--space-6));
+}
+
+.board[data-layout="overlay"] .board-body:has(> .side-panel-rail) {
+  --panel-reserve: calc(var(--side-panel-rail-width) + var(--space-6));
+}
+
+/*
+ * スマホ（#199）。**開くと全面。** 基準は `.board-stage` で、上の帯の 2 段目
+ * から下を覆う。1 段目（ボード名・未保存・保存）は覆わない（ADR 0021）。
+ *
+ * Excalidraw のモバイル用 UI（z-index 4）より上に置く。下のツールバーまで
+ * 覆わないと、パネルの下端の操作がツールバーの下に潜る。
+ */
+.board[data-layout="phone"] .side-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: auto;
+  border-left: none;
+  background: var(--color-bg);
 }

@@ -41,6 +41,12 @@ type Options = {
   currentElements: () => SceneElement[];
   /** キャンバスの要素を差し替える。人の操作として履歴に積む（`BoardPage`）。 */
   updateElements: (next: SceneElement[]) => void;
+  /**
+   * 置けたら呼ぶ。スマホの置き方ではパネルが全面でキャンバスを隠すので、
+   * 閉じて置いた図を見せる（#199、`BoardPage`）。**置けなかったら呼ばない。**
+   * パネルに出した理由を読ませる。
+   */
+  onPlaced?: () => void;
 };
 
 export type DiagramDrafting = {
@@ -71,6 +77,7 @@ export function useDiagramDraft({
   boardId,
   currentElements,
   updateElements,
+  onPlaced,
 }: Options): DiagramDrafting {
   const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
   // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
@@ -165,8 +172,9 @@ export function useDiagramDraft({
       // 置いた先へ寄せる。既存の絵の外に置くので、寄せないと押したのに何も
       // 起きていないように見える（ADR 0040）。
       api.scrollToContent(placed as never, { fitToContent: true, animate: true });
+      onPlaced?.();
     },
-    [api, currentElements, updateElements],
+    [api, currentElements, updateElements, onPlaced],
   );
 
   /**

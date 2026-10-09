@@ -8,6 +8,7 @@ import type {
   ProjectAccess,
 } from "../../api/types";
 import type { AnnotationMeta } from "../../excalidraw/annotation";
+import { boardBarButtonId } from "../BoardBar";
 import { GRANULARITY_LABEL, STATE_LABEL, annotationLabels } from "./annotationLabel";
 import { annotationCardButtonId } from "./AnnotationPanel";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "../diagram/diagramLabels";
@@ -181,13 +182,15 @@ export function AnnotationDetail({
   // カードは DOM に残ったまま隠れる（`SidePanel`）。パネルを畳んでいれば、
   // タブの列ごと隠れる（#202）。隠れたボタンは焦点を受けられないので、見えて
   // いて押せるものだけを候補にし、カードが無理なら選んでいるタブ、それも
-  // 無理なら畳んだ帯の「いまのタブ」へ戻す。
+  // 無理なら畳んだ帯の「いまのタブ」へ戻す。**スマホの置き方では帯が無い**
+  // （#199）。パネルを畳んでいれば、上の帯の「注釈」へ戻す。
   const close = (id: string) => {
     onClose();
     const candidates = [
       document.getElementById(annotationCardButtonId(id)),
       document.querySelector('[role="tab"][aria-selected="true"]'),
       document.querySelector('.side-panel-rail-tab[aria-current="true"]'),
+      document.getElementById(boardBarButtonId("annotations")),
     ];
     for (const el of candidates) {
       if (

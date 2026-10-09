@@ -36,6 +36,29 @@
   --notifications-right: calc(var(--side-panel-rail-width) + var(--space-6));
 }
 
+/*
+ * 重ねるとき（#199）は、浮かせたパネルの右にも余白がある（`sidePanel.css`）。
+ * そのぶんも足す。
+ */
+.app:has(.board[data-layout="overlay"] .side-panel:not([hidden])) .notifications {
+  --notifications-right: calc(var(--side-panel-width) + 2 * var(--space-6));
+}
+
+.app:has(.board[data-layout="overlay"] .side-panel-rail) .notifications {
+  --notifications-right: calc(var(--side-panel-rail-width) + 2 * var(--space-6));
+}
+
+/*
+ * スマホ（#199）では下に出す。上は etoki の帯（ボード名・未保存・保存）で、
+ * **状態を隠さない**ため覆わない。下に並ぶのは Excalidraw の操作で、通知が
+ * 閉じるまで隠れるだけで済む。全面に開いたパネルの上でも、ずらさない。
+ */
+.app:has(.board[data-layout="phone"]) .notifications {
+  --notifications-right: var(--space-6);
+  top: auto;
+  bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+}
+
 .notification {
   pointer-events: auto;
   display: flex;

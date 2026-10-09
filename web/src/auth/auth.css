@@ -149,3 +149,13 @@
 .login .error {
   border-radius: var(--radius-sm);
 }
+
+/*
+ * スマホ（#199）。画面の左右の余白を 16px にする。条件は一覧（`boards.css`）と
+ * 同じ式。
+ */
+@media (max-width: 729.98px), (max-height: 499.98px) and (max-width: 999.98px) {
+  .login {
+    padding: var(--space-6);
+  }
+}

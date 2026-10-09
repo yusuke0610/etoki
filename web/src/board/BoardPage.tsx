@@ -64,17 +64,19 @@ import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
 import { MermaidPastePanel } from "./diagram/MermaidPastePanel";
 import { useDiagramDraft } from "./diagram/useDiagramDraft";
 import { projectLabel } from "../boards/grouping";
+import { BoardBar } from "./BoardBar";
 import { BoardContext } from "./BoardContext";
 import { BoardMenu } from "./BoardMenu";
 import { BoardStatus } from "./BoardStatus";
 import { DeleteConfirm } from "./DeleteConfirm";
-import { SidePanel, type SidePanelTab } from "./SidePanel";
+import { SidePanel, type SidePanelTab, type TabSpec } from "./SidePanel";
 import { useCreation } from "./annotations/useCreation";
 import { useRunHistories } from "./annotations/useRunHistories";
 import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
 import { projectLink } from "./target/projectLink";
 import { canEditBoard } from "./members/roles";
 import { useBoardDeletion, useRename, useTargetRefresh } from "./useBoardManagement";
+import { useBoardLayout } from "./useBoardLayout";
 import { useBoardTransfer } from "./useBoardTransfer";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
@@ -300,6 +302,31 @@ export function BoardPage({
     setPanelCollapsed(collapsed);
     writePanelCollapsed(collapsed);
   }, []);
+  // 置き方（`layout.ts`、#199）。並べる・重ねる・スマホ。
+  const [layout, measureLayout] = useBoardLayout();
+  const phone = layout === "phone";
+  // スマホでパネルを全面に開いているか。**覚えない。** いつも畳んだ状態で
+  // 始める（#202）。広い画面で覚えた開閉とは別に持つので、スマホで開いても
+  // 広い画面の開閉は変わらない。
+  const [phonePanelOpen, setPhonePanelOpen] = useState(false);
+  // 上の帯からパネルを開いた回数（`SidePanel` の `openRequest`）。
+  const [panelOpenRequest, setPanelOpenRequest] = useState(0);
+  // スマホの置き方に入ったら畳む。描いている最中に置く（前の値と違うとき
+  // だけ置く形なので React が許している）。effect にすると、入った直後の 1 回は
+  // 前の置き方で開いていたパネルが全面に出る。
+  const [layoutSeen, setLayoutSeen] = useState(layout);
+  if (layoutSeen !== layout) {
+    setLayoutSeen(layout);
+    if (layout === "phone") setPhonePanelOpen(false);
+  }
+  const openPhonePanel = useCallback((tab: SidePanelTab) => {
+    setPanelTab(tab);
+    setPhonePanelOpen(true);
+    setPanelOpenRequest((n) => n + 1);
+  }, []);
+  // スマホで、キャンバスを見せるために全面のパネルを閉じる。置き方を見ずに
+  // 閉じてよい。スマホでなければこの値は読まれず、スマホに入るときに畳み直す。
+  const closePhonePanel = useCallback(() => setPhonePanelOpen(false), []);
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // キャンバスの上に開いている注釈の詳細（`AnnotationDetail`）。null なら閉じている。
@@ -564,7 +591,14 @@ export function BoardPage({
     pasteText,
     setPasteText,
     pasteMermaid,
-  } = useDiagramDraft({ api, boardId: board.id, currentElements, updateElements });
+  } = useDiagramDraft({
+    api,
+    boardId: board.id,
+    currentElements,
+    updateElements,
+    // 置いた図を見せる。スマホでは全面のパネルがキャンバスを隠している（#199）。
+    onPlaced: closePhonePanel,
+  });
 
   /**
    * 表を 1 つ置く（ADR 0069）。
@@ -640,10 +674,13 @@ export function BoardPage({
       const frame = currentElements().find((el) => el.id === frameId);
       if (!frame) return;
 
+      // スマホでは全面のパネルがキャンバスを隠しているので閉じる（#199）。
+      // 詳細を閉じてから寄せる（`AnnotationDetail`）のと同じ理由。
+      closePhonePanel();
       api.updateScene({ appState: { selectedElementIds: { [frameId]: true } } } as never);
       api.scrollToContent(frame as never, { fitToContent: true, animate: true });
     },
-    [api, currentElements],
+    [api, currentElements, closePhonePanel],
   );
 
   const { fileInput, exportScene, importScene } = useBoardTransfer({
@@ -993,8 +1030,17 @@ export function BoardPage({
    * 作ると「描き直す → onChange → state が変わる → 描き直す」の輪が閉じず、
    * 更新の上限で落ちる。子要素（メニュー・下の帯）とこの関数を安定させておけば、
    * state が変わってもキャンバスは描き直さない。
+   *
+   * **スマホの置き方では何も返さない**（#199）。右上の島は Excalidraw の
+   * ツールバーの行ではなく、キャンバスの上の etoki の帯に置く。**判定は etoki の
+   * 置き方で行い、引数の `isMobile` は見ない。** 島をどこに描くかを 1 つの判定で
+   * 決めておけば、2 つの判定がずれた幅でも島は必ずどちらか 1 か所に出る。
+   * Excalidraw の判定で返さないと、ずれた幅で島がどこにも無くなる。
    */
-  const renderTopRightUI = useCallback(() => topRightUI, [topRightUI]);
+  const renderTopRightUI = useCallback(
+    () => (phone ? null : topRightUI),
+    [phone, topRightUI],
+  );
   // **子要素は配列ごと 1 つにまとめて持つ。** `{boardMenu}<Footer>…</Footer>` を
   // その場で並べると、中身が同じでも `children` は描くたびに新しい配列になり、
   // Excalidraw の `memo` が効かない。
@@ -1008,8 +1054,100 @@ export function BoardPage({
     [boardMenu, footerUI],
   );
 
+  /*
+   * 注釈・図のドラフト・メンバーは右の 1 か所にタブで並べる（ADR 0065）。
+   * スマホの上の帯（`BoardBar`）も、同じタブから開くボタンを作る。
+   *
+   * **パネルは 1 枚ずつ境界で包む**（ADR 0027）。落ちたのが 1 枚でも外側で
+   * 受けると、キャンバスごと外れて未保存のブレストが消える。
+   */
+  const panelTabs: TabSpec[] = [
+    {
+      id: "annotations",
+      label: "注釈",
+      // 畳んでいるあいだに知りたいのは、手を打つ必要があるものだけ。
+      // 数えるのは注釈の一覧と同じく保存済みシーンが基準。
+      railBadges: railBadgesOf(annotations),
+      content: (
+        <ErrorBoundary name="注釈パネル" recovery="remount">
+          <AnnotationPanel
+            annotations={annotations}
+            detached={detached}
+            frames={{
+              markable,
+              unmarkable,
+              canvasIds: canvasFrameIds,
+              selectedIds: selectedFrames.map((f) => f.id),
+              onMark: handleMark,
+              onUnmark: handleUnmark,
+            }}
+            runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
+            stale={dirty}
+            canEdit={canEdit}
+            projectLink={link}
+            onOpenDetail={openDetail}
+          />
+        </ErrorBoundary>
+      ),
+    },
+    // 図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
+    // 叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。LLM が
+    // 未設定でもタブは出す。**黙って消さず、開いた先で理由を見せる**
+    // （ADR 0030、中核思想 3）。mermaid を貼る口（ADR 0062）も同じタブに
+    // 置く。LLM を通さないので未設定でも使えるが、描かせないのと同じ
+    // 理由で viewer には出さない。
+    ...(canEdit
+      ? [
+          {
+            id: "diagram" as const,
+            label: "図のドラフト",
+            content: (
+              <DiagramTab
+                mode={diagramMode}
+                onModeChange={setDiagramMode}
+                generate={
+                  <ErrorBoundary name="図のドラフト" recovery="remount">
+                    <DiagramChatPanel
+                      chat={chat}
+                      onChangeKind={handleChangeKind}
+                      onSend={generateDiagram}
+                      onPlace={() => void placeDraft()}
+                      unavailable={diagramUnavailable}
+                    />
+                  </ErrorBoundary>
+                }
+                paste={
+                  <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
+                    <MermaidPastePanel
+                      text={pasteText}
+                      onChangeText={setPasteText}
+                      onPlace={pasteMermaid}
+                    />
+                  </ErrorBoundary>
+                }
+              />
+            ),
+          },
+        ]
+      : []),
+    {
+      id: "members",
+      label: "メンバー",
+      // 共有が組み立てられていない構成では、押しても 503 しか返らない。
+      // タブは黙って消さず、開いた先で理由を出す（中核思想 3）。
+      content:
+        sharingUnavailable !== null ? (
+          <p className="hint side-panel-note">{sharingUnavailable}</p>
+        ) : (
+          <ErrorBoundary name="メンバーパネル" recovery="remount">
+            <MemberPanel boardId={board.id} role={board.role} />
+          </ErrorBoundary>
+        ),
+    },
+  ];
+
   return (
-    <div className="board">
+    <div className="board" data-layout={layout}>
       {canEdit && (
         // **入力そのものは出さない。** 押す口はメニューの「取り込み」1 つで、
         // ここはファイルを選ばせるためだけに置いてある。**メニューの中に
@@ -1067,167 +1205,119 @@ export function BoardPage({
         </p>
       )}
 
-      <div className="board-body">
-        <div className="canvas">
-          <Excalidraw
-            excalidrawAPI={setApi}
-            initialData={initialData as never}
-            onChange={handleChange as never}
-            langCode="ja-JP"
-            theme={theme}
-            // 持ち出しと取り込みの口は etoki のメニューに寄せてある（ADR 0045）。
-            UIOptions={UI_OPTIONS}
-            // Excalidraw の AI の口を閉じる（ADR 0067）。コマンドパレットの
-            // 「Mermaid to Excalidraw」はこれで出し分けられている。0.18.1 は
-            // パレットを置かないので今は効いていないが、置かれたときに守りを
-            // 通らない口が黙って開かないようにする。「その他」メニューの同じ
-            // 項目はこれでは消えないので、`board.css` で隠している。
-            aiEnabled={false}
-            onPaste={handlePaste}
-            // viewer には描かせない。描けるのに保存できないと、描いた内容を
-            // 黙って捨てることになる（ADR 0017）。
-            viewModeEnabled={!canEdit}
-            renderTopRightUI={renderTopRightUI}
-          >
-            {canvasChildren}
-          </Excalidraw>
-          {/*
-            注釈の frame を見分けられるようにする。Excalidraw の外に重ねる
-            だけで、要素には触らない（AnnotationOverlay の doc）。
-
-            **枠も境界で包む。** 包まずに落ちると外側の 1 枚が受けることになり、
-            キャンバスごと外れて未保存のブレストが消える（ADR 0027）。
-          */}
-          <ErrorBoundary name="注釈の枠" recovery="remount">
-            <AnnotationOverlay boxes={overlayBoxes} />
-          </ErrorBoundary>
-          {/*
-            解釈の結果と下書きの手直しは、キャンバスの上に広く開く。
-            **`.excalidraw` の外に置く。** 中に入れると色の変数がぶつかり、
-            axe が色を判定できない（ADR 0065）。
-          */}
-          <ErrorBoundary name="解釈の結果" recovery="remount">
-            <AnnotationDetail
-              openId={detailId}
-              openRequest={detailRequest}
-              onClose={() => setDetailId(null)}
-              annotations={annotations}
-              frames={{
-                canvasIds: canvasFrameIds,
-                metas: canvasMetas,
-                onFocus: focusFrame,
-                onChangeGranularity: handleMark,
-                onChangeKind: handleChangeAnnotationKind,
-              }}
-              interpretation={interpretation}
-              creation={creation}
-              runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
-              stale={dirty}
-              canEdit={canEdit}
-              projectLink={link}
-              targetLabel={targetLabel}
-            />
-          </ErrorBoundary>
-        </div>
-
+      {/*
+        注意の帯を除いた領域。**置き方はこの枠の大きさで決める**（`useBoardLayout`）。
+        スマホの上の帯もこの中に置く。
+      */}
+      <div className="board-main" ref={measureLayout}>
         {/*
-          注釈・図のドラフト・メンバーは右の 1 か所にタブで並べる（ADR 0065）。
-          **キャンバスを覆わない。** 図のドラフトは置いた図がどこに出るかを
-          見ながら直す道具なので、上に敷くと「置く」を押した結果が確かめられない。
-
-          **パネルは 1 枚ずつ境界で包む**（ADR 0027）。落ちたのが 1 枚でも外側で
-          受けると、キャンバスごと外れて未保存のブレストが消える。
+          スマホの置き方では、右上と下の帯の中身をキャンバスの上の etoki の帯に
+          移す（#199）。Excalidraw のモバイル用 UI では `Footer` が描かれず、
+          状態を常に見せる約束（ADR 0064 / 0065）が崩れるため。1 段目はボード名・
+          未保存・保存で、**全面に開いたパネルと詳細もここは覆わない**（ADR 0021）。
         */}
-        <SidePanel
-          active={panelTab}
-          onSelect={setPanelTab}
-          collapsed={panelCollapsed}
-          onCollapsedChange={changePanelCollapsed}
-          tabs={[
-            {
-              id: "annotations",
-              label: "注釈",
-              // 畳んでいるあいだに知りたいのは、手を打つ必要があるものだけ。
-              // 数えるのは注釈の一覧と同じく保存済みシーンが基準。
-              railBadges: railBadgesOf(annotations),
-              content: (
-                <ErrorBoundary name="注釈パネル" recovery="remount">
-                  <AnnotationPanel
-                    annotations={annotations}
-                    detached={detached}
-                    frames={{
-                      markable,
-                      unmarkable,
-                      canvasIds: canvasFrameIds,
-                      selectedIds: selectedFrames.map((f) => f.id),
-                      onMark: handleMark,
-                      onUnmark: handleUnmark,
-                    }}
-                    runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
-                    stale={dirty}
-                    canEdit={canEdit}
-                    projectLink={link}
-                    onOpenDetail={openDetail}
-                  />
+        {phone && <div className="board-bar board-bar-status">{topRightUI}</div>}
+        <div className="board-stage">
+          {phone && (
+            <BoardBar
+              tabs={panelTabs}
+              active={panelTab}
+              panelOpen={phonePanelOpen}
+              onOpen={openPhonePanel}
+              context={footerUI}
+            />
+          )}
+          <div className="board-body">
+            <div className="canvas">
+              {/*
+                Excalidraw と注釈の枠。枠はこの矩形の左上からの座標で置く。
+                **詳細はこの外に置く。** スマホでは詳細が上の帯の 2 段目まで
+                覆うので、キャンバスの矩形を基準にできない。
+              */}
+              <div className="canvas-frame">
+                <Excalidraw
+                  excalidrawAPI={setApi}
+                  initialData={initialData as never}
+                  onChange={handleChange as never}
+                  langCode="ja-JP"
+                  theme={theme}
+                  // 持ち出しと取り込みの口は etoki のメニューに寄せてある（ADR 0045）。
+                  UIOptions={UI_OPTIONS}
+                  // Excalidraw の AI の口を閉じる（ADR 0067）。コマンドパレットの
+                  // 「Mermaid to Excalidraw」はこれで出し分けられている。0.18.1 は
+                  // パレットを置かないので今は効いていないが、置かれたときに守りを
+                  // 通らない口が黙って開かないようにする。「その他」メニューの同じ
+                  // 項目はこれでは消えないので、`board.css` で隠している。
+                  aiEnabled={false}
+                  onPaste={handlePaste}
+                  // viewer には描かせない。描けるのに保存できないと、描いた内容を
+                  // 黙って捨てることになる（ADR 0017）。
+                  viewModeEnabled={!canEdit}
+                  renderTopRightUI={renderTopRightUI}
+                >
+                  {canvasChildren}
+                </Excalidraw>
+                {/*
+                  注釈の frame を見分けられるようにする。Excalidraw の外に重ねる
+                  だけで、要素には触らない（AnnotationOverlay の doc）。
+
+                  **枠も境界で包む。** 包まずに落ちると外側の 1 枚が受けることになり、
+                  キャンバスごと外れて未保存のブレストが消える（ADR 0027）。
+                */}
+                <ErrorBoundary name="注釈の枠" recovery="remount">
+                  <AnnotationOverlay boxes={overlayBoxes} />
                 </ErrorBoundary>
-              ),
-            },
-            // 図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
-            // 叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。LLM が
-            // 未設定でもタブは出す。**黙って消さず、開いた先で理由を見せる**
-            // （ADR 0030、中核思想 3）。mermaid を貼る口（ADR 0062）も同じタブに
-            // 置く。LLM を通さないので未設定でも使えるが、描かせないのと同じ
-            // 理由で viewer には出さない。
-            ...(canEdit
-              ? [
-                  {
-                    id: "diagram" as const,
-                    label: "図のドラフト",
-                    content: (
-                      <DiagramTab
-                        mode={diagramMode}
-                        onModeChange={setDiagramMode}
-                        generate={
-                          <ErrorBoundary name="図のドラフト" recovery="remount">
-                            <DiagramChatPanel
-                              chat={chat}
-                              onChangeKind={handleChangeKind}
-                              onSend={generateDiagram}
-                              onPlace={() => void placeDraft()}
-                              unavailable={diagramUnavailable}
-                            />
-                          </ErrorBoundary>
-                        }
-                        paste={
-                          <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
-                            <MermaidPastePanel
-                              text={pasteText}
-                              onChangeText={setPasteText}
-                              onPlace={pasteMermaid}
-                            />
-                          </ErrorBoundary>
-                        }
-                      />
-                    ),
-                  },
-                ]
-              : []),
-            {
-              id: "members",
-              label: "メンバー",
-              // 共有が組み立てられていない構成では、押しても 503 しか返らない。
-              // タブは黙って消さず、開いた先で理由を出す（中核思想 3）。
-              content:
-                sharingUnavailable !== null ? (
-                  <p className="hint side-panel-note">{sharingUnavailable}</p>
-                ) : (
-                  <ErrorBoundary name="メンバーパネル" recovery="remount">
-                    <MemberPanel boardId={board.id} role={board.role} />
-                  </ErrorBoundary>
-                ),
-            },
-          ]}
-        />
+              </div>
+              {/*
+                解釈の結果と下書きの手直しは、キャンバスの上に広く開く。
+                **`.excalidraw` の外に置く。** 中に入れると色の変数がぶつかり、
+                axe が色を判定できない（ADR 0065）。
+              */}
+              <ErrorBoundary name="解釈の結果" recovery="remount">
+                <AnnotationDetail
+                  openId={detailId}
+                  openRequest={detailRequest}
+                  onClose={() => setDetailId(null)}
+                  annotations={annotations}
+                  frames={{
+                    canvasIds: canvasFrameIds,
+                    metas: canvasMetas,
+                    onFocus: focusFrame,
+                    onChangeGranularity: handleMark,
+                    onChangeKind: handleChangeAnnotationKind,
+                  }}
+                  interpretation={interpretation}
+                  creation={creation}
+                  runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
+                  stale={dirty}
+                  canEdit={canEdit}
+                  projectLink={link}
+                  targetLabel={targetLabel}
+                />
+              </ErrorBoundary>
+            </div>
+
+            {/*
+              右のパネル（`panelTabs`）。**並べられる幅ではキャンバスを覆わない。**
+              図のドラフトは置いた図がどこに出るかを見ながら直す道具なので、上に
+              敷くと「置く」を押した結果が確かめられない。並べるとキャンバスが
+              モバイル用 UI になる幅では重ね、スマホでは全面に開く（#199）。
+            */}
+            <SidePanel
+              active={panelTab}
+              onSelect={setPanelTab}
+              collapsed={phone ? !phonePanelOpen : panelCollapsed}
+              onCollapsedChange={
+                phone
+                  ? (collapsed) => setPhonePanelOpen(!collapsed)
+                  : changePanelCollapsed
+              }
+              rail={!phone}
+              openRequest={panelOpenRequest}
+              tabs={panelTabs}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
