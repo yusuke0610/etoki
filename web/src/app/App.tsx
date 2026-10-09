@@ -427,6 +427,13 @@ export function App() {
     async (target: BoardTarget) => {
       if (current === null) return;
 
+      // **設定を待つ前に、走っている取得を無効にする**（#241）。
+      // 「やめる」の取り直しを待つあいだも選択画面は残っていて、作成先を決め
+      // られる。世代を進めるのが設定のあとの取り直しだけだと、設定を待つあいだに
+      // 着いた「やめる」の応答が通り、選択画面を閉じて変える前の作成先で
+      // キャンバスを作る。あとから着く取り直しは同じ `key` なのでキャンバスを
+      // 作り直さず、作成先と版だけが入れ替わる。
+      openings.invalidateAll();
       await boardsApi.setTarget(current.id, target);
 
       // **画像ごと開き直す。** 選択画面から戻るとキャンバスを作り直すが、設定の
@@ -441,7 +448,7 @@ export function App() {
       setCurrent(board);
       showLocation({ boardId: board.id, picking: false }, "replace");
     },
-    [current, loadBoard, showLocation],
+    [current, loadBoard, openings, showLocation],
   );
 
   /**
@@ -458,8 +465,9 @@ export function App() {
    *
    * 取り直しを待つあいだに作成先を決められる。設定より前に読んだボードが遅れて
    * 届くと、変える前の作成先で上書きする。**守っているのは `loadBoard` の世代。**
-   * 設定のあとの取り直し（`changeTarget`）が新しい世代を張るので、こちらの
-   * 応答は捨てられる。設定の応答をそのまま入れる形に戻すなら、ここも見直す。
+   * `changeTarget` が設定を始める時点で世代を進めるので、設定を待つあいだに
+   * 着いても、設定のあとに着いても、こちらの応答は捨てられる。設定の応答を
+   * そのまま入れる形に戻すなら、ここも見直す。
    *
    * 未保存の確認は要らない。「作成先を変更」は未保存のあいだ押せないので、
    * 選択画面に来た時点で捨てるものが無い。

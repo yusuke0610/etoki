@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import type { BoardDetail, BoardWithFiles, ErrorResponse } from "../src/api/types";
-import { installApi } from "./helpers/api";
+import { holdBoardDetail, holdSetTarget, installApi } from "./helpers/api";
 import { summarize } from "./helpers/boardData";
 import {
   backToList,
@@ -36,6 +36,11 @@ function withUnselected() {
   mock.annotations[board.id] = [];
 
   return mock;
+}
+
+/** 開いているボードを取り直す要求か。「やめる」の取り直しを待つのに使う。 */
+function isBoardDetail(r: { method(): string; url(): string }): boolean {
+  return r.method() === "GET" && new URL(r.url()).pathname === `/api/boards/${BOARD_ID}`;
 }
 
 /** 一覧からボードを開く。キャンバスが出ないので openBoard は使えない。 */
@@ -417,9 +422,7 @@ test.describe("作成先の選択", () => {
       },
     );
 
-    const detailOf = (r: { method(): string; url(): string }) =>
-      r.method() === "GET" && new URL(r.url()).pathname === `/api/boards/${BOARD_ID}`;
-    const requested = page.waitForRequest(detailOf);
+    const requested = page.waitForRequest(isBoardDetail);
     await picker(page).getByRole("button", { name: "やめる" }).click();
     await requested;
 
@@ -427,7 +430,7 @@ test.describe("作成先の選択", () => {
     await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
 
     // 設定のあとの取り直しはもう着いているので、ここで待てるのは止めた 1 本だけ。
-    const arrived = page.waitForResponse((r) => detailOf(r.request()));
+    const arrived = page.waitForResponse((r) => isBoardDetail(r.request()));
     release();
     await arrived;
     // 応答を受けた処理が画面を変えるまでの間を置いてから、変わっていないことを
@@ -435,6 +438,66 @@ test.describe("作成先の選択", () => {
     await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
 
     await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
+  });
+
+  // 切れると: 上と同じ取り直しが、設定の応答より先に着く並び。世代を進めるのが
+  // 設定のあとの取り直しだけだと、この応答が通って選択画面が閉じ、変える前の
+  // 作成先でキャンバスが作られる。あとから着く取り直しは同じ `key` なので
+  // キャンバスを作り直さず、作成先と版だけが入れ替わる。
+  test("「やめる」の取り直しが作成先の設定より先に着いても、選択画面に残り、決めた作成先で戻る", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, baseMock());
+    await chooseFromMenu(page, "作成先を変更");
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+    const other = picker(page).getByRole("button", { name: "#4 技術的負債" });
+    await expect(other).toBeVisible();
+
+    // どちらも本文は `installApi` のものを、放した時点で返す。取り直しを先に
+    // 放すので、こちらは設定より前のボード（前の作成先）を返す。
+    let releaseDetail = (): void => {};
+    await holdBoardDetail(
+      page,
+      BOARD_ID,
+      new Promise<void>((resolve) => {
+        releaseDetail = resolve;
+      }),
+    );
+    let releaseTarget = (): void => {};
+    await holdSetTarget(
+      page,
+      new Promise<void>((resolve) => {
+        releaseTarget = resolve;
+      }),
+    );
+
+    const requested = page.waitForRequest(isBoardDetail);
+    await picker(page).getByRole("button", { name: "やめる" }).click();
+    await requested;
+
+    const setting = page.waitForRequest(
+      (r) =>
+        r.method() === "PUT" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/target`,
+    );
+    await other.click();
+    await setting;
+
+    const arrived = page.waitForResponse((r) => isBoardDetail(r.request()));
+    releaseDetail();
+    await arrived;
+    // 応答を受けた処理が画面を変えるまでの間を置いてから、変わっていないことを
+    // 見る（上と同じ形）。
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    await expect(picker(page)).toBeVisible();
+    await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
+
+    releaseTarget();
+    await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
+    await expect(picker(page)).toHaveCount(0);
+    expect(new URL(page.url()).search).toBe(`?board=${BOARD_ID}`);
   });
 
   // draft issue を 1 件でも作ると固定される。押せるのに 409 で断るより、
