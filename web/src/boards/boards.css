@@ -86,14 +86,16 @@
 
 /*
  * カードの格子。列の最小幅は、1440px の画面で 4 列になる値にしてある
- * （#62 のアートボード「ボード一覧」）。狭い幅での列の減り方は #199。
+ * （#62 のアートボード「ボード一覧」）。狭くなると列が減り、スマホの幅
+ * （375px）では 1 列になる（#199）。**列の最小幅は画面の幅を超えさせない。**
+ * 超えると、それより狭い画面で横スクロールが出る。
  */
 .board-grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: var(--space-6);
 }
 
@@ -226,4 +228,25 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-4);
+}
+
+/*
+ * スマホ（#199）。画面の左右の余白を 16px にする。見出しの行は、押せない理由が
+ * 出ると「新しいボード」の隣に収まらないので折り返す。
+ *
+ * **条件は `web/src/board/layout.ts` の `isMobileBreakpoint` と同じ式**（Excalidraw
+ * 0.18.1 の写し）。ボードの画面と一覧で、スマホとして扱う大きさを揃える。
+ */
+@media (max-width: 729.98px), (max-height: 499.98px) and (max-width: 999.98px) {
+  .list-header {
+    padding: 0 var(--space-6);
+  }
+
+  .list-body {
+    padding: var(--space-6);
+  }
+
+  .list-title {
+    flex-wrap: wrap;
+  }
 }
