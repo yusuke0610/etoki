@@ -178,6 +178,7 @@ describe("ERROR_MESSAGES", () => {
       ERROR_MESSAGES.github_not_configured,
       ERROR_MESSAGES.auth_not_configured,
       ERROR_MESSAGES.sharing_not_configured,
+      ERROR_MESSAGES.mcp_connections_not_configured,
     ];
 
     expect(new Set(messages).size).toBe(messages.length);

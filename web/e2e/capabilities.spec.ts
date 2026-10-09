@@ -27,7 +27,13 @@ test.describe("設定していない機能", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     // 画面が案内するだけでなく、叩けば 503 が返る構成そのものを再現する。
     mock.interpret = {
@@ -61,7 +67,13 @@ test.describe("設定していない機能", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: false,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
 
@@ -91,7 +103,13 @@ test.describe("設定していない機能", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: false,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await installApi(page, mock);
     await page.goto("/");
@@ -125,7 +143,13 @@ test.describe("設定していない機能", () => {
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: false,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
 
@@ -146,7 +170,13 @@ test.describe("設定していない機能", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: true, sharing: false },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: true,
+        sharing: false,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
 

@@ -32,5 +32,8 @@ func (h *handlers) getCapabilities(c *gin.Context) {
 		// 材料で、ここに混ぜると「共有は使えない」と案内したのに /members は
 		// 成功する、という食い違いを作れる。
 		Sharing: h.members != nil,
+		// 材料は `/api/oauth/*` が 503 になるものそのもの（h.oauth）。認証なしの
+		// 構成では NewRouter が nil にしている。
+		McpConnections: h.oauth != nil,
 	})
 }

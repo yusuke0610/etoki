@@ -371,6 +371,7 @@ test.describe("スクリーンショット", () => {
         diagramDraft: false,
         creation: false,
         sharing: false,
+        mcpConnections: false,
       },
     };
 

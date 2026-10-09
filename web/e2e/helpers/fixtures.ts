@@ -517,7 +517,13 @@ export function baseMock(): ApiMock {
     // 既定は全部そろった構成。未設定の見せ方を確かめる spec だけが落とす。
     capabilities: {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: true, sharing: true },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     },
     session: { status: 200, body: { authRequired: false, authenticated: false } },
     login: { status: 200, body: { authorizeUrl: AUTHORIZE_URL } },

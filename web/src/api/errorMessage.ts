@@ -90,6 +90,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   github_not_configured: "GitHub が未設定です。ETOKI_GITHUB_TOKEN を設定してください。",
   auth_not_configured: "認証が未設定です。GitHub App の設定が必要です。",
   sharing_not_configured: "共有には認証の設定が必要です。GitHub App を設定してください。",
+  mcp_connections_not_configured:
+    "MCP のクライアントへの接続には認証の設定が必要です。GitHub App を設定してください。",
 };
 
 /**

@@ -62,7 +62,13 @@ test.describe("押せない理由が本文として読める", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
 
@@ -80,7 +86,13 @@ test.describe("押せない理由が本文として読める", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
     await openPanelTab(page, "図のドラフト");
@@ -117,7 +129,13 @@ test.describe("押せない理由が本文として読める", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: false,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await installApi(page, mock);
     await page.goto("/");

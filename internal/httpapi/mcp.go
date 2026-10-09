@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
+	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
@@ -43,19 +44,29 @@ type mcpRunsOutput struct {
 	Runs []apitypes.SyncRun `json:"runs" jsonschema:"GET /api/boards/{id}/annotations/{annotationId}/runs と同じ履歴"`
 }
 
-// newMCPHandler は `/mcp` のハンドラを返す。
+// mcpEntrance は `/mcp` の入口を返す。
+//
+//   - 認証なしの構成：道具をそのまま開く（ADR 0071）。
+//   - 認証ありで認可サーバーがある：etoki が発行したトークンで通す（ADR 0076）。
+//   - 認証ありで認可サーバーが無い：開かずに 503。利用者を決める手段が無いまま
+//     開くと、ログインせずに全ボードが読める。
+func mcpEntrance(h *handlers, authConfigured bool) gin.HandlerFunc {
+	switch {
+	case !authConfigured:
+		return gin.WrapH(newMCPHandler(h))
+	case h.oauth != nil:
+		return h.requireBearer(newMCPHandler(h))
+	default:
+		return gin.WrapH(mcpUnavailable())
+	}
+}
+
+// newMCPHandler は `/mcp` の道具を返す。
 //
 // **公開するのは読み取りの 3 つだけ**（ADR 0071）。解釈と作成は出さない。
 // 解釈の画像はブラウザでしか作れず（ADR 0018）、作成は作るものを選んで
 // 手直しする人の確認（ADR 0024）をどこに挟むかが決まっていない。
-//
-// **認証ありの構成では開かない。** 利用者を決める手段が無いまま開くと、
-// ログインせずに全ボードが読める。OAuth で開くのは #185。
-func newMCPHandler(h *handlers, authConfigured bool) http.Handler {
-	if authConfigured {
-		return mcpUnavailable()
-	}
-
+func newMCPHandler(h *handlers) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "etoki", Version: buildVersion()}, nil)
 
 	// 読むのは etoki の DB だけで、GitHub にも LLM にも出ていかない。
@@ -148,7 +159,8 @@ func (h *handlers) toolError(ctx context.Context, tool string, err error) error 
 	return fmt.Errorf("%s: internal error", apitypes.ErrorCodeInternal)
 }
 
-// mcpUnavailable は認証ありの構成で `/mcp` に来たリクエストへの応答。
+// mcpUnavailable は認証ありの構成で、認可サーバー（ADR 0076）を組み立てて
+// いないときに `/mcp` に来たリクエストへの応答。
 //
 // **404 ではなく 503。** URL の誤りではなく、この構成では開いていないことを
 // 伝える（ADR 0030 の 503 と同じ区別）。
@@ -160,8 +172,8 @@ func (h *handlers) toolError(ctx context.Context, tool string, err error) error 
 func mcpUnavailable() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w,
-			"mcp is not available when authentication is configured: "+
-				"it is only served without ETOKI_GITHUB_APP_CLIENT_ID",
+			"mcp is not available: authentication is configured "+
+				"but no OAuth grant repository is set up for MCP clients",
 			http.StatusServiceUnavailable)
 	})
 }

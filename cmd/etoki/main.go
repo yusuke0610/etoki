@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -50,6 +51,12 @@ var usage = `usage:
   etoki claim [--yes] <login>
                         所有者の無いボードを引き受ける。引き当てた相手を
                         見せて確かめる（--yes で省く）
+  etoki grants [--login <login>]
+                        MCP のクライアントに許した接続を一覧する
+  etoki revoke [--yes] <grant-id>
+  etoki revoke [--yes] --login <login>
+                        接続を取り消す。--login はその利用者の接続をすべて。
+                        取り消す前に対象を見せて確かめる（--yes で省く）
 
 environment:
   ETOKI_ADDR            リッスンアドレス（既定: ` + etoki.DefaultAddr + `）
@@ -135,6 +142,20 @@ func run() error {
 			return err
 		}
 		return claim(ctx, login, yes)
+	case args[0] == "grants":
+		login, err := parseGrantsArgs(args[1:])
+		if err != nil {
+			fmt.Fprint(os.Stderr, usage)
+			return err
+		}
+		return listGrants(ctx, login)
+	case args[0] == "revoke":
+		target, err := parseRevokeArgs(args[1:])
+		if err != nil {
+			fmt.Fprint(os.Stderr, usage)
+			return err
+		}
+		return revoke(ctx, target)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return fmt.Errorf("unknown command %q", args[0])
@@ -192,19 +213,23 @@ func serve(ctx context.Context) error {
 	}
 
 	srv, err := etoki.New(etoki.Options{
-		Addr:            os.Getenv("ETOKI_ADDR"),
-		Boards:          boards,
-		Mappings:        sqlite.NewMappingRepository(db),
-		LLM:             llmClient,
-		GitHub:          githubClient,
-		Auth:            auth,
-		WebDir:          webDir,
-		PublicURL:       os.Getenv(envPublicURL),
-		KindFieldName:   os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
-		ParentFieldName: os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
-		Logger:          logger,
-		LLMLimits:       limits,
-		AllowedOrigins:  splitList(os.Getenv("ETOKI_ALLOWED_ORIGINS")),
+		Addr:     os.Getenv("ETOKI_ADDR"),
+		Boards:   boards,
+		Mappings: sqlite.NewMappingRepository(db),
+		LLM:      llmClient,
+		GitHub:   githubClient,
+		Auth:     auth,
+		// 認証ありの構成で `/mcp` を OAuth で開く（ADR 0076）。Auth が nil なら
+		// etoki.New が使わない。
+		OAuthGrants:                  sqlite.NewOAuthGrantRepository(db),
+		OAuthClientMetadataDocuments: true,
+		WebDir:                       webDir,
+		PublicURL:                    os.Getenv(envPublicURL),
+		KindFieldName:                os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
+		ParentFieldName:              os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
+		Logger:                       logger,
+		LLMLimits:                    limits,
+		AllowedOrigins:               splitList(os.Getenv("ETOKI_ALLOWED_ORIGINS")),
 	})
 	if err != nil {
 		return err
@@ -323,41 +348,20 @@ func newGitHubClient(auth *etoki.Authenticator) (port.GitHubClient, error) {
 // 知っているのは最後にその login でログインした人までで、改名で空いた login を
 // 取った別人かどうかは GitHub にしか分からない。
 func claim(ctx context.Context, login string, yes bool) error {
-	path := dbPath()
-
 	// 確かめられない入力で黙って進めない。パイプから呼ぶなら --yes を明示させる。
 	if !yes && !isTerminal(os.Stdin) {
 		return errors.New("claim asks for confirmation; pass --yes when stdin is not a terminal")
 	}
 
-	db, err := sqlite.Open(ctx, path)
+	db, sessions, err := openAuthDB(ctx, "claim")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
 
-	// serve と同じ確認を通す。未初期化の DB に対して claim すると、原因の
-	// 分からない SQL エラーになる。
-	if err := sqlite.EnsureMigrated(ctx, db); err != nil {
-		if errors.Is(err, sqlite.ErrNotMigrated) {
-			return fmt.Errorf("%w\n  先に `make migrate` を実行してください (%s)", err, path)
-		}
-		return err
-	}
-
-	if !githubauth.ConfigFromEnv().Configured() {
-		return errors.New("claim requires authentication to be configured")
-	}
-
 	// 引き受ける相手は一度ログインしている必要がある。users に行ができるのは
 	// ログインしたときだけなので、そこで初めて指せるようになる。
-	box, err := newSecretBox()
-	if err != nil {
-		return err
-	}
-
-	user, err := sqlite.NewSessionRepository(db, box).
-		FindUserByLogin(ctx, githubauth.ProviderName, login)
+	user, err := sessions.FindUserByLogin(ctx, githubauth.ProviderName, login)
 	if err != nil {
 		return err
 	}
@@ -432,6 +436,262 @@ login は最後にログインしたときのものです。改名で空いた l
 	default:
 		return false
 	}
+}
+
+// openAuthDB は認証まわりを触るサブコマンド（claim / grants / revoke）の
+// 共通の準備。DB を開き、マイグレーション済みで、認証が設定されていることを
+// 確かめる。
+//
+// serve と同じ確認を通す。未初期化の DB に対して叩くと、原因の分からない SQL
+// エラーになる。
+func openAuthDB(ctx context.Context, command string) (*sql.DB, *sqlite.SessionRepository, error) {
+	path := dbPath()
+
+	db, err := sqlite.Open(ctx, path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := sqlite.EnsureMigrated(ctx, db); err != nil {
+		_ = db.Close()
+		if errors.Is(err, sqlite.ErrNotMigrated) {
+			return nil, nil, fmt.Errorf("%w\n  先に `make migrate` を実行してください (%s)", err, path)
+		}
+		return nil, nil, err
+	}
+
+	if !githubauth.ConfigFromEnv().Configured() {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("%s requires authentication to be configured", command)
+	}
+
+	box, err := newSecretBox()
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	return db, sqlite.NewSessionRepository(db, box), nil
+}
+
+// grantRow は一覧と確認に出す 1 行。許可に、許した利用者の login を添える。
+type grantRow struct {
+	grant port.OAuthGrant
+	login string
+}
+
+// grantRows は許可に login を添える。利用者が消えていれば login は空。
+func grantRows(
+	ctx context.Context, sessions *sqlite.SessionRepository, grants []port.OAuthGrant,
+) ([]grantRow, error) {
+	ids := make([]string, 0, len(grants))
+	for _, g := range grants {
+		ids = append(ids, g.UserID)
+	}
+	users, err := sessions.FindUsers(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	logins := make(map[string]string, len(users))
+	for _, u := range users {
+		logins[u.ID] = u.Login
+	}
+
+	rows := make([]grantRow, 0, len(grants))
+	for _, g := range grants {
+		rows = append(rows, grantRow{grant: g, login: logins[g.UserID]})
+	}
+	return rows, nil
+}
+
+// writeGrants は許可を表にして書く。
+func writeGrants(out io.Writer, rows []grantRow) {
+	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tLOGIN\tCLIENT\tCLIENT ID\tGRANTED\tLAST USED")
+	for _, r := range rows {
+		login := "@" + r.login
+		if r.login == "" {
+			login = "-"
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.grant.ID, login, orDash(r.grant.ClientName), r.grant.ClientID,
+			r.grant.CreatedAt.UTC().Format("2006-01-02 15:04 MST"),
+			r.grant.LastUsedAt.UTC().Format("2006-01-02 15:04 MST"))
+	}
+	_ = tw.Flush()
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// listGrants は MCP のクライアントに許した接続を一覧する（ADR 0076）。
+//
+// login を渡せばその利用者のものだけ。サーバーを動かしている人が、画面に
+// 入れなくなった利用者の接続を見つけて切るための道具。
+func listGrants(ctx context.Context, login string) error {
+	db, sessions, err := openAuthDB(ctx, "grants")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
+	repo := sqlite.NewOAuthGrantRepository(db)
+	var grants []port.OAuthGrant
+	if login == "" {
+		grants, err = repo.ListAllGrants(ctx)
+	} else {
+		user, ferr := sessions.FindUserByLogin(ctx, githubauth.ProviderName, login)
+		if ferr != nil {
+			return ferr
+		}
+		if user == nil {
+			return fmt.Errorf("unknown user %q", login)
+		}
+		grants, err = repo.ListGrants(ctx, user.ID)
+	}
+	if err != nil {
+		return err
+	}
+
+	rows, err := grantRows(ctx, sessions, grants)
+	if err != nil {
+		return err
+	}
+	writeGrants(os.Stdout, rows)
+	return nil
+}
+
+// revokeTarget は revoke が取り消す相手。どちらか一方だけが入る。
+type revokeTarget struct {
+	grantID string
+	login   string
+	yes     bool
+}
+
+// revoke は接続を取り消す（ADR 0076）。
+//
+// **取り消す前に対象を見せて確かめる**（claim と同じ。ADR 0053）。取り消すと
+// 手元の MCP のクライアントは同意からやり直しになる。既定は止める。
+func revoke(ctx context.Context, target revokeTarget) error {
+	if !target.yes && !isTerminal(os.Stdin) {
+		return errors.New("revoke asks for confirmation; pass --yes when stdin is not a terminal")
+	}
+
+	db, sessions, err := openAuthDB(ctx, "revoke")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
+	repo := sqlite.NewOAuthGrantRepository(db)
+	var grants []port.OAuthGrant
+	if target.grantID != "" {
+		g, err := repo.FindGrant(ctx, target.grantID)
+		if err != nil {
+			return err
+		}
+		if g == nil {
+			return fmt.Errorf("unknown grant %q", target.grantID)
+		}
+		grants = []port.OAuthGrant{*g}
+	} else {
+		user, err := sessions.FindUserByLogin(ctx, githubauth.ProviderName, target.login)
+		if err != nil {
+			return err
+		}
+		if user == nil {
+			return fmt.Errorf("unknown user %q", target.login)
+		}
+		if grants, err = repo.ListGrants(ctx, user.ID); err != nil {
+			return err
+		}
+	}
+	if len(grants) == 0 {
+		fmt.Fprintln(os.Stderr, "etoki: no grants to revoke")
+		return nil
+	}
+
+	rows, err := grantRows(ctx, sessions, grants)
+	if err != nil {
+		return err
+	}
+	if !target.yes && !confirmRevoke(os.Stdin, os.Stderr, rows) {
+		return errors.New("revoke canceled")
+	}
+
+	for _, g := range grants {
+		if err := repo.DeleteGrant(ctx, g.ID); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintf(os.Stderr, "etoki: revoked %d grant(s)\n", len(grants))
+	return nil
+}
+
+// confirmRevoke は取り消す対象を見せ、y / yes のときだけ true を返す。
+// 既定は止める（confirmClaim と同じ）。
+func confirmRevoke(in io.Reader, out io.Writer, rows []grantRow) bool {
+	_, _ = fmt.Fprintf(out, "次の %d 件の接続を取り消します。"+
+		"そのクライアントは同意からやり直しになります。\n", len(rows))
+	writeGrants(out, rows)
+	_, _ = fmt.Fprint(out, "取り消しますか？ [y/N] ")
+
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// parseGrantsArgs は grants の引数を読む。
+func parseGrantsArgs(args []string) (login string, err error) {
+	for i := 0; i < len(args); i++ {
+		if args[i] != "--login" {
+			return "", fmt.Errorf("grants: unexpected argument %q", args[i])
+		}
+		if i+1 >= len(args) || login != "" {
+			return "", errors.New("grants: --login takes one login")
+		}
+		i++
+		login = args[i]
+	}
+	return login, nil
+}
+
+// parseRevokeArgs は revoke の引数を読む。grant の ID か --login のどちらか
+// 1 つを要る。両方を許すと、どちらが取り消されるのかが読み手に分からない。
+func parseRevokeArgs(args []string) (revokeTarget, error) {
+	var t revokeTarget
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--yes":
+			t.yes = true
+		case a == "--login":
+			if i+1 >= len(args) || t.login != "" {
+				return revokeTarget{}, errors.New("revoke: --login takes one login")
+			}
+			i++
+			t.login = args[i]
+		case strings.HasPrefix(a, "-"):
+			return revokeTarget{}, fmt.Errorf("revoke: unknown flag %q", a)
+		case t.grantID != "":
+			return revokeTarget{}, errors.New("revoke takes exactly one grant id")
+		default:
+			t.grantID = a
+		}
+	}
+	switch {
+	case t.grantID == "" && t.login == "":
+		return revokeTarget{}, errors.New("revoke requires a grant id or --login")
+	case t.grantID != "" && t.login != "":
+		return revokeTarget{}, errors.New("revoke takes either a grant id or --login, not both")
+	}
+	return t, nil
 }
 
 // isTerminal は f が端末につながっているかを返す。
