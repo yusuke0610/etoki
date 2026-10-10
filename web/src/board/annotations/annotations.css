@@ -73,7 +73,7 @@
 
 /*
  * スマホ（#199）。**全面で開く。** 基準は `.board-stage` で、上の帯の 2 段目から
- * 下を覆う。1 段目（ボード名・未保存・保存）は覆わない（ADR 0021）。全面の
+ * 下を覆う。1 段目（ボード名・未保存・「絵解き」）は覆わない（ADR 0021）。全面の
  * パネル（z-index 5）から開くので、その上に置く。
  */
 .board[data-layout="phone"] .annotation-detail {
@@ -107,9 +107,15 @@
 }
 
 .annotation-detail-title h2 {
+  flex: none;
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+/* 見出し（絵解き）の隣に、どの注釈かを出す。長い名前は折り返す。 */
+.annotation-detail-label {
   flex: 1;
   min-width: 0;
-  margin: 0;
   font-size: var(--text-xl);
   overflow-wrap: anywhere;
 }

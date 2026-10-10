@@ -739,6 +739,58 @@ export function BoardPage({
     dismiss: dismissHere,
   });
 
+  // 保存のあとに読む値。保存は注釈の一覧を取り直すが、押した時点の関数は古い一覧を
+  // 握っている。呼ぶ側が最新の値を引けるよう、描画のたびに置き直す。
+  const latestAnnotations = useRef({ canvasMetas, annotations });
+  useEffect(() => {
+    latestAnnotations.current = { canvasMetas, annotations };
+  });
+
+  /**
+   * 右上の「絵解き」。**未保存なら保存してから、絵解きの面を開く**（#247）。
+   *
+   * 保存が要るのは etoki の都合（ADR 0018）で、押す人が知らなくてよい。**未保存の
+   * ときだけ保存する。** 保存は全部の注釈の引いた解釈と作成の状態を捨てる
+   * （`discardAfterSave`）ので、毎回保存すると、開き直すたびに前の結果が消える。
+   * 保存できなかったら（衝突・失敗・排他）開かない。通知と衝突の帯が理由を言う。
+   *
+   * 開く先: 注釈が 1 件ならその詳細。0 件か複数ならパネルの注釈の一覧。右上のボタンは
+   * どの注釈かを指していないので、選ぶのは人（中核思想 3）。スマホではパネルを
+   * 全面に開く（上の帯から開くのと同じ口、#199）。
+   */
+  const startEkidoki = useCallback(async () => {
+    if (isDirty() && !(await save())) return;
+    const { canvasMetas: metas, annotations: saved } = latestAnnotations.current;
+    const ids = metas ? Object.keys(metas) : saved.map((a) => a.id);
+    const only = ids.length === 1 ? ids[0] : undefined;
+    if (only !== undefined) {
+      openDetail(only);
+      return;
+    }
+    if (phone) {
+      openPhonePanel("annotations");
+      return;
+    }
+    setPanelTab("annotations");
+    changePanelCollapsed(false);
+  }, [changePanelCollapsed, isDirty, openDetail, openPhonePanel, phone, save]);
+
+  /**
+   * 詳細の「絵解く」。**未保存なら保存してから読む**（#247）。
+   *
+   * 保存の理由は `startEkidoki` と同じ。保存できなかったら読まない。保存は
+   * 引いた解釈をすべて捨てるので、**読むのは必ず保存のあと**（先に読むと、
+   * 引いた結果が直後に消える）。
+   */
+  const interpretAfterSave = useCallback(
+    async (id: string) => {
+      const granularity = latestAnnotations.current.canvasMetas?.[id]?.granularity;
+      if (isDirty() && !(await save())) return;
+      void interpret(id, { granularity });
+    },
+    [interpret, isDirty, save],
+  );
+
   // **ボードを変えたら、そのボードについての通知は全部下げる。** 通知は
   // キャンバスより上に生きているので、残すと別のボードの画面に並ぶ。
   //
@@ -878,7 +930,7 @@ export function BoardPage({
     // 起きたかが見えない。
     onInterpret: (id) => {
       openDetail(id);
-      void interpret(id);
+      void interpretAfterSave(id);
     },
     onSelect: showInterpretation,
     unavailable: interpretationUnavailable,
@@ -912,7 +964,7 @@ export function BoardPage({
     ? "保存してから作成先を変更できます"
     : exclusive.reasonFor("changeTarget");
 
-  // 右上に出す。ボード名・未保存・保存（`BoardStatus`）。**描くたびに作り直さない**
+  // 右上に出す。ボード名・未保存・「絵解き」（`BoardStatus`）。**描くたびに作り直さない**
   // （ADR 0065）。依存にはプリミティブと、同一性の保たれた関数だけを置く。
   const topRightUI = useMemo(
     () => (
@@ -924,9 +976,9 @@ export function BoardPage({
         onRename={() => void rename()}
         dirty={dirty}
         canEdit={canEdit}
-        onSave={() => void save()}
-        canSave={canSave}
-        saveBlocked={saveBlocked}
+        onEkidoki={() => void startEkidoki()}
+        canEkidoki={canSave}
+        ekidokiBlocked={saveBlocked}
         saving={saving}
       />
     ),
@@ -938,7 +990,7 @@ export function BoardPage({
       rename,
       dirty,
       canEdit,
-      save,
+      startEkidoki,
       canSave,
       saveBlocked,
       saving,
@@ -1214,7 +1266,7 @@ export function BoardPage({
           スマホの置き方では、右上と下の帯の中身をキャンバスの上の etoki の帯に
           移す（#199）。Excalidraw のモバイル用 UI では `Footer` が描かれず、
           状態を常に見せる約束（ADR 0064 / 0065）が崩れるため。1 段目はボード名・
-          未保存・保存で、**全面に開いたパネルと詳細もここは覆わない**（ADR 0021）。
+          未保存・「絵解き」で、**全面に開いたパネルと詳細もここは覆わない**（ADR 0021）。
         */}
         {phone && <div className="board-bar board-bar-status">{topRightUI}</div>}
         <div className="board-stage">

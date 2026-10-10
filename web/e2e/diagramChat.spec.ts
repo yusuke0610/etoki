@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { openBoardWithMock, openPanelTab } from "./helpers/board";
+import { openBoardWithMock, openPanelTab, saveScene } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -42,7 +42,7 @@ test.describe("図のドラフト", () => {
 
     // 保存して初めてシーンに載る。既存の frame 3 つはそのまま残っている
     // （**既存の要素には一切触らない**、#58 の原則）。
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
     const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
@@ -61,8 +61,8 @@ test.describe("図のドラフト", () => {
     }
   });
 
-  // **未保存でも使える**（ADR 0041）。保存済みシーンを読まないので、解釈の
-  // 「保存してから解釈できます」と同じ制約をかける理由が無い。
+  // **未保存でも使える**（ADR 0041）。保存済みシーンを読まないので、解釈のように
+  // 保存を挟む（#247）理由が無い。
   test("未保存のままでも生成できる", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());
     await openChat(page);
@@ -248,7 +248,7 @@ test.describe("図のドラフト", () => {
       await expect(page.getByText("未保存", { exact: true })).toBeVisible();
       await expect(page.getByText("置ける形になりませんでした")).toHaveCount(0);
 
-      await page.getByRole("button", { name: "保存", exact: true }).click();
+      await saveScene(page);
       await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
       const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {

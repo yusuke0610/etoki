@@ -1,14 +1,13 @@
-/** 帯の「解釈する」。 */
+/** 帯の「絵解く」。 */
 export type InterpretControl = {
   /** 説明文の id を注釈ごとに分けるために持つ。詳細は注釈の数だけ描いたまま残る。 */
   annotationId: string;
-  /** 1 度でも解釈していれば「解釈をやり直す」。 */
-  label: "解釈する" | "解釈をやり直す";
+  /** 1 度でも絵解きしていれば「絵解き直す」。 */
+  label: "絵解く" | "絵解き直す";
   running: boolean;
   /**
-   * 押せない理由。押せるなら null。**設定の不足が先、未保存が後**（ADR 0030）。
-   * 保存しても設定の不足は変わらないので、「保存してから」を先に出すと、保存
-   * した人がもう一度同じところで止まる。
+   * 押せない理由。押せるなら null。設定の不足だけ（ADR 0030）。未保存では止めない。
+   * 押した操作の中で保存するので（`BoardPage`、#247）、保存を理由に断らない。
    */
   blocked: string | null;
   onInterpret: () => void;
@@ -58,7 +57,7 @@ export function DetailBand({
         disabled={interpret.running || interpret.blocked !== null}
         aria-describedby={interpret.blocked !== null ? interpretBlockedId : undefined}
       >
-        {interpret.running ? "解釈中…" : interpret.label}
+        {interpret.running ? "絵解き中…" : interpret.label}
       </button>
 
       <div className="annotation-detail-band-text">

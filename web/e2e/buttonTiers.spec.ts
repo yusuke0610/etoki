@@ -7,6 +7,7 @@ import {
   openAnnotationDetail,
   openBoardWithMock,
   openPanelTab,
+  ekidokiButton,
 } from "./helpers/board";
 import { authRequiredMock, BOARD_ID, baseMock } from "./helpers/fixtures";
 
@@ -50,19 +51,17 @@ test.describe("ボタンの格", () => {
     await expect(dialog.getByRole("button", { name: "キャンセル" })).toHaveClass(QUIET);
   });
 
-  test("保存と作成は主となる操作、解釈はふつう、詳細を閉じるのは控えめ", async ({
+  test("絵解きと作成は主となる操作、絵解くはふつう、詳細を閉じるのは控えめ", async ({
     page,
   }) => {
     await openBoardWithMock(page, baseMock());
 
-    await expect(page.getByRole("button", { name: "保存", exact: true })).toHaveClass(
-      PRIMARY,
-    );
+    await expect(ekidokiButton(page)).toHaveClass(PRIMARY);
 
-    // 詳細の面の主となる操作は「GitHub に作成する」の 1 つ。解釈は帯の左に並ぶ
+    // 詳細の面の主となる操作は「GitHub に作成する」の 1 つ。絵解くは帯の左に並ぶ
     // ふつうの操作で、ヘッダーの「キャンバスで見る」と「閉じる」は控えめ（#201）。
     const detail = await openAnnotationDetail(page, "ログイン");
-    const interpret = detail.getByRole("button", { name: "解釈する" });
+    const interpret = detail.getByRole("button", { name: "絵解く" });
     await expect(interpret).not.toHaveClass(ANY_TIER);
     await expect(detail.getByRole("button", { name: "キャンバスで見る" })).toHaveClass(
       QUIET,

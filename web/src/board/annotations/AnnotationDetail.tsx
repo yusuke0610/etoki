@@ -285,6 +285,7 @@ function AnnotationFace({
 }) {
   const id = a.id;
   const headingId = `annotation-detail-title-${id}`;
+  const labelId = `annotation-detail-label-${id}`;
   const missingId = `annotation-detail-missing-${id}`;
   const viewerId = `annotation-detail-viewer-${id}`;
   const itemsRegionId = `annotation-detail-items-${id}`;
@@ -345,7 +346,7 @@ function AnnotationFace({
       // モードレスの dialog。開いているあいだも右のパネルとキャンバスは
       // 触れる（上の doc）ので、`aria-modal` は付けない。
       role="dialog"
-      aria-labelledby={headingId}
+      aria-labelledby={`${headingId} ${labelId}`}
       hidden={!open}
       // 開いた直後の焦点を受けるだけ。Tab の順には入れない。
       tabIndex={-1}
@@ -353,7 +354,15 @@ function AnnotationFace({
     >
       <header className="annotation-detail-header">
         <div className="annotation-detail-title">
-          <h2 id={headingId}>{label}</h2>
+          {/*
+            見出しは「絵解き」。どの注釈かは隣の名前で示す。面は注釈の数だけ描いた
+            まま残るので、見出しだけだと同じ名前の面が並ぶ。ダイアログの名前は
+            2 つをつないで読ませる（`aria-labelledby`）。
+          */}
+          <h2 id={headingId}>絵解き</h2>
+          <span id={labelId} className="annotation-detail-label">
+            {label}
+          </span>
           <span className={`badge badge-${a.state}`}>{STATE_LABEL[a.state]}</span>
           {/*
             キャンバスでその frame を選ぶ口（ADR 0022）。カードを押すと詳細が

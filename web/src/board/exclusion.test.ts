@@ -33,8 +33,8 @@ describe("blockedReason", () => {
 
   // **表そのもの。** 1 マスでも書き換えたら落ちる。
   it.each([
-    ["saving", "importing", "取り込みが終わるまで保存できません"],
-    ["saving", "creating", "作成が終わるまで保存できません"],
+    ["saving", "importing", "取り込みが終わるまで絵解きを始められません"],
+    ["saving", "creating", "作成が終わるまで絵解きを始められません"],
     ["importing", "saving", "保存が終わるまで取り込めません"],
     ["importing", "creating", "作成が終わるまで取り込めません"],
     ["creating", "saving", "保存が終わるまで作成できません。"],

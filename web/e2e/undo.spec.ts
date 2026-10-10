@@ -7,6 +7,7 @@ import {
   openBoard,
   openMermaidPaste,
   openPanelTab,
+  saveScene,
 } from "./helpers/board";
 import { BOARD_ID, baseMock, mixedFramesMock } from "./helpers/fixtures";
 
@@ -21,7 +22,7 @@ type SavedElement = {
 /** 保存して、送られたシーンの要素を返す。消した要素は数えない。 */
 async function saveAndRead(page: Page, mock: ApiMock): Promise<SavedElement[]> {
   const before = mock.details[BOARD_ID]?.updatedAt;
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await saveScene(page);
   await expect.poll(() => mock.details[BOARD_ID]?.updatedAt).not.toBe(before);
   const scene = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
     elements: SavedElement[];

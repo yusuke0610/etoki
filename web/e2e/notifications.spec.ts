@@ -11,6 +11,7 @@ import {
   interpret,
   openBoard,
   openBoardWithMock,
+  saveScene,
 } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
@@ -89,7 +90,7 @@ test.describe("通知", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     const alert = page.getByRole("alert");
     await expect(alert).toContainText("保存できませんでした");
@@ -119,7 +120,7 @@ test.describe("通知", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
 
     delete mock.saveSceneError;
@@ -140,7 +141,7 @@ test.describe("通知", () => {
 
     mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-09T00:00:00Z" };
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     await expect(page.getByText("他の人がこのボードを保存しました")).toBeVisible();
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
@@ -178,7 +179,7 @@ test.describe("通知", () => {
     await openBoard(page, BOARD_NAME);
 
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
     await chooseFromMenu(page, "作成先の名前を取り直す");
 
@@ -203,7 +204,7 @@ test.describe("通知", () => {
 
     const canvas = page.locator(".canvas");
     const before = await canvas.boundingBox();
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
 
     expect(await canvas.boundingBox()).toEqual(before);
@@ -222,7 +223,7 @@ test.describe("通知", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     const notification = page.locator(".notifications").getByRole("alert");
     await expect(notification).toContainText("保存できませんでした");
@@ -249,7 +250,7 @@ test.describe("通知", () => {
     };
     await openBoardWithMock(page, mock);
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
 
     // 未保存のまま離れるので確認が出る。
@@ -292,7 +293,7 @@ test.describe("通知", () => {
       }),
     );
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     page.on("dialog", (dialog) => void dialog.accept());
     await backToList(page);
