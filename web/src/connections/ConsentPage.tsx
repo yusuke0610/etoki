@@ -84,6 +84,47 @@ export function ConsentPage({ request, onLeave }: Props) {
   return (
     <div className="consent">
       <div className="consent-card">
+        {/*
+          何の画面かを一目で分からせる。この画面はクライアントのブラウザ操作から
+          いきなり開くので、etoki の画面だと読めないと、許可してよいかを考える
+          前に戸惑う。**ロゴは仮。** 絵は飾りなので読み上げから外し、名前は文字が持つ。
+        */}
+        <p className="consent-brand">
+          <svg
+            className="consent-logo"
+            viewBox="0 0 32 32"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect className="consent-logo-bg" width="32" height="32" rx="8" />
+            <rect
+              className="consent-logo-frame"
+              x="6"
+              y="7"
+              width="20"
+              height="18"
+              rx="3"
+            />
+            <rect
+              className="consent-logo-note"
+              x="10"
+              y="11"
+              width="6"
+              height="5"
+              rx="1"
+            />
+            <rect
+              className="consent-logo-note"
+              x="17"
+              y="16"
+              width="6"
+              height="5"
+              rx="1"
+            />
+          </svg>
+          <span className="consent-wordmark">etoki</span>
+        </p>
+
         <h1 className="consent-heading">MCP のクライアントからの接続</h1>
 
         {error && <ErrorNotice failure={error} />}
