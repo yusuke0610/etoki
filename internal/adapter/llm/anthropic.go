@@ -262,7 +262,7 @@ func (c *Client) Complete(ctx context.Context, req port.VisionRequest) (port.Vis
 		return port.VisionResponse{}, fmt.Errorf("decode response: %w", err)
 	}
 
-	text, err := extractText(resp)
+	text, err := extractText(resp, c.maxTokens)
 	if err != nil {
 		return port.VisionResponse{}, err
 	}
@@ -306,7 +306,7 @@ func (c *Client) buildRequest(req port.VisionRequest) apiRequest {
 //
 // content の先頭が本文とは限らない。thinking が有効なモデルでは thinking
 // ブロックが先に並ぶため、type が text のものだけを拾って連結する。
-func extractText(resp apiResponse) (string, error) {
+func extractText(resp apiResponse, maxTokens int) (string, error) {
 	// refusal は HTTP 200 で返る。content を読む前に判定する。
 	if resp.StopReason == "refusal" {
 		if resp.StopDetails.Category == "" {
@@ -317,7 +317,7 @@ func extractText(resp apiResponse) (string, error) {
 	// 打ち切られた応答は JSON として壊れている。再送しても同じ結果になるので、
 	// スキーマ違反ではなく呼び出しの失敗として返す。
 	if resp.StopReason == "max_tokens" {
-		return "", errors.New("response truncated: max_tokens reached")
+		return "", truncatedError(resp.Usage.OutputTokens, maxTokens)
 	}
 
 	var b strings.Builder
@@ -331,6 +331,24 @@ func extractText(resp apiResponse) (string, error) {
 	}
 
 	return b.String(), nil
+}
+
+// truncatedError は打ち切りのエラーに、誰が切ったのかを添える。
+//
+// 送った上限（maxTokens）に届く前に max_tokens で返るのは、向こうのコンテキスト
+// 長が先に尽きたとき。Ollama の既定は 4096 で、入力と出力の合計で切れる。こちらの
+// 上限を上げても直らないので、見分けられるようにしておく。使用量を返さない実装
+// （0）では、どちらとも言えないので言い切らない。
+func truncatedError(outputTokens, maxTokens int) error {
+	switch {
+	case outputTokens <= 0:
+		return errors.New("response truncated: max_tokens reached")
+	case outputTokens < maxTokens:
+		return fmt.Errorf("response truncated: stopped at %d output tokens, before our limit of %d "+
+			"(the backend likely ran out of context window)", outputTokens, maxTokens)
+	default:
+		return fmt.Errorf("response truncated: reached our limit of %d output tokens", maxTokens)
+	}
 }
 
 // statusError は 2xx 以外の応答をエラーにする。

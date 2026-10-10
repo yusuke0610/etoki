@@ -35,6 +35,64 @@ func newClient(t *testing.T, handler http.HandlerFunc) *llm.Client {
 	return c
 }
 
+// 送った上限（既定 16000）に届く前に stop_reason が max_tokens で返るのは、
+// 向こうのコンテキスト長が先に尽きたとき（Ollama の既定は 4096。入力 3233 +
+// 出力 863 で切れることを実機で確かめた）。etoki の上限を上げても直らないので、
+// 上限に届いたのか手前で切られたのかを、メッセージで区別できるようにする
+// （issue #252）。
+func TestComplete_TruncationNamesWhoCutItOff(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		usage   string
+		want    string
+		notWant string
+	}{
+		{
+			name:    "上限の手前で切られた",
+			usage:   `{"input_tokens":3233,"output_tokens":863}`,
+			want:    "before our limit",
+			notWant: "reached our limit",
+		},
+		{
+			name:    "上限に届いた",
+			usage:   `{"input_tokens":3233,"output_tokens":16000}`,
+			want:    "reached our limit",
+			notWant: "before our limit",
+		},
+		{
+			// 使用量を返さない実装では、どちらとも言えない。言い切らない。
+			name:    "使用量の報告が無い",
+			usage:   `{}`,
+			want:    "truncated",
+			notWant: "limit",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := newClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"{"}],`+
+					`"stop_reason":"max_tokens","usage":`+tt.usage+`}`)
+			})
+
+			_, err := c.Complete(t.Context(), port.VisionRequest{Text: "x"})
+			if err == nil {
+				t.Fatal("Complete() = nil, want error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Complete() = %v, want to contain %q", err, tt.want)
+			}
+			if strings.Contains(err.Error(), tt.notWant) {
+				t.Errorf("Complete() = %v, must not contain %q", err, tt.notWant)
+			}
+		})
+	}
+}
+
 // 認証を要求しないローカルのエンドポイントを想定するため、鍵は必須ではない。
 func TestComplete_OmitsAPIKeyHeaderWhenUnset(t *testing.T) {
 	t.Parallel()

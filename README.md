@@ -241,9 +241,22 @@ export ETOKI_LLM_MODEL=<プロキシ側のモデル名>
 make dev
 ```
 
-Ollama や LM Studio が直接公開するのは OpenAI Chat Completions 形状なので、
+LM Studio が直接公開するのは OpenAI Chat Completions 形状なので、
 `ETOKI_LLM_BASE_URL` をそこへ向けても動きません。形状を変換するプロキシを
-挟むか、`port.LLMClient` を自前実装して差し込んでください。
+挟むか、`port.LLMClient` を自前実装して差し込んでください。Ollama は
+Messages API 形状（`/v1/messages`）も公開していて、0.34.4 では
+`ETOKI_LLM_BASE_URL=http://localhost:11434` で動くことを確かめています。
+
+**Ollama はコンテキスト長が小さいと、応答が途中で切れます。** 既定は VRAM に
+応じて 4k / 32k / 256k で、4k だと入力と出力の合計が 4096 トークンに達した時点で
+`stop_reason` が `max_tokens` になります（etoki が送る上限の 16000 には届いて
+いなくても）。解釈は再送のたびに入力が増えるので、4k では 2 回目で切れやすく
+なります。`etoki: llm call failed ... response truncated: stopped at N output tokens,
+before our limit` と出たら、Ollama 側で広げてください。
+
+```sh
+OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+```
 
 ### GitHub Projects v2 を使う
 
