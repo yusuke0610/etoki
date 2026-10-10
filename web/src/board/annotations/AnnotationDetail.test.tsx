@@ -58,6 +58,34 @@ describe("AnnotationDetail", () => {
     expect(screen.getByLabelText("名前")).toHaveValue("ログインの入口");
   });
 
+  // 注釈を外した frame（保存前）は、キャンバスには在るが注釈ではない。名前を書く
+  // 口は注釈にしか書かないので、押せると入力した名前が黙って消える。押せなくして
+  // 理由を出す（ADR 0039）。
+  it("注釈から外した frame では、名前を変えさせず理由を出す", () => {
+    const detailProps = props();
+    render(
+      <AnnotationDetail {...detailProps} frames={{ ...detailProps.frames, names: {} }} />,
+    );
+
+    const input = screen.getByLabelText("名前");
+    expect(input).toBeDisabled();
+    expect(input).toHaveAccessibleDescription(/注釈から外してあります/);
+  });
+
+  // キャンバスからまだ聞いていない（null）うちは、外したことにしない（`canvasIds`
+  // と同じ扱い）。開いた直後の一瞬だけ押せなくなる。
+  it("キャンバスの名前がまだ分からないうちは、名前欄を止めない", () => {
+    const detailProps = props();
+    render(
+      <AnnotationDetail
+        {...detailProps}
+        frames={{ ...detailProps.frames, names: null }}
+      />,
+    );
+
+    expect(screen.getByLabelText("名前")).toBeEnabled();
+  });
+
   // 1 文字ごとに書くと、打つたびに未保存になり、「元に戻す」に 1 文字ずつ積まれる。
   // 確定するのは Enter か、欄から離れたとき。
   it("名前は入力の途中では書かず、Enter か欄を離れたときに書く", () => {

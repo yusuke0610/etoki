@@ -296,6 +296,7 @@ function AnnotationFace({
   const missingId = `annotation-detail-missing-${id}`;
   const viewerId = `annotation-detail-viewer-${id}`;
   const nameNoteId = `annotation-detail-name-note-${id}`;
+  const unmarkedId = `annotation-detail-unmarked-${id}`;
   const itemsRegionId = `annotation-detail-items-${id}`;
   const runsRegionId = `annotation-detail-runs-${id}`;
   const onCanvas = frames.canvasIds === null || frames.canvasIds.includes(id);
@@ -321,6 +322,10 @@ function AnnotationFace({
   // 書くと、打つたびに未保存になり、「元に戻す」に 1 文字ずつ積まれる。
   const canvasName = frames.names?.[id];
   const name = canvasName ?? a.name;
+  // キャンバスには在るが、もう注釈ではない（保存前に外した）。名前を書く口は注釈に
+  // しか書かない（`setAnnotationName`）ので、押せると入力した名前が黙って消える。
+  // **まだ聞いていない（null）うちは外したことにしない**（`canvasIds` と同じ）。
+  const unmarked = onCanvas && frames.names !== null && canvasName === undefined;
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const commitName = () => {
     if (nameDraft === null) return;
@@ -331,9 +336,14 @@ function AnnotationFace({
   };
   // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈で
   // 変えると「変更あり」になる。未作成なら影響が無いので言わない。
-  const nameNote = canEdit && a.state !== "uncreated";
+  const nameNote = canEdit && !unmarked && a.state !== "uncreated";
   const nameDescribedBy =
-    [!canEdit && viewerId, !onCanvas && missingId, nameNote && nameNoteId]
+    [
+      !canEdit && viewerId,
+      !onCanvas && missingId,
+      canEdit && unmarked && unmarkedId,
+      nameNote && nameNoteId,
+    ]
       .filter(Boolean)
       .join(" ") || undefined;
 
@@ -427,7 +437,7 @@ function AnnotationFace({
             <input
               value={nameDraft ?? name}
               placeholder="名前を付ける"
-              disabled={!canEdit || !onCanvas}
+              disabled={!canEdit || !onCanvas || unmarked}
               aria-describedby={nameDescribedBy}
               onChange={(e) => setNameDraft(e.target.value)}
               onBlur={commitName}
@@ -527,6 +537,11 @@ function AnnotationFace({
             </button>
           )}
         </div>
+        {canEdit && unmarked && (
+          <p className="hint" id={unmarkedId}>
+            このフレームは注釈から外してあります。名前を変えるには、もう一度注釈にしてください。
+          </p>
+        )}
         {nameNote && (
           <p className="hint" id={nameNoteId}>
             名前も絵解きの入力です。変えると「変更あり」になります。
