@@ -119,7 +119,7 @@ type Props = {
   interpretation: InterpretationProps;
   creation: CreationProps;
   runs: RunsProps;
-  /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
+  /** 未保存の変更があるか。「絵解く」が保存してから読むことを案内する（ADR 0077）。 */
   stale: boolean;
   /** 編集できるか。viewer は false（ADR 0017）。 */
   canEdit: boolean;
