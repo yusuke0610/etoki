@@ -305,6 +305,12 @@
   font-size: var(--text-sm);
 }
 
+/* 名前の欄（#249）。粒度と種別の選択欄と同じ行に並べ、長い名前も見える幅を取る。 */
+.annotation-name input {
+  width: 14em;
+  max-width: 100%;
+}
+
 .kind {
   font-size: var(--text-xs);
   color: var(--color-text-muted);

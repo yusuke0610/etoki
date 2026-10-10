@@ -97,11 +97,18 @@ export type FrameEditProps = {
    * null。**粒度と種別の選択欄はここを出す**（保存済みの値ではなく）。
    */
   metas: Record<string, AnnotationMeta> | null;
+  /**
+   * キャンバスにいま在る注釈の名前（frame の ID で引く、名前が無ければ空文字）。
+   * まだ分からなければ null。**名前欄はここを出す**（粒度と種別と同じ理由）。
+   */
+  names: Record<string, string> | null;
   /** キャンバスをそのフレームへ寄せて選択する（ADR 0022）。 */
   onFocus: (frameId: string) => void;
   onChangeGranularity: (frameId: string, granularity: Granularity) => void;
   /** 図の種別を差し替える。`undefined` は「指定なし」に戻す。 */
   onChangeKind: (frameId: string, kind: DiagramKind | undefined) => void;
+  /** frame の名前を書き換える（#249）。**確定したときだけ呼ぶ**（入力の途中では呼ばない）。 */
+  onChangeName: (frameId: string, name: string) => void;
 };
 
 type Props = {
@@ -288,6 +295,8 @@ function AnnotationFace({
   const labelId = `annotation-detail-label-${id}`;
   const missingId = `annotation-detail-missing-${id}`;
   const viewerId = `annotation-detail-viewer-${id}`;
+  const nameNoteId = `annotation-detail-name-note-${id}`;
+  const unmarkedId = `annotation-detail-unmarked-${id}`;
   const itemsRegionId = `annotation-detail-items-${id}`;
   const runsRegionId = `annotation-detail-runs-${id}`;
   const onCanvas = frames.canvasIds === null || frames.canvasIds.includes(id);
@@ -307,6 +316,36 @@ function AnnotationFace({
   const onCanvasMeta = frames.metas?.[id];
   const granularity = onCanvasMeta ? onCanvasMeta.granularity : a.granularity;
   const kind = onCanvasMeta ? onCanvasMeta.kind : a.kind;
+
+  // 名前も同じく**キャンバスの値**を出す（#249）。ただし入力の途中は書きかけを
+  // 持ち、**確定（Enter か欄を離れる）したときだけキャンバスに書く。** 1 文字ごとに
+  // 書くと、打つたびに未保存になり、「元に戻す」に 1 文字ずつ積まれる。
+  const canvasName = frames.names?.[id];
+  const name = canvasName ?? a.name;
+  // キャンバスには在るが、もう注釈ではない（保存前に外した）。名前を書く口は注釈に
+  // しか書かない（`setAnnotationName`）ので、押せると入力した名前が黙って消える。
+  // **まだ聞いていない（null）うちは外したことにしない**（`canvasIds` と同じ）。
+  const unmarked = onCanvas && frames.names !== null && canvasName === undefined;
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const commitName = () => {
+    if (nameDraft === null) return;
+    setNameDraft(null);
+    // 変えていないのに書くと、開いて閉じただけで未保存になる。前後の空白は
+    // 書く側（`setAnnotationName`）が落とすので、比べるのも落としてから。
+    if (nameDraft.trim() !== name.trim()) frames.onChangeName(id, nameDraft);
+  };
+  // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈で
+  // 変えると「変更あり」になる。未作成なら影響が無いので言わない。
+  const nameNote = canEdit && !unmarked && a.state !== "uncreated";
+  const nameDescribedBy =
+    [
+      !canEdit && viewerId,
+      !onCanvas && missingId,
+      canEdit && unmarked && unmarkedId,
+      nameNote && nameNoteId,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape") return;
@@ -389,6 +428,34 @@ function AnnotationFace({
         </div>
 
         <div className="annotation-detail-meta">
+          {/*
+            名前（#249）。frame の `name` に書くので、キャンバスのラベルにも同じ
+            名前が出る。キャンバスに無い注釈（未保存で消した frame）には書けない。
+          */}
+          <label className="granularity annotation-name">
+            名前
+            <input
+              value={nameDraft ?? name}
+              placeholder="名前を付ける"
+              disabled={!canEdit || !onCanvas || unmarked}
+              aria-describedby={nameDescribedBy}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                // 日本語の変換を確定する Enter では書かない。書くと、変換の途中の
+                // 名前がキャンバスに載る。
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  commitName();
+                } else if (e.key === "Escape" && nameDraft !== null) {
+                  // 書きかけがあれば、それを捨てるだけにする。面まで閉じると、
+                  // 書きかけを捨てたつもりで面ごと閉じる。
+                  e.stopPropagation();
+                  setNameDraft(null);
+                }
+              }}
+            />
+          </label>
           <label className="granularity">
             粒度
             {/* 押せない理由は本文の下にある読むだけの案内を指す（ADR 0039）。 */}
@@ -470,6 +537,16 @@ function AnnotationFace({
             </button>
           )}
         </div>
+        {canEdit && unmarked && (
+          <p className="hint" id={unmarkedId}>
+            このフレームは注釈から外してあります。名前を変えるには、もう一度注釈にしてください。
+          </p>
+        )}
+        {nameNote && (
+          <p className="hint" id={nameNoteId}>
+            名前も絵解きの入力です。変えると「変更あり」になります。
+          </p>
+        )}
       </header>
 
       <div className="annotation-detail-body">
@@ -537,7 +614,12 @@ function AnnotationFace({
             targetLabel={targetLabel}
             stale={stale}
             interpretationUnavailable={interpretation.unavailable}
-            onInterpret={() => interpretation.onInterpret(id)}
+            // 名前の書きかけは、読む前に確定する。帯のボタンは押しても焦点を
+            // 奪わない（`DetailBand`）ので、欄を離れたときの確定が走らない。
+            onInterpret={() => {
+              commitName();
+              interpretation.onInterpret(id);
+            }}
             onSelectInterpretation={(runId) => interpretation.onSelect(id, runId)}
             onCreate={(interpretationId, result) =>
               creation.onCreate(id, interpretationId, result)
@@ -545,10 +627,10 @@ function AnnotationFace({
           />
         ) : (
           // 解釈は LLM を叩く外部呼び出しで、作成は取り消せない（ADR 0017）。
-          // 読むだけの人には帯を出さず、なぜ無いのかを言う。押せない粒度と種別も
-          // ここを指す。
+          // 読むだけの人には帯を出さず、なぜ無いのかを言う。押せない名前・粒度・
+          // 種別もここを指す。
           <p className="hint" id={viewerId}>
-            読むだけの権限で開いています。粒度と種別は変えられず、解釈と作成もできません。
+            読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。
           </p>
         )}
       </div>
