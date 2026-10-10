@@ -215,6 +215,71 @@ describe("AnnotationDetail", () => {
     );
   });
 
+  // 解釈は 1 人につき同時に 1 件まで（ADR 0044）。別の注釈が走っているあいだに
+  // 押すと 429 で断られ、押したのに何も起きないように見える。押す前に理由を言う。
+  describe("別の注釈の解釈が走っているあいだ", () => {
+    function withRunning(otherRunning: boolean) {
+      const detailProps = props();
+      return {
+        ...detailProps,
+        annotations: [
+          {
+            id: "frame-1",
+            name: "ログイン",
+            granularity: "" as const,
+            state: "uncreated" as const,
+          },
+          {
+            id: "frame-2",
+            name: "決済",
+            granularity: "" as const,
+            state: "uncreated" as const,
+          },
+        ],
+        interpretation: {
+          ...detailProps.interpretation,
+          states: {
+            "frame-2": { running: otherRunning, runs: [], selectedId: null },
+          },
+        },
+      };
+    }
+
+    it("「解釈する」を押させず、帯に理由を出す", () => {
+      render(<AnnotationDetail {...withRunning(true)} />);
+
+      const interpret = screen.getByRole("button", { name: "解釈する" });
+      expect(interpret).toBeDisabled();
+      expect(interpret).toHaveAccessibleDescription(/ほかの囲みを解釈している/);
+    });
+
+    // 走っていない注釈の state が残っているだけ（結果を引いたあと）では止めない。
+    // 止めると、一度解釈した囲みがあるだけで、ほかの囲みが二度と押せなくなる。
+    it("走り終わった注釈の結果が残っているだけなら押せる", () => {
+      render(<AnnotationDetail {...withRunning(false)} />);
+
+      expect(screen.getByRole("button", { name: "解釈する" })).toBeEnabled();
+    });
+
+    // 自分自身が走っているときは、今までどおり「解釈中…」で押せない。理由の文は
+    // 出さない（待っているのは自分の解釈で、ほかの囲みではない）。
+    it("自分が走っているときは、ほかの囲みの理由を出さない", () => {
+      const detailProps = withRunning(false);
+      render(
+        <AnnotationDetail
+          {...detailProps}
+          interpretation={{
+            ...detailProps.interpretation,
+            states: { "frame-1": { running: true, runs: [], selectedId: null } },
+          }}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "解釈中…" })).toBeDisabled();
+      expect(screen.queryByText(/ほかの囲みを解釈している/)).toBeNull();
+    });
+  });
+
   it("読むだけの権限では帯を出さず、その理由を出す", () => {
     render(<AnnotationDetail {...props()} canEdit={false} />);
 
