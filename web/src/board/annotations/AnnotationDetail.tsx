@@ -371,7 +371,7 @@ function AnnotationFace({
           */}
           <button
             type="button"
-            className="quiet"
+            className="quiet annotation-detail-to-canvas"
             onClick={onShowOnCanvas}
             disabled={!onCanvas}
             aria-describedby={onCanvas ? undefined : missingId}

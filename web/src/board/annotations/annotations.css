@@ -102,6 +102,8 @@
 
 .annotation-detail-title {
   display: flex;
+  /* 狭い画面では、名前を潰さずに右のボタンを次の行へ回す（下の `flex-basis`）。 */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
 }
@@ -112,12 +114,21 @@
   font-size: var(--text-xl);
 }
 
-/* 見出し（絵解き）の隣に、どの注釈かを出す。長い名前は折り返す。 */
+/*
+ * 見出し（絵解き）の隣に、どの注釈かを出す。長い名前は折り返す。**8em までは
+ * 縮めない。** 縮めると、スマホの幅で状態のバッジと右のボタンに押されて
+ * 名前が 1 文字ずつ縦に折れる。足りなければボタンのほうが次の行へ回る。
+ */
 .annotation-detail-label {
-  flex: 1;
+  flex: 1 1 8em;
   min-width: 0;
   font-size: var(--text-xl);
   overflow-wrap: anywhere;
+}
+
+/* 右のボタンは右に寄せる。次の行へ回ったときも右端に並ぶ。 */
+.annotation-detail-to-canvas {
+  margin-left: auto;
 }
 
 .annotation-detail-close {
