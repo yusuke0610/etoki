@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   annotationMetas,
+  annotationNames,
   frameIds,
   granularityOf,
   isAnnotation,
   kindOf,
   markAsAnnotation,
   setAnnotationKind,
+  setAnnotationName,
   selectableFrames,
   unmarkAnnotation,
   type SceneElement,
@@ -290,5 +292,49 @@ describe("annotationMetas", () => {
         { ...annotation, isDeleted: true },
       ]),
     ).toEqual({ f1: { granularity: "", kind: undefined } });
+  });
+});
+
+describe("setAnnotationName", () => {
+  // 名前は frame の `name` そのものに書く（#249）。キャンバスのラベルにも同じ名前が
+  // 出るので、一覧とキャンバスの名前が揃う。
+  it("注釈の frame の名前を書き換え、履歴に積めるよう version を上げる", () => {
+    const [el] = setAnnotationName([{ ...annotation, version: 3 }], "f2", "決済の流れ");
+    expect(el?.name).toBe("決済の流れ");
+    expect(el?.version).toBe(4);
+  });
+
+  it("前後の空白は落とし、空なら名前を外す", () => {
+    expect(setAnnotationName([annotation], "f2", "  決済  ")[0]?.name).toBe("決済");
+    // 外すと Excalidraw の既定（null）に戻る。一覧は「絵N」と補う。
+    expect(setAnnotationName([annotation], "f2", "   ")[0]?.name).toBeNull();
+  });
+
+  // 同じ名前で書くと、何も変えていないのに未保存になり、「元に戻す」にも積まれる。
+  it("名前が変わらなければ要素をそのまま返す", () => {
+    const unnamed: SceneElement = { ...annotation, name: null };
+    expect(setAnnotationName([annotation], "f2", "決済まわり")[0]).toBe(annotation);
+    expect(setAnnotationName([unnamed], "f2", "")[0]).toBe(unnamed);
+  });
+
+  // 名前を付けられるのは詳細を開ける注釈だけ。ブレスト中に人が使った frame の
+  // 名前を etoki が書き換えない。
+  it("注釈でない frame とほかの要素には触らない", () => {
+    const [frame, other] = setAnnotationName([plainFrame, text], "f1", "名前");
+    expect(frame).toBe(plainFrame);
+    expect(other).toBe(text);
+  });
+});
+
+describe("annotationNames", () => {
+  // 注釈の詳細の名前欄が出す値。保存済みの値ではなく、キャンバスにいま在る値。
+  it("注釈の frame だけを、名前で引けるようにする。名前が無ければ空文字", () => {
+    expect(
+      annotationNames([plainFrame, annotation, text, { ...templated, name: null }]),
+    ).toEqual({ f2: "決済まわり", f3: "" });
+  });
+
+  it("削除済みは除く", () => {
+    expect(annotationNames([{ ...annotation, isDeleted: true }])).toEqual({});
   });
 });

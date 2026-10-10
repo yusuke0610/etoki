@@ -15,9 +15,11 @@ function props(): ComponentProps<typeof AnnotationDetail> {
     frames: {
       canvasIds: ["frame-1"],
       metas: { "frame-1": { granularity: "", kind: undefined } },
+      names: { "frame-1": "ログイン" },
       onFocus: vi.fn(),
       onChangeGranularity: vi.fn(),
       onChangeKind: vi.fn(),
+      onChangeName: vi.fn(),
     },
     interpretation: {
       states: {},
@@ -42,6 +44,124 @@ function props(): ComponentProps<typeof AnnotationDetail> {
 }
 
 describe("AnnotationDetail", () => {
+  // 名前欄も、粒度と種別と同じくキャンバスの値を出す（#249）。保存済みの値は次の
+  // 保存まで古い。
+  it("名前は、保存済みの値ではなくキャンバスの値を出す", () => {
+    const detailProps = props();
+    render(
+      <AnnotationDetail
+        {...detailProps}
+        frames={{ ...detailProps.frames, names: { "frame-1": "ログインの入口" } }}
+      />,
+    );
+
+    expect(screen.getByLabelText("名前")).toHaveValue("ログインの入口");
+  });
+
+  // 1 文字ごとに書くと、打つたびに未保存になり、「元に戻す」に 1 文字ずつ積まれる。
+  // 確定するのは Enter か、欄から離れたとき。
+  it("名前は入力の途中では書かず、Enter か欄を離れたときに書く", () => {
+    const detailProps = props();
+    render(<AnnotationDetail {...detailProps} />);
+
+    const input = screen.getByLabelText("名前");
+    fireEvent.change(input, { target: { value: "ログインの入口" } });
+    expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(detailProps.frames.onChangeName).toHaveBeenCalledWith(
+      "frame-1",
+      "ログインの入口",
+    );
+
+    fireEvent.change(input, { target: { value: "入口" } });
+    fireEvent.blur(input);
+    expect(detailProps.frames.onChangeName).toHaveBeenLastCalledWith("frame-1", "入口");
+  });
+
+  // 「絵解く」は押しても焦点を奪わない（`DetailBand`）。欄を離れたときの確定が
+  // 走らないので、押した処理の中で書きかけを確定してから読む。順番が逆だと、
+  // 保存にも解釈にも新しい名前が入らない。
+  it("名前の書きかけは、「絵解く」を押したときに読む前に確定する", () => {
+    const detailProps = props();
+    const calls: string[] = [];
+    detailProps.frames.onChangeName = vi.fn(() => calls.push("name"));
+    detailProps.interpretation.onInterpret = vi.fn(() => calls.push("interpret"));
+    render(<AnnotationDetail {...detailProps} />);
+
+    fireEvent.change(screen.getByLabelText("名前"), {
+      target: { value: "ログインの入口" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "絵解く" }));
+
+    expect(calls).toEqual(["name", "interpret"]);
+    expect(detailProps.frames.onChangeName).toHaveBeenCalledWith(
+      "frame-1",
+      "ログインの入口",
+    );
+  });
+
+  // 日本語の変換を確定する Enter で書くと、変換の途中の名前が書かれる。
+  it("変換中の Enter では書かない", () => {
+    const detailProps = props();
+    render(<AnnotationDetail {...detailProps} />);
+
+    const input = screen.getByLabelText("名前");
+    fireEvent.change(input, { target: { value: "ろぐいん" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+  });
+
+  // 変えていないのに書くと、開いて閉じただけで未保存になる。
+  it("名前を変えずに欄を離れても書かない", () => {
+    const detailProps = props();
+    render(<AnnotationDetail {...detailProps} />);
+
+    const input = screen.getByLabelText("名前");
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+  });
+
+  // Escape は、書きかけがあればそれを捨てるだけにする。詳細まで閉じると、
+  // 書きかけを捨てたつもりで面ごと閉じる。書きかけが無ければ面を閉じる。
+  it("名前の書きかけは Escape で捨て、詳細は閉じない", () => {
+    const detailProps = props();
+    render(<AnnotationDetail {...detailProps} />);
+
+    const input = screen.getByLabelText("名前");
+    fireEvent.change(input, { target: { value: "書きかけ" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(input).toHaveValue("ログイン");
+    expect(detailProps.onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(detailProps.onClose).toHaveBeenCalled();
+    expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+  });
+
+  // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈の名前を
+  // 変えると「変更あり」になることを、変える前に言う。未作成なら影響が無いので
+  // 出さない。
+  it("作成済みの注釈にだけ、名前を変えると変更ありになることを添える", () => {
+    const detailProps = props();
+    const { unmount } = render(<AnnotationDetail {...detailProps} />);
+    expect(screen.getByLabelText("名前")).not.toHaveAccessibleDescription();
+    unmount();
+
+    render(
+      <AnnotationDetail
+        {...detailProps}
+        annotations={[
+          { id: "frame-1", name: "ログイン", granularity: "", state: "created" },
+        ]}
+      />,
+    );
+    expect(screen.getByLabelText("名前")).toHaveAccessibleDescription(
+      /変えると「変更あり」になります/,
+    );
+  });
+
   // 選択欄が書く先はキャンバスの要素で、保存済みの値（annotations）は次の保存
   // まで古い。保存済みの値に「選んだ値」を重ねて出す作りは、保存中の選び直しや
   // 「元に戻す」でキャンバスと食い違った（#124、#214）。
@@ -235,7 +355,7 @@ describe("AnnotationDetail", () => {
     expect(screen.queryByRole("button", { name: "絵解く" })).toBeNull();
     expect(
       screen.getByText(
-        "読むだけの権限で開いています。粒度と種別は変えられず、解釈と作成もできません。",
+        "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
       ),
     ).toBeInTheDocument();
     // 押せない粒度と種別も同じ文を指す。
@@ -243,7 +363,7 @@ describe("AnnotationDetail", () => {
       const select = screen.getByRole("combobox", { name });
       expect(select).toBeDisabled();
       expect(select).toHaveAccessibleDescription(
-        "読むだけの権限で開いています。粒度と種別は変えられず、解釈と作成もできません。",
+        "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
       );
     }
   });

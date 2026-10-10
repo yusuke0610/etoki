@@ -22,10 +22,12 @@ import type {
 import { unavailableReason } from "../app/capability";
 import {
   annotationMetas,
+  annotationNames,
   frameIds,
   isAnnotation,
   markAsAnnotation,
   setAnnotationKind,
+  setAnnotationName,
   selectableFrames,
   unmarkAnnotation,
   type AnnotationMeta,
@@ -264,6 +266,9 @@ export function BoardPage({
   const [canvasMetas, setCanvasMetas] = useState<Record<string, AnnotationMeta> | null>(
     null,
   );
+  // キャンバスにいま在る注釈の名前（#249）。注釈の詳細の名前欄が出す値で、意味は
+  // 上の粒度と種別と同じ。
+  const [canvasNames, setCanvasNames] = useState<Record<string, string> | null>(null);
   // 注釈にした frame に重ねる枠。キャンバスの見え方が変わるたびに引き直す。
   const [overlayBoxes, setOverlayBoxes] = useState<AnnotationBox[]>([]);
   // 未保存かどうかを決めるのはここだけ（`useDirtyScene`）。
@@ -532,6 +537,7 @@ export function BoardPage({
       setSelectedFrames(selectableFrames(els, appState.selectedElementIds));
       setCanvasFrameIds(frameIds(els));
       setCanvasMetas(annotationMetas(els));
+      setCanvasNames(annotationNames(els));
 
       // スクロールとズームは onChange でしか届かない。要素が変わっていなくても
       // 引き直す必要があるので、ここでまとめて拾う。
@@ -655,6 +661,17 @@ export function BoardPage({
   const handleChangeAnnotationKind = useCallback(
     (frameId: string, kind: DiagramKind | undefined) => {
       updateElements(setAnnotationKind(currentElements(), frameId, kind));
+    },
+    [currentElements, updateElements],
+  );
+
+  /**
+   * 注釈の名前を書き換える（#249）。frame の `name` に書くので、キャンバスの
+   * ラベルにも同じ名前が出る。作成済みなら状態は「変更あり」になる（ADR 0036）。
+   */
+  const handleChangeAnnotationName = useCallback(
+    (frameId: string, name: string) => {
+      updateElements(setAnnotationName(currentElements(), frameId, name));
     },
     [currentElements, updateElements],
   );
@@ -1331,9 +1348,11 @@ export function BoardPage({
                   frames={{
                     canvasIds: canvasFrameIds,
                     metas: canvasMetas,
+                    names: canvasNames,
                     onFocus: focusFrame,
                     onChangeGranularity: handleMark,
                     onChangeKind: handleChangeAnnotationKind,
+                    onChangeName: handleChangeAnnotationName,
                   }}
                   interpretation={interpretation}
                   creation={creation}
