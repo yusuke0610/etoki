@@ -1,0 +1,131 @@
+/*
+ * MCP のクライアントへの接続（ADR 0076）。同意の画面と、接続の一覧のダイアログ。
+ * ボタンの並び（`.dialog-actions`）は新しいボードのダイアログと共有する
+ * （boards.css、先に読まれる）。
+ */
+
+/*
+ * 同意の画面。ログイン画面と同じく、中身が数行しか無いので真ん中に 1 枚だけ
+ * 置く。何を許すかを読ませる画面なので、ログインより少し広く取る。
+ */
+.consent {
+  margin: auto;
+  padding: var(--space-8);
+  width: 100%;
+  max-width: 520px;
+  box-sizing: border-box;
+}
+
+.consent-card {
+  padding: var(--space-8);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.consent-heading {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.consent-lead {
+  margin: 0;
+  line-height: 1.7;
+}
+
+/* 誰が来ているのかが、この画面でいちばん読ませたいこと。 */
+.consent-client {
+  overflow-wrap: anywhere;
+}
+
+.consent-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-3) var(--space-6);
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.consent-facts dt {
+  color: var(--color-text-muted);
+}
+
+.consent-facts dd {
+  margin: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* 狭い画面では見出しと中身を縦に積む。横に並べると中身が 1 文字ずつ折れる。 */
+@media (width <= 480px) {
+  .consent-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .consent-facts dd {
+    margin-bottom: var(--space-3);
+  }
+}
+
+/* 接続の一覧。新しいボードのダイアログと同じ器にする。 */
+.connections-dialog {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.connections-dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.connections-dialog h2 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-xl);
+}
+
+.connections-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-6) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.connection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.connection-body {
+  min-width: 0;
+}
+
+/* 取り消しは縮ませない。説明の行が長いと、ボタンの文字が折れて押す先が読みにくい。 */
+.connection button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.connection-name {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.connection-meta {
+  margin: var(--space-2) 0 0;
+}

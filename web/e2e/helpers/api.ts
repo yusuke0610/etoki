@@ -16,6 +16,10 @@ import type {
   Interpretation,
   InterpretRequest,
   LoginResponse,
+  OAuthAuthorization,
+  OAuthDecision,
+  OAuthDecisionRequest,
+  OAuthGrant,
   Project,
   RepositoryList,
   SaveSceneRequest,
@@ -28,6 +32,7 @@ import { installBoardRoutes } from "./routes/boards";
 import { installDiagramRoutes } from "./routes/diagram";
 import { installGitHubRoutes } from "./routes/github";
 import { installMemberRoutes } from "./routes/members";
+import { installOAuthRoutes } from "./routes/oauth";
 import { json } from "./routes/respond";
 import { installSessionRoutes } from "./routes/session";
 
@@ -180,6 +185,25 @@ export type ApiMock = {
    * 指定が無ければ空配列を返す。
    */
   runs?: Record<string, Reply<SyncRun[]>>;
+  /**
+   * MCP のクライアントへの許可（ADR 0076）。**無ければ扱えない構成**で、口は
+   * 503 を返す。有効にするときは capabilities の `mcpConnections` も立てる
+   * （`withConnections`）。
+   */
+  connections?: {
+    /** 同意の画面が読む、認可の要求。 */
+    authorization: Reply<OAuthAuthorization>;
+    /** 同意の画面が送ってきた要求（クエリ文字列）。届いた順に積む。 */
+    authorizationQueries: string[];
+    /** 返事への応答。 */
+    decision: Reply<OAuthDecision>;
+    /** 返事の本文。届いた順に積む。何を送ったかはここにしか現れない。 */
+    decisions: OAuthDecisionRequest[];
+    /** 自分の接続。取り消すと減る。 */
+    grants: OAuthGrant[];
+    /** 取り消した接続の ID。届いた順に積む。 */
+    revoked: string[];
+  };
 };
 
 /**
@@ -213,6 +237,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await installDiagramRoutes(page, mock);
   await installSessionRoutes(page, mock);
   await installGitHubRoutes(page, mock);
+  await installOAuthRoutes(page, mock);
 
   return mock;
 }

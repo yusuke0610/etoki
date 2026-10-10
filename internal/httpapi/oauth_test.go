@@ -677,3 +677,28 @@ func TestToken_RefreshOverHTTP(t *testing.T) {
 func usecaseOAuthServer(repo port.OAuthGrantRepository) *usecase.OAuthServer {
 	return usecase.NewOAuthServer(repo, nil)
 }
+
+// 登録は回数で絞る。上限を超えたら 429 を RFC の形で返す（ADR 0076）。
+func TestRegister_RateLimitedOverHTTP(t *testing.T) {
+	t.Parallel()
+
+	r, _, _ := newOAuthRouter(t, oauthRouterOptions{})
+	body := `{"client_name":"c","redirect_uris":["http://127.0.0.1/callback"]}`
+	headers := map[string]string{"Content-Type": "application/json"}
+
+	for i := range usecase.MaxClientRegistrations {
+		if rec := request(t, r, http.MethodPost, "/oauth/register", loopbackHost, headers, body); rec.Code != http.StatusCreated {
+			t.Fatalf("register #%d: %d %s", i, rec.Code, rec.Body)
+		}
+	}
+	rec := request(t, r, http.MethodPost, "/oauth/register", loopbackHost, headers, body)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429 (%s)", rec.Code, rec.Body)
+	}
+	var got struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.Error != "temporarily_unavailable" {
+		t.Errorf("body = %s, want error temporarily_unavailable", rec.Body)
+	}
+}

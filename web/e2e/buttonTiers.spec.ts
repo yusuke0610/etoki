@@ -8,7 +8,13 @@ import {
   openBoardWithMock,
   openPanelTab,
 } from "./helpers/board";
-import { authRequiredMock, BOARD_ID, baseMock } from "./helpers/fixtures";
+import {
+  authRequiredMock,
+  BOARD_ID,
+  baseMock,
+  CONSENT_PATH,
+  withConnections,
+} from "./helpers/fixtures";
 
 /**
  * ボタンの格（#203）。どの操作がどの格かを固定する。
@@ -115,5 +121,28 @@ test.describe("ボタンの格", () => {
     for (const button of await remove.all()) {
       await expect(button).toHaveClass(DANGER);
     }
+  });
+});
+
+// MCP のクライアントへの許可（ADR 0076）。同意の画面の主となる操作は「許可する」の
+// 1 つで、断るのは控えめ。接続の取り消しは「消す」操作なので赤。
+test.describe("MCP の接続のボタンの格", () => {
+  test("許可するは主となる操作、許可しないは控えめ", async ({ page }) => {
+    await installApi(page, withConnections(baseMock()));
+    await page.goto(CONSENT_PATH);
+
+    await expect(page.getByRole("button", { name: "許可する" })).toHaveClass(PRIMARY);
+    await expect(page.getByRole("button", { name: "許可しない" })).toHaveClass(QUIET);
+  });
+
+  test("接続の取り消しは消す操作", async ({ page }) => {
+    await installApi(page, withConnections(baseMock()));
+    await page.goto("/");
+    await page.getByRole("button", { name: "Octo Cat" }).click();
+    await page.getByRole("button", { name: "MCP の接続" }).click();
+
+    await expect(
+      page.getByRole("button", { name: "Claude Code の接続を取り消す" }),
+    ).toHaveClass(DANGER);
   });
 });

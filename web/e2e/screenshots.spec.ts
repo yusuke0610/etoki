@@ -24,6 +24,7 @@ import {
   ANNOTATION_IDS,
   BOARD_ID,
   BOARD_NAME,
+  CONSENT_PATH,
   annotations,
   authRequiredMock,
   baseMock,
@@ -36,6 +37,7 @@ import {
   repositories,
   signedIn,
   unselectedBoard,
+  withConnections,
 } from "./helpers/fixtures";
 
 /**
@@ -536,6 +538,29 @@ test.describe("スクリーンショット", () => {
     // 新しいボードのダイアログ（#200）。
     await newBoardDialog(page);
     await shot(page, "14-new-board-dialog");
+  });
+
+  // MCP のクライアントからの接続（ADR 0076）。同意の画面は `/oauth/authorize`
+  // から転送されたときにしか出ない。
+  test("MCP の接続の同意と一覧を撮る", async ({ page }) => {
+    await installApi(page, withConnections(baseMock()));
+
+    await page.goto(CONSENT_PATH);
+    await page.getByRole("button", { name: "許可する" }).waitFor();
+    await shot(page, "44-mcp-consent");
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.locator('html[data-theme="dark"]').waitFor({ state: "attached" });
+    await shot(page, "44-mcp-consent-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.locator('html[data-theme="light"]').waitFor({ state: "attached" });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Octo Cat" }).click();
+    await shot(page, "45-user-menu-connections");
+    await page.getByRole("button", { name: "MCP の接続" }).click();
+    await page.getByRole("button", { name: "Claude Code の接続を取り消す" }).waitFor();
+    await shot(page, "46-mcp-connections");
   });
 
   // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。
