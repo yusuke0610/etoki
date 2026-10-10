@@ -451,3 +451,28 @@ func grantIDs(gs []port.OAuthGrant) []string {
 	}
 	return ids
 }
+
+// 更新（AddTokens）でも期限切れを掃除する。新しい許可が作られない期間でも、
+// 更新のたびに増えるトークンの行が溜まり続けないようにする。更新中の許可は
+// 消さない。
+func TestAddTokens_PrunesExpired(t *testing.T) {
+	t.Parallel()
+
+	repo, _, user := newGrants(t)
+	ctx := t.Context()
+	seedGrant(t, repo, "dead", user.ID, baseTime)
+	seedGrant(t, repo, "alive", user.ID, baseTime.Add(29*24*time.Hour))
+
+	// dead の refresh token がちょうど切れた時刻に、alive を更新する。
+	at := baseTime.Add(30 * 24 * time.Hour)
+	if err := repo.AddTokens(ctx, "alive", tokenPair("next", at), at); err != nil {
+		t.Fatalf("AddTokens: %v", err)
+	}
+
+	if got, err := repo.FindGrant(ctx, "dead"); err != nil || got != nil {
+		t.Errorf("期限の切れた許可 = %v, %v; want 消えている", got, err)
+	}
+	if got, err := repo.FindToken(ctx, "next-access", at); err != nil || got == nil {
+		t.Errorf("更新した許可のトークン = %v, %v; want 残っている", got, err)
+	}
+}

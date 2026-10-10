@@ -654,8 +654,10 @@ func parseGrantsArgs(args []string) (login string, err error) {
 		if args[i] != "--login" {
 			return "", fmt.Errorf("grants: unexpected argument %q", args[i])
 		}
-		if i+1 >= len(args) || login != "" {
-			return "", errors.New("grants: --login takes one login")
+		// **空の値を断る。** 空の login は「絞らない」と同じに読まれるので、
+		// `--login "$LOGIN"` の変数が空だと、1 人ぶんのつもりで全員の接続を出す。
+		if i+1 >= len(args) || login != "" || args[i+1] == "" {
+			return "", errors.New("grants: --login takes one non-empty login")
 		}
 		i++
 		login = args[i]
@@ -672,8 +674,9 @@ func parseRevokeArgs(args []string) (revokeTarget, error) {
 		case a == "--yes":
 			t.yes = true
 		case a == "--login":
-			if i+1 >= len(args) || t.login != "" {
-				return revokeTarget{}, errors.New("revoke: --login takes one login")
+			// 空の値は grants と同じく断る。
+			if i+1 >= len(args) || t.login != "" || args[i+1] == "" {
+				return revokeTarget{}, errors.New("revoke: --login takes one non-empty login")
 			}
 			i++
 			t.login = args[i]

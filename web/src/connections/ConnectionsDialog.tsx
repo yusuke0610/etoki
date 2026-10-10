@@ -88,7 +88,13 @@ export function ConnectionsDialog({ open, onClose }: Props) {
       ref={dialog}
       className="connections-dialog"
       aria-labelledby="connections-heading"
-      onClose={onClose}
+      onClose={() => {
+        // 閉じたら走っている読み込みの応答を捨てる（`.claude/rules/async-ui.md`）。
+        // **effect の側では拾えない。** Esc はブラウザが先に閉じるので、`open` が
+        // false になった時点で `<dialog>` はもう閉じている。
+        loading.current++;
+        onClose();
+      }}
     >
       <h2 id="connections-heading">MCP の接続</h2>
       <p className="hint">

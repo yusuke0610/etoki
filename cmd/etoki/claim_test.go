@@ -138,6 +138,7 @@ func TestParseRevokeArgs(t *testing.T) {
 		"どちらも無い":          {args: []string{"--yes"}, err: true},
 		"ID が 2 つ":        {args: []string{"g1", "g2"}, err: true},
 		"--login の値が無い":   {args: []string{"--login"}, err: true},
+		"--login の値が空":    {args: []string{"--login", ""}, err: true},
 		"知らないフラグ":         {args: []string{"-f", "g1"}, err: true},
 		"何も無い":            {args: nil, err: true},
 	}
@@ -166,6 +167,8 @@ func TestParseGrantsArgs(t *testing.T) {
 		"何も無い":          {args: nil},
 		"--login":       {args: []string{"--login", "bob"}, login: "bob"},
 		"--login の値が無い": {args: []string{"--login"}, err: true},
+		// 空の login は「全員」と同じに読まれる。1 人ぶんのつもりで全員を出さない。
+		"--login の値が空":  {args: []string{"--login", ""}, err: true},
 		"位置引数":          {args: []string{"bob"}, err: true},
 		"--login が 2 つ": {args: []string{"--login", "a", "--login", "b"}, err: true},
 	} {

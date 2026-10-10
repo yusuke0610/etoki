@@ -65,7 +65,8 @@ func (h *handlers) oauthEndpoints(c *gin.Context) usecase.OAuthEndpoints {
 func oauthUnavailable(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.String(http.StatusServiceUnavailable,
-		"MCP authorization is not available: authentication is not configured\n")
+		"MCP authorization is not available: "+
+			"authentication or the OAuth grant repository is not configured\n")
 }
 
 // oauthJSON は RFC の口の応答を書く。トークンを含みうるので保存させない
@@ -293,8 +294,8 @@ func parseAuthorizeRequest(raw string) (usecase.AuthorizeRequest, error) {
 // mcpConnectionsNotConfigured は許可の口を組み立てていないときの案内。
 func mcpConnectionsNotConfigured(c *gin.Context) {
 	errorJSON(c, http.StatusServiceUnavailable, apitypes.ErrorCodeMcpConnectionsNotConfigured,
-		"mcp connections require authentication: "+
-			"set ETOKI_GITHUB_APP_CLIENT_ID and ETOKI_GITHUB_APP_CLIENT_SECRET")
+		"mcp connections require authentication and an OAuth grant repository "+
+			"(ETOKI_GITHUB_APP_CLIENT_ID / ETOKI_GITHUB_APP_CLIENT_SECRET)")
 }
 
 // getOAuthAuthorization は同意の画面に出すものを返す。何も書かない。

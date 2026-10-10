@@ -352,6 +352,14 @@ func (r *OAuthGrantRepository) AddTokens(
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// 期限切れの掃除もここで行う（書き込みのついで）。更新のたびにトークンが
+	// 2 行増えるので、新しい許可が作られない期間に掃除が止まると表が育つ。
+	// **更新中の許可は消えない。** UseRefreshToken が期限内の refresh token を
+	// 確かめたあとなので、その許可には期限の切れていないトークンが残っている。
+	if err := pruneTokens(ctx, tx, now); err != nil {
+		return err
+	}
+
 	// **許可の有無を UPDATE の結果で見る。** 先に読む形にすると、読んでから
 	// 足すまでのあいだの取り消しを見落とし、取り消した許可にトークンが増える。
 	res, err := tx.ExecContext(ctx,

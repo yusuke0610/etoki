@@ -186,9 +186,11 @@ GitHub を叩かないので、GitHub の資格情報の状態に依らない。
 ### Origin の検証との関係
 
 `/oauth/register` と `/oauth/token` は MCP のクライアントがブラウザの外から POST するので
-`Origin` が付かず、originGuard はいまのまま通す。**ブラウザで動く MCP のクライアントは
-cross-origin になり弾かれる。** 許すには `ETOKI_ALLOWED_ORIGINS` に足す。CORS は
-開けない（etoki は手元のツールで、画面以外のブラウザから叩かれる前提を持たない）。
+`Origin` が付かず、originGuard はいまのまま通す。**ブラウザで動く MCP のクライアントが
+別のオリジンから繋ぐ形には対応しない。** originGuard は未許可の `Origin` を弾き、
+`ETOKI_ALLOWED_ORIGINS` に足して originGuard を通しても、etoki は CORS の応答ヘッダを
+返さないので、ブラウザが応答を読ませない。CORS は開けない（etoki は手元のツールで、
+画面以外のブラウザから叩かれる前提を持たない）。
 
 `/oauth/authorize` は副作用を持たないので、`origin.go` が前提にしている「GET に副作用
 は無い（コールバックだけが例外）」は崩れない。code の発行は Origin の効く POST の
