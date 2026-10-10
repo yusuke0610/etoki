@@ -525,6 +525,9 @@ function AnnotationFace({
             targetLabel={targetLabel}
             stale={stale}
             interpretationUnavailable={interpretation.unavailable}
+            interpretationBusyElsewhere={Object.entries(interpretation.states).some(
+              ([otherId, other]) => otherId !== id && other.running,
+            )}
             onInterpret={() => interpretation.onInterpret(id)}
             onSelectInterpretation={(runId) => interpretation.onSelect(id, runId)}
             onCreate={(interpretationId, result) =>
