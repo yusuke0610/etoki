@@ -140,7 +140,7 @@ test.describe("注釈の状態", () => {
   test("名前の無い注釈は一覧上の位置で採番して出す", async ({ page }) => {
     await openBoardWithMock(page, multiFrameMock());
 
-    await expect(annotationCard(page, "注釈 2")).toBeVisible();
+    await expect(annotationCard(page, "絵2")).toBeVisible();
   });
 
   // 押す → updateScene → onChange → 選択の反映、の一周が実ブラウザで
@@ -150,10 +150,10 @@ test.describe("注釈の状態", () => {
   test("「キャンバスで見る」でフレームが選ばれ、カードが強調される", async ({ page }) => {
     await openBoardWithMock(page, multiFrameMock());
 
-    const card = annotationCard(page, "注釈 2");
+    const card = annotationCard(page, "絵2");
     await expect(card).not.toHaveAttribute("aria-current", "true");
 
-    const detail = await openAnnotationDetail(page, "注釈 2");
+    const detail = await openAnnotationDetail(page, "絵2");
     await detail.getByRole("button", { name: "キャンバスで見る" }).click();
 
     // 詳細を閉じてから寄せる。開いたままだと、選んだ frame が詳細の裏に隠れる。
@@ -176,8 +176,8 @@ test.describe("注釈の状態", () => {
     await expect(marks).toHaveCount(2);
     // 粒度も見分けられる。パネルを開かないと epic か issue か分からない状態に
     // しない。
-    await expect(marks.getByText("注釈 epic")).toBeVisible();
-    await expect(marks.getByText("注釈", { exact: true })).toBeVisible();
+    await expect(marks.getByText("絵 epic")).toBeVisible();
+    await expect(marks.getByText("絵", { exact: true })).toBeVisible();
   });
 
   // 印はキャンバスの外に重ねているので、スクロールやズームに自分では追従

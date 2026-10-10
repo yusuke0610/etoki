@@ -292,16 +292,16 @@ test.describe("mermaid を貼る", () => {
   test("図のドラフトと貼り付けは、どちらか一方だけを開く", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    const tab = await openPanelTab(page, "図のドラフト");
-    await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
+    const tab = await openPanelTab(page, "etoki AI");
+    await expect(page.getByRole("heading", { name: "etoki AI" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "mermaid を貼る" })).toHaveCount(0);
 
     await openPaste(page);
-    await expect(page.getByRole("heading", { name: "図のドラフト" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "etoki AI" })).toHaveCount(0);
 
     await tab.getByRole("button", { name: "LLM で作る", exact: true }).click();
     await expect(page.getByRole("heading", { name: "mermaid を貼る" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "etoki AI" })).toBeVisible();
   });
 
   // 構文エラーを直している途中で図のドラフトを見に行ったり、ほかのタブへ
@@ -321,7 +321,7 @@ test.describe("mermaid を貼る", () => {
     // 切り替えのたびにパネルを外す作りだと消える（`DiagramTab`）。
     await expect(page.locator(".mermaid-paste .error")).toBeVisible();
 
-    await openPanelTab(page, "注釈");
+    await openPanelTab(page, "絵解いた");
     await openPaste(page);
     await expect(page.getByLabel("貼る mermaid")).toHaveValue(broken);
   });
@@ -335,7 +335,7 @@ test.describe("mermaid を貼る", () => {
     await openBoardWithMock(page, mock);
 
     // 貼る口は図のドラフトのタブの中にあり、そのタブが viewer には無い。
-    await expect(page.getByRole("tab", { name: "図のドラフト" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "etoki AI" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "mermaid を貼る" })).toHaveCount(0);
   });
 });

@@ -6,8 +6,8 @@ import {
   newBoardDialog,
   openAnnotationDetail,
   openBoardWithMock,
-  openPanelTab,
   ekidokiButton,
+  openShareDialog,
 } from "./helpers/board";
 import { authRequiredMock, BOARD_ID, baseMock } from "./helpers/fixtures";
 
@@ -107,7 +107,7 @@ test.describe("ボタンの格", () => {
     };
     await openBoardWithMock(page, mock);
 
-    const panel = await openPanelTab(page, "メンバー");
+    const panel = await openShareDialog(page);
     await panel.getByText("Bob").waitFor();
     const remove = panel.getByRole("button", { name: /を外す$/ });
     await expect(remove.first()).toBeVisible();

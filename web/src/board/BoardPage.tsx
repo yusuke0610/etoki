@@ -59,7 +59,7 @@ import {
 import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
 import { useExclusion } from "./exclusion";
 import { useInterpretations } from "./annotations/useInterpretations";
-import { MemberPanel } from "./members/MemberPanel";
+import { ShareDialog } from "./members/ShareDialog";
 import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
 import { MermaidPastePanel } from "./diagram/MermaidPastePanel";
 import { useDiagramDraft } from "./diagram/useDiagramDraft";
@@ -327,6 +327,11 @@ export function BoardPage({
   // スマホで、キャンバスを見せるために全面のパネルを閉じる。置き方を見ずに
   // 閉じてよい。スマホでなければこの値は読まれず、スマホに入るときに畳み直す。
   const closePhonePanel = useCallback(() => setPhonePanelOpen(false), []);
+  // 共有のダイアログ（`ShareDialog`、#248）。開くのはキャンバスのメニュー。
+  // **関数を安定させる。** メニューは `useMemo` で持つ（ADR 0065）。
+  const [shareOpen, setShareOpen] = useState(false);
+  const openShare = useCallback(() => setShareOpen(true), []);
+  const closeShare = useCallback(() => setShareOpen(false), []);
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // キャンバスの上に開いている注釈の詳細（`AnnotationDetail`）。null なら閉じている。
@@ -1034,6 +1039,7 @@ export function BoardPage({
         role={board.role}
         targetLocked={board.targetLocked}
         onRename={() => setNameDraft(board.name)}
+        onShare={openShare}
         creationUnavailable={creationUnavailable}
         onRefreshTarget={() => void refreshTargetDisplay()}
         refreshingTarget={refreshingTarget}
@@ -1056,6 +1062,7 @@ export function BoardPage({
       board.name,
       board.role,
       setNameDraft,
+      openShare,
       board.targetLocked,
       api,
       creationUnavailable,
@@ -1107,8 +1114,10 @@ export function BoardPage({
   );
 
   /*
-   * 注釈・図のドラフト・メンバーは右の 1 か所にタブで並べる（ADR 0065）。
-   * スマホの上の帯（`BoardBar`）も、同じタブから開くボタンを作る。
+   * 「絵解いた」（注釈）と「etoki AI」（図のドラフト）は右の 1 か所にタブで並べる
+   * （ADR 0065）。共有はボードそのものの管理なので、ここではなくメニューから
+   * ダイアログで開く（#248、ADR 0078）。スマホの上の帯（`BoardBar`）も、同じ
+   * タブから開くボタンを作る。
    *
    * **パネルは 1 枚ずつ境界で包む**（ADR 0027）。落ちたのが 1 枚でも外側で
    * 受けると、キャンバスごと外れて未保存のブレストが消える。
@@ -1116,7 +1125,8 @@ export function BoardPage({
   const panelTabs: TabSpec[] = [
     {
       id: "annotations",
-      label: "注釈",
+      // 囲んで絵解きしたもの（#248）。中で使う語（注釈）は据え置く。
+      label: "絵解いた",
       // 畳んでいるあいだに知りたいのは、手を打つ必要があるものだけ。
       // 数えるのは注釈の一覧と同じく保存済みシーンが基準。
       railBadges: railBadgesOf(annotations),
@@ -1152,7 +1162,8 @@ export function BoardPage({
       ? [
           {
             id: "diagram" as const,
-            label: "図のドラフト",
+            // LLM に図を作らせる口と、mermaid を貼る口（#248）。
+            label: "etoki AI",
             content: (
               <DiagramTab
                 mode={diagramMode}
@@ -1182,20 +1193,6 @@ export function BoardPage({
           },
         ]
       : []),
-    {
-      id: "members",
-      label: "メンバー",
-      // 共有が組み立てられていない構成では、押しても 503 しか返らない。
-      // タブは黙って消さず、開いた先で理由を出す（中核思想 3）。
-      content:
-        sharingUnavailable !== null ? (
-          <p className="hint side-panel-note">{sharingUnavailable}</p>
-        ) : (
-          <ErrorBoundary name="メンバーパネル" recovery="remount">
-            <MemberPanel boardId={board.id} role={board.role} />
-          </ErrorBoundary>
-        ),
-    },
   ];
 
   return (
@@ -1367,6 +1364,13 @@ export function BoardPage({
               rail={!phone}
               openRequest={panelOpenRequest}
               tabs={panelTabs}
+            />
+            <ShareDialog
+              open={shareOpen}
+              onClose={closeShare}
+              boardId={board.id}
+              role={board.role}
+              unavailable={sharingUnavailable}
             />
           </div>
         </div>

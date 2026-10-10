@@ -8,9 +8,9 @@ import {
   openAnnotationDetail,
   openBoard,
   openBoardWithMock,
-  openPanelTab,
   saveScene,
   ekidokiButton,
+  openPanelTab,
 } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, annotations, baseMock } from "./helpers/fixtures";
 
@@ -321,12 +321,12 @@ test.describe("注釈の詳細", () => {
     await openBoardWithMock(page, baseMock());
 
     const detail = await openAnnotationDetail(page, "ログイン");
-    await openPanelTab(page, "メンバー");
+    await openPanelTab(page, "etoki AI");
     await detail.focus();
     await page.keyboard.press("Escape");
 
     await expect(detail).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "メンバー", exact: true })).toBeFocused();
+    await expect(page.getByRole("tab", { name: "etoki AI", exact: true })).toBeFocused();
   });
 
   // 切れると: パネルを畳むとタブの列ごと隠れる（#202）。カードにもタブにも戻れず、
@@ -345,6 +345,6 @@ test.describe("注釈の詳細", () => {
     await page.keyboard.press("Escape");
 
     await expect(detail).toHaveCount(0);
-    await expect(rail.getByRole("button", { name: /^注釈/ })).toBeFocused();
+    await expect(rail.getByRole("button", { name: /^絵解いた/ })).toBeFocused();
   });
 });
