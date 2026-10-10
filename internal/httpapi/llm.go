@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 
@@ -8,6 +9,14 @@ import (
 
 	"github.com/yusuke0610/etoki/internal/usecase"
 )
+
+// statusClientClosedRequest は、待っていた相手がいなくなったときの記録用の
+// ステータス（nginx の 499 に倣う）。
+//
+// **相手には届かない。** 契約（api/openapi.yaml）には載せない。載せても画面は
+// 読めない応答を受け取る側にいない。リクエストログのステータスで、障害の 5xx と
+// 区別するためだけに置く。
+const statusClientClosedRequest = 499
 
 // failLLM は LLM を叩く実行（解釈と図のドラフト生成）のエラーを応答にする。
 //
@@ -20,6 +29,17 @@ import (
 // 1 つにして sentinel を呼び出し側が渡す（#156）。
 func (h *handlers) failLLM(c *gin.Context, err, rejected error) {
 	switch {
+	case errors.Is(err, usecase.ErrLLMUnavailable) &&
+		errors.Is(err, context.Canceled) && c.Request.Context().Err() != nil:
+		// 解釈は 1〜数分かかるので、待っている間のリロードや離脱で起きる。上流の
+		// 障害ではなく、利用者が止めただけ。**リクエストの ctx が切れていることも
+		// 条件にする。** ctx が生きているのに Canceled で返るものは、こちらの都合で
+		// 切ったものではないので、障害として扱う。
+		h.logger.InfoContext(c.Request.Context(), "llm call cancelled by client",
+			slog.String("path", c.Request.URL.Path))
+		c.AbortWithStatus(statusClientClosedRequest)
+		return
+
 	case errors.Is(err, usecase.ErrLLMUnavailable):
 		// 認証や接続の失敗。API キーはアダプタ側でエラーに載せていない。
 		h.logger.ErrorContext(c.Request.Context(), "llm call failed",
