@@ -18,6 +18,7 @@ import {
   openPanelTab,
   pasteOnCanvas,
   picker,
+  saveScene,
   startNewBoard,
 } from "./helpers/board";
 import {
@@ -155,16 +156,14 @@ test.describe("スクリーンショット", () => {
     await shot(page, "20-annotation-marks");
   });
 
-  // 未保存のあいだは解釈できない。テキストは保存済みシーンから、画像は画面から
-  // 取るので、揃っていないと入力が食い違う（ADR 0018）。
-  test("未保存で解釈できない状態を撮る", async ({ page }) => {
+  // 未保存でも絵解ける。押すと保存してから読むことを、押す前に案内する（#247）。
+  test("未保存で絵解く前の案内を撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
-    // 理由は詳細の帯に出る（#201）。
     const detail = await openAnnotationDetail(page, "ログイン");
-    await detail.getByText("保存してから解釈できます", { exact: false }).waitFor();
-    await shot(page, "05-interpret-blocked");
+    await detail.getByText("押すと保存してから読みます", { exact: false }).waitFor();
+    await shot(page, "05-interpret-unsaved");
   });
 
   // ブレストに入る前の画面。作成先を選ばないとキャンバスが出ない（ADR 0014）。
@@ -285,7 +284,7 @@ test.describe("スクリーンショット", () => {
 
     mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await page.getByText("他の人がこのボードを保存しました").waitFor();
     await shot(page, "15-save-conflict");
   });
@@ -310,7 +309,7 @@ test.describe("スクリーンショット", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     await page.getByRole("alert").waitFor();
     await chooseFromMenu(page, "作成先の名前を取り直す");
     await expect(page.locator(".notifications").getByRole("alert")).toHaveCount(2);
@@ -340,7 +339,7 @@ test.describe("スクリーンショット", () => {
     };
     await openBoardWithMock(page, mock);
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await page.getByText("貼った画像が大きすぎて保存できません").waitFor();
     await shot(page, "22-scene-too-large");
   });
@@ -603,14 +602,14 @@ test.describe("スクリーンショット", () => {
     await shot(page, "41-side-panel-collapsed");
   });
 
-  // 注釈の詳細（#201）。カードを押すとキャンバスの上に開く。**解釈する前でも
-  // 粒度と種別を選べて、帯に「解釈する」だけが出ている**ことを画像で見る。
+  // 注釈の詳細（#201）。カードを押すとキャンバスの上に開く。**絵解く前でも
+  // 粒度と種別を選べて、帯に「絵解く」だけが出ている**ことを画像で見る。
   // GitHub にあるものを開いた側は、作成済みの注釈で撮る。
   test("注釈の詳細を撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     const detail = await openAnnotationDetail(page, "ログイン");
-    await detail.getByRole("button", { name: "解釈する" }).waitFor();
+    await detail.getByRole("button", { name: "絵解く" }).waitFor();
     await shot(page, "42-annotation-detail");
 
     await detail.getByRole("button", { name: "閉じる" }).click();
@@ -835,7 +834,7 @@ test.describe("スクリーンショット", () => {
     await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     await page.getByText("保存が終わるまで作成できません").waitFor();
     await shot(page, "30-create-blocked-while-saving");
 
@@ -1027,10 +1026,7 @@ test.describe("幅ごとのスクリーンショット", () => {
       await openPanelTab(page, "注釈");
       await shot(page, "45-phone-panel");
 
-      // 未保存のあいだは解釈できない（ADR 0018）。保存は全面のパネルを開いた
-      // まま押せる（上の帯の 1 段目は覆わない）。
-      await page.getByRole("button", { name: "保存", exact: true }).click();
-      await page.getByText("未保存", { exact: true }).waitFor({ state: "hidden" });
+      // 未保存のまま絵解くと、保存してから読む（ADR 0077）。
       await interpret(annotationCard(page, "ログイン"));
       await annotationDetail(page, "ログイン")
         .getByRole("button", { name: "GitHub に作成する" })
@@ -1038,7 +1034,7 @@ test.describe("幅ごとのスクリーンショット", () => {
       await shot(page, "46-phone-detail");
     });
 
-    // 名前の変更中は、入力が上の帯の 1 段目を 1 行で取り、保存は次の行へ回る。
+    // 名前の変更中は、入力が上の帯の 1 段目を 1 行で取り、「絵解き」は次の行へ回る。
     test("名前の変更中を撮る", async ({ page }) => {
       await openBoardWithMock(page, baseMock());
       await chooseFromMenu(page, "名前を変更");

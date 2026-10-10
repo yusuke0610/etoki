@@ -12,6 +12,7 @@ import {
   interpret,
   openBoard,
   openBoardWithMock,
+  saveScene,
   waitForBoard,
 } from "./helpers/board";
 import { ANNOTATION_IDS, BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
@@ -398,7 +399,7 @@ test.describe("取り込み", () => {
       importedFile("#ffffff", IMAGE_DATA_URL, ANNOTATION_IDS.created),
     );
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
     const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
@@ -510,7 +511,7 @@ test.describe("取り込み", () => {
 test.describe("貼った画像の保存", () => {
   /** 保存して、未保存が消えるまで待つ。 */
   async function save(page: Page): Promise<void> {
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
   }
 
@@ -583,7 +584,7 @@ test.describe("貼った画像の保存", () => {
       status: 413,
       body: { code: "scene_too_large", error: "pasted images are too large" },
     };
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     // 断られたことは通知で分かる。応答のあとにしか出ないので、ここで待てば
     // リクエストはもう積まれている。
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");

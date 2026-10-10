@@ -8,6 +8,7 @@ import {
   openBoardMenu,
   openBoardWithMock,
   openPanelTab,
+  ekidokiButton,
 } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
@@ -184,7 +185,7 @@ test.describe("共有", () => {
     await expect(
       page.getByText("読むだけの権限で開いています。編集・解釈・作成はできません。"),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "保存" })).toHaveCount(0);
+    await expect(ekidokiButton(page)).toHaveCount(0);
     // 状態は読める。何が作成済みかは、読むだけの人にも見える必要がある。
     await expect(page.locator(".annotation").first()).toBeVisible();
 

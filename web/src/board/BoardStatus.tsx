@@ -8,22 +8,28 @@ type Props = {
   onRename: () => void;
   dirty: boolean;
   canEdit: boolean;
-  onSave: () => void;
-  canSave: boolean;
-  /** 保存を押せない理由。押せるなら null（`exclusion.ts` の表から引く）。 */
-  saveBlocked: string | null;
+  /** 「絵解き」。未保存なら保存してから、絵解きの面を開く（`BoardPage`、#247）。 */
+  onEkidoki: () => void;
+  canEkidoki: boolean;
+  /** 「絵解き」を押せない理由。押せるなら null（`exclusion.ts` の表から引く）。 */
+  ekidokiBlocked: string | null;
+  /** 「絵解き」の中で保存しているあいだ。 */
   saving: boolean;
 };
 
 /**
- * 右上に出す。ボード名と、未保存かどうかと、保存（ADR 0065）。#230 で
+ * 右上に出す。ボード名と、未保存かどうかと、「絵解き」（ADR 0065）。#230 で
  * `BoardPage` から切り出し。
  *
- * **保存だけは拡張点のメニューに入れない。** いちばん押すものであり、作成中や
+ * **「絵解き」は保存を内包する**（#247）。保存が要るのは etoki の都合（状態の
+ * 判定と解釈のテキストが保存済みシーンを基準にする、ADR 0018）で、押す人が
+ * 知らなくてよい。保存だけをしたいときは `⌘/Ctrl+S`（#145）。
+ *
+ * **これだけは拡張点のメニューに入れない。** いちばん押すものであり、作成中や
  * 取り込み中に止まる理由（一時的な理由）がいちばん出る場所でもある。待たされて
  * いる本人が見ている場所で理由が読めないと意味が無い（ADR 0066）。
  *
- * **ボード名を隣に置く。** 何を保存するのかが、ボタンの隣で読める。
+ * **ボード名を隣に置く。** どのボードを絵解きするのかが、ボタンの隣で読める。
  *
  * Excalidraw の `renderTopRightUI` に載る。**描くたびに作り直さない**（ADR 0065）。
  * 要素を `useMemo` で持つのは `BoardPage`。
@@ -36,9 +42,9 @@ export function BoardStatus({
   onRename,
   dirty,
   canEdit,
-  onSave,
-  canSave,
-  saveBlocked,
+  onEkidoki,
+  canEkidoki,
+  ekidokiBlocked,
   saving,
 }: Props) {
   return (
@@ -90,7 +96,20 @@ export function BoardStatus({
           </button>
         </form>
       )}
+      {/*
+        未保存のあいだだけ、保存だけの口（ショートカット）を出す。**「絵解き」の
+        隣には置かない。** 並べると絵解きのショートカットに読める。**`title` に
+        隠さない**（ADR 0039）。
+
+        修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
+        それを見ていないので、片方だけ出すともう片方の利用者には嘘になる。
+      */}
       {dirty && <span className="dirty">未保存</span>}
+      {dirty && canEdit && (
+        <span className="hint save-shortcut">
+          <kbd className="shortcut">⌘/Ctrl+S</kbd> で保存
+        </span>
+      )}
       {canEdit && (
         <>
           {/*
@@ -101,29 +120,15 @@ export function BoardStatus({
           <button
             type="button"
             className="primary"
-            onClick={onSave}
-            disabled={!canSave}
-            aria-describedby={
-              saveBlocked !== null ? "save-shortcut save-blocked" : "save-shortcut"
-            }
+            onClick={onEkidoki}
+            disabled={!canEkidoki}
+            aria-describedby={ekidokiBlocked !== null ? "ekidoki-blocked" : undefined}
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? "準備中…" : "絵解き"}
           </button>
-          {/*
-            ショートカットの存在を画面に出す。**`title` に隠さない**
-            （ADR 0039）。**ボタンの中には置かない。** 中に置くと読み上げる名前が
-            「保存 Ctrl / ⌘ + S」になり、名前で引いている E2E が全部ずれる。
-            外に出して `aria-describedby` で結ぶ。
-
-            修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
-            それを見ていないので、片方だけ出すともう片方の利用者には嘘になる。
-          */}
-          <kbd className="hint shortcut" id="save-shortcut">
-            ⌘/Ctrl+S
-          </kbd>
-          {saveBlocked !== null && (
-            <span className="hint" id="save-blocked">
-              {saveBlocked}
+          {ekidokiBlocked !== null && (
+            <span className="hint" id="ekidoki-blocked">
+              {ekidokiBlocked}
             </span>
           )}
         </>

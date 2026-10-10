@@ -41,7 +41,7 @@ test.describe("設定していない機能", () => {
 
     // 解釈の口は注釈の詳細の帯にある（#201）。
     const detail = await openAnnotationDetail(page, "ログイン");
-    const interpret = detail.getByRole("button", { name: "解釈する" });
+    const interpret = detail.getByRole("button", { name: "絵解く" });
 
     // 黙って消さない。押せないことと、何を設定すればよいかを両方出す。
     await expect(interpret).toBeVisible();
@@ -165,7 +165,7 @@ test.describe("設定していない機能", () => {
     await openBoardWithMock(page, mock);
 
     const detail = await openAnnotationDetail(page, "ログイン");
-    await expect(detail.getByRole("button", { name: "解釈する" })).toBeEnabled();
+    await expect(detail.getByRole("button", { name: "絵解く" })).toBeEnabled();
     await detail.getByRole("button", { name: "閉じる" }).click();
     await openPanelTab(page, "メンバー");
     await expect(page.getByRole("region", { name: "メンバー" })).toBeVisible();

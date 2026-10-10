@@ -12,6 +12,7 @@ import {
   openBoardMenu,
   openBoardWithMock,
   picker,
+  saveScene,
   startNewBoard,
 } from "./helpers/board";
 import {
@@ -260,7 +261,7 @@ test.describe("作成先の選択", () => {
     await expect(menu.getByText("保存してから作成先を変更できます")).toBeVisible();
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     await openBoardMenu(page);
     await expect(change).toBeEnabled();

@@ -78,7 +78,7 @@ export function DraftEditor({
   projectLink: ProjectLink | null;
   /** 作る先の見出し（`acme/web › #1 ロードマップ`）。帯の文に出す。 */
   targetLabel: string | null;
-  /** 帯の「解釈をやり直す」。帯はここで描くので受け取って並べる。 */
+  /** 帯の「絵解き直す」。帯はここで描くので受け取って並べる。 */
   interpret: InterpretControl;
   onCreate: (interpretation: Interpretation) => void;
 }) {

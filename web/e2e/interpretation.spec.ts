@@ -19,7 +19,7 @@ import {
 } from "./helpers/fixtures";
 
 test.describe("解釈と作成", () => {
-  test("解釈するまで作成のボタンは出ない", async ({ page }) => {
+  test("絵解くまで作成のボタンは出ない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     // 中核思想 3。開くだけで GitHub に何かが起きる導線があってはならない。
@@ -33,25 +33,40 @@ test.describe("解釈と作成", () => {
   });
 
   // 解釈はテキストを保存済みシーンから、画像を画面から取る。揃っていないと
-  // 1 回の解釈の入力が食い違う（ADR 0018）。
-  test("未保存の変更があるあいだは解釈できない", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
+  // 1 回の解釈の入力が食い違う（ADR 0018）。**止めずに揃える。** 未保存なら、
+  // 「絵解く」を押した操作の中で保存してから読む（#247）。
+  test("未保存の変更があっても、絵解くと保存してから読み、結果を出す", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+
+    // 詳細はキャンバスの中央を覆うので、描いてから開く。描いた図形の選択は、
+    // 何も無いところを押して外す。選んだままだと Excalidraw の図形の設定欄が
+    // 詳細の左端に重なり、帯のボタンを覆う。
+    await drawRectangle(page);
+    const box = await page.locator(".excalidraw canvas").first().boundingBox();
+    if (!box) throw new Error("キャンバスが表示されていない");
+    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.9);
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(mock.saveRequests).toHaveLength(1);
+    expect(mock.interpretRequests).toHaveLength(1);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
+  // 保存済みなら保存しない。保存は全部の注釈の引いた解釈を捨てるので、押すたびに
+  // 保存すると、ほかの注釈の結果まで消える。
+  test("保存済みなら、絵解いても保存しない", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
 
     const detail = await openAnnotationDetail(page, "ログイン");
-    const button = detail.getByRole("button", { name: "解釈する" });
-    await expect(button).toBeEnabled();
+    await detail.getByRole("button", { name: "絵解く" }).click();
 
-    // 詳細はキャンバスの中央を覆うので、閉じてから描く。
-    await page.keyboard.press("Escape");
-    await drawRectangle(page);
-    await openAnnotationDetail(page, "ログイン");
-
-    await expect(button).toBeDisabled();
-    // 押せない理由は title に隠さない。disabled なボタンはフォーカスも当たらず、
-    // キーボードと読み上げの利用者に理由が届かない。理由は帯に出す（#201）。
-    await expect(
-      detail.getByText("保存してから解釈できます", { exact: false }),
-    ).toBeVisible();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(mock.interpretRequests).toHaveLength(1);
+    expect(mock.saveRequests).toHaveLength(0);
   });
 
   test("解釈すると注釈範囲の画像を添えて送る", async ({ page }) => {

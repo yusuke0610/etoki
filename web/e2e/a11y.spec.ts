@@ -15,6 +15,8 @@ import {
   openBoardWithMock,
   openMermaidPaste,
   openPanelTab,
+  saveScene,
+  ekidokiButton,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -42,23 +44,11 @@ import {
  */
 
 test.describe("押せない理由が本文として読める", () => {
-  // 未保存のあいだは解釈させない（ADR 0018）。テキストは保存済みシーンから、
-  // 画像は画面から取るので、揃っていないと 1 回の解釈の入力が食い違う。
-  test("解釈する：未保存のとき", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
-    await drawRectangle(page);
-
-    // 解釈の口は注釈の詳細の帯にある（#201）。
-    const detail = await openAnnotationDetail(page, "ログイン");
-    await expectBlockedReason(
-      detail.getByRole("button", { name: "解釈する" }),
-      "保存してから解釈できます",
-    );
-  });
-
+  // 未保存は押せない理由にならない。「絵解く」は押した操作の中で保存してから
+  // 読む（#247）。止めていた頃の理由（ADR 0018）は、保存を挟むことで満たす。
   // LLM が未設定の構成（ADR 0030）。理由は詳細の帯に出して、ボタンがそこを指す。
   // パネルの上の文を指さないのは、パネルが畳まれていることがあるから（#202）。
-  test("解釈する：LLM が未設定のとき", async ({ page }) => {
+  test("絵解く：LLM が未設定のとき", async ({ page }) => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
@@ -68,7 +58,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     const detail = await openAnnotationDetail(page, "ログイン");
     await expectBlockedReason(
-      detail.getByRole("button", { name: "解釈する" }),
+      detail.getByRole("button", { name: "絵解く" }),
       "ETOKI_LLM_API_KEY",
     );
   });
@@ -229,7 +219,7 @@ test.describe("押せない理由が本文として読める", () => {
     await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
 
     await expectBlockedReason(
       detail.getByRole("button", { name: "GitHub に作成する" }),
@@ -258,7 +248,7 @@ test.describe("押せない理由が本文として読める", () => {
     await openBoard(page, BOARD_NAME);
 
     // **描かない。** 描くと未保存の理由のほうが出て、保存中の経路を通らない。
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
 
     // **保存を押してから開く。** 開いてから外を押すと、メニューは閉じる。
     const menu = await openBoardMenu(page);
@@ -282,7 +272,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
 
     const menu = await openBoardMenu(page);
     const importButton = menu.getByRole("button", { name: "取り込み", exact: true });
@@ -294,7 +284,7 @@ test.describe("押せない理由が本文として読める", () => {
     await expect(menu.getByText("保存が終わるまで取り込めません")).toBeHidden();
   });
 
-  test("保存：取り込み中のとき", async ({ page }) => {
+  test("絵解き：取り込み中のとき", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     // loadFromBlob が使う FileReader を止め、ファイルを読んでいる状態を作る。
@@ -320,15 +310,17 @@ test.describe("押せない理由が本文として読める", () => {
     });
 
     await expectBlockedReason(
-      page.getByRole("button", { name: "保存", exact: true }),
-      "取り込みが終わるまで保存できません",
+      ekidokiButton(page),
+      "取り込みが終わるまで絵解きを始められません",
     );
 
     await page.evaluate(() => {
       const release = Reflect.get(window, "releaseImport") as unknown;
       if (typeof release === "function") release();
     });
-    await expect(page.getByText("取り込みが終わるまで保存できません")).toBeHidden();
+    await expect(
+      page.getByText("取り込みが終わるまで絵解きを始められません"),
+    ).toBeHidden();
   });
 
   test("GitHub に作成する：取り込み中のとき", async ({ page }) => {
@@ -381,7 +373,7 @@ test.describe("押せない理由が本文として読める", () => {
   // 逆向き。作成中は保存させない。**押せない理由を `title` に置くと、この
   // テストが落ちる。** `disabled` なボタンはフォーカスも当たらないので、
   // ホバーできない利用者には届かない。
-  test("保存：作成中のとき", async ({ page }) => {
+  test("絵解き：作成中のとき", async ({ page }) => {
     await installApi(page, baseMock());
     let release = () => {};
     await holdCreate(
@@ -400,12 +392,12 @@ test.describe("押せない理由が本文として読める", () => {
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     await expectBlockedReason(
-      page.getByRole("button", { name: "保存", exact: true }),
-      "作成が終わるまで保存できません",
+      ekidokiButton(page),
+      "作成が終わるまで絵解きを始められません",
     );
 
     release();
-    await expect(page.getByText("作成が終わるまで保存できません")).toBeHidden();
+    await expect(page.getByText("作成が終わるまで絵解きを始められません")).toBeHidden();
   });
 
   // 理由を出す側が壊れたら落ちること自体を確かめる。**ここが落ちなければ、
@@ -776,7 +768,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       };
       await openBoardWithMock(page, mock);
       await drawRectangle(page);
-      await page.getByRole("button", { name: "保存" }).click();
+      await saveScene(page);
       await expect(page.getByRole("alert")).toContainText("保存できませんでした");
 
       await expectNoAxeViolations(page);

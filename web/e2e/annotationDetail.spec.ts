@@ -9,6 +9,8 @@ import {
   openBoard,
   openBoardWithMock,
   openPanelTab,
+  saveScene,
+  ekidokiButton,
 } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, annotations, baseMock } from "./helpers/fixtures";
 
@@ -90,8 +92,8 @@ test.describe("注釈の詳細", () => {
     await openBoard(page, BOARD_NAME);
 
     const detail = await openAnnotationDetail(page, "ログイン");
-    await detail.getByRole("button", { name: "解釈する" }).press("Enter");
-    await expect(detail.getByRole("button", { name: "解釈中…" })).toBeDisabled();
+    await detail.getByRole("button", { name: "絵解く" }).press("Enter");
+    await expect(detail.getByRole("button", { name: "絵解き中…" })).toBeDisabled();
     await expect(detail).toBeFocused();
 
     await page.keyboard.press("Escape");
@@ -100,15 +102,21 @@ test.describe("注釈の詳細", () => {
   });
 
   // 粒度と種別を選ぶ場所が詳細なので、解釈の前でも開ける（#201）。粒度は
-  // `content_hash` の入力で、変えると未保存になり、未保存のあいだは解釈できない
-  // （ADR 0018）。**詳細の中で行き止まりにしない。** 押せない理由を帯に出し、
-  // 詳細を開いたまま右上の「保存」を押せば解ける（モーダルにしない、ADR 0065）。
-  test("詳細で粒度を変えると帯に保存を促し、保存すると解釈できる", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
+  // `content_hash` の入力で、変えると未保存になる。**未保存でも「絵解く」は押せる。**
+  // 押した操作の中で保存してから読む（#247）。保存が要るのは etoki の都合
+  // （テキストは保存済みシーンから取る、ADR 0018）で、押す人が知らなくてよい。
+  //
+  // **読むのは保存が届いてから。** 先に読むと、保存が引いた解釈を捨てる
+  // （`discardAfterSave`）ので、出た結果が直後に消える。保存を止めて確かめる。
+  test("詳細で粒度を変えても絵解ける。押すと保存してから読む", async ({ page }) => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const mock = await installApi(page, baseMock());
+    await holdSave(page, held);
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
 
     const detail = await openAnnotationDetail(page, "ログイン");
-    const button = detail.getByRole("button", { name: "解釈する" });
-    await expect(button).toBeEnabled();
     // 解釈するまで作成のボタンは出さない。
     await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
       0,
@@ -117,15 +125,58 @@ test.describe("注釈の詳細", () => {
     await detail.getByLabel("粒度").selectOption("epic");
     // 保存済みの粒度は保存するまで古い。選んだ値が選択欄に残っていること（#214）。
     await expect(detail.getByLabel("粒度")).toHaveValue("epic");
-    await expect(button).toBeDisabled();
-    await expect(button).toHaveAccessibleDescription(/保存してから解釈できます/);
-
-    await page.getByRole("button", { name: "保存", exact: true }).click();
-    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    const button = detail.getByRole("button", { name: "絵解く" });
     await expect(button).toBeEnabled();
     await expect(
-      detail.getByText("保存してから解釈できます", { exact: false }),
+      detail.getByText("押すと保存してから読みます", { exact: false }),
+    ).toBeVisible();
+
+    // 止めた保存はモックまで届かないので、送ったことはリクエストで見る。
+    const saving = page.waitForRequest(
+      (r) =>
+        r.method() === "PUT" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/scene`,
+    );
+    await button.click();
+    await saving;
+    await expect(detail.getByRole("button", { name: "絵解き中…" })).toBeDisabled();
+    // 保存が届くまで読まない。
+    expect(mock.interpretRequests).toHaveLength(0);
+
+    release();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(mock.interpretRequests).toHaveLength(1);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    await expect(
+      detail.getByText("押すと保存してから読みます", { exact: false }),
     ).toHaveCount(0);
+  });
+
+  // 保存できなかったら読まない。読むテキストは保存済みシーンから取るので、
+  // 書けていないシーンを前提に読むと、画面の画像と食い違う（ADR 0018）。
+  // 理由は保存の失敗として通知が言う。
+  test("絵解くときの保存に失敗したら、読まない", async ({ page }) => {
+    const mock = baseMock();
+    mock.saveSceneError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+    const installed = await openBoardWithMock(page, mock);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByLabel("粒度").selectOption("epic");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+
+    await expect(page.getByRole("alert")).toContainText("保存できませんでした");
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+
+    // 「読まなかった」は、読まれたあとにしか出ない表示を待ってからでないと
+    // 確かめられない（読む前に数えると、遅れて出るリクエストを見逃す）。保存を
+    // 直してもう一度押し、結果が出てから数える。1 回目で読んでいたら 2 件になる。
+    delete installed.saveSceneError;
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(installed.interpretRequests).toHaveLength(1);
   });
 
   // 粒度と種別の選択欄が出すのはキャンバスに書いた値。保存済みの値に「選んだ
@@ -145,7 +196,7 @@ test.describe("注釈の詳細", () => {
     const detail = await openAnnotationDetail(page, "ログイン");
     const select = detail.getByLabel("粒度");
     await select.selectOption("epic");
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     // 保存が epic のシーンを送ったあとで、元の「指定なし」へ選び直す。
     await select.selectOption({ label: "指定なし" });
     await expect(select).toHaveValue("");
@@ -155,7 +206,7 @@ test.describe("注釈の詳細", () => {
       a.name === "ログイン" ? { ...a, granularity: "epic" } : a,
     );
     release();
-    await expect(page.getByRole("button", { name: "保存", exact: true })).toBeEnabled();
+    await expect(ekidokiButton(page)).toBeEnabled();
     await expect(
       annotationCard(page, "ログイン").getByText("粒度 epic", { exact: false }),
     ).toBeVisible();
@@ -210,11 +261,11 @@ test.describe("注釈の詳細", () => {
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
-    await expect(detail.getByText("解釈しています…")).toBeVisible();
+    await expect(detail.getByText("絵解きしています…")).toBeVisible();
 
     await detail.getByRole("button", { name: "閉じる" }).click();
     await card.locator(".annotation-open").click();
-    await expect(detail.getByText("解釈しています…")).toBeVisible();
+    await expect(detail.getByText("絵解きしています…")).toBeVisible();
 
     release();
     await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
@@ -248,9 +299,9 @@ test.describe("注釈の詳細", () => {
 
     // 詳細はキャンバスの上に開いているので、開いたまま描き足せない。保存は未保存
     // でなくても押せ、どの保存でも解釈は捨てられる。
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     await expect(
-      detail.getByText("まだ解釈していません", { exact: false }),
+      detail.getByText("まだ絵解きしていません", { exact: false }),
     ).toBeVisible();
 
     await detail.focus();

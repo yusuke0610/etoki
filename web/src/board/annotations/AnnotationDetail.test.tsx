@@ -176,28 +176,42 @@ describe("AnnotationDetail", () => {
     );
   });
 
-  // 解釈の前でも詳細は開ける。帯には「解釈する」だけを出し、作成のボタンは
+  // 見出しは「絵解き」で、どの注釈かは隣の名前（#247）。面は注釈の数だけ並ぶので、
+  // ダイアログの名前は 2 つをつないで読ませる。見出しだけにすると面の見分けが付かない。
+  it("見出しは「絵解き」で、ダイアログの名前に注釈の名前を含める", () => {
+    render(<AnnotationDetail {...props()} />);
+
+    expect(screen.getByRole("heading", { name: "絵解き" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toHaveAccessibleName(/^絵解き .+/);
+  });
+
+  // 解釈の前でも詳細は開ける。帯には「絵解く」だけを出し、作成のボタンは
   // 解釈を 1 件選ぶまで出さない。
-  it("解釈の前は帯に「解釈する」だけがある", () => {
+  it("解釈の前は帯に「絵解く」だけがある", () => {
     const detailProps = props();
     render(<AnnotationDetail {...detailProps} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "解釈する" }));
+    fireEvent.click(screen.getByRole("button", { name: "絵解く" }));
     expect(detailProps.interpretation.onInterpret).toHaveBeenCalledWith("frame-1");
     expect(screen.queryByRole("button", { name: "GitHub に作成する" })).toBeNull();
   });
 
-  // 未保存のあいだは解釈させない（ADR 0018）。理由は帯の本文で結ぶ。
-  it("未保存のあいだは「解釈する」を押させず、帯に理由を出す", () => {
-    render(<AnnotationDetail {...props()} stale />);
+  // 未保存でも押させる。押した操作の中で保存してから読む（#247、`BoardPage`）。
+  // 止めると、粒度や種別を選び直した直後に押せなくなる。保存がほかの注釈の結果も
+  // 捨てることは本文で言う。
+  it("未保存でも「絵解く」を押させ、保存してから読むことを案内する", () => {
+    const detailProps = props();
+    render(<AnnotationDetail {...detailProps} stale />);
 
-    const interpret = screen.getByRole("button", { name: "解釈する" });
-    expect(interpret).toBeDisabled();
-    expect(interpret).toHaveAccessibleDescription(/保存してから解釈できます/);
+    const interpret = screen.getByRole("button", { name: "絵解く" });
+    expect(interpret).toBeEnabled();
+    expect(screen.getByText(/押すと保存してから読みます/)).toBeInTheDocument();
+    fireEvent.click(interpret);
+    expect(detailProps.interpretation.onInterpret).toHaveBeenCalledWith("frame-1");
   });
 
-  // 設定の不足は保存しても変わらないので、未保存より先に出す（ADR 0030）。
-  it("LLM が未設定なら、未保存より先にその理由を出す", () => {
+  // 設定の不足は保存しても変わらないので、押せない理由はそれだけ（ADR 0030）。
+  it("LLM が未設定なら、未保存でもその理由で止める", () => {
     const detailProps = props();
     render(
       <AnnotationDetail
@@ -210,15 +224,15 @@ describe("AnnotationDetail", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "解釈する" })).toHaveAccessibleDescription(
-      "LLM が未設定です。",
-    );
+    const interpret = screen.getByRole("button", { name: "絵解く" });
+    expect(interpret).toBeDisabled();
+    expect(interpret).toHaveAccessibleDescription("LLM が未設定です。");
   });
 
   it("読むだけの権限では帯を出さず、その理由を出す", () => {
     render(<AnnotationDetail {...props()} canEdit={false} />);
 
-    expect(screen.queryByRole("button", { name: "解釈する" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "絵解く" })).toBeNull();
     expect(
       screen.getByText(
         "読むだけの権限で開いています。粒度と種別は変えられず、解釈と作成もできません。",

@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { boardsApi } from "../../api/boards";
 import { describeFailure } from "../../api/errorMessage";
-import type { AnnotationStatus, SyncItem } from "../../api/types";
+import type { AnnotationStatus, Granularity, SyncItem } from "../../api/types";
 import { exportAnnotationImage } from "../../excalidraw/image";
 import { createGenerations } from "../generation";
 import {
@@ -22,10 +22,19 @@ type Options = {
   annotations: AnnotationStatus[];
 };
 
+export type InterpretOptions = {
+  /**
+   * 控える粒度。**保存の直後に呼ぶ側だけが渡す。** `annotations`（保存済みシーンの
+   * 注釈）は保存で取り直されるが、呼び出しの時点の関数はまだ古い一覧を握っている。
+   * 省くと保存前の粒度が履歴に残る（「絵解き」、#247）。
+   */
+  granularity?: Granularity;
+};
+
 export type Interpretations = {
   /** 注釈 ID をキーにした、引いた解釈。フロントのメモリだけに持つ。 */
   states: Record<string, InterpretationState>;
-  interpret: (annotationId: string) => Promise<void>;
+  interpret: (annotationId: string, options?: InterpretOptions) => Promise<void>;
   /** 見る解釈を選び直す。 */
   select: (annotationId: string, runId: number) => void;
   /** 作ったものを、それを作った解釈に結びつける（ADR 0052）。 */
@@ -59,7 +68,7 @@ export function useInterpretations({
    * 画面全体のエラー表示には流さない。
    */
   const interpret = useCallback(
-    async (annotationId: string) => {
+    async (annotationId: string, options?: InterpretOptions) => {
       // 応答を受け取ったとき、これがまだ最新の要求かを判断できるようにする。
       // 履歴に積むかどうかもこれで決める。**捨てるべき応答を捨てる責任は
       // 世代側にあり、履歴は返ってきたものを積むだけ。**
@@ -68,7 +77,9 @@ export function useInterpretations({
       // のか指定を変えたのかが読めないと選ぶ理由が無い。判定に使う粒度は
       // これまでどおり保存済みシーン側（AnnotationStatus）のもの。
       const granularity =
-        annotations.find((a) => a.id === annotationId)?.granularity ?? "";
+        options?.granularity ??
+        annotations.find((a) => a.id === annotationId)?.granularity ??
+        "";
 
       setStates((prev) => ({
         ...prev,

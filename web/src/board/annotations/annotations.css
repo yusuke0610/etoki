@@ -73,7 +73,7 @@
 
 /*
  * スマホ（#199）。**全面で開く。** 基準は `.board-stage` で、上の帯の 2 段目から
- * 下を覆う。1 段目（ボード名・未保存・保存）は覆わない（ADR 0021）。全面の
+ * 下を覆う。1 段目（ボード名・未保存・「絵解き」）は覆わない（ADR 0021）。全面の
  * パネル（z-index 5）から開くので、その上に置く。
  */
 .board[data-layout="phone"] .annotation-detail {
@@ -102,16 +102,33 @@
 
 .annotation-detail-title {
   display: flex;
+  /* 狭い画面では、名前を潰さずに右のボタンを次の行へ回す（下の `flex-basis`）。 */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
 }
 
 .annotation-detail-title h2 {
-  flex: 1;
-  min-width: 0;
+  flex: none;
   margin: 0;
   font-size: var(--text-xl);
+}
+
+/*
+ * 見出し（絵解き）の隣に、どの注釈かを出す。長い名前は折り返す。**8em までは
+ * 縮めない。** 縮めると、スマホの幅で状態のバッジと右のボタンに押されて
+ * 名前が 1 文字ずつ縦に折れる。足りなければボタンのほうが次の行へ回る。
+ */
+.annotation-detail-label {
+  flex: 1 1 8em;
+  min-width: 0;
+  font-size: var(--text-xl);
   overflow-wrap: anywhere;
+}
+
+/* 右のボタンは右に寄せる。次の行へ回ったときも右端に並ぶ。 */
+.annotation-detail-to-canvas {
+  margin-left: auto;
 }
 
 .annotation-detail-close {
