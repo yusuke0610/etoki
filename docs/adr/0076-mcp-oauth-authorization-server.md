@@ -1,6 +1,6 @@
 # 0076. 認証ありの構成では、etoki が認可サーバーになって `/mcp` を OAuth で開く
 
-- 状態: 提案
+- 状態: 採用
 - 日付: 2026-10-09
 
 ## 背景
@@ -57,9 +57,13 @@ etoki の側で範囲を絞れず、etoki の画面からは取り消せない�
 - 発行した許可は画面のセッションと寿命も失効の仕方も違う（下記）。同じ型に混ぜると、
   片方の都合でもう片方を壊す。
 
-`etoki.Options` に足すのは `OAuthGrants port.OAuthGrantRepository` の 1 つで、**nil で
-よい。** nil なら、認証ありの構成では `/mcp` をこれまでどおり 503 のままにする
-（ADR 0071）。認証なしの構成ではこの設定を見ない（`/mcp` は認証なしで開く）。
+`etoki.Options` に足すのは `OAuthGrants port.OAuthGrantRepository` と、CIMD を受けるか
+（`OAuthClientMetadataDocuments`、下記）の 2 つ。**`OAuthGrants` は nil でよい。** nil
+なら、認証ありの構成では `/mcp` をこれまでどおり 503 のままにする（ADR 0071）。認証
+なしの構成ではこの設定を見ない（`/mcp` は認証なしで開く）。
+
+CIMD の文書を取りに行く口は `internal/` に置き、`etoki.New` が組み立てる。外部
+リポジトリは `internal/` を import できないので、差し込む口ではなく真偽値で受ける。
 
 ### 許可（grant）を単位にする
 
@@ -69,18 +73,29 @@ etoki の側で範囲を絞れず、etoki の画面からは取り消せない�
 
 ### 同意を省かない。同意の画面は React に置く
 
-`/oauth/authorize` は要求を検証して保存し、画面の `/oauth/consent?request=<id>` へ送る。
-画面はログインしていなければ既存のログインに通し（戻り先は ADR 0059 の `returnTo`）、
-クライアントの名前・戻り先・scope を見せて、許可か拒否を POST で受ける。
-許可したら code を付けてクライアントに戻す。
+`/oauth/authorize` は**何も書かず、検証もせずに**、要求のクエリを 1 つの値に包んで
+画面（`/?authorize=<要求>`）へ転送する。画面はログインしていなければ既存のログインに
+通し（戻り先は ADR 0059 の `returnTo` で、要求ごと運ばれる）、要求をそのまま
+`GET /api/oauth/authorization` に送ってクライアントの名前・戻り先・scope を見せ、
+許可か拒否を `POST /api/oauth/authorization` で受ける。許可したら code を付けて
+クライアントに戻す。
 
 - **同じクライアントでも毎回聞く。** 登録は誰でもできるので（下記）、一度許したことを
   理由に自動で許すと、ログイン済みの利用者の code を別のページから取られうる。中核
   思想 3（システムは自動で判断しない）にも沿う。
-- **許可は POST で受ける。** Origin の検証（ADR 0013）が効く。`/oauth/authorize` 自体は
-  クライアントからのトップレベル遷移なので GET 以外にできないが、**書くのは要求の
-  控えだけで、code はまだ発行しない。** 控えは期限つき（`StateTTL` と同じ 10 分）・
-  単回使用。
+- **許可は POST で受け、要求はそこで検証し直す。** Origin の検証（ADR 0013）が効く。
+  画面に見せたときの検証を信じると、そのあいだに要求を差し替えられる。
+- **`/oauth/authorize` は副作用を持たない。** 副作用を持つ GET は `/api/auth/callback`
+  だけに留める（ADR 0013）。要求をサーバーに控える形も考えたが、そうすると 2 つめの
+  例外になる。**検証もここではしない。** CIMD の取得（外向きの通信）を、ログイン
+  していない誰でも起こせることになるため。検証はログインした画面が `/api` を叩いた
+  ときに行う。
+- **要求の誤りはクライアントに戻さず、画面に出す。** 戻り先を確かめる前に戻すと
+  オープンリダイレクトになる。確かめたあとの誤りも画面に出すのは、戻すかどうかで
+  分岐を持つほどの得が無いため。断るとき（「許可しない」）だけは、戻り先を確かめて
+  から `error=access_denied` を付けて戻す。
+- **同じ名前のパラメータが 2 つ付いた要求は断る**（RFC 6749 3.1）。先頭だけを読むと、
+  画面に見せた値と使う値が食い違いうる。
 - **画面に置く。** ログイン・`returnTo`・テーマ・文言（ADR 0034）の仕組みがそのまま
   使える。サーバーが HTML を返す形にすると、見た目と文言が画面と別の系統になる。
 
@@ -144,18 +159,25 @@ RFC 8252 に従い、ポートの違いを許す（ネイティブアプリは�
 （`AuthService.Logout`）、ブラウザを閉じる操作が手元の CLI の接続を切るのは意図に
 合わない。消したいなら一覧から取り消す。
 
-**利用者のセッションが無くても、MCP のトークンは単独で通る。** ただし GitHub の
-資格情報が失効していて更新もできない利用者は、書き込みの道具で `ErrNotAuthenticated`
-になる。そのときは道具の失敗として「画面でログインし直す」を返す。
+**利用者のセッションが無くても、MCP のトークンは単独で通る。** 読み取りの道具は
+GitHub を叩かないので、GitHub の資格情報の状態に依らない。書き込みの道具を足すと、
+資格情報が失効していて更新もできない利用者は `ErrNotAuthenticated` になる。その
+ときの見せ方は、書き込みの道具を足すときに決める。
 
 ### メタデータ
 
-- `GET /.well-known/oauth-protected-resource/mcp`（RFC 9728）。SDK の
-  `auth.ProtectedResourceMetadataHandler` を使う。
-- `GET /.well-known/oauth-authorization-server`（RFC 8414）。
-  `client_id_metadata_document_supported: true` を載せる。
+- `GET /.well-known/oauth-protected-resource/mcp`（RFC 9728）。パスを挟まない
+  `/.well-known/oauth-protected-resource` でも同じものを返す。先にそちらを引く
+  クライアントがある。
+- `GET /.well-known/oauth-authorization-server`（RFC 8414）。CIMD を受ける構成では
+  `client_id_metadata_document_supported: true` を載せる。認可の応答に `iss` を載せる
+  （RFC 9207）。
 - `/mcp` は Bearer が無い・無効なとき 401 と `WWW-Authenticate`（`resource_metadata`）を
-  返す。SDK の `auth.RequireBearerToken` を使う。
+  返す。
+
+**SDK の `auth.RequireBearerToken` と `auth.ProtectedResourceMetadataHandler` は使わ
+ない。** どちらも URL を固定値で受けるので、リクエストの Host から URL を組む etoki
+（下記）では構成ごとに作れない。返す形は SDK と同じにしてある。
 
 **issuer と `/mcp` の正規の URL は、ログインの `redirect_uri` と同じ規則で組む**
 （`ETOKI_PUBLIC_URL`、無ければリクエストの Host）。Host は originGuard（ADR 0013）が
@@ -168,14 +190,14 @@ RFC 8252 に従い、ポートの違いを許す（ネイティブアプリは�
 cross-origin になり弾かれる。** 許すには `ETOKI_ALLOWED_ORIGINS` に足す。CORS は
 開けない（etoki は手元のツールで、画面以外のブラウザから叩かれる前提を持たない）。
 
-`/oauth/authorize` は ADR 0015 のコールバックと同じく「副作用を持つ GET」になるが、
-書くのは期限つき・単回使用の要求の控えだけで、code の発行は Origin の効く POST の
-後ろにある。`origin.go` の doc コメントの例外の列挙に足す。
+`/oauth/authorize` は副作用を持たないので、`origin.go` が前提にしている「GET に副作用
+は無い（コールバックだけが例外）」は崩れない。code の発行は Origin の効く POST の
+後ろにある。
 
 ### SDK と置き場所
 
-`/mcp` 側（受ける側）は SDK の `auth` パッケージを使う。発行側は SDK に無いので
-自前で書く。**fosite などの認可サーバーのライブラリは入れない。** 要るのは公開
+受ける側も発行側も自前で書く（受ける側の理由は上の「メタデータ」）。**fosite などの
+認可サーバーのライブラリは入れない。** 要るのは公開
 クライアント・認可コード + PKCE・refresh の 1 組だけで、ライブラリの面の大半を
 使わないまま依存と設定を抱えることになる。
 
@@ -184,6 +206,16 @@ HTTP の口は `internal/httpapi`、発行の規則は `internal/usecase`、保�
 `api/openapi.yaml` に載せない。** 形を決めているのは RFC で、etoki の契約ではない。
 同意の画面が使う `/api/oauth/*` と、許可の一覧・取り消しの `/api/oauth/grants` は
 画面の契約なので載せる（ADR 0011）。
+
+### 保存
+
+コードとトークンは SHA-256 だけを置く。**使ったコードと refresh token は期限まで
+残す。** 使い回しに気づくためで、消すと 2 回目が「知らない値」になり、許可を失効
+させられない。使用済みにする照合は UPDATE 1 文に置く。同じ値が 2 本同時に来ても、
+1 回目になれるのは 1 本だけ。
+
+時刻は小数 9 桁の固定幅で書く。期限の判定を文字列の大小で行うので、桁数が揃って
+いないと順序が時刻と食い違う。
 
 ## 帰結
 
@@ -194,6 +226,12 @@ HTTP の口は `internal/httpapi`、発行の規則は `internal/usecase`、保�
   1 種類増える（CIMD の取得）。どちらも上の制限で絞る。
 - etoki は認可サーバーとしての規則（PKCE、`resource`、refresh の入れ替え）を自分で
   持つ。仕様の改版に追いつくのは etoki の仕事になる。
+- **ADR 0071 の帰結の 1 つを改める。** `make dev` の Vite は `/mcp` を転送しないと
+  していたが、`/mcp`・`/oauth`・`/.well-known` を転送する。認証ありの構成では許可の
+  途中で画面に転送され、画面を配っているのが Vite だから。Host は書き換えないので、
+  issuer と `/mcp` の URL は :5173 で組まれ、トークンの向き先と食い違わない。
+- トークンは発行したときの `/mcp` の URL に結びつく。`localhost` と `127.0.0.1` の
+  ように別の Host で来れば、別の資源として断る。
 
 ## 採らなかった案
 
