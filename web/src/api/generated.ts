@@ -147,6 +147,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/oauth/authorization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 同意の画面に出す、MCP のクライアントの認可の要求を返す
+         * @description `/oauth/authorize` は何も書かずに画面（`/?authorize=...`）へ転送する。
+         *     画面はそのクエリを `request` にそのまま載せてここを叩く（ADR 0076）。
+         *
+         *     **何も書かない。** 要求の誤りはクライアントに戻さず 400 で返し、画面に
+         *     出す。戻り先を確かめる前に戻すとオープンリダイレクトになる。
+         */
+        get: operations["getOAuthAuthorization"];
+        put?: never;
+        /**
+         * 認可の要求に同意する、または断る
+         * @description **POST なので Origin の検証が効く**（ADR 0013）。要求はここで検証し
+         *     直す。画面に出したときの検証を信じると、そのあいだに要求を差し替え
+         *     られる。
+         *
+         *     返した `redirectTo` へ画面が遷移する。同意したならコード付き、断ったなら
+         *     `error=access_denied` 付きでクライアントの戻り先を指す。
+         */
+        post: operations["decideOAuthAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/oauth/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分が MCP のクライアントに許した接続を返す
+         * @description 新しい順。**他人の許可は返さない。** 取り消しは利用者ごとに行い、
+         *     サーバーを動かしている人がまとめて切るのは CLI（`etoki revoke`）。
+         */
+        get: operations["listOAuthGrants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/oauth/grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 接続を取り消す
+         * @description その許可のトークンは直ちに使えなくなる。他人の許可は 404（存在を
+         *     教えない）。
+         */
+        delete: operations["revokeOAuthGrant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards": {
         parameters: {
             query?: never;
@@ -727,6 +804,12 @@ export interface components {
              *     決まって初めて意味を持つ（ADR 0016 / 0017）
              */
             sharing: boolean;
+            /**
+             * @description MCP のクライアントに接続を許せるか（ADR 0076）。false は認証か、
+             *     許可の保存先が未設定。**認証なしの構成では false。** そのときの
+             *     `/mcp` は許可なしで開いている（ADR 0071）ので、取り消すものが無い
+             */
+            mcpConnections: boolean;
         };
         /** @description ログイン状態。認証を設定していない構成でも 200 で返る。 */
         SessionStatus: {
@@ -772,7 +855,7 @@ export interface components {
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured";
+        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -856,6 +939,55 @@ export interface components {
             role: components["schemas"]["BoardRole"];
             /** Format: date-time */
             createdAt: string;
+        };
+        /** @description 同意の画面に出す、認可の要求 */
+        OAuthAuthorization: {
+            clientId: string;
+            /**
+             * @description クライアントが名乗った名前。**自称であって確かめていない。**
+             *     空文字はクライアントが名乗らなかった
+             */
+            clientName: string;
+            /**
+             * @description client_id が URL（Client ID Metadata Document）なら true。名前の
+             *     出どころが client_id のドメインになるので、画面はそれを見せる
+             */
+            clientIdIsUrl: boolean;
+            /** @description 同意したあとに戻す先 */
+            redirectUri: string;
+            /** @description 許す範囲。いまは `read` だけ */
+            scope: string;
+        };
+        /** @description 認可の要求への返事 */
+        OAuthDecisionRequest: {
+            /** @description `/oauth/authorize` に付いていたクエリ文字列そのもの */
+            request: string;
+            /** @description true なら同意、false なら断る */
+            approve: boolean;
+        };
+        /** @description 返事を受けたあとの遷移先 */
+        OAuthDecision: {
+            /** @description クライアントの戻り先。画面はここへ遷移する */
+            redirectTo: string;
+        };
+        /** @description MCP のクライアントに許した接続 1 件 */
+        OAuthGrant: {
+            id: string;
+            clientId: string;
+            /** @description 許したときにクライアントが名乗っていた名前 */
+            clientName: string;
+            scope: string;
+            /**
+             * Format: date-time
+             * @description 許した時刻
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description 最後にトークンを発行した時刻。アクセストークンを使うたびには
+             *     進めないので、1 時間（アクセストークンの寿命）の粒度
+             */
+            lastUsedAt: string;
         };
         /** @description 招待する前に見せる、login が当たった利用者 */
         Invitee: {
@@ -1625,7 +1757,9 @@ export interface components {
          * @description StateTTL（10 分）のあいだに始められるログインの回数が上限に達した
          *     （issue #147）。
          *
-         *     **ログインの開始は、ログインしていなくても書き込みが起きる唯一の口。**
+         *     **ログインの開始は、ログインしていなくても書き込みが起きる口の 1 つ。**
+         *     （もう 1 つは MCP のクライアントの登録 `/oauth/register` で、同じ形で
+         *     絞っている。ADR 0076）
          *     1 回ごとに state が 1 つ保存され、掃除は期限切れしか消さないので、
          *     上限が無いと窓のあいだ叩かれた回数だけ表が育つ。
          *
@@ -1903,6 +2037,113 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    getOAuthAuthorization: {
+        parameters: {
+            query: {
+                /** @description `/oauth/authorize` に付いていたクエリ文字列そのもの */
+                request: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 同意の画面に出すもの */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthAuthorization"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    decideOAuthAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description クライアントへ戻す先 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthDecision"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["RequestTooLarge"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    listOAuthGrants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自分の接続 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthGrant"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    revokeOAuthGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取り消した */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
         };
     };
     listBoards: {

@@ -148,6 +148,14 @@ export default defineConfig({
     proxy: {
       "/api": { target: API_TARGET },
       "/healthz": { target: API_TARGET },
+      // MCP の入口と、その認可（ADR 0076）。認証ありの構成では、認可の途中で
+      // 同意の画面（`/?authorize=...`）に転送される。画面を配っているのは
+      // ここなので、MCP のクライアントもここへ向けないと同意の画面に着かない。
+      // Host は書き換えない（changeOrigin を立てない）ので、issuer と `/mcp` の
+      // URL も :5173 で組まれ、トークンの向き先と食い違わない。
+      "/mcp": { target: API_TARGET },
+      "/oauth": { target: API_TARGET },
+      "/.well-known": { target: API_TARGET },
     },
   },
   test: {

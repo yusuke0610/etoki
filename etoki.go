@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/yusuke0610/etoki/internal/adapter/cimd"
 	"github.com/yusuke0610/etoki/internal/httpapi"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
@@ -141,6 +142,21 @@ type Options struct {
 	// GitHub クライアントの TokenSource にも同じものを渡す。呼び出し側で
 	// 組み立ててもらうのはそのためで、ここで作ると 2 つできてしまう。
 	Auth *Authenticator
+
+	// OAuthGrants は MCP のクライアントに発行する許可の保存先（ADR 0076）。任意。
+	//
+	// Auth と両方あるときだけ、認証ありの構成で `/mcp` を OAuth で開く。nil なら
+	// 認証ありの構成の `/mcp` はこれまでどおり 503 を返す（ADR 0071）。認証なしの
+	// 構成では使わない（`/mcp` は許可なしで開いている）。
+	OAuthGrants port.OAuthGrantRepository
+
+	// OAuthClientMetadataDocuments は、Client ID Metadata Document で名乗る
+	// MCP のクライアントを受けるか（ADR 0076）。
+	//
+	// 受けると、同意の画面を開いたときに client_id の URL を取りに行く。
+	// **外へ出ていく通信が 1 種類増える。** 行き先は公開アドレスの https だけに
+	// 絞ってあり、プロキシは使わない。false でも動的登録のクライアントは使える。
+	OAuthClientMetadataDocuments bool
 
 	// WebDir はビルド済みフロントエンド（web/dist）の置き場所。任意。
 	//
@@ -268,6 +284,16 @@ func New(opts Options) (*Server, error) {
 		AllowedOrigins: opts.AllowedOrigins,
 	}
 	deps.Auth = opts.Auth
+	// MCP のクライアントのための認可サーバー。**認証ありの構成でだけ組み立てる。**
+	// 発行した許可は「誰であるか」が決まって初めて意味を持つ（ADR 0076）。
+	if opts.Auth != nil && opts.OAuthGrants != nil {
+		var fetcher usecase.ClientMetadataFetcher
+		if opts.OAuthClientMetadataDocuments {
+			fetcher = cimd.New()
+		}
+		deps.OAuth = usecase.NewOAuthServer(opts.OAuthGrants, fetcher)
+		deps.OAuthMetadataDocuments = opts.OAuthClientMetadataDocuments
+	}
 	// 招待は「誰であるか」が決まって初めて意味を持つ。認証を設定していない
 	// 構成は利用者 1 人なので、共有する相手がいない（ADR 0017）。
 	if opts.Auth != nil {

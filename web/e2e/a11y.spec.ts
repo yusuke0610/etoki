@@ -20,6 +20,7 @@ import {
   ANNOTATION_IDS,
   BOARD_ID,
   BOARD_NAME,
+  CONSENT_PATH,
   annotations,
   authRequiredMock,
   baseMock,
@@ -27,6 +28,7 @@ import {
   createdRun,
   historyRuns,
   signedIn,
+  withConnections,
 } from "./helpers/fixtures";
 
 /**
@@ -62,7 +64,13 @@ test.describe("押せない理由が本文として読める", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
 
@@ -80,7 +88,13 @@ test.describe("押せない理由が本文として読める", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
     await openPanelTab(page, "図のドラフト");
@@ -110,6 +124,21 @@ test.describe("押せない理由が本文として読める", () => {
     );
   });
 
+  // MCP の接続は認証を設定した構成でしか扱えない（ADR 0076）。項目を消さずに
+  // 押せない理由を出す（ADR 0030）。既定の fixture は扱えない構成。
+  test("MCP の接続：扱えない構成のとき", async ({ page }) => {
+    const mock = baseMock();
+    mock.session = { status: 200, body: signedIn() };
+    await installApi(page, mock);
+    await page.goto("/");
+    await page.getByRole("button", { name: "Octo Cat" }).click();
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "MCP の接続" }),
+      "MCP のクライアントへの接続には認証の設定が必要です。",
+    );
+  });
+
   // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる（ADR 0021）。
   // GitHub が未設定ならボードを作れない（作成先を選べない、ADR 0030）。名前と
   // ひな形を決めたあとで行き止まりにしないよう、押す前に止めて理由を出す（#200）。
@@ -117,7 +146,13 @@ test.describe("押せない理由が本文として読める", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: false, sharing: true },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: false,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await installApi(page, mock);
     await page.goto("/");
@@ -534,6 +569,28 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.goto("/");
       await page.getByRole("button", { name: "Octo Cat" }).click();
       await page.getByRole("button", { name: "ログアウト" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    /*
+     * MCP のクライアントへの許可（ADR 0076）。同意の画面は `/oauth/authorize` から
+     * 転送されたときにしか出ず、接続のダイアログは開かないと DOM に出ない。
+     */
+    test("同意の画面", async ({ page }) => {
+      await installApi(page, withConnections(baseMock()));
+      await page.goto(CONSENT_PATH);
+      await page.getByRole("button", { name: "許可する" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    test("MCP の接続のダイアログを開いた状態", async ({ page }) => {
+      await installApi(page, withConnections(baseMock()));
+      await page.goto("/");
+      await page.getByRole("button", { name: "Octo Cat" }).click();
+      await page.getByRole("button", { name: "MCP の接続" }).click();
+      await page.getByRole("button", { name: "Claude Code の接続を取り消す" }).waitFor();
 
       await expectNoAxeViolations(page);
     });

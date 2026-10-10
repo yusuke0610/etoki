@@ -72,37 +72,38 @@ func (e DiagramKind) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
-	ErrorCodeAlreadyMember        ErrorCode = "already_member"
-	ErrorCodeAuthNotConfigured    ErrorCode = "auth_not_configured"
-	ErrorCodeConcurrencyLimited   ErrorCode = "concurrency_limited"
-	ErrorCodeContentHashMismatch  ErrorCode = "content_hash_mismatch"
-	ErrorCodeCreationIncomplete   ErrorCode = "creation_incomplete"
-	ErrorCodeCrossSiteRejected    ErrorCode = "cross_site_rejected"
-	ErrorCodeDiagramChatTooLong   ErrorCode = "diagram_chat_too_long"
-	ErrorCodeDiagramFailed        ErrorCode = "diagram_failed"
-	ErrorCodeForbiddenProject     ErrorCode = "forbidden_project"
-	ErrorCodeForbiddenRole        ErrorCode = "forbidden_role"
-	ErrorCodeGithubNotConfigured  ErrorCode = "github_not_configured"
-	ErrorCodeGithubUnavailable    ErrorCode = "github_unavailable"
-	ErrorCodeInternal             ErrorCode = "internal"
-	ErrorCodeInterpretationFailed ErrorCode = "interpretation_failed"
-	ErrorCodeInvalidInput         ErrorCode = "invalid_input"
-	ErrorCodeInviteeChanged       ErrorCode = "invitee_changed"
-	ErrorCodeLastOwner            ErrorCode = "last_owner"
-	ErrorCodeLlmNotConfigured     ErrorCode = "llm_not_configured"
-	ErrorCodeLlmUnavailable       ErrorCode = "llm_unavailable"
-	ErrorCodeLoginRequired        ErrorCode = "login_required"
-	ErrorCodeNotFound             ErrorCode = "not_found"
-	ErrorCodePreviousItemUnknown  ErrorCode = "previous_item_unknown"
-	ErrorCodeProjectFieldMissing  ErrorCode = "project_field_missing"
-	ErrorCodeRateLimited          ErrorCode = "rate_limited"
-	ErrorCodeRequestTooLarge      ErrorCode = "request_too_large"
-	ErrorCodeSceneConflict        ErrorCode = "scene_conflict"
-	ErrorCodeSceneTooLarge        ErrorCode = "scene_too_large"
-	ErrorCodeSharingNotConfigured ErrorCode = "sharing_not_configured"
-	ErrorCodeTargetLocked         ErrorCode = "target_locked"
-	ErrorCodeTargetMismatch       ErrorCode = "target_mismatch"
-	ErrorCodeTargetNotSelected    ErrorCode = "target_not_selected"
+	ErrorCodeAlreadyMember               ErrorCode = "already_member"
+	ErrorCodeAuthNotConfigured           ErrorCode = "auth_not_configured"
+	ErrorCodeConcurrencyLimited          ErrorCode = "concurrency_limited"
+	ErrorCodeContentHashMismatch         ErrorCode = "content_hash_mismatch"
+	ErrorCodeCreationIncomplete          ErrorCode = "creation_incomplete"
+	ErrorCodeCrossSiteRejected           ErrorCode = "cross_site_rejected"
+	ErrorCodeDiagramChatTooLong          ErrorCode = "diagram_chat_too_long"
+	ErrorCodeDiagramFailed               ErrorCode = "diagram_failed"
+	ErrorCodeForbiddenProject            ErrorCode = "forbidden_project"
+	ErrorCodeForbiddenRole               ErrorCode = "forbidden_role"
+	ErrorCodeGithubNotConfigured         ErrorCode = "github_not_configured"
+	ErrorCodeGithubUnavailable           ErrorCode = "github_unavailable"
+	ErrorCodeInternal                    ErrorCode = "internal"
+	ErrorCodeInterpretationFailed        ErrorCode = "interpretation_failed"
+	ErrorCodeInvalidInput                ErrorCode = "invalid_input"
+	ErrorCodeInviteeChanged              ErrorCode = "invitee_changed"
+	ErrorCodeLastOwner                   ErrorCode = "last_owner"
+	ErrorCodeLlmNotConfigured            ErrorCode = "llm_not_configured"
+	ErrorCodeLlmUnavailable              ErrorCode = "llm_unavailable"
+	ErrorCodeLoginRequired               ErrorCode = "login_required"
+	ErrorCodeMcpConnectionsNotConfigured ErrorCode = "mcp_connections_not_configured"
+	ErrorCodeNotFound                    ErrorCode = "not_found"
+	ErrorCodePreviousItemUnknown         ErrorCode = "previous_item_unknown"
+	ErrorCodeProjectFieldMissing         ErrorCode = "project_field_missing"
+	ErrorCodeRateLimited                 ErrorCode = "rate_limited"
+	ErrorCodeRequestTooLarge             ErrorCode = "request_too_large"
+	ErrorCodeSceneConflict               ErrorCode = "scene_conflict"
+	ErrorCodeSceneTooLarge               ErrorCode = "scene_too_large"
+	ErrorCodeSharingNotConfigured        ErrorCode = "sharing_not_configured"
+	ErrorCodeTargetLocked                ErrorCode = "target_locked"
+	ErrorCodeTargetMismatch              ErrorCode = "target_mismatch"
+	ErrorCodeTargetNotSelected           ErrorCode = "target_not_selected"
 )
 
 // Valid indicates whether the value is a known member of the ErrorCode enum.
@@ -147,6 +148,8 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeLlmUnavailable:
 		return true
 	case ErrorCodeLoginRequired:
+		return true
+	case ErrorCodeMcpConnectionsNotConfigured:
 		return true
 	case ErrorCodeNotFound:
 		return true
@@ -759,6 +762,11 @@ type Capabilities struct {
 	// Interpretation 注釈を解釈できるか。false は LLM が未設定（ADR 0008）
 	Interpretation bool `json:"interpretation"`
 
+	// McpConnections MCP のクライアントに接続を許せるか（ADR 0076）。false は認証か、
+	// 許可の保存先が未設定。**認証なしの構成では false。** そのときの
+	// `/mcp` は許可なしで開いている（ADR 0071）ので、取り消すものが無い
+	McpConnections bool `json:"mcpConnections"`
+
 	// Sharing ボードを共有できるか。false は認証が未設定。招待は「誰であるか」が
 	// 決まって初めて意味を持つ（ADR 0016 / 0017）
 	Sharing bool `json:"sharing"`
@@ -1060,6 +1068,57 @@ type LoginResponse struct {
 	AuthorizeURL string `json:"authorizeUrl"`
 }
 
+// OAuthAuthorization 同意の画面に出す、認可の要求
+type OAuthAuthorization struct {
+	ClientID string `json:"clientId"`
+
+	// ClientIDIsURL client_id が URL（Client ID Metadata Document）なら true。名前の
+	// 出どころが client_id のドメインになるので、画面はそれを見せる
+	ClientIDIsURL bool `json:"clientIdIsUrl"`
+
+	// ClientName クライアントが名乗った名前。**自称であって確かめていない。**
+	// 空文字はクライアントが名乗らなかった
+	ClientName string `json:"clientName"`
+
+	// RedirectURI 同意したあとに戻す先
+	RedirectURI string `json:"redirectUri"`
+
+	// Scope 許す範囲。いまは `read` だけ
+	Scope string `json:"scope"`
+}
+
+// OAuthDecision 返事を受けたあとの遷移先
+type OAuthDecision struct {
+	// RedirectTo クライアントの戻り先。画面はここへ遷移する
+	RedirectTo string `json:"redirectTo"`
+}
+
+// OAuthDecisionRequest 認可の要求への返事
+type OAuthDecisionRequest struct {
+	// Approve true なら同意、false なら断る
+	Approve bool `json:"approve"`
+
+	// Request `/oauth/authorize` に付いていたクエリ文字列そのもの
+	Request string `json:"request"`
+}
+
+// OAuthGrant MCP のクライアントに許した接続 1 件
+type OAuthGrant struct {
+	ClientID string `json:"clientId"`
+
+	// ClientName 許したときにクライアントが名乗っていた名前
+	ClientName string `json:"clientName"`
+
+	// CreatedAt 許した時刻
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
+
+	// LastUsedAt 最後にトークンを発行した時刻。アクセストークンを使うたびには
+	// 進めないので、1 時間（アクセストークンの寿命）の粒度
+	LastUsedAt time.Time `json:"lastUsedAt"`
+	Scope      string    `json:"scope"`
+}
+
 // Project リポジトリに紐づく Projects v2
 type Project struct {
 	// ID GraphQL の node ID。作成先として保存するのはこれ
@@ -1345,6 +1404,12 @@ type LookupInviteeParams struct {
 	Login string `form:"login" json:"login"`
 }
 
+// GetOAuthAuthorizationParams defines parameters for GetOAuthAuthorization.
+type GetOAuthAuthorizationParams struct {
+	// Request `/oauth/authorize` に付いていたクエリ文字列そのもの
+	Request string `form:"request" json:"request"`
+}
+
 // StartLoginJSONRequestBody defines body for StartLogin for application/json ContentType.
 type StartLoginJSONRequestBody = LoginRequest
 
@@ -1377,3 +1442,6 @@ type SetBoardTargetJSONRequestBody = BoardTarget
 
 // RefreshBoardTargetDisplayJSONRequestBody defines body for RefreshBoardTargetDisplay for application/json ContentType.
 type RefreshBoardTargetDisplayJSONRequestBody = BoardTargetDisplay
+
+// DecideOAuthAuthorizationJSONRequestBody defines body for DecideOAuthAuthorization for application/json ContentType.
+type DecideOAuthAuthorizationJSONRequestBody = OAuthDecisionRequest

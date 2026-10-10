@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { boardLocationUrl, NO_BOARD, parseBoardLocation } from "./location";
+import {
+  boardLocationUrl,
+  NO_BOARD,
+  parseBoardLocation,
+  parseConsentRequest,
+} from "./location";
 
 describe("parseBoardLocation", () => {
   it("board が無ければ開いていない", () => {
@@ -81,5 +86,28 @@ describe("往復", () => {
     const url = boardLocationUrl(location);
     const search = url.includes("?") ? url.slice(url.indexOf("?")) : "";
     expect(parseBoardLocation(search)).toEqual(location);
+  });
+});
+
+describe("parseConsentRequest", () => {
+  // 中を読まずにそのまま返す。検証するのはサーバー（ADR 0076）。
+  it("運ばれてきた要求をそのまま返す", () => {
+    const query = "client_id=c1&state=a%26b&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcb";
+    expect(
+      parseConsentRequest(`?${new URLSearchParams({ authorize: query }).toString()}`),
+    ).toBe(query);
+  });
+
+  it("無ければ null", () => {
+    expect(parseConsentRequest("")).toBeNull();
+    expect(parseConsentRequest("?board=b1")).toBeNull();
+    expect(parseConsentRequest("?authorize=")).toBeNull();
+  });
+
+  // ボードの URL と同居しても読める。ログインの戻り先として運ばれてくる。
+  it("ほかの param と並んでも読める", () => {
+    expect(parseConsentRequest("?board=b1&authorize=client_id%3Dc1")).toBe(
+      "client_id=c1",
+    );
   });
 });

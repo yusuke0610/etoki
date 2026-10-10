@@ -18,11 +18,13 @@ import { useNewBoardFlow } from "../boards/useNewBoardFlow";
 import { BoardPage } from "../board/BoardPage";
 import { createGenerations } from "../board/generation";
 import { RepositoryPicker } from "../board/target/RepositoryPicker";
+import { ConsentPage } from "../connections/ConsentPage";
 import { unavailableReason } from "./capability";
 import {
   boardLocationUrl,
   NO_BOARD,
   parseBoardLocation,
+  parseConsentRequest,
   type BoardLocation,
 } from "./location";
 import { useNotify } from "../notification/NotificationProvider";
@@ -147,6 +149,11 @@ export function App() {
   // から戻ってくる（ADR 0055）。ログインや作成先の選択の画面にも効かせるため、
   // ボードより上に置く。
   const [theme, setTheme] = useTheme();
+  // MCP のクライアントからの認可の要求（ADR 0076）。`/oauth/authorize` が
+  // `/?authorize=...` へ転送してくる。**読むのは起動時の 1 度だけ。** 同意の
+  // 画面はクライアントの戻り先へ遷移して終わるので、途中で変わることは無い。
+  // ログインを挟んでも、戻り先として URL ごと運ばれてくる（ADR 0059）。
+  const [consentRequest] = useState(() => parseConsentRequest(window.location.search));
 
   useEffect(() => {
     if (!signedIn) return;
@@ -447,7 +454,9 @@ export function App() {
    * 来た場所へ戻れない。
    */
   useEffect(() => {
-    if (!signedIn || openedFromUrl.current) return;
+    // 同意の画面ではボードを開かず、URL も書き換えない。書き換えると要求が
+    // URL から消え、読み込み直したときに何の画面だったのかが失われる。
+    if (!signedIn || openedFromUrl.current || consentRequest !== null) return;
     openedFromUrl.current = true;
 
     const initial = parseBoardLocation(window.location.search);
@@ -463,7 +472,7 @@ export function App() {
     // 自体なので、ここは外す（`useSession` の起動時の読み込みと同じ）。
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void open(initial.boardId, { mode: "replace", picking: initial.picking });
-  }, [open, showLocation, signedIn]);
+  }, [consentRequest, open, showLocation, signedIn]);
 
   /**
    * 戻る / 進むに追随する（ADR 0059）。
@@ -553,6 +562,22 @@ export function App() {
     );
   }
 
+  if (consentRequest !== null) {
+    return (
+      // ログイン画面と同じく、カード 1 枚を沈めた地に置く。
+      <div className="app app-signed-out etoki-ui">
+        <main className="main">
+          <ConsentPage
+            request={consentRequest}
+            // 要求を受けられなかったら一覧へ。同意の画面の URL を残すと、
+            // 読み込み直すたびに同じ失敗を繰り返す。
+            onLeave={() => window.location.assign("/")}
+          />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app etoki-ui">
       <main className="main">
@@ -585,6 +610,7 @@ export function App() {
             boards={boards}
             onOpen={(id) => void open(id)}
             creationUnavailable={unavailableReason(capabilities, "creation")}
+            connectionsUnavailable={unavailableReason(capabilities, "mcpConnections")}
             dialog={{
               open: creatingDialog,
               name,

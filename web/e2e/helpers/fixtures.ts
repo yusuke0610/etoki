@@ -6,6 +6,7 @@ import type {
   DiagramDraft,
   Granularity,
   Interpretation,
+  OAuthGrant,
   Project,
   RepositoryList,
   SessionStatus,
@@ -515,9 +516,18 @@ export function baseMock(): ApiMock {
     // 既定は認証を設定していない構成。ログインの導線を見る spec だけが
     // 書き換える。
     // 既定は全部そろった構成。未設定の見せ方を確かめる spec だけが落とす。
+    // **MCP の接続だけは既定で扱えない**（`connections` を持たないので口も
+    // 503）。認証を設定した構成でしか出ないもので、扱う spec が
+    // `withConnections` で両方を立てる。
     capabilities: {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: true, sharing: true },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     },
     session: { status: 200, body: { authRequired: false, authenticated: false } },
     login: { status: 200, body: { authorizeUrl: AUTHORIZE_URL } },
@@ -600,5 +610,84 @@ export function matchedInterpretationMock(): ApiMock {
     },
   };
 
+  return mock;
+}
+
+/** MCP のクライアントの戻り先（同意したあとに遷移する先）。 */
+export const CONSENT_REDIRECT_URI = "http://127.0.0.1:33418/callback";
+
+/**
+ * `/oauth/authorize` が運んでくる要求。**画面は中を読まない**ので、値は
+ * 何でもよいが、実物と同じ形にしておく。
+ */
+export const CONSENT_REQUEST = new URLSearchParams({
+  response_type: "code",
+  client_id: "client-1",
+  redirect_uri: CONSENT_REDIRECT_URI,
+  code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+  code_challenge_method: "S256",
+  scope: "read",
+  state: "st-1",
+}).toString();
+
+/** 同意の画面の URL。`/oauth/authorize` が転送してくる先と同じ形。 */
+export const CONSENT_PATH = `/?${new URLSearchParams({ authorize: CONSENT_REQUEST }).toString()}`;
+
+/** 自分の接続 2 件。動的登録と、URL で名乗ったクライアント。 */
+export function oauthGrants(): OAuthGrant[] {
+  return [
+    {
+      id: "grant-1",
+      clientId: "client-1",
+      clientName: "Claude Code",
+      scope: "read",
+      createdAt: "2026-10-01T09:00:00Z",
+      lastUsedAt: "2026-10-09T08:00:00Z",
+    },
+    {
+      id: "grant-2",
+      clientId: "https://client.example/oauth/metadata.json",
+      clientName: "Example Agent",
+      scope: "read",
+      createdAt: "2026-10-05T09:00:00Z",
+      lastUsedAt: "2026-10-05T10:00:00Z",
+    },
+  ];
+}
+
+/**
+ * ログインした構成で、MCP の接続を扱えるようにする（ADR 0076）。
+ *
+ * **capabilities と口を一緒に立てる。** 片方だけだと、実物では起きない
+ * 組み合わせになる（`ApiMock.capabilities` の約束）。
+ */
+export function withConnections(mock: ApiMock): ApiMock {
+  mock.session = { status: 200, body: signedIn() };
+  if ("interpretation" in mock.capabilities.body) {
+    mock.capabilities = {
+      status: 200,
+      body: { ...mock.capabilities.body, mcpConnections: true },
+    };
+  }
+  mock.connections = {
+    authorization: {
+      status: 200,
+      body: {
+        clientId: "client-1",
+        clientName: "Claude Code",
+        clientIdIsUrl: false,
+        redirectUri: CONSENT_REDIRECT_URI,
+        scope: "read",
+      },
+    },
+    authorizationQueries: [],
+    decision: {
+      status: 200,
+      body: { redirectTo: `${CONSENT_REDIRECT_URI}?code=c1&state=st-1` },
+    },
+    decisions: [],
+    grants: oauthGrants(),
+    revoked: [],
+  };
   return mock;
 }

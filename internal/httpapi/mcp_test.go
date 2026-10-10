@@ -224,8 +224,8 @@ func TestMCP_ListAnnotationRuns_MatchesAPI(t *testing.T) {
 }
 
 // 見つからないものは /api と同じ code で返し、**本文に理由を載せない**
-// （ADR 0016 / 0017）。認証ありの構成で開けるようになったとき（#185）、
-// 他人のボードの存在を確かめる口にしないため。
+// （ADR 0016 / 0017）。認証ありの構成でも開く（ADR 0076）ので、他人のボードの
+// 存在を確かめる口にしないため。
 func TestMCP_NotFound_IsToolErrorWithCode(t *testing.T) {
 	t.Parallel()
 
@@ -295,8 +295,8 @@ func TestMCP_MissingArguments_AreRejected(t *testing.T) {
 	}
 }
 
-// 認証ありの構成では開かない（ADR 0071、#185 で OAuth を足すまで）。利用者を
-// 決められないまま開くと、ログインせずに全ボードが読める。
+// 認証ありの構成で認可サーバー（ADR 0076）を組み立てていなければ開かない
+// （ADR 0071）。利用者を決められないまま開くと、ログインせずに全ボードが読める。
 func TestMCP_UnavailableWhenAuthIsConfigured(t *testing.T) {
 	t.Parallel()
 

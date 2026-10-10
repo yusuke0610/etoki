@@ -272,7 +272,13 @@ test.describe("mermaid を貼る", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
     await openPaste(page);

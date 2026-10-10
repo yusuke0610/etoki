@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -143,16 +142,11 @@ func (h *handlers) logout(c *gin.Context) {
 // 設定があればそれを使う。無ければリクエストの Host から組む。make dev では
 // ブラウザが :5173 にいて Vite が Host を書き換えずに転送するので、これで
 // 正しい値になる。
+//
+// 起点の組み立ては MCP の issuer と同じ（baseURL）。別々に組むと、同じ構成で
+// ログインの戻り先と issuer が別のホストを指しうる。
 func (h *handlers) redirectURI(c *gin.Context) string {
-	if h.publicURL != "" {
-		return strings.TrimRight(h.publicURL, "/") + callbackPath
-	}
-
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	return (&url.URL{Scheme: scheme, Host: c.Request.Host, Path: callbackPath}).String()
+	return h.baseURL(c) + callbackPath
 }
 
 // secureCookie は cookie に Secure を付けるかどうかを返す。

@@ -87,3 +87,95 @@ func TestParseClaimArgs(t *testing.T) {
 		})
 	}
 }
+
+// 取り消す前に、対象を見せて確かめる（ADR 0076）。既定は止める。
+func TestConfirmRevoke(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	rows := []grantRow{
+		{grant: port.OAuthGrant{
+			ID: "grant-1", ClientName: "Claude Code", ClientID: "client-1",
+			CreatedAt: at, LastUsedAt: at,
+		}, login: "alice"},
+		{grant: port.OAuthGrant{
+			ID: "grant-2", ClientID: "https://client.example/meta.json",
+			CreatedAt: at, LastUsedAt: at,
+		}},
+	}
+
+	for input, want := range map[string]bool{
+		"y\n": true, "yes\n": true, "Y\n": true, "\n": false, "n\n": false, "": false,
+	} {
+		var out bytes.Buffer
+		if got := confirmRevoke(strings.NewReader(input), &out, rows); got != want {
+			t.Errorf("confirmRevoke(%q) = %v, want %v", input, got, want)
+		}
+		for _, s := range []string{
+			"2 件", "grant-1", "@alice", "Claude Code", "client-1",
+			"grant-2", "https://client.example/meta.json", "2026-10-09",
+		} {
+			if !strings.Contains(out.String(), s) {
+				t.Errorf("確認に %q が出ていない:\n%s", s, out.String())
+			}
+		}
+	}
+}
+
+func TestParseRevokeArgs(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		args []string
+		want revokeTarget
+		err  bool
+	}{
+		"ID だけ":           {args: []string{"g1"}, want: revokeTarget{grantID: "g1"}},
+		"--yes と ID":      {args: []string{"--yes", "g1"}, want: revokeTarget{grantID: "g1", yes: true}},
+		"--login":         {args: []string{"--login", "bob"}, want: revokeTarget{login: "bob"}},
+		"--login と --yes": {args: []string{"--login", "bob", "--yes"}, want: revokeTarget{login: "bob", yes: true}},
+		"両方":              {args: []string{"g1", "--login", "bob"}, err: true},
+		"どちらも無い":          {args: []string{"--yes"}, err: true},
+		"ID が 2 つ":        {args: []string{"g1", "g2"}, err: true},
+		"--login の値が無い":   {args: []string{"--login"}, err: true},
+		"--login の値が空":    {args: []string{"--login", ""}, err: true},
+		"知らないフラグ":         {args: []string{"-f", "g1"}, err: true},
+		"何も無い":            {args: nil, err: true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseRevokeArgs(tc.args)
+			if (err != nil) != tc.err {
+				t.Fatalf("parseRevokeArgs(%v) err = %v, want err %v", tc.args, err, tc.err)
+			}
+			if got != tc.want {
+				t.Errorf("parseRevokeArgs(%v) = %+v, want %+v", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseGrantsArgs(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		args  []string
+		login string
+		err   bool
+	}{
+		"何も無い":          {args: nil},
+		"--login":       {args: []string{"--login", "bob"}, login: "bob"},
+		"--login の値が無い": {args: []string{"--login"}, err: true},
+		// 空の login は「全員」と同じに読まれる。1 人ぶんのつもりで全員を出さない。
+		"--login の値が空":  {args: []string{"--login", ""}, err: true},
+		"位置引数":          {args: []string{"bob"}, err: true},
+		"--login が 2 つ": {args: []string{"--login", "a", "--login", "b"}, err: true},
+	} {
+		login, err := parseGrantsArgs(tc.args)
+		if (err != nil) != tc.err || login != tc.login {
+			t.Errorf("%s: parseGrantsArgs(%v) = (%q, %v), want (%q, err %v)",
+				name, tc.args, login, err, tc.login, tc.err)
+		}
+	}
+}
