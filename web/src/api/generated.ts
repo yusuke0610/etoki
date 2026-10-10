@@ -6,3026 +6,2994 @@
  * しても次の生成で上書きされ、CI の codegen-drift ジョブが落ちる（ADR 0011）。
  */
 export interface paths {
-  "/healthz": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * プロセスが生きていることを返す
-     * @description DB や外部サービスの疎通確認は含めない。etoki は自動で外部に触らないという
-     *     方針のため、ヘルスチェックが副作用を持たないようにしている。
-     */
-    get: operations["getHealth"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/capabilities": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * いま使える機能を返す
-     * @description LLM や GitHub を設定していなくても etoki は起動する（ADR 0008）。
-     *     設定していない機能のエンドポイントは 503 を返すが、**それは押した後に
-     *     しか分からない。** 押す前に「いまできないこと」を見せるための口。
-     *
-     *     返すのはプロセスの設定であって、利用者ごとの権限ではない。ボード単位の
-     *     可否は `GET /api/boards/{id}/access`（ADR 0017）。**混ぜないこと。**
-     *     片方が「できる」でもう片方が「できない」は普通に起きる。
-     */
-    get: operations["getCapabilities"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/auth/session": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * ログイン状態を返す
-     * @description **常に 200 を返す。** 未ログインを 401 で伝えると、認証を設定していない
-     *     構成の起動時にも 401 が出て、本当の失効と見分けがつかなくなる。
-     *
-     *     `authRequired` が false なら認証を設定していない。画面はログインを
-     *     求めない（ADR 0015）。
-     */
-    get: operations["getSession"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/auth/login": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * 認可画面の URL を発行する
-     * @description **GET ではなく POST。** state の発行は書き込みであり、GET にすると
-     *     外部ページの `<img>` から叩けてしまう。POST なら Origin 検証が効く
-     *     （ADR 0013 / 0015）。
-     *
-     *     遷移そのものはフロントが行う。サーバーからリダイレクトしないのは、
-     *     fetch でのリダイレクト追跡が cross-origin で扱いにくいため。
-     */
-    post: operations["startLogin"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/auth/callback": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * 認可の結果を受け取ってセッションを張る
-     * @description 認証基盤からのトップレベル遷移。**etoki で唯一、副作用を持つ GET。**
-     *     GET 以外にはできないので、`state` の照合で守る。サーバー発行・単回
-     *     使用・期限つきなので、攻撃者は有効な値を用意できない（ADR 0015）。
-     *
-     *     画面に戻すためのリダイレクトを返す。ブラウザ以外から叩く用途は無い。
-     */
-    get: operations["completeLogin"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/auth/logout": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * セッションを破棄する
-     * @description GitHub 側のトークンは取り消さない。同じ利用者が別の端末からも使って
-     *     いる可能性があり、片方のログアウトで全部を切るのは意図に合わない。
-     */
-    post: operations["logout"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/oauth/authorization": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * 同意の画面に出す、MCP のクライアントの認可の要求を返す
-     * @description `/oauth/authorize` は何も書かずに画面（`/?authorize=...`）へ転送する。
-     *     画面はそのクエリを `request` にそのまま載せてここを叩く（ADR 0076）。
-     *
-     *     **何も書かない。** 要求の誤りはクライアントに戻さず 400 で返し、画面に
-     *     出す。戻り先を確かめる前に戻すとオープンリダイレクトになる。
-     */
-    get: operations["getOAuthAuthorization"];
-    put?: never;
-    /**
-     * 認可の要求に同意する、または断る
-     * @description **POST なので Origin の検証が効く**（ADR 0013）。要求はここで検証し
-     *     直す。画面に出したときの検証を信じると、そのあいだに要求を差し替え
-     *     られる。
-     *
-     *     返した `redirectTo` へ画面が遷移する。同意したならコード付き、断ったなら
-     *     `error=access_denied` 付きでクライアントの戻り先を指す。
-     */
-    post: operations["decideOAuthAuthorization"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/oauth/grants": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * 自分が MCP のクライアントに許した接続を返す
-     * @description 新しい順。**他人の許可は返さない。** 取り消しは利用者ごとに行い、
-     *     サーバーを動かしている人がまとめて切るのは CLI（`etoki revoke`）。
-     */
-    get: operations["listOAuthGrants"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/oauth/grants/{grantId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        grantId: string;
-      };
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /**
-     * 接続を取り消す
-     * @description その許可のトークンは直ちに使えなくなる。他人の許可は 404（存在を
-     *     教えない）。
-     */
-    delete: operations["revokeOAuthGrant"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * ボードの一覧を返す
-     * @description シーンは大きいので一覧には含めない。
-     */
-    get: operations["listBoards"];
-    put?: never;
-    /** ボードを作る */
-    post: operations["createBoard"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    /**
-     * ボードをシーンと貼った画像ごと返す
-     * @description **貼った画像を返すのはこの口だけ**（ADR 0074）。開いたあとのキャンバスは
-     *     すでに画像を持っているので、改名や作成先の設定の応答
-     *     （`BoardDetail`）には載せない。
-     *
-     *     シーンと画像は同じ時点のものを返す。別々に取ると、間に入った保存で
-     *     シーンが指す画像が欠ける。
-     */
-    get: operations["getBoard"];
-    put?: never;
-    post?: never;
-    /**
-     * ボードを削除する
-     * @description **owner だけ**（ADR 0017）。ボードごと畳む操作なので、シーンを書き換え
-     *     られる editor ではなく、招待も作成先の変更もできる相手に限る。
-     *
-     *     **GitHub 側の draft issue は消さない**（消せない。逆方向の書き込みは
-     *     スコープ外）。消えるのは etoki 側の記録のほうで、`sync_runs` と
-     *     `sync_items` と `board_members` が一緒に消える。その結果、**GitHub に
-     *     残った draft issue がどのボードのどの注釈から作られたのかは辿れなく
-     *     なる**（ADR 0007 / 0042）。
-     *
-     *     何が残るのかは `GET /api/boards/{id}/deletion` で先に引ける。画面は
-     *     押される前にそれを見せて確認させる（中核思想 3）。
-     *
-     *     **run があっても拒まない。** 拒むと、いちばん畳みたいボード（作成先を
-     *     間違えたまま 1 回作ってしまったボード）が永久に残る。判断の材料を
-     *     見せたうえで、決めるのは開発者にする。
-     */
-    delete: operations["deleteBoard"];
-    options?: never;
-    head?: never;
-    /**
-     * ボードの名前を変える
-     * @description 名前だけを変える。シーンも作成先も触らない。
-     *
-     *     **`updatedAt` は進めない。** あれはシーンの版であり、保存の照合基準
-     *     （ADR 0020）として使われている。名前を直しただけで進めると、そのボードを
-     *     開いている別のメンバーの次の保存が「他の人が保存しました」で断られる。
-     *     誰もシーンを触っていないのに衝突として読まれることになる。
-     *
-     *     変えられるのは editor 以上。作成先の変更（owner だけ）と揃えないのは、
-     *     名前は取り消せない作成の行き先を決めるものではないため。
-     */
-    patch: operations["renameBoard"];
-    trace?: never;
-  };
-  "/api/boards/{id}/deletion": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    /**
-     * 削除で何が失われるかを返す
-     * @description 削除は取り消せず、GitHub 側に作った draft issue も消せない。押す前に
-     *     何が残るのかを見せるための口（ADR 0042、中核思想 3）。
-     *
-     *     **押されたときだけ引く。** ボードを開くたびに数えると、削除するまで
-     *     要らない畳み込みを毎回引くことになる（ADR 0037 の取り直しと同じ形）。
-     *
-     *     **owner だけ。** 削除そのものと揃える。押せない相手に、押したときに
-     *     何が起きるかだけを見せる理由が無い。
-     */
-    get: operations["getBoardDeletion"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/scene": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * シーンを保存する
-     * @description 3 状態の判定は保存済みシーンを基準にする。保存するまで編集中の内容は
-     *     注釈の状態に反映されない。
-     *
-     *     保存はシーン全体を書く。ボードは共有できるので（ADR 0017）、後勝ちを
-     *     許すと失われるのは「相手が触った要素」ではなく相手の作業すべてになる。
-     *     `baseUpdatedAt` が現在の版と違えば 409 を返し、何も書かない（ADR 0020）。
-     *
-     *     **貼った画像はシーンとは別に送る**（ADR 0074）。送るのはボードがまだ
-     *     持っていない画像だけで、シーンから参照されなくなった画像は保存で消える。
-     *     シーンと画像は 1 つのトランザクションで書くので、409 のときは画像も
-     *     書かない。シーンに画像の実体（`files`）を入れて送ると 400。
-     *
-     *     シーンと、保存したあとに残る画像の合計にはそれぞれバイト数の上限がある。
-     *     超えたら縮小も切り捨てもせず 413 を返す（ADR 0018 と同じ扱い）。
-     */
-    put: operations["saveScene"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/target": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * draft issue の作成先をボードに設定する
-     * @description 利用者はリポジトリを選ぶが、保存するのはそのリポジトリに紐づく
-     *     Projects v2。draft issue はリポジトリではなく Project に属するため
-     *     （ADR 0014）。
-     *
-     *     そのボードで draft issue を 1 件でも作った後は 409 を返す。
-     */
-    put: operations["setBoardTarget"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/target/display": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * 作成先の表示用スナップショットだけを取り直す
-     * @description `projectNumber` / `projectTitle` / `projectUrl` は作成先を選んだ時点の
-     *     スナップショットで、判定には使わない（ADR 0019 / 0025）。GitHub 側で
-     *     Project を改名すると古いままになるが、**作成先そのものは固定済みで
-     *     変えられない**（ADR 0014）ため、選び直しでは直せなかった。この口は
-     *     表示用の 3 つだけを更新する（ADR 0037）。
-     *
-     *     **作成先そのもの（リポジトリと projectId）は変えられない。**
-     *     `projectId` は「どの作成先の表示名か」を確かめるために伴う。保存されて
-     *     いるものと違えば 409（`target_mismatch`）を返す。作成先を変えるのは
-     *     `PUT /api/boards/{id}/target` のほうで、固定後は通らない。
-     *
-     *     **etoki からは自動で取りにいかない。** 画面が押されたときに GitHub の
-     *     Project 一覧を引き、その値をここへ送る（中核思想 3）。
-     */
-    put: operations["refreshBoardTargetDisplay"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/access": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    /**
-     * そのボードで何ができるかを返す
-     * @description etoki 側のロールと、GitHub 側の書き込み可否を**別々に**返す（ADR 0017）。
-     *     「開けるが書けない」が普通に起きるので、1 つに畳むと画面に出せない。
-     *
-     *     `projectAccess` は**状態であって判定ではない。** 実際に作れるかは作成時に
-     *     GitHub が返したものが正しい。これを見て作成を止めるのではなく、
-     *     できない理由を先に見せるために使う。
-     *
-     *     ボード取得とは別の呼び出しにしてある。GitHub が未設定・不通でもボードは
-     *     開ける必要がある。
-     */
-    get: operations["getBoardAccess"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/members": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    /**
-     * ボードのメンバーを返す
-     * @description メンバーなら誰でも見られる。誰と共有しているかを owner だけが知って
-     *     いる状態にすると、招待された側は自分が何に呼ばれたのか分からない。
-     */
-    get: operations["listBoardMembers"];
-    put?: never;
-    /**
-     * メンバーを招待する
-     * @description 招待できるのは owner だけ。**招待される側にリポジトリのアクセス権は
-     *     要らない**（ADR 0017）。ブレストに呼ぶ相手と、GitHub に書ける相手は
-     *     同じではない。
-     *
-     *     指す相手は login だが、一度 etoki にログインしている必要がある。
-     *     未ログインの login 宛に招待を積むと、改名で空いた login を取った別人に
-     *     権限が渡る。その場合は 400 を返す。
-     *
-     *     **`userId` には、招待の前に `lookupInvitee` で見せた相手を渡す**
-     *     （ADR 0053）。いまその login を持つ相手と違えば、招待せずに
-     *     `invitee_changed` の 409 を返す。確認してから押すまでのあいだに、
-     *     改名で空いた login を別人が取ったときに起きる。
-     */
-    post: operations["inviteBoardMember"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/invitee": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    /**
-     * 招待する前に、login が誰に当たるのかを返す
-     * @description **etoki が知っているのは「最後にその login でログインした人」まで**
-     *     （ADR 0053）。いまの持ち主は GitHub にしか分からないので、表示名と
-     *     最終ログインを見せて、招待する相手かどうかを owner に決めさせる。
-     *
-     *     引けるのは owner だけ。未ログインの login は招待と同じく 400 を返す。
-     *     招待の 400 からすでに分かることなので、新しく漏れる情報は無い。
-     */
-    get: operations["lookupInvitee"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/members/{userId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
+    "/healthz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
         /**
-         * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
-         *     指し先としては使えない（ADR 0015）。
+         * プロセスが生きていることを返す
+         * @description DB や外部サービスの疎通確認は含めない。etoki は自動で外部に触らないという
+         *     方針のため、ヘルスチェックが副作用を持たないようにしている。
          */
-        userId: components["parameters"]["UserId"];
-      };
-      cookie?: never;
+        get: operations["getHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    /**
-     * メンバーのロールを変える
-     * @description owner だけ。最後の owner は降格できない。誰も招待できず作成先も
-     *     変えられないボードが残るため。
-     */
-    put: operations["setBoardMemberRole"];
-    post?: never;
-    /**
-     * メンバーを外す
-     * @description owner だけ。最後の owner は外せない。
-     */
-    delete: operations["removeBoardMember"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/github/repositories": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * いま使える機能を返す
+         * @description LLM や GitHub を設定していなくても etoki は起動する（ADR 0008）。
+         *     設定していない機能のエンドポイントは 503 を返すが、**それは押した後に
+         *     しか分からない。** 押す前に「いまできないこと」を見せるための口。
+         *
+         *     返すのはプロセスの設定であって、利用者ごとの権限ではない。ボード単位の
+         *     可否は `GET /api/boards/{id}/access`（ADR 0017）。**混ぜないこと。**
+         *     片方が「できる」でもう片方が「できない」は普通に起きる。
+         */
+        get: operations["getCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * 作成先に選べるリポジトリの一覧を返す
-     * @description アーカイブ済みは含めない。トークンに repo の read が無いと 0 件になるが、
-     *     権限不足と「本当に 1 つも無い」は区別できない。
-     */
-    get: operations["listRepositories"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/github/repositories/{owner}/{repo}/projects": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description リポジトリ所有者の login */
-        owner: components["parameters"]["RepositoryOwner"];
-        /** @description リポジトリ名 */
-        repo: components["parameters"]["RepositoryName"];
-      };
-      cookie?: never;
+    "/api/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ログイン状態を返す
+         * @description **常に 200 を返す。** 未ログインを 401 で伝えると、認証を設定していない
+         *     構成の起動時にも 401 が出て、本当の失効と見分けがつかなくなる。
+         *
+         *     `authRequired` が false なら認証を設定していない。画面はログインを
+         *     求めない（ADR 0015）。
+         */
+        get: operations["getSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * リポジトリに紐づく Projects v2 の一覧を返す
-     * @description 閉じた Project は含めない。
-     */
-    get: operations["listRepositoryProjects"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/annotations": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 認可画面の URL を発行する
+         * @description **GET ではなく POST。** state の発行は書き込みであり、GET にすると
+         *     外部ページの `<img>` から叩けてしまう。POST なら Origin 検証が効く
+         *     （ADR 0013 / 0015）。
+         *
+         *     遷移そのものはフロントが行う。サーバーからリダイレクトしないのは、
+         *     fetch でのリダイレクト追跡が cross-origin で扱いにくいため。
+         */
+        post: operations["startLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * 注釈の 3 状態と、シーンから消えた注釈を返す
-     * @description 保存済みシーンから注釈を取り出し、最新の run の content_hash と
-     *     突き合わせて uncreated / created / changed を決める。
-     *
-     *     あわせて、シーンから消えたのに GitHub 側にはものが残っている注釈を
-     *     detached に返す。**2 つを 1 つのリストに混ぜない。** 消えた注釈には
-     *     比べる相手のテキストがシーンに無く、3 状態も名前も粒度も決まらない。
-     */
-    get: operations["listAnnotations"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/annotations/{annotationId}/runs": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-        /** @description 注釈にした frame の要素 ID */
-        annotationId: components["parameters"]["AnnotationId"];
-      };
-      cookie?: never;
+    "/api/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 認可の結果を受け取ってセッションを張る
+         * @description 認証基盤からのトップレベル遷移。**etoki で唯一、副作用を持つ GET。**
+         *     GET 以外にはできないので、`state` の照合で守る。サーバー発行・単回
+         *     使用・期限つきなので、攻撃者は有効な値を用意できない（ADR 0015）。
+         *
+         *     画面に戻すためのリダイレクトを返す。ブラウザ以外から叩く用途は無い。
+         */
+        get: operations["completeLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * その注釈の実行履歴を返す
-     * @description 再実行しても過去の run は消さない（ADR 0007）。**残す理由は追跡なので、
-     *     読む口が無いと残している意味が無い。** GitHub 側に何世代ぶんの draft
-     *     issue が在るのかは、ここでしか辿れない。
-     *
-     *     並びは新しい順。**新しさは `createdAt` ではなく `id` で決める。** 時刻は
-     *     呼び出し側が与えるので、同じ時刻の run がありうる。
-     *
-     *     返すのは直近のぶんだけで、件数の上限はサーバーが決める。範囲指定は
-     *     持たない（数え上げではなく「直前に何をしたか」を辿るための口なので、
-     *     遡り続ける導線を作る理由が無い）。
-     *
-     *     **`AnnotationStatus.items` とは別物。** あちらは run 履歴を itemId で
-     *     畳んだ「いま GitHub に在るもの」で、こちらは畳む前の 1 回ずつの記録
-     *     （ADR 0026）。
-     */
-    get: operations["listAnnotationRuns"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/diagram-draft": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * セッションを破棄する
+         * @description GitHub 側のトークンは取り消さない。同じ利用者が別の端末からも使って
+         *     いる可能性があり、片方のログアウトで全部を切るのは意図に合わない。
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * プロンプトから図のドラフトを生成する
-     * @description **サーバーの状態を一切変えない**（ADR 0041）。DB にも GitHub にも触れず、
-     *     会話も保存しない。返した mermaid をキャンバスに置くかどうかは、見てから
-     *     開発者が決める（中核思想 3）。
-     *
-     *     **保存済みシーンを読まないので、未保存でも使える。** 解釈が保存を
-     *     要求する（ADR 0018）のとは非対称だが、手抜きではなく副作用の有無から
-     *     出る違い。
-     *
-     *     注釈でも解釈でもないので、パスはボードの直下に置く。囲みとは無関係で、
-     *     キャンバスに何も無くても呼べる。
-     */
-    post: operations["generateDiagramDraft"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/annotations/{annotationId}/interpret": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-        /** @description 注釈にした frame の要素 ID */
-        annotationId: components["parameters"]["AnnotationId"];
-      };
-      cookie?: never;
+    "/api/oauth/authorization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 同意の画面に出す、MCP のクライアントの認可の要求を返す
+         * @description `/oauth/authorize` は何も書かずに画面（`/?authorize=...`）へ転送する。
+         *     画面はそのクエリを `request` にそのまま載せてここを叩く（ADR 0076）。
+         *
+         *     **何も書かない。** 要求の誤りはクライアントに戻さず 400 で返し、画面に
+         *     出す。戻り先を確かめる前に戻すとオープンリダイレクトになる。
+         */
+        get: operations["getOAuthAuthorization"];
+        put?: never;
+        /**
+         * 認可の要求に同意する、または断る
+         * @description **POST なので Origin の検証が効く**（ADR 0013）。要求はここで検証し
+         *     直す。画面に出したときの検証を信じると、そのあいだに要求を差し替え
+         *     られる。
+         *
+         *     返した `redirectTo` へ画面が遷移する。同意したならコード付き、断ったなら
+         *     `error=access_denied` 付きでクライアントの戻り先を指す。
+         */
+        post: operations["decideOAuthAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * 注釈を LLM に解釈させる
-     * @description GitHub には何も作らず、sync_runs にも書かない。何を作るかは結果を見た
-     *     開発者が別途トリガーする（中核思想 3）。
-     *
-     *     テキストは保存済みシーンから取る。`image` はフロントが書き出した注釈
-     *     範囲の画像で、矢印やグルーピングのようにテキストに現れない構造を渡す
-     *     ためのもの（ADR 0018）。ボディごと省略できる。
-     */
-    post: operations["interpretAnnotation"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/boards/{id}/annotations/{annotationId}/items": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-        /** @description 注釈にした frame の要素 ID */
-        annotationId: components["parameters"]["AnnotationId"];
-      };
-      cookie?: never;
+    "/api/oauth/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分が MCP のクライアントに許した接続を返す
+         * @description 新しい順。**他人の許可は返さない。** 取り消しは利用者ごとに行い、
+         *     サーバーを動かしている人がまとめて切るのは CLI（`etoki revoke`）。
+         */
+        get: operations["listOAuthGrants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * 解釈結果から draft issue を作る
-     * @description リクエストボディは開発者が確認した解釈結果そのもの。サーバー側で解釈し
-     *     直さない。ただし内容は信用せず、ユースケース層で検証し直す。
-     *
-     *     `contentHash` は解釈時点の保存済みシーンのもの。現在のシーンと食い違うと
-     *     409 を返す（ADR 0010）。
-     */
-    post: operations["createItems"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
+    "/api/oauth/grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 接続を取り消す
+         * @description その許可のトークンは直ちに使えなくなる。他人の許可は 404（存在を
+         *     教えない）。
+         */
+        delete: operations["revokeOAuthGrant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ボードの一覧を返す
+         * @description シーンは大きいので一覧には含めない。
+         */
+        get: operations["listBoards"];
+        put?: never;
+        /** ボードを作る */
+        post: operations["createBoard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * ボードをシーンと貼った画像ごと返す
+         * @description **貼った画像を返すのはこの口だけ**（ADR 0074）。開いたあとのキャンバスは
+         *     すでに画像を持っているので、改名や作成先の設定の応答
+         *     （`BoardDetail`）には載せない。
+         *
+         *     シーンと画像は同じ時点のものを返す。別々に取ると、間に入った保存で
+         *     シーンが指す画像が欠ける。
+         */
+        get: operations["getBoard"];
+        put?: never;
+        post?: never;
+        /**
+         * ボードを削除する
+         * @description **owner だけ**（ADR 0017）。ボードごと畳む操作なので、シーンを書き換え
+         *     られる editor ではなく、招待も作成先の変更もできる相手に限る。
+         *
+         *     **GitHub 側の draft issue は消さない**（消せない。逆方向の書き込みは
+         *     スコープ外）。消えるのは etoki 側の記録のほうで、`sync_runs` と
+         *     `sync_items` と `board_members` が一緒に消える。その結果、**GitHub に
+         *     残った draft issue がどのボードのどの注釈から作られたのかは辿れなく
+         *     なる**（ADR 0007 / 0042）。
+         *
+         *     何が残るのかは `GET /api/boards/{id}/deletion` で先に引ける。画面は
+         *     押される前にそれを見せて確認させる（中核思想 3）。
+         *
+         *     **run があっても拒まない。** 拒むと、いちばん畳みたいボード（作成先を
+         *     間違えたまま 1 回作ってしまったボード）が永久に残る。判断の材料を
+         *     見せたうえで、決めるのは開発者にする。
+         */
+        delete: operations["deleteBoard"];
+        options?: never;
+        head?: never;
+        /**
+         * ボードの名前を変える
+         * @description 名前だけを変える。シーンも作成先も触らない。
+         *
+         *     **`updatedAt` は進めない。** あれはシーンの版であり、保存の照合基準
+         *     （ADR 0020）として使われている。名前を直しただけで進めると、そのボードを
+         *     開いている別のメンバーの次の保存が「他の人が保存しました」で断られる。
+         *     誰もシーンを触っていないのに衝突として読まれることになる。
+         *
+         *     変えられるのは editor 以上。作成先の変更（owner だけ）と揃えないのは、
+         *     名前は取り消せない作成の行き先を決めるものではないため。
+         */
+        patch: operations["renameBoard"];
+        trace?: never;
+    };
+    "/api/boards/{id}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 削除で何が失われるかを返す
+         * @description 削除は取り消せず、GitHub 側に作った draft issue も消せない。押す前に
+         *     何が残るのかを見せるための口（ADR 0042、中核思想 3）。
+         *
+         *     **押されたときだけ引く。** ボードを開くたびに数えると、削除するまで
+         *     要らない畳み込みを毎回引くことになる（ADR 0037 の取り直しと同じ形）。
+         *
+         *     **owner だけ。** 削除そのものと揃える。押せない相手に、押したときに
+         *     何が起きるかだけを見せる理由が無い。
+         */
+        get: operations["getBoardDeletion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/scene": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * シーンを保存する
+         * @description 3 状態の判定は保存済みシーンを基準にする。保存するまで編集中の内容は
+         *     注釈の状態に反映されない。
+         *
+         *     保存はシーン全体を書く。ボードは共有できるので（ADR 0017）、後勝ちを
+         *     許すと失われるのは「相手が触った要素」ではなく相手の作業すべてになる。
+         *     `baseUpdatedAt` が現在の版と違えば 409 を返し、何も書かない（ADR 0020）。
+         *
+         *     **貼った画像はシーンとは別に送る**（ADR 0074）。送るのはボードがまだ
+         *     持っていない画像だけで、シーンから参照されなくなった画像は保存で消える。
+         *     シーンと画像は 1 つのトランザクションで書くので、409 のときは画像も
+         *     書かない。シーンに画像の実体（`files`）を入れて送ると 400。
+         *
+         *     シーンと、保存したあとに残る画像の合計にはそれぞれバイト数の上限がある。
+         *     超えたら縮小も切り捨てもせず 413 を返す（ADR 0018 と同じ扱い）。
+         */
+        put: operations["saveScene"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * draft issue の作成先をボードに設定する
+         * @description 利用者はリポジトリを選ぶが、保存するのはそのリポジトリに紐づく
+         *     Projects v2。draft issue はリポジトリではなく Project に属するため
+         *     （ADR 0014）。
+         *
+         *     そのボードで draft issue を 1 件でも作った後は 409 を返す。
+         */
+        put: operations["setBoardTarget"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/target/display": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 作成先の表示用スナップショットだけを取り直す
+         * @description `projectNumber` / `projectTitle` / `projectUrl` は作成先を選んだ時点の
+         *     スナップショットで、判定には使わない（ADR 0019 / 0025）。GitHub 側で
+         *     Project を改名すると古いままになるが、**作成先そのものは固定済みで
+         *     変えられない**（ADR 0014）ため、選び直しでは直せなかった。この口は
+         *     表示用の 3 つだけを更新する（ADR 0037）。
+         *
+         *     **作成先そのもの（リポジトリと projectId）は変えられない。**
+         *     `projectId` は「どの作成先の表示名か」を確かめるために伴う。保存されて
+         *     いるものと違えば 409（`target_mismatch`）を返す。作成先を変えるのは
+         *     `PUT /api/boards/{id}/target` のほうで、固定後は通らない。
+         *
+         *     **etoki からは自動で取りにいかない。** 画面が押されたときに GitHub の
+         *     Project 一覧を引き、その値をここへ送る（中核思想 3）。
+         */
+        put: operations["refreshBoardTargetDisplay"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * そのボードで何ができるかを返す
+         * @description etoki 側のロールと、GitHub 側の書き込み可否を**別々に**返す（ADR 0017）。
+         *     「開けるが書けない」が普通に起きるので、1 つに畳むと画面に出せない。
+         *
+         *     `projectAccess` は**状態であって判定ではない。** 実際に作れるかは作成時に
+         *     GitHub が返したものが正しい。これを見て作成を止めるのではなく、
+         *     できない理由を先に見せるために使う。
+         *
+         *     ボード取得とは別の呼び出しにしてある。GitHub が未設定・不通でもボードは
+         *     開ける必要がある。
+         */
+        get: operations["getBoardAccess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * ボードのメンバーを返す
+         * @description メンバーなら誰でも見られる。誰と共有しているかを owner だけが知って
+         *     いる状態にすると、招待された側は自分が何に呼ばれたのか分からない。
+         */
+        get: operations["listBoardMembers"];
+        put?: never;
+        /**
+         * メンバーを招待する
+         * @description 招待できるのは owner だけ。**招待される側にリポジトリのアクセス権は
+         *     要らない**（ADR 0017）。ブレストに呼ぶ相手と、GitHub に書ける相手は
+         *     同じではない。
+         *
+         *     指す相手は login だが、一度 etoki にログインしている必要がある。
+         *     未ログインの login 宛に招待を積むと、改名で空いた login を取った別人に
+         *     権限が渡る。その場合は 400 を返す。
+         *
+         *     **`userId` には、招待の前に `lookupInvitee` で見せた相手を渡す**
+         *     （ADR 0053）。いまその login を持つ相手と違えば、招待せずに
+         *     `invitee_changed` の 409 を返す。確認してから押すまでのあいだに、
+         *     改名で空いた login を別人が取ったときに起きる。
+         */
+        post: operations["inviteBoardMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/invitee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 招待する前に、login が誰に当たるのかを返す
+         * @description **etoki が知っているのは「最後にその login でログインした人」まで**
+         *     （ADR 0053）。いまの持ち主は GitHub にしか分からないので、表示名と
+         *     最終ログインを見せて、招待する相手かどうかを owner に決めさせる。
+         *
+         *     引けるのは owner だけ。未ログインの login は招待と同じく 400 を返す。
+         *     招待の 400 からすでに分かることなので、新しく漏れる情報は無い。
+         */
+        get: operations["lookupInvitee"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /**
+                 * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+                 *     指し先としては使えない（ADR 0015）。
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * メンバーのロールを変える
+         * @description owner だけ。最後の owner は降格できない。誰も招待できず作成先も
+         *     変えられないボードが残るため。
+         */
+        put: operations["setBoardMemberRole"];
+        post?: never;
+        /**
+         * メンバーを外す
+         * @description owner だけ。最後の owner は外せない。
+         */
+        delete: operations["removeBoardMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 作成先に選べるリポジトリの一覧を返す
+         * @description アーカイブ済みは含めない。トークンに repo の read が無いと 0 件になるが、
+         *     権限不足と「本当に 1 つも無い」は区別できない。
+         */
+        get: operations["listRepositories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/repositories/{owner}/{repo}/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description リポジトリ所有者の login */
+                owner: components["parameters"]["RepositoryOwner"];
+                /** @description リポジトリ名 */
+                repo: components["parameters"]["RepositoryName"];
+            };
+            cookie?: never;
+        };
+        /**
+         * リポジトリに紐づく Projects v2 の一覧を返す
+         * @description 閉じた Project は含めない。
+         */
+        get: operations["listRepositoryProjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 注釈の 3 状態と、シーンから消えた注釈を返す
+         * @description 保存済みシーンから注釈を取り出し、最新の run の content_hash と
+         *     突き合わせて uncreated / created / changed を決める。
+         *
+         *     あわせて、シーンから消えたのに GitHub 側にはものが残っている注釈を
+         *     detached に返す。**2 つを 1 つのリストに混ぜない。** 消えた注釈には
+         *     比べる相手のテキストがシーンに無く、3 状態も名前も粒度も決まらない。
+         */
+        get: operations["listAnnotations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/annotations/{annotationId}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 注釈にした frame の要素 ID */
+                annotationId: components["parameters"]["AnnotationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * その注釈の実行履歴を返す
+         * @description 再実行しても過去の run は消さない（ADR 0007）。**残す理由は追跡なので、
+         *     読む口が無いと残している意味が無い。** GitHub 側に何世代ぶんの draft
+         *     issue が在るのかは、ここでしか辿れない。
+         *
+         *     並びは新しい順。**新しさは `createdAt` ではなく `id` で決める。** 時刻は
+         *     呼び出し側が与えるので、同じ時刻の run がありうる。
+         *
+         *     返すのは直近のぶんだけで、件数の上限はサーバーが決める。範囲指定は
+         *     持たない（数え上げではなく「直前に何をしたか」を辿るための口なので、
+         *     遡り続ける導線を作る理由が無い）。
+         *
+         *     **`AnnotationStatus.items` とは別物。** あちらは run 履歴を itemId で
+         *     畳んだ「いま GitHub に在るもの」で、こちらは畳む前の 1 回ずつの記録
+         *     （ADR 0026）。
+         */
+        get: operations["listAnnotationRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/diagram-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * プロンプトから図のドラフトを生成する
+         * @description **サーバーの状態を一切変えない**（ADR 0041）。DB にも GitHub にも触れず、
+         *     会話も保存しない。返した mermaid をキャンバスに置くかどうかは、見てから
+         *     開発者が決める（中核思想 3）。
+         *
+         *     **保存済みシーンを読まないので、未保存でも使える。** 解釈が保存を
+         *     要求する（ADR 0018）のとは非対称だが、手抜きではなく副作用の有無から
+         *     出る違い。
+         *
+         *     注釈でも解釈でもないので、パスはボードの直下に置く。囲みとは無関係で、
+         *     キャンバスに何も無くても呼べる。
+         */
+        post: operations["generateDiagramDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/annotations/{annotationId}/interpret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 注釈にした frame の要素 ID */
+                annotationId: components["parameters"]["AnnotationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 注釈を LLM に解釈させる
+         * @description GitHub には何も作らず、sync_runs にも書かない。何を作るかは結果を見た
+         *     開発者が別途トリガーする（中核思想 3）。
+         *
+         *     テキストは保存済みシーンから取る。`image` はフロントが書き出した注釈
+         *     範囲の画像で、矢印やグルーピングのようにテキストに現れない構造を渡す
+         *     ためのもの（ADR 0018）。ボディごと省略できる。
+         */
+        post: operations["interpretAnnotation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/annotations/{annotationId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 注釈にした frame の要素 ID */
+                annotationId: components["parameters"]["AnnotationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 解釈結果から draft issue を作る
+         * @description リクエストボディは開発者が確認した解釈結果そのもの。サーバー側で解釈し
+         *     直さない。ただし内容は信用せず、ユースケース層で検証し直す。
+         *
+         *     `contentHash` は解釈時点の保存済みシーンのもの。現在のシーンと食い違うと
+         *     409 を返す（ADR 0010）。
+         */
+        post: operations["createItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: {
-    /** @description ログイン中の利用者 */
-    AuthUser: {
-      /** @description 認証基盤の識別子。"github" など */
-      provider: string;
-      login: string;
-      displayName: string;
+    schemas: {
+        /** @description ログイン中の利用者 */
+        AuthUser: {
+            /** @description 認証基盤の識別子。"github" など */
+            provider: string;
+            login: string;
+            displayName: string;
+        };
+        /**
+         * @description いま使える機能。**プロセスの設定であって、利用者ごとの権限ではない。**
+         *
+         *     false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
+         *     `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
+         *     原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
+         */
+        Capabilities: {
+            /** @description 注釈を解釈できるか。false は LLM が未設定（ADR 0008） */
+            interpretation: boolean;
+            /**
+             * @description プロンプトから図のドラフトを生成できるか。false は LLM が未設定。
+             *
+             *     **`interpretation` と畳まない。** 未設定の理由も設定するものも
+             *     同じだが、答えている問いが違う。1 つにすると、画面はどちらの
+             *     ボタンを止めればよいのかをこの値から決められなくなる
+             */
+            diagramDraft: boolean;
+            /**
+             * @description draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
+             *     引けない**ので、新しいボードも作れない（ADR 0017）
+             */
+            creation: boolean;
+            /**
+             * @description ボードを共有できるか。false は認証が未設定。招待は「誰であるか」が
+             *     決まって初めて意味を持つ（ADR 0016 / 0017）
+             */
+            sharing: boolean;
+            /**
+             * @description MCP のクライアントに接続を許せるか（ADR 0076）。false は認証か、
+             *     許可の保存先が未設定。**認証なしの構成では false。** そのときの
+             *     `/mcp` は許可なしで開いている（ADR 0071）ので、取り消すものが無い
+             */
+            mcpConnections: boolean;
+        };
+        /** @description ログイン状態。認証を設定していない構成でも 200 で返る。 */
+        SessionStatus: {
+            /** @description 認証を設定しているか。false なら画面はログインを求めない */
+            authRequired: boolean;
+            authenticated: boolean;
+            user?: components["schemas"]["AuthUser"];
+        };
+        /**
+         * @description ログイン開始のリクエストボディ。**省略できる。**
+         *
+         *     戻り先は state と一緒にサーバーが持ち、コールバックの URL には載せない
+         *     （ADR 0059）。載せると、認可基盤から戻ってきた URL の中身が戻り先を
+         *     決めることになり、オープンリダイレクトを塞ぐ責任が毎回の照合に移る。
+         */
+        LoginRequest: {
+            /**
+             * @description ログイン後に戻す先。**自オリジンの相対パスだけ**（`/` で始まり
+             *     `//` では始まらない）。それ以外は 400 で弾く。省略と空文字は
+             *     「`/` に戻す」。
+             */
+            returnTo?: string;
+        };
+        /** @description 認可画面へ送り出すための URL */
+        LoginResponse: {
+            authorizeUrl: string;
+        };
+        /** @description /healthz のレスポンスボディ */
+        HealthResponse: {
+            /** @example ok */
+            status: string;
+        };
+        /**
+         * @description 失敗の原因を表す機械可読な符号。**画面はこれで打ち手を分ける。**
+         *
+         *     ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
+         *     「解釈からやり直す」「入力を変える」が同居していて、利用者がすべきことは
+         *     すべて違う。403 も etoki のロール不足（`forbidden_role`）と GitHub 側の
+         *     拒否（`forbidden_project`）で直す場所が違い、2 層に分けて持つと決めた
+         *     （ADR 0017）のに、文言に畳むと画面でその区別が消える。
+         *
+         *     **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
+         *     畳むと画面が「何を設定すればよいか」を言えなくなる。
+         * @enum {string}
+         */
+        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
+        /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
+        ErrorResponse: {
+            code: components["schemas"]["ErrorCode"];
+            /**
+             * @description 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
+             *     GitHub や LLM が返した本文が実際の手掛かりになる経路があるので残す
+             */
+            error: string;
+        };
+        /**
+         * @description 注釈の 3 状態。保存済みシーンの content_hash と最新 run のそれを
+         *     突き合わせて決まる。
+         * @enum {string}
+         */
+        SyncState: "uncreated" | "created" | "changed";
+        /**
+         * @description 注釈の粒度。空文字は「指定なし」で、粒度の判断を LLM に任せる。
+         * @enum {string}
+         */
+        Granularity: "" | "epic" | "issue";
+        /**
+         * @description 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
+         *     プロンプトから生成するドラフトが同じ 5 種を指す。
+         *
+         *     - `todo` … やることの洗い出し
+         *     - `mindmap` … 発想の広げ方
+         *     - `sequence` … 登場人物とやりとりの順序
+         *     - `er` … 実体と関連
+         *     - `architecture` … 構成要素と境界
+         *
+         *     **どの mermaid 記法で書くかはサーバーが決める**（ADR 0041）。
+         *     `mindmap` と `architecture` は mermaid にも同名の記法があるが、
+         *     Excalidraw の要素に分解できず画像 1 枚になるため使わない（ADR 0040）。
+         * @enum {string}
+         */
+        DiagramKind: "todo" | "mindmap" | "sequence" | "er" | "architecture";
+        /**
+         * @description GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ
+         *     （ADR 0006）。
+         * @enum {string}
+         */
+        ItemKind: "epic" | "issue";
+        /**
+         * @description ボードに対する権限の強さ（ADR 0017）。
+         *
+         *     - `owner` … 招待とロール変更、作成先の変更ができる
+         *     - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
+         *       最終的に決めるのは GitHub
+         *     - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
+         *       あり、閲覧者に許すのは「閲覧」ではない
+         * @enum {string}
+         */
+        BoardRole: "owner" | "editor" | "viewer";
+        /**
+         * @description 作成先の Project に書けるかどうかの、いまの状態。
+         *
+         *     - `allowed` … 書ける
+         *     - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
+         *       持たない利用者がこれになる
+         *     - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
+         *       問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
+         *       倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
+         * @enum {string}
+         */
+        ProjectAccess: "allowed" | "denied" | "unknown";
+        /** @description そのボードで何ができるか。etoki 側と GitHub 側を別々に返す */
+        BoardAccess: {
+            role: components["schemas"]["BoardRole"];
+            projectAccess: components["schemas"]["ProjectAccess"];
+        };
+        /** @description ボードのメンバー 1 人 */
+        BoardMember: {
+            /** @description etoki が発番した ID。指し先にはこれを使う */
+            userId: string;
+            /**
+             * @description 認証基盤上のログイン名。表示用。移行前のボードなど、利用者を
+             *     引けない場合は空文字になる
+             */
+            login: string;
+            displayName: string;
+            role: components["schemas"]["BoardRole"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description 同意の画面に出す、認可の要求 */
+        OAuthAuthorization: {
+            clientId: string;
+            /**
+             * @description クライアントが名乗った名前。**自称であって確かめていない。**
+             *     空文字はクライアントが名乗らなかった
+             */
+            clientName: string;
+            /**
+             * @description client_id が URL（Client ID Metadata Document）なら true。名前の
+             *     出どころが client_id のドメインになるので、画面はそれを見せる
+             */
+            clientIdIsUrl: boolean;
+            /** @description 同意したあとに戻す先 */
+            redirectUri: string;
+            /** @description 許す範囲。いまは `read` だけ */
+            scope: string;
+        };
+        /** @description 認可の要求への返事 */
+        OAuthDecisionRequest: {
+            /** @description `/oauth/authorize` に付いていたクエリ文字列そのもの */
+            request: string;
+            /** @description true なら同意、false なら断る */
+            approve: boolean;
+        };
+        /** @description 返事を受けたあとの遷移先 */
+        OAuthDecision: {
+            /** @description クライアントの戻り先。画面はここへ遷移する */
+            redirectTo: string;
+        };
+        /** @description MCP のクライアントに許した接続 1 件 */
+        OAuthGrant: {
+            id: string;
+            clientId: string;
+            /** @description 許したときにクライアントが名乗っていた名前 */
+            clientName: string;
+            scope: string;
+            /**
+             * Format: date-time
+             * @description 許した時刻
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description 最後にトークンを発行した時刻。アクセストークンを使うたびには
+             *     進めないので、1 時間（アクセストークンの寿命）の粒度
+             */
+            lastUsedAt: string;
+        };
+        /** @description 招待する前に見せる、login が当たった利用者 */
+        Invitee: {
+            /** @description etoki が発番した ID。招待のときにそのまま送り返す */
+            userId: string;
+            /** @description 最後にログインしたときの login */
+            login: string;
+            displayName: string;
+            /**
+             * Format: date-time
+             * @description 最後に etoki にログインした時刻。login はこのときのもので、いまの
+             *     持ち主かどうかは GitHub にしか分からない
+             */
+            lastSignedInAt: string;
+        };
+        /** @description 招待のリクエストボディ */
+        InviteMemberRequest: {
+            /** @description 招待する相手の login。一度 etoki にログインしている必要がある */
+            login: string;
+            /**
+             * @description `lookupInvitee` で確認した相手の ID。いまその login を持つ相手と
+             *     違えば 409（`invitee_changed`）
+             */
+            userId: string;
+            role: components["schemas"]["BoardRole"];
+        };
+        /** @description ロール変更のリクエストボディ */
+        SetMemberRoleRequest: {
+            role: components["schemas"]["BoardRole"];
+        };
+        /**
+         * @description ボードの共通部分。一覧（`BoardListEntry`）と詳細（`BoardDetail`）の
+         *     両方がこれを取り込む。シーンは大きいので含めない。
+         *
+         *     作成先は含める。一覧をリポジトリと Project でまとめて見せるため
+         *     （ADR 0019）。`targetLocked` は含めない。一覧で使う場面が無く、作成先を
+         *     変えられるかどうかは開いたボードで決める。
+         */
+        BoardSummary: {
+            id: string;
+            name: string;
+            role: components["schemas"]["BoardRole"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description 作成先リポジトリの所有者。未選択なら空文字 */
+            repositoryOwner: string;
+            /** @description 作成先リポジトリの名前。未選択なら空文字 */
+            repositoryName: string;
+            /** @description draft issue を作る Projects v2 の node ID。未選択なら空文字 */
+            projectId: string;
+            /**
+             * @description 作成先 Project の番号。作成先を選んだ時点のスナップショット
+             *     （ADR 0019）。取得していなければ 0
+             */
+            projectNumber: number;
+            /**
+             * @description 作成先 Project の名前。作成先を選んだ時点のスナップショット
+             *     （ADR 0019）。取得していなければ空文字
+             */
+            projectTitle: string;
+            /**
+             * @description 作成先 Project の URL。作成先を選んだ時点のスナップショット
+             *     （ADR 0025）。取得していなければ空文字。
+             *
+             *     番号から組み立てたものではなく GitHub が返したもの。Projects v2 の
+             *     URL は owner が user か org かで形が変わり、etoki はどちらなのかを
+             *     知らない
+             */
+            projectUrl: string;
+        };
+        /**
+         * @description 注釈の 3 状態ごとの件数。保存済みシーンが基準で、注釈の状態
+         *     （`AnnotationStatus.state`）と同じ判定で数える。
+         *
+         *     キャンバスから消えた注釈（`DetachedAnnotation`）は数えない。3 状態を
+         *     持たないため（ADR 0046）。
+         */
+        AnnotationCounts: {
+            uncreated: number;
+            created: number;
+            changed: number;
+        };
+        /**
+         * @description 一覧で返すボード。ボードの共通部分に、注釈の 3 状態の件数を足したもの。
+         *     開く前にどのボードに手を打つものがあるかを見せるため（#200）。
+         *
+         *     **件数は一覧にだけ載せる。** `BoardSummary` に置くと、取り込んでいる
+         *     `BoardDetail` を返すすべての応答で数えることになる。開いたボードの
+         *     状態は注釈の一覧（`AnnotationStatus`）が持っている。
+         */
+        BoardListEntry: components["schemas"]["BoardSummary"] & {
+            /**
+             * @description 注釈の 3 状態ごとの件数。**シーンを読めなかったボードは null**。
+             *     1 枚のシーンが壊れているだけで一覧全体を失敗させない。
+             *
+             *     **required にしてある。** 省略できる形にすると、書き忘れた
+             *     返し方が「読めなかった」と同じ見え方のまま通る。
+             */
+            annotationCounts: components["schemas"]["AnnotationCounts"] | null;
+        };
+        /** @description シーンと作成先の固定状態を加えたボード */
+        BoardDetail: components["schemas"]["BoardSummary"] & {
+            /**
+             * @description Excalidraw のシーン JSON をそのまま入れた文字列。**貼った画像の
+             *     実体（`files`）は入らない。** 画像はボードを開く口
+             *     （`getBoard` の `BoardWithFiles.files`）だけが返す（ADR 0074）
+             */
+            scene: string;
+            /**
+             * @description 作成先を変更できないことを表す。そのボードで draft issue を
+             *     1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
+             *     数えられないので、状態としてサーバーが返す
+             */
+            targetLocked: boolean;
+            /**
+             * @description いま保存されているシーンか、貼った画像の合計が保存できる上限
+             *     （ADR 0038 / 0074）を超えていて、このままでは保存し直せない
+             *     ことを表す（issue #103）。上限を導入する前に保存されたボードや、
+             *     上限を引き下げた後にだけ真になりうる。
+             *
+             *     **上限の数値そのものは返さない。** フロントは判定結果だけを
+             *     受け取り、上限を複製しない。`projectAccess` の
+             *     `unknown` / `allowed` / `denied` と同じで、判定はサーバーの
+             *     持ち場のまま
+             */
+            sceneOverLimit: boolean;
+        };
+        /** @description 開いたボード。`BoardDetail` に、貼った画像をすべて加えたもの（ADR 0074）。 */
+        BoardWithFiles: components["schemas"]["BoardDetail"] & {
+            /**
+             * @description 画像の ID → Excalidraw の画像データ（BinaryFileData）を JSON に
+             *     した文字列。キーはシーンの画像の要素の `fileId` が指す値。
+             *     画像が無ければ空のオブジェクト。
+             *
+             *     **中身を etoki は解釈しない。** 保存で送られてきたものをそのまま
+             *     返す（`scene` と同じ）
+             */
+            files: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * @description ボードを削除したときに etoki から失われるもの（ADR 0042）。
+         *
+         *     **GitHub 側で何が起きるかは含まれない。** etoki は draft issue を
+         *     消さないので、GitHub にはそのまま残る。ここが答えるのは「辿れなく
+         *     なるのはどれだけか」という問いのほう。
+         */
+        BoardDeletion: {
+            /**
+             * @description そのボードから作成したと etoki が記録している draft issue の件数。
+             *
+             *     数え方は注釈のカードに出している「いま GitHub に在る N 件」と同じ
+             *     畳み込み（ADR 0026）。**GitHub 上でまだ在るかどうかは etoki には
+             *     分からない**（ADR 0007）ので、これは記録の件数であって現況では
+             *     ない
+             */
+            recordedItemCount: number;
+        };
+        /**
+         * @description draft issue の作成先。設定のリクエストボディ。
+         *
+         *     リポジトリと Project の両方を持つ。保存先として効くのは projectId
+         *     だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
+         *
+         *     projectNumber と projectTitle と projectUrl は**表示用のスナップショット**
+         *     であり、作成先そのものではない（ADR 0019 / 0025）。未選択の判定にも、
+         *     固定済みかどうかの判定にも使わない。選ばせた画面が見せていたものを
+         *     そのまま送る。
+         *
+         *     表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存する。
+         *     必須にすると、画面を通さない呼び出し側が値をでっち上げることになる。
+         */
+        BoardTarget: {
+            repositoryOwner: string;
+            repositoryName: string;
+            projectId: string;
+            projectNumber?: number;
+            projectTitle?: string;
+            projectUrl?: string;
+        };
+        /**
+         * @description 作成先の表示用スナップショット。取り直しのリクエストボディ（ADR 0037）。
+         *
+         *     `projectId` は**変更先ではなく照合材料**。どの作成先の表示名なのかを
+         *     示すために伴い、保存されているものと違えば 409 になる。リポジトリを
+         *     持たないのは、この口で作成先そのものを動かせないことを形で示すため。
+         *
+         *     表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存
+         *     する。BoardTarget と同じ扱いにしてあるので、GitHub が URL を返さない
+         *     Project でも取り直せる。
+         */
+        BoardTargetDisplay: {
+            /** @description いま保存されている作成先の Projects v2 node ID */
+            projectId: string;
+            projectNumber?: number;
+            projectTitle?: string;
+            projectUrl?: string;
+        };
+        /**
+         * @description 作成先の候補と、取りきったかどうか（ADR 0054）。
+         *
+         *     **配列ではなく包んだ形で返す。** 候補は上限で打ち切られうるので、配列
+         *     だけでは「これで全部」と「ここまでしか見ていない」を画面が区別できない。
+         *     区別できないと、目当てが出ないときに権限を疑うのか件数を疑うのかを利用者が
+         *     決められない（中核思想 3）。
+         *
+         *     **ヘッダでは返さない。** 契約に現れないものを画面が読むことになり、
+         *     生成した型から辿れなくなる（ADR 0011）。
+         */
+        RepositoryList: {
+            /** @description 候補。0 件でも配列を返す */
+            repositories: components["schemas"]["Repository"][];
+            /**
+             * @description 上限に当たって辿るのをやめた。**「まだある」ではなく「見るのを
+             *     やめた」。** 打ち切った先に候補が残っているかどうかは、辿るのを
+             *     やめた以上サーバーにも分からない。
+             *
+             *     **件数も上限値も返さない。** 画面が出せるのは「ここまでしか見て
+             *     いない」までで、数を出すと上限を画面が知ることになる（ADR 0038 が
+             *     シーンの上限を返さないのと同じ理由）。
+             */
+            truncated: boolean;
+        };
+        /** @description 作成先を選ぶときに見せるリポジトリ */
+        Repository: {
+            owner: string;
+            name: string;
+            description?: string;
+        };
+        /** @description リポジトリに紐づく Projects v2 */
+        Project: {
+            /** @description GraphQL の node ID。作成先として保存するのはこれ */
+            id: string;
+            /** @description リポジトリ内での番号。GitHub の URL に出る */
+            number: number;
+            title: string;
+            /**
+             * @description Project のページ。**番号から組み立てず GitHub が返したものを運ぶ。**
+             *     Projects v2 の URL は owner が user か org かで形が変わり、etoki は
+             *     どちらなのかを知らない（ADR 0025）
+             */
+            url: string;
+        };
+        /**
+         * @description ボード作成のリクエストボディ。
+         *
+         *     **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
+         *     （ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
+         *     「ボードの作成にはリポジトリへのアクセス権が要る」はこれで満ちる
+         *     （ADR 0017）。
+         *
+         *     副産物として、作成先が未選択のボードは新規には生まれなくなる。移行前の
+         *     ボードは未選択のまま残るので、`projectId` が空文字の経路は消えない。
+         */
+        CreateBoardRequest: {
+            name: string;
+            repositoryOwner: string;
+            repositoryName: string;
+            /** @description draft issue を作る Projects v2 の node ID */
+            projectId: string;
+            /**
+             * @description 作成先 Project の番号。表示用のスナップショット（ADR 0019）。
+             *     省略すると 0（名前を知らない）で保存する
+             */
+            projectNumber?: number;
+            /**
+             * @description 作成先 Project の名前。表示用のスナップショット（ADR 0019）。
+             *     省略すると空文字（名前を知らない）で保存する
+             */
+            projectTitle?: string;
+            /**
+             * @description 作成先 Project の URL。表示用のスナップショット（ADR 0025）。
+             *     省略すると空文字（URL を知らない）で保存する
+             */
+            projectUrl?: string;
+            /**
+             * @description 省略すると空のシーンで作る。画像の実体（`files`）が入っていたら 400。
+             *     作成は画像を受け取らない（ADR 0074）
+             */
+            scene?: string;
+        };
+        /**
+         * @description 改名のリクエストボディ。
+         *
+         *     名前だけを持つ。作成先やシーンを一緒に送れる形にすると、この経路でも
+         *     作成先を書けることになり、固定（ADR 0014）が意味を失う。
+         */
+        RenameBoardRequest: {
+            /** @description 新しい名前。空文字と空白だけは弾く */
+            name: string;
+        };
+        /**
+         * @description シーン保存のリクエストボディ。
+         *
+         *     `baseUpdatedAt` は任意にしない。任意にすると API を直接叩く経路で照合を
+         *     素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
+         */
+        SaveSceneRequest: {
+            /**
+             * @description 画像の実体（`files`）を抜いたシーン JSON。空の `files` は構わないが、
+             *     画像が入っていたら 400（画像は `files` で送る、ADR 0074）
+             */
+            scene: string;
+            /**
+             * @description ボードに足す画像。画像の ID → Excalidraw の画像データ
+             *     （BinaryFileData）を JSON にした文字列（`BoardWithFiles.files` と
+             *     同じ形）。
+             *
+             *     **ボードがまだ持っていない画像だけを送る。** 持っているものは
+             *     開いたときの `files` のキーと、保存の応答の `fileIds` で分かる。
+             *     同じ ID を送ればその画像を置き換える。
+             *
+             *     シーンから参照されていない画像と、`id` がキーと違う画像は 400。
+             *     送らなかった画像は、シーンから参照されているかぎり残る。省略すると
+             *     足す画像なし
+             */
+            files?: {
+                [key: string]: string;
+            };
+            /**
+             * Format: date-time
+             * @description 編集の基準にしたボードの `updatedAt`。取得時に返ったものをそのまま
+             *     送り返す。現在の版と違えば 409 になり、シーンは書き換わらない
+             *     （ADR 0020）
+             */
+            baseUpdatedAt: string;
+        };
+        /**
+         * @description 保存後のボードの版。
+         *
+         *     返さないと、クライアントは保存のたびにボードを取り直さないと次の保存が
+         *     できない。取り直すとシーンまで運ぶことになる。
+         */
+        SaveSceneResponse: {
+            /**
+             * Format: date-time
+             * @description 保存後の `updatedAt`。次の保存の `baseUpdatedAt` になる
+             */
+            updatedAt: string;
+            /**
+             * @description 保存後にボードが持っている画像の ID（ADR 0074）。次の保存では、
+             *     ここにある画像を送らなくてよい。
+             *
+             *     **クライアントは自分で数え直さない。** 何が残って何が消えたかの
+             *     規則はサーバーが持つ。手元で導くと、規則が 2 箇所になる
+             */
+            fileIds: string[];
+        };
+        /**
+         * @description 1 つの run がその item に対して何をしたか（ADR 0026）。
+         *
+         *     `created` は新しく作った、`updated` は既存の draft issue を書き換えた。
+         *     記録していなかった頃の run はすべて `created`。当時は更新の経路が無かった。
+         * @enum {string}
+         */
+        SyncAction: "created" | "updated";
+        /**
+         * @description 1 回の実行がその draft issue に対して行った書き込み 1 件。
+         *
+         *     **「作成済みの 1 件」ではない。** `confirmed` が false なら、GitHub に
+         *     届いたかどうかを etoki は知らない（ADR 0056）。
+         */
+        SyncItem: {
+            /**
+             * @description GitHub Projects v2 の item ID。
+             *
+             *     **`confirmed` が false の作成では空文字**（ID が返ってこなかった）。
+             *     更新では相手の ID が分かっているので、未確定でも入る
+             */
+            itemId: string;
+            /**
+             * Format: int64
+             * @description item の数値の識別子（GraphQL の `fullDatabaseId`）。**省略と 0 は
+             *     「知らない」。** 記録していなかった頃の run と、GitHub が返さなかった
+             *     ときにそうなる。
+             *
+             *     **URL ではなく素材だけを返す**（ADR 0057）。item ごとのリンクの形と、
+             *     組めないときの落とし先はフロントの 1 箇所が持つ。
+             */
+            itemDatabaseId?: number;
+            kind: components["schemas"]["ItemKind"];
+            title: string;
+            /** @description 作成時の本文。記録していなかった頃の run では空 */
+            body: string;
+            /** @description 解釈結果の中でだけ通じる ID。親子の対応づけに使う */
+            localId: string;
+            /** @description epic に属する issue のとき、その epic の localId */
+            parentLocalId?: string;
+            action: components["schemas"]["SyncAction"];
+            /**
+             * @description この書き込みが GitHub に届いたことを確かめられたかどうか
+             *     （ADR 0056）。
+             *
+             *     false は「失敗した」ではなく「**分からない**」。GitHub が受理した
+             *     あとで応答だけを失った場合も、受理せずに返した場合も、etoki からは
+             *     区別できない。**確かめるのは開発者**（中核思想 3）。
+             *
+             *     記録していなかった頃の run では true。当時は確定したものしか
+             *     記録できなかった
+             */
+            confirmed: boolean;
+        };
+        /**
+         * @description run が最後まで進んだかどうか（ADR 0043）。
+         *
+         *     **省略は「成功」ではなく「記録していない」。** この項目を足す前の run に
+         *     は記録が無く、当時も途中失敗は起きていた。`complete` と同じに扱わない。
+         * @enum {string}
+         */
+        RunOutcome: "complete" | "incomplete";
+        /**
+         * @description 1 つの注釈に対する 1 回ぶんの実行の記録（ADR 0007）。
+         *
+         *     **「そのときの全体像」ではなく「その 1 回で何をしたか」**（ADR 0026）。
+         *     触らなかった item はここには現れない。いま GitHub に在るものが知りたい
+         *     なら `AnnotationStatus.items`（畳み込み）を見る。
+         */
+        SyncRun: {
+            /**
+             * Format: int64
+             * @description run の識別子。**新しさの順はこれで決まる**（時刻は呼び出し側が
+             *     与えるので、同じ値の run がありうる）
+             */
+            id: number;
+            /**
+             * Format: date-time
+             * @description 実行の時刻
+             */
+            createdAt: string;
+            /**
+             * @description 最後まで進んだかどうか。**記録していなかった頃の run では省略する**
+             *     （ADR 0043）
+             */
+            outcome?: components["schemas"]["RunOutcome"];
+            /**
+             * @description 途中で失敗した理由。`outcome` が `incomplete` のときだけ入る。
+             *
+             *     **利用者向けの文言ではなく手掛かり**なので、画面は既定で畳む
+             *     （ADR 0034）
+             */
+            error?: string;
+            /**
+             * @description その run で作成または更新した draft issue。1 件も作れずに終わった
+             *     実行は記録しないので、記録された run には 1 件以上入る（ADR 0009）
+             */
+            items: components["schemas"]["SyncItem"][];
+        };
+        /**
+         * @description ボード 1 枚ぶんの注釈。**シーンに在るものと、消えたのに GitHub 側には
+         *     残っているものを分けて返す。**
+         */
+        BoardAnnotations: {
+            /** @description 保存済みシーンに在る注釈。0 件でも配列を返す */
+            annotations: components["schemas"]["AnnotationStatus"][];
+            /**
+             * @description シーンから消えたのに GitHub 側にものが残っている注釈。
+             *     0 件でも配列を返す
+             */
+            detached: components["schemas"]["DetachedAnnotation"][];
+        };
+        /**
+         * @description 注釈にした frame をキャンバスから消して保存したあとも、GitHub 側に
+         *     残っている draft issue（#111）。
+         *
+         *     **run の記録は消えていない**（ADR 0007）ので `.../annotations/{id}/runs`
+         *     はそのまま読める。ここはその導線を出すための一覧。
+         *
+         *     **etoki は消しも作り直しもしない**（中核思想 3）。frame を引き直すと
+         *     要素の ID が変わるので、以後は別の注釈として扱われる。
+         */
+        DetachedAnnotation: {
+            /**
+             * @description 消えた frame の要素 ID。**名前は返さない。** シーンから消えている
+             *     ので取りようが無い。何の囲みだったかは items から読む
+             */
+            id: string;
+            /**
+             * Format: date-time
+             * @description 最後に実行した時刻
+             */
+            lastSyncedAt?: string;
+            /**
+             * @description この注釈が GitHub に在らしめている draft issue。畳み込みは
+             *     AnnotationStatus.items と同じ（ADR 0026）。
+             *
+             *     **空でも省略しない。** 届いたか分からない書き込みだけが残っている
+             *     注釈がありうる（ADR 0056）
+             */
+            items: components["schemas"]["SyncItem"][];
+            /**
+             * @description GitHub に届いたか分からない書き込み（ADR 0056）。1 件も無ければ
+             *     省略する。意味は AnnotationStatus.unconfirmedItems と同じ。
+             *
+             *     **囲みを消しても落とさない。** 確かめようのない書き込みが画面から
+             *     消えてよい理由にはならない
+             */
+            unconfirmedItems?: components["schemas"]["SyncItem"][];
+        };
+        /** @description 注釈 1 つの状態 */
+        AnnotationStatus: {
+            id: string;
+            name: string;
+            granularity: components["schemas"]["Granularity"];
+            /**
+             * @description 開発者が選んだ図の種別。**選んでいなければ省略する**（テンプレート
+             *     から始めていない注釈がそれ）。
+             *
+             *     `Granularity` のように空文字を値に持たせず省略で表すのは、種別の
+             *     語彙を 1 つに保つため。プロンプトからのドラフト生成は「何の図か」が
+             *     入力そのものなので指定なしを受け付けず、enum に空文字を足すと
+             *     そちらの契約まで緩む。
+             *
+             *     **解釈のプロンプトに載り、`content_hash` の入力にも入る。**
+             *     差し替えれば `changed` になる（粒度と同じ）。
+             */
+            kind?: components["schemas"]["DiagramKind"];
+            state: components["schemas"]["SyncState"];
+            /**
+             * Format: date-time
+             * @description 前回実行の時刻。未実行なら省略する
+             */
+            lastSyncedAt?: string;
+            /**
+             * @description 前回実行が最後まで進んだかどうか（ADR 0043）。未実行と、記録して
+             *     いなかった頃の run では省略する。
+             *
+             *     **`state` は変わらない。** 途中で失敗しても作れたぶんは記録するので、
+             *     状態は `created` になる（ADR 0009）。件数だけでは、途中で止まった
+             *     のか、もともとその件数だったのかが読めないので別に出す。
+             *
+             *     **理由はここには載せない。** 一覧は「何が起きたか」まで見せる場所で、
+             *     手掛かりの本文は履歴（`GET .../runs`）が持つ
+             */
+            lastRunOutcome?: components["schemas"]["RunOutcome"];
+            /**
+             * @description この注釈が GitHub に在らしめている draft issue（ADR 0026）。
+             *
+             *     **前回実行で作られたものではなく、run 履歴を itemId で畳んだもの。**
+             *     更新は同じ itemId に吸収され、今回触らなかったものも残り続ける。
+             *     最新 run だけを返すと、更新のあとに取り残しが画面から消える。
+             *     1 件も無ければ省略する
+             */
+            items?: components["schemas"]["SyncItem"][];
+            /**
+             * @description GitHub に届いたか分からない書き込み（ADR 0056）。1 件も無ければ
+             *     省略する。
+             *
+             *     **`items` とは別のリスト。** あちらは「いま GitHub に在るもの」で、
+             *     こちらは在るかどうかが分からないもの。混ぜると件数が嘘になり、
+             *     更新先としても選べてしまう（未確定の作成は `itemId` を持たない）。
+             *     分けているのは `detached` と同じ理由（ADR 0046）。
+             *
+             *     **`state` はこれを見ない。** 確定が 1 件も無くても `created` に
+             *     なる。押し直しで消せない draft issue が重複するほうを避ける
+             *     （ADR 0009 / 0056）
+             */
+            unconfirmedItems?: components["schemas"]["SyncItem"][];
+        };
+        /** @description 解釈結果に含まれる draft issue 1 件。まだ作成はしていない */
+        InterpretedItem: {
+            localId: string;
+            kind: components["schemas"]["ItemKind"];
+            title: string;
+            body: string;
+            parentLocalId?: string;
+            /**
+             * @description 書き換える対象の itemId（ADR 0026）。新しく作るなら省略する。
+             *
+             *     解釈のレスポンスでは LLM が対応づけた候補が入る。作成のリクエストでは
+             *     開発者が確かめた結果として送り返す。**サーバーはこの値がその注釈の
+             *     ものであることを確かめる。** 確かめずに通すと、任意の node ID を
+             *     書いて無関係な draft issue を書き換えられる
+             */
+            previousItemId?: string;
+        };
+        /**
+         * @description 注釈の frame 範囲だけを写した画像。frame の外にある要素は含めない。
+         *
+         *     サーバーは保存しない。解釈 1 回のあいだ LLM へ渡すためだけに使う
+         *     （ADR 0018）。
+         */
+        AnnotationImage: {
+            /**
+             * @description 画像の MIME タイプ。PNG だけを受け付ける
+             * @enum {string}
+             */
+            mediaType: "image/png";
+            /**
+             * Format: byte
+             * @description 画像のバイト列を base64 で表したもの。デコード後のバイト数に上限が
+             *     あり、超えると 400 を返す。上限は超えても縮小せず弾く。黙って劣化
+             *     させると、渡したはずの情報が消えたことに気づけない（ADR 0018）
+             */
+            data: string;
+        };
+        /**
+         * @description 解釈のリクエストボディ。テキストは保存済みシーンから取るので、ここには
+         *     シーンから作れないものだけを載せる。
+         */
+        InterpretRequest: {
+            image?: components["schemas"]["AnnotationImage"];
+        };
+        /**
+         * @description 図のドラフトを直してきたやりとり 1 往復。
+         *
+         *     **サーバーは会話を保存しない**（ADR 0041）ので、ここまでの往復は毎回
+         *     まるごと送る。会話は成果物ではなく、成果物はキャンバス。
+         */
+        DiagramTurn: {
+            /** @description そのとき書いた指示 */
+            prompt: string;
+            /** @description それに対して返った mermaid */
+            mermaid: string;
+        };
+        /**
+         * @description 図のドラフトを 1 つ作るための入力。**保存済みシーンもキャンバスも
+         *     読まない**（ADR 0041）ので、未保存でも使える。
+         */
+        GenerateDiagramRequest: {
+            kind: components["schemas"]["DiagramKind"];
+            /**
+             * @description 今回の指示。空白だけのものは 400 で弾く。既定に倒さないのは、
+             *     何を描くかが入力そのものであるため
+             */
+            prompt: string;
+            /**
+             * @description ここまでのやりとり。1 回目は空。**上限を超えたら黙って古いものを
+             *     捨てず、`diagram_chat_too_long` で返す**
+             */
+            history?: components["schemas"]["DiagramTurn"][];
+        };
+        /**
+         * @description 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
+         *     見てから開発者が決める（中核思想 3）。mermaid を Excalidraw の要素に
+         *     するのはフロントの仕事（ADR 0040）。
+         */
+        DiagramDraft: {
+            kind: components["schemas"]["DiagramKind"];
+            /** @description 生成された mermaid。コードフェンスは外してある */
+            mermaid: string;
+            /**
+             * @description このあと何往復できるか。**上限に当たってから知らせるのでは遅い**
+             *     ので、押す前に見えるようにしている
+             */
+            turnsRemaining: number;
+        };
+        /**
+         * @description LLM が注釈をどう解釈したか。
+         *
+         *     `summary` は GitHub には作らない。作成前に「こう読んだ」を見せるためだけに
+         *     使う（ADR 0006）。
+         *
+         *     作成のリクエストボディとしてもこの形をそのまま使う。開発者が確認した
+         *     結果を送り返す、という流れなので別の型にしない。
+         */
+        Interpretation: {
+            summary: string;
+            /**
+             * @description 解釈の入力になった保存済みシーンのハッシュ。フロントでは組み立てず、
+             *     受け取ったものをそのまま送り返す
+             */
+            contentHash: string;
+            items: components["schemas"]["InterpretedItem"][];
+        };
+        /** @description 作成した run。途中で失敗しても、作れたぶんは items に入る */
+        CreatedRun: {
+            /** Format: int64 */
+            runId: number;
+            /** Format: date-time */
+            createdAt: string;
+            items: components["schemas"]["SyncItem"][];
+            /** @description 途中で失敗したことを表す */
+            incomplete?: boolean;
+            /** @description 途中で失敗した理由 */
+            error?: string;
+        };
     };
-    /**
-     * @description いま使える機能。**プロセスの設定であって、利用者ごとの権限ではない。**
-     *
-     *     false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
-     *     `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
-     *     原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
-     */
-    Capabilities: {
-      /** @description 注釈を解釈できるか。false は LLM が未設定（ADR 0008） */
-      interpretation: boolean;
-      /**
-       * @description プロンプトから図のドラフトを生成できるか。false は LLM が未設定。
-       *
-       *     **`interpretation` と畳まない。** 未設定の理由も設定するものも
-       *     同じだが、答えている問いが違う。1 つにすると、画面はどちらの
-       *     ボタンを止めればよいのかをこの値から決められなくなる
-       */
-      diagramDraft: boolean;
-      /**
-       * @description draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
-       *     引けない**ので、新しいボードも作れない（ADR 0017）
-       */
-      creation: boolean;
-      /**
-       * @description ボードを共有できるか。false は認証が未設定。招待は「誰であるか」が
-       *     決まって初めて意味を持つ（ADR 0016 / 0017）
-       */
-      sharing: boolean;
-      /**
-       * @description MCP のクライアントに接続を許せるか（ADR 0076）。false は認証か、
-       *     許可の保存先が未設定。**認証なしの構成では false。** そのときの
-       *     `/mcp` は許可なしで開いている（ADR 0071）ので、取り消すものが無い
-       */
-      mcpConnections: boolean;
+    responses: {
+        /** @description リクエストの内容が不正 */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description ログインしていない、またはセッションが失効した。認証を設定している
+         *     場合にだけ起こる（ADR 0015）。
+         */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description 次のどれか。
+         *
+         *     - Host または Origin が許可されていない。ブラウザ由来の cross-site
+         *       リクエストを弾いた場合（ADR 0013）。全エンドポイントで起こりうる
+         *     - ボードのメンバーではあるが、その操作にロールが足りない（ADR 0017）。
+         *       **メンバーでない場合は 404。** 区別すると ID を総当たりして他人の
+         *       ボードの存在を確かめられる
+         *     - GitHub がその Project への書き込みを拒んだ。etoki は実行者の
+         *       トークンで叩くので、リポジトリのアクセス権が無ければここに来る
+         */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description リクエストボディが `/api` の既定の上限を超えている（issue #147）。
+         *
+         *     **上限は `/api` の入口 1 箇所で掛かる。** 口ごとに置くと、足した口だけが
+         *     歯止めの無いまま残る。より広い本文を受ける口（シーンの保存・解釈の画像・
+         *     図のドラフトの会話）はそれぞれの上限に置き換わる。
+         *
+         *     **置き換わっても code が変わるとは限らない。** 自分の code を持つのは
+         *     シーンの保存（`scene_too_large`）と図のドラフトの会話
+         *     （`diagram_chat_too_long`）だけ。**解釈の画像は上限だけが広く、超えたときは
+         *     この code で返る。** 打ち手が「送っているものを見直す」で同じだから。
+         *
+         *     **`scene_too_large` に畳まない。** あちらの打ち手は「貼った画像を減らす」
+         *     だが、こちらに当たるのは名前・作成先・招待・作成の項目のような、本来は
+         *     既定の上限に収まる本文。打ち手は「送っているものを見直す」になる。
+         *
+         *     **上限の値は返さない。** クライアントが持つと、サーバー側で動かした日に
+         *     そちらだけが古くなる（ADR 0038 がシーンの上限を返さないのと同じ理由）。
+         */
+        RequestTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description シーンか、保存したあとに残る貼った画像の合計が、保存できる大きさを
+         *     超えている。**縮小も切り捨てもせずに弾く**（ADR 0018 と同じ扱い）。
+         *     効いてくるのはキャンバスに貼った画像で、シーンと画像のどちらで超えたかは
+         *     code で分けない（ADR 0074）。
+         *
+         *     400 ではないのは、中身の誤りではなく大きさだから。打ち手が「送った
+         *     内容を直す」ではなく「貼った画像を減らす」になる。
+         */
+        SceneTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description StateTTL（10 分）のあいだに始められるログインの回数が上限に達した
+         *     （issue #147）。
+         *
+         *     **ログインの開始は、ログインしていなくても書き込みが起きる口の 1 つ。**
+         *     （もう 1 つは MCP のクライアントの登録 `/oauth/register` で、同じ形で
+         *     絞っている。ADR 0076）
+         *     1 回ごとに state が 1 つ保存され、掃除は期限切れしか消さないので、
+         *     上限が無いと窓のあいだ叩かれた回数だけ表が育つ。
+         *
+         *     **絞る軸はプロセス全体。** この口は認証の外にあるので、`rate_limited`
+         *     でも「利用者ごと」（ADR 0044）は使えない。code を分けないのは、画面の
+         *     打ち手が同じ「時間をおく」だからで、分ける基準はステータスではなく
+         *     打ち手（ADR 0034）。
+         */
+        TooManyLoginStarts: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description LLM を叩く実行の上限に当たった（ADR 0044）。**上限は利用者ごと**で、
+         *     解釈と図のドラフト生成が 1 つの枠を共有する。どちらも課金を伴う外部
+         *     呼び出しなので、片方だけ絞ると抜け道が残る。
+         *
+         *     **code を 2 つに分ける。** ステータスは同じでも打ち手が違う。
+         *
+         *     - `rate_limited`: 窓の中の回数を使い切った。時間をおく
+         *     - `concurrency_limited`: いま走っている実行がある。終わるのを待つ
+         *
+         *     **上限に当たった実行は LLM を 1 回も呼んでいない。** 呼んでから結果を
+         *     捨てると、課金だけが発生する。
+         *
+         *     回数の上限は設定した構成にしか存在しない（既定は同時実行のみ）。
+         *     **残り枠は返さない。** 無い上限の残りを常時載せることになるため。
+         */
+        TooManyRequests: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description 図のドラフトの会話が上限を超えている。往復の回数か、会話全体の長さの
+         *     どちらか。
+         *
+         *     **黙って古いやりとりを捨てない。** 捨てると、積み上げた指示のどれが
+         *     効いているのかが分からなくなる。やり直すかどうかは開発者が決める
+         *     （中核思想 3）。
+         *
+         *     400 ではないのは大きさだから。送られた内容は正しく、打ち手が「送った
+         *     内容を直す」ではなく「会話をやり直す」になる（SceneTooLarge と同じ）。
+         */
+        DiagramChatTooLong: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description その機能に必要な設定がされていない。URL の誤りではないので 404 に
+         *     しない。
+         */
+        NotConfigured: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description 対象が見つからない */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description サーバー側の想定外の失敗 */
+        InternalError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
     };
-    /** @description ログイン状態。認証を設定していない構成でも 200 で返る。 */
-    SessionStatus: {
-      /** @description 認証を設定しているか。false なら画面はログインを求めない */
-      authRequired: boolean;
-      authenticated: boolean;
-      user?: components["schemas"]["AuthUser"];
+    parameters: {
+        /** @description ボードの ID */
+        BoardId: string;
+        /** @description 注釈にした frame の要素 ID */
+        AnnotationId: string;
+        /**
+         * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+         *     指し先としては使えない（ADR 0015）。
+         */
+        UserId: string;
+        /** @description リポジトリ所有者の login */
+        RepositoryOwner: string;
+        /** @description リポジトリ名 */
+        RepositoryName: string;
     };
-    /**
-     * @description ログイン開始のリクエストボディ。**省略できる。**
-     *
-     *     戻り先は state と一緒にサーバーが持ち、コールバックの URL には載せない
-     *     （ADR 0059）。載せると、認可基盤から戻ってきた URL の中身が戻り先を
-     *     決めることになり、オープンリダイレクトを塞ぐ責任が毎回の照合に移る。
-     */
-    LoginRequest: {
-      /**
-       * @description ログイン後に戻す先。**自オリジンの相対パスだけ**（`/` で始まり
-       *     `//` では始まらない）。それ以外は 400 で弾く。省略と空文字は
-       *     「`/` に戻す」。
-       */
-      returnTo?: string;
-    };
-    /** @description 認可画面へ送り出すための URL */
-    LoginResponse: {
-      authorizeUrl: string;
-    };
-    /** @description /healthz のレスポンスボディ */
-    HealthResponse: {
-      /** @example ok */
-      status: string;
-    };
-    /**
-     * @description 失敗の原因を表す機械可読な符号。**画面はこれで打ち手を分ける。**
-     *
-     *     ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
-     *     「解釈からやり直す」「入力を変える」が同居していて、利用者がすべきことは
-     *     すべて違う。403 も etoki のロール不足（`forbidden_role`）と GitHub 側の
-     *     拒否（`forbidden_project`）で直す場所が違い、2 層に分けて持つと決めた
-     *     （ADR 0017）のに、文言に畳むと画面でその区別が消える。
-     *
-     *     **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
-     *     畳むと画面が「何を設定すればよいか」を言えなくなる。
-     * @enum {string}
-     */
-    ErrorCode:
-      | "invalid_input"
-      | "request_too_large"
-      | "login_required"
-      | "forbidden_role"
-      | "forbidden_project"
-      | "cross_site_rejected"
-      | "not_found"
-      | "scene_conflict"
-      | "scene_too_large"
-      | "target_locked"
-      | "target_mismatch"
-      | "content_hash_mismatch"
-      | "previous_item_unknown"
-      | "already_member"
-      | "invitee_changed"
-      | "last_owner"
-      | "target_not_selected"
-      | "project_field_missing"
-      | "llm_unavailable"
-      | "interpretation_failed"
-      | "diagram_failed"
-      | "diagram_chat_too_long"
-      | "rate_limited"
-      | "concurrency_limited"
-      | "creation_incomplete"
-      | "github_unavailable"
-      | "internal"
-      | "llm_not_configured"
-      | "github_not_configured"
-      | "auth_not_configured"
-      | "sharing_not_configured"
-      | "mcp_connections_not_configured";
-    /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
-    ErrorResponse: {
-      code: components["schemas"]["ErrorCode"];
-      /**
-       * @description 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
-       *     GitHub や LLM が返した本文が実際の手掛かりになる経路があるので残す
-       */
-      error: string;
-    };
-    /**
-     * @description 注釈の 3 状態。保存済みシーンの content_hash と最新 run のそれを
-     *     突き合わせて決まる。
-     * @enum {string}
-     */
-    SyncState: "uncreated" | "created" | "changed";
-    /**
-     * @description 注釈の粒度。空文字は「指定なし」で、粒度の判断を LLM に任せる。
-     * @enum {string}
-     */
-    Granularity: "" | "epic" | "issue";
-    /**
-     * @description 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
-     *     プロンプトから生成するドラフトが同じ 5 種を指す。
-     *
-     *     - `todo` … やることの洗い出し
-     *     - `mindmap` … 発想の広げ方
-     *     - `sequence` … 登場人物とやりとりの順序
-     *     - `er` … 実体と関連
-     *     - `architecture` … 構成要素と境界
-     *
-     *     **どの mermaid 記法で書くかはサーバーが決める**（ADR 0041）。
-     *     `mindmap` と `architecture` は mermaid にも同名の記法があるが、
-     *     Excalidraw の要素に分解できず画像 1 枚になるため使わない（ADR 0040）。
-     * @enum {string}
-     */
-    DiagramKind: "todo" | "mindmap" | "sequence" | "er" | "architecture";
-    /**
-     * @description GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ
-     *     （ADR 0006）。
-     * @enum {string}
-     */
-    ItemKind: "epic" | "issue";
-    /**
-     * @description ボードに対する権限の強さ（ADR 0017）。
-     *
-     *     - `owner` … 招待とロール変更、作成先の変更ができる
-     *     - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-     *       最終的に決めるのは GitHub
-     *     - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-     *       あり、閲覧者に許すのは「閲覧」ではない
-     * @enum {string}
-     */
-    BoardRole: "owner" | "editor" | "viewer";
-    /**
-     * @description 作成先の Project に書けるかどうかの、いまの状態。
-     *
-     *     - `allowed` … 書ける
-     *     - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
-     *       持たない利用者がこれになる
-     *     - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
-     *       問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
-     *       倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
-     * @enum {string}
-     */
-    ProjectAccess: "allowed" | "denied" | "unknown";
-    /** @description そのボードで何ができるか。etoki 側と GitHub 側を別々に返す */
-    BoardAccess: {
-      role: components["schemas"]["BoardRole"];
-      projectAccess: components["schemas"]["ProjectAccess"];
-    };
-    /** @description ボードのメンバー 1 人 */
-    BoardMember: {
-      /** @description etoki が発番した ID。指し先にはこれを使う */
-      userId: string;
-      /**
-       * @description 認証基盤上のログイン名。表示用。移行前のボードなど、利用者を
-       *     引けない場合は空文字になる
-       */
-      login: string;
-      displayName: string;
-      role: components["schemas"]["BoardRole"];
-      /** Format: date-time */
-      createdAt: string;
-    };
-    /** @description 同意の画面に出す、認可の要求 */
-    OAuthAuthorization: {
-      clientId: string;
-      /**
-       * @description クライアントが名乗った名前。**自称であって確かめていない。**
-       *     空文字はクライアントが名乗らなかった
-       */
-      clientName: string;
-      /**
-       * @description client_id が URL（Client ID Metadata Document）なら true。名前の
-       *     出どころが client_id のドメインになるので、画面はそれを見せる
-       */
-      clientIdIsUrl: boolean;
-      /** @description 同意したあとに戻す先 */
-      redirectUri: string;
-      /** @description 許す範囲。いまは `read` だけ */
-      scope: string;
-    };
-    /** @description 認可の要求への返事 */
-    OAuthDecisionRequest: {
-      /** @description `/oauth/authorize` に付いていたクエリ文字列そのもの */
-      request: string;
-      /** @description true なら同意、false なら断る */
-      approve: boolean;
-    };
-    /** @description 返事を受けたあとの遷移先 */
-    OAuthDecision: {
-      /** @description クライアントの戻り先。画面はここへ遷移する */
-      redirectTo: string;
-    };
-    /** @description MCP のクライアントに許した接続 1 件 */
-    OAuthGrant: {
-      id: string;
-      clientId: string;
-      /** @description 許したときにクライアントが名乗っていた名前 */
-      clientName: string;
-      scope: string;
-      /**
-       * Format: date-time
-       * @description 許した時刻
-       */
-      createdAt: string;
-      /**
-       * Format: date-time
-       * @description 最後にトークンを発行した時刻。アクセストークンを使うたびには
-       *     進めないので、1 時間（アクセストークンの寿命）の粒度
-       */
-      lastUsedAt: string;
-    };
-    /** @description 招待する前に見せる、login が当たった利用者 */
-    Invitee: {
-      /** @description etoki が発番した ID。招待のときにそのまま送り返す */
-      userId: string;
-      /** @description 最後にログインしたときの login */
-      login: string;
-      displayName: string;
-      /**
-       * Format: date-time
-       * @description 最後に etoki にログインした時刻。login はこのときのもので、いまの
-       *     持ち主かどうかは GitHub にしか分からない
-       */
-      lastSignedInAt: string;
-    };
-    /** @description 招待のリクエストボディ */
-    InviteMemberRequest: {
-      /** @description 招待する相手の login。一度 etoki にログインしている必要がある */
-      login: string;
-      /**
-       * @description `lookupInvitee` で確認した相手の ID。いまその login を持つ相手と
-       *     違えば 409（`invitee_changed`）
-       */
-      userId: string;
-      role: components["schemas"]["BoardRole"];
-    };
-    /** @description ロール変更のリクエストボディ */
-    SetMemberRoleRequest: {
-      role: components["schemas"]["BoardRole"];
-    };
-    /**
-     * @description ボードの共通部分。一覧（`BoardListEntry`）と詳細（`BoardDetail`）の
-     *     両方がこれを取り込む。シーンは大きいので含めない。
-     *
-     *     作成先は含める。一覧をリポジトリと Project でまとめて見せるため
-     *     （ADR 0019）。`targetLocked` は含めない。一覧で使う場面が無く、作成先を
-     *     変えられるかどうかは開いたボードで決める。
-     */
-    BoardSummary: {
-      id: string;
-      name: string;
-      role: components["schemas"]["BoardRole"];
-      /** Format: date-time */
-      createdAt: string;
-      /** Format: date-time */
-      updatedAt: string;
-      /** @description 作成先リポジトリの所有者。未選択なら空文字 */
-      repositoryOwner: string;
-      /** @description 作成先リポジトリの名前。未選択なら空文字 */
-      repositoryName: string;
-      /** @description draft issue を作る Projects v2 の node ID。未選択なら空文字 */
-      projectId: string;
-      /**
-       * @description 作成先 Project の番号。作成先を選んだ時点のスナップショット
-       *     （ADR 0019）。取得していなければ 0
-       */
-      projectNumber: number;
-      /**
-       * @description 作成先 Project の名前。作成先を選んだ時点のスナップショット
-       *     （ADR 0019）。取得していなければ空文字
-       */
-      projectTitle: string;
-      /**
-       * @description 作成先 Project の URL。作成先を選んだ時点のスナップショット
-       *     （ADR 0025）。取得していなければ空文字。
-       *
-       *     番号から組み立てたものではなく GitHub が返したもの。Projects v2 の
-       *     URL は owner が user か org かで形が変わり、etoki はどちらなのかを
-       *     知らない
-       */
-      projectUrl: string;
-    };
-    /**
-     * @description 注釈の 3 状態ごとの件数。保存済みシーンが基準で、注釈の状態
-     *     （`AnnotationStatus.state`）と同じ判定で数える。
-     *
-     *     キャンバスから消えた注釈（`DetachedAnnotation`）は数えない。3 状態を
-     *     持たないため（ADR 0046）。
-     */
-    AnnotationCounts: {
-      uncreated: number;
-      created: number;
-      changed: number;
-    };
-    /**
-     * @description 一覧で返すボード。ボードの共通部分に、注釈の 3 状態の件数を足したもの。
-     *     開く前にどのボードに手を打つものがあるかを見せるため（#200）。
-     *
-     *     **件数は一覧にだけ載せる。** `BoardSummary` に置くと、取り込んでいる
-     *     `BoardDetail` を返すすべての応答で数えることになる。開いたボードの
-     *     状態は注釈の一覧（`AnnotationStatus`）が持っている。
-     */
-    BoardListEntry: components["schemas"]["BoardSummary"] & {
-      /**
-       * @description 注釈の 3 状態ごとの件数。**シーンを読めなかったボードは null**。
-       *     1 枚のシーンが壊れているだけで一覧全体を失敗させない。
-       *
-       *     **required にしてある。** 省略できる形にすると、書き忘れた
-       *     返し方が「読めなかった」と同じ見え方のまま通る。
-       */
-      annotationCounts: components["schemas"]["AnnotationCounts"] | null;
-    };
-    /** @description シーンと作成先の固定状態を加えたボード */
-    BoardDetail: components["schemas"]["BoardSummary"] & {
-      /**
-       * @description Excalidraw のシーン JSON をそのまま入れた文字列。**貼った画像の
-       *     実体（`files`）は入らない。** 画像はボードを開く口
-       *     （`getBoard` の `BoardWithFiles.files`）だけが返す（ADR 0074）
-       */
-      scene: string;
-      /**
-       * @description 作成先を変更できないことを表す。そのボードで draft issue を
-       *     1 件でも作ると立つ（ADR 0014）。フロントは sync_runs を
-       *     数えられないので、状態としてサーバーが返す
-       */
-      targetLocked: boolean;
-      /**
-       * @description いま保存されているシーンか、貼った画像の合計が保存できる上限
-       *     （ADR 0038 / 0074）を超えていて、このままでは保存し直せない
-       *     ことを表す（issue #103）。上限を導入する前に保存されたボードや、
-       *     上限を引き下げた後にだけ真になりうる。
-       *
-       *     **上限の数値そのものは返さない。** フロントは判定結果だけを
-       *     受け取り、上限を複製しない。`projectAccess` の
-       *     `unknown` / `allowed` / `denied` と同じで、判定はサーバーの
-       *     持ち場のまま
-       */
-      sceneOverLimit: boolean;
-    };
-    /** @description 開いたボード。`BoardDetail` に、貼った画像をすべて加えたもの（ADR 0074）。 */
-    BoardWithFiles: components["schemas"]["BoardDetail"] & {
-      /**
-       * @description 画像の ID → Excalidraw の画像データ（BinaryFileData）を JSON に
-       *     した文字列。キーはシーンの画像の要素の `fileId` が指す値。
-       *     画像が無ければ空のオブジェクト。
-       *
-       *     **中身を etoki は解釈しない。** 保存で送られてきたものをそのまま
-       *     返す（`scene` と同じ）
-       */
-      files: {
-        [key: string]: string;
-      };
-    };
-    /**
-     * @description ボードを削除したときに etoki から失われるもの（ADR 0042）。
-     *
-     *     **GitHub 側で何が起きるかは含まれない。** etoki は draft issue を
-     *     消さないので、GitHub にはそのまま残る。ここが答えるのは「辿れなく
-     *     なるのはどれだけか」という問いのほう。
-     */
-    BoardDeletion: {
-      /**
-       * @description そのボードから作成したと etoki が記録している draft issue の件数。
-       *
-       *     数え方は注釈のカードに出している「いま GitHub に在る N 件」と同じ
-       *     畳み込み（ADR 0026）。**GitHub 上でまだ在るかどうかは etoki には
-       *     分からない**（ADR 0007）ので、これは記録の件数であって現況では
-       *     ない
-       */
-      recordedItemCount: number;
-    };
-    /**
-     * @description draft issue の作成先。設定のリクエストボディ。
-     *
-     *     リポジトリと Project の両方を持つ。保存先として効くのは projectId
-     *     だが、どのリポジトリから選んだかを画面に出すために owner / name も残す。
-     *
-     *     projectNumber と projectTitle と projectUrl は**表示用のスナップショット**
-     *     であり、作成先そのものではない（ADR 0019 / 0025）。未選択の判定にも、
-     *     固定済みかどうかの判定にも使わない。選ばせた画面が見せていたものを
-     *     そのまま送る。
-     *
-     *     表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存する。
-     *     必須にすると、画面を通さない呼び出し側が値をでっち上げることになる。
-     */
-    BoardTarget: {
-      repositoryOwner: string;
-      repositoryName: string;
-      projectId: string;
-      projectNumber?: number;
-      projectTitle?: string;
-      projectUrl?: string;
-    };
-    /**
-     * @description 作成先の表示用スナップショット。取り直しのリクエストボディ（ADR 0037）。
-     *
-     *     `projectId` は**変更先ではなく照合材料**。どの作成先の表示名なのかを
-     *     示すために伴い、保存されているものと違えば 409 になる。リポジトリを
-     *     持たないのは、この口で作成先そのものを動かせないことを形で示すため。
-     *
-     *     表示用の 3 つは任意。省略すると「知らない」（0 と空文字）として保存
-     *     する。BoardTarget と同じ扱いにしてあるので、GitHub が URL を返さない
-     *     Project でも取り直せる。
-     */
-    BoardTargetDisplay: {
-      /** @description いま保存されている作成先の Projects v2 node ID */
-      projectId: string;
-      projectNumber?: number;
-      projectTitle?: string;
-      projectUrl?: string;
-    };
-    /**
-     * @description 作成先の候補と、取りきったかどうか（ADR 0054）。
-     *
-     *     **配列ではなく包んだ形で返す。** 候補は上限で打ち切られうるので、配列
-     *     だけでは「これで全部」と「ここまでしか見ていない」を画面が区別できない。
-     *     区別できないと、目当てが出ないときに権限を疑うのか件数を疑うのかを利用者が
-     *     決められない（中核思想 3）。
-     *
-     *     **ヘッダでは返さない。** 契約に現れないものを画面が読むことになり、
-     *     生成した型から辿れなくなる（ADR 0011）。
-     */
-    RepositoryList: {
-      /** @description 候補。0 件でも配列を返す */
-      repositories: components["schemas"]["Repository"][];
-      /**
-       * @description 上限に当たって辿るのをやめた。**「まだある」ではなく「見るのを
-       *     やめた」。** 打ち切った先に候補が残っているかどうかは、辿るのを
-       *     やめた以上サーバーにも分からない。
-       *
-       *     **件数も上限値も返さない。** 画面が出せるのは「ここまでしか見て
-       *     いない」までで、数を出すと上限を画面が知ることになる（ADR 0038 が
-       *     シーンの上限を返さないのと同じ理由）。
-       */
-      truncated: boolean;
-    };
-    /** @description 作成先を選ぶときに見せるリポジトリ */
-    Repository: {
-      owner: string;
-      name: string;
-      description?: string;
-    };
-    /** @description リポジトリに紐づく Projects v2 */
-    Project: {
-      /** @description GraphQL の node ID。作成先として保存するのはこれ */
-      id: string;
-      /** @description リポジトリ内での番号。GitHub の URL に出る */
-      number: number;
-      title: string;
-      /**
-       * @description Project のページ。**番号から組み立てず GitHub が返したものを運ぶ。**
-       *     Projects v2 の URL は owner が user か org かで形が変わり、etoki は
-       *     どちらなのかを知らない（ADR 0025）
-       */
-      url: string;
-    };
-    /**
-     * @description ボード作成のリクエストボディ。
-     *
-     *     **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
-     *     （ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
-     *     「ボードの作成にはリポジトリへのアクセス権が要る」はこれで満ちる
-     *     （ADR 0017）。
-     *
-     *     副産物として、作成先が未選択のボードは新規には生まれなくなる。移行前の
-     *     ボードは未選択のまま残るので、`projectId` が空文字の経路は消えない。
-     */
-    CreateBoardRequest: {
-      name: string;
-      repositoryOwner: string;
-      repositoryName: string;
-      /** @description draft issue を作る Projects v2 の node ID */
-      projectId: string;
-      /**
-       * @description 作成先 Project の番号。表示用のスナップショット（ADR 0019）。
-       *     省略すると 0（名前を知らない）で保存する
-       */
-      projectNumber?: number;
-      /**
-       * @description 作成先 Project の名前。表示用のスナップショット（ADR 0019）。
-       *     省略すると空文字（名前を知らない）で保存する
-       */
-      projectTitle?: string;
-      /**
-       * @description 作成先 Project の URL。表示用のスナップショット（ADR 0025）。
-       *     省略すると空文字（URL を知らない）で保存する
-       */
-      projectUrl?: string;
-      /**
-       * @description 省略すると空のシーンで作る。画像の実体（`files`）が入っていたら 400。
-       *     作成は画像を受け取らない（ADR 0074）
-       */
-      scene?: string;
-    };
-    /**
-     * @description 改名のリクエストボディ。
-     *
-     *     名前だけを持つ。作成先やシーンを一緒に送れる形にすると、この経路でも
-     *     作成先を書けることになり、固定（ADR 0014）が意味を失う。
-     */
-    RenameBoardRequest: {
-      /** @description 新しい名前。空文字と空白だけは弾く */
-      name: string;
-    };
-    /**
-     * @description シーン保存のリクエストボディ。
-     *
-     *     `baseUpdatedAt` は任意にしない。任意にすると API を直接叩く経路で照合を
-     *     素通りでき、防ぎたい後勝ちがそのまま残る（ADR 0010 と同じ理由）。
-     */
-    SaveSceneRequest: {
-      /**
-       * @description 画像の実体（`files`）を抜いたシーン JSON。空の `files` は構わないが、
-       *     画像が入っていたら 400（画像は `files` で送る、ADR 0074）
-       */
-      scene: string;
-      /**
-       * @description ボードに足す画像。画像の ID → Excalidraw の画像データ
-       *     （BinaryFileData）を JSON にした文字列（`BoardWithFiles.files` と
-       *     同じ形）。
-       *
-       *     **ボードがまだ持っていない画像だけを送る。** 持っているものは
-       *     開いたときの `files` のキーと、保存の応答の `fileIds` で分かる。
-       *     同じ ID を送ればその画像を置き換える。
-       *
-       *     シーンから参照されていない画像と、`id` がキーと違う画像は 400。
-       *     送らなかった画像は、シーンから参照されているかぎり残る。省略すると
-       *     足す画像なし
-       */
-      files?: {
-        [key: string]: string;
-      };
-      /**
-       * Format: date-time
-       * @description 編集の基準にしたボードの `updatedAt`。取得時に返ったものをそのまま
-       *     送り返す。現在の版と違えば 409 になり、シーンは書き換わらない
-       *     （ADR 0020）
-       */
-      baseUpdatedAt: string;
-    };
-    /**
-     * @description 保存後のボードの版。
-     *
-     *     返さないと、クライアントは保存のたびにボードを取り直さないと次の保存が
-     *     できない。取り直すとシーンまで運ぶことになる。
-     */
-    SaveSceneResponse: {
-      /**
-       * Format: date-time
-       * @description 保存後の `updatedAt`。次の保存の `baseUpdatedAt` になる
-       */
-      updatedAt: string;
-      /**
-       * @description 保存後にボードが持っている画像の ID（ADR 0074）。次の保存では、
-       *     ここにある画像を送らなくてよい。
-       *
-       *     **クライアントは自分で数え直さない。** 何が残って何が消えたかの
-       *     規則はサーバーが持つ。手元で導くと、規則が 2 箇所になる
-       */
-      fileIds: string[];
-    };
-    /**
-     * @description 1 つの run がその item に対して何をしたか（ADR 0026）。
-     *
-     *     `created` は新しく作った、`updated` は既存の draft issue を書き換えた。
-     *     記録していなかった頃の run はすべて `created`。当時は更新の経路が無かった。
-     * @enum {string}
-     */
-    SyncAction: "created" | "updated";
-    /**
-     * @description 1 回の実行がその draft issue に対して行った書き込み 1 件。
-     *
-     *     **「作成済みの 1 件」ではない。** `confirmed` が false なら、GitHub に
-     *     届いたかどうかを etoki は知らない（ADR 0056）。
-     */
-    SyncItem: {
-      /**
-       * @description GitHub Projects v2 の item ID。
-       *
-       *     **`confirmed` が false の作成では空文字**（ID が返ってこなかった）。
-       *     更新では相手の ID が分かっているので、未確定でも入る
-       */
-      itemId: string;
-      /**
-       * Format: int64
-       * @description item の数値の識別子（GraphQL の `fullDatabaseId`）。**省略と 0 は
-       *     「知らない」。** 記録していなかった頃の run と、GitHub が返さなかった
-       *     ときにそうなる。
-       *
-       *     **URL ではなく素材だけを返す**（ADR 0057）。item ごとのリンクの形と、
-       *     組めないときの落とし先はフロントの 1 箇所が持つ。
-       */
-      itemDatabaseId?: number;
-      kind: components["schemas"]["ItemKind"];
-      title: string;
-      /** @description 作成時の本文。記録していなかった頃の run では空 */
-      body: string;
-      /** @description 解釈結果の中でだけ通じる ID。親子の対応づけに使う */
-      localId: string;
-      /** @description epic に属する issue のとき、その epic の localId */
-      parentLocalId?: string;
-      action: components["schemas"]["SyncAction"];
-      /**
-       * @description この書き込みが GitHub に届いたことを確かめられたかどうか
-       *     （ADR 0056）。
-       *
-       *     false は「失敗した」ではなく「**分からない**」。GitHub が受理した
-       *     あとで応答だけを失った場合も、受理せずに返した場合も、etoki からは
-       *     区別できない。**確かめるのは開発者**（中核思想 3）。
-       *
-       *     記録していなかった頃の run では true。当時は確定したものしか
-       *     記録できなかった
-       */
-      confirmed: boolean;
-    };
-    /**
-     * @description run が最後まで進んだかどうか（ADR 0043）。
-     *
-     *     **省略は「成功」ではなく「記録していない」。** この項目を足す前の run に
-     *     は記録が無く、当時も途中失敗は起きていた。`complete` と同じに扱わない。
-     * @enum {string}
-     */
-    RunOutcome: "complete" | "incomplete";
-    /**
-     * @description 1 つの注釈に対する 1 回ぶんの実行の記録（ADR 0007）。
-     *
-     *     **「そのときの全体像」ではなく「その 1 回で何をしたか」**（ADR 0026）。
-     *     触らなかった item はここには現れない。いま GitHub に在るものが知りたい
-     *     なら `AnnotationStatus.items`（畳み込み）を見る。
-     */
-    SyncRun: {
-      /**
-       * Format: int64
-       * @description run の識別子。**新しさの順はこれで決まる**（時刻は呼び出し側が
-       *     与えるので、同じ値の run がありうる）
-       */
-      id: number;
-      /**
-       * Format: date-time
-       * @description 実行の時刻
-       */
-      createdAt: string;
-      /**
-       * @description 最後まで進んだかどうか。**記録していなかった頃の run では省略する**
-       *     （ADR 0043）
-       */
-      outcome?: components["schemas"]["RunOutcome"];
-      /**
-       * @description 途中で失敗した理由。`outcome` が `incomplete` のときだけ入る。
-       *
-       *     **利用者向けの文言ではなく手掛かり**なので、画面は既定で畳む
-       *     （ADR 0034）
-       */
-      error?: string;
-      /**
-       * @description その run で作成または更新した draft issue。1 件も作れずに終わった
-       *     実行は記録しないので、記録された run には 1 件以上入る（ADR 0009）
-       */
-      items: components["schemas"]["SyncItem"][];
-    };
-    /**
-     * @description ボード 1 枚ぶんの注釈。**シーンに在るものと、消えたのに GitHub 側には
-     *     残っているものを分けて返す。**
-     */
-    BoardAnnotations: {
-      /** @description 保存済みシーンに在る注釈。0 件でも配列を返す */
-      annotations: components["schemas"]["AnnotationStatus"][];
-      /**
-       * @description シーンから消えたのに GitHub 側にものが残っている注釈。
-       *     0 件でも配列を返す
-       */
-      detached: components["schemas"]["DetachedAnnotation"][];
-    };
-    /**
-     * @description 注釈にした frame をキャンバスから消して保存したあとも、GitHub 側に
-     *     残っている draft issue（#111）。
-     *
-     *     **run の記録は消えていない**（ADR 0007）ので `.../annotations/{id}/runs`
-     *     はそのまま読める。ここはその導線を出すための一覧。
-     *
-     *     **etoki は消しも作り直しもしない**（中核思想 3）。frame を引き直すと
-     *     要素の ID が変わるので、以後は別の注釈として扱われる。
-     */
-    DetachedAnnotation: {
-      /**
-       * @description 消えた frame の要素 ID。**名前は返さない。** シーンから消えている
-       *     ので取りようが無い。何の囲みだったかは items から読む
-       */
-      id: string;
-      /**
-       * Format: date-time
-       * @description 最後に実行した時刻
-       */
-      lastSyncedAt?: string;
-      /**
-       * @description この注釈が GitHub に在らしめている draft issue。畳み込みは
-       *     AnnotationStatus.items と同じ（ADR 0026）。
-       *
-       *     **空でも省略しない。** 届いたか分からない書き込みだけが残っている
-       *     注釈がありうる（ADR 0056）
-       */
-      items: components["schemas"]["SyncItem"][];
-      /**
-       * @description GitHub に届いたか分からない書き込み（ADR 0056）。1 件も無ければ
-       *     省略する。意味は AnnotationStatus.unconfirmedItems と同じ。
-       *
-       *     **囲みを消しても落とさない。** 確かめようのない書き込みが画面から
-       *     消えてよい理由にはならない
-       */
-      unconfirmedItems?: components["schemas"]["SyncItem"][];
-    };
-    /** @description 注釈 1 つの状態 */
-    AnnotationStatus: {
-      id: string;
-      name: string;
-      granularity: components["schemas"]["Granularity"];
-      /**
-       * @description 開発者が選んだ図の種別。**選んでいなければ省略する**（テンプレート
-       *     から始めていない注釈がそれ）。
-       *
-       *     `Granularity` のように空文字を値に持たせず省略で表すのは、種別の
-       *     語彙を 1 つに保つため。プロンプトからのドラフト生成は「何の図か」が
-       *     入力そのものなので指定なしを受け付けず、enum に空文字を足すと
-       *     そちらの契約まで緩む。
-       *
-       *     **解釈のプロンプトに載り、`content_hash` の入力にも入る。**
-       *     差し替えれば `changed` になる（粒度と同じ）。
-       */
-      kind?: components["schemas"]["DiagramKind"];
-      state: components["schemas"]["SyncState"];
-      /**
-       * Format: date-time
-       * @description 前回実行の時刻。未実行なら省略する
-       */
-      lastSyncedAt?: string;
-      /**
-       * @description 前回実行が最後まで進んだかどうか（ADR 0043）。未実行と、記録して
-       *     いなかった頃の run では省略する。
-       *
-       *     **`state` は変わらない。** 途中で失敗しても作れたぶんは記録するので、
-       *     状態は `created` になる（ADR 0009）。件数だけでは、途中で止まった
-       *     のか、もともとその件数だったのかが読めないので別に出す。
-       *
-       *     **理由はここには載せない。** 一覧は「何が起きたか」まで見せる場所で、
-       *     手掛かりの本文は履歴（`GET .../runs`）が持つ
-       */
-      lastRunOutcome?: components["schemas"]["RunOutcome"];
-      /**
-       * @description この注釈が GitHub に在らしめている draft issue（ADR 0026）。
-       *
-       *     **前回実行で作られたものではなく、run 履歴を itemId で畳んだもの。**
-       *     更新は同じ itemId に吸収され、今回触らなかったものも残り続ける。
-       *     最新 run だけを返すと、更新のあとに取り残しが画面から消える。
-       *     1 件も無ければ省略する
-       */
-      items?: components["schemas"]["SyncItem"][];
-      /**
-       * @description GitHub に届いたか分からない書き込み（ADR 0056）。1 件も無ければ
-       *     省略する。
-       *
-       *     **`items` とは別のリスト。** あちらは「いま GitHub に在るもの」で、
-       *     こちらは在るかどうかが分からないもの。混ぜると件数が嘘になり、
-       *     更新先としても選べてしまう（未確定の作成は `itemId` を持たない）。
-       *     分けているのは `detached` と同じ理由（ADR 0046）。
-       *
-       *     **`state` はこれを見ない。** 確定が 1 件も無くても `created` に
-       *     なる。押し直しで消せない draft issue が重複するほうを避ける
-       *     （ADR 0009 / 0056）
-       */
-      unconfirmedItems?: components["schemas"]["SyncItem"][];
-    };
-    /** @description 解釈結果に含まれる draft issue 1 件。まだ作成はしていない */
-    InterpretedItem: {
-      localId: string;
-      kind: components["schemas"]["ItemKind"];
-      title: string;
-      body: string;
-      parentLocalId?: string;
-      /**
-       * @description 書き換える対象の itemId（ADR 0026）。新しく作るなら省略する。
-       *
-       *     解釈のレスポンスでは LLM が対応づけた候補が入る。作成のリクエストでは
-       *     開発者が確かめた結果として送り返す。**サーバーはこの値がその注釈の
-       *     ものであることを確かめる。** 確かめずに通すと、任意の node ID を
-       *     書いて無関係な draft issue を書き換えられる
-       */
-      previousItemId?: string;
-    };
-    /**
-     * @description 注釈の frame 範囲だけを写した画像。frame の外にある要素は含めない。
-     *
-     *     サーバーは保存しない。解釈 1 回のあいだ LLM へ渡すためだけに使う
-     *     （ADR 0018）。
-     */
-    AnnotationImage: {
-      /**
-       * @description 画像の MIME タイプ。PNG だけを受け付ける
-       * @enum {string}
-       */
-      mediaType: "image/png";
-      /**
-       * Format: byte
-       * @description 画像のバイト列を base64 で表したもの。デコード後のバイト数に上限が
-       *     あり、超えると 400 を返す。上限は超えても縮小せず弾く。黙って劣化
-       *     させると、渡したはずの情報が消えたことに気づけない（ADR 0018）
-       */
-      data: string;
-    };
-    /**
-     * @description 解釈のリクエストボディ。テキストは保存済みシーンから取るので、ここには
-     *     シーンから作れないものだけを載せる。
-     */
-    InterpretRequest: {
-      image?: components["schemas"]["AnnotationImage"];
-    };
-    /**
-     * @description 図のドラフトを直してきたやりとり 1 往復。
-     *
-     *     **サーバーは会話を保存しない**（ADR 0041）ので、ここまでの往復は毎回
-     *     まるごと送る。会話は成果物ではなく、成果物はキャンバス。
-     */
-    DiagramTurn: {
-      /** @description そのとき書いた指示 */
-      prompt: string;
-      /** @description それに対して返った mermaid */
-      mermaid: string;
-    };
-    /**
-     * @description 図のドラフトを 1 つ作るための入力。**保存済みシーンもキャンバスも
-     *     読まない**（ADR 0041）ので、未保存でも使える。
-     */
-    GenerateDiagramRequest: {
-      kind: components["schemas"]["DiagramKind"];
-      /**
-       * @description 今回の指示。空白だけのものは 400 で弾く。既定に倒さないのは、
-       *     何を描くかが入力そのものであるため
-       */
-      prompt: string;
-      /**
-       * @description ここまでのやりとり。1 回目は空。**上限を超えたら黙って古いものを
-       *     捨てず、`diagram_chat_too_long` で返す**
-       */
-      history?: components["schemas"]["DiagramTurn"][];
-    };
-    /**
-     * @description 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
-     *     見てから開発者が決める（中核思想 3）。mermaid を Excalidraw の要素に
-     *     するのはフロントの仕事（ADR 0040）。
-     */
-    DiagramDraft: {
-      kind: components["schemas"]["DiagramKind"];
-      /** @description 生成された mermaid。コードフェンスは外してある */
-      mermaid: string;
-      /**
-       * @description このあと何往復できるか。**上限に当たってから知らせるのでは遅い**
-       *     ので、押す前に見えるようにしている
-       */
-      turnsRemaining: number;
-    };
-    /**
-     * @description LLM が注釈をどう解釈したか。
-     *
-     *     `summary` は GitHub には作らない。作成前に「こう読んだ」を見せるためだけに
-     *     使う（ADR 0006）。
-     *
-     *     作成のリクエストボディとしてもこの形をそのまま使う。開発者が確認した
-     *     結果を送り返す、という流れなので別の型にしない。
-     */
-    Interpretation: {
-      summary: string;
-      /**
-       * @description 解釈の入力になった保存済みシーンのハッシュ。フロントでは組み立てず、
-       *     受け取ったものをそのまま送り返す
-       */
-      contentHash: string;
-      items: components["schemas"]["InterpretedItem"][];
-    };
-    /** @description 作成した run。途中で失敗しても、作れたぶんは items に入る */
-    CreatedRun: {
-      /** Format: int64 */
-      runId: number;
-      /** Format: date-time */
-      createdAt: string;
-      items: components["schemas"]["SyncItem"][];
-      /** @description 途中で失敗したことを表す */
-      incomplete?: boolean;
-      /** @description 途中で失敗した理由 */
-      error?: string;
-    };
-  };
-  responses: {
-    /** @description リクエストの内容が不正 */
-    BadRequest: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /**
-     * @description ログインしていない、またはセッションが失効した。認証を設定している
-     *     場合にだけ起こる（ADR 0015）。
-     */
-    Unauthorized: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /**
-     * @description 次のどれか。
-     *
-     *     - Host または Origin が許可されていない。ブラウザ由来の cross-site
-     *       リクエストを弾いた場合（ADR 0013）。全エンドポイントで起こりうる
-     *     - ボードのメンバーではあるが、その操作にロールが足りない（ADR 0017）。
-     *       **メンバーでない場合は 404。** 区別すると ID を総当たりして他人の
-     *       ボードの存在を確かめられる
-     *     - GitHub がその Project への書き込みを拒んだ。etoki は実行者の
-     *       トークンで叩くので、リポジトリのアクセス権が無ければここに来る
-     */
-    Forbidden: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /**
-     * @description リクエストボディが `/api` の既定の上限を超えている（issue #147）。
-     *
-     *     **上限は `/api` の入口 1 箇所で掛かる。** 口ごとに置くと、足した口だけが
-     *     歯止めの無いまま残る。より広い本文を受ける口（シーンの保存・解釈の画像・
-     *     図のドラフトの会話）はそれぞれの上限に置き換わる。
-     *
-     *     **置き換わっても code が変わるとは限らない。** 自分の code を持つのは
-     *     シーンの保存（`scene_too_large`）と図のドラフトの会話
-     *     （`diagram_chat_too_long`）だけ。**解釈の画像は上限だけが広く、超えたときは
-     *     この code で返る。** 打ち手が「送っているものを見直す」で同じだから。
-     *
-     *     **`scene_too_large` に畳まない。** あちらの打ち手は「貼った画像を減らす」
-     *     だが、こちらに当たるのは名前・作成先・招待・作成の項目のような、本来は
-     *     既定の上限に収まる本文。打ち手は「送っているものを見直す」になる。
-     *
-     *     **上限の値は返さない。** クライアントが持つと、サーバー側で動かした日に
-     *     そちらだけが古くなる（ADR 0038 がシーンの上限を返さないのと同じ理由）。
-     */
-    RequestTooLarge: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /**
-     * @description シーンか、保存したあとに残る貼った画像の合計が、保存できる大きさを
-     *     超えている。**縮小も切り捨てもせずに弾く**（ADR 0018 と同じ扱い）。
-     *     効いてくるのはキャンバスに貼った画像で、シーンと画像のどちらで超えたかは
-     *     code で分けない（ADR 0074）。
-     *
-     *     400 ではないのは、中身の誤りではなく大きさだから。打ち手が「送った
-     *     内容を直す」ではなく「貼った画像を減らす」になる。
-     */
-    SceneTooLarge: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /**
-     * @description StateTTL（10 分）のあいだに始められるログインの回数が上限に達した
-     *     （issue #147）。
-     *
-     *     **ログインの開始は、ログインしていなくても書き込みが起きる口の 1 つ。**
-     *     （もう 1 つは MCP のクライアントの登録 `/oauth/register` で、同じ形で
-     *     絞っている。ADR 0076）
-     *     1 回ごとに state が 1 つ保存され、掃除は期限切れしか消さないので、
-     *     上限が無いと窓のあいだ叩かれた回数だけ表が育つ。
-     *
-     *     **絞る軸はプロセス全体。** この口は認証の外にあるので、`rate_limited`
-     *     でも「利用者ごと」（ADR 0044）は使えない。code を分けないのは、画面の
-     *     打ち手が同じ「時間をおく」だからで、分ける基準はステータスではなく
-     *     打ち手（ADR 0034）。
-     */
-    TooManyLoginStarts: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /**
-     * @description LLM を叩く実行の上限に当たった（ADR 0044）。**上限は利用者ごと**で、
-     *     解釈と図のドラフト生成が 1 つの枠を共有する。どちらも課金を伴う外部
-     *     呼び出しなので、片方だけ絞ると抜け道が残る。
-     *
-     *     **code を 2 つに分ける。** ステータスは同じでも打ち手が違う。
-     *
-     *     - `rate_limited`: 窓の中の回数を使い切った。時間をおく
-     *     - `concurrency_limited`: いま走っている実行がある。終わるのを待つ
-     *
-     *     **上限に当たった実行は LLM を 1 回も呼んでいない。** 呼んでから結果を
-     *     捨てると、課金だけが発生する。
-     *
-     *     回数の上限は設定した構成にしか存在しない（既定は同時実行のみ）。
-     *     **残り枠は返さない。** 無い上限の残りを常時載せることになるため。
-     */
-    TooManyRequests: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /**
-     * @description 図のドラフトの会話が上限を超えている。往復の回数か、会話全体の長さの
-     *     どちらか。
-     *
-     *     **黙って古いやりとりを捨てない。** 捨てると、積み上げた指示のどれが
-     *     効いているのかが分からなくなる。やり直すかどうかは開発者が決める
-     *     （中核思想 3）。
-     *
-     *     400 ではないのは大きさだから。送られた内容は正しく、打ち手が「送った
-     *     内容を直す」ではなく「会話をやり直す」になる（SceneTooLarge と同じ）。
-     */
-    DiagramChatTooLong: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /**
-     * @description その機能に必要な設定がされていない。URL の誤りではないので 404 に
-     *     しない。
-     */
-    NotConfigured: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /** @description 対象が見つからない */
-    NotFound: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-    /** @description サーバー側の想定外の失敗 */
-    InternalError: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["ErrorResponse"];
-      };
-    };
-  };
-  parameters: {
-    /** @description ボードの ID */
-    BoardId: string;
-    /** @description 注釈にした frame の要素 ID */
-    AnnotationId: string;
-    /**
-     * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
-     *     指し先としては使えない（ADR 0015）。
-     */
-    UserId: string;
-    /** @description リポジトリ所有者の login */
-    RepositoryOwner: string;
-    /** @description リポジトリ名 */
-    RepositoryName: string;
-  };
-  requestBodies: never;
-  headers: never;
-  pathItems: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  getHealth: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description プロセスは生きている */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HealthResponse"];
-        };
-      };
-      403: components["responses"]["Forbidden"];
-    };
-  };
-  getCapabilities: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description いま使える機能 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Capabilities"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  getSession: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description ログイン状態 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SessionStatus"];
-        };
-      };
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  startLogin: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        "application/json": components["schemas"]["LoginRequest"];
-      };
-    };
-    responses: {
-      /** @description 送り出す先 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["LoginResponse"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      403: components["responses"]["Forbidden"];
-      429: components["responses"]["TooManyLoginStarts"];
-      500: components["responses"]["InternalError"];
-      /** @description 認証が設定されていない */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  completeLogin: {
-    parameters: {
-      query: {
-        code: string;
-        state: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /**
-       * @description 画面へ戻す。成功時だけでなく、state が古い・code を使い切った
-       *     場合もここに来る。ブラウザのトップレベル遷移に JSON を返すと
-       *     利用者が生のエラー本文を見ることになるため
-       */
-      302: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description code か state が付いていない（直接叩かれた場合） */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-      /** @description 認証が設定されていない */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  logout: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 破棄した。もともとログインしていなくても 204 */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  getOAuthAuthorization: {
-    parameters: {
-      query: {
-        /** @description `/oauth/authorize` に付いていたクエリ文字列そのもの */
-        request: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 同意の画面に出すもの */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["OAuthAuthorization"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  decideOAuthAuthorization: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["OAuthDecisionRequest"];
-      };
-    };
-    responses: {
-      /** @description クライアントへ戻す先 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["OAuthDecision"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      413: components["responses"]["RequestTooLarge"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  listOAuthGrants: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 自分の接続 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["OAuthGrant"][];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  revokeOAuthGrant: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        grantId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 取り消した */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  listBoards: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description ボードの一覧。0 件でも配列を返す */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardListEntry"][];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  createBoard: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateBoardRequest"];
-      };
-    };
-    responses: {
-      /** @description 作成したボード */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardDetail"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      413: components["responses"]["SceneTooLarge"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  getBoard: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description ボード */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardWithFiles"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  deleteBoard: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 削除した */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  renameBoard: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["RenameBoardRequest"];
-      };
-    };
-    responses: {
-      /** @description 改名後のボード */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardDetail"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      413: components["responses"]["RequestTooLarge"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  getBoardDeletion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 削除で失われるもの */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardDeletion"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  saveScene: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SaveSceneRequest"];
-      };
-    };
-    responses: {
-      /** @description 保存した。次の保存の基準になる版を返す */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SaveSceneResponse"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      /** @description 基準にした版が古い。他の誰かがすでに保存している */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      413: components["responses"]["SceneTooLarge"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  setBoardTarget: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["BoardTarget"];
-      };
-    };
-    responses: {
-      /** @description 設定後のボード */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardDetail"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      /** @description すでに draft issue を作っているので作成先を変えられない */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      413: components["responses"]["RequestTooLarge"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  refreshBoardTargetDisplay: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["BoardTargetDisplay"];
-      };
-    };
-    responses: {
-      /** @description 更新後のボード */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardDetail"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      /** @description 送られた projectId が保存されている作成先と違う */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      413: components["responses"]["RequestTooLarge"];
-      /** @description そのボードには作成先が設定されていない */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      500: components["responses"]["InternalError"];
-    };
-  };
-  getBoardAccess: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 権限 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardAccess"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  listBoardMembers: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description メンバー */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardMember"][];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  inviteBoardMember: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["InviteMemberRequest"];
-      };
-    };
-    responses: {
-      /** @description 招待した */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardMember"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      /** @description すでにメンバー、または確認した相手といまの持ち主が違う */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      413: components["responses"]["RequestTooLarge"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  lookupInvitee: {
-    parameters: {
-      query: {
-        /** @description 招待する相手の login。大文字小文字は区別しない */
-        login: string;
-      };
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description その login で最後にログインした利用者 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Invitee"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  setBoardMemberRole: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-        /**
-         * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
-         *     指し先としては使えない（ADR 0015）。
-         */
-        userId: components["parameters"]["UserId"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SetMemberRoleRequest"];
-      };
-    };
-    responses: {
-      /** @description 変更後のメンバー */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardMember"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      /** @description 最後の owner は降格できない */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      413: components["responses"]["RequestTooLarge"];
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  removeBoardMember: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-        /**
-         * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
-         *     指し先としては使えない（ADR 0015）。
-         */
-        userId: components["parameters"]["UserId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 外した */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      /** @description 最後の owner は外せない */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      500: components["responses"]["InternalError"];
-      503: components["responses"]["NotConfigured"];
-    };
-  };
-  listRepositories: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description リポジトリの一覧 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RepositoryList"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-      /** @description GitHub の呼び出しに失敗した */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description GitHub が設定されていない */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  listRepositoryProjects: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description リポジトリ所有者の login */
-        owner: components["parameters"]["RepositoryOwner"];
-        /** @description リポジトリ名 */
-        repo: components["parameters"]["RepositoryName"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Projects v2 の一覧。0 件でも配列を返す */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Project"][];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      500: components["responses"]["InternalError"];
-      /** @description GitHub の呼び出しに失敗した */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description GitHub が設定されていない */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  listAnnotations: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 注釈の状態。annotations / detached とも 0 件でも配列を返す */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["BoardAnnotations"];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  listAnnotationRuns: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-        /** @description 注釈にした frame の要素 ID */
-        annotationId: components["parameters"]["AnnotationId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description 実行の履歴。新しい順。一度も実行していなければ空配列 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SyncRun"][];
-        };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      500: components["responses"]["InternalError"];
-    };
-  };
-  generateDiagramDraft: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["GenerateDiagramRequest"];
-      };
-    };
-    responses: {
-      /** @description 生成された図のドラフト */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiagramDraft"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      413: components["responses"]["DiagramChatTooLong"];
-      429: components["responses"]["TooManyRequests"];
-      500: components["responses"]["InternalError"];
-      /** @description LLM の呼び出しに失敗した、または図が返らなかった */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description LLM が設定されていない */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  interpretAnnotation: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-        /** @description 注釈にした frame の要素 ID */
-        annotationId: components["parameters"]["AnnotationId"];
-      };
-      cookie?: never;
-    };
-    /** @description 省略すると、これまでどおりテキストだけで解釈する。 */
-    requestBody?: {
-      content: {
-        "application/json": components["schemas"]["InterpretRequest"];
-      };
-    };
-    responses: {
-      /** @description 解釈の結果 */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Interpretation"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      413: components["responses"]["RequestTooLarge"];
-      429: components["responses"]["TooManyRequests"];
-      500: components["responses"]["InternalError"];
-      /** @description LLM の呼び出しに失敗した、または出力がスキーマを満たさなかった */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description LLM が設定されていない */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  createItems: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ボードの ID */
-        id: components["parameters"]["BoardId"];
-        /** @description 注釈にした frame の要素 ID */
-        annotationId: components["parameters"]["AnnotationId"];
-      };
-      cookie?: never;
-    };
-    /** @description 解釈のエンドポイントが返したものをそのまま送り返す */
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["Interpretation"];
-      };
-    };
-    responses: {
-      /**
-       * @description 作成した run。途中で失敗した場合も、作れたぶんは items に入り
-       *     `incomplete` が立つ（ADR 0009）。
-       */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CreatedRun"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      /**
-       * @description 解釈時点と現在のシーンの contentHash が食い違うか、`previousItemId` が
-       *     その注釈のものではない。どちらも解釈からやり直す
-       */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      413: components["responses"]["RequestTooLarge"];
-      /**
-       * @description ボードに作成先が設定されていない、または Projects v2 側に必要な
-       *     フィールドが無い
-       */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      500: components["responses"]["InternalError"];
-      /** @description GitHub への作成が 1 件も成功しなかった */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description GitHub が設定されていない */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
+    getHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description プロセスは生きている */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description いま使える機能 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ログイン状態 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionStatus"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    startLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description 送り出す先 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyLoginStarts"];
+            500: components["responses"]["InternalError"];
+            /** @description 認証が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    completeLogin: {
+        parameters: {
+            query: {
+                code: string;
+                state: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /**
+             * @description 画面へ戻す。成功時だけでなく、state が古い・code を使い切った
+             *     場合もここに来る。ブラウザのトップレベル遷移に JSON を返すと
+             *     利用者が生のエラー本文を見ることになるため
+             */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description code か state が付いていない（直接叩かれた場合） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            /** @description 認証が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 破棄した。もともとログインしていなくても 204 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getOAuthAuthorization: {
+        parameters: {
+            query: {
+                /** @description `/oauth/authorize` に付いていたクエリ文字列そのもの */
+                request: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 同意の画面に出すもの */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthAuthorization"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    decideOAuthAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description クライアントへ戻す先 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthDecision"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["RequestTooLarge"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    listOAuthGrants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自分の接続 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthGrant"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    revokeOAuthGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 取り消した */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    listBoards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ボードの一覧。0 件でも配列を返す */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardListEntry"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBoardRequest"];
+            };
+        };
+        responses: {
+            /** @description 作成したボード */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["SceneTooLarge"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ボード */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardWithFiles"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deleteBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 削除した */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    renameBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameBoardRequest"];
+            };
+        };
+        responses: {
+            /** @description 改名後のボード */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["RequestTooLarge"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getBoardDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 削除で失われるもの */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDeletion"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    saveScene: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveSceneRequest"];
+            };
+        };
+        responses: {
+            /** @description 保存した。次の保存の基準になる版を返す */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaveSceneResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description 基準にした版が古い。他の誰かがすでに保存している */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            413: components["responses"]["SceneTooLarge"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    setBoardTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardTarget"];
+            };
+        };
+        responses: {
+            /** @description 設定後のボード */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description すでに draft issue を作っているので作成先を変えられない */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            413: components["responses"]["RequestTooLarge"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    refreshBoardTargetDisplay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardTargetDisplay"];
+            };
+        };
+        responses: {
+            /** @description 更新後のボード */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description 送られた projectId が保存されている作成先と違う */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            413: components["responses"]["RequestTooLarge"];
+            /** @description そのボードには作成先が設定されていない */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getBoardAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 権限 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardAccess"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    listBoardMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description メンバー */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardMember"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    inviteBoardMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description 招待した */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardMember"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description すでにメンバー、または確認した相手といまの持ち主が違う */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            413: components["responses"]["RequestTooLarge"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    lookupInvitee: {
+        parameters: {
+            query: {
+                /** @description 招待する相手の login。大文字小文字は区別しない */
+                login: string;
+            };
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description その login で最後にログインした利用者 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitee"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    setBoardMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /**
+                 * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+                 *     指し先としては使えない（ADR 0015）。
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMemberRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description 変更後のメンバー */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardMember"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description 最後の owner は降格できない */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            413: components["responses"]["RequestTooLarge"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    removeBoardMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /**
+                 * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
+                 *     指し先としては使えない（ADR 0015）。
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 外した */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description 最後の owner は外せない */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    listRepositories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description リポジトリの一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepositoryList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            /** @description GitHub の呼び出しに失敗した */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description GitHub が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listRepositoryProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description リポジトリ所有者の login */
+                owner: components["parameters"]["RepositoryOwner"];
+                /** @description リポジトリ名 */
+                repo: components["parameters"]["RepositoryName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Projects v2 の一覧。0 件でも配列を返す */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            /** @description GitHub の呼び出しに失敗した */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description GitHub が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAnnotations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 注釈の状態。annotations / detached とも 0 件でも配列を返す */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardAnnotations"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listAnnotationRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 注釈にした frame の要素 ID */
+                annotationId: components["parameters"]["AnnotationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 実行の履歴。新しい順。一度も実行していなければ空配列 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRun"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    generateDiagramDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateDiagramRequest"];
+            };
+        };
+        responses: {
+            /** @description 生成された図のドラフト */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["DiagramChatTooLong"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            /** @description LLM の呼び出しに失敗した、または図が返らなかった */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description LLM が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    interpretAnnotation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 注釈にした frame の要素 ID */
+                annotationId: components["parameters"]["AnnotationId"];
+            };
+            cookie?: never;
+        };
+        /** @description 省略すると、これまでどおりテキストだけで解釈する。 */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["InterpretRequest"];
+            };
+        };
+        responses: {
+            /** @description 解釈の結果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Interpretation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["RequestTooLarge"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            /** @description LLM の呼び出しに失敗した、または出力がスキーマを満たさなかった */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description LLM が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 注釈にした frame の要素 ID */
+                annotationId: components["parameters"]["AnnotationId"];
+            };
+            cookie?: never;
+        };
+        /** @description 解釈のエンドポイントが返したものをそのまま送り返す */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Interpretation"];
+            };
+        };
+        responses: {
+            /**
+             * @description 作成した run。途中で失敗した場合も、作れたぶんは items に入り
+             *     `incomplete` が立つ（ADR 0009）。
+             */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedRun"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description 解釈時点と現在のシーンの contentHash が食い違うか、`previousItemId` が
+             *     その注釈のものではない。どちらも解釈からやり直す
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            413: components["responses"]["RequestTooLarge"];
+            /**
+             * @description ボードに作成先が設定されていない、または Projects v2 側に必要な
+             *     フィールドが無い
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description GitHub への作成が 1 件も成功しなかった */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description GitHub が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
 }
