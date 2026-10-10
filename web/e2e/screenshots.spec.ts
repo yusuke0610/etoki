@@ -20,6 +20,7 @@ import {
   picker,
   saveScene,
   startNewBoard,
+  openShareDialog,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -141,7 +142,7 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, multiFrameMock());
 
     // 寄せる口は詳細の「キャンバスで見る」。押すと詳細を閉じてフレームを選ぶ（#201）。
-    const detail = await openAnnotationDetail(page, "注釈 2");
+    const detail = await openAnnotationDetail(page, "絵2");
     await detail.getByRole("button", { name: "キャンバスで見る" }).click();
     // 寄せる動きはアニメーションする。終わる前に撮ると、途中の位置が写る。
     await page.waitForTimeout(1000);
@@ -192,7 +193,7 @@ test.describe("スクリーンショット", () => {
     // バッジはキャンバスより先に出る。ここで待たないと Excalidraw の
     // 「Loading scene...」を撮ってしまい、報告に使えない画像になる。
     await page.locator(".excalidraw canvas").first().waitFor();
-    await page.getByRole("heading", { name: "注釈", level: 2 }).waitFor();
+    await page.getByRole("heading", { name: "絵解いた", level: 2 }).waitFor();
     await shot(page, "07-target-selected");
   });
 
@@ -441,7 +442,7 @@ test.describe("スクリーンショット", () => {
     };
 
     await openBoardWithMock(page, mock);
-    await openPanelTab(page, "メンバー");
+    await openShareDialog(page);
     await page.getByText("Carol").waitFor();
     await shot(page, "11-members");
 
@@ -745,7 +746,7 @@ test.describe("スクリーンショット", () => {
   test("図のドラフトのチャットを撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await openPanelTab(page, "図のドラフト");
+    await openPanelTab(page, "etoki AI");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     // mermaid が出るまで待つ。待たずに撮ると、生成中の画面が写る。
@@ -1023,7 +1024,7 @@ test.describe("幅ごとのスクリーンショット", () => {
       await page.getByText("未保存", { exact: true }).waitFor();
       await shot(page, "44-phone-board");
 
-      await openPanelTab(page, "注釈");
+      await openPanelTab(page, "絵解いた");
       await shot(page, "45-phone-panel");
 
       // 未保存のまま絵解くと、保存してから読む（ADR 0077）。

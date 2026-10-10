@@ -47,7 +47,7 @@ test.describe("元に戻す", () => {
     await openBoard(page, BOARD_NAME);
 
     await drawRectangle(page);
-    await openPanelTab(page, "図のドラフト");
+    await openPanelTab(page, "etoki AI");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     await expect(page.locator(".diagram-mermaid")).toContainText("flowchart TD");
@@ -118,7 +118,7 @@ test.describe("元に戻す", () => {
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
 
-    await openPanelTab(page, "図のドラフト");
+    await openPanelTab(page, "etoki AI");
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     await expect(page.locator(".diagram-mermaid")).toContainText("flowchart TD");

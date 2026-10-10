@@ -13,8 +13,8 @@ import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /** チャットを開く。 */
 async function openChat(page: Page): Promise<void> {
-  await openPanelTab(page, "図のドラフト");
-  await expect(page.getByRole("heading", { name: "図のドラフト" })).toBeVisible();
+  await openPanelTab(page, "etoki AI");
+  await expect(page.getByRole("heading", { name: "etoki AI" })).toBeVisible();
 }
 
 test.describe("図のドラフト", () => {
@@ -278,9 +278,7 @@ test.describe("図のドラフト", () => {
 
     // タブごと出さない。**タブの並びが出ていることを先に見る。** 並びが
     // 描かれていないだけなら、出していても「無い」で通る。
-    await expect(page.getByRole("tab", { name: "注釈", exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("tab", { name: "図のドラフト", exact: true }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "絵解いた", exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "etoki AI", exact: true })).toHaveCount(0);
   });
 });

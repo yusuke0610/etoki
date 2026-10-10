@@ -69,16 +69,17 @@ test.describe("右上の「絵解き」", () => {
   // （中核思想 3）。別のタブを開いていても、畳んでいても、注釈の一覧に戻す。
   test("注釈が複数なら、パネルの注釈の一覧を開く", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
-    await openPanelTab(page, "図のドラフト");
+    await openPanelTab(page, "etoki AI");
     await page.getByRole("button", { name: "パネルを閉じる" }).click();
 
     await ekidokiButton(page).click();
 
-    await expect(page.getByRole("tab", { name: "注釈", exact: true })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    await expect(page.getByRole("tabpanel", { name: "注釈", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("tab", { name: "絵解いた", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.getByRole("tabpanel", { name: "絵解いた", exact: true }),
+    ).toBeVisible();
     await expect(page.locator("section.annotation-detail:not([hidden])")).toHaveCount(0);
   });
 });

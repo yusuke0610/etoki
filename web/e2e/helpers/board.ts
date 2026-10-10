@@ -58,11 +58,23 @@ export async function openPanelTab(page: Page, name: string): Promise<Locator> {
 }
 
 /**
+ * キャンバスのメニューの「共有…」からダイアログを開き、その枠を返す（#248）。
+ * メンバーの一覧と招待はこの中にある。**閉じたら中身は外れる**ので、開くたびに
+ * 一覧を引き直す。
+ */
+export async function openShareDialog(page: Page): Promise<Locator> {
+  await chooseFromMenu(page, "共有…");
+  const dialog = page.getByRole("dialog", { name: "共有", exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/**
  * mermaid の貼り付けを開き、その枠を返す（ADR 0062）。図のドラフトのタブの中で、
  * LLM に作らせる口と切り替えて出す（`DiagramTab`）。
  */
 export async function openMermaidPaste(page: Page): Promise<Locator> {
-  const panel = await openPanelTab(page, "図のドラフト");
+  const panel = await openPanelTab(page, "etoki AI");
   await panel.getByRole("button", { name: "mermaid を貼る", exact: true }).click();
   const paste = page.locator(".mermaid-paste");
   await expect(paste).toBeVisible();
@@ -140,16 +152,16 @@ export async function waitForBoard(page: Page, name: string): Promise<void> {
   await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
   await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
   // スマホの置き方では、パネルは畳んだ状態で始まる（#199）。代わりに上の帯の
-  // 「注釈」を待つ。
+  // 「絵解いた」を待つ。
   if ((await page.locator('.board[data-layout="phone"]').count()) > 0) {
     await expect(
-      page.locator(".board-bar-panels").getByRole("button", { name: /^注釈(、|$)/ }),
+      page.locator(".board-bar-panels").getByRole("button", { name: /^絵解いた(、|$)/ }),
     ).toBeVisible();
     return;
   }
   // **見出しは階層まで絞る。** パネルの中には「キャンバスに無い注釈」
   // （#111）のような h3 も並ぶので、名前だけで引くと 2 つ見つかって落ちる。
-  await expect(page.getByRole("heading", { name: "注釈", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "絵解いた", level: 2 })).toBeVisible();
 }
 
 /**

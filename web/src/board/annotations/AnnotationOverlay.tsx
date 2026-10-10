@@ -38,9 +38,11 @@ export function AnnotationOverlay({ boxes }: Props) {
           }}
         >
           <span className="annotation-overlay-badge">
-            {box.granularity === ""
-              ? "注釈"
-              : `注釈 ${GRANULARITY_LABEL[box.granularity]}`}
+            {/*
+              一覧の「絵N」と同じ語にする（#248）。**番号は付けない。** 一覧の番号は
+              一覧の中の位置で、キャンバスの並びとは一致しない（ADR 0022）。
+            */}
+            {box.granularity === "" ? "絵" : `絵 ${GRANULARITY_LABEL[box.granularity]}`}
           </span>
         </div>
       ))}
