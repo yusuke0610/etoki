@@ -336,16 +336,17 @@ func extractText(resp apiResponse, maxTokens int) (string, error) {
 // truncatedError は打ち切りのエラーに、誰が切ったのかを添える。
 //
 // 送った上限（maxTokens）に届く前に max_tokens で返るのは、向こうのコンテキスト
-// 長が先に尽きたとき。Ollama の既定は 4096 で、入力と出力の合計で切れる。こちらの
-// 上限を上げても直らないので、見分けられるようにしておく。使用量を返さない実装
-// （0）では、どちらとも言えないので言い切らない。
+// 長か、向こう自身の出力上限が先に尽きたとき。Ollama の既定のコンテキスト長は
+// 4096 で、入力と出力の合計で切れる。どちらなのかは応答から分からないので、
+// 両方を候補に挙げる。こちらの上限を上げても直らないので、見分けられるように
+// しておく。使用量を返さない実装（0）では、どちらとも言えないので言い切らない。
 func truncatedError(outputTokens, maxTokens int) error {
 	switch {
 	case outputTokens <= 0:
 		return errors.New("response truncated: max_tokens reached")
 	case outputTokens < maxTokens:
 		return fmt.Errorf("response truncated: stopped at %d output tokens, before our limit of %d "+
-			"(the backend likely ran out of context window)", outputTokens, maxTokens)
+			"(the backend's context window or its own output limit may be smaller)", outputTokens, maxTokens)
 	default:
 		return fmt.Errorf("response truncated: reached our limit of %d output tokens", maxTokens)
 	}

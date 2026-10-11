@@ -241,9 +241,13 @@ export ETOKI_LLM_MODEL=<プロキシ側のモデル名>
 make dev
 ```
 
-LM Studio が直接公開するのは OpenAI Chat Completions 形状なので、
-`ETOKI_LLM_BASE_URL` をそこへ向けても動きません。形状を変換するプロキシを
-挟むか、`port.LLMClient` を自前実装して差し込んでください。Ollama は
+LM Studio は 0.4.1 から Anthropic 互換の `POST /v1/messages` も公開しています。
+ただし etoki が読む応答のフィールド（`content`・`stop_reason`・`usage`）まで
+揃うかは確かめていないので、直接つなげるとは言い切れません。つなげて動かない
+ときは、モデル ID（`ETOKI_LLM_MODEL`）を LM Studio 側の名前に合わせたうえで、
+形状を変換するプロキシを挟むか、`port.LLMClient` を自前実装して差し込んで
+ください。それより前の版は OpenAI Chat Completions 形状だけなので、直接は
+動きません。Ollama は
 Messages API 形状（`/v1/messages`）も公開していて、0.34.4 では
 `ETOKI_LLM_BASE_URL=http://localhost:11434` で動くことを確かめています。
 
