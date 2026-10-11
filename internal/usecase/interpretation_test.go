@@ -475,6 +475,55 @@ func TestInterpret_PassesGranularityInstruction(t *testing.T) {
 	}
 }
 
+// 出力例が epic を含んだままだと、issue 指定でも小型モデルは例をなぞって epic を
+// 返す（issue #251）。例は指定した粒度で通る形にする。
+//
+// 制約の文面ではなく「出力例の kind」を見る。issue 指定の制約は epic という語を
+// 含むので、語の有無では区別できない。
+func TestInterpret_SystemPromptExampleFollowsGranularity(t *testing.T) {
+	t.Parallel()
+
+	const (
+		epicKind  = `"kind": "epic"`
+		issueKind = `"kind": "issue"`
+	)
+
+	tests := []struct {
+		granularity string
+		wantEpic    bool
+	}{
+		{granularity: "issue", wantEpic: false},
+		{granularity: "epic", wantEpic: true},
+		// 指定なしは今までと同じ例（epic と issue の両方）。
+		{granularity: "", wantEpic: true},
+	}
+
+	for _, tt := range tests {
+		t.Run("granularity="+tt.granularity, func(t *testing.T) {
+			t.Parallel()
+
+			scene := strings.Replace(interpretScene, `"granularity":""`,
+				`"granularity":"`+tt.granularity+`"`, 1)
+			llm := &fakeLLM{responses: []string{validLLMOutput}}
+			svc, _ := newInterpretService(t, newBoard(scene), llm)
+
+			_, _ = svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+
+			if len(llm.requests) == 0 {
+				t.Fatal("LLM が呼ばれていない")
+			}
+			system := llm.requests[0].System
+
+			if !strings.Contains(system, issueKind) {
+				t.Errorf("出力例に issue が無い:\n%s", system)
+			}
+			if got := strings.Contains(system, epicKind); got != tt.wantEpic {
+				t.Errorf("出力例に epic がある = %v, want %v:\n%s", got, tt.wantEpic, system)
+			}
+		})
+	}
+}
+
 // 再送は「何が悪かったか」を伝えて初めて意味を持つ。
 func TestInterpret_RetriesWithCorrections(t *testing.T) {
 	t.Parallel()
