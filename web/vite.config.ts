@@ -145,6 +145,13 @@ export default defineConfig({
     // ポートが埋まっていたら黙って隣にずらさず落とす。ずらされると
     // Playwright が 5173 を待ち続け、原因の分からないタイムアウトになる。
     strictPort: true,
+    // どのページからも iframe で埋め込ませない。`make start` で etoki が画面に
+    // 付けているもの（`internal/httpapi/webui.go` の setWebUIHeaders）と同じ。
+    // **同意の画面（ADR 0076）は dev ではここから配る**ので、無いと埋め込んで
+    // 「許可する」を押させる形（クリックジャッキング）で code を取られうる。
+    headers: {
+      "Content-Security-Policy": "frame-ancestors 'none'",
+    },
     proxy: {
       "/api": { target: API_TARGET },
       "/healthz": { target: API_TARGET },

@@ -39,6 +39,15 @@ async function stubClientCallback(
 }
 
 test.describe("同意の画面", () => {
+  // 埋め込ませない。埋め込めると、別のページの下に重ねて「許可する」を
+  // 押させられる（クリックジャッキング）。dev でこの画面を配るのは Vite なので、
+  // etoki の配信（webui.go）とは別に、ここで Vite の応答を見る。
+  test("iframe への埋め込みを禁じるヘッダを返す", async ({ page }) => {
+    await installApi(page, withConnections(baseMock()));
+    const res = await page.goto(CONSENT_PATH);
+    expect(res?.headers()["content-security-policy"]).toBe("frame-ancestors 'none'");
+  });
+
   // 未ログインで来た人は、ログインを経て同意の画面に戻る。**戻り先に要求ごと
   // 渡す。** 渡さないと、ログインした先が一覧になり、クライアントは待ちぼうけになる。
   test("未ログインなら、要求ごと戻り先にしてログインへ送る", async ({ page }) => {
