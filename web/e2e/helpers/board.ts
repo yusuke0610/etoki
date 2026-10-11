@@ -34,14 +34,22 @@ export async function chooseFromMenu(page: Page, name: string): Promise<void> {
  *
  * **初めて開くまで中身は DOM に無い。** 1 度開いたタブは、ほかを開いても隠す
  * だけで残る。「出さない」を見るときは、開いてから中を見る。パネルを畳んで
- * いれば、右端の帯から開き直す。
+ * いれば、右端の帯から開き直す。スマホの置き方では右端の帯が無く、上の帯の
+ * ボタンから全面に開く（#199）。
  */
 export async function openPanelTab(page: Page, name: string): Promise<Locator> {
   // 畳んでいれば帯から開く（#202）。帯のボタンの名前は件数まで含むので、
   // タブの名前で始まるものを引く。
+  const opener = new RegExp(`^${name}(、|$)`);
   const rail = page.locator(".side-panel-rail");
+  const bar = page.locator(".board-bar-panels");
   if (await rail.isVisible()) {
-    await rail.getByRole("button", { name: new RegExp(`^${name}(、|$)`) }).click();
+    await rail.getByRole("button", { name: opener }).click();
+  } else if (
+    (await bar.isVisible()) &&
+    !(await page.getByRole("tablist", { name: "パネル" }).isVisible())
+  ) {
+    await bar.getByRole("button", { name: opener }).click();
   }
   await page.getByRole("tab", { name, exact: true }).click();
   const panel = page.getByRole("tabpanel", { name, exact: true });
@@ -131,6 +139,14 @@ export async function openBoard(page: Page, name: string): Promise<void> {
 export async function waitForBoard(page: Page, name: string): Promise<void> {
   await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
   await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
+  // スマホの置き方では、パネルは畳んだ状態で始まる（#199）。代わりに上の帯の
+  // 「注釈」を待つ。
+  if ((await page.locator('.board[data-layout="phone"]').count()) > 0) {
+    await expect(
+      page.locator(".board-bar-panels").getByRole("button", { name: /^注釈(、|$)/ }),
+    ).toBeVisible();
+    return;
+  }
   // **見出しは階層まで絞る。** パネルの中には「キャンバスに無い注釈」
   // （#111）のような h3 も並ぶので、名前だけで引くと 2 つ見つかって落ちる。
   await expect(page.getByRole("heading", { name: "注釈", level: 2 })).toBeVisible();
