@@ -128,13 +128,14 @@ func isBlocked(a netip.Addr) bool {
 
 // blockedPrefixes は netip の判定に無い、繋がない範囲。
 var blockedPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),     // 「この網」
-	netip.MustParsePrefix("100.64.0.0/10"), // CGNAT
-	netip.MustParsePrefix("192.0.0.0/24"),  // IETF プロトコル割り当て
-	netip.MustParsePrefix("198.18.0.0/15"), // ベンチマーク
-	netip.MustParsePrefix("240.0.0.0/4"),   // 予約
-	netip.MustParsePrefix("64:ff9b::/96"),  // NAT64（内側の IPv4 を指しうる）
-	netip.MustParsePrefix("2002::/16"),     // 6to4（内側の IPv4 を指しうる）
+	netip.MustParsePrefix("0.0.0.0/8"),      // 「この網」
+	netip.MustParsePrefix("100.64.0.0/10"),  // CGNAT
+	netip.MustParsePrefix("192.0.0.0/24"),   // IETF プロトコル割り当て
+	netip.MustParsePrefix("198.18.0.0/15"),  // ベンチマーク
+	netip.MustParsePrefix("240.0.0.0/4"),    // 予約
+	netip.MustParsePrefix("64:ff9b::/96"),   // NAT64（内側の IPv4 を指しうる）
+	netip.MustParsePrefix("64:ff9b:1::/48"), // ローカル用の NAT64（RFC 8215、同上）
+	netip.MustParsePrefix("2002::/16"),      // 6to4（内側の IPv4 を指しうる）
 }
 
 // document は文書のうち etoki が読む項目。

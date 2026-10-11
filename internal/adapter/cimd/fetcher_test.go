@@ -100,6 +100,8 @@ func TestIsBlocked(t *testing.T) {
 		"::ffff:127.0.0.1": true,
 		"::ffff:10.0.0.1":  true,
 		"64:ff9b::a00:1":   true,
+		"64:ff9b:1::a00:1": true, // ローカル用の NAT64（RFC 8215）
+		"2002:a00:1::":     true, // 6to4 で 10.0.0.1 を指す
 		"8.8.8.8":          false,
 		"1.1.1.1":          false,
 		"2001:4860::8888":  false,
