@@ -614,6 +614,9 @@ function AnnotationFace({
             targetLabel={targetLabel}
             stale={stale}
             interpretationUnavailable={interpretation.unavailable}
+            interpretationBusyElsewhere={Object.entries(interpretation.states).some(
+              ([otherId, other]) => otherId !== id && other.running,
+            )}
             // 名前の書きかけは、読む前に確定する。帯のボタンは押しても焦点を
             // 奪わない（`DetailBand`）ので、欄を離れたときの確定が走らない。
             onInterpret={() => {

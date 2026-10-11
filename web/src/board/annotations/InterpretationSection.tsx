@@ -44,10 +44,20 @@ type InterpretationSectionProps = {
   stale: boolean;
   /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
   interpretationUnavailable: string | null;
+  /** ほかの囲みの解釈が走っているか。自分自身のぶんは含めない。 */
+  interpretationBusyElsewhere: boolean;
   onInterpret: () => void;
   onSelectInterpretation: (runId: number) => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
 };
+
+/**
+/**
+ * ほかの囲みの解釈が走っているあいだ「解釈する」を押せない理由。解釈は 1 人に
+ * つき同時に 1 件までで（ADR 0044）、押すと 429 で断られる。断られてから知らせる
+ * より、押す前に言う。
+ */
+const BUSY_ELSEWHERE_REASON = "ほかの囲みを絵解き中です。終わってから押せます。";
 
 /**
  * 解釈の結果と、下端の帯（`DetailBand`）。注釈の詳細（`AnnotationDetail`）の
@@ -71,6 +81,7 @@ export function InterpretationSection({
   targetLabel,
   stale,
   interpretationUnavailable,
+  interpretationBusyElsewhere,
   onInterpret,
   onSelectInterpretation,
   onCreate,
@@ -86,9 +97,12 @@ export function InterpretationSection({
     // 保存しているあいだも「絵解き中」に数える。押した操作の中で保存するので
     // （`BoardPage`）、保存が終わるまでの待ちも絵解きの一部。
     running: running || saving,
-    // 押せない理由は設定の不足だけ。**未保存では止めない。** 保存してから読むので、
-    // テキスト（保存済みシーン）と画像（画面）は揃う（ADR 0018）。
-    blocked: interpretationUnavailable,
+    // 押せない理由は設定の不足と、ほかの囲みの解釈が走っていること。**未保存では
+    // 止めない。** 保存してから読むので、テキスト（保存済みシーン）と画像（画面）は
+    // 揃う（ADR 0018）。設定の不足が先: 待っても設定は変わらない（ADR 0030）。
+    blocked:
+      interpretationUnavailable ??
+      (interpretationBusyElsewhere ? BUSY_ELSEWHERE_REASON : null),
     onInterpret,
   };
 
