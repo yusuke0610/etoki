@@ -329,6 +329,16 @@ export function holdBoardDetail(
   return holdRoute(page, (url) => url.pathname === `/api/boards/${boardId}`, "GET", hold);
 }
 
+/** 作成先の設定を止める。解決するまで応答を返さない。 */
+export function holdSetTarget(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/target$/.test(url.pathname),
+    "PUT",
+    hold,
+  );
+}
+
 /** 作成を「作成中」のまま止める。解決するまで応答を返さない。 */
 export function holdCreate(page: Page, hold: Promise<void>): Promise<void> {
   return holdRoute(
