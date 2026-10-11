@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/yusuke0610/etoki/internal/loopback"
@@ -305,6 +306,16 @@ func validateClientMetadata(meta ClientMetadata) (string, []string, error) {
 	if utf8.RuneCountInString(name) > maxClientNameRunes {
 		return "", nil, oauthError(OAuthInvalidClientMetadata,
 			"client_name must be at most %d characters", maxClientNameRunes)
+	}
+	// **制御文字と向きの制御を断る。** 名前は同意の画面と `etoki grants` の表に
+	// そのまま出る。改行や端末の制御列が入ると、表の行を偽装したり端末の表示を
+	// 変えたりでき、向きの制御（RLO など）は画面の名前を別の綴りに見せる。名前は
+	// クライアントの自称なので、出す側ごとに逃がすより入口で断る。
+	if strings.IndexFunc(name, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r)
+	}) >= 0 {
+		return "", nil, oauthError(OAuthInvalidClientMetadata,
+			"client_name must not contain control characters")
 	}
 
 	if len(meta.RedirectURIs) == 0 || len(meta.RedirectURIs) > maxRedirectURIs {

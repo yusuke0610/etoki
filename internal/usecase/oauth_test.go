@@ -396,6 +396,33 @@ func TestRegister_RejectsTooManyOrNoRedirectURIs(t *testing.T) {
 	requireOAuthError(t, err, usecase.OAuthInvalidClientMetadata)
 }
 
+// 名前に制御文字を入れさせない。名前は同意の画面と `etoki grants` の表に
+// そのまま出るので、改行で表の行を偽装したり、端末の制御列や向きの制御で
+// 見え方を変えたりできる。
+func TestRegister_RejectsControlCharactersInName(t *testing.T) {
+	t.Parallel()
+	s, _, _, _ := newOAuthServer(t)
+
+	for _, name := range []string{
+		"Claude\nCode",           // 改行
+		"Claude\x1b[2JCode",      // 端末の制御列
+		"Claude\u202eedoC",       // 向きの上書き（RLO）
+		"Claude\u2066Code\u2069", // 向きの分離
+	} {
+		_, err := s.Register(t.Context(), usecase.ClientMetadata{
+			ClientName: name, RedirectURIs: []string{"http://127.0.0.1/cb"},
+		})
+		requireOAuthError(t, err, usecase.OAuthInvalidClientMetadata)
+	}
+
+	// 日本語や絵文字は通す。
+	if _, err := s.Register(t.Context(), usecase.ClientMetadata{
+		ClientName: "クライアント 🤖", RedirectURIs: []string{"http://127.0.0.1/cb"},
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+}
+
 // 2. 秘密を持つクライアントとしての登録は断る。
 func TestRegister_RejectsConfidentialClients(t *testing.T) {
 	t.Parallel()
