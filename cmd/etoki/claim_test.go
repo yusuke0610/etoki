@@ -108,7 +108,7 @@ func TestConfirmRevoke(t *testing.T) {
 		"y\n": true, "yes\n": true, "Y\n": true, "\n": false, "n\n": false, "": false,
 	} {
 		var out bytes.Buffer
-		if got := confirmRevoke(strings.NewReader(input), &out, rows); got != want {
+		if got := confirmRevoke(strings.NewReader(input), &out, rows, nil); got != want {
 			t.Errorf("confirmRevoke(%q) = %v, want %v", input, got, want)
 		}
 		for _, s := range []string{
@@ -118,6 +118,32 @@ func TestConfirmRevoke(t *testing.T) {
 			if !strings.Contains(out.String(), s) {
 				t.Errorf("確認に %q が出ていない:\n%s", s, out.String())
 			}
+		}
+	}
+}
+
+// --login で指したときは、引き当てた相手を claim と同じ材料で見せる（ADR 0053）。
+// login は改名で別人に移りうるので、接続の表に login が出るだけでは、切る相手が
+// 思っている人かを確かめられない。
+func TestConfirmRevoke_ShowsMatchedUser(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	rows := []grantRow{{grant: port.OAuthGrant{
+		ID: "grant-1", ClientID: "client-1", CreatedAt: at, LastUsedAt: at,
+	}, login: "bob"}}
+	user := port.User{
+		ID: "user-1", Login: "bob", DisplayName: "Bob Example",
+		UpdatedAt: time.Date(2026, 8, 1, 9, 30, 0, 0, time.UTC),
+	}
+
+	var out bytes.Buffer
+	if confirmRevoke(strings.NewReader("\n"), &out, rows, &user) {
+		t.Fatal("confirmRevoke with empty input = true, want false")
+	}
+	for _, want := range []string{"Bob Example", "user-1", "2026-08-01", "改名"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("確認に %q が出ていない:\n%s", want, out.String())
 		}
 	}
 }

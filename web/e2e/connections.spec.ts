@@ -203,6 +203,37 @@ test.describe("MCP の接続", () => {
     await expect(page.getByRole("button", { name: "Octo Cat" })).toBeFocused();
   });
 
+  // 取り消しの応答を待つあいだは、押したことが届いているとボタンで見せる。
+  // 守り（二重に送らない）は ref にあるが、ref は再描画しないので画面に出ない。
+  test("取り消しを待つあいだ、ボタンが取り消し中であることを出す", async ({ page }) => {
+    await installApi(page, withConnections(baseMock()));
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // 後から登録したものが先に当たる。応答を止めてから、いつもの偽物へ回す。
+    await page.route("**/api/oauth/grants/grant-1", async (route) => {
+      await held;
+      await route.fallback();
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Octo Cat" }).click();
+    await page.getByRole("button", { name: "MCP の接続" }).click();
+    const dialog = page.getByRole("dialog", { name: "MCP の接続" });
+
+    await dialog.getByRole("button", { name: "Claude Code の接続を取り消す" }).click();
+    await expect(
+      dialog.getByRole("button", { name: "Claude Code の接続を取り消しています" }),
+    ).toHaveText("取り消しています…");
+    // 他の行はそのまま。
+    await expect(
+      dialog.getByRole("button", { name: "Example Agent の接続を取り消す" }),
+    ).toHaveText("取り消す");
+
+    release();
+    await expect(dialog.getByText("Claude Code")).toHaveCount(0);
+  });
+
   // 開くたびに引き直す。接続はブラウザの外で増える。
   test("開き直すと一覧を引き直す", async ({ page }) => {
     const mock = await installApi(page, withConnections(baseMock()));

@@ -38,6 +38,9 @@ export function ConnectionsDialog({ open, onClose }: Props) {
   // 取り消している接続の ID。二重に押させない守りは ref に置く（同じ tick の
   // 2 回目が state の古い値を読む）。
   const revoking = useRef(new Set<string>());
+  // 画面に出すための写し。ref は再描画しないので、押したことが届いたかを
+  // ボタンの文言で見せるにはこちらが要る（ConsentPage の sending と同じ）。
+  const [revokingIds, setRevokingIds] = useState<ReadonlySet<string>>(new Set());
   // 読み込みの世代。開き直したら前の応答は捨てる。
   const loading = useRef(0);
 
@@ -70,6 +73,7 @@ export function ConnectionsDialog({ open, onClose }: Props) {
   const revoke = useCallback(async (grantId: string) => {
     if (revoking.current.has(grantId)) return;
     revoking.current.add(grantId);
+    setRevokingIds(new Set(revoking.current));
     setError(null);
     try {
       await oauthApi.revoke(grantId);
@@ -80,6 +84,7 @@ export function ConnectionsDialog({ open, onClose }: Props) {
       setError(describeFailure("接続を取り消せませんでした", e));
     } finally {
       revoking.current.delete(grantId);
+      setRevokingIds(new Set(revoking.current));
     }
   }, []);
 
@@ -114,6 +119,7 @@ export function ConnectionsDialog({ open, onClose }: Props) {
           {grants.map((grant) => {
             const name = clientDisplayName(grant.clientName);
             const origin = clientOrigin(grant.clientId);
+            const pending = revokingIds.has(grant.id);
             return (
               <li key={grant.id} className="connection">
                 <div className="connection-body">
@@ -128,10 +134,10 @@ export function ConnectionsDialog({ open, onClose }: Props) {
                   className="danger"
                   // 行ごとに同じ文言が並ぶので、読み上げで区別できる名前にする
                   // （`.claude/rules/async-ui.md`）。
-                  aria-label={`${name} の接続を取り消す`}
+                  aria-label={`${name} の接続を${pending ? "取り消しています" : "取り消す"}`}
                   onClick={() => void revoke(grant.id)}
                 >
-                  取り消す
+                  {pending ? "取り消しています…" : "取り消す"}
                 </button>
               </li>
             );

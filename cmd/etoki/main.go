@@ -418,16 +418,9 @@ func parseClaimArgs(args []string) (login string, yes bool, err error) {
 // 渡らないようにする。
 func confirmClaim(in io.Reader, out io.Writer, u port.User, unowned int) bool {
 	// 書けなくても確かめる手段が無いだけなので、読む側（既定は止める）に任せる。
-	_, _ = fmt.Fprintf(out, `所有者の無いボード %d 枚を、次の利用者に引き受けさせます。
-  表示名        %s
-  login         @%s
-  ID            %s
-  最終ログイン  %s
-login は最後にログインしたときのものです。改名で空いた login を別人が取って
-いないか、表示名と最終ログインで確かめてください。
-引き受けますか？ [y/N] `,
-		unowned, u.DisplayName, u.Login, u.ID,
-		u.UpdatedAt.UTC().Format("2006-01-02 15:04 MST"))
+	_, _ = fmt.Fprintf(out, "所有者の無いボード %d 枚を、次の利用者に引き受けさせます。\n", unowned)
+	writeUser(out, u)
+	_, _ = fmt.Fprint(out, "引き受けますか？ [y/N] ")
 
 	line, _ := bufio.NewReader(in).ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(line)) {
@@ -436,6 +429,20 @@ login は最後にログインしたときのものです。改名で空いた l
 	default:
 		return false
 	}
+}
+
+// writeUser は login で引き当てた相手を、確かめられる形で書く（ADR 0053）。
+// etoki が知っているのは「最後にその login でログインした人」までなので、
+// 別人かどうかは ID・表示名・最終ログインを見て人が決める。
+func writeUser(out io.Writer, u port.User) {
+	_, _ = fmt.Fprintf(out, `  表示名        %s
+  login         @%s
+  ID            %s
+  最終ログイン  %s
+login は最後にログインしたときのものです。改名で空いた login を別人が取って
+いないか、表示名と最終ログインで確かめてください。
+`,
+		u.DisplayName, u.Login, u.ID, u.UpdatedAt.UTC().Format("2006-01-02 15:04 MST"))
 }
 
 // openAuthDB は認証まわりを触るサブコマンド（claim / grants / revoke）の
@@ -587,7 +594,10 @@ func revoke(ctx context.Context, target revokeTarget) error {
 	defer func() { _ = db.Close() }()
 
 	repo := sqlite.NewOAuthGrantRepository(db)
-	var grants []port.OAuthGrant
+	var (
+		grants []port.OAuthGrant
+		owner  *port.User
+	)
 	if target.grantID != "" {
 		g, err := repo.FindGrant(ctx, target.grantID)
 		if err != nil {
@@ -605,6 +615,7 @@ func revoke(ctx context.Context, target revokeTarget) error {
 		if user == nil {
 			return fmt.Errorf("unknown user %q", target.login)
 		}
+		owner = user
 		if grants, err = repo.ListGrants(ctx, user.ID); err != nil {
 			return err
 		}
@@ -618,7 +629,7 @@ func revoke(ctx context.Context, target revokeTarget) error {
 	if err != nil {
 		return err
 	}
-	if !target.yes && !confirmRevoke(os.Stdin, os.Stderr, rows) {
+	if !target.yes && !confirmRevoke(os.Stdin, os.Stderr, rows, owner) {
 		return errors.New("revoke canceled")
 	}
 
@@ -633,7 +644,15 @@ func revoke(ctx context.Context, target revokeTarget) error {
 
 // confirmRevoke は取り消す対象を見せ、y / yes のときだけ true を返す。
 // 既定は止める（confirmClaim と同じ）。
-func confirmRevoke(in io.Reader, out io.Writer, rows []grantRow) bool {
+//
+// **login で指したときは、引き当てた相手も見せる**（user が nil でない）。
+// 引き当ては claim と同じく「最後にその login でログインした人」なので、改名で
+// 空いた login を取った別人の接続を切らないよう、claim と同じ材料を出す。
+func confirmRevoke(in io.Reader, out io.Writer, rows []grantRow, user *port.User) bool {
+	if user != nil {
+		_, _ = fmt.Fprintln(out, "次の利用者の接続を取り消します。")
+		writeUser(out, *user)
+	}
 	_, _ = fmt.Fprintf(out, "次の %d 件の接続を取り消します。"+
 		"そのクライアントは同意からやり直しになります。\n", len(rows))
 	writeGrants(out, rows)
