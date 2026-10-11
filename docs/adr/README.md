@@ -82,3 +82,4 @@
 | [0077](0077-ekidoki-saves-before-interpreting.md)                | 「絵解き」は保存を挟み、未保存のときだけ保存してから進む                 | 採用                 |
 | [0078](0078-share-dialog-and-panel-names.md)                     | メンバーは「共有」のダイアログで開き、パネルの名前を使う人の言葉に寄せる | 採用                 |
 | [0079](0079-name-annotations-on-the-frame.md)                    | 囲みの名前は絵解きの面で付け、frame の name にそのまま書く               | 採用                 |
+| [0080](0080-canvas-scroll-by-keys-and-edges.md)                  | キャンバスの移動を etoki が足す（矢印キーと、ドラッグ中の端）            | 採用                 |
