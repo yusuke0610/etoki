@@ -9,6 +9,7 @@ const all: Capabilities = {
   diagramDraft: true,
   creation: true,
   sharing: true,
+  mcpConnections: true,
 };
 
 describe("unavailableReason", () => {
@@ -30,6 +31,9 @@ describe("unavailableReason", () => {
     expect(unavailableReason({ ...all, sharing: false }, "sharing")).toBe(
       ERROR_MESSAGES.sharing_not_configured,
     );
+    expect(unavailableReason({ ...all, mcpConnections: false }, "mcpConnections")).toBe(
+      ERROR_MESSAGES.mcp_connections_not_configured,
+    );
   });
 
   // **設定するものが違えば違う文言。** 畳むと「何を設定すればよいか」を
@@ -40,10 +44,11 @@ describe("unavailableReason", () => {
       diagramDraft: false,
       creation: false,
       sharing: false,
+      mcpConnections: false,
     };
-    const messages = (["interpretation", "creation", "sharing"] as const).map((f) =>
-      unavailableReason(none, f),
-    );
+    const messages = (
+      ["interpretation", "creation", "sharing", "mcpConnections"] as const
+    ).map((f) => unavailableReason(none, f));
 
     expect(new Set(messages).size).toBe(messages.length);
 

@@ -158,3 +158,15 @@ export type ProjectAccess = Schemas["ProjectAccess"];
 
 /** そのボードで何ができるか。etoki 側と GitHub 側を別々に持つ。 */
 export type BoardAccess = Schemas["BoardAccess"];
+
+/** 同意の画面に出す、MCP のクライアントの認可の要求（ADR 0076）。 */
+export type OAuthAuthorization = Schemas["OAuthAuthorization"];
+
+/** 認可の要求への返事。要求はクエリ文字列のまま送り返す。 */
+export type OAuthDecisionRequest = Schemas["OAuthDecisionRequest"];
+
+/** 返事を受けたあとの遷移先（クライアントの戻り先）。 */
+export type OAuthDecision = Schemas["OAuthDecision"];
+
+/** MCP のクライアントに許した接続 1 件。 */
+export type OAuthGrant = Schemas["OAuthGrant"];

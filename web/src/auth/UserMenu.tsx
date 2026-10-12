@@ -6,10 +6,18 @@ import { initialsOf } from "./initials";
 type Props = {
   user: AuthUser;
   onLogout: () => void;
+  /** 「MCP の接続」を開く（ADR 0076）。 */
+  onOpenConnections: () => void;
+  /**
+   * MCP の接続を扱えない理由。扱えるなら、またはまだ確かめていなければ null
+   * （ADR 0030）。
+   */
+  connectionsUnavailable: string | null;
 };
 
 /**
- * 一覧の上の帯の右に置く、利用者のメニュー（#200）。中身は「ログアウト」だけ。
+ * 一覧の上の帯の右に置く、利用者のメニュー（#200）。中身は「MCP の接続」と
+ * 「ログアウト」。
  *
  * **開くまでしまう。** ログアウトは毎回押すものではないので、帯に並べておく
  * 理由が無い。しまっても、誰としてログインしているかはボタンの名前で常に読める。
@@ -18,9 +26,15 @@ type Props = {
  * 1 つしか無く、矢印キーで項目を渡る作りを持つほどではない。開いた中身は
  * ふつうのボタンで、Tab で届く。
  */
-export function UserMenu({ user, onLogout }: Props) {
+export function UserMenu({
+  user,
+  onLogout,
+  onOpenConnections,
+  connectionsUnavailable,
+}: Props) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  const connectionsReasonId = useId();
   const root = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   // 名前が空の利用者もいる（GitHub の表示名は任意）。丸を空にしないよう login で埋める。
@@ -78,6 +92,27 @@ export function UserMenu({ user, onLogout }: Props) {
         <span className="user-menu-name">{name}</span>
       </button>
       <div id={panelId} className="user-menu-panel" hidden={!open}>
+        {/*
+          扱えないときも黙って消さず、押せない理由を隣に出す（ADR 0030）。
+        */}
+        <button
+          type="button"
+          disabled={connectionsUnavailable !== null}
+          aria-describedby={
+            connectionsUnavailable !== null ? connectionsReasonId : undefined
+          }
+          onClick={() => {
+            setOpen(false);
+            onOpenConnections();
+          }}
+        >
+          MCP の接続
+        </button>
+        {connectionsUnavailable !== null && (
+          <p className="hint user-menu-reason" id={connectionsReasonId}>
+            {connectionsUnavailable}
+          </p>
+        )}
         <button type="button" onClick={onLogout}>
           ログアウト
         </button>

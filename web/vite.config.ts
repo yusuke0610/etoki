@@ -145,9 +145,24 @@ export default defineConfig({
     // ポートが埋まっていたら黙って隣にずらさず落とす。ずらされると
     // Playwright が 5173 を待ち続け、原因の分からないタイムアウトになる。
     strictPort: true,
+    // どのページからも iframe で埋め込ませない。`make start` で etoki が画面に
+    // 付けているもの（`internal/httpapi/webui.go` の setWebUIHeaders）と同じ。
+    // **同意の画面（ADR 0076）は dev ではここから配る**ので、無いと埋め込んで
+    // 「許可する」を押させる形（クリックジャッキング）で code を取られうる。
+    headers: {
+      "Content-Security-Policy": "frame-ancestors 'none'",
+    },
     proxy: {
       "/api": { target: API_TARGET },
       "/healthz": { target: API_TARGET },
+      // MCP の入口と、その認可（ADR 0076）。認証ありの構成では、認可の途中で
+      // 同意の画面（`/?authorize=...`）に転送される。画面を配っているのは
+      // ここなので、MCP のクライアントもここへ向けないと同意の画面に着かない。
+      // Host は書き換えない（changeOrigin を立てない）ので、issuer と `/mcp` の
+      // URL も :5173 で組まれ、トークンの向き先と食い違わない。
+      "/mcp": { target: API_TARGET },
+      "/oauth": { target: API_TARGET },
+      "/.well-known": { target: API_TARGET },
     },
   },
   test: {

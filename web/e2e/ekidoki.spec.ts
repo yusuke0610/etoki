@@ -1,12 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+import { holdSave } from "./helpers/api";
 import {
   annotationDetail,
   drawRectangle,
   ekidokiButton,
+  openAnnotationDetail,
   openBoardWithMock,
   openPanelTab,
 } from "./helpers/board";
+import { annotationsOfScene } from "./helpers/boardData";
 import { BOARD_ID, annotatedScene, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -45,6 +48,39 @@ test.describe("右上の「絵解き」", () => {
     await expect(annotationDetail(page, "ログイン")).toBeVisible();
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     expect(mock.saveRequests).toHaveLength(1);
+  });
+
+  // **待つあいだに変わったら、保存し直してから開く**（#259 のレビュー）。待つ
+  // あいだに付けた注釈を開くと、保存済みの一覧に無いので詳細がその場で閉じる。
+  test("保存を待つあいだに注釈を付けたら、保存し直してから開く", async ({ page }) => {
+    const mock = singleAnnotationMock();
+    mock.annotations[BOARD_ID] = annotationsOfScene(annotatedScene());
+    mock.annotationsFollowSave = true;
+    const installed = await openBoardWithMock(page, mock);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await holdSave(page, held);
+
+    // 外してから押し、保存が注釈の無いシーンを送ったあとで付け直す。
+    await (
+      await openAnnotationDetail(page, "ログイン")
+    )
+      .getByRole("button", { name: "キャンバスで見る" })
+      .click();
+    await page.getByRole("button", { name: /の注釈を外す/ }).click();
+    const saving = page.waitForRequest(
+      (r) =>
+        r.method() === "PUT" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/scene`,
+    );
+    await ekidokiButton(page).click();
+    await saving;
+    await page.getByRole("button", { name: /を注釈にする/ }).click();
+
+    release();
+    await expect(annotationDetail(page, "ログイン")).toBeVisible();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    expect(installed.saveRequests).toHaveLength(2);
   });
 
   // 保存できなかったら開かない。理由は保存の失敗として通知が言う。開くと、

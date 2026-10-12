@@ -127,6 +127,18 @@ const UI_OPTIONS = {
 const ANNOTATIONS_FAILED = "annotations-failed";
 const SCENE_UNREADABLE = "scene-unreadable";
 
+/**
+ * 保存済みの一覧にその注釈が在るか。開いていた詳細を閉じる判定と、保存のあとに
+ * 読むかどうかの判定（`interpretAfterSave`）が使う。**同じ条件で決める。** ずれると、
+ * 詳細が閉じたのに読む（結果を出す先が無い）か、開いたままなのに読まない。
+ *
+ * **一覧が壊れていても投げない。** 詳細を閉じる判定はパネルの境界の外にあり、
+ * 投げると画面ごと落ちる（ADR 0027、`railBadgesOf` と同じ）。
+ */
+function listed(annotations: readonly AnnotationStatus[], id: string): boolean {
+  return (annotations as readonly (AnnotationStatus | null)[]).some((a) => a?.id === id);
+}
+
 type Props = {
   /**
    * 開いたボード。**貼った画像を持つのは開いたときだけ**（ADR 0074）。キャンバスに
@@ -446,12 +458,17 @@ export function BoardPage({
   // 投げたものだけ反映する。古い応答で上書きすると、作成済みの注釈が未作成に
   // 巻き戻って見える。
   const annotationsRequest = useRef(0);
+  // 最後に反映した一覧。**保存のあとに読む側が、描き直しを待たずに引く**
+  // （`interpretAfterSave`）。保存は取り直しを待ってから返るが、state が
+  // 描き直されるのはそのあとで、返った時点の値はまだ保存前の一覧のことがある。
+  const fetchedAnnotations = useRef<AnnotationStatus[]>([]);
 
   const refreshAnnotations = useCallback(async () => {
     const request = ++annotationsRequest.current;
     try {
       const next = await boardsApi.annotations(board.id);
       if (request !== annotationsRequest.current) return;
+      fetchedAnnotations.current = next.annotations;
       setAnnotations(next.annotations);
       setDetached(next.detached);
       dismissHere(ANNOTATIONS_FAILED);
@@ -774,19 +791,36 @@ export function BoardPage({
   });
 
   /**
+   * 未保存でなくなるまで保存する。保存できなかったら false（ADR 0077）。
+   *
+   * **保存を待つあいだに変わったら、保存し直す。** 保存が送るのは呼んだ時点の
+   * シーンで、待つあいだの描き足しや選び直しは未保存のまま残る（`markSaved`）。
+   * 1 回で済ませると、このあと読むもの（注釈の一覧、解釈）が保存済みシーンと
+   * 食い違う。
+   */
+  const saveUntilClean = useCallback(async () => {
+    while (isDirty()) {
+      if (!(await save())) return false;
+    }
+    return true;
+  }, [isDirty, save]);
+
+  /**
    * 右上の「絵解き」。**未保存なら保存してから、絵解きの面を開く**（#247）。
    *
    * 保存が要るのは etoki の都合（ADR 0018）で、押す人が知らなくてよい。**未保存の
    * ときだけ保存する。** 保存は全部の注釈の引いた解釈と作成の状態を捨てる
    * （`discardAfterSave`）ので、毎回保存すると、開き直すたびに前の結果が消える。
    * 保存できなかったら（衝突・失敗・排他）開かない。通知と衝突の帯が理由を言う。
+   * 待つあいだに変わったら保存し直す（`saveUntilClean`）。待つあいだに付けた注釈を
+   * 開くと、保存済みの一覧に無いので詳細がその場で閉じる。
    *
    * 開く先: 注釈が 1 件ならその詳細。0 件か複数ならパネルの注釈の一覧。右上のボタンは
    * どの注釈かを指していないので、選ぶのは人（中核思想 3）。スマホではパネルを
    * 全面に開く（上の帯から開くのと同じ口、#199）。
    */
   const startEkidoki = useCallback(async () => {
-    if (isDirty() && !(await save())) return;
+    if (!(await saveUntilClean())) return;
     const { canvasMetas: metas, annotations: saved } = latestAnnotations.current;
     const ids = metas ? Object.keys(metas) : saved.map((a) => a.id);
     const only = ids.length === 1 ? ids[0] : undefined;
@@ -800,7 +834,7 @@ export function BoardPage({
     }
     setPanelTab("annotations");
     changePanelCollapsed(false);
-  }, [changePanelCollapsed, isDirty, openDetail, openPhonePanel, phone, save]);
+  }, [changePanelCollapsed, openDetail, openPhonePanel, phone, saveUntilClean]);
 
   /**
    * 詳細の「絵解く」。**未保存なら保存してから読む**（#247）。
@@ -809,24 +843,27 @@ export function BoardPage({
    * 引いた解釈をすべて捨てるので、**読むのは必ず保存のあと**（先に読むと、
    * 引いた結果が直後に消える）。
    *
-   * **保存を待つあいだに変わったら、保存し直してから読む。** 保存が送るのは押した
-   * 時点のシーンで、待つあいだの描き足しや選び直しは未保存のまま残る
-   * （`markSaved`）。テキストは保存済みシーンから、画像は画面から取る（ADR 0018）
-   * ので、残したまま読むと 2 つが食い違う。画像に使う要素は `interpret` を呼んだ
-   * その場で読む（`exportAnnotationImage`）ので、未保存でないと確かめてから
-   * 読むまでのあいだに変わる隙は無い。
+   * **保存を待つあいだに変わったら、保存し直してから読む**（`saveUntilClean`）。
+   * テキストは保存済みシーンから、画像は画面から取る（ADR 0018）ので、残したまま
+   * 読むと 2 つが食い違う。画像に使う要素は `interpret` を呼んだその場で読む
+   * （`exportAnnotationImage`）ので、未保存でないと確かめてから読むまでのあいだに
+   * 変わる隙は無い。
+   *
+   * **保存で消えた注釈は読まない。** 押す前か待つあいだに、フレームを消したか
+   * 注釈から外した。保存済みの一覧に無いので詳細は閉じていて、読んでも結果を出す
+   * 先が無い。見るのは取り直した一覧で、**キャンバスではない。** フレームが画面に
+   * 無くても、保存済みの一覧に在ればテキストだけで読む（ADR 0018）。
    */
   const interpretAfterSave = useCallback(
     async (id: string) => {
-      while (isDirty()) {
-        if (!(await save())) return;
-      }
+      if (!(await saveUntilClean())) return;
+      if (!listed(fetchedAnnotations.current, id)) return;
       // 控える粒度は、読む時点のキャンバスの値（= 保存済みシーンの値）。押した
       // 時点の値を控えると、待つあいだに選び直したときに読んだものと食い違う。
       const granularity = latestAnnotations.current.canvasMetas?.[id]?.granularity;
       void interpret(id, { granularity });
     },
-    [interpret, isDirty, save],
+    [interpret, saveUntilClean],
   );
 
   // **ボードを変えたら、そのボードについての通知は全部下げる。** 通知は
@@ -955,13 +992,8 @@ export function BoardPage({
   // **開いていた詳細の注釈が保存で消えたら、詳細を閉じる。** 描いたまま残すと、
   // 同じ注釈が戻ったとき（元に戻して保存したとき）に、閉じたはずの詳細が開き直る。
   // 描いている最中に置く。前の値と違うときだけ置く形なので React が許している。
-  //
-  // **一覧が壊れていても投げない。** ここはパネルの境界の外なので、投げると画面
-  // ごと落ちる（ADR 0027、`railBadgesOf` と同じ）。
-  if (
-    detailId !== null &&
-    !(annotations as readonly (AnnotationStatus | null)[]).some((a) => a?.id === detailId)
-  ) {
+  // ここはパネルの境界の外なので、一覧が壊れていても投げない（`listed`）。
+  if (detailId !== null && !listed(annotations, detailId)) {
     setDetailVanished((n) => n + 1);
     setDetailId(null);
   }

@@ -6,6 +6,10 @@ import type {
   InterpretRequest,
   LoginRequest,
   LoginResponse,
+  OAuthAuthorization,
+  OAuthDecision,
+  OAuthDecisionRequest,
+  OAuthGrant,
   SessionStatus,
   BoardAccess,
   BoardDetail,
@@ -361,4 +365,36 @@ export const githubApi = {
     request<Project[]>(
       `/api/github/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/projects`,
     ),
+};
+
+/**
+ * MCP のクライアントへの許可（ADR 0076）。
+ *
+ * **要求はクエリ文字列のまま運ぶ。** `/oauth/authorize` が何も書かずに
+ * `/?authorize=...` へ転送してくるので、画面は中を読まずにそのまま送り返す。
+ * 項目ごとに詰め替えると、検証するサーバーと画面とで読み方が 2 つになる。
+ */
+export const oauthApi = {
+  authorization: (query: string) =>
+    request<OAuthAuthorization>(
+      `/api/oauth/authorization?request=${encodeURIComponent(query)}`,
+    ),
+
+  /**
+   * 同意する、または断る。返った `redirectTo` へ遷移するのは呼び出し側。
+   *
+   * POST なので Origin の検証が効く（ADR 0013）。
+   */
+  decide: (query: string, approve: boolean) =>
+    request<OAuthDecision>("/api/oauth/authorization", {
+      method: "POST",
+      body: JSON.stringify({ request: query, approve } satisfies OAuthDecisionRequest),
+    }),
+
+  grants: () => request<OAuthGrant[]>("/api/oauth/grants"),
+
+  revoke: (grantId: string) =>
+    request<void>(`/api/oauth/grants/${encodeURIComponent(grantId)}`, {
+      method: "DELETE",
+    }),
 };
