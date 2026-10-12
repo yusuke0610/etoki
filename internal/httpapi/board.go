@@ -197,6 +197,14 @@ type handlers struct {
 	// nil のときは /api/auth/session が authRequired: false を返し、画面は
 	// ログインを求めない（ADR 0015）。
 	auth *usecase.AuthService
+	// oauth は MCP のクライアントのための認可サーバー（ADR 0076）。nil でもよい。
+	//
+	// nil のときは `/oauth/*` と `/.well-known/*` が 503 を返し、認証ありの構成の
+	// `/mcp` は開かない（ADR 0071）。
+	oauth *usecase.OAuthServer
+	// oauthMetadataDocuments は Client ID Metadata Document で名乗るクライアントを
+	// 受けるか。認可サーバーのメタデータに載せる。
+	oauthMetadataDocuments bool
 	// publicURL は認可から戻ってくる先の組み立てに使う。空ならリクエストの
 	// Host から組む。
 	publicURL string

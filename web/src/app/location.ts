@@ -60,3 +60,18 @@ export function boardLocationUrl({ boardId, picking }: BoardLocation): string {
   if (picking) params.set(PICKING_PARAM, PICKING_ON);
   return `/?${params.toString()}`;
 }
+
+/** MCP のクライアントの認可の要求を運ぶクエリのキー（ADR 0076）。 */
+const AUTHORIZE_PARAM = "authorize";
+
+/**
+ * 同意の画面に運ばれてきた認可の要求を読む。無ければ null。
+ *
+ * `/oauth/authorize` は何も書かずに `/?authorize=<要求のクエリ>` へ転送して
+ * くる。**中は読まない。** サーバーへそのまま送り返し、検証もサーバーが行う。
+ * 空文字は「要求が無い」と同じに扱う（転送元が付けないことは無い）。
+ */
+export function parseConsentRequest(search: string): string | null {
+  const value = new URLSearchParams(search).get(AUTHORIZE_PARAM);
+  return value === null || value === "" ? null : value;
+}

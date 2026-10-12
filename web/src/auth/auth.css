@@ -66,6 +66,13 @@
   background: var(--color-hover);
 }
 
+/* 利用者のメニューで、押せない項目の理由をその下に出す（ADR 0030）。 */
+.user-menu-reason {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-3);
+  max-width: 240px;
+}
+
 /*
  * ログイン画面。ここだけは中身が数行しか無いので、左上に寄せると
  * 読み込みに失敗した画面に見える。**画面の真ん中に 1 枚だけ置く。**

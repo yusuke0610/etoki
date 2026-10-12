@@ -1,7 +1,8 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type { BoardListEntry, SessionStatus } from "../api/types";
 import { UserMenu } from "../auth/UserMenu";
+import { ConnectionsDialog } from "../connections/ConnectionsDialog";
 import type { TemplateChoice } from "../excalidraw/template";
 import { BoardCard } from "./BoardCard";
 import { boardSections } from "./grouping";
@@ -33,6 +34,11 @@ type Props = {
    * まだ確かめていなければ null（ADR 0030）。
    */
   creationUnavailable: string | null;
+  /**
+   * MCP の接続を扱えない理由（ADR 0076）。扱えるなら、またはまだ確かめて
+   * いなければ null（ADR 0030）。
+   */
+  connectionsUnavailable: string | null;
   /** 新しいボードのダイアログ（`NewBoardDialog`）。開閉と入力は App が `useNewBoardFlow` で持つ。 */
   dialog: {
     open: boolean;
@@ -66,9 +72,16 @@ export function BoardListPage({
   boards,
   onOpen,
   creationUnavailable,
+  connectionsUnavailable,
   dialog,
 }: Props) {
   const newBoard = useRef<HTMLButtonElement>(null);
+  // 「MCP の接続」のダイアログ。**開閉はここで持つ。** 新しいボードと違って
+  // 作成先の選択から戻って開き直す流れが無く、App が持つ理由が無い。
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+  // 閉じたら焦点を戻す先。押した「MCP の接続」はしまったメニューの中にあって
+  // 見えないので、メニューを開くボタンへ戻す。
+  const userMenu = useRef<HTMLDivElement>(null);
   const sections = useMemo(
     () => (boards === null ? [] : boardSections(boards.entries)),
     [boards],
@@ -82,7 +95,16 @@ export function BoardListPage({
       */}
       <header className="list-header">
         <h1 className="brand">etoki</h1>
-        {user && <UserMenu user={user} onLogout={onLogout} />}
+        {user && (
+          <div ref={userMenu} className="list-header-user">
+            <UserMenu
+              user={user}
+              onLogout={onLogout}
+              onOpenConnections={() => setConnectionsOpen(true)}
+              connectionsUnavailable={connectionsUnavailable}
+            />
+          </div>
+        )}
       </header>
 
       <div className="list-body">
@@ -165,6 +187,13 @@ export function BoardListPage({
         // 直したときは、開く前の焦点がどこにも無いので、ブラウザに任せると
         // 画面の先頭へ落ちる。
         onClosed={() => newBoard.current?.focus()}
+      />
+      <ConnectionsDialog
+        open={connectionsOpen}
+        onClose={() => {
+          setConnectionsOpen(false);
+          userMenu.current?.querySelector("button")?.focus();
+        }}
       />
     </div>
   );
