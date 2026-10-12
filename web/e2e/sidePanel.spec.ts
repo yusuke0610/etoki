@@ -85,7 +85,13 @@ test.describe("右のパネル", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: true, diagramDraft: true, creation: true, sharing: false },
+      body: {
+        interpretation: true,
+        diagramDraft: true,
+        creation: true,
+        sharing: false,
+        mcpConnections: false,
+      },
     };
     await openBoardWithMock(page, mock);
 

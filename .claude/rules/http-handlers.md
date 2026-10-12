@@ -78,8 +78,24 @@ paths:
   載せない規則も `/api` と同じにする。
 - **Host の検証は originGuard だけ。** SDK の `DisableLocalhostProtection` を
   戻さない。戻すと `ETOKI_ALLOWED_ORIGINS` で許したホストが `/mcp` だけで落ちる。
-- **認証ありの構成の 503 は text/plain で返す**（上の「エラー本文も
-  `ErrorResponse` に揃える」の例外）。`/mcp` で SDK 自身が返すエラーが
+- **認証ありの構成では Bearer で通す**（`requireBearer`、ADR 0076）。**画面の cookie
+  では通さない。** `resolveSession` が cookie から利用者を載せていても、トークンの
+  利用者で上書きする。**`/api` に Bearer を受けさせない。** 口ごとに「どちらで来たか」
+  の分岐が入る。
+- **OAuth の口（`/oauth/*`・`/.well-known/*`）は RFC の形で返す。** 誤りは
+  `ErrorResponse` ではなく `{error, error_description}` で、`errors.go` の表も引かない
+  （code が RFC の語彙で、画面のための契約ではない）。`api/openapi.yaml` にも載せない。
+  同意の画面が叩く `/api/oauth/*` は画面の契約なので、ふつうの約束に従う。
+- **`/oauth/authorize` に検証も書き込みも足さない。** 要求を包んで画面へ転送する
+  だけにしてある。足すと副作用を持つ GET が 2 つになり（下の「cross-site
+  リクエストの拒否」）、CIMD の取得（外向きの通信）をログインしていない誰でも
+  起こせる。検証は `/api/oauth/authorization` で行う。
+- **issuer と `/mcp` の URL は `baseURL` から組む。** ログインの `redirect_uri` と
+  同じ起点で、別々に組むと同じ構成で別のホストを指しうる。トークンは発行した
+  ときの `/mcp` の URL に結びつく（RFC 8707）ので、テストで実際の HTTP サーバーに
+  載せるときは PublicURL で起点を固定する。
+- **認可サーバーを組み立てていない構成の 503 は text/plain で返す**（上の
+  「エラー本文も `ErrorResponse` に揃える」の例外）。`/mcp` で SDK 自身が返すエラーが
   text/plain で、`ErrorResponse` の code は画面のための列挙（ADR 0034）。画面は
   `/mcp` を叩かないので、code を足すと読まれない文言が 1 つ増える。
 

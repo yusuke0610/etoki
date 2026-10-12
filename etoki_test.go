@@ -682,3 +682,49 @@ func fakeAuthenticator(t *testing.T) *etoki.Authenticator {
 	}
 	return auth
 }
+
+// 認証ありの構成で `/mcp` を開くのは、許可の保存先を渡したときだけ（ADR 0076）。
+// 渡さなければこれまでどおり 503（ADR 0071）。渡せば、トークンを求める 401 に
+// なり、MCP のクライアントは認可の流れを始められる。
+func TestNew_OpensMCPWithOAuthGrants(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		withGrants bool
+		want       int
+	}{
+		"保存先なし": {withGrants: false, want: http.StatusServiceUnavailable},
+		"保存先あり": {withGrants: true, want: http.StatusUnauthorized},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := options(t, "")
+			opts.Auth = fakeAuthenticator(t)
+			if tc.withGrants {
+				db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "grants.db"))
+				if err != nil {
+					t.Fatalf("Open: %v", err)
+				}
+				t.Cleanup(func() { _ = db.Close() })
+				opts.OAuthGrants = sqlite.NewOAuthGrantRepository(db)
+			}
+			srv, err := etoki.New(opts)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mcp",
+				strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+			req.Host = "127.0.0.1:8080"
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != tc.want {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tc.want, rec.Body)
+			}
+		})
+	}
+}
