@@ -9,7 +9,7 @@ import {
   openBoardWithMock,
   openPanelTab,
 } from "./helpers/board";
-import { annotationsOfScene } from "./helpers/boardData";
+import { annotationsOfScene, emptyScene } from "./helpers/boardData";
 import { BOARD_ID, annotatedScene, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -21,10 +21,13 @@ import { BOARD_ID, annotatedScene, baseMock, board } from "./helpers/fixtures";
  * 開き直すたびに前の結果が消える。
  */
 test.describe("右上の「絵解き」", () => {
-  // 注釈が 1 件の構成。どれを開くかを人に選ばせる余地が無い。
+  // 注釈が 1 件の構成。どれを開くかを人に選ばせる余地が無い。**保存済みの一覧も
+  // シーンに揃える。** 開く先は保存済みの一覧で数えるので、既定の 3 件のままだと
+  // 一覧を開く。
   function singleAnnotationMock() {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), scene: annotatedScene() };
+    mock.annotations[BOARD_ID] = annotationsOfScene(annotatedScene());
     return mock;
   }
 
@@ -54,7 +57,6 @@ test.describe("右上の「絵解き」", () => {
   // あいだに付けた注釈を開くと、保存済みの一覧に無いので詳細がその場で閉じる。
   test("保存を待つあいだに注釈を付けたら、保存し直してから開く", async ({ page }) => {
     const mock = singleAnnotationMock();
-    mock.annotations[BOARD_ID] = annotationsOfScene(annotatedScene());
     mock.annotationsFollowSave = true;
     const installed = await openBoardWithMock(page, mock);
     let release!: () => void;
@@ -81,6 +83,21 @@ test.describe("右上の「絵解き」", () => {
     await expect(annotationDetail(page, "ログイン")).toBeVisible();
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     expect(installed.saveRequests).toHaveLength(2);
+  });
+
+  // **数えるのは保存済みの一覧で、キャンバスではない**（#259 のレビュー）。状態は
+  // 保存済みシーンが基準。キャンバスで数えると、フレームが画面に無い注釈を数え
+  // そこね、1 件なのに一覧を開く。
+  test("保存済みの注釈が 1 件なら、フレームが画面に無くてもその面を開く", async ({
+    page,
+  }) => {
+    const mock = singleAnnotationMock();
+    mock.details[BOARD_ID] = { ...board(), scene: emptyScene() };
+    await openBoardWithMock(page, mock);
+
+    await ekidokiButton(page).click();
+
+    await expect(annotationDetail(page, "ログイン")).toBeVisible();
   });
 
   // 保存できなかったら開かない。理由は保存の失敗として通知が言う。開くと、
