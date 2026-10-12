@@ -808,11 +808,22 @@ export function BoardPage({
    * 保存の理由は `startEkidoki` と同じ。保存できなかったら読まない。保存は
    * 引いた解釈をすべて捨てるので、**読むのは必ず保存のあと**（先に読むと、
    * 引いた結果が直後に消える）。
+   *
+   * **保存を待つあいだに変わったら、保存し直してから読む。** 保存が送るのは押した
+   * 時点のシーンで、待つあいだの描き足しや選び直しは未保存のまま残る
+   * （`markSaved`）。テキストは保存済みシーンから、画像は画面から取る（ADR 0018）
+   * ので、残したまま読むと 2 つが食い違う。画像に使う要素は `interpret` を呼んだ
+   * その場で読む（`exportAnnotationImage`）ので、未保存でないと確かめてから
+   * 読むまでのあいだに変わる隙は無い。
    */
   const interpretAfterSave = useCallback(
     async (id: string) => {
+      while (isDirty()) {
+        if (!(await save())) return;
+      }
+      // 控える粒度は、読む時点のキャンバスの値（= 保存済みシーンの値）。押した
+      // 時点の値を控えると、待つあいだに選び直したときに読んだものと食い違う。
       const granularity = latestAnnotations.current.canvasMetas?.[id]?.granularity;
-      if (isDirty() && !(await save())) return;
       void interpret(id, { granularity });
     },
     [interpret, isDirty, save],
