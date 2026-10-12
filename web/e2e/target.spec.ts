@@ -321,7 +321,7 @@ test.describe("作成先の選択", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
     await chooseFromMenu(page, "作成先を変更");
@@ -330,7 +330,7 @@ test.describe("作成先の選択", () => {
 
     await drawRectangle(page);
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
 
     // 409 なら「他の人がこのボードを保存しました」が出て、未保存も残る。
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
