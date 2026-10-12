@@ -12,6 +12,7 @@ import {
   ekidokiButton,
   openPanelTab,
 } from "./helpers/board";
+import { annotationsOfScene } from "./helpers/boardData";
 import { BOARD_ID, BOARD_NAME, annotations, baseMock } from "./helpers/fixtures";
 
 /**
@@ -150,6 +151,59 @@ test.describe("注釈の詳細", () => {
     await expect(
       detail.getByText("押すと保存してから読みます", { exact: false }),
     ).toHaveCount(0);
+  });
+
+  // **保存を待つあいだに変わったら、保存し直してから読む**（#259 のレビュー）。
+  // テキストは保存済みシーンから、画像は画面から取る（ADR 0018）。保存が送るのは
+  // 押した時点のシーンなので、待つあいだの選び直しを残したまま読むと、テキストは
+  // 選び直す前のシーン、画像はいまのキャンバスになって食い違う。
+  test("絵解くときの保存を待つあいだに粒度を変えたら、保存し直してから読む", async ({
+    page,
+  }) => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const mock = await installApi(page, baseMock());
+    await holdSave(page, held);
+    // 何回目の保存のあとで読んだかを、リクエストの並びで見る。
+    const order: string[] = [];
+    page.on("request", (r) => {
+      const path = new URL(r.url()).pathname;
+      if (r.method() === "PUT" && path === `/api/boards/${BOARD_ID}/scene`) {
+        order.push("save");
+      }
+      if (r.method() === "POST" && /\/annotations\/[^/]+\/interpret$/.test(path)) {
+        order.push("interpret");
+      }
+    });
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const select = detail.getByLabel("粒度");
+    await select.selectOption("epic");
+    const saving = page.waitForRequest(
+      (r) =>
+        r.method() === "PUT" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/scene`,
+    );
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await saving;
+    // 保存が epic のシーンを送ったあとで選び直す。
+    await select.selectOption("issue");
+
+    release();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(order).toEqual(["save", "save", "interpret"]);
+    const resaved = annotationsOfScene(mock.saveRequests[1]?.scene ?? "{}");
+    expect(resaved.find((a) => a.name === "ログイン")?.granularity).toBe("issue");
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    // 控える粒度も保存し直した値にする。押した時点の epic を控えると、issue で
+    // 読んだ結果に「粒度 epic」と書いた行が付く。行は 2 回引くと並ぶ。
+    await detail.getByRole("button", { name: "絵解き直す" }).click();
+    const runs = detail.getByLabel("解釈結果").locator("option");
+    await expect(runs).toHaveCount(2);
+    await expect(runs.nth(1)).toContainText("粒度 issue");
   });
 
   // 保存できなかったら読まない。読むテキストは保存済みシーンから取るので、
