@@ -449,8 +449,9 @@ export function BoardPage({
   // 巻き戻って見える。
   const annotationsRequest = useRef(0);
   // 最後に反映した一覧。**保存のあとに読む側が、描き直しを待たずに引く**
-  // （`interpretAfterSave`）。保存は取り直しを待ってから返るが、state が
-  // 描き直されるのはそのあとで、返った時点の値はまだ保存前の一覧のことがある。
+  // （`startEkidoki` / `interpretAfterSave`）。保存は取り直しを待ってから返るが、
+  // state が描き直されるのはそのあとで、返った時点の値はまだ保存前の一覧のことが
+  // ある。
   const fetchedAnnotations = useRef<AnnotationStatus[]>([]);
 
   const refreshAnnotations = useCallback(async () => {
@@ -761,11 +762,11 @@ export function BoardPage({
     dismiss: dismissHere,
   });
 
-  // 保存のあとに読む値。保存は注釈の一覧を取り直すが、押した時点の関数は古い一覧を
-  // 握っている。呼ぶ側が最新の値を引けるよう、描画のたびに置き直す。
-  const latestAnnotations = useRef({ canvasMetas, annotations });
+  // 保存のあとに読むキャンバスの値。押した時点の関数は押した時点の値を握って
+  // いるので、呼ぶ側が最新の値を引けるよう、描画のたびに置き直す。
+  const latestCanvasMetas = useRef(canvasMetas);
   useEffect(() => {
-    latestAnnotations.current = { canvasMetas, annotations };
+    latestCanvasMetas.current = canvasMetas;
   });
 
   /**
@@ -795,12 +796,13 @@ export function BoardPage({
    *
    * 開く先: 注釈が 1 件ならその詳細。0 件か複数ならパネルの注釈の一覧。右上のボタンは
    * どの注釈かを指していないので、選ぶのは人（中核思想 3）。スマホではパネルを
-   * 全面に開く（上の帯から開くのと同じ口、#199）。
+   * 全面に開く（上の帯から開くのと同じ口、#199）。**数えるのは取り直した保存済みの
+   * 一覧で、キャンバスではない**（状態は保存済みシーンが基準）。キャンバスで数えると、
+   * フレームが画面に無い注釈を数えそこね、1 件なのに一覧を開く。
    */
   const startEkidoki = useCallback(async () => {
     if (!(await saveUntilClean())) return;
-    const { canvasMetas: metas, annotations: saved } = latestAnnotations.current;
-    const ids = metas ? Object.keys(metas) : saved.map((a) => a.id);
+    const ids = fetchedAnnotations.current.map((a) => a.id);
     const only = ids.length === 1 ? ids[0] : undefined;
     if (only !== undefined) {
       openDetail(only);
@@ -838,7 +840,7 @@ export function BoardPage({
       if (!listed(fetchedAnnotations.current, id)) return;
       // 控える粒度は、読む時点のキャンバスの値（= 保存済みシーンの値）。押した
       // 時点の値を控えると、待つあいだに選び直したときに読んだものと食い違う。
-      const granularity = latestAnnotations.current.canvasMetas?.[id]?.granularity;
+      const granularity = latestCanvasMetas.current?.[id]?.granularity;
       void interpret(id, { granularity });
     },
     [interpret, saveUntilClean],
