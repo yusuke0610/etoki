@@ -14,6 +14,7 @@ const REASON_CODE: Record<keyof Capabilities, ErrorCode> = {
   diagramDraft: "llm_not_configured",
   creation: "github_not_configured",
   sharing: "sharing_not_configured",
+  mcpConnections: "mcp_connections_not_configured",
 };
 
 /**

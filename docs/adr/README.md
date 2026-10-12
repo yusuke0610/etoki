@@ -79,5 +79,6 @@
 | [0073](0073-css-by-feature-ordered-by-imports.md)                | CSS は機能のディレクトリに置き、読む順は入口の @import で決める          | 採用                 |
 | [0074](0074-keep-pasted-images-apart-from-the-scene.md)          | 貼った画像はシーンとは別に持ち、保存ではまだ無い画像だけを書く           | 採用                 |
 | [0075](0075-board-layout-follows-excalidraw-breakpoint.md)       | ボードの置き方は Excalidraw のモバイル判定の式に揃える                   | 採用                 |
+| [0076](0076-mcp-oauth-authorization-server.md)                   | 認証ありの構成では、etoki が認可サーバーになって `/mcp` を OAuth で開く  | 採用                 |
 | [0077](0077-ekidoki-saves-before-interpreting.md)                | 「絵解き」は保存を挟み、未保存のときだけ保存してから進む                 | 採用                 |
 | [0078](0078-share-dialog-and-panel-names.md)                     | メンバーは「共有」のダイアログで開き、パネルの名前を使う人の言葉に寄せる | 採用                 |

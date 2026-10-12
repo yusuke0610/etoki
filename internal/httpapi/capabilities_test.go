@@ -163,7 +163,7 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
 	}
 	caps := decode[apitypes.Capabilities](t, rec)
-	if caps.Interpretation || caps.DiagramDraft || caps.Creation || caps.Sharing {
+	if caps.Interpretation || caps.DiagramDraft || caps.Creation || caps.Sharing || caps.McpConnections {
 		t.Fatalf("素の構成なのに使えることになっている: %+v", caps)
 	}
 
@@ -180,6 +180,10 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 		{http.MethodGet, "/api/github/repositories", apitypes.ErrorCodeGithubNotConfigured},
 		{http.MethodGet, "/api/boards/" + id + "/members", apitypes.ErrorCodeSharingNotConfigured},
 		{http.MethodGet, "/api/boards/" + id + "/invitee?login=bob", apitypes.ErrorCodeSharingNotConfigured},
+		{http.MethodGet, "/api/oauth/grants", apitypes.ErrorCodeMcpConnectionsNotConfigured},
+		{http.MethodGet, "/api/oauth/authorization?request=x", apitypes.ErrorCodeMcpConnectionsNotConfigured},
+		{http.MethodPost, "/api/oauth/authorization", apitypes.ErrorCodeMcpConnectionsNotConfigured},
+		{http.MethodDelete, "/api/oauth/grants/g1", apitypes.ErrorCodeMcpConnectionsNotConfigured},
 	} {
 		t.Run(tt.path, func(t *testing.T) {
 			rec := do(t, r, tt.method, tt.path, nil)

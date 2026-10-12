@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -64,6 +65,17 @@ func newAuthRouter(
 ) (*gin.Engine, port.SessionRepository) {
 	t.Helper()
 
+	deps, sessions, _ := newAuthDeps(t, provider)
+	return httpapi.NewRouter(deps), sessions
+}
+
+// newAuthDeps は newAuthRouter の組み立てを返す。認可サーバー（ADR 0076）を
+// 足したルーターを作るのに、同じ組み立てから始める。
+func newAuthDeps(
+	t *testing.T, provider port.IdentityProvider,
+) (httpapi.Deps, port.SessionRepository, *sql.DB) {
+	t.Helper()
+
 	db := openTempDB(t)
 	if err := sqlite.Migrate(t.Context(), db); err != nil {
 		t.Fatalf("Migrate: %v", err)
@@ -99,7 +111,7 @@ func newAuthRouter(
 		deps.Members = usecase.NewBoardMemberService(boards, auth, usecase.NewBoardLocks())
 	}
 
-	return httpapi.NewRouter(deps), sessions
+	return deps, sessions, db
 }
 
 // login は実際にログインを通し、セッション cookie を返す。
