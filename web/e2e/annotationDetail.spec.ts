@@ -206,6 +206,34 @@ test.describe("注釈の詳細", () => {
     await expect(runs.nth(1)).toContainText("粒度 issue");
   });
 
+  // **保存で消えた注釈は読まない**（#259 のレビュー）。保存済みの一覧に無いので
+  // 詳細は閉じていて、読んでも結果を出す先が無い。
+  test("絵解くときの保存で注釈が消えたら、読まない", async ({ page }) => {
+    const mock = baseMock();
+    mock.annotationsFollowSave = true;
+    const installed = await openBoardWithMock(page, mock);
+
+    // 外しても、保存するまでは保存済みの一覧に残るので詳細を開ける。
+    await (
+      await openAnnotationDetail(page, "ログイン")
+    )
+      .getByRole("button", { name: "キャンバスで見る" })
+      .click();
+    await page.getByRole("button", { name: /の注釈を外す/ }).click();
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+
+    await expect(annotationCard(page, "ログイン")).toHaveCount(0);
+    await expect(page.locator("section.annotation-detail:not([hidden])")).toHaveCount(0);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    // 「読まなかった」は、読まれたあとにしか出ない表示を待ってから数える。ほかの
+    // 注釈を読み、結果が出てから数える。消えた注釈を読んでいたら 2 件になる。
+    const other = await openAnnotationDetail(page, "パスワード再設定");
+    await other.getByRole("button", { name: "絵解く" }).click();
+    await expect(other.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(installed.interpretRequests).toHaveLength(1);
+  });
+
   // 保存できなかったら読まない。読むテキストは保存済みシーンから取るので、
   // 書けていないシーンを前提に読むと、画面の画像と食い違う（ADR 0018）。
   // 理由は保存の失敗として通知が言う。

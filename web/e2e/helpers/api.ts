@@ -142,6 +142,15 @@ export type ApiMock = {
    */
   saveSceneError?: Reply<never>;
   /**
+   * 保存できたら、保存したシーンから注釈の一覧を作り直す（`annotationsOfScene`）。
+   *
+   * **実物のサーバーは保存済みシーンから一覧を作るが、モックは既定で spec が
+   * 決めた一覧を持ち回る。** 3 状態を spec ごとに決めるため。保存で注釈が増える・
+   * 消えることを確かめる spec だけが立てる。作り直した一覧の 3 状態は
+   * `uncreated` になる。
+   */
+  annotationsFollowSave?: boolean;
+  /**
    * そのボードで何ができるか。ボード ID をキーにする。
    *
    * 無いボードは role をボードの値から、projectAccess を unknown として返す。
