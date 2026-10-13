@@ -262,6 +262,14 @@ before our limit` と出たら、Ollama 側で広げてください。
 OLLAMA_CONTEXT_LENGTH=16384 ollama serve
 ```
 
+これは**新しい `ollama serve` を起動するだけ**です。Ollama のアプリや Linux の
+サービスがすでに `11434` を使っていると、bind に失敗し、動いているサーバーの
+コンテキスト長も変わりません。その場合は、先にそのサーバーを止めてから上のコマンドを
+実行するか、起動設定に環境変数を足して再起動してください（macOS のアプリは
+`launchctl setenv OLLAMA_CONTEXT_LENGTH 16384` のあとアプリを再起動、Linux の
+systemd は `systemctl edit ollama.service` で
+`Environment="OLLAMA_CONTEXT_LENGTH=16384"` を足して `systemctl restart ollama`）。
+
 ### GitHub Projects v2 を使う
 
 draft issue の作成にはトークンが要ります。
