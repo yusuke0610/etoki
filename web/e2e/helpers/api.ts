@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 
 import type {
   AnnotationStatus,
@@ -146,6 +146,15 @@ export type ApiMock = {
    * 版の照合より先に返す。大きさで断られる場面は基準が合っていても起きる。
    */
   saveSceneError?: Reply<never>;
+  /**
+   * 保存できたら、保存したシーンから注釈の一覧を作り直す（`annotationsOfScene`）。
+   *
+   * **実物のサーバーは保存済みシーンから一覧を作るが、モックは既定で spec が
+   * 決めた一覧を持ち回る。** 3 状態を spec ごとに決めるため。保存で注釈が増える・
+   * 消えることを確かめる spec だけが立てる。作り直した一覧の 3 状態は
+   * `uncreated` になる。
+   */
+  annotationsFollowSave?: boolean;
   /**
    * そのボードで何ができるか。ボード ID をキーにする。
    *
@@ -296,6 +305,30 @@ export function breakAnnotations(page: Page, hold?: Promise<void>): Promise<void
   );
 }
 
+/**
+ * 注釈の一覧の取得を、ここから失敗させる（500）。壊すのではなく取れない形で、
+ * 落ちる画面は無く、通知が出る。
+ *
+ * **開いたときの取得が届いてから呼ぶ。** 手元に前の一覧が残ったまま、取り直しだけが
+ * 失敗する状況を作るため（#259）。`installApi` の**後**に呼ぶ。返す関数で取得を
+ * 戻せる。「しなかった」を、直して押し直した結果から数えるのに使う。
+ */
+export async function failAnnotations(page: Page): Promise<() => Promise<void>> {
+  const match = (url: URL) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname);
+  const fail = async (route: Route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await json(route, 500, {
+      code: "internal",
+      error: "internal error",
+    } satisfies ErrorResponse);
+  };
+  await page.route(match, fail);
+  return () => page.unroute(match, fail);
+}
+
 /** ボードの一覧を壊す。キャンバスへ入る前の画面ごと落ちる。 */
 export function breakBoards(page: Page): Promise<void> {
   return breakList(page, (url) => url.pathname === "/api/boards", [null]);
@@ -336,6 +369,19 @@ export function holdSave(page: Page, hold: Promise<void>): Promise<void> {
     page,
     (url) => /^\/api\/boards\/[^/]+\/scene$/.test(url.pathname),
     "PUT",
+    hold,
+  );
+}
+
+/**
+ * 注釈の一覧の取得を止める。解決するまで応答を返さない。開いたときの取得が
+ * 届いてから呼ぶ（取り直しを待つあいだを作るため、#259）。
+ */
+export function holdAnnotations(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
+    "GET",
     hold,
   );
 }

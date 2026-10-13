@@ -1,7 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import type { ApiMock } from "./helpers/api";
-import { openBoardWithMock, openMermaidPaste, openPanelTab } from "./helpers/board";
+import {
+  openBoardWithMock,
+  openMermaidPaste,
+  openPanelTab,
+  saveScene,
+} from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
@@ -40,7 +45,7 @@ async function paste(page: Page, text: string): Promise<void> {
 
 /** 保存して、送られたシーンの要素を返す。 */
 async function saveAndRead(page: Page, mock: ApiMock): Promise<SavedElement[]> {
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await saveScene(page);
   await expect(page.getByText("未保存", { exact: true })).toBeHidden();
   const scene = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
     elements: SavedElement[];

@@ -11,6 +11,7 @@ import {
   openBoard,
   openBoardWithMock,
   picker,
+  saveScene,
   startNewBoard,
 } from "./helpers/board";
 import {
@@ -438,7 +439,7 @@ test.describe("ボード", () => {
     // 描いたものは未保存のまま残っている。消えていれば「未保存」が下りる。
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await saveScene(page);
 
     // 409 なら「他の人がこのボードを保存しました」が出る。出ないことを見る。
     await expect(page.getByRole("alert")).toHaveCount(0);

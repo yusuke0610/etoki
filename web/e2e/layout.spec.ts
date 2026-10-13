@@ -13,6 +13,8 @@ import {
   openMermaidPaste,
   openPanelTab,
   picker,
+  ekidokiButton,
+  saveScene,
 } from "./helpers/board";
 import {
   BOARD_ID,
@@ -92,7 +94,7 @@ async function showSaveFailure(page: Page): Promise<Locator> {
   };
   await openBoardWithMock(page, mock);
   await drawRectangle(page);
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await saveScene(page);
   const notification = page.locator(".notifications").getByRole("alert");
   await expect(notification).toContainText("保存できませんでした");
   return notification;
@@ -157,7 +159,7 @@ test.describe("置き方と Excalidraw の判定が揃っている", () => {
 test.describe("重ねる", () => {
   test.use({ viewport: { width: 1024, height: 768 } });
 
-  // 浮かせたパネルが、右上の島（保存と「未保存」）も下の帯（ロール・作成先・
+  // 浮かせたパネルが、右上の島（「絵解き」と「未保存」）も下の帯（ロール・作成先・
   // 大きさ）も覆わない（ADR 0021 / 0064）。**位置で見る。** パネルは Excalidraw の
   // UI より下に置いているので、重なっていても島は上に出て押せてしまい、押せるか
   // では気づけない。
@@ -216,27 +218,38 @@ test.describe("重ねる", () => {
 test.describe("スマホ", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
-  test("描くと上の帯に「未保存」が出て、保存できる", async ({ page }) => {
+  // スマホにはキーボードが無いことが多く、保存だけの口（`⌘/Ctrl+S`）は出さない。
+  // 保存は「絵解き」が挟む（ADR 0077）。押すと保存してから、パネルを全面に開く。
+  test("描くと上の帯に「未保存」が出て、「絵解き」で保存してパネルを開く", async ({
+    page,
+  }) => {
     const mock = await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
 
     const status = page.locator(".board-bar-status");
     await expect(status.getByText("未保存", { exact: true })).toBeVisible();
-    await status.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(status.getByText("⌘/Ctrl+S")).toBeHidden();
+    await status.getByRole("button", { name: "絵解き", exact: true }).click();
     await expect(status.getByText("未保存", { exact: true })).toBeHidden();
     expect(mock.saveRequests).toHaveLength(1);
+    // 注釈が複数なので、全面のパネルで一覧を開く。
+    await expect(page.locator(".side-panel")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "注釈", exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   // `renderTopRightUI` はスマホでは何も返さない。Excalidraw のツールバーの行に
-  // 島を詰めると、ツールバーと合わせて画面からはみ出し、保存が切れる。
-  test("右上の島は Excalidraw の中に出さず、保存は画面に収まる", async ({ page }) => {
+  // 島を詰めると、ツールバーと合わせて画面からはみ出し、「絵解き」が切れる。
+  test("右上の島は Excalidraw の中に出さず、「絵解き」は画面に収まる", async ({
+    page,
+  }) => {
     await openBoardWithMock(page, baseMock());
 
     await expect(page.locator(".excalidraw .board-status")).toHaveCount(0);
-    const save = await page
-      .getByRole("button", { name: "保存", exact: true })
-      .boundingBox();
-    if (!save) throw new Error("保存ボタンが表示されていない");
+    const save = await ekidokiButton(page).boundingBox();
+    if (!save) throw new Error("「絵解き」が表示されていない");
     expect(save.x + save.width).toBeLessThanOrEqual(375);
   });
 
@@ -267,8 +280,8 @@ test.describe("スマホ", () => {
     if (!box) throw new Error("パネルが表示されていない");
     expect(box.width).toBe(375);
 
-    // 1 段目（保存と「未保存」）は覆わない（ADR 0021）。
-    await page.getByRole("button", { name: "保存", exact: true }).click({ trial: true });
+    // 1 段目（「絵解き」と「未保存」）は覆わない（ADR 0021）。
+    await ekidokiButton(page).click({ trial: true });
 
     // 閉じると、開いたボタンへ焦点が戻る。
     await page.getByRole("button", { name: "パネルを閉じる" }).click();
@@ -342,7 +355,7 @@ test.describe("スマホ", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 
-  // 通知は下に出す。上の帯（ボード名・未保存・保存と、ロール・作成先）は状態を
+  // 通知は下に出す。上の帯（ボード名・未保存・「絵解き」と、ロール・作成先）は状態を
   // 出しているので覆わない。
   test("通知は上の帯に重ならない", async ({ page }) => {
     const notification = await showSaveFailure(page);
@@ -398,9 +411,9 @@ test.describe("スマホ", () => {
 test.describe("スマホの横長", () => {
   test.use({ viewport: { width: 812, height: 375 } });
 
-  test("保存と下の帯の中身が見えている", async ({ page }) => {
+  test("「絵解き」と下の帯の中身が見えている", async ({ page }) => {
     await openBoardWithMock(page, baseMock(), BOARD_NAME);
-    await page.getByRole("button", { name: "保存", exact: true }).click({ trial: true });
+    await ekidokiButton(page).click({ trial: true });
     await expect(boardBar(page)).toContainText("オーナー");
   });
 });

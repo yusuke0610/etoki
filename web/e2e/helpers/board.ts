@@ -211,16 +211,34 @@ export async function openAnnotationDetail(page: Page, name: string): Promise<Lo
 }
 
 /**
- * カードから詳細を開き、下端の帯の「解釈する」を押す（#201）。1 度解釈して
- * いれば「解釈をやり直す」を押す。**解釈の口はカードには無い。**
+ * カードから詳細を開き、下端の帯の「絵解く」を押す（#201、#247）。1 度絵解きして
+ * いれば「絵解き直す」を押す。**解釈の口はカードには無い。**
  */
 export async function interpret(card: Locator): Promise<void> {
   await card.locator(".annotation-open").click();
   await card
     .page()
     .locator("section.annotation-detail:not([hidden])")
-    .getByRole("button", { name: /^解釈(する|をやり直す)$/ })
+    .getByRole("button", { name: /^絵解(く|き直す)$/ })
     .click();
+}
+
+/**
+ * シーンを保存する。**保存だけの口は `⌘/Ctrl+S`**（#145）。右上のボタンは
+ * 「絵解き」で、保存のあとに絵解きの面かパネルを開く（#247）ので、保存だけを
+ * 確かめたい spec はこちらを通す。
+ */
+export async function saveScene(page: Page): Promise<void> {
+  // **押せるようになるまで待つ。** ショートカットは「絵解き」と同じ式で止まる
+  // （`BoardPage` の `canSave`）ので、取り込みや作成の最中に押すと黙って弾かれる。
+  // ボタンを押していた頃は、押せるまで `click()` が待っていた。
+  await expect(ekidokiButton(page)).toBeEnabled();
+  await page.keyboard.press("ControlOrMeta+s");
+}
+
+/** 右上の「絵解き」。未保存なら保存してから、絵解きの面かパネルを開く（#247）。 */
+export function ekidokiButton(page: Page): Locator {
+  return page.getByRole("button", { name: "絵解き", exact: true });
 }
 
 /**
@@ -231,9 +249,9 @@ export async function interpret(card: Locator): Promise<void> {
  * 満たされてしまう。
  */
 export function annotationDetail(page: Page, name: string): Locator {
-  return page
-    .locator("section.annotation-detail:not([hidden])")
-    .filter({ has: page.getByRole("heading", { level: 2, name }) });
+  // 見出しは「絵解き」で、どの注釈かは隣の名前（#247）。ダイアログの名前は
+  // 2 つをつないだもの。**隠れた面は role で引けない**ので、開いているものだけが返る。
+  return page.getByRole("dialog", { name: `絵解き ${name}`, exact: true });
 }
 
 /**

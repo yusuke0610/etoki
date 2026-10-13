@@ -37,7 +37,10 @@ type InterpretationSectionProps = {
   projectLink: ProjectLink | null;
   /** 作る先の見出し（`acme/web › #1 ロードマップ`）。帯の文に出す。 */
   targetLabel: string | null;
-  /** 未保存の変更があるあいだは解釈させない（ADR 0018）。 */
+  /**
+   * 未保存の変更があるか。**押せない理由には使わない。** 「絵解く」は未保存なら
+   * 保存してから読む（`BoardPage`、#247）。ここでは、そうなることを案内するために使う。
+   */
   stale: boolean;
   /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
   interpretationUnavailable: string | null;
@@ -45,13 +48,6 @@ type InterpretationSectionProps = {
   onSelectInterpretation: (runId: number) => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
 };
-
-/**
- * 未保存のあいだ「解釈する」を押せない理由。テキストは保存済みシーンから、
- * 画像は画面から取るので、揃っていないと 1 回の解釈の入力が食い違う（ADR 0018）。
- */
-const STALE_REASON =
-  "保存してから解釈できます。テキストは保存済みのシーンから、画像は画面から取るためです。";
 
 /**
  * 解釈の結果と、下端の帯（`DetailBand`）。注釈の詳細（`AnnotationDetail`）の
@@ -86,18 +82,19 @@ export function InterpretationSection({
 
   const interpret: InterpretControl = {
     annotationId,
-    label:
-      runs.length > 0 || state?.failure !== undefined ? "解釈をやり直す" : "解釈する",
-    running,
-    // **設定の不足が先。** 保存しても状況は変わらないので、「保存してから」を
-    // 先に出すと、保存した人がもう一度同じところで止まる（ADR 0030）。
-    blocked: interpretationUnavailable ?? (stale ? STALE_REASON : null),
+    label: runs.length > 0 || state?.failure !== undefined ? "絵解き直す" : "絵解く",
+    // 保存しているあいだも「絵解き中」に数える。押した操作の中で保存するので
+    // （`BoardPage`）、保存が終わるまでの待ちも絵解きの一部。
+    running: running || saving,
+    // 押せない理由は設定の不足だけ。**未保存では止めない。** 保存してから読むので、
+    // テキスト（保存済みシーン）と画像（画面）は揃う（ADR 0018）。
+    blocked: interpretationUnavailable,
     onInterpret,
   };
 
   return (
     <div className="interpretation-result-area">
-      {running && <p className="hint">解釈しています…</p>}
+      {running && <p className="hint">絵解きしています…</p>}
 
       {/*
         解釈の前でも詳細は開ける（粒度と種別を選ぶ場所がここなので）。何を押すと
@@ -106,8 +103,19 @@ export function InterpretationSection({
       */}
       {!running && runs.length === 0 && !state?.failure && (
         <p className="hint">
-          まだ解釈していません。「解釈する」を押すと、この注釈を読んで、作るものの
-          下書きを出します。保存すると、前に解釈した結果は捨てます。
+          まだ絵解きしていません。「絵解く」を押すと、この注釈を読んで、作るものの
+          下書きを出します。
+        </p>
+      )}
+      {/*
+        未保存のあいだだけ、保存が入ることを言う。**保存は全部の注釈の引いた解釈と
+        作成の状態を捨てる**ので、この注釈の前の結果も、ほかの注釈の結果も消える。
+        黙って保存すると、結果が消えた理由が読めない。
+      */}
+      {stale && !running && (
+        <p className="hint">
+          未保存の変更があります。「{interpret.label}」を押すと保存してから読みます。
+          保存すると、ほかの注釈のぶんも含めて、これまでの絵解きの結果を捨てます。
         </p>
       )}
 

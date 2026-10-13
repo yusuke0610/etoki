@@ -65,7 +65,12 @@ export type SceneSave = {
    * いるのであって、この推論を禁じてはいない）。
    */
   overLimit: boolean;
-  save: () => Promise<void>;
+  /**
+   * 保存する。**書けたときだけ true を返す。** 押せない（排他に弾かれた）・衝突・
+   * 失敗はどれも false。保存の続きに何かを始める呼び出し側（「絵解き」、#247）が、
+   * 書けていないシーンを前提に走り出さないために返す。
+   */
+  save: () => Promise<boolean>;
 };
 
 /** シーンを保存する（#146 で `BoardPage` から切り出し）。 */
@@ -113,14 +118,15 @@ export function useSceneSave({
   // 通知の「再試行」から呼ぶ保存。**押された時点の save を呼ぶ。** 通知は失敗した
   // 時点で作られるので、そのときの save を閉じ込めると、あとで api が変わった
   // あとでも古いものを呼ぶ。
-  const saveRef = useRef<() => Promise<void>>(async () => {});
+  const saveRef = useRef<() => Promise<boolean>>(async () => false);
 
-  const save = useCallback(async () => {
-    if (!api) return;
+  const save = useCallback(async (): Promise<boolean> => {
+    if (!api) return false;
+    let written = false;
 
     // disabled は表示の約束。取り込みや作成の最中に直接呼ばれても保存しないよう、
     // 永続化の入口でも同じ排他を確かめる（表は `exclusion.ts`）。
-    await exclusive.run("saving", async () => {
+    const ran = await exclusive.run("saving", async () => {
       try {
         const elements = api.getSceneElements();
         // 画像は抜いて、サーバーがまだ持っていないものだけを添える（ADR 0074）。
@@ -153,6 +159,7 @@ export function useSceneSave({
         setOverLimit(false);
         markSaved(sent);
         await onSaved();
+        written = true;
       } catch (e) {
         // 409 は「保存に失敗した」ではなく「他の人が先に保存した」という状態。
         // こちらの編集は未保存のまま残す。捨てて読み直すと、消えるのは相手では
@@ -174,6 +181,7 @@ export function useSceneSave({
         });
       }
     });
+    return ran && written;
   }, [
     api,
     boardId,

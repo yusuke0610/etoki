@@ -12,7 +12,9 @@ import {
   openAnnotationDetail,
   openBoard,
   openBoardWithMock,
+  saveScene,
   waitForBoard,
+  ekidokiButton,
 } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
@@ -89,7 +91,7 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
     await expect(page.getByText("未保存の変更あり")).toBeVisible();
 
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     await expect(page.getByText("未保存の変更あり")).toBeHidden();
@@ -190,7 +192,7 @@ test.describe("シーンの保存", () => {
   test("保存してあれば、確認なしで一覧へ戻る", async ({ page }) => {
     await openBoardWithMock(page, twoBoards());
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
     // 出た確認は控えておく。Playwright は既定で dialog を閉じるので、拾わずに
@@ -213,7 +215,7 @@ test.describe("シーンの保存", () => {
     for (let i = 0; i < 2; i++) {
       await drawRectangle(page);
       await expect(page.getByText("未保存", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "保存" }).click();
+      await saveScene(page);
       await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     }
 
@@ -229,7 +231,7 @@ test.describe("シーンの保存", () => {
     mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
 
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     await expect(page.getByText("他の人がこのボードを保存しました")).toBeVisible();
     // 未保存のまま残す。ここが消えると、保存できたと誤解したまま閉じられる。
@@ -250,7 +252,7 @@ test.describe("シーンの保存", () => {
     };
     await openBoardWithMock(page, mock);
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     // 打ち手まで言う。「大きすぎます」だけでは、描いた量を減らせと読める。
     await expect(page.getByText("貼った画像が大きすぎて保存できません")).toBeVisible();
@@ -291,7 +293,7 @@ test.describe("シーンの保存", () => {
     ).toBeVisible();
 
     await drawRectangle(page);
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     await expect(page.getByText("このボードは保存できる上限を超えています")).toBeHidden();
@@ -312,15 +314,17 @@ test.describe("シーンの保存", () => {
     await expect(page.locator(".badge-size")).toHaveText(/^[\d.]+ (B|KiB|MiB)$/);
   });
 
-  test("未保存のまま解釈しようとすると、保存を促す", async ({ page }) => {
+  // 未保存でも絵解ける（#247）。押すと保存が入り、保存はほかの注釈の結果も
+  // 捨てるので、押す前にそれを言う。
+  test("未保存のまま詳細を開くと、絵解くと保存されることを案内する", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     await drawRectangle(page);
 
-    // 理由は詳細の帯に出る（#201）。
     const detail = await openAnnotationDetail(page, "ログイン");
+    await expect(detail.getByRole("button", { name: "絵解く" })).toBeEnabled();
     await expect(
-      detail.getByText("保存してから解釈できます", { exact: false }),
+      detail.getByText("押すと保存してから読みます", { exact: false }),
     ).toBeVisible();
   });
 
@@ -389,7 +393,7 @@ test.describe("シーンの保存", () => {
     await installApi(page, mock);
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
-    await expect(page.getByRole("button", { name: "保存" })).toHaveCount(0);
+    await expect(ekidokiButton(page)).toHaveCount(0);
 
     const requests: string[] = [];
     page.on("request", (req) => {
@@ -463,12 +467,13 @@ test.describe("シーンの保存", () => {
       }
     });
 
-    await expect(page.getByRole("button", { name: "保存中…" })).toBeVisible();
+    // 保存しているあいだ、右上の「絵解き」は「準備中…」と名乗る（#247）。
+    await expect(page.getByRole("button", { name: "準備中…" })).toBeVisible();
 
     // 再描画を挟んだあとの 1 回も通さない。こちらはボタンの disabled と同じ式が
     // 効いていることを見る。
     await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
-    await expect(page.getByRole("button", { name: "保存中…" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "準備中…" })).toBeVisible();
 
     release();
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
@@ -489,18 +494,18 @@ test.describe("シーンの保存", () => {
     await detail.getByRole("button", { name: "閉じる" }).click();
     await drawRectangle(page);
     await card.locator(".annotation-open").click();
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
 
     // 解釈は保存済みシーンに対する結果。保存したら対象が変わっているので、
     // 古い結果のまま作成させてはならない。
     await expect(
-      detail.getByText("まだ解釈していません", { exact: false }),
+      detail.getByText("まだ絵解きしていません", { exact: false }),
     ).toBeVisible();
     await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
       0,
     );
-    // 引いた解釈も捨てるので、帯は「やり直す」ではなく「解釈する」に戻る。
-    // 「やり直す」のままだと、捨てた結果がまだどこかにあるように読める。
-    await expect(detail.getByRole("button", { name: "解釈する" })).toBeEnabled();
+    // 引いた解釈も捨てるので、帯は「絵解き直す」ではなく「絵解く」に戻る。
+    // 「絵解き直す」のままだと、捨てた結果がまだどこかにあるように読める。
+    await expect(detail.getByRole("button", { name: "絵解く" })).toBeEnabled();
   });
 });

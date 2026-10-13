@@ -120,6 +120,18 @@ const UI_OPTIONS = {
 const ANNOTATIONS_FAILED = "annotations-failed";
 const SCENE_UNREADABLE = "scene-unreadable";
 
+/**
+ * 保存済みの一覧にその注釈が在るか。開いていた詳細を閉じる判定と、保存のあとに
+ * 読むかどうかの判定（`interpretAfterSave`）が使う。**同じ条件で決める。** ずれると、
+ * 詳細が閉じたのに読む（結果を出す先が無い）か、開いたままなのに読まない。
+ *
+ * **一覧が壊れていても投げない。** 詳細を閉じる判定はパネルの境界の外にあり、
+ * 投げると画面ごと落ちる（ADR 0027、`railBadgesOf` と同じ）。
+ */
+function listed(annotations: readonly AnnotationStatus[], id: string): boolean {
+  return (annotations as readonly (AnnotationStatus | null)[]).some((a) => a?.id === id);
+}
+
 type Props = {
   /**
    * 開いたボード。**貼った画像を持つのは開いたときだけ**（ADR 0074）。キャンバスに
@@ -431,29 +443,42 @@ export function BoardPage({
   // 投げたものだけ反映する。古い応答で上書きすると、作成済みの注釈が未作成に
   // 巻き戻って見える。
   const annotationsRequest = useRef(0);
+  // 最後に投げた取得。追い越された取得は、これの結果を返す。
+  const latestAnnotations = useRef<Promise<AnnotationStatus[] | null> | null>(null);
 
-  const refreshAnnotations = useCallback(async () => {
+  /**
+   * 注釈の状態を取り直し、反映した一覧を返す。取れなかったら null（通知は出す）。
+   *
+   * **成否を返す。** 取り直した一覧で開く先や読むかどうかを決める側
+   * （`startEkidoki` / `interpretAfterSave`）が待って使う。state は描き直すまで
+   * 古く、取れなかったときは前の一覧のまま残るので、どちらも判断に使えない。
+   * 追い越されたら、追い越した取得の結果を返す（反映されるのはそちらなので）。
+   */
+  const refreshAnnotations = useCallback((): Promise<AnnotationStatus[] | null> => {
     const request = ++annotationsRequest.current;
-    try {
-      const next = await boardsApi.annotations(board.id);
-      if (request !== annotationsRequest.current) return;
-      setAnnotations(next.annotations);
-      setDetached(next.detached);
-      dismissHere(ANNOTATIONS_FAILED);
-    } catch (e) {
-      if (request !== annotationsRequest.current) return;
-      onError(describeFailure("注釈の状態を取得できませんでした", e), {
-        key: ANNOTATIONS_FAILED,
-      });
-    }
+    const pending = (async (): Promise<AnnotationStatus[] | null> => {
+      try {
+        const next = await boardsApi.annotations(board.id);
+        if (request !== annotationsRequest.current) return latestAnnotations.current;
+        setAnnotations(next.annotations);
+        setDetached(next.detached);
+        dismissHere(ANNOTATIONS_FAILED);
+        return next.annotations;
+      } catch (e) {
+        if (request !== annotationsRequest.current) return latestAnnotations.current;
+        onError(describeFailure("注釈の状態を取得できませんでした", e), {
+          key: ANNOTATIONS_FAILED,
+        });
+        return null;
+      }
+    })();
+    latestAnnotations.current = pending;
+    return pending;
   }, [board.id, dismissHere, onError]);
 
-  // 開いたら注釈の状態を引く。**`set-state-in-effect` の対象外。** state を置くのは
-  // 応答が届いてから（`await` の後）で、effect の本体からは置かない。BoardPage が
-  // 大きかったうちは解析が諦めていて出ていなかった（`web/CLAUDE.md` の「関心を
-  // フックに切り出すとき」）。
+  // 開いたら注釈の状態を引く。state を置くのは応答が届いてから（`await` の後）で、
+  // effect の本体からは置かない。
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshAnnotations();
   }, [refreshAnnotations]);
 
@@ -739,6 +764,107 @@ export function BoardPage({
     dismiss: dismissHere,
   });
 
+  // 保存のあとに読むキャンバスの値。押した時点の関数は押した時点の値を握って
+  // いるので、呼ぶ側が最新の値を引けるよう、描画のたびに置き直す。
+  const latestCanvasMetas = useRef(canvasMetas);
+  useEffect(() => {
+    latestCanvasMetas.current = canvasMetas;
+  });
+
+  /**
+   * 未保存でなくなるまで保存し、保存済みの注釈の一覧を取り直して返す。保存か
+   * 取り直しができなかったら null（ADR 0077）。
+   *
+   * **保存と取り直しを待つあいだに変わったら、保存し直す。** 保存が送るのは
+   * 呼んだ時点のシーンで、待つあいだの描き足しや選び直しは未保存のまま残る
+   * （`markSaved`）。1 回で済ませると、このあと読むもの（注釈の一覧、解釈）が
+   * 保存済みシーンと食い違う。**確かめ直すのは最後の待ち（取り直し）のあと。**
+   * 保存のあとで確かめても、取り直すあいだの変更が残る。
+   *
+   * **一覧は保存が要らなかったときも取り直す。** 手元の一覧は、開いた直後なら
+   * まだ届いておらず、前の取り直しが失敗していれば古い。保存したときは保存の
+   * あとの取り直し（`discardAfterSave`）と 2 度引くが、あちらは失敗しても保存を
+   * 失敗にしない（保存は済んでいる）ので、成否はここで見る。
+   */
+  const saveAndRefresh = useCallback(async () => {
+    let saved: AnnotationStatus[] | null;
+    do {
+      while (isDirty()) {
+        if (!(await save())) return null;
+      }
+      saved = await refreshAnnotations();
+    } while (saved !== null && isDirty());
+    return saved;
+  }, [isDirty, refreshAnnotations, save]);
+
+  /**
+   * 右上の「絵解き」。**未保存なら保存してから、絵解きの面を開く**（#247）。
+   *
+   * 保存が要るのは etoki の都合（ADR 0018）で、押す人が知らなくてよい。**未保存の
+   * ときだけ保存する。** 保存は全部の注釈の引いた解釈と作成の状態を捨てる
+   * （`discardAfterSave`）ので、毎回保存すると、開き直すたびに前の結果が消える。
+   * 保存できなかったら（衝突・失敗・排他）開かない。通知と衝突の帯が理由を言う。
+   * 保存と取り直しを待つあいだに変わったら保存し直す（`saveAndRefresh`）。待つ
+   * あいだに付けた注釈を開くと、保存済みの一覧に無いので詳細がその場で閉じる。
+   * **一覧を取り直せなかったときも開かない**（通知が言う）。前の一覧で数えると、
+   * 別の面を開く。
+   *
+   * 開く先: 注釈が 1 件ならその詳細。0 件か複数ならパネルの注釈の一覧。右上のボタンは
+   * どの注釈かを指していないので、選ぶのは人（中核思想 3）。スマホではパネルを
+   * 全面に開く（上の帯から開くのと同じ口、#199）。**数えるのは取り直した保存済みの
+   * 一覧で、キャンバスではない**（状態は保存済みシーンが基準）。キャンバスで数えると、
+   * フレームが画面に無い注釈を数えそこね、1 件なのに一覧を開く。
+   */
+  const startEkidoki = useCallback(async () => {
+    const saved = await saveAndRefresh();
+    if (saved === null) return;
+    const ids = saved.map((a) => a.id);
+    const only = ids.length === 1 ? ids[0] : undefined;
+    if (only !== undefined) {
+      openDetail(only);
+      return;
+    }
+    if (phone) {
+      openPhonePanel("annotations");
+      return;
+    }
+    setPanelTab("annotations");
+    changePanelCollapsed(false);
+  }, [changePanelCollapsed, openDetail, openPhonePanel, phone, saveAndRefresh]);
+
+  /**
+   * 詳細の「絵解く」。**未保存なら保存してから読む**（#247）。
+   *
+   * 保存の理由は `startEkidoki` と同じ。保存できなかったら読まない。保存は
+   * 引いた解釈をすべて捨てるので、**読むのは必ず保存のあと**（先に読むと、
+   * 引いた結果が直後に消える）。
+   *
+   * **保存と取り直しを待つあいだに変わったら、保存し直してから読む**
+   * （`saveAndRefresh`）。テキストは保存済みシーンから、画像は画面から取る
+   * （ADR 0018）ので、残したまま読むと 2 つが食い違う。画像に使う要素は
+   * `interpret` を呼んだその場で読む
+   * （`exportAnnotationImage`）ので、未保存でないと確かめてから読むまでのあいだに
+   * 変わる隙は無い。
+   *
+   * **保存で消えた注釈は読まない。** 押す前か待つあいだに、フレームを消したか
+   * 注釈から外した。保存済みの一覧に無いので詳細は閉じていて、読んでも結果を出す
+   * 先が無い。見るのは取り直した一覧で、**キャンバスではない。** フレームが画面に
+   * 無くても、保存済みの一覧に在ればテキストだけで読む（ADR 0018）。**一覧を
+   * 取り直せなかったときも読まない**（通知が言う）。消えたかどうかを前の一覧では
+   * 決められない。
+   */
+  const interpretAfterSave = useCallback(
+    async (id: string) => {
+      const saved = await saveAndRefresh();
+      if (saved === null || !listed(saved, id)) return;
+      // 控える粒度は、読む時点のキャンバスの値（= 保存済みシーンの値）。押した
+      // 時点の値を控えると、待つあいだに選び直したときに読んだものと食い違う。
+      const granularity = latestCanvasMetas.current?.[id]?.granularity;
+      void interpret(id, { granularity });
+    },
+    [interpret, saveAndRefresh],
+  );
+
   // **ボードを変えたら、そのボードについての通知は全部下げる。** 通知は
   // キャンバスより上に生きているので、残すと別のボードの画面に並ぶ。
   //
@@ -851,13 +977,8 @@ export function BoardPage({
   // **開いていた詳細の注釈が保存で消えたら、詳細を閉じる。** 描いたまま残すと、
   // 同じ注釈が戻ったとき（元に戻して保存したとき）に、閉じたはずの詳細が開き直る。
   // 描いている最中に置く。前の値と違うときだけ置く形なので React が許している。
-  //
-  // **一覧が壊れていても投げない。** ここはパネルの境界の外なので、投げると画面
-  // ごと落ちる（ADR 0027、`railBadgesOf` と同じ）。
-  if (
-    detailId !== null &&
-    !(annotations as readonly (AnnotationStatus | null)[]).some((a) => a?.id === detailId)
-  ) {
+  // ここはパネルの境界の外なので、一覧が壊れていても投げない（`listed`）。
+  if (detailId !== null && !listed(annotations, detailId)) {
     setDetailVanished((n) => n + 1);
     setDetailId(null);
   }
@@ -878,7 +999,7 @@ export function BoardPage({
     // 起きたかが見えない。
     onInterpret: (id) => {
       openDetail(id);
-      void interpret(id);
+      void interpretAfterSave(id);
     },
     onSelect: showInterpretation,
     unavailable: interpretationUnavailable,
@@ -912,7 +1033,7 @@ export function BoardPage({
     ? "保存してから作成先を変更できます"
     : exclusive.reasonFor("changeTarget");
 
-  // 右上に出す。ボード名・未保存・保存（`BoardStatus`）。**描くたびに作り直さない**
+  // 右上に出す。ボード名・未保存・「絵解き」（`BoardStatus`）。**描くたびに作り直さない**
   // （ADR 0065）。依存にはプリミティブと、同一性の保たれた関数だけを置く。
   const topRightUI = useMemo(
     () => (
@@ -924,9 +1045,9 @@ export function BoardPage({
         onRename={() => void rename()}
         dirty={dirty}
         canEdit={canEdit}
-        onSave={() => void save()}
-        canSave={canSave}
-        saveBlocked={saveBlocked}
+        onEkidoki={() => void startEkidoki()}
+        canEkidoki={canSave}
+        ekidokiBlocked={saveBlocked}
         saving={saving}
       />
     ),
@@ -938,7 +1059,7 @@ export function BoardPage({
       rename,
       dirty,
       canEdit,
-      save,
+      startEkidoki,
       canSave,
       saveBlocked,
       saving,
@@ -1214,7 +1335,7 @@ export function BoardPage({
           スマホの置き方では、右上と下の帯の中身をキャンバスの上の etoki の帯に
           移す（#199）。Excalidraw のモバイル用 UI では `Footer` が描かれず、
           状態を常に見せる約束（ADR 0064 / 0065）が崩れるため。1 段目はボード名・
-          未保存・保存で、**全面に開いたパネルと詳細もここは覆わない**（ADR 0021）。
+          未保存・「絵解き」で、**全面に開いたパネルと詳細もここは覆わない**（ADR 0021）。
         */}
         {phone && <div className="board-bar board-bar-status">{topRightUI}</div>}
         <div className="board-stage">

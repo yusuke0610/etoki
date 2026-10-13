@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { breakAnnotations, breakBoards, installApi } from "./helpers/api";
-import { drawRectangle, openBoard } from "./helpers/board";
+import { drawRectangle, openBoard, saveScene } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock } from "./helpers/fixtures";
 
 /**
@@ -43,7 +43,7 @@ test.describe("描画に失敗したとき", () => {
 
     // 描いたものがサーバーまで届くところまで見る。ここが要点で、届かないなら
     // 未保存のブレストは失われている。既定のシーンに rectangle は無い。
-    await page.getByRole("button", { name: "保存" }).click();
+    await saveScene(page);
     await expect(page.getByText("未保存", { exact: true })).toHaveCount(0);
 
     const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {

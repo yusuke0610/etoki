@@ -60,16 +60,18 @@ export type Operation = RunningOperation | "changeTarget";
  * 3 つには無い。**この PR では字面を動かさない**（`web/e2e/a11y.spec.ts` が文言で
  * 引いている）。揃えるなら E2E の期待文言と同じコミットで動かす。
  *
- * **対角（走っているものと同じ操作）は null。** ボタン自身が「保存中…」
+ * **対角（走っているものと同じ操作）は null。** ボタン自身が「準備中…」
  * 「取り込み中…」「作成中…」と名乗っているので、隣に「保存が終わるまで保存
  * できません」と出しても読む人の打ち手は増えない。**弾くこと自体は
  * `useExclusion` が行う**ので、null は「通す」という意味ではない。
  */
 const BLOCKED: Record<Operation, Record<RunningOperation, string | null>> = {
+  // 「絵解き」（保存を内包する、#247）の押せない理由。保存の口は `⌘/Ctrl+S` だけ
+  // になったが、操作の名前は `saving` のまま。排他しているのは保存のほう。
   saving: {
     saving: null,
-    importing: "取り込みが終わるまで保存できません",
-    creating: "作成が終わるまで保存できません",
+    importing: "取り込みが終わるまで絵解きを始められません",
+    creating: "作成が終わるまで絵解きを始められません",
   },
   importing: {
     saving: "保存が終わるまで取り込めません",

@@ -311,6 +311,8 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
       };
       mock.details[id] = next;
       mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
+      if (mock.annotationsFollowSave)
+        mock.annotations[id] = annotationsOfScene(req.scene);
       await json(route, 200, {
         updatedAt: next.updatedAt,
         fileIds: Object.keys(held).sort(),
