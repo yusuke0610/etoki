@@ -268,8 +268,9 @@ OLLAMA_CONTEXT_LENGTH=16384 ollama serve
 コンテキスト長も変わりません。その場合は、先にそのサーバーを止めてから上のコマンドを
 実行するか、起動設定に環境変数を足して再起動してください（macOS のアプリは
 `launchctl setenv OLLAMA_CONTEXT_LENGTH 16384` のあとアプリを再起動、Linux の
-systemd は `systemctl edit ollama.service` で
-`Environment="OLLAMA_CONTEXT_LENGTH=16384"` を足して `systemctl restart ollama`）。
+systemd は `systemctl edit ollama.service` で開いた drop-in に、`[Service]` の
+見出しを付けて `Environment="OLLAMA_CONTEXT_LENGTH=16384"` を書き、
+`systemctl restart ollama`）。見出しが無いと環境変数は適用されません。
 
 ### GitHub Projects v2 を使う
 
