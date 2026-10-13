@@ -19,8 +19,8 @@ type Options = {
   ) => void;
   /** 引いてある実行の履歴を捨てる（`useRunHistories`）。 */
   discardRuns: (annotationId: string) => void;
-  /** 注釈の状態を取り直す。失敗は自分で出す。 */
-  refreshAnnotations: () => Promise<void>;
+  /** 注釈の状態を取り直す。失敗は自分で出す。返す一覧は使わない。 */
+  refreshAnnotations: () => Promise<unknown>;
 };
 
 export type Creation = {

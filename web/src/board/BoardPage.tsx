@@ -448,35 +448,42 @@ export function BoardPage({
   // 投げたものだけ反映する。古い応答で上書きすると、作成済みの注釈が未作成に
   // 巻き戻って見える。
   const annotationsRequest = useRef(0);
-  // 最後に反映した一覧。**保存のあとに読む側が、描き直しを待たずに引く**
-  // （`startEkidoki` / `interpretAfterSave`）。保存は取り直しを待ってから返るが、
-  // state が描き直されるのはそのあとで、返った時点の値はまだ保存前の一覧のことが
-  // ある。
-  const fetchedAnnotations = useRef<AnnotationStatus[]>([]);
+  // 最後に投げた取得。追い越された取得は、これの結果を返す。
+  const latestAnnotations = useRef<Promise<AnnotationStatus[] | null> | null>(null);
 
-  const refreshAnnotations = useCallback(async () => {
+  /**
+   * 注釈の状態を取り直し、反映した一覧を返す。取れなかったら null（通知は出す）。
+   *
+   * **成否を返す。** 取り直した一覧で開く先や読むかどうかを決める側
+   * （`startEkidoki` / `interpretAfterSave`）が待って使う。state は描き直すまで
+   * 古く、取れなかったときは前の一覧のまま残るので、どちらも判断に使えない。
+   * 追い越されたら、追い越した取得の結果を返す（反映されるのはそちらなので）。
+   */
+  const refreshAnnotations = useCallback((): Promise<AnnotationStatus[] | null> => {
     const request = ++annotationsRequest.current;
-    try {
-      const next = await boardsApi.annotations(board.id);
-      if (request !== annotationsRequest.current) return;
-      fetchedAnnotations.current = next.annotations;
-      setAnnotations(next.annotations);
-      setDetached(next.detached);
-      dismissHere(ANNOTATIONS_FAILED);
-    } catch (e) {
-      if (request !== annotationsRequest.current) return;
-      onError(describeFailure("注釈の状態を取得できませんでした", e), {
-        key: ANNOTATIONS_FAILED,
-      });
-    }
+    const pending = (async (): Promise<AnnotationStatus[] | null> => {
+      try {
+        const next = await boardsApi.annotations(board.id);
+        if (request !== annotationsRequest.current) return latestAnnotations.current;
+        setAnnotations(next.annotations);
+        setDetached(next.detached);
+        dismissHere(ANNOTATIONS_FAILED);
+        return next.annotations;
+      } catch (e) {
+        if (request !== annotationsRequest.current) return latestAnnotations.current;
+        onError(describeFailure("注釈の状態を取得できませんでした", e), {
+          key: ANNOTATIONS_FAILED,
+        });
+        return null;
+      }
+    })();
+    latestAnnotations.current = pending;
+    return pending;
   }, [board.id, dismissHere, onError]);
 
-  // 開いたら注釈の状態を引く。**`set-state-in-effect` の対象外。** state を置くのは
-  // 応答が届いてから（`await` の後）で、effect の本体からは置かない。BoardPage が
-  // 大きかったうちは解析が諦めていて出ていなかった（`web/CLAUDE.md` の「関心を
-  // フックに切り出すとき」）。
+  // 開いたら注釈の状態を引く。state を置くのは応答が届いてから（`await` の後）で、
+  // effect の本体からは置かない。
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshAnnotations();
   }, [refreshAnnotations]);
 
@@ -770,19 +777,25 @@ export function BoardPage({
   });
 
   /**
-   * 未保存でなくなるまで保存する。保存できなかったら false（ADR 0077）。
+   * 未保存でなくなるまで保存し、保存済みの注釈の一覧を取り直して返す。保存か
+   * 取り直しができなかったら null（ADR 0077）。
    *
    * **保存を待つあいだに変わったら、保存し直す。** 保存が送るのは呼んだ時点の
    * シーンで、待つあいだの描き足しや選び直しは未保存のまま残る（`markSaved`）。
    * 1 回で済ませると、このあと読むもの（注釈の一覧、解釈）が保存済みシーンと
    * 食い違う。
+   *
+   * **一覧は保存が要らなかったときも取り直す。** 手元の一覧は、開いた直後なら
+   * まだ届いておらず、前の取り直しが失敗していれば古い。保存したときは保存の
+   * あとの取り直し（`discardAfterSave`）と 2 度引くが、あちらは失敗しても保存を
+   * 失敗にしない（保存は済んでいる）ので、成否はここで見る。
    */
-  const saveUntilClean = useCallback(async () => {
+  const saveAndRefresh = useCallback(async () => {
     while (isDirty()) {
-      if (!(await save())) return false;
+      if (!(await save())) return null;
     }
-    return true;
-  }, [isDirty, save]);
+    return refreshAnnotations();
+  }, [isDirty, refreshAnnotations, save]);
 
   /**
    * 右上の「絵解き」。**未保存なら保存してから、絵解きの面を開く**（#247）。
@@ -791,8 +804,9 @@ export function BoardPage({
    * ときだけ保存する。** 保存は全部の注釈の引いた解釈と作成の状態を捨てる
    * （`discardAfterSave`）ので、毎回保存すると、開き直すたびに前の結果が消える。
    * 保存できなかったら（衝突・失敗・排他）開かない。通知と衝突の帯が理由を言う。
-   * 待つあいだに変わったら保存し直す（`saveUntilClean`）。待つあいだに付けた注釈を
-   * 開くと、保存済みの一覧に無いので詳細がその場で閉じる。
+   * 待つあいだに変わったら保存し直す（`saveAndRefresh`）。待つあいだに付けた注釈を
+   * 開くと、保存済みの一覧に無いので詳細がその場で閉じる。**一覧を取り直せなかった
+   * ときも開かない**（通知が言う）。前の一覧で数えると、別の面を開く。
    *
    * 開く先: 注釈が 1 件ならその詳細。0 件か複数ならパネルの注釈の一覧。右上のボタンは
    * どの注釈かを指していないので、選ぶのは人（中核思想 3）。スマホではパネルを
@@ -801,8 +815,9 @@ export function BoardPage({
    * フレームが画面に無い注釈を数えそこね、1 件なのに一覧を開く。
    */
   const startEkidoki = useCallback(async () => {
-    if (!(await saveUntilClean())) return;
-    const ids = fetchedAnnotations.current.map((a) => a.id);
+    const saved = await saveAndRefresh();
+    if (saved === null) return;
+    const ids = saved.map((a) => a.id);
     const only = ids.length === 1 ? ids[0] : undefined;
     if (only !== undefined) {
       openDetail(only);
@@ -814,7 +829,7 @@ export function BoardPage({
     }
     setPanelTab("annotations");
     changePanelCollapsed(false);
-  }, [changePanelCollapsed, openDetail, openPhonePanel, phone, saveUntilClean]);
+  }, [changePanelCollapsed, openDetail, openPhonePanel, phone, saveAndRefresh]);
 
   /**
    * 詳細の「絵解く」。**未保存なら保存してから読む**（#247）。
@@ -823,7 +838,7 @@ export function BoardPage({
    * 引いた解釈をすべて捨てるので、**読むのは必ず保存のあと**（先に読むと、
    * 引いた結果が直後に消える）。
    *
-   * **保存を待つあいだに変わったら、保存し直してから読む**（`saveUntilClean`）。
+   * **保存を待つあいだに変わったら、保存し直してから読む**（`saveAndRefresh`）。
    * テキストは保存済みシーンから、画像は画面から取る（ADR 0018）ので、残したまま
    * 読むと 2 つが食い違う。画像に使う要素は `interpret` を呼んだその場で読む
    * （`exportAnnotationImage`）ので、未保存でないと確かめてから読むまでのあいだに
@@ -832,18 +847,20 @@ export function BoardPage({
    * **保存で消えた注釈は読まない。** 押す前か待つあいだに、フレームを消したか
    * 注釈から外した。保存済みの一覧に無いので詳細は閉じていて、読んでも結果を出す
    * 先が無い。見るのは取り直した一覧で、**キャンバスではない。** フレームが画面に
-   * 無くても、保存済みの一覧に在ればテキストだけで読む（ADR 0018）。
+   * 無くても、保存済みの一覧に在ればテキストだけで読む（ADR 0018）。**一覧を
+   * 取り直せなかったときも読まない**（通知が言う）。消えたかどうかを前の一覧では
+   * 決められない。
    */
   const interpretAfterSave = useCallback(
     async (id: string) => {
-      if (!(await saveUntilClean())) return;
-      if (!listed(fetchedAnnotations.current, id)) return;
+      const saved = await saveAndRefresh();
+      if (saved === null || !listed(saved, id)) return;
       // 控える粒度は、読む時点のキャンバスの値（= 保存済みシーンの値）。押した
       // 時点の値を控えると、待つあいだに選び直したときに読んだものと食い違う。
       const granularity = latestCanvasMetas.current?.[id]?.granularity;
       void interpret(id, { granularity });
     },
-    [interpret, saveUntilClean],
+    [interpret, saveAndRefresh],
   );
 
   // **ボードを変えたら、そのボードについての通知は全部下げる。** 通知は
