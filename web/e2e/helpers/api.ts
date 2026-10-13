@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 
 import type {
   AnnotationStatus,
@@ -16,6 +16,10 @@ import type {
   Interpretation,
   InterpretRequest,
   LoginResponse,
+  OAuthAuthorization,
+  OAuthDecision,
+  OAuthDecisionRequest,
+  OAuthGrant,
   Project,
   RepositoryList,
   SaveSceneRequest,
@@ -28,6 +32,7 @@ import { installBoardRoutes } from "./routes/boards";
 import { installDiagramRoutes } from "./routes/diagram";
 import { installGitHubRoutes } from "./routes/github";
 import { installMemberRoutes } from "./routes/members";
+import { installOAuthRoutes } from "./routes/oauth";
 import { json } from "./routes/respond";
 import { installSessionRoutes } from "./routes/session";
 
@@ -142,6 +147,15 @@ export type ApiMock = {
    */
   saveSceneError?: Reply<never>;
   /**
+   * 保存できたら、保存したシーンから注釈の一覧を作り直す（`annotationsOfScene`）。
+   *
+   * **実物のサーバーは保存済みシーンから一覧を作るが、モックは既定で spec が
+   * 決めた一覧を持ち回る。** 3 状態を spec ごとに決めるため。保存で注釈が増える・
+   * 消えることを確かめる spec だけが立てる。作り直した一覧の 3 状態は
+   * `uncreated` になる。
+   */
+  annotationsFollowSave?: boolean;
+  /**
    * そのボードで何ができるか。ボード ID をキーにする。
    *
    * 無いボードは role をボードの値から、projectAccess を unknown として返す。
@@ -180,6 +194,25 @@ export type ApiMock = {
    * 指定が無ければ空配列を返す。
    */
   runs?: Record<string, Reply<SyncRun[]>>;
+  /**
+   * MCP のクライアントへの許可（ADR 0076）。**無ければ扱えない構成**で、口は
+   * 503 を返す。有効にするときは capabilities の `mcpConnections` も立てる
+   * （`withConnections`）。
+   */
+  connections?: {
+    /** 同意の画面が読む、認可の要求。 */
+    authorization: Reply<OAuthAuthorization>;
+    /** 同意の画面が送ってきた要求（クエリ文字列）。届いた順に積む。 */
+    authorizationQueries: string[];
+    /** 返事への応答。 */
+    decision: Reply<OAuthDecision>;
+    /** 返事の本文。届いた順に積む。何を送ったかはここにしか現れない。 */
+    decisions: OAuthDecisionRequest[];
+    /** 自分の接続。取り消すと減る。 */
+    grants: OAuthGrant[];
+    /** 取り消した接続の ID。届いた順に積む。 */
+    revoked: string[];
+  };
 };
 
 /**
@@ -213,6 +246,7 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   await installDiagramRoutes(page, mock);
   await installSessionRoutes(page, mock);
   await installGitHubRoutes(page, mock);
+  await installOAuthRoutes(page, mock);
 
   return mock;
 }
@@ -271,6 +305,30 @@ export function breakAnnotations(page: Page, hold?: Promise<void>): Promise<void
   );
 }
 
+/**
+ * 注釈の一覧の取得を、ここから失敗させる（500）。壊すのではなく取れない形で、
+ * 落ちる画面は無く、通知が出る。
+ *
+ * **開いたときの取得が届いてから呼ぶ。** 手元に前の一覧が残ったまま、取り直しだけが
+ * 失敗する状況を作るため（#259）。`installApi` の**後**に呼ぶ。返す関数で取得を
+ * 戻せる。「しなかった」を、直して押し直した結果から数えるのに使う。
+ */
+export async function failAnnotations(page: Page): Promise<() => Promise<void>> {
+  const match = (url: URL) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname);
+  const fail = async (route: Route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await json(route, 500, {
+      code: "internal",
+      error: "internal error",
+    } satisfies ErrorResponse);
+  };
+  await page.route(match, fail);
+  return () => page.unroute(match, fail);
+}
+
 /** ボードの一覧を壊す。キャンバスへ入る前の画面ごと落ちる。 */
 export function breakBoards(page: Page): Promise<void> {
   return breakList(page, (url) => url.pathname === "/api/boards", [null]);
@@ -316,6 +374,19 @@ export function holdSave(page: Page, hold: Promise<void>): Promise<void> {
 }
 
 /**
+ * 注釈の一覧の取得を止める。解決するまで応答を返さない。開いたときの取得が
+ * 届いてから呼ぶ（取り直しを待つあいだを作るため、#259）。
+ */
+export function holdAnnotations(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
+    "GET",
+    hold,
+  );
+}
+
+/**
  * 指定したボードの取得だけを止める。解決するまで応答を返さない。
  *
  * **1 枚だけ止める。** 全部止めると、追い越す側の取得まで待つことになり、
@@ -327,6 +398,16 @@ export function holdBoardDetail(
   hold: Promise<void>,
 ): Promise<void> {
   return holdRoute(page, (url) => url.pathname === `/api/boards/${boardId}`, "GET", hold);
+}
+
+/** 作成先の設定を止める。解決するまで応答を返さない。 */
+export function holdSetTarget(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/target$/.test(url.pathname),
+    "PUT",
+    hold,
+  );
 }
 
 /** 作成を「作成中」のまま止める。解決するまで応答を返さない。 */

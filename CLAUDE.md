@@ -209,9 +209,12 @@ GitHub の形しか差せなくなる。
 - **利用者は `context.Context` で運ぶ。** 出入口は `port.ContextWithUserID` /
   `port.UserIDFromContext`。`port/` に置いてあるのは、外部リポジトリが
   `GitHubTokenSource` を自前実装するときに読む必要があるため。
-- **MCP の入口（`/mcp`）は認証なしの構成でだけ開く**（ADR 0071）。認証を
-  設定すると 503 を返し、道具を組み立てない。利用者を決める手段（OAuth、#185）を
-  持つまで、認証ありの構成で開かないこと。
+- **MCP の入口（`/mcp`）は、認証ありの構成では etoki が発行したトークンでだけ
+  通す**（ADR 0076）。etoki が認可サーバーになり、「誰であるか」は既存のログイン
+  （`port.IdentityProvider`）で決め、利用者は同じく `port.ContextWithUserID` で運ぶ。
+  許可の保存先（`port.OAuthGrantRepository`）を渡さなければ 503 のまま開かない
+  （ADR 0071）。**画面の cookie で `/mcp` を通さず、`/api` は Bearer を受けない。**
+  **同意は毎回人に訊く。** 登録は誰でもできるので、自動で許すと code を横取りされる。
 
 配線（`cmd/etoki`）の約束:
 

@@ -88,8 +88,8 @@ export function useInterpretations({
 
       try {
         // 画像は画面から書き出す。テキストは保存済みシーンから取るので、
-        // 未保存のあいだは押させない（ADR 0018）。ここに来た時点で両者は
-        // 揃っている。
+        // 未保存なら保存してから呼ぶ（ADR 0018 / 0077、`BoardPage` の
+        // `interpretAfterSave`）。ここに来た時点で両者は揃っている。
         const image = api ? await exportAnnotationImage(api, annotationId) : undefined;
         if (!generations.isCurrent(annotationId, generation)) return;
 

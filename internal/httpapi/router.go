@@ -51,6 +51,15 @@ type Deps struct {
 	// nil のときは既存の挙動のまま。全エンドポイントが素通しになり、
 	// /api/auth/session は authRequired: false を返す（ADR 0015）。
 	Auth *usecase.AuthService
+	// OAuth は MCP のクライアントのための認可サーバー（ADR 0076）。nil でもよい。
+	//
+	// **Auth が nil なら使わない。** 認証なしの構成では `/mcp` は許可なしで
+	// 開いている（ADR 0071）ので、発行する意味が無い。Auth があって OAuth が
+	// nil なら、`/mcp` はこれまでどおり 503 を返す。
+	OAuth *usecase.OAuthServer
+	// OAuthMetadataDocuments は Client ID Metadata Document で名乗るクライアントを
+	// 受けるか（OAuth を組み立てたときに文書を取りに行く口を渡したか）。
+	OAuthMetadataDocuments bool
 	// WebDir はビルド済みフロントエンド（web/dist）の置き場所。空なら配らない。
 	//
 	// 空のときに配らないのは、make dev では Vite が同じものを持っているため。
@@ -86,6 +95,12 @@ func NewRouter(deps Deps) *gin.Engine {
 
 	r.GET("/healthz", handleHealthz)
 
+	// 認可サーバーは認証ありの構成でだけ使う。理由は Deps.OAuth。
+	oauth := deps.OAuth
+	if deps.Auth == nil {
+		oauth = nil
+	}
+
 	h := &handlers{
 		boards:          deps.Boards,
 		annotations:     deps.Annotations,
@@ -96,8 +111,11 @@ func NewRouter(deps Deps) *gin.Engine {
 		members:         deps.Members,
 		access:          deps.Access,
 		auth:            deps.Auth,
-		publicURL:       deps.PublicURL,
-		logger:          logger,
+		oauth:           oauth,
+		// 文書を取りに行けても、認可サーバーを組み立てていなければ載せる先が無い。
+		oauthMetadataDocuments: oauth != nil && deps.OAuthMetadataDocuments,
+		publicURL:              deps.PublicURL,
+		logger:                 logger,
 	}
 
 	// セッションの解決はここで一度だけ。弾くのは requireAuth の仕事で、
@@ -106,8 +124,19 @@ func NewRouter(deps Deps) *gin.Engine {
 
 	// MCP の入口（ADR 0071）。`/api` の外に置くが、**Host と Origin の検証
 	// （originGuard）の内側にある。** 道具は `/api` と同じ組み立て（h）を通る。
-	// 認証ありの構成では 503 を返すだけで、道具は組み立てない。
-	r.Any(mcpPath, gin.WrapH(newMCPHandler(h, deps.Auth != nil)))
+	// 認証ありの構成では、etoki が発行したトークンで通す（ADR 0076）。認可
+	// サーバーを組み立てていなければ 503 を返すだけで、道具は組み立てない。
+	r.Any(mcpPath, mcpEntrance(h, deps.Auth != nil))
+
+	// MCP のクライアントのための認可サーバー（ADR 0076）。形は RFC が決めて
+	// いるので `/api` の外に置く。`/oauth/authorize` は何も書かずに同意の画面へ
+	// 転送するだけで、副作用を持つ GET を増やさない（ADR 0013）。
+	r.GET(wellKnownResourcePath, h.getProtectedResourceMetadata)
+	r.GET(wellKnownResourcePath+mcpPath, h.getProtectedResourceMetadata)
+	r.GET(wellKnownAuthorization, h.getAuthorizationServerMetadata)
+	r.GET(oauthAuthorizePath, h.authorize)
+	r.POST(oauthTokenPath, h.token)
+	r.POST(oauthRegisterPath, h.register)
 
 	// キャッシュ禁止と本文の上限は `/api` の入口 1 箇所で掛ける。認証の要否で
 	// 分かれる **前**に置くのは、あとから増やしたグループだけが漏れるのを防ぐため
@@ -170,6 +199,13 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 明示的に作成を叩く（中核思想 3）。
 		api.POST("/boards/:id/annotations/:annotationId/interpret", h.interpretAnnotation)
 		api.POST("/boards/:id/annotations/:annotationId/items", h.createItems)
+
+		// MCP のクライアントへの許可（ADR 0076）。同意の返事は POST なので
+		// Origin の検証が効く。一覧と取り消しは自分の許可だけ。
+		api.GET("/oauth/authorization", h.getOAuthAuthorization)
+		api.POST("/oauth/authorization", h.decideOAuthAuthorization)
+		api.GET("/oauth/grants", h.listOAuthGrants)
+		api.DELETE("/oauth/grants/:grantId", h.revokeOAuthGrant)
 
 		// 作成先を選ぶための一覧。ここで選んだ Project をボードに設定する。
 		api.GET("/github/repositories", h.listRepositories)

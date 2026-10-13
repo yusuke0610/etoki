@@ -297,7 +297,7 @@ func (s *InterpretationService) complete(
 ) (domain.Interpretation, llmUsage, error) {
 	base := buildUserMessage(a, texts, len(images) > 0, previous)
 	req := port.VisionRequest{
-		System: interpretationSystemPrompt,
+		System: interpretationSystemPrompt(a.Granularity),
 		Text:   base,
 		Images: images,
 	}
@@ -590,10 +590,30 @@ func correctionLines(err error) []string {
 // **制約一覧は domain.Rules から組み立てる。** 手で書くと、検査を足したときに
 // 片方だけ古くなり、指示していない制約で弾くことになる（ADR 0028）。ここが持つ
 // のは役割・出力形式・再送の枠組みだけ。
-var interpretationSystemPrompt = fmt.Sprintf(interpretationSystemPromptTemplate,
-	domain.InterpretationConstraints())
+//
+// **出力例は粒度ごとに変える**（issue #251）。issue 指定なのに例が epic を
+// 含むと、小型モデルは例をなぞって epic を返し、再送でも直らない。例が言うのは
+// 形までで、何を作るかは granularityInstruction と domain.Rules が言う。
+func interpretationSystemPrompt(g domain.Granularity) string {
+	return fmt.Sprintf(interpretationSystemPromptTemplate,
+		interpretationExampleItems(g), domain.InterpretationConstraints())
+}
 
-// interpretationSystemPromptTemplate の %s に制約一覧が入る。
+// interpretationExampleItems は出力例の items の中身を、粒度で通る形にする。
+//
+// issue だけの例は previousRef を null にする。前回の一覧を渡していないときは
+// 必ず null という制約があるのに、唯一の例が p1 だと、存在しない ref を書き写して
+// 弾かれる。
+func interpretationExampleItems(g domain.Granularity) string {
+	if g == domain.GranularityIssue {
+		return `    {"localId": "i1", "kind": "issue", "title": "...", "body": "...", "parentLocalId": null, "previousRef": null}`
+	}
+	return `    {"localId": "e1", "kind": "epic",  "title": "...", "body": "...", "parentLocalId": null,  "previousRef": null},
+    {"localId": "i1", "kind": "issue", "title": "...", "body": "...", "parentLocalId": "e1", "previousRef": "p1"}`
+}
+
+// interpretationSystemPromptTemplate の 1 つ目の %s に出力例の items、2 つ目に
+// 制約一覧が入る。
 const interpretationSystemPromptTemplate = `あなたはホワイトボード上のブレスト内容を読み、開発タスクへ整理する担当です。
 
 与えられるのは、ホワイトボード上で開発者が囲んだ 1 つの範囲に含まれるテキストです。
@@ -605,8 +625,7 @@ draft issue に落とせる形へ整理してください。
 {
   "summary": "この範囲をどう解釈したかの説明",
   "items": [
-    {"localId": "e1", "kind": "epic",  "title": "...", "body": "...", "parentLocalId": null,  "previousRef": null},
-    {"localId": "i1", "kind": "issue", "title": "...", "body": "...", "parentLocalId": "e1", "previousRef": "p1"}
+%s
   ]
 }
 

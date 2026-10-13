@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { holdInterpret, holdSave, installApi } from "./helpers/api";
+import {
+  failAnnotations,
+  holdAnnotations,
+  holdInterpret,
+  holdSave,
+  installApi,
+} from "./helpers/api";
 import {
   annotationCard,
   annotationDetail,
@@ -12,6 +18,7 @@ import {
   ekidokiButton,
   openPanelTab,
 } from "./helpers/board";
+import { annotationsOfScene } from "./helpers/boardData";
 import { BOARD_ID, BOARD_NAME, annotations, baseMock } from "./helpers/fixtures";
 
 /**
@@ -152,6 +159,126 @@ test.describe("注釈の詳細", () => {
     ).toHaveCount(0);
   });
 
+  // **保存を待つあいだに変わったら、保存し直してから読む**（#259 のレビュー）。
+  // テキストは保存済みシーンから、画像は画面から取る（ADR 0018）。保存が送るのは
+  // 押した時点のシーンなので、待つあいだの選び直しを残したまま読むと、テキストは
+  // 選び直す前のシーン、画像はいまのキャンバスになって食い違う。
+  test("絵解くときの保存を待つあいだに粒度を変えたら、保存し直してから読む", async ({
+    page,
+  }) => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const mock = await installApi(page, baseMock());
+    await holdSave(page, held);
+    // 何回目の保存のあとで読んだかを、リクエストの並びで見る。
+    const order: string[] = [];
+    page.on("request", (r) => {
+      const path = new URL(r.url()).pathname;
+      if (r.method() === "PUT" && path === `/api/boards/${BOARD_ID}/scene`) {
+        order.push("save");
+      }
+      if (r.method() === "POST" && /\/annotations\/[^/]+\/interpret$/.test(path)) {
+        order.push("interpret");
+      }
+    });
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const select = detail.getByLabel("粒度");
+    await select.selectOption("epic");
+    const saving = page.waitForRequest(
+      (r) =>
+        r.method() === "PUT" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/scene`,
+    );
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await saving;
+    // 保存が epic のシーンを送ったあとで選び直す。
+    await select.selectOption("issue");
+
+    release();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(order).toEqual(["save", "save", "interpret"]);
+    const resaved = annotationsOfScene(mock.saveRequests[1]?.scene ?? "{}");
+    expect(resaved.find((a) => a.name === "ログイン")?.granularity).toBe("issue");
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+
+    // 控える粒度も保存し直した値にする。押した時点の epic を控えると、issue で
+    // 読んだ結果に「粒度 epic」と書いた行が付く。行は 2 回引くと並ぶ。
+    await detail.getByRole("button", { name: "絵解き直す" }).click();
+    const runs = detail.getByLabel("解釈結果").locator("option");
+    await expect(runs).toHaveCount(2);
+    await expect(runs.nth(1)).toContainText("粒度 issue");
+  });
+
+  // **保存で消えた注釈は読まない**（#259 のレビュー）。保存済みの一覧に無いので
+  // 詳細は閉じていて、読んでも結果を出す先が無い。
+  test("絵解くときの保存で注釈が消えたら、読まない", async ({ page }) => {
+    const mock = baseMock();
+    mock.annotationsFollowSave = true;
+    const installed = await openBoardWithMock(page, mock);
+
+    // 外しても、保存するまでは保存済みの一覧に残るので詳細を開ける。
+    await (
+      await openAnnotationDetail(page, "ログイン")
+    )
+      .getByRole("button", { name: "キャンバスで見る" })
+      .click();
+    await page.getByRole("button", { name: /の注釈を外す/ }).click();
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+
+    await expect(annotationCard(page, "ログイン")).toHaveCount(0);
+    await expect(page.locator("section.annotation-detail:not([hidden])")).toHaveCount(0);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    // 「読まなかった」は、読まれたあとにしか出ない表示を待ってから数える。ほかの
+    // 注釈を読み、結果が出てから数える。消えた注釈を読んでいたら 2 件になる。
+    const other = await openAnnotationDetail(page, "パスワード再設定");
+    await other.getByRole("button", { name: "絵解く" }).click();
+    await expect(other.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(installed.interpretRequests).toHaveLength(1);
+  });
+
+  // **一覧を取り直すあいだに変わっても、保存し直してから読む**（#259 のレビュー）。
+  // 保存が要らないときも一覧は取り直すので、その待ちも保存を待つのと同じ隙になる。
+  // 確かめ直しを保存の直後に置くと、取り直すあいだの選び直しを残したまま読む。
+  test("絵解くときの一覧の取り直しを待つあいだに粒度を変えたら、保存してから読む", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+    const order: string[] = [];
+    page.on("request", (r) => {
+      const path = new URL(r.url()).pathname;
+      if (r.method() === "PUT" && path === `/api/boards/${BOARD_ID}/scene`) {
+        order.push("save");
+      }
+      if (r.method() === "POST" && /\/annotations\/[^/]+\/interpret$/.test(path)) {
+        order.push("interpret");
+      }
+    });
+    const detail = await openAnnotationDetail(page, "ログイン");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await holdAnnotations(page, held);
+
+    const refreshing = page.waitForRequest(
+      (r) =>
+        r.method() === "GET" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/annotations`,
+    );
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await refreshing;
+    await detail.getByLabel("粒度").selectOption("epic");
+
+    release();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(order).toEqual(["save", "interpret"]);
+    const saved = annotationsOfScene(mock.saveRequests[0]?.scene ?? "{}");
+    expect(saved.find((a) => a.name === "ログイン")?.granularity).toBe("epic");
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
   // 保存できなかったら読まない。読むテキストは保存済みシーンから取るので、
   // 書けていないシーンを前提に読むと、画面の画像と食い違う（ADR 0018）。
   // 理由は保存の失敗として通知が言う。
@@ -174,6 +301,28 @@ test.describe("注釈の詳細", () => {
     // 確かめられない（読む前に数えると、遅れて出るリクエストを見逃す）。保存を
     // 直してもう一度押し、結果が出てから数える。1 回目で読んでいたら 2 件になる。
     delete installed.saveSceneError;
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(installed.interpretRequests).toHaveLength(1);
+  });
+
+  // **一覧を取り直せなかったら読まない**（#259 のレビュー）。消えた注釈かどうかを
+  // 前の一覧では決められない。保存が要らないときも取り直す（前の取り直しが失敗して
+  // いれば、手元の一覧は古い）。理由は取得の失敗として通知が言う。
+  test("絵解く前に注釈の一覧を取り直せなかったら、読まない", async ({ page }) => {
+    const installed = await openBoardWithMock(page, baseMock());
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const restore = await failAnnotations(page);
+
+    await detail.getByRole("button", { name: "絵解く" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "注釈の状態を取得できませんでした",
+    );
+
+    // 「読まなかった」は、取得を直して押し直し、結果が出てから数える。1 回目で
+    // 読んでいたら 2 件になる。
+    await restore();
     await detail.getByRole("button", { name: "絵解く" }).click();
     await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
     expect(installed.interpretRequests).toHaveLength(1);

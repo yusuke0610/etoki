@@ -242,9 +242,34 @@ export ETOKI_LLM_MODEL=<プロキシ側のモデル名>
 make dev
 ```
 
-Ollama や LM Studio が直接公開するのは OpenAI Chat Completions 形状なので、
-`ETOKI_LLM_BASE_URL` をそこへ向けても動きません。形状を変換するプロキシを
-挟むか、`port.LLMClient` を自前実装して差し込んでください。
+LM Studio は 0.4.1 から Anthropic 互換の `POST /v1/messages` も公開しています。
+ただし etoki が読む応答のフィールド（`content`・`stop_reason`・`usage`）まで
+揃うかは確かめていないので、直接つなげるとは言い切れません。つなげて動かない
+ときは、モデル ID（`ETOKI_LLM_MODEL`）を LM Studio 側の名前に合わせたうえで、
+形状を変換するプロキシを挟むか、`port.LLMClient` を自前実装して差し込んで
+ください。それより前の版は OpenAI Chat Completions 形状だけなので、直接は
+動きません。Ollama は
+Messages API 形状（`/v1/messages`）も公開していて、0.34.4 では
+`ETOKI_LLM_BASE_URL=http://localhost:11434` で動くことを確かめています。
+
+**Ollama はコンテキスト長が小さいと、応答が途中で切れます。** 既定は VRAM に
+応じて 4k / 32k / 256k で、4k だと入力と出力の合計が 4096 トークンに達した時点で
+`stop_reason` が `max_tokens` になります（etoki が送る上限の 16000 には届いて
+いなくても）。解釈は再送のたびに入力が増えるので、4k では 2 回目で切れやすく
+なります。`etoki: llm call failed ... response truncated: stopped at N output tokens,
+before our limit` と出たら、Ollama 側で広げてください。
+
+```sh
+OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+```
+
+これは**新しい `ollama serve` を起動するだけ**です。Ollama のアプリや Linux の
+サービスがすでに `11434` を使っていると、bind に失敗し、動いているサーバーの
+コンテキスト長も変わりません。その場合は、先にそのサーバーを止めてから上のコマンドを
+実行するか、起動設定に環境変数を足して再起動してください（macOS のアプリは
+`launchctl setenv OLLAMA_CONTEXT_LENGTH 16384` のあとアプリを再起動、Linux の
+systemd は `systemctl edit ollama.service` で
+`Environment="OLLAMA_CONTEXT_LENGTH=16384"` を足して `systemctl restart ollama`）。
 
 ### GitHub Projects v2 を使う
 
@@ -460,8 +485,12 @@ Claude Code なら次のように登録します。
 claude mcp add --transport http etoki http://127.0.0.1:8080/mcp
 ```
 
-**向ける先はバックエンド（:8080）です。** `make dev` でも同じで、Vite の
-開発サーバー（:5173）は `/mcp` を転送しません。
+**`make dev` では開発サーバー（:5173）に向けます。** 認証ありの構成では、
+許可の途中で画面（同意の画面）を開くためです。
+
+```sh
+claude mcp add --transport http etoki http://127.0.0.1:5173/mcp
+```
 
 公開しているのは読み取りの道具だけです。返す JSON は `/api` と同じ形です。
 
@@ -474,10 +503,42 @@ claude mcp add --transport http etoki http://127.0.0.1:8080/mcp
 **解釈と作成はできません。** 作るものを選んで手直しするのは、画面の前にいる
 開発者の役目のままです（[ADR 0071](docs/adr/0071-mcp-read-only-entrance.md)）。
 
-**GitHub App でログインを要求している構成では開きません**（503 を返します）。
-MCP のクライアントが誰なのかを決める手段（OAuth）をまだ持っていないためです。
-認証なしの構成で `ETOKI_ADDR` を広げると、`/mcp` も `/api` と同じく届く範囲の
-誰でも読めます。
+**認証なしの構成では、許可なしで開きます。** `ETOKI_ADDR` を広げると、`/mcp` も
+`/api` と同じく届く範囲の誰でも読めます。
+
+#### GitHub App でログインを要求している構成
+
+**etoki が発行するトークンで `/mcp` を開きます**
+（[ADR 0076](docs/adr/0076-mcp-oauth-authorization-server.md)）。登録は上と
+同じです。初めて道具を使うときに、クライアントがブラウザで etoki の同意の画面を
+開きます。
+
+1. ログインしていなければ、いつもの GitHub のログインを通ります。
+2. 同意の画面に、接続しようとしているクライアントの名前と戻り先が出ます。
+   **名前はクライアントの自称です。** 自分で始めた接続でなければ許可しないで
+   ください。
+3. 「許可する」を押すと、クライアントに戻ってトークンが渡ります。
+
+見えるボードは画面と同じです。自分がメンバーのボードだけが読めます。
+
+**接続はいつでも取り消せます。** 画面ではボード一覧の利用者のメニューにある
+「MCP の接続」から、サーバーを動かしている人は CLI から取り消します。
+取り消したクライアントは許可からやり直しになります。
+
+```sh
+etoki grants                     # 全員の接続を一覧する
+etoki grants --login alice       # alice の接続だけ
+etoki revoke <grant-id>          # 1 件を取り消す（対象を見せて確かめる）
+etoki revoke --login alice       # alice の接続をすべて取り消す
+```
+
+ログアウトしても接続は残ります。ブラウザを閉じる操作が、手元のクライアントを
+切ることにならないようにするためです。
+
+クライアントの登録は、動的登録（RFC 7591）と Client ID Metadata Document の
+両方を受けます。後者は同意の画面を開いたときに etoki がクライアントの URL を
+取りに行くので、**外へ出ていく通信が 1 種類増えます。** 行き先は公開アドレスの
+https だけに絞り、プロキシは使いません。
 
 ### 別の基盤に載せ替える
 

@@ -188,7 +188,13 @@ test.describe("図のドラフト", () => {
     const mock = baseMock();
     mock.capabilities = {
       status: 200,
-      body: { interpretation: false, diagramDraft: false, creation: true, sharing: true },
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: true,
+        sharing: true,
+        mcpConnections: false,
+      },
     };
     mock.diagramDraft = {
       status: 503,
