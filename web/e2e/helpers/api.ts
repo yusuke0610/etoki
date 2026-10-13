@@ -374,6 +374,19 @@ export function holdSave(page: Page, hold: Promise<void>): Promise<void> {
 }
 
 /**
+ * 注釈の一覧の取得を止める。解決するまで応答を返さない。開いたときの取得が
+ * 届いてから呼ぶ（取り直しを待つあいだを作るため、#259）。
+ */
+export function holdAnnotations(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/annotations$/.test(url.pathname),
+    "GET",
+    hold,
+  );
+}
+
+/**
  * 指定したボードの取得だけを止める。解決するまで応答を返さない。
  *
  * **1 枚だけ止める。** 全部止めると、追い越す側の取得まで待つことになり、
