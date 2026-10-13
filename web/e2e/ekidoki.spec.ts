@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { failAnnotations, holdSave } from "./helpers/api";
+import { failAnnotations, holdAnnotations, holdSave } from "./helpers/api";
 import {
   annotationCard,
   annotationDetail,
@@ -84,6 +84,30 @@ test.describe("右上の「絵解き」", () => {
     await expect(annotationDetail(page, "ログイン")).toBeVisible();
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
     expect(installed.saveRequests).toHaveLength(2);
+  });
+
+  // **一覧を取り直すあいだに変わっても、保存してから開く**（#259 のレビュー）。
+  // 保存が要らないときも一覧は取り直すので、その待ちも保存を待つのと同じ隙になる。
+  test("一覧の取り直しを待つあいだに描き足したら、保存してから開く", async ({ page }) => {
+    const mock = await openBoardWithMock(page, singleAnnotationMock());
+    await expect(annotationCard(page, "ログイン")).toBeVisible();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await holdAnnotations(page, held);
+
+    const refreshing = page.waitForRequest(
+      (r) =>
+        r.method() === "GET" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/annotations`,
+    );
+    await ekidokiButton(page).click();
+    await refreshing;
+    await drawRectangle(page);
+
+    release();
+    await expect(annotationDetail(page, "ログイン")).toBeVisible();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    expect(mock.saveRequests).toHaveLength(1);
   });
 
   // **数えるのは保存済みの一覧で、キャンバスではない**（#259 のレビュー）。状態は

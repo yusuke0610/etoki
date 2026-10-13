@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { failAnnotations, holdInterpret, holdSave, installApi } from "./helpers/api";
+import {
+  failAnnotations,
+  holdAnnotations,
+  holdInterpret,
+  holdSave,
+  installApi,
+} from "./helpers/api";
 import {
   annotationCard,
   annotationDetail,
@@ -232,6 +238,45 @@ test.describe("注釈の詳細", () => {
     await other.getByRole("button", { name: "絵解く" }).click();
     await expect(other.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
     expect(installed.interpretRequests).toHaveLength(1);
+  });
+
+  // **一覧を取り直すあいだに変わっても、保存し直してから読む**（#259 のレビュー）。
+  // 保存が要らないときも一覧は取り直すので、その待ちも保存を待つのと同じ隙になる。
+  // 確かめ直しを保存の直後に置くと、取り直すあいだの選び直しを残したまま読む。
+  test("絵解くときの一覧の取り直しを待つあいだに粒度を変えたら、保存してから読む", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+    const order: string[] = [];
+    page.on("request", (r) => {
+      const path = new URL(r.url()).pathname;
+      if (r.method() === "PUT" && path === `/api/boards/${BOARD_ID}/scene`) {
+        order.push("save");
+      }
+      if (r.method() === "POST" && /\/annotations\/[^/]+\/interpret$/.test(path)) {
+        order.push("interpret");
+      }
+    });
+    const detail = await openAnnotationDetail(page, "ログイン");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await holdAnnotations(page, held);
+
+    const refreshing = page.waitForRequest(
+      (r) =>
+        r.method() === "GET" &&
+        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/annotations`,
+    );
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await refreshing;
+    await detail.getByLabel("粒度").selectOption("epic");
+
+    release();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(order).toEqual(["save", "interpret"]);
+    const saved = annotationsOfScene(mock.saveRequests[0]?.scene ?? "{}");
+    expect(saved.find((a) => a.name === "ログイン")?.granularity).toBe("epic");
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
   });
 
   // 保存できなかったら読まない。読むテキストは保存済みシーンから取るので、
