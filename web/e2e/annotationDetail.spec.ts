@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { holdInterpret, holdSave, installApi } from "./helpers/api";
+import { failAnnotations, holdInterpret, holdSave, installApi } from "./helpers/api";
 import {
   annotationCard,
   annotationDetail,
@@ -256,6 +256,28 @@ test.describe("注釈の詳細", () => {
     // 確かめられない（読む前に数えると、遅れて出るリクエストを見逃す）。保存を
     // 直してもう一度押し、結果が出てから数える。1 回目で読んでいたら 2 件になる。
     delete installed.saveSceneError;
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    expect(installed.interpretRequests).toHaveLength(1);
+  });
+
+  // **一覧を取り直せなかったら読まない**（#259 のレビュー）。消えた注釈かどうかを
+  // 前の一覧では決められない。保存が要らないときも取り直す（前の取り直しが失敗して
+  // いれば、手元の一覧は古い）。理由は取得の失敗として通知が言う。
+  test("絵解く前に注釈の一覧を取り直せなかったら、読まない", async ({ page }) => {
+    const installed = await openBoardWithMock(page, baseMock());
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const restore = await failAnnotations(page);
+
+    await detail.getByRole("button", { name: "絵解く" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "注釈の状態を取得できませんでした",
+    );
+
+    // 「読まなかった」は、取得を直して押し直し、結果が出てから数える。1 回目で
+    // 読んでいたら 2 件になる。
+    await restore();
     await detail.getByRole("button", { name: "絵解く" }).click();
     await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
     expect(installed.interpretRequests).toHaveLength(1);

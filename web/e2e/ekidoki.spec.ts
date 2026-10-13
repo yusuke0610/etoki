@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { holdSave } from "./helpers/api";
+import { failAnnotations, holdSave } from "./helpers/api";
 import {
+  annotationCard,
   annotationDetail,
   drawRectangle,
   ekidokiButton,
@@ -116,6 +117,41 @@ test.describe("右上の「絵解き」", () => {
     await expect(page.getByRole("alert")).toContainText("保存できませんでした");
     await expect(annotationDetail(page, "ログイン")).toHaveCount(0);
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  });
+
+  // **一覧を取り直せなかったら開かない**（#259 のレビュー）。開く先は取り直した
+  // 一覧で数えるので、前の一覧のままでは決められない。理由は取得の失敗として
+  // 通知が言う。開くのは通知を出したあとなので、間を置いてから見る。
+  test("保存のあと注釈の一覧を取り直せなかったら、開かない", async ({ page }) => {
+    await openBoardWithMock(page, singleAnnotationMock());
+    await expect(annotationCard(page, "ログイン")).toBeVisible();
+    await failAnnotations(page);
+    await drawRectangle(page);
+
+    await ekidokiButton(page).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "注釈の状態を取得できませんでした",
+    );
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    await expect(annotationDetail(page, "ログイン")).toHaveCount(0);
+  });
+
+  // **保存が要らないときも取り直す。** 手元の一覧は、前の取り直しが失敗していれば
+  // 古い（#259 のレビュー）。
+  test("保存が要らないときも一覧を取り直し、取れなかったら開かない", async ({ page }) => {
+    const mock = await openBoardWithMock(page, singleAnnotationMock());
+    await expect(annotationCard(page, "ログイン")).toBeVisible();
+    await failAnnotations(page);
+
+    await ekidokiButton(page).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "注釈の状態を取得できませんでした",
+    );
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    await expect(annotationDetail(page, "ログイン")).toHaveCount(0);
+    expect(mock.saveRequests).toHaveLength(0);
   });
 
   // 右上のボタンはどの注釈かを指していない。複数あるなら、選ぶのは人
