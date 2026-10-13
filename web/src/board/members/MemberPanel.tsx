@@ -146,13 +146,9 @@ export function MemberPanel({ boardId, role }: Props) {
   const owner = isOwner(role);
 
   return (
+    // 見出しはダイアログの「共有」が持つ（`ShareDialog`）。**閉じる口は置かない。**
+    // 開閉はダイアログが持つ。
     <section className="member-panel" aria-label="メンバー">
-      {/*
-        見出しは見た目だけ隠す。右のパネルのタブに同じ名前が出ている
-        （`SidePanel`）。**閉じる口は置かない。** 開閉はタブが持つ。
-      */}
-      <h2 className="visually-hidden">メンバー</h2>
-
       {listError && (
         <>
           <ErrorNotice failure={listError} />

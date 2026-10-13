@@ -17,6 +17,7 @@ import {
   openPanelTab,
   saveScene,
   ekidokiButton,
+  openShareDialog,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -87,7 +88,7 @@ test.describe("押せない理由が本文として読める", () => {
       },
     };
     await openBoardWithMock(page, mock);
-    await openPanelTab(page, "図のドラフト");
+    await openPanelTab(page, "etoki AI");
 
     await expectBlockedReason(
       page.getByRole("button", { name: "生成", exact: true }),
@@ -600,7 +601,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     test("図のドラフトを生成した状態", async ({ page }) => {
       await openBoardWithMock(page, baseMock());
 
-      await openPanelTab(page, "図のドラフト");
+      await openPanelTab(page, "etoki AI");
       await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
       await page.getByRole("button", { name: "生成", exact: true }).click();
       await page.locator(".diagram-mermaid").waitFor();
@@ -731,7 +732,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     // メンバーのパネルも独立した領域で、開くまで DOM に出ない。行ごとのボタンが
     // 並ぶ唯一の画面でもある（`.claude/rules/async-ui.md` の「行固有の
     // accessible name」）。
-    test("メンバーを開いた状態", async ({ page }) => {
+    test("共有のダイアログを開いた状態", async ({ page }) => {
       const mock = baseMock();
       mock.members = {
         [BOARD_ID]: [
@@ -753,7 +754,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       };
       await openBoardWithMock(page, mock);
 
-      await openPanelTab(page, "メンバー");
+      await openShareDialog(page);
       await page.getByText("Bob").waitFor();
 
       await expectNoAxeViolations(page);
@@ -801,7 +802,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       test("全面のパネルと詳細", async ({ page }) => {
         await openBoardWithMock(page, baseMock());
-        await openPanelTab(page, "注釈");
+        await openPanelTab(page, "絵解いた");
 
         await expectNoAxeViolations(page);
 

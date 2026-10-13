@@ -67,13 +67,13 @@ export function DiagramChatPanel({
   };
 
   return (
-    <section className="panel diagram-chat" aria-label="図のドラフト">
+    <section className="panel diagram-chat" aria-label="etoki AI">
       {/*
         見出しは見た目だけ隠す。右のパネルのタブに同じ名前が出ている
         （`SidePanel`）。読み上げの見出しの移動には残す。**閉じる口は置かない。**
         開閉はタブが持つ。
       */}
-      <h2 className="visually-hidden">図のドラフト</h2>
+      <h2 className="visually-hidden">etoki AI</h2>
 
       {/*
         押す前に理由を出す。**`title` に隠さない。** `disabled` なボタンは

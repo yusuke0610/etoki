@@ -234,10 +234,9 @@ test.describe("スマホ", () => {
     expect(mock.saveRequests).toHaveLength(1);
     // 注釈が複数なので、全面のパネルで一覧を開く。
     await expect(page.locator(".side-panel")).toBeVisible();
-    await expect(page.getByRole("tab", { name: "注釈", exact: true })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    await expect(
+      page.getByRole("tab", { name: "絵解いた", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
   });
 
   // `renderTopRightUI` はスマホでは何も返さない。Excalidraw のツールバーの行に
@@ -269,13 +268,13 @@ test.describe("スマホ", () => {
     // 右端の帯は出さない。画面の右端をキャンバスから取らない。
     await expect(page.locator(".side-panel-rail")).toHaveCount(0);
     // 注釈には手を打つ必要がある件数を添える（畳んだ帯と同じ）。
-    const opener = boardBar(page).getByRole("button", { name: /^注釈、/ });
+    const opener = boardBar(page).getByRole("button", { name: /^絵解いた、/ });
     await expect(opener).toContainText("未作成");
 
     await opener.click();
     const panel = page.locator(".side-panel");
     await expect(panel).toBeVisible();
-    await expect(page.getByRole("tab", { name: "注釈", exact: true })).toBeFocused();
+    await expect(page.getByRole("tab", { name: "絵解いた", exact: true })).toBeFocused();
     const box = await panel.boundingBox();
     if (!box) throw new Error("パネルが表示されていない");
     expect(box.width).toBe(375);
@@ -292,7 +291,7 @@ test.describe("スマホ", () => {
   // 開閉は覚えない（#202）。スマホではいつも畳んだ状態で始める。
   test("開いたまま読み込み直しても、畳んで始まる", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
-    await openPanelTab(page, "注釈");
+    await openPanelTab(page, "絵解いた");
     await page.reload();
     await expect(boardBar(page)).toBeVisible();
     await expect(page.locator(".side-panel")).toBeHidden();
@@ -303,7 +302,7 @@ test.describe("スマホ", () => {
   }) => {
     const mock = await openBoardWithMock(page, baseMock());
 
-    await openPanelTab(page, "注釈");
+    await openPanelTab(page, "絵解いた");
     await interpret(annotationCard(page, "ログイン"));
     const detail = annotationDetail(page, "ログイン");
     const box = await detail.boundingBox();
@@ -327,7 +326,7 @@ test.describe("スマホ", () => {
   // frame はパネルの下に隠れる。
   test("詳細の「キャンバスで見る」は、全面のパネルも閉じる", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
-    await openPanelTab(page, "注釈");
+    await openPanelTab(page, "絵解いた");
     await annotationCard(page, "ログイン").locator(".annotation-open").click();
     const detail = annotationDetail(page, "ログイン");
 
@@ -335,7 +334,7 @@ test.describe("スマホ", () => {
     await expect(detail).toHaveCount(0);
     await expect(page.locator(".side-panel")).toBeHidden();
     await expect(
-      boardBar(page).getByRole("button", { name: /^注釈(、|$)/ }),
+      boardBar(page).getByRole("button", { name: /^絵解いた(、|$)/ }),
     ).toBeFocused();
   });
 
@@ -379,7 +378,7 @@ test.describe("スマホ", () => {
     await openBoardWithMock(page, mock);
     expect(await horizontalScrollers(page)).toEqual([]);
 
-    await openPanelTab(page, "注釈");
+    await openPanelTab(page, "絵解いた");
     await interpret(annotationCard(page, "ログイン"));
     await expect(annotationDetail(page, "ログイン")).toBeVisible();
     expect(await horizontalScrollers(page)).toEqual([]);

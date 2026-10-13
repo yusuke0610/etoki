@@ -57,7 +57,9 @@ export function itemKinds(): ItemKind[] {
  * キャンバスを寄せることのほう。
  */
 export function annotationLabel(name: string, index: number): string {
-  return name.trim() === "" ? `注釈 ${index + 1}` : name;
+  // 「絵1」「絵2」（#248）。名前の代わりに補うだけで、frame の `name` には書かない
+  // （`name` は `content_hash` の入力で、書くと状態が変わる、ADR 0036）。
+  return name.trim() === "" ? `絵${index + 1}` : name;
 }
 
 /**

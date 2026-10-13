@@ -262,7 +262,7 @@ test.describe("取り込み", () => {
 
     // 取り込んだ注釈 1 つに入れ替わる。
     await expect(annotationFrames(page)).toHaveCount(1);
-    await expect(annotationFrames(page)).toContainText("注釈 epic");
+    await expect(annotationFrames(page)).toContainText("絵 epic");
 
     // 状態は保存済みシーンが基準なので、元の 3 つは一覧に残ったまま「キャンバスに
     // ありません」になる（ADR 0022）。**取り込みでサーバーは変わらない**ことが、

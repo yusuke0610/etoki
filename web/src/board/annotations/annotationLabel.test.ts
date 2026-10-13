@@ -29,19 +29,19 @@ describe("annotationLabel", () => {
   });
 
   it("名前が無ければ一覧上の位置で採番する", () => {
-    expect(annotationLabel("", 1)).toBe("注釈 2");
+    expect(annotationLabel("", 1)).toBe("絵2");
   });
 
   // Excalidraw は空白だけの名前も受け取る。見た目が「名前なし」と同じものを
   // 名前として扱うと、見出しが空欄のカードが並ぶ。
   it("空白だけの名前は名前なしとして扱う", () => {
-    expect(annotationLabel("   ", 2)).toBe("注釈 3");
+    expect(annotationLabel("   ", 2)).toBe("絵3");
   });
 });
 
 describe("annotationLabels", () => {
   // 採番は名前の有無ではなく一覧上の位置で振る。名前ありを飛ばして数えると、
-  // 「注釈 2」が 2 番目のカードを指さなくなる。
+  // 「絵2」が 2 番目のカードを指さなくなる。
   it("名前ありを飛ばさずに位置で採番する", () => {
     const got = annotationLabels([
       status("a", "ログイン"),
@@ -50,8 +50,8 @@ describe("annotationLabels", () => {
     ]);
 
     expect(got.get("a")).toBe("ログイン");
-    expect(got.get("b")).toBe("注釈 2");
-    expect(got.get("c")).toBe("注釈 3");
+    expect(got.get("b")).toBe("絵2");
+    expect(got.get("c")).toBe("絵3");
   });
 
   it("空の一覧では何も引けない", () => {
@@ -65,7 +65,7 @@ describe("frameLabel", () => {
   });
 
   // まだ注釈でない frame は一覧に並んでいないので番号を持たない。
-  // 番号を振ると、状態欄の「注釈 n」と食い違う番号が同じ画面に 2 種類出る。
+  // 番号を振ると、状態欄の「絵n」と食い違う番号が同じ画面に 2 種類出る。
   it("名前が無ければ番号を振らない", () => {
     expect(frameLabel("")).toBe("名前のないフレーム");
   });

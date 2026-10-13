@@ -12,6 +12,7 @@ import {
   importIcon,
   refreshTargetIcon,
   renameIcon,
+  shareIcon,
   tableIcon,
 } from "./menuIcons";
 import type { DeletionState } from "./useBoardManagement";
@@ -24,6 +25,8 @@ type Props = {
   targetLocked: boolean;
   /** 名前の編集を始める。 */
   onRename: () => void;
+  /** 共有のダイアログを開く（`ShareDialog`、#248）。 */
+  onShare: () => void;
   /** GitHub が使えない理由。使えるなら null（ADR 0030）。 */
   creationUnavailable: string | null;
   onRefreshTarget: () => void;
@@ -75,6 +78,7 @@ export function BoardMenu({
   role,
   targetLocked,
   onRename,
+  onShare,
   creationUnavailable,
   onRefreshTarget,
   refreshingTarget,
@@ -105,6 +109,16 @@ export function BoardMenu({
           名前を変更
         </MainMenu.Item>
       )}
+      {/*
+        共有はボードそのものの管理なので、右のパネル（ボードの中身に対する作業）
+        ではなくここから開く（#248、ADR 0078）。**誰にでも出す。** 一覧は読む
+        だけの人にも見え、招待と解除はダイアログの中で owner にだけ出る
+        （ADR 0017）。共有が組み立てられていない構成でも口は消さず、開いた先で
+        理由を出す（ADR 0030）。
+      */}
+      <MainMenu.Item className="etoki-menu-item" icon={shareIcon} onSelect={onShare}>
+        共有…
+      </MainMenu.Item>
       <MainMenu.Separator />
       {!isOwner(role) ? (
         // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で

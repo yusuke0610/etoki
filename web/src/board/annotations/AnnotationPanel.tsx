@@ -97,7 +97,7 @@ export function AnnotationPanel({
   return (
     <aside className="panel">
       {/* 見出しは見た目だけ隠す。右のパネルのタブに同じ名前が出ている（`SidePanel`）。 */}
-      <h2 className="visually-hidden">注釈</h2>
+      <h2 className="visually-hidden">絵解いた</h2>
 
       {!canEdit && (
         <p className="hint" role="status">

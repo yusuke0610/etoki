@@ -1,7 +1,31 @@
-/* メンバーは右のパネルのタブの 1 つ（`SidePanel`）。キャンバスの上に重ねると、
-   ブレスト中の絵が隠れる。 */
-.member-panel {
-  padding: var(--space-5);
+/*
+ * 共有のダイアログ（#248）。ブラウザの `<dialog>` をモーダルで開く。形は新しい
+ * ボードのダイアログ（`.new-board-dialog`）に揃える。メンバーの一覧が伸びたら
+ * ダイアログの中でスクロールさせる。
+ */
+.share-dialog {
+  box-sizing: border-box;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.share-dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.share-dialog h2 {
+  margin: 0 0 var(--space-6);
+  font-size: var(--text-xl);
+}
+
+.share-dialog .dialog-actions {
+  margin-top: var(--space-6);
 }
 
 .invite-form {
