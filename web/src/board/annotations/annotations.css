@@ -46,16 +46,33 @@
  * 数件のときに空の面がキャンバスを覆う。
  */
 .annotation-detail {
+  /*
+   * Excalidraw が図形を選んだときに左へ出す設定欄（線・背景・太さ…）の幅。
+   * 左の余白と欄そのものと、面との隙間を含む。**面は設定欄より下（z-index 3）に
+   * 置くので、重なると設定欄が押下を受けて、帯の「絵解く」が押せなくなる**
+   * （#262）。図形を選ぶのは面を開く前とは限らない（面は開いたまま描ける）ので、
+   * 開くときに選択を外す形では足りない。常に欄の右を使う。
+   *
+   * 値はライブラリの見た目の写しで、ライブラリを上げたら変わりうる。
+   * `web/e2e/detailIsland.spec.ts` が、並べる・重ねるの両方で押せることを見る。
+   */
+  --island-reserve: 208px;
   position: absolute;
   top: 104px;
   max-height: calc(100% - 104px - 72px);
   /*
-   * 重ねたパネルの覆う幅（`--panel-reserve`、`sidePanel.css`）を右から除いた
-   * 残りの真ん中に開く（#199）。並べるときはパネルがキャンバスの外にあるので 0。
+   * 左の設定欄（`--island-reserve`）と、重ねたパネルの覆う幅（`--panel-reserve`、
+   * `sidePanel.css`）を両側から除いた残りの真ん中に開く（#199）。並べるときは
+   * パネルがキャンバスの外にあるので 0。
    */
-  left: calc((100% - var(--panel-reserve, 0px)) / 2);
+  left: calc(
+    var(--island-reserve) + (100% - var(--island-reserve) - var(--panel-reserve, 0px)) / 2
+  );
   transform: translateX(-50%);
-  width: min(760px, calc(100% - var(--panel-reserve, 0px) - 2 * var(--space-6)));
+  width: min(
+    760px,
+    calc(100% - var(--island-reserve) - var(--panel-reserve, 0px) - 2 * var(--space-6))
+  );
   z-index: 3;
   display: flex;
   flex-direction: column;
