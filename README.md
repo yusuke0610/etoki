@@ -242,9 +242,34 @@ export ETOKI_LLM_MODEL=<プロキシ側のモデル名>
 make dev
 ```
 
-Ollama や LM Studio が直接公開するのは OpenAI Chat Completions 形状なので、
-`ETOKI_LLM_BASE_URL` をそこへ向けても動きません。形状を変換するプロキシを
-挟むか、`port.LLMClient` を自前実装して差し込んでください。
+LM Studio は 0.4.1 から Anthropic 互換の `POST /v1/messages` も公開しています。
+ただし etoki が読む応答のフィールド（`content`・`stop_reason`・`usage`）まで
+揃うかは確かめていないので、直接つなげるとは言い切れません。つなげて動かない
+ときは、モデル ID（`ETOKI_LLM_MODEL`）を LM Studio 側の名前に合わせたうえで、
+形状を変換するプロキシを挟むか、`port.LLMClient` を自前実装して差し込んで
+ください。それより前の版は OpenAI Chat Completions 形状だけなので、直接は
+動きません。Ollama は
+Messages API 形状（`/v1/messages`）も公開していて、0.34.4 では
+`ETOKI_LLM_BASE_URL=http://localhost:11434` で動くことを確かめています。
+
+**Ollama はコンテキスト長が小さいと、応答が途中で切れます。** 既定は VRAM に
+応じて 4k / 32k / 256k で、4k だと入力と出力の合計が 4096 トークンに達した時点で
+`stop_reason` が `max_tokens` になります（etoki が送る上限の 16000 には届いて
+いなくても）。解釈は再送のたびに入力が増えるので、4k では 2 回目で切れやすく
+なります。`etoki: llm call failed ... response truncated: stopped at N output tokens,
+before our limit` と出たら、Ollama 側で広げてください。
+
+```sh
+OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+```
+
+これは**新しい `ollama serve` を起動するだけ**です。Ollama のアプリや Linux の
+サービスがすでに `11434` を使っていると、bind に失敗し、動いているサーバーの
+コンテキスト長も変わりません。その場合は、先にそのサーバーを止めてから上のコマンドを
+実行するか、起動設定に環境変数を足して再起動してください（macOS のアプリは
+`launchctl setenv OLLAMA_CONTEXT_LENGTH 16384` のあとアプリを再起動、Linux の
+systemd は `systemctl edit ollama.service` で
+`Environment="OLLAMA_CONTEXT_LENGTH=16384"` を足して `systemctl restart ollama`）。
 
 ### GitHub Projects v2 を使う
 
