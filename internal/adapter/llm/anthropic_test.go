@@ -65,8 +65,8 @@ func TestComplete_TruncationNamesWhoCutItOff(t *testing.T) {
 			// 使用量を返さない実装では、どちらとも言えない。言い切らない。
 			name:    "使用量の報告が無い",
 			usage:   `{}`,
-			want:    "truncated",
-			notWant: "limit",
+			want:    "did not report output token usage",
+			notWant: "reached",
 		},
 	}
 
