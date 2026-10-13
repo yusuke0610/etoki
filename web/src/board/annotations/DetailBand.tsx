@@ -54,6 +54,11 @@ export function DetailBand({
       <button
         type="button"
         onClick={interpret.onInterpret}
+        // **押しても焦点を奪わない。** 名前の欄（#249）は欄を離れたときに確定する
+        // ので、焦点が移った瞬間に未保存になり、本文に保存の案内が出て帯が下へ
+        // ずれる。押し始めた位置から帯が逃げ、指を離した先にボタンが無い。確定は
+        // 押した処理の中で行う（`AnnotationFace` の `onInterpret`）。
+        onMouseDown={(e) => e.preventDefault()}
         disabled={interpret.running || interpret.blocked !== null}
         aria-describedby={interpret.blocked !== null ? interpretBlockedId : undefined}
       >

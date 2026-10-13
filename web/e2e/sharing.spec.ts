@@ -199,7 +199,7 @@ test.describe("共有", () => {
     await expect(detail.getByRole("button", { name: /^解釈/ })).toHaveCount(0);
     await expect(
       detail.getByText(
-        "読むだけの権限で開いています。粒度と種別は変えられず、解釈と作成もできません。",
+        "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
       ),
     ).toBeVisible();
   });

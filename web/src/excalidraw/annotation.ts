@@ -184,6 +184,33 @@ export function setAnnotationKind(
   });
 }
 
+/**
+ * 注釈の frame の名前を書き換える（#249）。注釈でなければ何もしない。
+ *
+ * **名前は frame の `name` そのものに書く。** キャンバスのラベルにも同じ名前が
+ * 出るので、一覧とキャンバスの名前が揃う（ADR 0022 の「どのフレームか」）。
+ * `name` は `content_hash` の入力なので、作成済みの注釈の名前を変えると状態は
+ * 「変更あり」になる（ADR 0036）。表示用の名前を `customData` に別に持つ案は
+ * 採らない。Go 側の `AnnotationMeta` と共有のテストデータまで動く（ADR 0079）。
+ *
+ * 前後の空白は落とし、空なら名前を外す（Excalidraw の既定の null）。**名前が
+ * 変わらなければ要素をそのまま返す。** 書くと、何も変えていないのに未保存になり、
+ * 「元に戻す」にも積まれる。
+ */
+export function setAnnotationName(
+  elements: readonly SceneElement[],
+  frameId: string,
+  name: string,
+): SceneElement[] {
+  const trimmed = name.trim();
+  const next = trimmed === "" ? null : trimmed;
+  return elements.map((el) => {
+    if (el.id !== frameId || !isAnnotation(el)) return el;
+    if ((el.name ?? null) === next) return el;
+    return changed(el, { name: next });
+  });
+}
+
 /** 注釈の指定を外す。frame 自体は残す。 */
 export function unmarkAnnotation(
   elements: readonly SceneElement[],
@@ -223,6 +250,25 @@ export function selectableFrames(
 /** シーンにいま在る frame の ID。パネルが「押しても飛べない」項目を出すために使う。 */
 export function frameIds(elements: readonly SceneElement[]): string[] {
   return elements.filter((el) => el.type === "frame" && !el.isDeleted).map((el) => el.id);
+}
+
+/**
+ * シーンにいま在る注釈の名前を、frame の ID で引けるようにする。名前が無ければ
+ * 空文字。
+ *
+ * 注釈の詳細の名前欄がキャンバスに書いた値を出すために使う（粒度と種別と同じ、
+ * `annotationMetas`）。**`AnnotationMeta` には入れない。** あちらは Go 側と同じ形を
+ * 持つ `customData.etoki` の写しで、名前は frame の `name` にある。
+ */
+export function annotationNames(
+  elements: readonly SceneElement[],
+): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const el of elements) {
+    if (!isAnnotation(el)) continue;
+    names[el.id] = el.name ?? "";
+  }
+  return names;
 }
 
 /**
