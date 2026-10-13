@@ -80,6 +80,11 @@ import { canEditBoard } from "./members/roles";
 import { useBoardDeletion, useRename, useTargetRefresh } from "./useBoardManagement";
 import { useBoardLayout } from "./useBoardLayout";
 import { useBoardTransfer } from "./useBoardTransfer";
+import {
+  measureVisibleCanvas,
+  useArrowKeyScroll,
+  useDragEdgeScroll,
+} from "./useCanvasScroll";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
@@ -966,6 +971,20 @@ export function BoardPage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [canSave, save]);
 
+  /*
+    キャンバスの移動を楽にする（#250）。何も選んでいないときの矢印キーと、
+    ドラッグ中に端へ寄せたときのスクロール。**測る枠は重ねたパネルを除いた
+    もの**（`measureVisibleCanvas`）。パネルの下に隠れたところを端にすると、
+    パネルに重なるまで運ばないとスクロールしない。
+  */
+  const canvasFrame = useRef<HTMLDivElement>(null);
+  const visibleCanvas = useCallback(
+    () => (canvasFrame.current ? measureVisibleCanvas(canvasFrame.current) : null),
+    [],
+  );
+  useArrowKeyScroll(api, visibleCanvas);
+  useDragEdgeScroll(api, visibleCanvas);
+
   // 設定していない機能は、押す前に理由を出す（ADR 0030）。null は使える、
   // または「まだ確かめていない」。
   //
@@ -1369,7 +1388,7 @@ export function BoardPage({
                 **詳細はこの外に置く。** スマホでは詳細が上の帯の 2 段目まで
                 覆うので、キャンバスの矩形を基準にできない。
               */}
-              <div className="canvas-frame">
+              <div className="canvas-frame" ref={canvasFrame}>
                 <Excalidraw
                   excalidrawAPI={setApi}
                   initialData={initialData as never}
