@@ -260,7 +260,7 @@ test.describe("スクリーンショット", () => {
     await installApi(page, mock);
     await page.goto("/");
     await page.getByRole("button", { name: "使い方を見る" }).waitFor();
-    await shot(page, "30-boards-none");
+    await shot(page, "54-boards-none");
 
     await page.getByRole("button", { name: "使い方を見る" }).click();
     const video = page.getByRole("dialog", { name: "etoki の使い方" }).locator("video");
@@ -275,7 +275,7 @@ test.describe("スクリーンショット", () => {
           v.currentTime = Math.min(v.duration, 6);
         }),
     );
-    await shot(page, "31-tutorial");
+    await shot(page, "55-tutorial");
   });
 
   test("キャンバスのメニューを撮る", async ({ page }) => {
