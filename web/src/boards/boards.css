@@ -27,8 +27,18 @@
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
   font-size: var(--text-xl);
   margin: 0;
+}
+
+/* ロゴの印（ADR 0082）。角丸の地は絵の側が持つ。 */
+.brand-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 }
 
 .list-body {
