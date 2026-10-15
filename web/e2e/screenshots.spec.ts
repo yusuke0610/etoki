@@ -251,6 +251,33 @@ test.describe("スクリーンショット", () => {
 
   // キャンバスのメニュー（ADR 0065）。たまに押す操作と、押せない理由の文
   // （ADR 0066）がここに入る。未保存にして、理由が出ている状態を撮る。
+  // 使い方（ADR 0081）。ボードが 0 件の空状態の口と、開いたダイアログ。動画は
+  // 止めてから撮る。再生中だと、撮るたびに違うコマが写る。
+  test("使い方を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.boards = [];
+    mock.details = {};
+    await installApi(page, mock);
+    await page.goto("/");
+    await page.getByRole("button", { name: "使い方を見る" }).waitFor();
+    await shot(page, "54-boards-none");
+
+    await page.getByRole("button", { name: "使い方を見る" }).click();
+    const video = page.getByRole("dialog", { name: "etoki の使い方" }).locator("video");
+    await expect
+      .poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState))
+      .toBeGreaterThanOrEqual(2);
+    await video.evaluate(
+      (v: HTMLVideoElement) =>
+        new Promise<void>((resolve) => {
+          v.pause();
+          v.addEventListener("seeked", () => resolve(), { once: true });
+          v.currentTime = Math.min(v.duration, 6);
+        }),
+    );
+    await shot(page, "55-tutorial");
+  });
+
   test("キャンバスのメニューを撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);

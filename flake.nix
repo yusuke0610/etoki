@@ -64,6 +64,10 @@
             # Go 本体は flake.lock が決めていて Dependabot の security updates の
             # 対象にならないので、ここで調べないと気づく経路が無い（ADR 0035）。
             govulncheck
+            # 使い方の動画を録るときだけ使う（make tutorial-capture、ADR 0081）。
+            # Playwright の録画は WebM なので、切り出して H.264 の MP4 にする。
+            # ビルドと CI には要らない。録った動画はコミットしてある。
+            ffmpeg-headless
           ];
 
           shellHook = ''

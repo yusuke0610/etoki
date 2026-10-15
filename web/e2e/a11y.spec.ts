@@ -555,6 +555,20 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    // 使い方のダイアログ（ADR 0081）。開かないと DOM に出ない。動画の下の説明と
+    // ページ送りのボタンまで含めて見る。
+    test("使い方のダイアログを開いた状態", async ({ page }) => {
+      await installApi(page, baseMock());
+      await page.goto("/");
+      await page
+        .locator(".list-header")
+        .getByRole("button", { name: "使い方", exact: true })
+        .click();
+      await page.getByRole("dialog", { name: "etoki の使い方" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     test("利用者のメニューを開いた状態", async ({ page }) => {
       const mock = baseMock();
       mock.session = { status: 200, body: signedIn() };
