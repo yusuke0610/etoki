@@ -1,0 +1,76 @@
+/*
+ * 使い方のダイアログ（ADR 0081）。形は新しいボードのダイアログ
+ * （`.new-board-dialog`）に揃え、動画のぶん幅を取る。
+ *
+ * **スマホでも画面に収める。** 動画はデスクトップで録ったものを縮めて見せる。
+ * 高さが足りないときは、動画を縮めてページ送りのボタンを画面に残す。
+ */
+.tutorial-dialog {
+  box-sizing: border-box;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.tutorial-dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.tutorial-dialog h2 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-xl);
+}
+
+.tutorial-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tutorial-step {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.tutorial-step h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.tutorial-count {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 録画は 16:9。高さは画面の残りに合わせて縮める。見出し・本文・ボタンのぶんを
+ * 引いておかないと、低い画面でページ送りが画面の外へ押し出される。
+ */
+.tutorial-video {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 320px);
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+
+.tutorial-body {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: 1.7;
+}
+
+/* 抜ける口は左へ寄せ、ページ送りと離す。 */
+.tutorial-dialog .tutorial-skip {
+  margin-right: auto;
+}

@@ -51,6 +51,25 @@
   margin: 0;
 }
 
+/* 上の帯の右。使い方の口と、ログインしていれば利用者のメニュー。 */
+.list-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* 空状態の文と、使い方の口（ADR 0081）。 */
+.list-empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.list-empty .hint {
+  margin: 0;
+}
+
 .list-title-action {
   display: flex;
   align-items: center;

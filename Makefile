@@ -62,7 +62,7 @@ ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web start try-fake \
-        test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
+        test test-go test-web test-scripts test-e2e tutorial-capture lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
         codegen codegen-go codegen-web migrate token-report clean reset-db vulncheck
 
@@ -165,6 +165,11 @@ test-e2e: ## Playwright で E2E テストを実行する（test には含めな�
 	@# 実行のたびに web/e2e-output/screenshots/ が作り直される。UI を変えたときは
 	@# ここの画像を報告に添える（web/CLAUDE.md の「報告にブラウザの実行結果を添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
+
+tutorial-capture: ## 使い方の動画を録り直す（画面を変えたら回して、動画をコミットする）
+	@# 録るのはテストではなく生成器（ADR 0081）。web/src/tutorial/media/ を書き換える。
+	@# test-e2e に混ぜないのは、ffmpeg が要り、回すたびに動画が書き換わるため。
+	cd $(WEB_DIR) && bunx playwright test -c playwright.tutorial.config.ts
 
 lint: lint-go lint-web lint-docs lint-fmt lint-nix lint-actions lint-sh ## Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 

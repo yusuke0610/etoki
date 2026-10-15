@@ -654,6 +654,7 @@ export function App() {
             onOpen={(id) => void open(id)}
             creationUnavailable={unavailableReason(capabilities, "creation")}
             connectionsUnavailable={unavailableReason(capabilities, "mcpConnections")}
+            theme={theme}
             dialog={{
               open: creatingDialog,
               name,

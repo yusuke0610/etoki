@@ -37,6 +37,7 @@ test.describe("メニューのアイコン", () => {
       "書き出し",
       "取り込み",
       "表",
+      "etoki の使い方",
       "ボードを削除",
     ]) {
       const icon = item(menu, name).locator(".dropdown-menu-item__icon svg");
