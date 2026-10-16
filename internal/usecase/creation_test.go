@@ -977,6 +977,34 @@ func TestCreate_RevalidatesInterpretation(t *testing.T) {
 	}
 }
 
+// 保存の検査が入る前に保存されたシーンもありうるので、作成でも読める値か
+// 見る。解釈と同じ規則で、種別も見る（#276）。
+func TestCreate_RejectsUnknownAnnotationMeta(t *testing.T) {
+	t.Parallel()
+
+	for name, meta := range map[string]string{
+		"種別": `"granularity":"","kind":"gantt"`,
+		"粒度": `"granularity":"project"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			scene := strings.Replace(interpretScene, `"granularity":""`, meta, 1)
+			gh := &fakeGitHub{fields: projectFields()}
+			svc := usecase.NewCreationService(&fakeBoards{board: newBoard(scene)},
+				&fakeMappings{}, gh, usecase.NewBoardLocks())
+
+			_, err := svc.Create(t.Context(), "board-1", "annot-1", "sha256:whatever", interpretation())
+			if !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("Create() = %v, want ErrInvalidInput", err)
+			}
+			if len(gh.calls) != 0 {
+				t.Errorf("GitHub を叩いている: %+v", gh.calls)
+			}
+		})
+	}
+}
+
 func TestCreate_NotFound(t *testing.T) {
 	t.Parallel()
 
