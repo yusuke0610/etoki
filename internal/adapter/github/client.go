@@ -12,11 +12,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/yusuke0610/etoki/internal/baseurl"
 	"github.com/yusuke0610/etoki/internal/loopback"
 	"github.com/yusuke0610/etoki/port"
 )
@@ -118,30 +118,16 @@ func New(cfg Config) (*Client, error) {
 	if base == "" {
 		base = DefaultBaseURL
 	}
-	u, err := url.Parse(base)
+	// 形（スキーム・ホスト・クエリと fragment）は llm と同じ検査を通す。
+	u, err := baseurl.Parse("github", base)
 	if err != nil {
-		return nil, fmt.Errorf("etoki: invalid github base url: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("etoki: invalid github base url %q: scheme must be http or https", u.Redacted())
-	}
-	// url.Parse は "http://" や "https:api.github.com" も通す。
-	if u.Hostname() == "" {
-		return nil, fmt.Errorf("etoki: invalid github base url %q: host is missing", u.Redacted())
+		return nil, err
 	}
 	// **http はループバックにだけ許す。** この口を開けたのは手元の偽物に向ける
 	// ため（ADR 0050）で、http で届く GitHub は無い。綴りの誤り 1 つで本物の
 	// トークンを平文で外へ送らない。
 	if u.Scheme == "http" && !loopback.Hostname(u.Hostname()) {
 		return nil, fmt.Errorf("etoki: invalid github base url %q: http is allowed only for loopback", u.Redacted())
-	}
-	// クエリと fragment は弾く。送り先は base に "/graphql" を足した文字列
-	// なので、"?x=1" が付いていると "...?x=1/graphql" になり、足したぶんが
-	// path ではなくクエリの一部として飛ぶ。黙って別の URL を叩くより、
-	// 起動時に落とす。
-	if u.RawQuery != "" || u.ForceQuery || strings.Contains(base, "#") {
-		return nil, fmt.Errorf(
-			"etoki: invalid github base url %q: query and fragment are not allowed", u.Redacted())
 	}
 
 	c := &Client{
