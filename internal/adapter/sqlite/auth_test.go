@@ -1047,3 +1047,81 @@ func TestAddMember_RejectsUnknownBoard(t *testing.T) {
 		t.Fatal("AddMember: want foreign key error, got nil")
 	}
 }
+
+// 期限を可変幅で書いていた頃の行も、移行のあとは秒の切れ目まで延びない（#274）。
+// 比べる値だけを固定幅にすると、旧い行の `…:00Z` は `…:00.300000000Z` より
+// 後に並び、期限を 1 秒未満過ぎても通る。
+func TestMigrate_PadsLegacyExpiryToFixedWidth(t *testing.T) {
+	t.Parallel()
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	migrateUpTo(t, db, "0017")
+
+	if _, err := db.ExecContext(t.Context(),
+		`INSERT INTO users (id, provider, subject, login, display_name, created_at, updated_at)
+		 VALUES ('u1', 'github', '1', 'alice', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	// 秒ちょうど（小数部が無い）と、末尾の 0 が落ちた小数部の 2 つ。
+	whole := baseTime.Add(time.Hour)
+	frac := baseTime.Add(time.Hour + 500*time.Millisecond)
+	for token, exp := range map[string]time.Time{"whole": whole, "frac": frac} {
+		legacy := exp.UTC().Format(time.RFC3339Nano)
+		if _, err := db.ExecContext(t.Context(),
+			`INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, 'u1', ?, ?)`,
+			token, "2026-01-01T00:00:00Z", legacy,
+		); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+		if _, err := db.ExecContext(t.Context(),
+			`INSERT INTO oauth_states (state, return_to, created_at, expires_at) VALUES (?, '', ?, ?)`,
+			token, "2026-01-01T00:00:00Z", legacy,
+		); err != nil {
+			t.Fatalf("seed state: %v", err)
+		}
+	}
+
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	repo := newSessions(t, db)
+	for token, exp := range map[string]time.Time{"whole": whole, "frac": frac} {
+		if got, err := repo.FindSession(t.Context(), token, exp.Add(-300*time.Millisecond)); err != nil || got == nil {
+			t.Errorf("%s: 期限の 300ms 前の FindSession() = (%v, %v), want 返る", token, got, err)
+		}
+		if got, err := repo.FindSession(t.Context(), token, exp.Add(300*time.Millisecond)); err != nil || got != nil {
+			t.Errorf("%s: 期限を 300ms 過ぎた FindSession() = (%v, %v), want (nil, nil)", token, got, err)
+		}
+		// 読み戻した期限は元の時刻のまま。桁を足しただけで値は変えない。
+		got, err := repo.FindSession(t.Context(), token, exp.Add(-time.Second))
+		if err != nil || got == nil || !got.ExpiresAt.Equal(exp) {
+			t.Errorf("%s: ExpiresAt = %v, want %v", token, got, exp)
+		}
+	}
+
+	// state は掃除で同じ期限より前のものが消えるので、手前の時刻で 1 つずつ見る。
+	if got, err := repo.ConsumeState(t.Context(), "whole", whole.Add(-300*time.Millisecond)); err != nil || got == nil {
+		t.Errorf("whole: 期限の 300ms 前の ConsumeState() = (%v, %v), want 通る", got, err)
+	}
+	// whole の期限を過ぎた時刻でも、frac の期限（whole の 500ms 後）の手前なら通る。
+	if got, err := repo.ConsumeState(t.Context(), "frac", whole.Add(300*time.Millisecond)); err != nil || got == nil {
+		t.Errorf("frac: 期限の 200ms 前の ConsumeState() = (%v, %v), want 通る", got, err)
+	}
+
+	// 消費した state は消えているので、行の形はセッションで見る。
+	var n int
+	if err := db.QueryRowContext(t.Context(),
+		`SELECT COUNT(*) FROM sessions WHERE length(expires_at) <> 30`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("固定幅でない期限が %d 行残っている", n)
+	}
+}
