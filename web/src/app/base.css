@@ -15,6 +15,30 @@
   border: 0;
 }
 
+/*
+ * モーダルで開くダイアログの器（#278）。新しいボード・共有・接続の一覧が使う。
+ * ブラウザの `<dialog>` を `showModal()` で開く。幅と見出しの余白はダイアログ
+ * ごとに違うので、それぞれの CSS が持つ。地を覆う色は変数で持つ（ダークでは
+ * 濃くする）。
+ */
+.modal-dialog {
+  box-sizing: border-box;
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px var(--color-shadow);
+}
+
+.modal-dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.modal-dialog h2 {
+  font-size: var(--text-xl);
+}
+
 body {
   margin: 0;
   /* 塗らないとブラウザの既定（白）が透けて、ダークでも地が明るいまま残る。 */
