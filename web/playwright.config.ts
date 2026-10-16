@@ -21,9 +21,12 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // Excalidraw のキャンバスは描画が重い。CI では並列度を落として、
-  // 実装ではなくマシンの都合で落ちるのを避ける。
-  workers: process.env.CI ? 1 : undefined,
+  // Excalidraw のキャンバスは描画が重い。CI では並列度を 2 に抑えて、
+  // 実装ではなくマシンの都合で落ちるのを避ける。1 にするとランナー（4 vCPU）が
+  // 遊んだまま全件を直列に回し、CI の 8 割が E2E 待ちになっていた（#269）。
+  // 同じ大きさの手元では 2 で失敗も flaky も出ず、4 では flaky が出た。
+  // 上げるなら、retries に吸われて緑のまま延びていないかを CI のログで見てから。
+  workers: process.env.CI ? 2 : undefined,
 
   reporter: process.env.CI
     ? [["github"], ["html", { outputFolder: "./e2e-output/report", open: "never" }]]
