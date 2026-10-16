@@ -101,6 +101,21 @@ type Annotation struct {
 	Kind DiagramKind
 }
 
+// CheckMeta は注釈のメタデータが etoki の知っている値かを確かめる。
+//
+// **知らない値を「指定なし」に丸めない**（ADR 0047「粒度と同じ」）。丸めると、
+// 開発者が指定したつもりの粒度や種別が黙って外れる。保存・解釈・作成の 3 つの
+// 入口が同じ規則で見るよう、判定はここ 1 つに置く（#276）。
+func (a Annotation) CheckMeta() error {
+	if !a.Granularity.Valid() {
+		return fmt.Errorf("unknown granularity %q on annotation %s", a.Granularity, a.ID)
+	}
+	if !a.Kind.Valid() {
+		return fmt.Errorf("unknown diagram kind %q on annotation %s", a.Kind, a.ID)
+	}
+	return nil
+}
+
 // ParseScene はシーン JSON を読む。
 func ParseScene(raw []byte) (Scene, error) {
 	var s Scene

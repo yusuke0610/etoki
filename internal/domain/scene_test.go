@@ -421,3 +421,31 @@ func TestParseScene_TolerantOfUnknownFields(t *testing.T) {
 		t.Errorf("要素数 = %d, want 1", len(s.Elements))
 	}
 }
+
+// 知らない粒度と種別は、指定なしに丸めずに弾く（ADR 0047）。指定なし（空）と
+// 既知の値は通す。常に弾く実装を通さないため、通す側も並べる。
+func TestAnnotation_CheckMeta(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		a       domain.Annotation
+		wantErr bool
+	}{
+		{"指定なし", domain.Annotation{}, false},
+		{"既知の値", domain.Annotation{
+			Granularity: domain.GranularityEpic, Kind: domain.DiagramKindSequence}, false},
+		{"知らない粒度", domain.Annotation{Granularity: "project"}, true},
+		{"知らない種別", domain.Annotation{Kind: "gantt"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := tt.a.CheckMeta(); (err != nil) != tt.wantErr {
+				t.Errorf("CheckMeta() = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
