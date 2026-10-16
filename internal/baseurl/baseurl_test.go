@@ -66,15 +66,25 @@ func TestParse_Accepts(t *testing.T) {
 	}
 }
 
-// URL に埋め込まれた資格情報をエラーに載せない。
+// URL に埋め込まれた資格情報をエラーに載せない。形の検査で弾いたときも、
+// url.Parse が読めなかったときも（*url.Error は入力の URL をそのまま運ぶ、#284）。
 func TestParse_RedactsCredentials(t *testing.T) {
 	t.Parallel()
 
-	_, err := baseurl.Parse("llm", "https://user:secret@api.example.test?x=1")
-	if err == nil {
-		t.Fatal("Parse() = nil, want error")
-	}
-	if strings.Contains(err.Error(), "secret") {
-		t.Errorf("error leaks the password: %v", err)
+	for name, raw := range map[string]string{
+		"形の検査で弾く":       "https://user:secret@api.example.test?x=1",
+		"url.Parse が失敗": "https://user:secret@api.example.test/%zz",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := baseurl.Parse("llm", raw)
+			if err == nil {
+				t.Fatal("Parse() = nil, want error")
+			}
+			if strings.Contains(err.Error(), "secret") {
+				t.Errorf("error leaks the password: %v", err)
+			}
+		})
 	}
 }

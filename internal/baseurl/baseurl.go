@@ -10,6 +10,7 @@
 package baseurl
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -23,6 +24,12 @@ import (
 func Parse(what, raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
+		// *url.Error は入力の URL をそのまま文字列に載せるので、埋め込まれた
+		// 資格情報まで出る（#284）。運ぶのは中の理由だけにする。
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		return nil, fmt.Errorf("etoki: invalid %s base url: %w", what, err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
