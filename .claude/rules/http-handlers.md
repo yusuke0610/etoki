@@ -13,6 +13,10 @@ paths:
 - **境界の DTO は `internal/httpapi/apitypes/types.gen.go` の生成型を使う。**
   手で型を足さない。正本は `api/openapi.yaml`（ADR 0011、詳細は
   `api/CLAUDE.md`）。
+- **列挙の値は domain / port と契約の両方にある。** port/ は internal/ に依存せず
+  （ADR 0001）、ハンドラは string のキャストで写し合うので、片方にだけ値を足しても
+  コンパイルは通る。`vocabulary_test.go` が両方のソースから値を数え直して照合する。
+  **列挙の型を足したら、そこの表にも足す。** 表に無い型は誰も見ていない（#275）。
 - **エラー本文も `ErrorResponse` に揃える。** `gin.H{"error": ...}` を直に
   書かない。
 - **sentinel → (status, code) の写し替えは `internal/httpapi/errors.go` の表
