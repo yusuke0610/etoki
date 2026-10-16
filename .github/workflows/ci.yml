@@ -20,6 +20,10 @@ concurrency:
 permissions:
   contents: read
 
+# E2E は lint / test の結果を使わないので、別の job にして並べて走らせる。
+# 1 つの job に直列で並べていたころは、E2E が setup・lint・test の後ろで
+# 3 分ほど待ってから動き出していた（#269）。どちらの job も手元と同じ
+# make ターゲットを通る（下の setup のコメント）。
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -61,6 +65,33 @@ jobs:
       - name: test
         run: nix develop --command make test
 
+      - name: build
+        run: nix develop --command make build
+
+      # 最後に置く。外で新しい脆弱性が公開されると差分と関係なく落ちるので、
+      # 前に置くとその日の PR が lint / test の結果を見られなくなる。
+      # 先のステップが落ちても回す。定期実行は差分が無いので、lint や test の
+      # 不安定さで止まると、その週は脆弱性に気づく唯一の経路が抜ける。
+      # E2E は別の job なので、そちらが落ちてもここは止まらない。
+      - name: vulncheck
+        if: ${{ !cancelled() }}
+        run: nix develop --command make vulncheck
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # E2E に要るのは web の依存だけだが、入口は check と同じ make setup に
+      # 揃える。E2E のためだけの準備手順を CI に持たない。
+      - name: setup
+        run: nix develop --command make setup
+
       # ブラウザは devShell が渡す（PLAYWRIGHT_BROWSERS_PATH）。CI 側で
       # playwright install を叩かないのは、そこだけ flake.lock の外で
       # バージョンが決まってしまうため。
@@ -74,14 +105,3 @@ jobs:
           name: playwright-report
           path: web/e2e-output/
           retention-days: 7
-
-      - name: build
-        run: nix develop --command make build
-
-      # 最後に置く。外で新しい脆弱性が公開されると差分と関係なく落ちるので、
-      # 前に置くとその日の PR が lint / test の結果を見られなくなる。
-      # 先のステップが落ちても回す。定期実行は差分が無いので、lint や e2e の
-      # 不安定さで止まると、その週は脆弱性に気づく唯一の経路が抜ける。
-      - name: vulncheck
-        if: ${{ !cancelled() }}
-        run: nix develop --command make vulncheck

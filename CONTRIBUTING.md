@@ -169,13 +169,16 @@ PR を作ると CodeRabbit のレビューが付く。**作りっぱなしにせ
 
 ## CI
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) が PR ごとに走る。
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) が PR ごとに走る。job は
+`check` と `e2e` の 2 つで、並べて走る。E2E は lint / test の結果を使わないので、
+後ろで待たせない（#269）。
 
-| ステップ                                    | 中身                                                                   |
-| ------------------------------------------- | ---------------------------------------------------------------------- |
-| `nix flake check`                           | Nix コードのフォーマット検査（[ADR 0002](docs/adr/0002-toolchain.md)） |
-| `setup` / `lint` / `test` / `e2e` / `build` | 手元と同じ `make` ターゲット                                           |
-| `codegen drift`                             | 生成物が `api/openapi.yaml` と一致し、コミットされていること           |
+| job     | ステップ                                          | 中身                                                                   |
+| ------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
+| `check` | `nix flake check`                                 | Nix コードのフォーマット検査（[ADR 0002](docs/adr/0002-toolchain.md)） |
+| `check` | `setup` / `lint` / `test` / `build` / `vulncheck` | 手元と同じ `make` ターゲット                                           |
+| `check` | `codegen drift`                                   | 生成物が `api/openapi.yaml` と一致し、コミットされていること           |
+| `e2e`   | `setup` / `e2e`                                   | 手元と同じ `make` ターゲット                                           |
 
 **CI は手元と同じ入口（`nix develop --command make …`）を通る。** CI 専用の
 セットアップ手順を持たないことで、「手元では通るが CI で落ちる」の原因を devShell の
