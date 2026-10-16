@@ -9,7 +9,12 @@ import type {
 } from "../../api/types";
 import type { AnnotationMeta } from "../../excalidraw/annotation";
 import { boardBarButtonId } from "../BoardBar";
-import { GRANULARITY_LABEL, STATE_LABEL, annotationLabels } from "./annotationLabel";
+import {
+  GRANULARITY_LABEL,
+  OFF_CANVAS_NOTICE,
+  STATE_LABEL,
+  annotationLabels,
+} from "./annotationLabel";
 import { annotationCardButtonId } from "./AnnotationPanel";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "../diagram/diagramLabels";
 import { InterpretationSection } from "./InterpretationSection";
@@ -583,7 +588,7 @@ function AnnotationFace({
          */}
         {!onCanvas && (
           <p className="hint" id={missingId}>
-            このフレームはキャンバスにありません。保存すると一覧からも消えます。
+            {OFF_CANVAS_NOTICE}
           </p>
         )}
         {/* 開発者が手を打つまで消えない（ADR 0056）。 */}
