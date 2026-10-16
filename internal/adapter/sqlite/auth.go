@@ -193,13 +193,13 @@ func scanUser(s rowScanner) (port.User, error) {
 // 掃除に適している。読み取り側でやると、GET のたびに DELETE を打つことになる。
 func (r *SessionRepository) CreateSession(ctx context.Context, s port.Session) error {
 	if _, err := r.db.ExecContext(ctx,
-		`DELETE FROM sessions WHERE expires_at <= ?`, formatTime(s.CreatedAt)); err != nil {
+		`DELETE FROM sessions WHERE expires_at <= ?`, formatFixedTime(s.CreatedAt)); err != nil {
 		return fmt.Errorf("prune sessions: %w", err)
 	}
 
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
-		s.TokenHash, s.UserID, formatTime(s.CreatedAt), formatTime(s.ExpiresAt),
+		s.TokenHash, s.UserID, formatTime(s.CreatedAt), formatFixedTime(s.ExpiresAt),
 	)
 	if err != nil {
 		return fmt.Errorf("insert session: %w", err)
@@ -219,7 +219,7 @@ func (r *SessionRepository) FindSession(
 	row := r.db.QueryRowContext(ctx,
 		`SELECT token_hash, user_id, created_at, expires_at
 		 FROM sessions WHERE token_hash = ? AND expires_at > ?`,
-		tokenHash, formatTime(now))
+		tokenHash, formatFixedTime(now))
 
 	var (
 		s                    port.Session
@@ -339,13 +339,13 @@ func unreadableCredentials(userID string, err error) error {
 // やめるのは異常ではない**ので、掃除を戻ってきた場合だけに置くと表が育つ。
 func (r *SessionRepository) SaveState(ctx context.Context, st port.OAuthState) error {
 	if _, err := r.db.ExecContext(ctx,
-		`DELETE FROM oauth_states WHERE expires_at <= ?`, formatTime(st.CreatedAt)); err != nil {
+		`DELETE FROM oauth_states WHERE expires_at <= ?`, formatFixedTime(st.CreatedAt)); err != nil {
 		return fmt.Errorf("prune oauth states: %w", err)
 	}
 
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO oauth_states (state, return_to, created_at, expires_at) VALUES (?, ?, ?, ?)`,
-		st.State, st.ReturnTo, formatTime(st.CreatedAt), formatTime(st.ExpiresAt),
+		st.State, st.ReturnTo, formatTime(st.CreatedAt), formatFixedTime(st.ExpiresAt),
 	)
 	if err != nil {
 		return fmt.Errorf("insert oauth state: %w", err)
@@ -363,7 +363,7 @@ func (r *SessionRepository) ConsumeState(
 	ctx context.Context, state string, now time.Time,
 ) (*port.OAuthState, error) {
 	if _, err := r.db.ExecContext(ctx,
-		`DELETE FROM oauth_states WHERE expires_at <= ?`, formatTime(now)); err != nil {
+		`DELETE FROM oauth_states WHERE expires_at <= ?`, formatFixedTime(now)); err != nil {
 		return nil, fmt.Errorf("prune oauth states: %w", err)
 	}
 
@@ -373,7 +373,7 @@ func (r *SessionRepository) ConsumeState(
 	err := r.db.QueryRowContext(ctx,
 		`DELETE FROM oauth_states WHERE state = ? AND expires_at > ?
 		 RETURNING return_to`,
-		state, formatTime(now),
+		state, formatFixedTime(now),
 	).Scan(&returnTo)
 	if errors.Is(err, sql.ErrNoRows) {
 		// 未知・使用済み・期限切れ。どれも「通らなかった」で同じ扱い。

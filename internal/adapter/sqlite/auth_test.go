@@ -149,6 +149,42 @@ func TestFindSession_IgnoresExpired(t *testing.T) {
 	}
 }
 
+// 期限を 1 秒未満だけ過ぎたセッションも返さない（#274）。期限の判定は文字列の
+// 大小で行うので、末尾の 0 を落とす書式だと `…:00Z` が `…:00.3Z` より後に並び、
+// 期限が秒の切れ目まで延びる。
+func TestFindSession_IgnoresExpiredWithinTheSecond(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+	u := seedUser(t, repo)
+
+	// 期限は秒ちょうど。末尾の 0 を落とす書式では小数部が付かない。
+	expiresAt := baseTime.Add(time.Hour)
+	if err := repo.CreateSession(t.Context(), port.Session{
+		TokenHash: "hash-1", UserID: u.ID,
+		CreatedAt: baseTime, ExpiresAt: expiresAt,
+	}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	got, err := repo.FindSession(t.Context(), "hash-1", expiresAt.Add(300*time.Millisecond))
+	if err != nil {
+		t.Fatalf("FindSession: %v", err)
+	}
+	if got != nil {
+		t.Errorf("期限を 300ms 過ぎたセッションが返っている: %+v", got)
+	}
+
+	// 期限の手前では返る。常に nil を返す実装を通さないため。
+	got, err = repo.FindSession(t.Context(), "hash-1", expiresAt.Add(-300*time.Millisecond))
+	if err != nil {
+		t.Fatalf("FindSession: %v", err)
+	}
+	if got == nil {
+		t.Error("期限の 300ms 前のセッションが返らない")
+	}
+}
+
 // 存在しないセッションの削除は誤りにしない。ログアウトを冪等にするため。
 func TestDeleteSession_IsIdempotent(t *testing.T) {
 	t.Parallel()
@@ -406,6 +442,33 @@ func TestConsumeState_RejectsExpiredAndUnknown(t *testing.T) {
 
 	if got, err = repo.ConsumeState(t.Context(), "never-issued", baseTime); err != nil || got != nil {
 		t.Errorf("未知の ConsumeState() = (%v, %v), want (nil, nil)", got, err)
+	}
+}
+
+// state も同じく、期限を 1 秒未満だけ過ぎたものは通さない（#274）。
+func TestConsumeState_RejectsExpiredWithinTheSecond(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+
+	expiresAt := baseTime.Add(time.Minute)
+	for _, s := range []string{"late", "early"} {
+		if err := repo.SaveState(t.Context(), port.OAuthState{
+			State: s, CreatedAt: baseTime, ExpiresAt: expiresAt,
+		}); err != nil {
+			t.Fatalf("SaveState: %v", err)
+		}
+	}
+
+	// 手前を先に見る。過ぎた時刻で呼ぶと、掃除が同じ期限のもう 1 つも消す。
+	got, err := repo.ConsumeState(t.Context(), "early", expiresAt.Add(-300*time.Millisecond))
+	if err != nil || got == nil {
+		t.Errorf("期限の 300ms 前の ConsumeState() = (%v, %v), want 通る", got, err)
+	}
+
+	got, err = repo.ConsumeState(t.Context(), "late", expiresAt.Add(300*time.Millisecond))
+	if err != nil || got != nil {
+		t.Errorf("期限を 300ms 過ぎた ConsumeState() = (%v, %v), want (nil, nil)", got, err)
 	}
 }
 
