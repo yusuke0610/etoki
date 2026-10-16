@@ -40,7 +40,7 @@ export function ShareDialog({ open, onClose, boardId, role, unavailable }: Props
   return (
     <dialog
       ref={dialog}
-      className="share-dialog"
+      className="modal-dialog share-dialog"
       aria-labelledby="share-dialog-heading"
       // Esc はブラウザが閉じ、「閉じる」も閉じるだけなので、閉じたときの処理は
       // ここ 1 か所に集まる。

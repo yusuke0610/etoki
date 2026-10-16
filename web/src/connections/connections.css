@@ -106,25 +106,13 @@
   }
 }
 
-/* 接続の一覧。新しいボードのダイアログと同じ器にする。 */
+/* 接続の一覧。器は `.modal-dialog`（`app/base.css`）。 */
 .connections-dialog {
-  box-sizing: border-box;
   width: min(560px, calc(100vw - 32px));
-  padding: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  color: var(--color-text);
-  box-shadow: 0 8px 24px var(--color-shadow);
-}
-
-.connections-dialog::backdrop {
-  background: var(--color-backdrop);
 }
 
 .connections-dialog h2 {
   margin: 0 0 var(--space-4);
-  font-size: var(--text-xl);
 }
 
 .connections-list {

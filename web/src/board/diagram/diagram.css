@@ -43,7 +43,7 @@
 .mermaid-paste .diagram-chat-form textarea,
 .mermaid-paste .error-detail pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: pre;
   overflow-x: auto;
 }

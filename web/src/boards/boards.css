@@ -169,22 +169,10 @@
 }
 
 /*
- * 新しいボードのダイアログ（#200）。ブラウザの `<dialog>` をモーダルで開く。
- * 地を覆う色は変数で持つ（ダークでは濃くする）。
+ * 新しいボードのダイアログ（#200）。器は `.modal-dialog`（`app/base.css`）。
  */
 .new-board-dialog {
-  box-sizing: border-box;
   width: min(440px, calc(100vw - 32px));
-  padding: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  color: var(--color-text);
-  box-shadow: 0 8px 24px var(--color-shadow);
-}
-
-.new-board-dialog::backdrop {
-  background: var(--color-backdrop);
 }
 
 .new-board-dialog form {
@@ -195,7 +183,6 @@
 
 .new-board-dialog h2 {
   margin: 0;
-  font-size: var(--text-xl);
 }
 
 .new-board-name {

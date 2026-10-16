@@ -59,7 +59,7 @@
   --island-reserve: 208px;
   position: absolute;
   top: 104px;
-  max-height: calc(100% - 104px - 72px);
+  max-height: calc(100% - 104px - var(--canvas-overlay-inset));
   /*
    * 左の設定欄（`--island-reserve`）と、重ねたパネルの覆う幅（`--panel-reserve`、
    * `sidePanel.css`）を両側から除いた残りの真ん中に開く（#199）。並べるときは

@@ -17,8 +17,8 @@
   /* 右端からの距離。ボードの画面では、右のパネルか畳んだ帯の幅を足す。 */
   --notifications-right: var(--space-6);
   position: fixed;
-  /* 右上の島（上端 16px・高さ 40px 前後）の下から始める。 */
-  top: 72px;
+  /* 右上の島の下から始める。重ねたパネルと同じ高さ（`app/tokens.css`）。 */
+  top: var(--canvas-overlay-inset);
   right: var(--notifications-right);
   width: min(420px, calc(100vw - var(--notifications-right) - var(--space-6)));
   display: flex;

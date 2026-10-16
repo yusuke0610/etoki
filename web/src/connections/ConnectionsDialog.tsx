@@ -91,7 +91,7 @@ export function ConnectionsDialog({ open, onClose }: Props) {
   return (
     <dialog
       ref={dialog}
-      className="connections-dialog"
+      className="modal-dialog connections-dialog"
       aria-labelledby="connections-heading"
       onClose={() => {
         // 閉じたら走っている読み込みの応答を捨てる（`.claude/rules/async-ui.md`）。

@@ -57,7 +57,7 @@ export function NewBoardDialog({
   return (
     <dialog
       ref={dialog}
-      className="new-board-dialog"
+      className="modal-dialog new-board-dialog"
       aria-labelledby="new-board-heading"
       // **閉じたらやめたことにする。** Esc はブラウザが閉じ、「キャンセル」も
       // 閉じるだけなので、やめる処理はここ 1 か所に集まる。「次へ」は閉じずに
