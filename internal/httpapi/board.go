@@ -209,6 +209,8 @@ type handlers struct {
 	// Host から組む。
 	publicURL string
 	logger    *slog.Logger
+	// hints は「設定されていない」ときに本文へ添える案内（Deps.SetupHints）。
+	hints SetupHints
 }
 
 // maxSceneBody はシーンを載せたリクエストボディを読む上限。

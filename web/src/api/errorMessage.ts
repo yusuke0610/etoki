@@ -86,8 +86,11 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "GitHub に問い合わせられませんでした。権限とレート制限を確かめてください。",
   internal: "etoki の内部でエラーが起きました。",
   // 設定するものが違うので 1 つに畳まない。畳むと何を設定すればよいか言えない。
-  llm_not_configured: "LLM が未設定です。ETOKI_LLM_API_KEY を設定してください。",
-  github_not_configured: "GitHub が未設定です。ETOKI_GITHUB_TOKEN を設定してください。",
+  // **環境変数の名前は書かない**（ADR 0083）。名前を知っているのは起動の配線
+  // だけで、サーバーの本文として「詳細」に出る。ここに写すと、名前や「どれが
+  // あれば使えるか」を変えた日に画面だけが古い案内を続ける。
+  llm_not_configured: "LLM が未設定です。etoki を起動する側で設定してください。",
+  github_not_configured: "GitHub が未設定です。etoki を起動する側で設定してください。",
   auth_not_configured: "認証が未設定です。GitHub App の設定が必要です。",
   sharing_not_configured: "共有には認証の設定が必要です。GitHub App を設定してください。",
   mcp_connections_not_configured:

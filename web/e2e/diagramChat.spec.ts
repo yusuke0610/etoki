@@ -211,7 +211,7 @@ test.describe("図のドラフト", () => {
     await expect(send).toBeDisabled();
 
     await expect(
-      page.locator(".diagram-chat").getByText("ETOKI_LLM_API_KEY"),
+      page.locator(".diagram-chat").getByText("LLM が未設定です。"),
     ).toBeVisible();
     // 押せないボタンはフォーカスも当たらない。読み上げに理由が届くよう指す。
     await expect(send).toHaveAttribute("aria-describedby", "diagram-unavailable");

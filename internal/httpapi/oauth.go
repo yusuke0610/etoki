@@ -292,16 +292,18 @@ func parseAuthorizeRequest(raw string) (usecase.AuthorizeRequest, error) {
 }
 
 // mcpConnectionsNotConfigured は許可の口を組み立てていないときの案内。
-func mcpConnectionsNotConfigured(c *gin.Context) {
-	errorJSON(c, http.StatusServiceUnavailable, apitypes.ErrorCodeMcpConnectionsNotConfigured,
-		"mcp connections require authentication and an OAuth grant repository "+
-			"(ETOKI_GITHUB_APP_CLIENT_ID / ETOKI_GITHUB_APP_CLIENT_SECRET)")
+//
+// 案内は認証のものを使う。許可の保存先は cmd/etoki が必ず渡すので、利用者が
+// 設定で足せるのは認証の側だけ。
+func (h *handlers) mcpConnectionsNotConfigured(c *gin.Context) {
+	notConfigured(c, apitypes.ErrorCodeMcpConnectionsNotConfigured,
+		"mcp connections require authentication and an OAuth grant repository", h.hints.Auth)
 }
 
 // getOAuthAuthorization は同意の画面に出すものを返す。何も書かない。
 func (h *handlers) getOAuthAuthorization(c *gin.Context) {
 	if h.oauth == nil {
-		mcpConnectionsNotConfigured(c)
+		h.mcpConnectionsNotConfigured(c)
 		return
 	}
 	req, err := parseAuthorizeRequest(c.Query("request"))
@@ -329,7 +331,7 @@ func (h *handlers) getOAuthAuthorization(c *gin.Context) {
 // URL を返すのは、ログインの開始（/api/auth/login）と同じ理由。
 func (h *handlers) decideOAuthAuthorization(c *gin.Context) {
 	if h.oauth == nil {
-		mcpConnectionsNotConfigured(c)
+		h.mcpConnectionsNotConfigured(c)
 		return
 	}
 	var body apitypes.OAuthDecisionRequest
@@ -360,7 +362,7 @@ func (h *handlers) decideOAuthAuthorization(c *gin.Context) {
 // listOAuthGrants は自分の許可を返す。
 func (h *handlers) listOAuthGrants(c *gin.Context) {
 	if h.oauth == nil {
-		mcpConnectionsNotConfigured(c)
+		h.mcpConnectionsNotConfigured(c)
 		return
 	}
 	user, _ := currentUser(c)
@@ -391,7 +393,7 @@ func toOAuthGrant(g port.OAuthGrant) apitypes.OAuthGrant {
 // revokeOAuthGrant は自分の許可を取り消す。
 func (h *handlers) revokeOAuthGrant(c *gin.Context) {
 	if h.oauth == nil {
-		mcpConnectionsNotConfigured(c)
+		h.mcpConnectionsNotConfigured(c)
 		return
 	}
 	user, _ := currentUser(c)

@@ -138,3 +138,29 @@ func TestREADME_EnvNamesMatchUsage(t *testing.T) {
 		t.Errorf("README と usage の環境変数が食い違う\nREADME: %v\nusage:  %v", readme, fromUsage)
 	}
 }
+
+// 設定の案内に載せる名前は、usage が説明している変数であること（ADR 0083）。
+//
+// 案内はアダプタの定数から組むので綴りはずれないが、usage と README に無い
+// 変数を案内すると、言われたとおりに調べても行き当たらない。**案内の側から
+// 名前を引く。** 期待する名前を手で並べると、案内から落としたときに気づけない。
+func TestSetupHints_NameDocumentedVariables(t *testing.T) {
+	t.Parallel()
+
+	hints := setupHints()
+	name := regexp.MustCompile(`ETOKI_[A-Z0-9_]+`)
+	for field, hint := range map[string]string{
+		"LLM": hints.LLM, "GitHub": hints.GitHub,
+		"Auth": hints.Auth, "AllowedOrigins": hints.AllowedOrigins,
+	} {
+		names := name.FindAllString(hint, -1)
+		if len(names) == 0 {
+			t.Errorf("SetupHints.%s = %q, names no variable", field, hint)
+		}
+		for _, n := range names {
+			if !strings.Contains(usage, "  "+n+" ") {
+				t.Errorf("SetupHints.%s names %s, which usage does not document", field, n)
+			}
+		}
+	}
+}

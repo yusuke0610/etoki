@@ -19,7 +19,7 @@ import (
 // 結果を見た開発者が別途トリガーする（中核思想 3）。
 func (h *handlers) interpretAnnotation(c *gin.Context) {
 	if h.interpretations == nil {
-		llmNotConfigured(c)
+		h.llmNotConfigured(c)
 		return
 	}
 

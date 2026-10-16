@@ -78,6 +78,25 @@ type Deps struct {
 	// 公開インターフェースにバインドした利用者が、自分で自分を締め出さない
 	// ための逃げ道。
 	AllowedOrigins []string
+	// SetupHints は「設定されていない」ときに本文へ添える案内。空でもよい。
+	//
+	// 何という環境変数で設定するかを知っているのは配線（cmd/etoki）だけ。
+	// httpapi が名前を書くと、自前の実装を差し込む構成にも存在しない設定を
+	// 案内する（ADR 0083）。空の項目は本文に何も足さない。
+	SetupHints SetupHints
+}
+
+// SetupHints は機能ごとの「何を設定すればよいか」の案内文。
+type SetupHints struct {
+	// LLM は解釈と図のドラフト生成（llm_not_configured）。
+	LLM string
+	// GitHub は作成と作成先の候補（github_not_configured）。
+	GitHub string
+	// Auth はログイン・共有・MCP の許可（auth / sharing /
+	// mcp_connections_not_configured）。どれも認証を設定すれば開く。
+	Auth string
+	// AllowedOrigins は cross-site として弾いたとき（cross_site_rejected）。
+	AllowedOrigins string
 }
 
 // NewRouter は etoki の HTTP ルーティングを構築する。
@@ -91,7 +110,7 @@ func NewRouter(deps Deps) *gin.Engine {
 	// 検証はログの後に置く。弾いたリクエストも記録に残す。何を叩かれたかが
 	// 分からないと、弾けていること自体を確かめられない。
 	r.Use(gin.Recovery(), requestLogger(logger),
-		newOriginGuard(deps.AllowedOrigins).handler(logger))
+		newOriginGuard(deps.AllowedOrigins, deps.SetupHints.AllowedOrigins).handler(logger))
 
 	r.GET("/healthz", handleHealthz)
 
@@ -116,6 +135,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		oauthMetadataDocuments: oauth != nil && deps.OAuthMetadataDocuments,
 		publicURL:              deps.PublicURL,
 		logger:                 logger,
+		hints:                  deps.SetupHints,
 	}
 
 	// セッションの解決はここで一度だけ。弾くのは requireAuth の仕事で、

@@ -46,7 +46,7 @@ func (h *handlers) getBoardAccess(c *gin.Context) {
 
 func (h *handlers) listBoardMembers(c *gin.Context) {
 	if h.members == nil {
-		sharingNotConfigured(c)
+		h.sharingNotConfigured(c)
 		return
 	}
 
@@ -68,7 +68,7 @@ func (h *handlers) listBoardMembers(c *gin.Context) {
 // lookupInvitee は、招待の前に login が誰に当たるのかを返す（ADR 0053）。
 func (h *handlers) lookupInvitee(c *gin.Context) {
 	if h.members == nil {
-		sharingNotConfigured(c)
+		h.sharingNotConfigured(c)
 		return
 	}
 
@@ -88,7 +88,7 @@ func (h *handlers) lookupInvitee(c *gin.Context) {
 
 func (h *handlers) inviteBoardMember(c *gin.Context) {
 	if h.members == nil {
-		sharingNotConfigured(c)
+		h.sharingNotConfigured(c)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *handlers) inviteBoardMember(c *gin.Context) {
 
 func (h *handlers) setBoardMemberRole(c *gin.Context) {
 	if h.members == nil {
-		sharingNotConfigured(c)
+		h.sharingNotConfigured(c)
 		return
 	}
 
@@ -130,7 +130,7 @@ func (h *handlers) setBoardMemberRole(c *gin.Context) {
 
 func (h *handlers) removeBoardMember(c *gin.Context) {
 	if h.members == nil {
-		sharingNotConfigured(c)
+		h.sharingNotConfigured(c)
 		return
 	}
 

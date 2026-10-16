@@ -25,8 +25,11 @@ import (
 const DefaultBaseURL = "https://api.github.com"
 
 // 環境変数名。
+//
+// EnvToken を公開しているのは、配線（cmd/etoki）が「GitHub が設定されていない」
+// ときの案内を同じ名前から組むため（ADR 0083）。
 const (
-	envToken   = "ETOKI_GITHUB_TOKEN" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
+	EnvToken   = "ETOKI_GITHUB_TOKEN" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
 	envBaseURL = "ETOKI_GITHUB_BASE_URL"
 )
 
@@ -82,7 +85,7 @@ type Config struct {
 // 値の検証は行わない。既定への差し戻しと BaseURL の検証は New が行う。
 func ConfigFromEnv() Config {
 	return Config{
-		Token:   os.Getenv(envToken),
+		Token:   os.Getenv(EnvToken),
 		BaseURL: os.Getenv(envBaseURL),
 	}
 }
@@ -109,7 +112,7 @@ func New(cfg Config) (*Client, error) {
 	if tokens == nil {
 		if cfg.Token == "" {
 			return nil, fmt.Errorf("%w: set Config.Token, Config.TokenSource, or %s",
-				ErrTokenRequired, envToken)
+				ErrTokenRequired, EnvToken)
 		}
 		tokens = staticToken(cfg.Token)
 	}

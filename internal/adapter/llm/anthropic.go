@@ -59,9 +59,12 @@ const maxResponseBytes = 10 << 20 // 10 MiB
 const maxRedirects = 10
 
 // 環境変数名。
+//
+// EnvBaseURL と EnvAPIKey を公開しているのは、配線（cmd/etoki）が「LLM が
+// 設定されていない」ときの案内を同じ名前から組むため（ADR 0083）。
 const (
-	envBaseURL = "ETOKI_LLM_BASE_URL"
-	envAPIKey  = "ETOKI_LLM_API_KEY" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
+	EnvBaseURL = "ETOKI_LLM_BASE_URL"
+	EnvAPIKey  = "ETOKI_LLM_API_KEY" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
 	envModel   = "ETOKI_LLM_MODEL"
 )
 
@@ -97,8 +100,8 @@ type Config struct {
 // 値の検証は行わない。未設定の項目は空のまま返し、既定への差し戻しは New が行う。
 func ConfigFromEnv() Config {
 	return Config{
-		BaseURL: os.Getenv(envBaseURL),
-		APIKey:  os.Getenv(envAPIKey),
+		BaseURL: os.Getenv(EnvBaseURL),
+		APIKey:  os.Getenv(EnvAPIKey),
 		Model:   os.Getenv(envModel),
 	}
 }
