@@ -19,11 +19,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/yusuke0610/etoki/internal/baseurl"
 	"github.com/yusuke0610/etoki/internal/loopback"
 	"github.com/yusuke0610/etoki/port"
 )
@@ -121,19 +121,10 @@ type Client struct {
 // 失敗として現れて原因の切り分けが遠回りになる。
 func New(cfg Config) (*Client, error) {
 	base := orDefault(cfg.BaseURL, DefaultBaseURL)
-	u, err := url.Parse(base)
+	// 形（スキーム・ホスト・クエリと fragment）は github と同じ検査を通す。
+	u, err := baseurl.Parse("llm", base)
 	if err != nil {
-		return nil, fmt.Errorf("etoki: invalid llm base url: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		// Redacted は URL に埋め込まれた資格情報を伏せる。
-		return nil, fmt.Errorf("etoki: invalid llm base url %q: scheme must be http or https", u.Redacted())
-	}
-	// url.Parse は "http://" や "https:gateway.example" も通す。スキームだけ見て
-	// 通すと、ホストの無い URL が起動時の検証をすり抜け、呼び出したときに
-	// "no Host in request URL" として初めて失敗する。検証を置いた意味がなくなる。
-	if u.Hostname() == "" {
-		return nil, fmt.Errorf("etoki: invalid llm base url %q: host is missing", u.Redacted())
+		return nil, err
 	}
 	// **鍵を持つときだけ、http はループバックに限る**（#64）。鍵は x-api-key
 	// ヘッダで毎回送るので、http で外へ向けると平文で流れる。綴りの誤り 1 つで
@@ -147,13 +138,6 @@ func New(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf(
 			"etoki: invalid llm base url %q: http is allowed only for loopback when an api key is set",
 			u.Redacted())
-	}
-	// クエリと fragment は弾く。送り先は base に "/v1/messages" を足した文字列
-	// なので、"?x=1" が付いていると足したぶんが path ではなくクエリの一部に
-	// なる。github 側（client.go の New）と同じ理由で、同じ形で見る。
-	if u.RawQuery != "" || u.ForceQuery || strings.Contains(base, "#") {
-		return nil, fmt.Errorf(
-			"etoki: invalid llm base url %q: query and fragment are not allowed", u.Redacted())
 	}
 
 	c := &Client{
