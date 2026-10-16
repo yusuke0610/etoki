@@ -25,17 +25,6 @@ func NewOAuthGrantRepository(db *sql.DB) *OAuthGrantRepository {
 
 var _ port.OAuthGrantRepository = (*OAuthGrantRepository)(nil)
 
-// fixedTimeLayout は小数 9 桁で固定した RFC 3339。
-//
-// **期限の判定を文字列の大小で行うので、桁数を揃える。** formatTime の
-// RFC3339Nano は小数部の末尾の 0 を落とすので、".5Z" が ".45Z" より前に
-// 並ぶ。読むのは parseTime のままでよい（RFC3339Nano の解析は桁数を問わない）。
-const fixedTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
-
-func formatFixedTime(t time.Time) string {
-	return t.UTC().Format(fixedTimeLayout)
-}
-
 // CreateClient は登録したクライアントを保存し、許可を得ないまま古くなった
 // 登録を消す。
 func (r *OAuthGrantRepository) CreateClient(

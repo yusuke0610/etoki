@@ -150,18 +150,11 @@ func (s *InterpretationService) Interpret(
 		return InterpretationResult{}, fmt.Errorf("%w: %s", ErrAnnotationNotFound, annotationID)
 	}
 
-	// 粒度が未知の値ならここで止める。既定に倒して解釈を進めると、開発者が
-	// 指定したつもりの制約が黙って外れる。状態を見せて選ばせる方針に反する。
-	if !annotation.Granularity.Valid() {
-		return InterpretationResult{}, fmt.Errorf("%w: unknown granularity %q on annotation %s",
-			ErrInvalidInput, annotation.Granularity, annotationID)
-	}
-
-	// 種別も同じ扱い。**知らない値を「指定なし」に丸めない。** 丸めると、
-	// テンプレートから始めたつもりの囲みが、何の図とも言われないまま解釈される。
-	if !annotation.Kind.Valid() {
-		return InterpretationResult{}, fmt.Errorf("%w: unknown diagram kind %q on annotation %s",
-			ErrInvalidInput, annotation.Kind, annotationID)
+	// 粒度と種別が未知の値ならここで止める。既定に倒して解釈を進めると、開発者が
+	// 指定したつもりの制約が黙って外れる。保存の入口でも見ているが、検査を入れる
+	// 前に保存されたシーンがありうるので、読む側でも見る。
+	if err := annotation.CheckMeta(); err != nil {
+		return InterpretationResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	// 前回までに作ったものを見せて、「これは前回のどれの更新か」を答えさせる。

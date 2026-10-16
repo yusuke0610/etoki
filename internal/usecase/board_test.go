@@ -515,6 +515,66 @@ func TestRename_TrimsAndRejectsBlank(t *testing.T) {
 	}
 }
 
+// 作成も改名と同じ規則で名前を見る（#276）。片方だけだと、空白だけの名前の
+// ボードが作成の口からだけ作れる。
+func TestCreate_TrimsAndRejectsBlankName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("前後の空白を落として書く", func(t *testing.T) {
+		t.Parallel()
+
+		b, err := newBoardService(&fakeBoards{}).Create(t.Context(), "  余白つき  ", "", newTarget())
+		if err != nil {
+			t.Fatalf("Create() = %v", err)
+		}
+		if b.Name != "余白つき" {
+			t.Errorf("Name = %q, want 余白つき", b.Name)
+		}
+	})
+
+	for _, name := range []string{"", "   ", "\t\n"} {
+		t.Run("空とみなして弾く/"+name, func(t *testing.T) {
+			t.Parallel()
+
+			boards := &fakeBoards{}
+			_, err := newBoardService(boards).Create(t.Context(), name, "", newTarget())
+			if !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("Create(%q) = %v, want ErrInvalidInput", name, err)
+			}
+			if boards.writes != 0 {
+				t.Errorf("弾いたのに作っている: writes = %d", boards.writes)
+			}
+		})
+	}
+}
+
+// 知らない粒度と種別は、保存の入口で弾く（ADR 0047「粒度と同じ」、#276）。
+// 通すと、解釈か作成を押した時点で初めて 400 になり、どこで紛れたのか分からない。
+func TestSaveScene_RejectsUnknownAnnotationMeta(t *testing.T) {
+	t.Parallel()
+
+	for name, meta := range map[string]string{
+		"種別": `"granularity":"","kind":"gantt"`,
+		"粒度": `"granularity":"project"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			boards := &fakeBoards{board: newBoard(interpretScene)}
+			scene := strings.Replace(interpretScene, `"granularity":""`, meta, 1)
+
+			_, err := newBoardService(boards).SaveScene(
+				t.Context(), "board-1", scene, nil, boards.board.UpdatedAt)
+			if !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("SaveScene() = %v, want ErrInvalidInput", err)
+			}
+			if boards.writes != 0 {
+				t.Errorf("弾いたのに書き込んでいる: writes = %d", boards.writes)
+			}
+		})
+	}
+}
+
 func TestTargetLocked(t *testing.T) {
 	t.Parallel()
 

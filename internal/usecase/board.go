@@ -110,8 +110,9 @@ func NewBoardService(
 func (s *BoardService) Create(
 	ctx context.Context, name, scene string, target port.BoardTarget,
 ) (port.Board, error) {
-	if name == "" {
-		return port.Board{}, fmt.Errorf("%w: name is required", ErrInvalidInput)
+	name, err := normalizeBoardName(name)
+	if err != nil {
+		return port.Board{}, err
 	}
 	if !target.Selected() {
 		return port.Board{}, fmt.Errorf(
@@ -300,11 +301,9 @@ func (s *BoardService) countAnnotations(
 // なので、名前を直しただけで進めると、開いている別のメンバーの次の保存が
 // 理由なく 409 になる。
 func (s *BoardService) Rename(ctx context.Context, id, name string) error {
-	// 前後の空白は落とす。落としたうえで空なら弾く。空白だけの名前を通すと、
-	// 一覧に見出しの無い行が並び、開くまでどのボードか分からなくなる。
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return fmt.Errorf("%w: name is required", ErrInvalidInput)
+	name, err := normalizeBoardName(name)
+	if err != nil {
+		return err
 	}
 
 	if _, err := s.access(ctx, id, port.RoleEditor); err != nil {
@@ -636,6 +635,20 @@ func validateProjectURL(raw string) error {
 // emptyScene は Excalidraw が読み込める最小のシーン。
 const emptyScene = `{"type":"excalidraw","version":2,"source":"etoki","elements":[],"appState":{}}`
 
+// normalizeBoardName はボードの名前の前後の空白を落とし、落としたうえで空なら
+// 弾く。空白だけの名前を通すと、一覧に見出しの無い行が並び、開くまでどの
+// ボードか分からなくなる。
+//
+// **作成と改名の両方がこれを通す**（#276）。片方だけだと、空白だけの名前の
+// ボードがもう片方の口からだけ作れる。
+func normalizeBoardName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
+	return name, nil
+}
+
 // validateScene は保存前にシーンが読めることと、大きさが上限に収まることを
 // 確かめ、読んだシーンを返す。
 //
@@ -661,8 +674,8 @@ func validateScene(scene string) (domain.Scene, error) {
 		return domain.Scene{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	for _, a := range parsed.Annotations() {
-		if !a.Kind.Valid() {
-			return domain.Scene{}, fmt.Errorf("%w: unknown diagram kind %q", ErrInvalidInput, a.Kind)
+		if err := a.CheckMeta(); err != nil {
+			return domain.Scene{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}
 	}
 	if parsed.HasFiles() {
