@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 
 import type { BoardListEntry, SessionStatus } from "../api/types";
+import logoMarkUrl from "../app/logoMark.svg";
 import { UserMenu } from "../auth/UserMenu";
 import { ConnectionsDialog } from "../connections/ConnectionsDialog";
 import type { TemplateChoice } from "../excalidraw/template";
@@ -94,7 +95,11 @@ export function BoardListPage({
         見出しの位置が構成ごとに動かないようにする。
       */}
       <header className="list-header">
-        <h1 className="brand">etoki</h1>
+        <h1 className="brand">
+          {/* ロゴは飾り。名前は文字が持つ（ADR 0082）。 */}
+          <img className="brand-logo" src={logoMarkUrl} alt="" width={32} height={32} />
+          etoki
+        </h1>
         {user && (
           <div ref={userMenu} className="list-header-user">
             <UserMenu
