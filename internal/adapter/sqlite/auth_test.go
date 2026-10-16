@@ -149,6 +149,42 @@ func TestFindSession_IgnoresExpired(t *testing.T) {
 	}
 }
 
+// 期限を 1 秒未満だけ過ぎたセッションも返さない（#274）。期限の判定は文字列の
+// 大小で行うので、末尾の 0 を落とす書式だと `…:00Z` が `…:00.3Z` より後に並び、
+// 期限が秒の切れ目まで延びる。
+func TestFindSession_IgnoresExpiredWithinTheSecond(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+	u := seedUser(t, repo)
+
+	// 期限は秒ちょうど。末尾の 0 を落とす書式では小数部が付かない。
+	expiresAt := baseTime.Add(time.Hour)
+	if err := repo.CreateSession(t.Context(), port.Session{
+		TokenHash: "hash-1", UserID: u.ID,
+		CreatedAt: baseTime, ExpiresAt: expiresAt,
+	}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	got, err := repo.FindSession(t.Context(), "hash-1", expiresAt.Add(300*time.Millisecond))
+	if err != nil {
+		t.Fatalf("FindSession: %v", err)
+	}
+	if got != nil {
+		t.Errorf("期限を 300ms 過ぎたセッションが返っている: %+v", got)
+	}
+
+	// 期限の手前では返る。常に nil を返す実装を通さないため。
+	got, err = repo.FindSession(t.Context(), "hash-1", expiresAt.Add(-300*time.Millisecond))
+	if err != nil {
+		t.Fatalf("FindSession: %v", err)
+	}
+	if got == nil {
+		t.Error("期限の 300ms 前のセッションが返らない")
+	}
+}
+
 // 存在しないセッションの削除は誤りにしない。ログアウトを冪等にするため。
 func TestDeleteSession_IsIdempotent(t *testing.T) {
 	t.Parallel()
@@ -406,6 +442,33 @@ func TestConsumeState_RejectsExpiredAndUnknown(t *testing.T) {
 
 	if got, err = repo.ConsumeState(t.Context(), "never-issued", baseTime); err != nil || got != nil {
 		t.Errorf("未知の ConsumeState() = (%v, %v), want (nil, nil)", got, err)
+	}
+}
+
+// state も同じく、期限を 1 秒未満だけ過ぎたものは通さない（#274）。
+func TestConsumeState_RejectsExpiredWithinTheSecond(t *testing.T) {
+	t.Parallel()
+
+	repo := newSessions(t, newDB(t))
+
+	expiresAt := baseTime.Add(time.Minute)
+	for _, s := range []string{"late", "early"} {
+		if err := repo.SaveState(t.Context(), port.OAuthState{
+			State: s, CreatedAt: baseTime, ExpiresAt: expiresAt,
+		}); err != nil {
+			t.Fatalf("SaveState: %v", err)
+		}
+	}
+
+	// 手前を先に見る。過ぎた時刻で呼ぶと、掃除が同じ期限のもう 1 つも消す。
+	got, err := repo.ConsumeState(t.Context(), "early", expiresAt.Add(-300*time.Millisecond))
+	if err != nil || got == nil {
+		t.Errorf("期限の 300ms 前の ConsumeState() = (%v, %v), want 通る", got, err)
+	}
+
+	got, err = repo.ConsumeState(t.Context(), "late", expiresAt.Add(300*time.Millisecond))
+	if err != nil || got != nil {
+		t.Errorf("期限を 300ms 過ぎた ConsumeState() = (%v, %v), want (nil, nil)", got, err)
 	}
 }
 
@@ -982,5 +1045,83 @@ func TestAddMember_RejectsUnknownBoard(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("AddMember: want foreign key error, got nil")
+	}
+}
+
+// 期限を可変幅で書いていた頃の行も、移行のあとは秒の切れ目まで延びない（#274）。
+// 比べる値だけを固定幅にすると、旧い行の `…:00Z` は `…:00.300000000Z` より
+// 後に並び、期限を 1 秒未満過ぎても通る。
+func TestMigrate_PadsLegacyExpiryToFixedWidth(t *testing.T) {
+	t.Parallel()
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	migrateUpTo(t, db, "0017")
+
+	if _, err := db.ExecContext(t.Context(),
+		`INSERT INTO users (id, provider, subject, login, display_name, created_at, updated_at)
+		 VALUES ('u1', 'github', '1', 'alice', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	// 秒ちょうど（小数部が無い）と、末尾の 0 が落ちた小数部の 2 つ。
+	whole := baseTime.Add(time.Hour)
+	frac := baseTime.Add(time.Hour + 500*time.Millisecond)
+	for token, exp := range map[string]time.Time{"whole": whole, "frac": frac} {
+		legacy := exp.UTC().Format(time.RFC3339Nano)
+		if _, err := db.ExecContext(t.Context(),
+			`INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, 'u1', ?, ?)`,
+			token, "2026-01-01T00:00:00Z", legacy,
+		); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+		if _, err := db.ExecContext(t.Context(),
+			`INSERT INTO oauth_states (state, return_to, created_at, expires_at) VALUES (?, '', ?, ?)`,
+			token, "2026-01-01T00:00:00Z", legacy,
+		); err != nil {
+			t.Fatalf("seed state: %v", err)
+		}
+	}
+
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	repo := newSessions(t, db)
+	for token, exp := range map[string]time.Time{"whole": whole, "frac": frac} {
+		if got, err := repo.FindSession(t.Context(), token, exp.Add(-300*time.Millisecond)); err != nil || got == nil {
+			t.Errorf("%s: 期限の 300ms 前の FindSession() = (%v, %v), want 返る", token, got, err)
+		}
+		if got, err := repo.FindSession(t.Context(), token, exp.Add(300*time.Millisecond)); err != nil || got != nil {
+			t.Errorf("%s: 期限を 300ms 過ぎた FindSession() = (%v, %v), want (nil, nil)", token, got, err)
+		}
+		// 読み戻した期限は元の時刻のまま。桁を足しただけで値は変えない。
+		got, err := repo.FindSession(t.Context(), token, exp.Add(-time.Second))
+		if err != nil || got == nil || !got.ExpiresAt.Equal(exp) {
+			t.Errorf("%s: ExpiresAt = %v, want %v", token, got, exp)
+		}
+	}
+
+	// state は掃除で同じ期限より前のものが消えるので、手前の時刻で 1 つずつ見る。
+	if got, err := repo.ConsumeState(t.Context(), "whole", whole.Add(-300*time.Millisecond)); err != nil || got == nil {
+		t.Errorf("whole: 期限の 300ms 前の ConsumeState() = (%v, %v), want 通る", got, err)
+	}
+	// whole の期限を過ぎた時刻でも、frac の期限（whole の 500ms 後）の手前なら通る。
+	if got, err := repo.ConsumeState(t.Context(), "frac", whole.Add(300*time.Millisecond)); err != nil || got == nil {
+		t.Errorf("frac: 期限の 200ms 前の ConsumeState() = (%v, %v), want 通る", got, err)
+	}
+
+	// 消費した state は消えているので、行の形はセッションで見る。
+	var n int
+	if err := db.QueryRowContext(t.Context(),
+		`SELECT COUNT(*) FROM sessions WHERE length(expires_at) <> 30`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("固定幅でない期限が %d 行残っている", n)
 	}
 }
