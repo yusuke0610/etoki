@@ -1,6 +1,7 @@
 import type { AnnotationStatus, DetachedAnnotation, Granularity } from "../../api/types";
 import type { SelectableFrame } from "../../excalidraw/annotation";
 import {
+  OFF_CANVAS_NOTICE,
   STATE_LABEL,
   annotationLabels,
   annotationSummary,
@@ -173,11 +174,7 @@ export function AnnotationPanel({
                     **押さなくても見えている必要があるもの**は、ボタンの外に
                     畳まずに出す。中身の一覧と続きの説明は詳細に出す。
                   */}
-                  {!onCanvas && (
-                    <p className="hint">
-                      このフレームはキャンバスにありません。保存すると一覧からも消えます。
-                    </p>
-                  )}
+                  {!onCanvas && <p className="hint">{OFF_CANVAS_NOTICE}</p>}
                   {/*
                    **畳まない**（ADR 0056）。開発者が手を打つまで消えない。
                    */}

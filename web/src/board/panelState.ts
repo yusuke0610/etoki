@@ -1,6 +1,7 @@
 import type { AnnotationStatus } from "../api/types";
 import { safeLocalStorage } from "../app/storage";
 import type { RailBadge } from "./SidePanel";
+import { STATE_LABEL } from "./annotations/annotationLabel";
 
 const STORAGE_KEY = "etoki.sidePanel.collapsed";
 
@@ -53,7 +54,7 @@ export function railBadgesOf(annotations: readonly AnnotationStatus[]): RailBadg
     }
   }
   return [
-    { label: "未作成", state: "uncreated", count: uncreated },
-    { label: "変更あり", state: "changed", count: changed },
+    { label: STATE_LABEL.uncreated, state: "uncreated", count: uncreated },
+    { label: STATE_LABEL.changed, state: "changed", count: changed },
   ];
 }
