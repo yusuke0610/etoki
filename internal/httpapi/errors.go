@@ -153,33 +153,47 @@ func errorJSON(c *gin.Context, status int, code apitypes.ErrorCode, hint string)
 //
 // 404 ではなく 503 なのは、URL の誤りではなく設定の不足だと伝えるため。ルート
 // 自体は生やしてある（router.go の Deps を参照）。文言はここにまとめてあり、
-// 画面に出るのは code から引いた日本語のほう。
+// 画面に出るのは code から引いた日本語のほう。何を設定すればよいかは配線から
+// 受け取る（Deps.SetupHints）。
 
-func llmNotConfigured(c *gin.Context) {
-	errorJSON(c, http.StatusServiceUnavailable, apitypes.ErrorCodeLlmNotConfigured,
-		"llm is not configured: set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL")
+func (h *handlers) llmNotConfigured(c *gin.Context) {
+	notConfigured(c, apitypes.ErrorCodeLlmNotConfigured, "llm is not configured", h.hints.LLM)
 }
 
 // githubNotConfigured は GitHub 未設定のときの案内。
 //
 // 作成先はボードごとに選ぶので、必要なのはトークンだけ（ADR 0014）。
-func githubNotConfigured(c *gin.Context) {
-	errorJSON(c, http.StatusServiceUnavailable, apitypes.ErrorCodeGithubNotConfigured,
-		"github is not configured: set ETOKI_GITHUB_TOKEN")
+func (h *handlers) githubNotConfigured(c *gin.Context) {
+	notConfigured(c, apitypes.ErrorCodeGithubNotConfigured,
+		"github is not configured", h.hints.GitHub)
 }
 
-func authNotConfigured(c *gin.Context) {
-	errorJSON(c, http.StatusServiceUnavailable, apitypes.ErrorCodeAuthNotConfigured,
-		"authentication is not configured: "+
-			"set ETOKI_GITHUB_APP_CLIENT_ID and ETOKI_GITHUB_APP_CLIENT_SECRET")
+func (h *handlers) authNotConfigured(c *gin.Context) {
+	notConfigured(c, apitypes.ErrorCodeAuthNotConfigured,
+		"authentication is not configured", h.hints.Auth)
 }
 
 // sharingNotConfigured は共有が組み立てられていないときの案内。
 //
 // 招待は「誰であるか」が決まって初めて意味を持つ。認証を設定していない構成は
 // 利用者 1 人なので、共有する相手がいない（ADR 0016 / 0017）。
-func sharingNotConfigured(c *gin.Context) {
-	errorJSON(c, http.StatusServiceUnavailable, apitypes.ErrorCodeSharingNotConfigured,
-		"sharing requires authentication: "+
-			"set ETOKI_GITHUB_APP_CLIENT_ID and ETOKI_GITHUB_APP_CLIENT_SECRET")
+func (h *handlers) sharingNotConfigured(c *gin.Context) {
+	notConfigured(c, apitypes.ErrorCodeSharingNotConfigured,
+		"sharing requires authentication", h.hints.Auth)
+}
+
+// notConfigured は設定不足の本文に、配線から受け取った案内を添える（ADR 0083）。
+//
+// **案内が無ければ何も足さない。** 環境変数の名前を知っているのは配線
+// （cmd/etoki）だけで、自前の実装を差し込む構成には案内する名前が無い。
+func notConfigured(c *gin.Context, code apitypes.ErrorCode, what, hint string) {
+	errorJSON(c, http.StatusServiceUnavailable, code, withHint(what, hint))
+}
+
+// withHint は本文に案内を「: 」で続ける。案内が空なら本文だけを返す。
+func withHint(msg, hint string) string {
+	if hint == "" {
+		return msg
+	}
+	return msg + ": " + hint
 }

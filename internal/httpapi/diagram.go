@@ -19,7 +19,7 @@ import (
 // （中核思想 3）。
 func (h *handlers) generateDiagramDraft(c *gin.Context) {
 	if h.diagrams == nil {
-		llmNotConfigured(c)
+		h.llmNotConfigured(c)
 		return
 	}
 

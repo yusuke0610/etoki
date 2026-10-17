@@ -49,18 +49,21 @@ test.describe("設定していない機能", () => {
     const detail = await openAnnotationDetail(page, "ログイン");
     const interpret = detail.getByRole("button", { name: "絵解く" });
 
-    // 黙って消さない。押せないことと、何を設定すればよいかを両方出す。
+    // 黙って消さない。押せないことと、何が足りないかを両方出す。
     await expect(interpret).toBeVisible();
     await expect(interpret).toBeDisabled();
 
     // 理由は開いた詳細の帯に 1 つ。詳細は 1 つずつしか開かないので、注釈の
     // 数だけ並ばない。
-    const reason = page.getByText("ETOKI_LLM_API_KEY");
+    // **環境変数の名前は出さない**（ADR 0083）。名前を知っているのは起動の
+    // 配線だけで、押した後の 503 の本文として「詳細」に出る。
+    const reason = page.getByText("LLM が未設定です。");
     await expect(reason).toBeVisible();
     await expect(reason).toHaveCount(1);
     // 押せないボタンはフォーカスも当たらない。読み上げに理由が届くよう、
     // ボタンからこの文を指しておく（既存の「保存してから」と同じ形）。
-    await expect(interpret).toHaveAccessibleDescription(/ETOKI_LLM_API_KEY/);
+    await expect(interpret).toHaveAccessibleDescription(/LLM が未設定です。/);
+    await expect(page.getByText("ETOKI_", { exact: false })).toHaveCount(0);
   });
 
   test("GitHub が未設定なら、作成の代わりに理由を出す", async ({ page }) => {
@@ -88,7 +91,7 @@ test.describe("設定していない機能", () => {
     await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
       0,
     );
-    await expect(detail.getByText("ETOKI_GITHUB_TOKEN")).toBeVisible();
+    await expect(detail.getByText("GitHub が未設定です。")).toBeVisible();
     await expect(
       detail.getByText("ブレストと解釈はこのまま続けられます。"),
     ).toBeVisible();
@@ -119,7 +122,7 @@ test.describe("設定していない機能", () => {
     await expect(button).toBeVisible();
     await expect(button).toBeDisabled();
     // 押した後に 503 で返る理由と同じ文言（`capability.ts`）。
-    await expect(button).toHaveAccessibleDescription(/ETOKI_GITHUB_TOKEN/);
+    await expect(button).toHaveAccessibleDescription(/GitHub が未設定です。/);
     // 開けるボードは開ける。止めるのは作ることだけ。
     await expect(
       page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
@@ -161,7 +164,7 @@ test.describe("設定していない機能", () => {
     ).toHaveCount(0);
     // 確定していることは変わらず読める。理由は押した後に返る 503 と同じ文言。
     await expect(menu.getByText("作成先は確定（draft issue を作成済み）")).toBeVisible();
-    await expect(menu.getByText("ETOKI_GITHUB_TOKEN").first()).toBeVisible();
+    await expect(menu.getByText("GitHub が未設定です。").first()).toBeVisible();
   });
 
   // 口は黙って消さず、開いた先で理由を出す（ADR 0030）。図のドラフトで LLM が

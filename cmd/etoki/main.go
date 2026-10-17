@@ -40,6 +40,9 @@ const envPublicURL = "ETOKI_PUBLIC_URL"
 // envWebDir はビルド済みフロントエンドの置き場所。未設定なら画面を配らない。
 const envWebDir = "ETOKI_WEB_DIR"
 
+// envAllowedOrigins はループバック以外に追加で許すオリジン（カンマ区切り）。
+const envAllowedOrigins = "ETOKI_ALLOWED_ORIGINS"
+
 // defaultDBPath は ETOKI_DB_PATH が未設定のときに使う SQLite ファイル。
 const defaultDBPath = "etoki.db"
 
@@ -229,7 +232,8 @@ func serve(ctx context.Context) error {
 		ParentFieldName:              os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
 		Logger:                       logger,
 		LLMLimits:                    limits,
-		AllowedOrigins:               splitList(os.Getenv("ETOKI_ALLOWED_ORIGINS")),
+		AllowedOrigins:               splitList(os.Getenv(envAllowedOrigins)),
+		SetupHints:                   setupHints(),
 	})
 	if err != nil {
 		return err
@@ -815,6 +819,21 @@ func positiveInt(name string) (int, error) {
 		return 0, fmt.Errorf("%s must be at least 1, got %q", name, raw)
 	}
 	return n, nil
+}
+
+// setupHints は「設定されていない」ときに添える案内を、各アダプタが読む
+// 環境変数の名前から組む（ADR 0083）。
+//
+// **名前を知っているのはここだけにする。** サーバーの本文にも画面の文言にも
+// 書き写さない。写すと名前を変えた日に、存在しない変数を案内し続ける。
+func setupHints() etoki.SetupHints {
+	return etoki.SetupHints{
+		// どちらかがあれば組み立てる（newLLMClient）。
+		LLM:            fmt.Sprintf("set %s or %s", llm.EnvAPIKey, llm.EnvBaseURL),
+		GitHub:         "set " + github.EnvToken,
+		Auth:           fmt.Sprintf("set %s and %s", githubauth.EnvClientID, githubauth.EnvClientSecret),
+		AllowedOrigins: fmt.Sprintf("set %s if etoki is bound beyond loopback", envAllowedOrigins),
+	}
 }
 
 // splitList はカンマ区切りの環境変数を要素に分ける。空要素は捨てる。

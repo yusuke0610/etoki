@@ -50,7 +50,7 @@ func (h *handlers) getSession(c *gin.Context) {
 // 叩けてしまう。POST なら Origin 検証が効く（ADR 0013 / 0015）。
 func (h *handlers) startLogin(c *gin.Context) {
 	if h.auth == nil {
-		authNotConfigured(c)
+		h.authNotConfigured(c)
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *handlers) startLogin(c *gin.Context) {
 // 使用・期限つきなので攻撃者は有効な値を用意できない（ADR 0015）。
 func (h *handlers) completeLogin(c *gin.Context) {
 	if h.auth == nil {
-		authNotConfigured(c)
+		h.authNotConfigured(c)
 		return
 	}
 

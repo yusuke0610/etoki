@@ -32,7 +32,7 @@ const maxCreateBody = domain.MaxItems*(domain.MaxTitleRunes+domain.MaxBodyRunes)
 // （中核思想 3）。
 func (h *handlers) createItems(c *gin.Context) {
 	if h.creations == nil {
-		githubNotConfigured(c)
+		h.githubNotConfigured(c)
 		return
 	}
 

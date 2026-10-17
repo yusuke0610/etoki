@@ -31,12 +31,15 @@ type originGuard struct {
 	origins map[string]struct{}
 	// hosts は追加で許す Host ヘッダ。origins から導く。
 	hosts map[string]struct{}
+	// hint は許すオリジンの足し方の案内。配線から受け取る（ADR 0083）。
+	hint string
 }
 
-func newOriginGuard(allowed []string) originGuard {
+func newOriginGuard(allowed []string, hint string) originGuard {
 	g := originGuard{
 		origins: make(map[string]struct{}, len(allowed)),
 		hosts:   make(map[string]struct{}, len(allowed)),
+		hint:    hint,
 	}
 
 	for _, raw := range allowed {
@@ -159,9 +162,8 @@ func (g originGuard) reject(c *gin.Context, logger *slog.Logger, msg string, att
 	)
 
 	// 何を許すかは応答に載せない。攻撃者が許可リストを総当たりで
-	// 探れるようにする理由がない。
+	// 探れるようにする理由がない。載せるのは足し方の案内だけ。
 	c.Abort()
 	errorJSON(c, http.StatusForbidden, apitypes.ErrorCodeCrossSiteRejected,
-		"forbidden: request did not come from a local origin. "+
-			"set ETOKI_ALLOWED_ORIGINS if etoki is bound beyond loopback")
+		withHint("forbidden: request did not come from a local origin", g.hint))
 }

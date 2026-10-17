@@ -582,6 +582,12 @@ test.describe("解釈と作成", () => {
     await expect(
       detail.getByText("llm is not configured", { exact: false }),
     ).toBeHidden();
+    // 何という変数を設定するかは、配線が組んだ本文として「詳細」で読める
+    // （ADR 0083）。画面の文言は名前を持たない。
+    await detail.getByText("詳細", { exact: true }).click();
+    await expect(
+      detail.getByText("set ETOKI_LLM_API_KEY or ETOKI_LLM_BASE_URL", { exact: false }),
+    ).toBeVisible();
     // 画面全体の通知に流すと、どの注釈で起きたか分からなくなる（ADR 0058）。
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });

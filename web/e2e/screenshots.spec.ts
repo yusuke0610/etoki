@@ -380,7 +380,7 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
     // 解釈できない理由は詳細の帯に出る（#201）。
     const detail = await openAnnotationDetail(page, "ログイン");
-    await detail.getByText("ETOKI_LLM_API_KEY").waitFor();
+    await detail.getByText("LLM が未設定です。").waitFor();
     await shot(page, "21-not-configured");
   });
 

@@ -190,7 +190,20 @@ type Options struct {
 	// 許すので、既定の構成では空でよい。Addr で公開インターフェースに
 	// バインドしたときだけ、そのオリジンを足す必要がある（ADR 0013）。
 	AllowedOrigins []string
+
+	// SetupHints は「設定されていない」ときに添える、何を設定すればよいかの
+	// 案内。任意。
+	//
+	// 環境変数の名前を知っているのは配線（cmd/etoki）だけ（ADR 0083）。空なら
+	// 応答にも起動時の警告にも名前を載せない。自前の実装を差し込む構成には、
+	// 案内すべき ETOKI_* が無い。
+	SetupHints SetupHints
 }
+
+// SetupHints は機能ごとの「何を設定すればよいか」の案内文。
+//
+// 別名で公開しているのは Authenticator と同じ理由（ADR 0001）。
+type SetupHints = httpapi.SetupHints
 
 // Authenticator はログインとセッションを担う。
 //
@@ -282,6 +295,7 @@ func New(opts Options) (*Server, error) {
 		PublicURL:      opts.PublicURL,
 		Logger:         opts.Logger,
 		AllowedOrigins: opts.AllowedOrigins,
+		SetupHints:     opts.SetupHints,
 	}
 	deps.Auth = opts.Auth
 	// MCP のクライアントのための認可サーバー。**認証ありの構成でだけ組み立てる。**
@@ -325,7 +339,7 @@ func New(opts Options) (*Server, error) {
 
 	handler := httpapi.NewRouter(deps)
 
-	warnIfExposedWithoutAuth(addr, opts.Auth != nil, opts.Logger)
+	warnIfExposedWithoutAuth(addr, opts.Auth != nil, opts.SetupHints.Auth, opts.Logger)
 
 	return &Server{
 		addr:                addr,
@@ -354,7 +368,10 @@ func New(opts Options) (*Server, error) {
 // **New に置くのは Run より前に見えるため。** Run は起動に成功した後でしか
 // 呼ばれず、バインドに失敗した構成では出ない。危ういのは設定の組み合わせの
 // ほうなので、組み立てた時点で言う。
-func warnIfExposedWithoutAuth(addr string, authConfigured bool, logger *slog.Logger) {
+//
+// 認証の設定の仕方は authHint（Options.SetupHints.Auth）で受け取る。空なら名前を
+// 出さずに言う（ADR 0083）。
+func warnIfExposedWithoutAuth(addr string, authConfigured bool, authHint string, logger *slog.Logger) {
 	if authConfigured || httpapi.IsLoopbackHost(addr) {
 		return
 	}
@@ -362,14 +379,16 @@ func warnIfExposedWithoutAuth(addr string, authConfigured bool, logger *slog.Log
 		logger = slog.Default()
 	}
 
+	configure := "configure authentication"
+	if authHint != "" {
+		configure += " (" + authHint + ")"
+	}
 	logger.Warn("listening beyond loopback without authentication",
 		slog.String("addr", addr),
 		slog.String("detail",
 			"anyone who can reach this address can read and write every board, "+
 				"and can use the configured GitHub token and LLM key"),
-		slog.String("hint",
-			"configure ETOKI_GITHUB_APP_CLIENT_ID / ETOKI_GITHUB_APP_CLIENT_SECRET "+
-				"to require sign-in, or bind to "+DefaultAddr),
+		slog.String("hint", configure+" to require sign-in, or bind to "+DefaultAddr),
 	)
 }
 

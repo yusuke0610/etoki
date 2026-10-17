@@ -12,7 +12,7 @@ import (
 // listRepositories は作成先に選べるリポジトリを返す。
 func (h *handlers) listRepositories(c *gin.Context) {
 	if h.catalog == nil {
-		githubNotConfigured(c)
+		h.githubNotConfigured(c)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (h *handlers) listRepositories(c *gin.Context) {
 // listRepositoryProjects はリポジトリに紐づく Projects v2 を返す。
 func (h *handlers) listRepositoryProjects(c *gin.Context) {
 	if h.catalog == nil {
-		githubNotConfigured(c)
+		h.githubNotConfigured(c)
 		return
 	}
 
