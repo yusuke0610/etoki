@@ -80,7 +80,11 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     steps:
+      # この job は git の認証を使わない。依存コードを動かす（make setup と
+      # E2E）ので、checkout が .git に残すトークンを読ませない。
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@v31
         with:
