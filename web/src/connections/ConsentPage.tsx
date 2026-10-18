@@ -4,7 +4,7 @@ import { oauthApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
 import type { OAuthAuthorization } from "../api/types";
 import { ErrorNotice } from "../app/ErrorNotice";
-import logoMarkUrl from "../app/logoMark.svg";
+import { Wordmark } from "../app/Wordmark";
 import { clientDisplayName, clientOrigin } from "./clientLabel";
 
 type Props = {
@@ -88,11 +88,10 @@ export function ConsentPage({ request, onLeave }: Props) {
         {/*
           何の画面かを一目で分からせる。この画面はクライアントのブラウザ操作から
           いきなり開くので、etoki の画面だと読めないと、許可してよいかを考える
-          前に戸惑う。絵は飾りなので読み上げから外し、名前は文字が持つ（ADR 0082）。
+          前に戸惑う。ロゴが名前の「etoki」を持つ（ADR 0084）。
         */}
         <p className="consent-brand">
-          <img className="consent-logo" src={logoMarkUrl} alt="" width={32} height={32} />
-          <span className="consent-wordmark">etoki</span>
+          <Wordmark height={30} />
         </p>
 
         <h1 className="consent-heading">MCP のクライアントからの接続</h1>

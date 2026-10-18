@@ -49,6 +49,13 @@
   --brand-bg-subtle: #e6f6ee;
   --on-brand: #fff;
   /*
+   * ロゴの i の点にした付箋（ADR 0084）。**ダークでも差し替えない。** 字の色では
+   * なく印の一部で、テーマで色を変えると別の印に見える。ファビコン
+   * （`favicon.svg`）も同じ値を持つ。ページの外で描かれ、ここを読めないため。
+   * **`--logo-*` は使えない。** Excalidraw が自前のロゴに使っている。
+   */
+  --brand-note: #2e9e6a;
+  /*
    * **ライブラリと名前がぶつかる 3 つは、値を `--etoki-*` に持つ。** Excalidraw も
    * `.excalidraw` に `--color-success` / `--color-warning` / `--color-danger` を
    * 自前で持っていて（薄い黄色や薄い緑）、キャンバスの中に置いた etoki の部品は
