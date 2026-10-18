@@ -44,7 +44,13 @@ function props(): ComponentProps<typeof AnnotationDetail> {
 }
 
 describe("AnnotationDetail", () => {
-  // 名前欄も、粒度と種別と同じくキャンバスの値を出す（#249）。保存済みの値は次の
+  // 名前は見出しの隣のラベルを押して、その場で変える（#305）。欄は常には出さない。
+  const startRename = (name = "ログイン") => {
+    fireEvent.click(screen.getByRole("button", { name }));
+    return screen.getByLabelText("名前");
+  };
+
+  // 名前も、粒度と種別と同じくキャンバスの値を出す（#249）。保存済みの値は次の
   // 保存まで古い。
   it("名前は、保存済みの値ではなくキャンバスの値を出す", () => {
     const detailProps = props();
@@ -55,7 +61,16 @@ describe("AnnotationDetail", () => {
       />,
     );
 
-    expect(screen.getByLabelText("名前")).toHaveValue("ログインの入口");
+    expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
+    expect(startRename("ログインの入口")).toHaveValue("ログインの入口");
+  });
+
+  // 名前は常設の欄ではなく、見出しの隣のラベルを押して変える。
+  it("名前の欄は常には出さず、ラベルを押すと出て焦点が入る", () => {
+    render(<AnnotationDetail {...props()} />);
+
+    expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
+    expect(startRename()).toHaveFocus();
   });
 
   // 注釈を外した frame（保存前）は、キャンバスには在るが注釈ではない。名前を書く
@@ -67,14 +82,13 @@ describe("AnnotationDetail", () => {
       <AnnotationDetail {...detailProps} frames={{ ...detailProps.frames, names: {} }} />,
     );
 
-    const input = screen.getByLabelText("名前");
-    expect(input).toBeDisabled();
-    expect(input).toHaveAccessibleDescription(/注釈から外してあります/);
+    expect(screen.queryByRole("button", { name: "ログイン" })).not.toBeInTheDocument();
+    expect(screen.getByText(/注釈から外してあります/)).toBeInTheDocument();
   });
 
   // キャンバスからまだ聞いていない（null）うちは、外したことにしない（`canvasIds`
   // と同じ扱い）。開いた直後の一瞬だけ押せなくなる。
-  it("キャンバスの名前がまだ分からないうちは、名前欄を止めない", () => {
+  it("キャンバスの名前がまだ分からないうちは、名前を変える口を止めない", () => {
     const detailProps = props();
     render(
       <AnnotationDetail
@@ -83,7 +97,15 @@ describe("AnnotationDetail", () => {
       />,
     );
 
-    expect(screen.getByLabelText("名前")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "ログイン" })).toBeEnabled();
+  });
+
+  // 読むだけのロールは名前を変えられない。理由は本文に出ている（ADR 0030 / 0039）。
+  it("読むだけのロールでは、名前を押せるものにしない", () => {
+    render(<AnnotationDetail {...props()} canEdit={false} />);
+
+    expect(screen.queryByRole("button", { name: "ログイン" })).not.toBeInTheDocument();
+    expect(screen.getByText("ログイン", { selector: "span" })).toBeInTheDocument();
   });
 
   // 1 文字ごとに書くと、打つたびに未保存になり、「元に戻す」に 1 文字ずつ積まれる。
@@ -92,7 +114,7 @@ describe("AnnotationDetail", () => {
     const detailProps = props();
     render(<AnnotationDetail {...detailProps} />);
 
-    const input = screen.getByLabelText("名前");
+    const input = startRename();
     fireEvent.change(input, { target: { value: "ログインの入口" } });
     expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
 
@@ -101,10 +123,13 @@ describe("AnnotationDetail", () => {
       "frame-1",
       "ログインの入口",
     );
+    expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
 
-    fireEvent.change(input, { target: { value: "入口" } });
-    fireEvent.blur(input);
+    const again = startRename();
+    fireEvent.change(again, { target: { value: "入口" } });
+    fireEvent.blur(again);
     expect(detailProps.frames.onChangeName).toHaveBeenLastCalledWith("frame-1", "入口");
+    expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
   });
 
   // 「絵解く」は押しても焦点を奪わない（`DetailBand`）。欄を離れたときの確定が
@@ -117,7 +142,7 @@ describe("AnnotationDetail", () => {
     detailProps.interpretation.onInterpret = vi.fn(() => calls.push("interpret"));
     render(<AnnotationDetail {...detailProps} />);
 
-    fireEvent.change(screen.getByLabelText("名前"), {
+    fireEvent.change(startRename(), {
       target: { value: "ログインの入口" },
     });
     fireEvent.click(screen.getByRole("button", { name: "絵解く" }));
@@ -134,10 +159,11 @@ describe("AnnotationDetail", () => {
     const detailProps = props();
     render(<AnnotationDetail {...detailProps} />);
 
-    const input = screen.getByLabelText("名前");
+    const input = startRename();
     fireEvent.change(input, { target: { value: "ろぐいん" } });
     fireEvent.keyDown(input, { key: "Enter", isComposing: true });
     expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("名前")).toBeInTheDocument();
   });
 
   // 変えていないのに書くと、開いて閉じただけで未保存になる。
@@ -145,27 +171,44 @@ describe("AnnotationDetail", () => {
     const detailProps = props();
     render(<AnnotationDetail {...detailProps} />);
 
-    const input = screen.getByLabelText("名前");
-    fireEvent.focus(input);
-    fireEvent.blur(input);
+    fireEvent.blur(startRename());
     expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
   });
 
-  // Escape は、書きかけがあればそれを捨てるだけにする。詳細まで閉じると、
-  // 書きかけを捨てたつもりで面ごと閉じる。書きかけが無ければ面を閉じる。
+  // Escape は、書きかけを捨てるだけにする。詳細まで閉じると、書きかけを捨てた
+  // つもりで面ごと閉じる。欄が閉じたあとの Escape は面を閉じる。焦点はラベルへ戻す。
   it("名前の書きかけは Escape で捨て、詳細は閉じない", () => {
     const detailProps = props();
     render(<AnnotationDetail {...detailProps} />);
 
-    const input = screen.getByLabelText("名前");
+    const input = startRename();
     fireEvent.change(input, { target: { value: "書きかけ" } });
     fireEvent.keyDown(input, { key: "Escape" });
 
-    expect(input).toHaveValue("ログイン");
+    expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
+    const label = screen.getByRole("button", { name: "ログイン" });
+    expect(label).toHaveFocus();
     expect(detailProps.onClose).not.toHaveBeenCalled();
-    fireEvent.keyDown(input, { key: "Escape" });
+    fireEvent.keyDown(label, { key: "Escape" });
     expect(detailProps.onClose).toHaveBeenCalled();
     expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+  });
+
+  // Enter で確定したあとは、焦点をラベルへ戻す。欄を離れて確定したときは、離れた
+  // 先の焦点を奪わない。
+  it("焦点は Enter のあとだけラベルへ戻し、欄を離れたときは奪わない", () => {
+    render(<AnnotationDetail {...props()} />);
+
+    fireEvent.change(startRename(), { target: { value: "入口" } });
+    fireEvent.keyDown(screen.getByLabelText("名前"), { key: "Enter" });
+    expect(screen.getByRole("button", { name: "ログイン" })).toHaveFocus();
+
+    const input = startRename();
+    fireEvent.change(input, { target: { value: "出口" } });
+    screen.getByRole("button", { name: "絵解く" }).focus();
+    fireEvent.blur(input);
+    expect(screen.getByRole("button", { name: "絵解く" })).toHaveFocus();
   });
 
   // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈の名前を
@@ -174,7 +217,9 @@ describe("AnnotationDetail", () => {
   it("作成済みの注釈にだけ、名前を変えると変更ありになることを添える", () => {
     const detailProps = props();
     const { unmount } = render(<AnnotationDetail {...detailProps} />);
-    expect(screen.getByLabelText("名前")).not.toHaveAccessibleDescription();
+    expect(
+      screen.getByRole("button", { name: "ログイン" }),
+    ).not.toHaveAccessibleDescription();
     unmount();
 
     render(
@@ -185,9 +230,10 @@ describe("AnnotationDetail", () => {
         ]}
       />,
     );
-    expect(screen.getByLabelText("名前")).toHaveAccessibleDescription(
+    expect(screen.getByRole("button", { name: "ログイン" })).toHaveAccessibleDescription(
       /変えると「変更あり」になります/,
     );
+    expect(startRename()).toHaveAccessibleDescription(/変えると「変更あり」になります/);
   });
 
   // 選択欄が書く先はキャンバスの要素で、保存済みの値（annotations）は次の保存

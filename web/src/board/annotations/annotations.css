@@ -322,10 +322,33 @@
   font-size: var(--text-sm);
 }
 
-/* 名前の欄（#249）。粒度と種別の選択欄と同じ行に並べ、長い名前も見える幅を取る。 */
-.annotation-name input {
-  width: 14em;
-  max-width: 100%;
+/*
+ * 名前のラベルを押して変える（#305）。見た目はラベルのまま、押せることは鉛筆の印と
+ * 下線で示す（色だけで示さない）。欄になっても同じ大きさにして、見出しの行が
+ * 動かないようにする。
+ */
+.annotation-detail-rename {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.25em;
+}
+
+.annotation-detail-rename-mark {
+  margin-left: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.annotation-detail-rename-input {
+  box-sizing: border-box;
+  min-width: 0;
+  font: inherit;
 }
 
 .kind {
