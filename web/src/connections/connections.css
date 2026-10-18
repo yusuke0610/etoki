@@ -26,25 +26,9 @@
   gap: var(--space-6);
 }
 
-/* 何の画面かを示す帯。ロゴの印と、名前の文字を並べる。 */
+/* 何の画面かを示す帯。ロゴ（ADR 0084）だけを置く。 */
 .consent-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
   margin: 0;
-}
-
-/* ロゴの印（ADR 0082）。角丸の地は絵の側が持つ。 */
-.consent-logo {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-}
-
-.consent-wordmark {
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  color: var(--color-text);
 }
 
 .consent-heading {
