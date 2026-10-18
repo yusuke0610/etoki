@@ -19,10 +19,14 @@ import {
  * **値ではなく、同じ変数を外で読んだ色と比べる**（a11y.spec の「キャンバスの
  * 中の etoki の部品」と同じ）。値を書き写すと、配色を変えた日にここだけが古くなる。
  *
- * **字が描けたかは、字の外接の幅で見る。** `d` が壊れても `<svg>` の箱は
- * 残るので、見えているかだけでは通る。
+ * **字が描けたかは、字の外接矩形で見る。** `d` が壊れても `<svg>` の箱は
+ * 残るので、見えているかだけでは通る。幅で字が欠けていないことを、画面の上で
+ * `<svg>` の箱に収まっていることで、字がずれて表示範囲の外へ出ていないことを
+ * 見る。外接矩形は、範囲の外にあって描かれない図形にも返る。
  */
 const LETTERS_WIDTH = 212.4;
+/** 画面の上の矩形を比べるときの許し（px）。`<svg>` の幅は整数に丸めてある。 */
+const SLACK = 1;
 
 async function expectWordmark(page: Page, container: Locator, colorScheme: string) {
   await expect(page.locator("html")).toHaveAttribute("data-theme", colorScheme);
@@ -33,6 +37,14 @@ async function expectWordmark(page: Page, container: Locator, colorScheme: strin
   expect(
     await letters.evaluate((el: SVGGraphicsElement) => el.getBBox().width),
   ).toBeCloseTo(LETTERS_WIDTH, 0);
+  const drawn = await letters.boundingBox();
+  if (!drawn) throw new Error("字が表示されていない");
+  const frame = await wordmark.boundingBox();
+  if (!frame) throw new Error("ロゴが表示されていない");
+  expect(drawn.x).toBeGreaterThanOrEqual(frame.x - SLACK);
+  expect(drawn.y).toBeGreaterThanOrEqual(frame.y - SLACK);
+  expect(drawn.x + drawn.width).toBeLessThanOrEqual(frame.x + frame.width + SLACK);
+  expect(drawn.y + drawn.height).toBeLessThanOrEqual(frame.y + frame.height + SLACK);
   expect(await fillOf(letters)).toBe(await colorOfVariable(page, "--color-text"));
   expect(await fillOf(wordmark.locator("rect"))).toBe(
     await colorOfVariable(page, "--brand-note"),
