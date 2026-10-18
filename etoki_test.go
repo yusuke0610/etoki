@@ -654,6 +654,77 @@ func TestNewWarnsWhenExposedWithoutAuth(t *testing.T) {
 	}
 }
 
+// 起動時の警告にも、設定の案内は配線から受け取ったものだけを載せる（ADR 0083）。
+// 自前の実装を差し込む構成は ETOKI_* を読まないので、渡されていなければ名前を
+// 出さない。
+func TestNewWarnsWithSetupHint(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		hint string
+		// want は警告に載っているべき文字列。空なら確かめない。
+		want string
+	}{
+		"案内を渡した":    {hint: "hint-for-auth", want: "hint-for-auth"},
+		"案内を渡していない": {hint: ""},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			opts := options(t, "0.0.0.0:8080")
+			opts.Logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+				Level: slog.LevelWarn,
+			}))
+			opts.SetupHints = etoki.SetupHints{Auth: tc.hint}
+
+			if _, err := etoki.New(opts); err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			log := buf.String()
+			if !strings.Contains(log, "listening beyond loopback without authentication") {
+				t.Fatalf("not warned (log: %q)", log)
+			}
+			if tc.want != "" && !strings.Contains(log, tc.want) {
+				t.Errorf("log = %q, want it to contain %q", log, tc.want)
+			}
+			if strings.Contains(log, "ETOKI_") {
+				t.Errorf("log = %q, names an environment variable", log)
+			}
+		})
+	}
+}
+
+// 案内は Options からルーターまで届く。httpapi 側のテストは Deps から先しか
+// 見ないので、詰め替えで落とすとここでしか気づけない。
+func TestNewPassesSetupHintsToRouter(t *testing.T) {
+	t.Parallel()
+
+	opts := options(t, "")
+	opts.SetupHints = etoki.SetupHints{LLM: "hint-for-llm"}
+	srv, err := etoki.New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/boards/b/diagram-draft", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "127.0.0.1:8080"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusServiceUnavailable, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "hint-for-llm") {
+		t.Errorf("body = %s, want the LLM hint", rec.Body)
+	}
+}
+
 // fakeAuthenticator は「認証を設定した」状態を作るためだけの Authenticator。
 //
 // 中身は呼ばない。New が見るのは nil かどうかだけ。

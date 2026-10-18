@@ -85,3 +85,5 @@
 | [0079](0079-name-annotations-on-the-frame.md)                    | 囲みの名前は絵解きの面で付け、frame の name にそのまま書く               | 採用                 |
 | [0080](0080-canvas-scroll-by-keys-and-edges.md)                  | キャンバスの移動を etoki が足す（矢印キーと、ドラッグ中の端）            | 採用                 |
 | [0081](0081-onboarding-tutorial-as-recorded-video.md)            | 使い方は、実画面を録った動画を小さなダイアログで見せる                   | 採用                 |
+| [0082](0082-logo-as-outlined-svg.md)                             | ロゴは字を輪郭にした SVG で持ち、色は絵の側に固定する                    | 採用                 |
+| [0083](0083-setup-hints-from-the-wiring.md)                      | 設定の案内に載せる環境変数の名前は、配線だけが持つ                       | 採用                 |

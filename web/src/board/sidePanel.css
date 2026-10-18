@@ -132,17 +132,16 @@
  * 重ねる（#199、`layout.ts`）。並べるとキャンバスがモバイル用 UI になる幅では、
  * キャンバスを押し縮めずに右へ浮かせる。畳んだ帯も同じ位置に重ねる。
  *
- * **上下 72px を空ける。** 上は右上の島（保存と「未保存」）を隠さないため
- * （ADR 0021）、下は下の帯（ロール・作成先・大きさ）と Excalidraw の右下の
- * ヘルプの行を隠さないため。
+ * **上下に `--canvas-overlay-inset` を空ける**（理由は `app/tokens.css`、
+ * ADR 0021）。
  *
  * **Excalidraw の UI より下（z-index 3）に置く。** 注釈の詳細と同じ。上に置くと、
  * ライブラリのサイドバーを開いたときにこちらの下に潜る。
  */
 .board[data-layout="overlay"] :is(.side-panel, .side-panel-rail) {
   position: absolute;
-  top: 72px;
-  bottom: 72px;
+  top: var(--canvas-overlay-inset);
+  bottom: var(--canvas-overlay-inset);
   right: var(--space-6);
   z-index: 3;
   border: 1px solid var(--color-border);

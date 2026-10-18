@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 
 import type { BoardListEntry, SessionStatus } from "../api/types";
+import logoMarkUrl from "../app/logoMark.svg";
 import type { Theme } from "../app/theme";
 import { UserMenu } from "../auth/UserMenu";
 import { ConnectionsDialog } from "../connections/ConnectionsDialog";
@@ -107,7 +108,11 @@ export function BoardListPage({
         見出しの位置が構成ごとに動かないようにする。
       */}
       <header className="list-header">
-        <h1 className="brand">etoki</h1>
+        <h1 className="brand">
+          {/* ロゴは飾り。名前は文字が持つ（ADR 0082）。 */}
+          <img className="brand-logo" src={logoMarkUrl} alt="" width={32} height={32} />
+          etoki
+        </h1>
         <div className="list-header-actions">
           {/*
             **見返す口は帯に置く。** 認証なしの構成では利用者のメニューが無く、

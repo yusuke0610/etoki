@@ -12,6 +12,14 @@ export const STATE_LABEL: Record<SyncState, string> = {
 };
 
 /**
+ * 注釈の frame がキャンバスに無いことの知らせ（#279）。カード（`AnnotationPanel`）と
+ * 詳細（`AnnotationDetail`）の両方が出す。**1 か所に置く。** 同じ状態が、画面の
+ * 場所によって違う文で出ないようにする。
+ */
+export const OFF_CANVAS_NOTICE =
+  "このフレームはキャンバスにありません。保存すると一覧からも消えます。";
+
+/**
  * 粒度の見出し。
  *
  * パネルとキャンバスに重ねる枠で同じ語を出すためにここに置く。片方だけ

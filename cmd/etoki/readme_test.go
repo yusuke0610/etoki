@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yusuke0610/etoki"
+	githubauth "github.com/yusuke0610/etoki/internal/adapter/auth/github"
 	"github.com/yusuke0610/etoki/internal/adapter/github"
 	"github.com/yusuke0610/etoki/internal/adapter/llm"
 )
@@ -136,5 +137,41 @@ func TestREADME_EnvNamesMatchUsage(t *testing.T) {
 	slices.Sort(fromUsage)
 	if !slices.Equal(readme, fromUsage) {
 		t.Errorf("README と usage の環境変数が食い違う\nREADME: %v\nusage:  %v", readme, fromUsage)
+	}
+}
+
+// 設定の案内は、その機能を開く変数をすべて名指しし、どれも usage が説明して
+// いること（ADR 0083）。
+//
+// **期待する組はアダプタの定数で書く。** 名前の文字列を写すと、ここが 2 つ目の
+// 正本になる。組と完全に一致させるのは、2 つのうち 1 つを落としても「何か 1 つは
+// 名指している」で通るため（LLM はキーかエンドポイントのどちらかで開く）。
+// usage との照合は、言われたとおりに調べて行き当たることを見る。
+func TestSetupHints_NameDocumentedVariables(t *testing.T) {
+	t.Parallel()
+
+	hints := setupHints()
+	name := regexp.MustCompile(`ETOKI_[A-Z0-9_]+`)
+	for _, tc := range []struct {
+		field string
+		hint  string
+		want  []string
+	}{
+		{"LLM", hints.LLM, []string{llm.EnvAPIKey, llm.EnvBaseURL}},
+		{"GitHub", hints.GitHub, []string{github.EnvToken}},
+		{"Auth", hints.Auth, []string{githubauth.EnvClientID, githubauth.EnvClientSecret}},
+		{"AllowedOrigins", hints.AllowedOrigins, []string{envAllowedOrigins}},
+	} {
+		names := name.FindAllString(tc.hint, -1)
+		slices.Sort(names)
+		want := slices.Sorted(slices.Values(tc.want))
+		if !slices.Equal(names, want) {
+			t.Errorf("SetupHints.%s = %q, names %q, want %q", tc.field, tc.hint, names, want)
+		}
+		for _, n := range names {
+			if !strings.Contains(usage, "  "+n+" ") {
+				t.Errorf("SetupHints.%s names %s, which usage does not document", tc.field, n)
+			}
+		}
 	}
 }

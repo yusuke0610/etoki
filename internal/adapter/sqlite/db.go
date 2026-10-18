@@ -47,7 +47,26 @@ func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-// parseTime は formatTime が書いた文字列を時刻に戻す。
+// fixedTimeLayout は小数 9 桁で固定した RFC 3339。
+const fixedTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+// formatFixedTime は時刻を桁数の揃った文字列にする。
+//
+// **SQL で文字列の大小を比べる列（期限）は、書き込みも比べる値もこれで作る。**
+// formatTime の RFC3339Nano は小数部の末尾の 0 を落とすので、".5Z" が ".45Z"
+// より前に、"00Z" が "00.3Z" より後に並び、時刻の順と食い違う（ADR 0076、#274）。
+// 読むのは parseTime のままでよい（RFC3339Nano の解析は桁数を問わない）。
+//
+// sessions と oauth_states の期限は、以前は formatTime で書いていた。その行は
+// マイグレーション 0017 が固定幅に揃える。
+//
+// **formatTime をこれに置き換えない。** boards.updated_at は版の照合を等値で
+// 行う（ADR 0020）ので、書式を変えると既存の行と一致しなくなる。
+func formatFixedTime(t time.Time) string {
+	return t.UTC().Format(fixedTimeLayout)
+}
+
+// parseTime は formatTime と formatFixedTime が書いた文字列を時刻に戻す。
 func parseTime(s string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {

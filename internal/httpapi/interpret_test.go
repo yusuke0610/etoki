@@ -414,6 +414,10 @@ func TestInterpretAnnotation_LLMErrors(t *testing.T) {
 }
 
 // 粒度が不正なシーンはリクエストの問題として 400 で返す。
+//
+// **弾くのは保存の入口**（#276）。保存を通らずに残った古いシーンを解釈で弾く
+// 経路は、ユースケースのテスト（TestInterpret_RejectsUnknownGranularity）が
+// LLM を呼ばないことまで見ている。
 func TestInterpretAnnotation_InvalidGranularity(t *testing.T) {
 	t.Parallel()
 
@@ -423,14 +427,12 @@ func TestInterpretAnnotation_InvalidGranularity(t *testing.T) {
 	id := createBoard(t, r, "設計会")
 	scene := `{"type":"excalidraw","elements":[
 		{"id":"annot-1","type":"frame","name":"決済まわり","customData":{"etoki":{"granularity":"project"}}}]}`
-	if rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene",
-		saveSceneBody(scene, fixedTime)); rec.Code != http.StatusOK {
-		t.Fatalf("save scene: %d %s", rec.Code, rec.Body)
-	}
-
-	rec := do(t, r, http.MethodPost, interpretPath(id, "annot-1"), nil)
+	rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/scene", saveSceneBody(scene, fixedTime))
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+		t.Fatalf("save scene: status = %d, want 400 (%s)", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeInvalidInput {
+		t.Errorf("code = %s, want invalid_input", code)
 	}
 	if llm.calls != 0 {
 		t.Error("粒度が不正なのに LLM を呼んでいる")

@@ -26,7 +26,7 @@
   gap: var(--space-6);
 }
 
-/* 何の画面かを示す帯。ロゴは仮で、色は変数から引く（ダークでも沈ませない）。 */
+/* 何の画面かを示す帯。ロゴの印と、名前の文字を並べる。 */
 .consent-brand {
   display: flex;
   align-items: center;
@@ -34,26 +34,11 @@
   margin: 0;
 }
 
+/* ロゴの印（ADR 0082）。角丸の地は絵の側が持つ。 */
 .consent-logo {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-}
-
-.consent-logo-bg {
-  fill: var(--brand);
-}
-
-/* 注釈の囲み（frame）を思わせる破線。中の 2 枚は付箋。 */
-.consent-logo-frame {
-  fill: none;
-  stroke: var(--on-brand);
-  stroke-width: 1.5;
-  stroke-dasharray: 3 2;
-}
-
-.consent-logo-note {
-  fill: var(--on-brand);
 }
 
 .consent-wordmark {
@@ -106,25 +91,13 @@
   }
 }
 
-/* 接続の一覧。新しいボードのダイアログと同じ器にする。 */
+/* 接続の一覧。器は `.modal-dialog`（`app/base.css`）。 */
 .connections-dialog {
-  box-sizing: border-box;
   width: min(560px, calc(100vw - 32px));
-  padding: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  color: var(--color-text);
-  box-shadow: 0 8px 24px var(--color-shadow);
-}
-
-.connections-dialog::backdrop {
-  background: var(--color-backdrop);
 }
 
 .connections-dialog h2 {
   margin: 0 0 var(--space-4);
-  font-size: var(--text-xl);
 }
 
 .connections-list {

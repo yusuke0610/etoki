@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { authApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
 import { ErrorNotice } from "../app/ErrorNotice";
+import logoUrl from "../app/logo.svg";
 
 /**
  * ログインを促す画面。
@@ -40,6 +41,8 @@ export function LoginPage() {
   return (
     <div className="login">
       <div className="login-card">
+        {/* ロゴは飾りなので読み上げから外し、名前は見出しの文字が持つ（ADR 0082）。 */}
+        <img className="login-logo" src={logoUrl} alt="" width={880} height={560} />
         <h1 className="login-mark">etoki</h1>
 
         <p className="login-lead">

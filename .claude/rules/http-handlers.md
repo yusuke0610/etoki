@@ -13,6 +13,10 @@ paths:
 - **境界の DTO は `internal/httpapi/apitypes/types.gen.go` の生成型を使う。**
   手で型を足さない。正本は `api/openapi.yaml`（ADR 0011、詳細は
   `api/CLAUDE.md`）。
+- **列挙の値は domain / port と契約の両方にある。** port/ は internal/ に依存せず
+  （ADR 0001）、ハンドラは string のキャストで写し合うので、片方にだけ値を足しても
+  コンパイルは通る。`vocabulary_test.go` が両方のソースから値を数え直して照合する。
+  **列挙の型を足したら、そこの表にも足す。** 表に無い型は誰も見ていない（#275）。
 - **エラー本文も `ErrorResponse` に揃える。** `gin.H{"error": ...}` を直に
   書かない。
 - **sentinel → (status, code) の写し替えは `internal/httpapi/errors.go` の表
@@ -26,6 +30,11 @@ paths:
   書く。
 - **`error` 本文は手掛かりであって利用者向けの文言ではない。** Go の内部文言
   （`etoki: ...`）を画面向けに書き換えない。画面は code から日本語を引く。
+- **本文に環境変数の名前を書かない。** 何を設定すればよいかは配線
+  （`cmd/etoki`）が `Deps.SetupHints` で渡し、`withHint` が添える（ADR 0083）。
+  渡されていなければ何も足さない。自前の実装を差し込む構成は `ETOKI_*` を
+  読まないので、名前を書くと存在しない設定を案内する。`*_not_configured` を
+  足したら `setuphints_test.go` の表にも足す。
 - **`GET /api/capabilities` は `Deps` の nil をそのまま返す**（ADR 0030）。
   押す前に「いまできないこと」を見せるための口で、**判定材料は各エンドポイントと
   同じ nil**。別の材料で組み立てると、案内と 503 が食い違う。

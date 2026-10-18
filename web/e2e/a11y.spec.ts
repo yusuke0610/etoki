@@ -68,7 +68,7 @@ test.describe("押せない理由が本文として読める", () => {
     const detail = await openAnnotationDetail(page, "ログイン");
     await expectBlockedReason(
       detail.getByRole("button", { name: "絵解く" }),
-      "ETOKI_LLM_API_KEY",
+      "LLM が未設定です。",
     );
   });
 
@@ -92,7 +92,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     await expectBlockedReason(
       page.getByRole("button", { name: "生成", exact: true }),
-      "ETOKI_LLM_API_KEY",
+      "LLM が未設定です。",
     );
   });
 
@@ -150,7 +150,7 @@ test.describe("押せない理由が本文として読める", () => {
 
     await expectBlockedReason(
       page.getByRole("button", { name: "新しいボード", exact: true }),
-      "ETOKI_GITHUB_TOKEN",
+      "GitHub が未設定です。",
     );
   });
 

@@ -179,9 +179,9 @@ func (s *CreationService) Create(
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrAnnotationNotFound, annotationID)
 	}
-	if !annotation.Granularity.Valid() {
-		return nil, fmt.Errorf("%w: unknown granularity %q on annotation %s",
-			ErrInvalidInput, annotation.Granularity, annotationID)
+	// 解釈と同じ規則で見る。保存の検査を入れる前に保存されたシーンがありうる。
+	if err := annotation.CheckMeta(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	// 解釈時点と作成時点で保存済みシーンが変わっていたら作らない。作った

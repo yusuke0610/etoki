@@ -98,6 +98,17 @@
   gap: var(--space-5);
 }
 
+/*
+ * ロゴ（ADR 0082）。**色は絵の側が地ごと持つ**ので、ダークでも同じに見える。
+ * 下の説明の絵と違って変数から引かないのはそのため。角だけ部品に揃える。
+ */
+.login-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
 .login-mark {
   font-size: var(--text-2xl);
   margin: 0;
