@@ -367,3 +367,19 @@ export function leftBehindItemIds(draft: Draft, previous: SyncItem[]): Set<strin
 
   return new Set(previous.map((it) => it.itemId).filter((id) => !claimed.has(id)));
 }
+
+/** 選んだ項目のうち、新しく作るものと、前に作ったものを書き換えるものの数。 */
+export type SelectedActions = { create: number; update: number };
+
+/**
+ * 選んだ項目を、新しく作るものと書き換えるものに分けて数える（ADR 0026、#289）。
+ *
+ * 押す直前の帯に出す（`creationNotice`）。**分け方は送るときと同じ規則にする**
+ * （`targetItemIdOf`）。作った ID が先で、新しく作るに倒した項目は新規。別の規則で
+ * 数えると、帯に出した数と実際に送るものが食い違う。
+ */
+export function selectedActions(draft: Draft): SelectedActions {
+  const selected = draft.items.filter((d) => d.selected);
+  const update = selected.filter((d) => targetItemIdOf(d) !== undefined).length;
+  return { create: selected.length - update, update };
+}
