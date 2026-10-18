@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import type {
   BoardAnnotations,
   Interpretation,
+  InterpretationJob,
   InterpretRequest,
 } from "../../../src/api/types";
 
@@ -40,6 +41,28 @@ export async function installAnnotationRoutes(page: Page, mock: ApiMock): Promis
     },
   );
 
+  // 解釈は始めるのと受け取るのが別のリクエスト（ADR 0085）。始めたジョブは
+  // ここで覚え、取りに来たら `mock.interpret` の応答で終わらせる。
+  const jobs = new Map<string, string>();
+  let seq = 0;
+  const jobOf = (
+    id: string,
+    annotationId: string,
+    withResult: boolean,
+  ): InterpretationJob => {
+    if (mock.interpretJobRunning) {
+      return { id, annotationId, status: "running", startedAt: "2026-10-19T09:00:00Z" };
+    }
+    return {
+      id,
+      annotationId,
+      status: "succeeded",
+      startedAt: "2026-10-19T09:00:00Z",
+      // 2xx のときだけジョブが作られるので、本文は解釈の結果。
+      ...(withResult ? { result: mock.interpret.body as Interpretation } : {}),
+    };
+  };
+
   // 末尾一致にしない。パスを間違えても一致してしまい、契約から外れた呼び出しが
   // 緑のまま通る。取りこぼしはキャッチオールが 500 で拾う。
   await page.route(
@@ -55,7 +78,61 @@ export async function installAnnotationRoutes(page: Page, mock: ApiMock): Promis
       mock.interpretRequests.push(
         (route.request().postDataJSON() ?? {}) as InterpretRequest,
       );
-      await json(route, mock.interpret.status, mock.interpret.body);
+      // 始める時点で弾かれる失敗（429 など）は、そのまま返す。
+      if (mock.interpret.status < 200 || mock.interpret.status >= 300) {
+        await json(route, mock.interpret.status, mock.interpret.body);
+        return;
+      }
+
+      const annotationId = new URL(route.request().url()).pathname.split("/")[5] ?? "";
+      seq += 1;
+      const id = `job-${seq}`;
+      jobs.set(id, annotationId);
+      await json(route, 202, {
+        id,
+        annotationId,
+        status: "running",
+        startedAt: "2026-10-19T09:00:00Z",
+      } satisfies InterpretationJob);
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/interpretation-jobs$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await json(
+        route,
+        200,
+        [...jobs].map(([id, annotationId]) => jobOf(id, annotationId, false)),
+      );
+    },
+  );
+
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/interpretation-jobs\/[^/]+$/.test(url.pathname),
+    async (route) => {
+      const id = new URL(route.request().url()).pathname.split("/")[5] ?? "";
+      const annotationId = jobs.get(id);
+
+      if (route.request().method() === "DELETE") {
+        mock.jobDiscards.push(id);
+        jobs.delete(id);
+        await route.fulfill({ status: 204 });
+        return;
+      }
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      if (annotationId === undefined) {
+        await json(route, 404, { code: "not_found", error: "not found" });
+        return;
+      }
+      await json(route, 200, jobOf(id, annotationId, true));
     },
   );
 

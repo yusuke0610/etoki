@@ -1121,14 +1121,22 @@ paths:
     post:
       tags: [annotations]
       operationId: interpretAnnotation
-      summary: 注釈を LLM に解釈させる
+      summary: 注釈の解釈を始める
       description: |
+        LLM の応答は待たず、ジョブを返す。結果は `getInterpretationJob` で取る
+        （ADR 0085）。解釈は 1〜数分かかるので、リクエストに結びつけると画面を
+        離れた時点で受け取り手がいなくなる。
+
         GitHub には何も作らず、sync_runs にも書かない。何を作るかは結果を見た
         開発者が別途トリガーする（中核思想 3）。
 
         テキストは保存済みシーンから取る。`image` はフロントが書き出した注釈
         範囲の画像で、矢印やグルーピングのようにテキストに現れない構造を渡す
         ためのもの（ADR 0018）。ボディごと省略できる。
+
+        **同じ注釈をまだ解釈している最中なら、新しく始めず、走っているジョブを
+        返す。** そのとき画像は読まない。別の注釈を解釈している最中は 429
+        （`concurrency_limited`）。
       requestBody:
         required: false
         description: |
@@ -1138,12 +1146,12 @@ paths:
             schema:
               $ref: "#/components/schemas/InterpretRequest"
       responses:
-        "200":
-          description: 解釈の結果
+        "202":
+          description: 始めた、または走っているジョブ
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Interpretation"
+                $ref: "#/components/schemas/InterpretationJob"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1158,12 +1166,104 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
-        "502":
-          description: LLM の呼び出しに失敗した、または出力がスキーマを満たさなかった
+        "503":
+          description: LLM が設定されていない
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /api/boards/{id}/interpretation-jobs:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [annotations]
+      operationId: listInterpretationJobs
+      summary: 自分の解釈のジョブを返す
+      description: |
+        ボードを開き直したとき、走っている解釈と、終わっているが受け取って
+        いない解釈を知るための口（ADR 0085）。始めた順。**結果は含めない。**
+        取るのは `getInterpretationJob`。
+
+        自分が始めたものだけ。他の利用者のジョブは存在も見せない。
+      responses:
+        "200":
+          description: ジョブ。無ければ空配列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InterpretationJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: LLM が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/boards/{id}/interpretation-jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [annotations]
+      operationId: getInterpretationJob
+      summary: 解釈のジョブを返す
+      description: |
+        走っていれば `running`。終わっていれば結果か失敗の理由を載せる。
+        **読んでも消えない。** 返事が途中で失われたとき、読んだ時点で消えていると
+        課金した結果を二度と取れない。要らなくなったら `discardInterpretationJob`
+        （ADR 0085）。
+      responses:
+        "200":
+          description: ジョブ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterpretationJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: LLM が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [annotations]
+      operationId: discardInterpretationJob
+      summary: 解釈のジョブを要らないものとして捨てる
+      description: |
+        走っていれば止める。終わっていれば結果を捨てる。**取り消しと受け取り済みを
+        同じ操作にしてある。** どちらも言いたいことは「このジョブはもう要らない」で
+        同じ（ADR 0085）。捨てたジョブは `getInterpretationJob` でも
+        `listInterpretationJobs` でも出ない。
+      responses:
+        "204":
+          description: 捨てた
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "503":
           description: LLM が設定されていない
           content:
@@ -1257,6 +1357,14 @@ components:
       in: path
       required: true
       description: 注釈にした frame の要素 ID
+      schema:
+        type: string
+
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      description: 解釈のジョブの ID
       schema:
         type: string
 
@@ -2641,6 +2749,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/InterpretedItem"
+
+    InterpretationJob:
+      type: object
+      description: |
+        1 回の解釈の、いまの様子（ADR 0085）。
+
+        - `running` … 走っている
+        - `succeeded` … 終わった。`result` に結果が入る
+        - `failed` … 失敗した。`error` に理由が入る。打ち手は `error.code` で分ける
+
+        一覧には `result` を載せない。取るのは 1 件ずつの取得。
+      required: [id, annotationId, status, startedAt]
+      properties:
+        id:
+          type: string
+        annotationId:
+          type: string
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        startedAt:
+          type: string
+          format: date-time
+        result:
+          $ref: "#/components/schemas/Interpretation"
+        error:
+          $ref: "#/components/schemas/ErrorResponse"
 
     CreatedRun:
       type: object

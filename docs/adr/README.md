@@ -86,3 +86,4 @@
 | [0080](0080-canvas-scroll-by-keys-and-edges.md)                  | キャンバスの移動を etoki が足す（矢印キーと、ドラッグ中の端）            | 採用                 |
 | [0082](0082-logo-as-outlined-svg.md)                             | ロゴは字を輪郭にした SVG で持ち、色は絵の側に固定する                    | 採用                 |
 | [0083](0083-setup-hints-from-the-wiring.md)                      | 設定の案内に載せる環境変数の名前は、配線だけが持つ                       | 採用                 |
+| [0085](0085-interpretation-as-server-side-job.md)                | 解釈をリクエストから切り離し、サーバー側のジョブとして走らせる           | 採用                 |
