@@ -1,7 +1,23 @@
 /*
- * 字は Assistant Bold 3.000（Copyright 2020 The Assistant Project Authors、SIL Open
- * Font License 1.1）の字形を輪郭にしたもの。書体のファイルは読まない（ADR 0084）。
- * 字間は書体の送りから 6 単位詰め、i は点の無い ı にしてある。
+ * 字は Assistant Bold 3.000 の字形を輪郭にして写したもの。書体のファイルは
+ * 読まない（ADR 0084）。字間は書体の送りから 6 単位詰め、i は点の無い ı に
+ * してある。
+ *
+ * 表示は下の `/*!` のコメントに分けてある。ビルドがそこだけを拾って
+ * `third-party-notices.txt` に書き出す（ADR 0070）。この説明と 1 つにまとめると、
+ * 説明まで表示に出る。
+ */
+/*!
+ * Assistant — https://github.com/hafontia/Assistant
+ *
+ * The letter outlines in this file are taken from Assistant Bold 3.000.
+ *
+ * Copyright 2020 The Assistant Project Authors (https://github.com/hafontia/Assistant).
+ * Copyright 2010 The Source Sans Pro Authors (https://github.com/adobe-fonts/source-sans-pro),
+ * with Reserved Font Name 'Source'. Source is a trademark of Adobe Systems Incorporated
+ * in the United States and/or other countries.
+ *
+ * Licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org).
  */
 const LETTERS =
   "M24.8 76.9Q17.8 76.9 12.2 73.8Q6.5 70.7 3.2 65Q0 59.2 0 51Q0 43 3.3 37.2Q6.6 31.4 11.9 28.2Q17.2 25 23.1 25Q30 25 34.7 28.1Q39.3 31.2 41.7 36.6Q44 41.9 44 48.7Q44 50.5 43.8 52.3Q43.6 54 43.4 54.9H10.7L10.6 45.8H32.3Q32.3 41.1 30.2 38.3Q28 35.5 23.4 35.5Q20.7 35.5 18.2 37Q15.7 38.5 14.1 41.9Q12.5 45.3 12.5 51Q12.5 56.7 14.6 60.1Q16.6 63.4 19.8 64.9Q23 66.4 26.6 66.4Q29.6 66.4 32.2 65.6Q34.9 64.7 37.6 63.1L42.1 71.4Q38.4 73.9 33.9 75.4Q29.3 76.9 24.8 76.9ZM72.3 76.9Q63.3 76.9 59.5 71.7Q55.7 66.5 55.7 58.1V37H48.8V26.8L56.4 26.2L58 13H69.3V26.2H81.4V37H69.3V58Q69.3 62.2 71 64.2Q72.8 66.1 75.9 66.1Q77.2 66.1 78.5 65.8Q79.8 65.5 80.8 65.1L83 75.1Q81 75.7 78.3 76.3Q75.6 76.9 72.3 76.9ZM111.7 76.9Q105.4 76.9 100 73.9Q94.5 70.8 91.2 65Q87.8 59.2 87.8 51Q87.8 42.8 91.2 37Q94.5 31.2 100 28.1Q105.4 25 111.7 25Q117.9 25 123.4 28.1Q128.8 31.2 132.2 37Q135.6 42.8 135.6 51Q135.6 59.2 132.2 65Q128.8 70.8 123.4 73.9Q117.9 76.9 111.7 76.9ZM111.7 65.8Q114.9 65.8 117.1 64Q119.3 62.2 120.5 58.9Q121.6 55.5 121.6 51Q121.6 46.5 120.5 43.2Q119.3 39.8 117.1 38Q114.9 36.1 111.7 36.1Q108.4 36.1 106.2 38Q104 39.8 102.9 43.2Q101.8 46.5 101.8 51Q101.8 55.5 102.9 58.9Q104 62.2 106.2 64Q108.4 65.8 111.7 65.8ZM145.5 75.7V5.4H158.8V46.9H159.2L175.7 26.2H190.6L173.4 46.5L192 75.7H177.2L165.6 55.7L158.8 63.4V75.7ZM198.8 75.7V26.2H212.4V75.7Z";
