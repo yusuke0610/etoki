@@ -84,5 +84,6 @@
 | [0078](0078-share-dialog-and-panel-names.md)                     | メンバーは「共有」のダイアログで開き、パネルの名前を使う人の言葉に寄せる | 採用                 |
 | [0079](0079-name-annotations-on-the-frame.md)                    | 囲みの名前は絵解きの面で付け、frame の name にそのまま書く               | 採用                 |
 | [0080](0080-canvas-scroll-by-keys-and-edges.md)                  | キャンバスの移動を etoki が足す（矢印キーと、ドラッグ中の端）            | 採用                 |
-| [0082](0082-logo-as-outlined-svg.md)                             | ロゴは字を輪郭にした SVG で持ち、色は絵の側に固定する                    | 採用                 |
+| [0082](0082-logo-as-outlined-svg.md)                             | ロゴは字を輪郭にした SVG で持ち、色は絵の側に固定する                    | 置き換え済み（0084） |
 | [0083](0083-setup-hints-from-the-wiring.md)                      | 設定の案内に載せる環境変数の名前は、配線だけが持つ                       | 採用                 |
+| [0084](0084-logo-wordmark-in-ui-typeface.md)                     | ロゴは UI の書体で書いた名前の文字にし、字の色はテーマから引く           | 採用                 |

@@ -4,24 +4,34 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * ロゴの SVG（ADR 0082）が、配っていないものに頼っていないこと。
+ * ファビコン（ADR 0084）が、配っていないものに頼っていないこと。
  *
- * **回帰止め。切れると何が起きるか。** ロゴは `<img>` で置くので、SVG の中で
- * 書体を名指しした字は見る人の手元の書体で描かれ、外を指す参照は読まれずに
- * 欠ける。どちらも失敗にならず、絵が黙って崩れる。案（`<text>` で字を置いて
- * いる）から書き出し直すときに、そのまま持ち込むのがいちばん起きやすい。
+ * **回帰止め。切れると何が起きるか。** ファビコンはページの外で描かれるので、
+ * SVG の中で書体を名指しした字は見る人の手元の書体で描かれ、外を指す参照は
+ * 読まれずに欠ける。どちらも失敗にならず、絵が黙って崩れる。
  *
  * バンドラの解決を挟まず fs で読むのは、中身の文字列を見たいから。vitest は
  * web/ を root に走るので、そこからの相対で解く。
  */
-const LOGO_FILES = ["logo.svg", "logoMark.svg", "favicon.svg"];
+const FAVICON = "src/app/favicon.svg";
 
 function read(path: string): string {
   return readFileSync(resolve(process.cwd(), path), "utf8");
 }
 
-describe.each(LOGO_FILES)("%s", (name) => {
-  const svg = read(`src/app/${name}`);
+describe("favicon.svg", () => {
+  const svg = read(FAVICON);
+
+  /**
+   * **回帰止め。** 壊れた SVG は失敗を出さず、タブが既定の絵に戻るだけ。
+   * XML のコメントに `--` を書いただけでも壊れる（変数の名前を書きがち）。
+   */
+  it("XML として読める", () => {
+    const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+
+    expect(doc.getElementsByTagName("parsererror")).toHaveLength(0);
+    expect(doc.documentElement.tagName).toBe("svg");
+  });
 
   it("字を書体で描かず、輪郭で持つ", () => {
     expect(svg).not.toMatch(/<text[\s>]/);
@@ -34,6 +44,21 @@ describe.each(LOGO_FILES)("%s", (name) => {
 
     for (const ref of [...urls, ...hrefs]) expect(ref).toMatch(/^#/);
   });
+
+  /**
+   * **回帰止め。** 地の緑はロゴの付箋（`--brand-note`）と同じ値を、ここに写して
+   * 持つ（ページの変数を読めないため）。片方だけ変えると、タブとページで印の色が
+   * 割れる。どちらの値も推測せず、両方のファイルから引いて比べる。
+   */
+  it("地の緑は、ロゴの付箋の変数と同じ値", () => {
+    const token = /--brand-note:\s*(#[0-9a-fA-F]{6})\s*;/.exec(
+      read("src/app/tokens.css"),
+    )?.[1];
+    const ground = /<rect\b[^>]*\bfill="(#[0-9a-fA-F]{6})"/.exec(svg)?.[1];
+
+    expect(token).toMatch(/^#/);
+    expect(ground?.toLowerCase()).toBe(token?.toLowerCase());
+  });
 });
 
 /**
@@ -41,10 +66,9 @@ describe.each(LOGO_FILES)("%s", (name) => {
  * ビルドは警告を出して href をそのまま残すだけで落ちない。タブの絵が既定に
  * 戻っても誰も気づかないので、ファイルを動かしたら追随していることをここで見る。
  */
-it("index.html のファビコンが、実在するロゴの SVG を指す", () => {
+it("index.html のファビコンが、上の検査を掛けた SVG を指す", () => {
   const href = /<link rel="icon"[^>]*href="([^"]+)"/.exec(read("index.html"))?.[1] ?? "";
 
-  // 上の検査が掛かっているファイルのどれかであること。
-  expect(LOGO_FILES.map((f) => `/src/app/${f}`)).toContain(href);
+  expect(href).toBe(`/${FAVICON}`);
   expect(existsSync(resolve(process.cwd(), `.${href}`))).toBe(true);
 });
