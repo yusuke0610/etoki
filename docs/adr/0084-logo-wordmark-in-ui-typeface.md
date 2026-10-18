@@ -80,8 +80,6 @@ React の写しの 2 つになる」は、部品そのものを正本にして S
 
 - ロゴの正本は `web/src/app/Wordmark.tsx`（ページ）と `web/src/app/favicon.svg`
   （タブ）の 2 つ。e の字形は両方が持つので、字を直すなら両方直す。
-- 付箋の緑は `tokens.css` の `--brand-note` と `favicon.svg` の 2 か所にある。
-  一致は `web/src/app/logo.test.ts` が見る。
-- 字と付箋がテーマの色で描けていることは `web/e2e/logo.spec.ts` がライトと
-  ダークで見る。名前は `aria-label` が持つので、字が沈んでもほかの検査は
-  落ちない。
+- 名前は `aria-label` が持つので、字が描けなくても、ダークの地に沈んでも、
+  画面の名前と読み上げは変わらない。字がテーマの色で描けているかは、描いた
+  色を見ないと分からない。
