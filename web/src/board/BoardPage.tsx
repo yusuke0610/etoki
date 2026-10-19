@@ -1045,7 +1045,7 @@ export function BoardPage({
     onSelect: showInterpretation,
     unavailable: interpretationUnavailable,
   };
-  // 作る先の見出し。帯の「選んだ N 件を … に作ります」に出す。作成先が未選択の
+  // 作る先の見出し。押す直前の帯の文（`creationNotice`）に出す。作成先が未選択の
   // ボードでは作成まで進めないので null。
   const targetLabel =
     board.projectId === ""

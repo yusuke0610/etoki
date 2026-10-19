@@ -10,6 +10,7 @@ import {
   leftBehindItemIds,
   markCreated,
   orphanedLocalIds,
+  selectedActions,
   setBody,
   setKind,
   setTitle,
@@ -302,6 +303,64 @@ describe("leftBehindItemIds", () => {
 
     draft = setUpdatesPrevious(draft, "n1", false);
     expect([...leftBehindItemIds(draft, previous)]).toEqual(["PVTI_a"]);
+  });
+});
+
+// 押す直前の帯に出す数（#289）。更新は前の内容を消すので、作成と同じ数に
+// 畳むと、書き換えることを押す前に読めない（ADR 0026）。
+describe("selectedActions", () => {
+  function draftWith(items: InterpretedItem[]) {
+    return createDraft({ summary: "s", contentHash: "h", items });
+  }
+
+  it("LLM が対応づけた項目は更新、それ以外は新規に数える", () => {
+    const draft = draftWith([
+      { localId: "n1", kind: "issue", title: "t", body: "", previousItemId: "PVTI_a" },
+      { localId: "n2", kind: "issue", title: "t", body: "" },
+    ]);
+
+    expect(selectedActions(draft)).toEqual({ create: 1, update: 1 });
+  });
+
+  // 送るときに対応づけを落とす項目は、GitHub 側で新しく作られる。
+  it("新しく作るに倒した項目は新規に数える", () => {
+    let draft = draftWith([
+      { localId: "n1", kind: "issue", title: "t", body: "", previousItemId: "PVTI_a" },
+      { localId: "n2", kind: "issue", title: "t", body: "" },
+    ]);
+    draft = setUpdatesPrevious(draft, "n1", false);
+
+    expect(selectedActions(draft)).toEqual({ create: 2, update: 0 });
+  });
+
+  it("選んでいない項目は数えない", () => {
+    let draft = draftWith([
+      { localId: "n1", kind: "issue", title: "t", body: "", previousItemId: "PVTI_a" },
+      { localId: "n2", kind: "issue", title: "t", body: "" },
+    ]);
+    draft = toggleItem(draft, "n1");
+
+    expect(selectedActions(draft)).toEqual({ create: 1, update: 0 });
+  });
+
+  // 作った項目を選び直すと、作った draft issue の書き換えとして送る（ADR 0052）。
+  // 新規に数えると、重複を作るように読める。
+  it("この下書きから作った項目を選び直すと更新に数える", () => {
+    let draft = draftWith([{ localId: "n1", kind: "issue", title: "t", body: "" }]);
+    draft = markCreated(draft, [
+      {
+        itemId: "PVTI_new",
+        kind: "issue",
+        title: "t",
+        body: "",
+        localId: "n1",
+        action: "created",
+        confirmed: true,
+      },
+    ]);
+    draft = toggleItem(draft, "n1");
+
+    expect(selectedActions(draft)).toEqual({ create: 0, update: 1 });
   });
 });
 
