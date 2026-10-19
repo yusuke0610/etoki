@@ -234,6 +234,13 @@ describe("ERROR_MESSAGES", () => {
     expect(ERROR_MESSAGES.llm_overloaded).toContain("LLM 側");
   });
 
+  // 文言が違うことだけでは、打ち手を言わない汎用の文に変えても通る。打ち手そのものを見る。
+  it("打ち切りはコンテキスト長を、拒否は頼み方と渡した内容を見直すよう案内する", () => {
+    expect(ERROR_MESSAGES.llm_truncated).toContain("コンテキスト長");
+    expect(ERROR_MESSAGES.llm_refused).toContain("頼み方");
+    expect(ERROR_MESSAGES.llm_refused).toContain("渡した内容");
+  });
+
   // 設定するものが違うので畳まない。畳むと「何を設定すればよいか」を言えない。
   it("未設定の 4 つは別々の文言を持つ", () => {
     const messages = [
