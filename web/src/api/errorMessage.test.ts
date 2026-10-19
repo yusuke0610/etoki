@@ -206,6 +206,34 @@ describe("ERROR_MESSAGES", () => {
     expect(ERROR_MESSAGES.rate_limited).not.toBe(ERROR_MESSAGES.concurrency_limited);
   });
 
+  // LLM の呼び出しの失敗は打ち手で分けた（ADR 0086）。畳むと、打ち切りでも
+  // 混雑でも「鍵を確かめて」と言うことになる。
+  const llmCallFailures = [
+    ERROR_MESSAGES.llm_unavailable,
+    ERROR_MESSAGES.llm_truncated,
+    ERROR_MESSAGES.llm_refused,
+    ERROR_MESSAGES.llm_overloaded,
+  ];
+
+  it("LLM の呼び出しの失敗の 4 つは別々の文言を持つ", () => {
+    expect(new Set(llmCallFailures).size).toBe(llmCallFailures.length);
+  });
+
+  // 図の生成でも同じ code が返る。片方の名前で書くと、もう片方で食い違う。
+  // 環境変数の名前も書かない（ADR 0083）。差し込んだ実装は読まない。
+  it("LLM の呼び出しの失敗は「解釈」と言い切らず、環境変数の名前を書かない", () => {
+    for (const message of llmCallFailures) {
+      expect(message).not.toContain("解釈");
+      expect(message).not.toMatch(/ETOKI_/);
+    }
+  });
+
+  // 上流の混雑と etoki 自身の上限は、どちらも待つ話だが相手が違う（ADR 0044 / 0086）。
+  it("上流の混雑は etoki 自身の上限と別の文言を持つ", () => {
+    expect(ERROR_MESSAGES.llm_overloaded).not.toBe(ERROR_MESSAGES.rate_limited);
+    expect(ERROR_MESSAGES.llm_overloaded).toContain("LLM 側");
+  });
+
   // 設定するものが違うので畳まない。畳むと「何を設定すればよいか」を言えない。
   it("未設定の 4 つは別々の文言を持つ", () => {
     const messages = [

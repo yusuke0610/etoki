@@ -102,6 +102,14 @@ var wantMappings = map[string]wantMapping{
 
 	"usecase.ErrLLMUnavailable": {
 		usecase.ErrLLMUnavailable, http.StatusBadGateway, apitypes.ErrorCodeLlmUnavailable},
+	// LLM の呼び出しの失敗は打ち手で分ける（ADR 0086）。上流の混雑は 429 にも
+	// rate_limited にもしない。etoki 自身の上限（ADR 0044）とは相手が違う。
+	"usecase.ErrLLMTruncated": {
+		usecase.ErrLLMTruncated, http.StatusBadGateway, apitypes.ErrorCodeLlmTruncated},
+	"usecase.ErrLLMRefused": {
+		usecase.ErrLLMRefused, http.StatusBadGateway, apitypes.ErrorCodeLlmRefused},
+	"usecase.ErrLLMOverloaded": {
+		usecase.ErrLLMOverloaded, http.StatusBadGateway, apitypes.ErrorCodeLlmOverloaded},
 	"usecase.ErrInterpretationFailed": {
 		usecase.ErrInterpretationFailed, http.StatusBadGateway, apitypes.ErrorCodeInterpretationFailed},
 	"usecase.ErrCreationIncomplete": {
@@ -110,11 +118,16 @@ var wantMappings = map[string]wantMapping{
 
 // notMapped は境界に出てこないので表に載せない sentinel。
 //
-// **どちらもユースケース層が自分のエラーに写し替えて返す**ので、ハンドラまで
+// **どれもユースケース層が自分のエラーに写し替えて返す**ので、ハンドラまで
 // 届かない。届くようになったら表に足す判断が要る。
 var notMapped = map[string]string{
 	"port.ErrConflict":      "usecase.ErrSceneConflict に写して返す（ADR 0020）",
 	"port.ErrAlreadyExists": "usecase.ErrAlreadyMember に写して返す",
+	// LLMClient の実装が名乗る原因。ユースケース層が入れ子にせず写し替える
+	// （llmCallError、ADR 0086）。
+	"port.ErrLLMTruncated":  "usecase.ErrLLMTruncated に写して返す",
+	"port.ErrLLMRefused":    "usecase.ErrLLMRefused に写して返す",
+	"port.ErrLLMOverloaded": "usecase.ErrLLMOverloaded に写して返す",
 }
 
 func TestErrorMappings(t *testing.T) {

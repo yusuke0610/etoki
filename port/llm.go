@@ -1,6 +1,39 @@
 package port
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// LLM の呼び出しが失敗した原因のうち、打ち手が違うもの（ADR 0086）。
+//
+// **外部の LLMClient 実装は返さなくてよい。** 返さなければ、ユースケース層は
+// 原因の分からない失敗として扱い、画面には `llm_unavailable` の文が出る。
+// それで動かなくなるものは無く、案内が「設定と接続を確かめる」に寄るだけ。
+// 返すなら fmt.Errorf("%w: ...", port.ErrLLMTruncated) のように包み、原因の
+// 手掛かりは続く文に載せる（ADR 0005 / 0008）。
+//
+// **どれも再送で直る問題ではない、とユースケース層は扱う。** 修正指示を
+// 添えて投げ直すのはスキーマ違反のときだけで、ここに挙げた失敗では投げ直さない。
+var (
+	// ErrLLMTruncated は、応答が出力の上限で打ち切られたことを表す。
+	//
+	// 切ったのは向こうのコンテキスト長か出力の上限で、頼み方では直らない。
+	// ローカル LLM では既定のコンテキスト長が小さいと起きる。
+	ErrLLMTruncated = errors.New("etoki: llm response truncated")
+
+	// ErrLLMRefused は、モデルが応答を拒んだことを表す。
+	//
+	// 設定の誤りではない。頼み方か、描いた内容を変える話になる。
+	ErrLLMRefused = errors.New("etoki: llm refused the request")
+
+	// ErrLLMOverloaded は、向こうが混んでいるか一時的に応答できないことを表す。
+	//
+	// レート制限・過負荷・向こう側のエラーが該当する。**etoki 自身の実行の
+	// 上限（ADR 0044）とは別物。** 時間をおけば通る見込みがある点は同じだが、
+	// 待つ相手が違う。
+	ErrLLMOverloaded = errors.New("etoki: llm upstream is busy or failing")
+)
 
 // Image は LLM に渡す画像 1 枚。
 type Image struct {
@@ -52,6 +85,10 @@ type Usage struct {
 // この実装には含めない。外部リポジトリが独自実装を差し込む際のコストを
 // 最小化するための切り方である。判断の経緯は
 // docs/adr/0005-llm-client-abstraction.md を参照。
+//
+// 失敗の原因は ErrLLMTruncated / ErrLLMRefused / ErrLLMOverloaded で名乗れる。
+// **名乗るかどうかは実装の任意**で、名乗らない失敗も同じように扱われる
+// （画面の案内が原因に合わせて変わらないだけ。ADR 0086）。
 type LLMClient interface {
 	Complete(ctx context.Context, req VisionRequest) (VisionResponse, error)
 }

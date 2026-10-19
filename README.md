@@ -256,8 +256,8 @@ Messages API 形状（`/v1/messages`）も公開していて、0.34.4 では
 応じて 4k / 32k / 256k で、4k だと入力と出力の合計が 4096 トークンに達した時点で
 `stop_reason` が `max_tokens` になります（etoki が送る上限の 16000 には届いて
 いなくても）。解釈は再送のたびに入力が増えるので、4k では 2 回目で切れやすく
-なります。`etoki: llm call failed ... response truncated: stopped at N output tokens,
-before our limit` と出たら、Ollama 側で広げてください。
+なります。「LLM の応答が途中で打ち切られました」と出て、詳細に
+`stopped at N output tokens, before our limit` とあれば、Ollama 側で広げてください。
 
 ```sh
 OLLAMA_CONTEXT_LENGTH=16384 ollama serve

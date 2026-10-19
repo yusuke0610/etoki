@@ -23,8 +23,11 @@ var (
 	ErrInterpretationFailed = errors.New("etoki: llm output did not satisfy the schema")
 	// ErrLLMUnavailable は LLM の呼び出しそのものが失敗したことを表す。
 	//
-	// 接続不可・認証エラー・モデル側の失敗などが該当する。スキーマ違反とは
+	// 接続不可・認証エラー・原因の分からない失敗などが該当する。スキーマ違反とは
 	// 原因も打ち手も違うので、呼び出し側が区別できるよう分けている。
+	//
+	// 打ち切り・拒否・上流の混雑は別の sentinel に分けてある（llmcall.go、
+	// ADR 0086）。LLMClient の実装がそれを名乗らなかったときは、ここに落ちる。
 	ErrLLMUnavailable = errors.New("etoki: llm call failed")
 )
 
@@ -306,8 +309,7 @@ func (s *InterpretationService) complete(
 		resp, err := s.llm.Complete(ctx, req)
 		if err != nil {
 			// 接続やモデル側の失敗は修正指示で直る問題ではないので再送しない。
-			return domain.Interpretation{}, usage,
-				fmt.Errorf("%w (attempt %d): %w", ErrLLMUnavailable, attempt, err)
+			return domain.Interpretation{}, usage, llmCallError(attempt, err)
 		}
 		usage.addTokens(resp.Usage)
 

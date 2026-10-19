@@ -297,9 +297,10 @@ func extractText(resp apiResponse, maxTokens int) (string, error) {
 	// refusal は HTTP 200 で返る。content を読む前に判定する。
 	if resp.StopReason == "refusal" {
 		if resp.StopDetails.Category == "" {
-			return "", errors.New("model refused the request")
+			return "", fmt.Errorf("%w: model refused the request", port.ErrLLMRefused)
 		}
-		return "", fmt.Errorf("model refused the request: %s", resp.StopDetails.Category)
+		return "", fmt.Errorf("%w: model refused the request: %s",
+			port.ErrLLMRefused, resp.StopDetails.Category)
 	}
 	// 打ち切られた応答は JSON として壊れている。再送しても同じ結果になるので、
 	// スキーマ違反ではなく呼び出しの失敗として返す。
@@ -328,15 +329,20 @@ func extractText(resp apiResponse, maxTokens int) (string, error) {
 // 両方を候補に挙げる。こちらの上限を上げても直らないので、見分けられるように
 // しておく。使用量を返さない実装（0）では、どちらとも言えないので、上限に届いたとも言わず、
 // 停止理由と使用量が分からないことだけを伝える。
+//
+// どの場合も port.ErrLLMTruncated を名乗る。誰が切ったかは画面の code では
+// 分けず、続く文（詳細）に残す（ADR 0086）。
 func truncatedError(outputTokens, maxTokens int) error {
 	switch {
 	case outputTokens <= 0:
-		return errors.New("response truncated: stop_reason is max_tokens, but the backend did not report output token usage")
+		return fmt.Errorf("%w: stop_reason is max_tokens, but the backend did not report output token usage",
+			port.ErrLLMTruncated)
 	case outputTokens < maxTokens:
-		return fmt.Errorf("response truncated: stopped at %d output tokens, before our limit of %d "+
-			"(the backend's context window or its own output limit may be smaller)", outputTokens, maxTokens)
+		return fmt.Errorf("%w: stopped at %d output tokens, before our limit of %d "+
+			"(the backend's context window or its own output limit may be smaller)",
+			port.ErrLLMTruncated, outputTokens, maxTokens)
 	default:
-		return fmt.Errorf("response truncated: reached our limit of %d output tokens", maxTokens)
+		return fmt.Errorf("%w: reached our limit of %d output tokens", port.ErrLLMTruncated, maxTokens)
 	}
 }
 
@@ -344,12 +350,24 @@ func truncatedError(outputTokens, maxTokens int) error {
 //
 // API キーはヘッダにしか載せていないので、応答をそのまま含めても漏れない。
 // ただし長さは切る。本文全体を載せるとログが読めなくなる。
+//
+// 429 と 5xx（Anthropic の過負荷 529 を含む）は port.ErrLLMOverloaded を
+// 名乗る。時間をおけば通る見込みのある失敗で、設定を見直しても直らない
+// （ADR 0086）。それ以外の 4xx（401 / 403 / 400 など）は名乗らない。鍵・
+// 権限・リクエストの形の話で、打ち手は設定の側にある。
 func statusError(status int, raw []byte) error {
+	var detail string
 	var resp apiError
 	if err := json.Unmarshal(raw, &resp); err == nil && resp.Error.Message != "" {
-		return fmt.Errorf("messages api: %d %s: %s", status, resp.Error.Type, resp.Error.Message)
+		detail = fmt.Sprintf("messages api: %d %s: %s", status, resp.Error.Type, resp.Error.Message)
+	} else {
+		detail = fmt.Sprintf("messages api: %d: %s", status, truncate(string(raw), 200))
 	}
-	return fmt.Errorf("messages api: %d: %s", status, truncate(string(raw), 200))
+
+	if status == http.StatusTooManyRequests || status >= http.StatusInternalServerError {
+		return fmt.Errorf("%w: %s", port.ErrLLMOverloaded, detail)
+	}
+	return errors.New(detail)
 }
 
 // truncate は s を n 文字（バイトではなくルーン）までに切る。

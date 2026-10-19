@@ -853,9 +853,16 @@ export interface components {
          *
          *     **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
+         *
+         *     LLM の呼び出しの失敗も打ち手で分ける（ADR 0086）。打ち切り
+         *     （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+         *     （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+         *     LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+         *     混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+         *     別の code で返る。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
+        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "llm_truncated" | "llm_refused" | "llm_overloaded" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
