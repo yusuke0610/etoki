@@ -338,6 +338,11 @@ function AnnotationFace({
   // 非 null のあいだが「書いている途中」。
   const canRename = canEdit && onCanvas && !unmarked;
   const [nameDraft, setNameDraft] = useState<string | null>(null);
+  // 書いている途中で押せる条件を失ったら（読むだけに変わった・注釈から外した・
+  // キャンバスから消えた）、書きかけを捨てて欄を閉じる。書く口が書けない対象に
+  // 確定させると入力が黙って消え、条件が戻ったとき古い書きかけが欄ごと復活する。
+  // effect ではなく描画中に捨てるのは、1 回ぶんの古い欄を描かないため。
+  if (!canRename && nameDraft !== null) setNameDraft(null);
   const labelRef = useRef<HTMLButtonElement>(null);
   // 欄を閉じたあとに焦点をラベルへ戻すか。Enter と Escape だけ戻す。欄を離れて
   // 確定したときは、離れた先の焦点を奪わない。
@@ -356,6 +361,8 @@ function AnnotationFace({
   const commitName = () => {
     if (nameDraft === null) return;
     setNameDraft(null);
+    // 開いた時点と同じ条件を確定でも見る。
+    if (!canRename) return;
     // 変えていないのに書くと、開いて閉じただけで未保存になる。前後の空白は
     // 書く側（`setAnnotationName`）が落とすので、比べるのも落としてから。
     if (nameDraft.trim() !== name.trim()) frames.onChangeName(id, nameDraft);
@@ -417,7 +424,7 @@ function AnnotationFace({
             2 つをつないで読ませる（`aria-labelledby`）。
           */}
           <h2 id={headingId}>絵解き</h2>
-          {nameDraft !== null ? (
+          {canRename && nameDraft !== null ? (
             <>
               {/*
                 ダイアログの名前は `labelId` から引く。書いている最中は欄の値が

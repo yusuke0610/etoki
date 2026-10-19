@@ -195,6 +195,24 @@ describe("AnnotationDetail", () => {
     expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
   });
 
+  // 書いている途中で押せる条件を失ったら、書きかけを捨てて欄を閉じる。入力欄を
+  // 押せる条件は、確定したときに書く口が書ける条件と揃える（async-ui.md）。残すと
+  // 書けない対象に確定を押させ、条件が戻ったときに古い書きかけが欄ごと復活する。
+  it("書いている途中で名前を変えられなくなったら、書きかけを捨てて欄を閉じる", () => {
+    const detailProps = props();
+    const { rerender } = render(<AnnotationDetail {...detailProps} />);
+
+    fireEvent.change(startRename(), { target: { value: "書きかけ" } });
+    rerender(<AnnotationDetail {...detailProps} canEdit={false} />);
+
+    expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
+    expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+
+    rerender(<AnnotationDetail {...detailProps} canEdit={true} />);
+    expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
+    expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+  });
+
   // Enter で確定したあとは、焦点をラベルへ戻す。欄を離れて確定したときは、離れた
   // 先の焦点を奪わない。
   it("焦点は Enter のあとだけラベルへ戻し、欄を離れたときは奪わない", () => {
