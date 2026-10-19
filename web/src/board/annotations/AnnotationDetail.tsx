@@ -13,7 +13,7 @@ import {
   GRANULARITY_LABEL,
   OFF_CANVAS_NOTICE,
   STATE_LABEL,
-  annotationLabels,
+  numberedLabel,
 } from "./annotationLabel";
 import { annotationCardButtonId } from "./AnnotationPanel";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "../diagram/diagramLabels";
@@ -220,12 +220,12 @@ export function AnnotationDetail({
   // 見出しを組むところで落ち、開いてもいない詳細の境界が右のパネルと並んで
   // 2 つ目の「表示できませんでした」を出す。
   if (visited.size === 0) return null;
-  const labels = annotationLabels(annotations);
 
   return (
     <>
       {[...visited].map((id) => {
-        const annotation = annotations.find((a) => a.id === id);
+        const index = annotations.findIndex((a) => a.id === id);
+        const annotation = annotations[index];
         // 保存で注釈が消えたら面も出さない。描いたまま残すと、一覧に無い注釈の
         // 下書きが開いたまま取り残される。
         if (!annotation) return null;
@@ -238,7 +238,7 @@ export function AnnotationDetail({
               else sections.current.delete(id);
             }}
             annotation={annotation}
-            label={labels.get(id) ?? ""}
+            numberLabel={numberedLabel(index)}
             open={id === openId}
             onClose={() => close(id)}
             onShowOnCanvas={() => {
@@ -267,7 +267,7 @@ export function AnnotationDetail({
 function AnnotationFace({
   sectionRef,
   annotation: a,
-  label,
+  numberLabel,
   open,
   onClose,
   onShowOnCanvas,
@@ -282,7 +282,7 @@ function AnnotationFace({
 }: {
   sectionRef: (el: HTMLElement | null) => void;
   annotation: AnnotationStatus;
-  label: string;
+  numberLabel: string;
   open: boolean;
   onClose: () => void;
   onShowOnCanvas: () => void;
@@ -333,7 +333,7 @@ function AnnotationFace({
   const unmarked = onCanvas && frames.names !== null && canvasName === undefined;
   // 見出しに出す名前もキャンバスの値にする。保存済みの値のままだと、確定した
   // のに見出しが古い名前のまま次の保存まで残る。名前が無いときは番号の見出し。
-  const heading = name.trim() === "" ? label : name;
+  const heading = name.trim() === "" ? numberLabel : name;
   // 名前を変える口は見出しの隣のラベル（#305）。押すと欄になり、`nameDraft` が
   // 非 null のあいだが「書いている途中」。
   const canRename = canEdit && onCanvas && !unmarked;

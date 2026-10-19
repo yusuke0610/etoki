@@ -65,6 +65,22 @@ describe("AnnotationDetail", () => {
     expect(startRename("ログインの入口")).toHaveValue("ログインの入口");
   });
 
+  // 名前を消して確定したら、保存を待たずに番号の見出しになる。保存済みの名前から
+  // 作った見出しに落とすと、消したはずの旧名が見出しとダイアログの名前に残る。
+  it("名前を消した直後は、保存済みの旧名ではなく番号の見出しを出す", () => {
+    const detailProps = props();
+    render(
+      <AnnotationDetail
+        {...detailProps}
+        frames={{ ...detailProps.frames, names: { "frame-1": "" } }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "絵1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "ログイン" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "絵解き 絵1" })).toBeInTheDocument();
+  });
+
   // 名前は常設の欄ではなく、見出しの隣のラベルを押して変える。
   it("名前の欄は常には出さず、ラベルを押すと出て焦点が入る", () => {
     render(<AnnotationDetail {...props()} />);
