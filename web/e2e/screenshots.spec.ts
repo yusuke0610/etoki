@@ -479,9 +479,16 @@ test.describe("スクリーンショット", () => {
 
     await openBoardWithMock(page, mock);
     await page
-      .getByText("読むだけの権限で開いています。編集・解釈・作成はできません。")
+      .getByText(
+        "読むだけの権限で開いています。編集・解釈・作成はできず、etoki AI も使えません。",
+      )
       .waitFor();
     await shot(page, "13-viewer");
+
+    // 消した編集系の操作の理由（#295）。owner 専用の理由と並ぶ姿を残す。
+    const menu = await openBoardMenu(page);
+    await menu.getByText("編集できる人だけです", { exact: false }).waitFor();
+    await shot(page, "54-viewer-menu");
   });
 
   // 一覧を作成先ごとの節に分けた姿（ADR 0019、#200）。ボードが 1 枚の 01 では
