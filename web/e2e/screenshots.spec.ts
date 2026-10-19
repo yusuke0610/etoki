@@ -488,7 +488,7 @@ test.describe("スクリーンショット", () => {
     // 消した編集系の操作の理由（#295）。owner 専用の理由と並ぶ姿を残す。
     const menu = await openBoardMenu(page);
     await menu.getByText("編集できる人だけです", { exact: false }).waitFor();
-    await shot(page, "54-viewer-menu");
+    await shot(page, "56-viewer-menu");
   });
 
   // 一覧を作成先ごとの節に分けた姿（ADR 0019、#200）。ボードが 1 枚の 01 では
