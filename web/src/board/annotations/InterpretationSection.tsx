@@ -3,6 +3,7 @@ import type {
   Interpretation,
   ProjectAccess,
   SyncItem,
+  SyncState,
 } from "../../api/types";
 import { ErrorNotice } from "../../app/ErrorNotice";
 import { GRANULARITY_LABEL } from "./annotationLabel";
@@ -22,6 +23,8 @@ type InterpretationSectionProps = {
   annotationId: string;
   /** 注釈の粒度。作成前に手直しできる範囲がこれで変わる。 */
   granularity: Granularity;
+  /** 注釈の 3 状態。解釈を引く前の本文をこれで分ける（#290）。 */
+  syncState: SyncState;
   state?: InterpretationState;
   creation?: CreationState;
   /** 保存中は下書きの編集も止める。 */
@@ -60,6 +63,44 @@ type InterpretationSectionProps = {
 const BUSY_ELSEWHERE_REASON = "ほかの囲みを絵解き中です。終わってから押せます。";
 
 /**
+ * 作成済みと変更ありで共通の、押したときに起きること（ADR 0026）。押しただけでは
+ * 作らないことまで言う。言わないと「もう一度作ると重複する」と考えて止まる（#290）。
+ */
+const REINTERPRET_HINT =
+  "「絵解く」を押すと読み直して、前回作ったものの更新を候補にした下書きを出します。" +
+  "押しただけでは何も作りません。更新するか新しく作るかは、作る前に項目ごとに選べます。";
+
+/**
+ * 解釈を引く前の本文。注釈の 3 状態で分ける。
+ *
+ * **引いた解釈はメモリにしか無い**（#39）ので、開き直すと作成済みでも変更ありでも
+ * この文になる。状態で分けないと、作成済みなのに「まだ」と言い、変更ありの次の
+ * 一手が画面に無い（#290）。状態を見せても、そこから何を選べるかが無いと選ばせた
+ * ことにならない（中核思想 3）。
+ *
+ * 変更ありは「中身が変わった」とは言わない。前回の記録と一致しないという印で、
+ * 種別を足した移行のように、中身が同じでも付く（ADR 0047）。
+ */
+function beforeInterpretationHint(syncState: SyncState): string {
+  switch (syncState) {
+    case "uncreated":
+      return "まだ絵解きしていません。「絵解く」を押すと、この注釈を読んで、作るものの下書きを出します。";
+    case "created":
+      return (
+        "この注釈から作ったものが GitHub にあります。絵解きの結果は画面を開いているあいだしか" +
+        "持たないので、開き直したり保存したりすると、ここには出なくなります。" +
+        REINTERPRET_HINT
+      );
+    case "changed":
+      return (
+        "「変更あり」は、前回作ったときの記録といまの注釈が一致しないという印で、" +
+        "中身を書き換えていなくても付くことがあります。" +
+        REINTERPRET_HINT
+      );
+  }
+}
+
+/**
  * 解釈の結果と、下端の帯（`DetailBand`）。注釈の詳細（`AnnotationDetail`）の
  * 本文に出す。
  *
@@ -70,6 +111,7 @@ const BUSY_ELSEWHERE_REASON = "ほかの囲みを絵解き中です。終わっ�
 export function InterpretationSection({
   annotationId,
   granularity,
+  syncState,
   state,
   creation,
   saving,
@@ -116,10 +158,7 @@ export function InterpretationSection({
         web/CLAUDE.md）ので、開いたまま保存したときも同じ文に戻る。
       */}
       {!running && runs.length === 0 && !state?.failure && (
-        <p className="hint">
-          まだ絵解きしていません。「絵解く」を押すと、この注釈を読んで、作るものの
-          下書きを出します。
-        </p>
+        <p className="hint">{beforeInterpretationHint(syncState)}</p>
       )}
       {/*
         未保存のあいだだけ、保存が入ることを言う。**保存は全部の注釈の引いた解釈と
