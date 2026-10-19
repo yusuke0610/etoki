@@ -450,6 +450,32 @@ test.describe("スクリーンショット", () => {
     await shot(page, "20-error-notice");
   });
 
+  // 作成先の Project にフィールドが足りずに止まった画面（#292）。何を作るかが
+  // 前に出ていて、名前は畳んだ詳細にあることを、詳細を開いた状態で残す。
+  test("フィールドが足りずに作成が止まった状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.createItems = {
+      status: 422,
+      body: {
+        code: "project_field_missing",
+        error:
+          'etoki: required project field is missing: single select "Kind" with option "epic", single select "Kind" with option "issue", text "Parent"',
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const alert = detail.getByRole("alert");
+    await alert.waitFor();
+    await alert.locator("summary").click();
+    await alert.scrollIntoViewIfNeeded();
+    await shot(page, "57-project-field-missing");
+  });
+
   // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある
   // （ADR 0017）。
   test("メンバーの一覧を撮る", async ({ page }) => {

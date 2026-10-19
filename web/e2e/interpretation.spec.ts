@@ -638,4 +638,41 @@ test.describe("解釈と作成", () => {
     ).toBeVisible();
     await expect(card.getByText("未作成")).toBeVisible();
   });
+
+  // 切れると: いちばん手間をかけたあとで「フィールドがありません」とだけ出て、
+  // 何を作ればよいかを英文から読み解くことになる（#292）。名前は設定で変わる
+  // ので前に出さず、サーバーの本文として詳細に残す（ADR 0034 / 0083）。
+  test("Project にフィールドが足りないと、何を作るかを前に出し、名前は詳細に置く", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.createItems = {
+      status: 422,
+      body: {
+        code: "project_field_missing",
+        error:
+          'etoki: required project field is missing: single select "Kind" with option "epic", single select "Kind" with option "issue", text "Parent"',
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const alert = detail.getByRole("alert");
+    await expect(alert).toContainText("作成できませんでした");
+    await expect(alert).toContainText("種別を表す単一選択のフィールド");
+    await expect(alert).toContainText("選択肢 epic と issue");
+    await expect(alert).toContainText("親を表すテキストのフィールド");
+    await expect(alert).toContainText("押し直せば");
+    // 名前は畳んだ側にだけ置く。前に出すと、名前を変えた構成で嘘になる。
+    const body = alert.getByText('single select "Kind"', { exact: false });
+    await expect(body).toBeHidden();
+    await alert.getByText("詳細", { exact: true }).click();
+    await expect(body).toBeVisible();
+    // 作らずに止まる。種別も親子も無い draft issue を並べない（ADR 0006）。
+    await expect(card.getByText("未作成")).toBeVisible();
+  });
 });
