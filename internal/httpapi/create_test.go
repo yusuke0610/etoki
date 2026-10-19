@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,8 @@ type stubGitHub struct {
 	listErr error
 	// canWrite は CanWriteProject が返す値。
 	canWrite bool
+	// fieldsErr が非 nil なら ListProjectFields が失敗する。
+	fieldsErr error
 }
 
 func (s *stubGitHub) CanWriteProject(context.Context, string) (bool, error) {
@@ -49,6 +52,9 @@ func (s *stubGitHub) ListRepositoryProjects(context.Context, string, string) ([]
 }
 
 func (s *stubGitHub) ListProjectFields(context.Context, string) ([]port.ProjectField, error) {
+	if s.fieldsErr != nil {
+		return nil, s.fieldsErr
+	}
 	if s.fields != nil {
 		return s.fields, nil
 	}
@@ -136,7 +142,7 @@ func newCreateRouter(t *testing.T, gh port.GitHubClient) (*gin.Engine, port.Mapp
 	if gh != nil {
 		deps.Creations = usecase.NewCreationService(boards, mappings, gh, locks,
 			usecase.WithCreationClock(func() time.Time { return fixedTime }))
-		deps.Catalog = usecase.NewGitHubCatalogService(gh)
+		deps.Catalog = usecase.NewGitHubCatalogService(gh, usecase.ProjectFieldNames{}, nil)
 	}
 
 	return httpapi.NewRouter(deps), mappings
@@ -943,5 +949,77 @@ func TestListRepositories_UnavailableWithoutGitHub(t *testing.T) {
 	}
 	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeGithubNotConfigured {
 		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeGithubNotConfigured)
+	}
+}
+
+// 作成先の Project のフィールドを確かめる口（ADR 0086）。足りない役割を返し、
+// 名前は返さない。
+//
+// 切れると: 画面が足りないものを並べられないか、契約に無い形（null や名前）が
+// 応答に出る。
+func TestCheckProjectFields(t *testing.T) {
+	t.Parallel()
+
+	gh := &stubGitHub{fields: []port.ProjectField{
+		{ID: "F_kind", Name: "Kind", DataType: "SINGLE_SELECT", Options: []port.ProjectFieldOption{
+			{ID: "O_epic", Name: "epic"},
+		}},
+	}}
+	r, _ := newCreateRouter(t, gh)
+
+	rec := do(t, r, http.MethodGet, "/api/github/projects/PVT_9/fields", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	got := decode[apitypes.ProjectFieldsCheck](t, rec)
+	if got.ProjectID != "PVT_9" {
+		t.Errorf("projectId = %q, want PVT_9", got.ProjectID)
+	}
+	if got.Status != apitypes.ProjectFieldsStatusMissing {
+		t.Errorf("status = %q, want missing", got.Status)
+	}
+	want := []apitypes.ProjectFieldRequirement{
+		apitypes.ProjectFieldRequirementKindIssue, apitypes.ProjectFieldRequirementParent,
+	}
+	if !slices.Equal(got.MissingFields, want) {
+		t.Errorf("missingFields = %q, want %q", got.MissingFields, want)
+	}
+	// 名前（Kind / Parent）は応答に載せない。設定で変わるので、画面に写させない。
+	if body := rec.Body.String(); strings.Contains(body, "Kind") || strings.Contains(body, "Parent") {
+		t.Errorf("フィールドの名前が応答に出ている: %s", body)
+	}
+}
+
+// 揃っていれば ok で、足りないものは null ではなく空配列。
+func TestCheckProjectFields_OKHasEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+
+	rec := do(t, r, http.MethodGet, "/api/github/projects/PVT_9/fields", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	if body := strings.TrimSpace(rec.Body.String()); body != `{"missingFields":[],"projectId":"PVT_9","status":"ok"}` {
+		t.Errorf("body = %q", body)
+	}
+}
+
+// GitHub に問い合わせられなければ 200 の unknown。一覧の口のように 502 に
+// しない（ADR 0086）。
+//
+// 切れると: GitHub が一時的に落ちているだけで、選択の画面に失敗が出る。
+func TestCheckProjectFields_UnknownWhenGitHubFails(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{fieldsErr: errors.New("github api: 502")})
+
+	rec := do(t, r, http.MethodGet, "/api/github/projects/PVT_9/fields", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+	got := decode[apitypes.ProjectFieldsCheck](t, rec)
+	if got.Status != apitypes.ProjectFieldsStatusUnknown || len(got.MissingFields) != 0 {
+		t.Errorf("got = %+v, want unknown with no missing fields", got)
 	}
 }

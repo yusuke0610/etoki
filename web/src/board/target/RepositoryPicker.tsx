@@ -8,6 +8,8 @@ import {
 } from "../../api/errorMessage";
 import type { BoardTarget, Project, Repository } from "../../api/types";
 import { ErrorNotice } from "../../app/ErrorNotice";
+import { log } from "../../app/logger";
+import { projectFieldsNotice, type FieldsCheckState } from "./projectFieldsNotice";
 
 type Props = {
   /** 見出しに出す名前。作成前のボードにはまだ ID が無いので名前だけ受ける。 */
@@ -32,6 +34,11 @@ type Props = {
  *
  * どれかを既定で選んだり、1 件しか無いときに自動で確定したりしない。
  * 作成先は取り返しのつかない選択なので、開発者に選ばせる（中核思想 3）。
+ *
+ * **Project は押して選び、確定は別のボタンで行う**（ADR 0086）。選んだときに
+ * 作成に要るフィールドが揃っているかを 1 度だけ確かめて見せる。押した瞬間に
+ * 確定すると、確かめた結果を見せる前に画面が切り替わる。**結果で確定を止めない。**
+ * 判定は作成のときに GitHub が返したもので決まる。
  */
 export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
   const [repositories, setRepositories] = useState<Repository[] | null>(null);
@@ -42,6 +49,10 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
   // Project の一覧を取れなかったか。取れないまま「読み込み中…」を出し続けると、
   // 上に出した失敗の案内と食い違う（#293）。
   const [projectsFailed, setProjectsFailed] = useState(false);
+  // 選んだがまだ確定していない Project と、そのフィールドを確かめた結果
+  // （null は確かめている最中）。
+  const [chosen, setChosen] = useState<Project | null>(null);
+  const [fieldsCheck, setFieldsCheck] = useState<FieldsCheckState>(null);
   const [error, setError] = useState<Failure | null>(null);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("");
@@ -97,6 +108,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
     setRepository(repo);
     setProjects(null);
     setProjectsFailed(false);
+    setChosen(null);
     setError(null);
 
     try {
@@ -114,36 +126,64 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
     }
   }, []);
 
-  const chooseProject = useCallback(
-    async (project: Project) => {
-      if (!repository) return;
+  // Project を続けて押すと応答が前後しうる。**応答が名乗る projectId と、
+  // 最後に投げたものの両方で照合する。** 古い応答を入れると、選んでいない
+  // Project の結果を出す（`.claude/rules/async-ui.md`）。
+  const fieldsRequest = useRef(0);
 
-      setSaving(true);
-      setError(null);
-      try {
-        await onSelected({
-          repositoryOwner: repository.owner,
-          repositoryName: repository.name,
-          projectId: project.id,
-          // 番号と名前と URL は表示用のスナップショット（ADR 0019 / 0025）。
-          // この画面が見せていたものをそのまま送る。projectId は不透明な
-          // node ID なので、送らないと一覧に「名称未取得」と出るしかなくなる。
-          //
-          // **URL も組み立てずに送る。** owner が user か org かで形が変わり、
-          // フロントもサーバーもどちらなのかを知らない。GitHub が返したものを
-          // ここまで運んできてある。
-          projectNumber: project.number,
-          projectTitle: project.title,
-          projectUrl: project.url,
-        });
-      } catch (e) {
-        setError(describeFailure("作成先を設定できませんでした", e));
-      } finally {
-        setSaving(false);
-      }
-    },
-    [onSelected, repository],
-  );
+  /**
+   * Project を選ぶ。**確定はしない。** 作成に要るフィールドを 1 度だけ確かめる。
+   *
+   * 引くのは押したときだけ。一覧を出しただけでは引かない（Project の数だけ
+   * 問い合わせが増える、ADR 0086）。
+   */
+  const chooseProject = useCallback(async (project: Project) => {
+    const request = ++fieldsRequest.current;
+
+    setChosen(project);
+    setFieldsCheck(null);
+    setError(null);
+
+    try {
+      const check = await githubApi.projectFields(project.id);
+      if (request !== fieldsRequest.current || check.projectId !== project.id) return;
+      setFieldsCheck(check);
+    } catch (e) {
+      if (request !== fieldsRequest.current) return;
+      // 問い合わせられなかったことは、確かめられなかったとして見せる。
+      // **足りないにも揃っているにも倒さない。** 選ぶことも止めない。
+      log.warn("作成に要るフィールドを確かめられませんでした", e);
+      setFieldsCheck({ projectId: project.id, status: "unknown", missingFields: [] });
+    }
+  }, []);
+
+  const confirmProject = useCallback(async () => {
+    if (!repository || !chosen) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      await onSelected({
+        repositoryOwner: repository.owner,
+        repositoryName: repository.name,
+        projectId: chosen.id,
+        // 番号と名前と URL は表示用のスナップショット（ADR 0019 / 0025）。
+        // この画面が見せていたものをそのまま送る。projectId は不透明な
+        // node ID なので、送らないと一覧に「名称未取得」と出るしかなくなる。
+        //
+        // **URL も組み立てずに送る。** owner が user か org かで形が変わり、
+        // フロントもサーバーもどちらなのかを知らない。GitHub が返したものを
+        // ここまで運んできてある。
+        projectNumber: chosen.number,
+        projectTitle: chosen.title,
+        projectUrl: chosen.url,
+      });
+    } catch (e) {
+      setError(describeFailure("作成先を設定できませんでした", e));
+    } finally {
+      setSaving(false);
+    }
+  }, [chosen, onSelected, repository]);
 
   return (
     <div className="picker">
@@ -270,6 +310,8 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
                 <li key={p.id}>
                   <button
                     type="button"
+                    aria-pressed={chosen?.id === p.id}
+                    className={chosen?.id === p.id ? "active" : ""}
                     disabled={saving}
                     onClick={() => void chooseProject(p)}
                   >
@@ -279,6 +321,33 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
               ))}
             </ul>
           )}
+        </section>
+      )}
+
+      {chosen && (
+        <section className="panel-section picker-confirm" aria-label="選んだ作成先">
+          <h2>
+            #{chosen.number} {chosen.title} を作成先にする
+          </h2>
+          {/*
+            確かめた結果は状態として出す（失敗の帯にしない）。足りなくても
+            選べるので、選ぶ前の注意書きとして読ませる（ADR 0086）。
+          */}
+          <p
+            className={fieldsCheck?.status === "missing" ? "hint fields-missing" : "hint"}
+            role="status"
+          >
+            {projectFieldsNotice(fieldsCheck)}
+          </p>
+          <button
+            type="button"
+            className="primary"
+            // 確かめた結果では止めない。止めるのは設定の最中だけ。
+            disabled={saving}
+            onClick={() => void confirmProject()}
+          >
+            この Project にする
+          </button>
         </section>
       )}
 

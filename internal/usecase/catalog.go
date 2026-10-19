@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/yusuke0610/etoki/port"
 )
@@ -12,12 +13,27 @@ import (
 // ボードに何を設定するかは開発者が選ぶ。この層は候補を並べるだけで、
 // 自動でどれかを選んだり既定にしたりしない（中核思想 3）。
 type GitHubCatalogService struct {
-	github port.GitHubClient
+	github     port.GitHubClient
+	fieldNames ProjectFieldNames
+	logger     *slog.Logger
 }
 
 // NewGitHubCatalogService は GitHubCatalogService を作る。
-func NewGitHubCatalogService(github port.GitHubClient) *GitHubCatalogService {
-	return &GitHubCatalogService{github: github}
+//
+// fieldNames は作成（`CreationService`）と同じものを渡す。**任意の設定ではなく
+// 引数にしてある。** 渡し忘れると既定の名前で確かめることになり、名前を変えた
+// 構成で、確認と作成の答えが食い違う（#292）。空の名前は既定に落とす。
+func NewGitHubCatalogService(
+	github port.GitHubClient, fieldNames ProjectFieldNames, logger *slog.Logger,
+) *GitHubCatalogService {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &GitHubCatalogService{
+		github:     github,
+		fieldNames: fieldNames.withDefaults(),
+		logger:     logger,
+	}
 }
 
 // ListRepositories は選べるリポジトリを返す。

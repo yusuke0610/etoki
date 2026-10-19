@@ -985,6 +985,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/github/projects/{projectId}/fields:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [github]
+      operationId: checkProjectFields
+      summary: 作成先の Project に、作成に要るフィールドが揃っているかを返す
+      description: |
+        作成先を選ぶ画面が、Project を選んだときに 1 度だけ引く（ADR 0086）。
+        draft issue の種別と親は Project のカスタムフィールドで表すので
+        （ADR 0006）、足りないと作成は 422 `project_field_missing` で止まる。
+        それを押す前に見せるための口。
+
+        **判定ではない。** 実際に作れるかは作成時に GitHub が返したものが正しい。
+        これを見て選択も作成も止めない。GitHub に問い合わせられなかったときは
+        エラーにせず `unknown` を返す（`ProjectAccess` と同じ扱い、ADR 0017）。
+
+        **フィールドの名前は返さない。** 名前は設定で変わり、知っているのは起動の
+        配線だけ。返すのは足りない役割（`ProjectFieldRequirement`）まで。
+      responses:
+        "200":
+          description: 確かめた結果。確かめられなかったときも 200 で `unknown` を返す
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectFieldsCheck"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: GitHub が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/boards/{id}/annotations:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -1278,6 +1319,13 @@ components:
       schema:
         type: string
 
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: Projects v2 の GraphQL の node ID（`Project.id`）
+      schema:
+        type: string
     RepositoryName:
       name: repo
       in: path
@@ -2121,6 +2169,47 @@ components:
             Project のページ。**番号から組み立てず GitHub が返したものを運ぶ。**
             Projects v2 の URL は owner が user か org かで形が変わり、etoki は
             どちらなのかを知らない（ADR 0025）
+
+    ProjectFieldRequirement:
+      type: string
+      description: |
+        作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0086）。
+
+        - `kind_epic` … 種別を表す単一選択のフィールドの選択肢 epic
+        - `kind_issue` … 同じフィールドの選択肢 issue
+        - `parent` … 親を表すテキストのフィールド
+      enum: [kind_epic, kind_issue, parent]
+
+    ProjectFieldsStatus:
+      type: string
+      description: |
+        作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+
+        - `ok` … 揃っている
+        - `missing` … 足りないものがある。何が足りないかは `missingFields`
+        - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+          **ok / missing のどちらにも倒さない**
+      enum: [ok, missing, unknown]
+
+    ProjectFieldsCheck:
+      type: object
+      description: 作成先の Project のフィールドを確かめた結果。表示のための材料で、判定には使わない
+      required: [projectId, status, missingFields]
+      properties:
+        projectId:
+          type: string
+          description: |
+            確かめた Project。画面は選び直しの前後で応答を取り違えないよう、
+            これで照合する
+        status:
+          $ref: "#/components/schemas/ProjectFieldsStatus"
+        missingFields:
+          type: array
+          description: |
+            足りないもの。`status` が `missing` のときだけ要素を持ち、それ以外は
+            空配列
+          items:
+            $ref: "#/components/schemas/ProjectFieldRequirement"
 
     CreateBoardRequest:
       type: object

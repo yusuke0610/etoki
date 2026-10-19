@@ -51,6 +51,14 @@ func TestVocabulary_MatchesContract(t *testing.T) {
 			name: "BoardRole", dir: "port",
 		},
 		{
+			// 作成先の Project のフィールドの確認（ADR 0086）。境界に出るのは
+			// usecase の型で、domain / port には無い。
+			name: "ProjectFieldRequirement", dir: "internal/usecase",
+		},
+		{
+			name: "ProjectFieldsStatus", dir: "internal/usecase",
+		},
+		{
 			name: "RunOutcome", dir: "port",
 			// 記録していなかった頃の run。契約では lastRunOutcome の省略で表す（ADR 0043）。
 			onlyInDomain: map[string]string{"": "不明は省略で表す"},

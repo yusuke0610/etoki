@@ -156,6 +156,12 @@ export type SetMemberRoleRequest = Schemas["SetMemberRoleRequest"];
 /** 作成先の Project に書けるかどうかの、いまの状態。判定ではない。 */
 export type ProjectAccess = Schemas["ProjectAccess"];
 
+/** 作成に要るフィールドのうちの 1 つ。名前ではなく役割で表す（ADR 0086）。 */
+export type ProjectFieldRequirement = Schemas["ProjectFieldRequirement"];
+
+/** 作成先の Project のフィールドを確かめた結果。判定ではない（ADR 0086）。 */
+export type ProjectFieldsCheck = Schemas["ProjectFieldsCheck"];
+
 /** そのボードで何ができるか。etoki 側と GitHub 側を別々に持つ。 */
 export type BoardAccess = Schemas["BoardAccess"];
 

@@ -7,6 +7,7 @@ import {
   backToList,
   chooseFromMenu,
   chooseTarget,
+  confirmProject,
   drawRectangle,
   openBoard,
   openBoardMenu,
@@ -120,6 +121,182 @@ test.describe("作成先の選択", () => {
     // 取り消せない。
     // **Project まで書く**（#217）。リポジトリ名だけでは作る先が決まらない。
     await expect(page.locator(".badge-target")).toHaveText("acme/web › #1 ロードマップ");
+  });
+
+  // 作成に要るフィールドは、選んだときに 1 度だけ確かめて見せる（ADR 0086）。
+  // 切れると: 足りないと分かるのが作成を押したとき（いちばん手間をかけた後）に
+  // 戻る（#292）。
+  test.describe("選んだ Project のフィールド", () => {
+    test("一覧を出しただけでは確かめず、選んだ Project だけを確かめる", async ({
+      page,
+    }) => {
+      const mock = withUnselected();
+      await installApi(page, mock);
+      await page.goto("/");
+      await openUnselected(page);
+      await picker(page)
+        .getByRole("button", { name: /acme\/web/ })
+        .click();
+      await expect(
+        picker(page).getByRole("button", { name: "#4 技術的負債" }),
+      ).toBeVisible();
+      expect(mock.projectFieldsRequests ?? []).toEqual([]);
+
+      const requested = page.waitForRequest(
+        (r) =>
+          r.method() === "GET" &&
+          new URL(r.url()).pathname === "/api/github/projects/PVT_1/fields",
+      );
+      await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+      await requested;
+
+      await expect(
+        picker(page).getByText("作成に要るフィールドが揃っています"),
+      ).toBeVisible();
+      await expect(
+        picker(page).getByRole("button", { name: "#1 ロードマップ" }),
+      ).toHaveAttribute("aria-pressed", "true");
+      // 選んだだけでは確定しない。確定は別のボタン。
+      await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
+      expect(mock.projectFieldsRequests).toEqual(["PVT_1"]);
+    });
+
+    test("足りないものだけを並べ、名前は出さず、そのまま確定できる", async ({ page }) => {
+      const mock = withUnselected();
+      mock.projectFields = {
+        PVT_1: {
+          status: 200,
+          body: {
+            projectId: "PVT_1",
+            status: "missing",
+            missingFields: ["kind_issue", "parent"],
+          },
+        },
+      };
+      await installApi(page, mock);
+      await page.goto("/");
+      await openUnselected(page);
+      await picker(page)
+        .getByRole("button", { name: /acme\/web/ })
+        .click();
+      await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+
+      const notice = picker(page).getByRole("status");
+      await expect(notice).toContainText(
+        "種別を表す単一選択のフィールド（選択肢 issue）と、親を表すテキストのフィールドがありません",
+      );
+      // 足りているもの（選択肢 epic）は並べない。
+      await expect(notice).not.toContainText("epic");
+      // 名前は設定で変わるので写さない（ADR 0083 と同じ理由）。
+      await expect(notice).not.toContainText("Kind");
+      await expect(notice).not.toContainText("Parent");
+
+      // **結果で確定を止めない**（中核思想 3）。
+      const confirm = picker(page).getByRole("button", { name: "この Project にする" });
+      await expect(confirm).toBeEnabled();
+      await confirm.click();
+      await expect(page.locator(".badge-target")).toHaveText(
+        "acme/web › #1 ロードマップ",
+      );
+    });
+
+    test("確かめられなければ、どちらとも言わず、そのまま確定できる", async ({ page }) => {
+      const mock = withUnselected();
+      mock.projectFields = {
+        PVT_1: {
+          status: 200,
+          body: { projectId: "PVT_1", status: "unknown", missingFields: [] },
+        },
+      };
+      await installApi(page, mock);
+      await page.goto("/");
+      await openUnselected(page);
+      await picker(page)
+        .getByRole("button", { name: /acme\/web/ })
+        .click();
+      await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+
+      const notice = picker(page).getByRole("status");
+      await expect(notice).toContainText("確かめられませんでした");
+      await expect(notice).not.toContainText("揃っています");
+      await expect(notice).not.toContainText("ありません");
+
+      await confirmProject(page);
+      await expect(page.locator(".badge-target")).toHaveText(
+        "acme/web › #1 ロードマップ",
+      );
+    });
+
+    // 切れると: 問い合わせが返らない（通信の失敗）だけで確定できなくなるか、
+    // 確かめていないのに揃っている・足りないと出る。
+    test("問い合わせ自体が失敗しても、確かめられなかったと出して確定できる", async ({
+      page,
+    }) => {
+      await installApi(page, withUnselected());
+      await page.route(
+        (url) => url.pathname === "/api/github/projects/PVT_1/fields",
+        (route) => route.abort(),
+      );
+      await page.goto("/");
+      await openUnselected(page);
+      await picker(page)
+        .getByRole("button", { name: /acme\/web/ })
+        .click();
+      await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+
+      await expect(picker(page).getByRole("status")).toContainText(
+        "確かめられませんでした",
+      );
+      await confirmProject(page);
+      await expect(page.locator(".badge-target")).toHaveText(
+        "acme/web › #1 ロードマップ",
+      );
+    });
+
+    // 切れると: 選び直す前の Project の結果が遅れて着き、いま選んでいる Project に
+    // 「足りない」と出る。
+    test("選び直したら、前に選んだ Project の結果を出さない", async ({ page }) => {
+      const mock = withUnselected();
+      mock.projectFields = {
+        PVT_1: {
+          status: 200,
+          body: { projectId: "PVT_1", status: "missing", missingFields: ["parent"] },
+        },
+      };
+      await installApi(page, mock);
+      let release = (): void => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route(
+        (url) => url.pathname === "/api/github/projects/PVT_1/fields",
+        async (route) => {
+          await held;
+          await route.fallback();
+        },
+      );
+      await page.goto("/");
+      await openUnselected(page);
+      await picker(page)
+        .getByRole("button", { name: /acme\/web/ })
+        .click();
+
+      await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+      await picker(page).getByRole("button", { name: "#4 技術的負債" }).click();
+      await expect(picker(page).getByRole("status")).toContainText("揃っています");
+
+      const arrived = page.waitForResponse(
+        (r) => new URL(r.url()).pathname === "/api/github/projects/PVT_1/fields",
+      );
+      release();
+      await arrived;
+      await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+
+      await expect(picker(page).getByRole("status")).toContainText("揃っています");
+      await expect(picker(page).getByRole("heading", { level: 2 }).last()).toContainText(
+        "#4 技術的負債",
+      );
+    });
   });
 
   // 1 件しか無くても自動で確定しない。作成先は取り返しがつかないので、
@@ -480,6 +657,7 @@ test.describe("作成先の選択", () => {
     await requested;
 
     await other.click();
+    await confirmProject(page);
     await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
 
     // 設定のあとの取り直しはもう着いているので、ここで待てるのは止めた 1 本だけ。
@@ -536,6 +714,7 @@ test.describe("作成先の選択", () => {
         new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/target`,
     );
     await other.click();
+    await confirmProject(page);
     await setting;
 
     const arrived = page.waitForResponse((r) => isBoardDetail(r.request()));

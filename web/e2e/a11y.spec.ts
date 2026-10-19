@@ -15,6 +15,7 @@ import {
   openBoardWithMock,
   openMermaidPaste,
   openPanelTab,
+  picker,
   saveScene,
   ekidokiButton,
   openShareDialog,
@@ -567,6 +568,30 @@ for (const colorScheme of ["light", "dark"] as const) {
       await installApi(page, baseMock());
       await page.goto("/");
       await newBoardDialog(page);
+
+      await expectNoAxeViolations(page);
+    });
+
+    /*
+     * 作成先の Project を選んで、足りないフィールドが出た状態（ADR 0086）。
+     * **選ぶまで DOM に出ない**ので、ほかの検査には掛かっていない。注意の色の
+     * コントラストはここでしか測れない。
+     */
+    test("作成先の Project を選び、足りないフィールドが出た状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.projectFields = {
+        PVT_1: {
+          status: 200,
+          body: { projectId: "PVT_1", status: "missing", missingFields: ["parent"] },
+        },
+      };
+      await openBoardWithMock(page, mock);
+      await chooseFromMenu(page, "作成先を変更");
+      await picker(page)
+        .getByRole("button", { name: /acme\/web/ })
+        .click();
+      await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+      await picker(page).getByText("がありません", { exact: false }).waitFor();
 
       await expectNoAxeViolations(page);
     });

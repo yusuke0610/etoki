@@ -66,6 +66,29 @@
 }
 
 /*
+ * 選んだ Project の確定（ADR 0086）。一覧から離して置き、確かめた結果を確定の
+ * ボタンの直前に読ませる。
+ */
+.picker-confirm {
+  margin-top: var(--space-5);
+}
+
+.picker-confirm .hint {
+  margin: 0 0 var(--space-4);
+}
+
+/*
+ * 足りないときは注意の色で出す。**失敗の帯（`.error`）にはしない。** 選ぶこと
+ * は止めておらず、作成のときに止まるという予告だから。
+ */
+.picker-confirm .fields-missing {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+}
+
+/*
  * スマホ（#199）。候補の名前と説明を縦に積み、1 列に並べる。横に並べたままだと、
  * 長い説明に押されて名前が 1 文字ずつ折れる。条件は一覧（`boards.css`）と同じ式。
  */

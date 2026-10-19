@@ -21,6 +21,7 @@ import type {
   OAuthDecisionRequest,
   OAuthGrant,
   Project,
+  ProjectFieldsCheck,
   RepositoryList,
   SaveSceneRequest,
   SessionStatus,
@@ -112,6 +113,14 @@ export type ApiMock = {
   repositories: Reply<RepositoryList>;
   /** `owner/name` をキーにした Projects v2。 */
   projects: Record<string, Reply<Project[]>>;
+  /**
+   * Project の ID をキーにした、作成に要るフィールドを確かめた結果（ADR 0086）。
+   *
+   * 無い Project は揃っている（`ok`）として返す。全 spec に書かせないため。
+   */
+  projectFields?: Record<string, Reply<ProjectFieldsCheck>>;
+  /** 確かめに来た Project の ID。届いた順に積む。選んだときだけ引くことを見る。 */
+  projectFieldsRequests?: string[];
   /**
    * いま使える機能。既定は全部そろった構成。
    *
