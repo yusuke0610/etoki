@@ -97,6 +97,28 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "MCP のクライアントへの接続には認証の設定が必要です。GitHub App を設定してください。",
 };
 
+/** 場面ごとに `ERROR_MESSAGES` の文を差し替える表。 */
+export type MessageOverrides = Partial<Record<ErrorCode, string>>;
+
+/**
+ * 作成先の選択で、リポジトリの Projects v2 を引いたときの上書き（#293）。
+ *
+ * **ADR 0034 の「場面ごとの上書きを対応表の外に置く」。** 同じ
+ * `forbidden_project` でも、作成で拒まれたなら直すのは Project の権限だが、
+ * ここで拒まれるのは GitHub App で個人アカウントの Project を辿ったときにも
+ * 起きる。そちらは権限を見直しても直らず、Organization 所有に移すしかない
+ * （README「個人アカウントの Projects v2 は使えない」）。表の文を変えると
+ * 作成の場面が嘘になるので、この場面でだけ差し替える。
+ *
+ * **どちらの原因かを決めつけない。** Project の URL（`/users/`）から言い当て
+ * られそうに見えるが、etoki は owner が user か org かを知らない（ADR 0025）。
+ * 可能性を並べ、選ぶのは読んだ人に任せる。
+ */
+export const PROJECT_LIST_MESSAGES: MessageOverrides = {
+  forbidden_project:
+    "GitHub がこのリポジトリの Project を見せませんでした。書く権限が無いか、GitHub App で動かしているなら個人アカウントの Project には触れません（Organization の Project なら使えます）。",
+};
+
 /**
  * 応答が返ってこなかったときの文言。
  *
@@ -117,8 +139,14 @@ export type Failure = {
  * 失敗を画面に出せる形にする。
  *
  * `action` は操作の名前（`保存できませんでした`）。原因の文言は code から引く。
+ * `overrides` は場面ごとの差し替え（`PROJECT_LIST_MESSAGES` など）。載っている
+ * code だけ表の文に優先する。
  */
-export function describeFailure(action: string, e: unknown): Failure {
+export function describeFailure(
+  action: string,
+  e: unknown,
+  overrides?: MessageOverrides,
+): Failure {
   if (!(e instanceof ApiError)) {
     // 応答が返ってこなかった。**例外の中身は画面に出さず console に固定する**
     // （`web/CLAUDE.md`、ADR 0027）。`TypeError: Failed to fetch` を畳んで
@@ -129,9 +157,9 @@ export function describeFailure(action: string, e: unknown): Failure {
 
   // 対応表は ErrorCode で網羅しているが、受け取る値は契約より新しいことがある。
   // 知らない code をここで拾えるよう、引くときだけ緩い型で見る。
-  const known: string | undefined = (ERROR_MESSAGES as Partial<Record<string, string>>)[
-    e.code
-  ];
+  const known: string | undefined =
+    (overrides as Partial<Record<string, string>> | undefined)?.[e.code] ??
+    (ERROR_MESSAGES as Partial<Record<string, string>>)[e.code];
   if (known === undefined) {
     // サーバーのほうが新しい。畳んで隠すと何も言えなくなるので本文を出す。
     return { message: `${action}: ${e.message}`, detail: "" };

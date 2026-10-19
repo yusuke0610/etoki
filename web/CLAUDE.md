@@ -604,6 +604,9 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 - **文言を持つのは `web/src/api/errorMessage.ts` だけ。** コンポーネントが持つ
   のは操作の名前（`保存できませんでした`）まで。`Record<ErrorCode, string>` に
   してあるので、契約に code が増えて文言を書き忘れると `tsc` が落ちる。
+  **場面によって原因の側を言い換える必要があるときは、上書きの表を同じ
+  モジュールに置き、`describeFailure` に渡す**（`PROJECT_LIST_MESSAGES`、
+  ADR 0034 の追記）。表の文を書き換えると、ほかの場面が嘘になる。
 - **サーバーの `error` 本文は既定で畳む**（`ErrorNotice` の `<details>`）。
   捨てはしない。GitHub のレート制限や LLM の設定不足は本文にしか手掛かりが無い。
   **知らない code のときだけ本文を前に出す。**

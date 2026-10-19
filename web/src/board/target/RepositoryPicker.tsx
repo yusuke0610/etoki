@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { githubApi } from "../../api/boards";
-import { describeFailure, type Failure } from "../../api/errorMessage";
+import {
+  describeFailure,
+  PROJECT_LIST_MESSAGES,
+  type Failure,
+} from "../../api/errorMessage";
 import type { BoardTarget, Project, Repository } from "../../api/types";
 import { ErrorNotice } from "../../app/ErrorNotice";
 
@@ -35,6 +39,9 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
   const [truncated, setTruncated] = useState(false);
   const [repository, setRepository] = useState<Repository | null>(null);
   const [projects, setProjects] = useState<Project[] | null>(null);
+  // Project の一覧を取れなかったか。取れないまま「読み込み中…」を出し続けると、
+  // 上に出した失敗の案内と食い違う（#293）。
+  const [projectsFailed, setProjectsFailed] = useState(false);
   const [error, setError] = useState<Failure | null>(null);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("");
@@ -89,6 +96,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
 
     setRepository(repo);
     setProjects(null);
+    setProjectsFailed(false);
     setError(null);
 
     try {
@@ -97,7 +105,12 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
       setProjects(list);
     } catch (e) {
       if (request !== projectsRequest.current) return;
-      setError(describeFailure("プロジェクトを取得できませんでした", e));
+      setProjectsFailed(true);
+      // 拒まれた理由はリポジトリの権限とは限らない。この場面でだけ文を
+      // 差し替える（`PROJECT_LIST_MESSAGES`、#293）。
+      setError(
+        describeFailure("プロジェクトを取得できませんでした", e, PROJECT_LIST_MESSAGES),
+      );
     }
   }, []);
 
@@ -237,12 +250,19 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           <h2>
             {repository.owner}/{repository.name} のプロジェクト
           </h2>
-          {projects === null ? (
+          {projectsFailed ? null : projects === null ? (
             <p className="hint">読み込み中…</p>
           ) : projects.length === 0 ? (
+            // 候補は書ける Project だけに絞っている（ADR 0014）。読めるだけの
+            // Project は 0 件に数えられるので、「無い」とだけ言うと、作る必要の
+            // 無いものを作りにいかせる。**無いのか書けないのかは API からは
+            // 区別できない**（ADR 0017）ので、両方を言う（#293）。
             <p className="hint">
-              {"このリポジトリに紐づく Projects v2 がありません。"}
-              {"GitHub 側で作ってから選び直してください。"}
+              {"このリポジトリには、書き込める Projects v2 が紐づいていません。"}
+              {"紐づく Project が無いか、あっても書く権限がありません。"}
+              {
+                "GitHub 側で Project を作って紐づけるか、書く権限をもらってから選び直してください。"
+              }
             </p>
           ) : (
             <ul className="plain-list">
