@@ -229,6 +229,30 @@ describe("AnnotationDetail", () => {
     expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
   });
 
+  // キャンバスの名前がまだ分からない（null）うちに欄を開くと、下書きは保存済みの
+  // 名前から始まる。あとでキャンバスの名前が届いたとき、触っていない下書きを確定して
+  // 古い名前をキャンバスへ書き戻さない。「変えたか」は開いた時点の値と比べる。
+  it("開いたあとにキャンバスの名前が届いても、触っていない下書きでは書き戻さない", () => {
+    const detailProps = props();
+    const { rerender } = render(
+      <AnnotationDetail
+        {...detailProps}
+        frames={{ ...detailProps.frames, names: null }}
+      />,
+    );
+
+    const input = startRename();
+    rerender(
+      <AnnotationDetail
+        {...detailProps}
+        frames={{ ...detailProps.frames, names: { "frame-1": "入口" } }}
+      />,
+    );
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
+  });
+
   // Enter で確定したあとは、焦点をラベルへ戻す。欄を離れて確定したときは、離れた
   // 先の焦点を奪わない。
   it("焦点は Enter のあとだけラベルへ戻し、欄を離れたときは奪わない", () => {

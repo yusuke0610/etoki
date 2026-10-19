@@ -343,6 +343,10 @@ function AnnotationFace({
   // 確定させると入力が黙って消え、条件が戻ったとき古い書きかけが欄ごと復活する。
   // effect ではなく描画中に捨てるのは、1 回ぶんの古い欄を描かないため。
   if (!canRename && nameDraft !== null) setNameDraft(null);
+  // 欄を開いた時点の名前。「変えたか」はこれと比べる。確定時のキャンバスの名前と
+  // 比べると、キャンバスの名前が分かる前（保存済みの値から始めた）に開いた下書きを、
+  // 触っていないのに古い名前としてキャンバスへ書き戻す。
+  const draftStart = useRef("");
   const labelRef = useRef<HTMLButtonElement>(null);
   // 欄を閉じたあとに焦点をラベルへ戻すか。Enter と Escape だけ戻す。欄を離れて
   // 確定したときは、離れた先の焦点を奪わない。
@@ -365,7 +369,9 @@ function AnnotationFace({
     if (!canRename) return;
     // 変えていないのに書くと、開いて閉じただけで未保存になる。前後の空白は
     // 書く側（`setAnnotationName`）が落とすので、比べるのも落としてから。
-    if (nameDraft.trim() !== name.trim()) frames.onChangeName(id, nameDraft);
+    if (nameDraft.trim() !== draftStart.current.trim()) {
+      frames.onChangeName(id, nameDraft);
+    }
   };
   // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈で
   // 変えると「変更あり」になる。未作成なら影響が無いので言わない。
@@ -469,7 +475,10 @@ function AnnotationFace({
               ref={labelRef}
               className="annotation-detail-label annotation-detail-rename"
               aria-describedby={nameDescribedBy}
-              onClick={() => setNameDraft(name)}
+              onClick={() => {
+                draftStart.current = name;
+                setNameDraft(name);
+              }}
             >
               {heading}
               <span aria-hidden="true" className="annotation-detail-rename-mark">
