@@ -183,7 +183,9 @@ test.describe("共有", () => {
     await openBoardWithMock(page, mock);
 
     await expect(
-      page.getByText("読むだけの権限で開いています。編集・解釈・作成はできません。"),
+      page.getByText(
+        "読むだけの権限で開いています。編集・解釈・作成はできず、etoki AI も使えません。",
+      ),
     ).toBeVisible();
     await expect(ekidokiButton(page)).toHaveCount(0);
     // 状態は読める。何が作成済みかは、読むだけの人にも見える必要がある。
@@ -202,6 +204,46 @@ test.describe("共有", () => {
         "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
       ),
     ).toBeVisible();
+  });
+
+  // 切れると: 読むだけの人のメニューから編集系の操作が理由なく消え、並ぶ
+  // owner 専用の操作にだけ理由が出る（#295）。消えたことと理由の両方を、
+  // **同じ開いたメニューの中で**見る。閉じたままだと出していても通る。
+  test("viewer のメニューには、消した編集系の操作の理由を 1 文だけ出す", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
+    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
+
+    await openBoardWithMock(page, mock);
+
+    const menu = await openBoardMenu(page);
+    for (const name of ["名前を変更", "取り込み", "表"]) {
+      await expect(menu.getByRole("button", { name, exact: true })).toHaveCount(0);
+    }
+    // 項目ごとに同じ文を並べない（ADR 0030）。
+    const note = menu.getByText(
+      "名前の変更・取り込み・表などを使えるのは、編集できる人だけです",
+    );
+    await expect(note).toHaveCount(1);
+    await expect(note).toBeVisible();
+    // owner 専用の文も並ぶ。形を揃えたのはこの並びのため。
+    await expect(menu.getByText("作成先を変えられるのはオーナーだけです")).toBeVisible();
+    // 書き出しは viewer にも出す（ADR 0017）。消えているのが編集系だけだと分かる。
+    await expect(menu.getByRole("button", { name: "書き出し" })).toBeVisible();
+  });
+
+  // 編集できる人には出さない。出しっぱなしでも上の検査は通る。
+  test("編集できる人のメニューには、編集系の理由を出さない", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), role: "editor" };
+
+    await openBoardWithMock(page, mock);
+
+    const menu = await openBoardMenu(page);
+    await expect(menu.getByRole("button", { name: "名前を変更" })).toBeVisible();
+    await expect(menu.getByText("編集できる人だけです")).toHaveCount(0);
   });
 
   test("オーナー以外には作成先の変更を出さない", async ({ page }) => {
