@@ -304,8 +304,17 @@ func extractText(resp apiResponse, maxTokens int) (string, error) {
 	}
 	// 打ち切られた応答は JSON として壊れている。再送しても同じ結果になるので、
 	// スキーマ違反ではなく呼び出しの失敗として返す。
-	if resp.StopReason == "max_tokens" {
+	//
+	// model_context_window_exceeded も打ち切り。出力の上限ではなくモデルの
+	// コンテキスト長が尽きたときに返る（本文の途中までが入っていることがある）。
+	// 読んで先へ渡すと、壊れた JSON が修正指示つきの再送に回り、入力が増えて
+	// 同じところでまた切れる。
+	switch resp.StopReason {
+	case "max_tokens":
 		return "", truncatedError(resp.Usage.OutputTokens, maxTokens)
+	case "model_context_window_exceeded":
+		return "", fmt.Errorf("%w: stop_reason is model_context_window_exceeded "+
+			"(the model's context window ran out before the response finished)", port.ErrLLMTruncated)
 	}
 
 	var b strings.Builder

@@ -519,6 +519,14 @@ func TestComplete_NamesTheCause(t *testing.T) {
 			want: "ErrLLMTruncated",
 		},
 		{
+			// コンテキスト長が尽きた。途中までの本文が入っていても成功にしない。
+			name:   "model_context_window_exceeded で打ち切り",
+			status: http.StatusOK,
+			body: `{"content":[{"type":"text","text":"{\"summary\":"}],` +
+				`"stop_reason":"model_context_window_exceeded","usage":{"input_tokens":990000,"output_tokens":12}}`,
+			want: "ErrLLMTruncated",
+		},
+		{
 			name:   "拒否",
 			status: http.StatusOK,
 			body:   `{"content":[],"stop_reason":"refusal","stop_details":{"category":"cyber"}}`,
