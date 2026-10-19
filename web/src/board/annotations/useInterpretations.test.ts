@@ -88,7 +88,10 @@ describe("useInterpretations", () => {
 
     expect(interpret).toHaveBeenCalledTimes(2);
     const state = hook.current.states.a1;
-    expect(state?.failure).toEqual({ message: "解釈できませんでした: boom", detail: "" });
+    expect(state?.failure).toEqual({
+      message: "絵解きできませんでした: boom",
+      detail: "",
+    });
     expect(state?.runs.map((r) => r.result.summary)).toEqual(["一つ目"]);
   });
 

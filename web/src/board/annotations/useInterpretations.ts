@@ -110,7 +110,7 @@ export function useInterpretations({
           ...prev,
           [annotationId]: failInterpretation(
             prev[annotationId],
-            describeFailure("解釈できませんでした", e),
+            describeFailure("絵解きできませんでした", e),
           ),
         }));
       }

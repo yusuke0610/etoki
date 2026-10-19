@@ -362,15 +362,13 @@ test.describe("通知", () => {
     await openBoard(page, OTHER_NAME);
 
     const alert = page.getByRole("alert");
-    await expect(alert).toContainText("注釈の状態を取得できませんでした");
+    await expect(alert).toContainText("絵の状態を取得できませんでした");
 
     // ここで 1 枚目の取得が成功して返る。
     release();
     await page.waitForTimeout(500);
 
     // 2 枚目の通知は残る。
-    await expect(page.getByRole("alert")).toContainText(
-      "注釈の状態を取得できませんでした",
-    );
+    await expect(page.getByRole("alert")).toContainText("絵の状態を取得できませんでした");
   });
 });

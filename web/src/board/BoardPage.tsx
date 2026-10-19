@@ -481,7 +481,7 @@ export function BoardPage({
         return next.annotations;
       } catch (e) {
         if (request !== annotationsRequest.current) return latestAnnotations.current;
-        onError(describeFailure("注釈の状態を取得できませんでした", e), {
+        onError(describeFailure("絵の状態を取得できませんでした", e), {
           key: ANNOTATIONS_FAILED,
         });
         return null;
@@ -1236,7 +1236,7 @@ export function BoardPage({
       // 数えるのは注釈の一覧と同じく保存済みシーンが基準。
       railBadges: railBadgesOf(annotations),
       content: (
-        <ErrorBoundary name="注釈パネル" recovery="remount">
+        <ErrorBoundary name="「絵解いた」パネル" recovery="remount">
           <AnnotationPanel
             annotations={annotations}
             detached={detached}
@@ -1418,7 +1418,7 @@ export function BoardPage({
                   **枠も境界で包む。** 包まずに落ちると外側の 1 枚が受けることになり、
                   キャンバスごと外れて未保存のブレストが消える（ADR 0027）。
                 */}
-                <ErrorBoundary name="注釈の枠" recovery="remount">
+                <ErrorBoundary name="絵の枠" recovery="remount">
                   <AnnotationOverlay boxes={overlayBoxes} />
                 </ErrorBoundary>
               </div>
@@ -1427,7 +1427,7 @@ export function BoardPage({
                 **`.excalidraw` の外に置く。** 中に入れると色の変数がぶつかり、
                 axe が色を判定できない（ADR 0065）。
               */}
-              <ErrorBoundary name="解釈の結果" recovery="remount">
+              <ErrorBoundary name="絵解きの結果" recovery="remount">
                 <AnnotationDetail
                   openId={detailId}
                   openRequest={detailRequest}

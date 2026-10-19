@@ -117,7 +117,7 @@ export function InterpretationSection({
       */}
       {!running && runs.length === 0 && !state?.failure && (
         <p className="hint">
-          まだ絵解きしていません。「絵解く」を押すと、この注釈を読んで、作るものの
+          まだ絵解きしていません。「絵解く」を押すと、この絵を読んで、作るものの
           下書きを出します。
         </p>
       )}
@@ -129,7 +129,7 @@ export function InterpretationSection({
       {stale && !running && (
         <p className="hint">
           未保存の変更があります。「{interpret.label}」を押すと保存してから読みます。
-          保存すると、ほかの注釈のぶんも含めて、これまでの絵解きの結果を捨てます。
+          保存すると、ほかの絵のぶんも含めて、これまでの絵解きの結果を捨てます。
         </p>
       )}
 
@@ -206,7 +206,7 @@ function InterpretationHistory({
 
   return (
     <div className="interpretation-history">
-      <label htmlFor={selectId}>解釈結果</label>
+      <label htmlFor={selectId}>絵解きの結果</label>
       <select
         id={selectId}
         value={selectedId ?? ""}

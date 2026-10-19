@@ -70,7 +70,7 @@ test.describe("右上の「絵解き」", () => {
     )
       .getByRole("button", { name: "キャンバスで見る" })
       .click();
-    await page.getByRole("button", { name: /の注釈を外す/ }).click();
+    await page.getByRole("button", { name: /を絵から外す/ }).click();
     const saving = page.waitForRequest(
       (r) =>
         r.method() === "PUT" &&
@@ -78,7 +78,7 @@ test.describe("右上の「絵解き」", () => {
     );
     await ekidokiButton(page).click();
     await saving;
-    await page.getByRole("button", { name: /を注釈にする/ }).click();
+    await page.getByRole("button", { name: /を絵にする/ }).click();
 
     release();
     await expect(annotationDetail(page, "ログイン")).toBeVisible();
@@ -154,9 +154,7 @@ test.describe("右上の「絵解き」", () => {
 
     await ekidokiButton(page).click();
 
-    await expect(page.getByRole("alert")).toContainText(
-      "注釈の状態を取得できませんでした",
-    );
+    await expect(page.getByRole("alert")).toContainText("絵の状態を取得できませんでした");
     await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
     await expect(annotationDetail(page, "ログイン")).toHaveCount(0);
   });
@@ -170,9 +168,7 @@ test.describe("右上の「絵解き」", () => {
 
     await ekidokiButton(page).click();
 
-    await expect(page.getByRole("alert")).toContainText(
-      "注釈の状態を取得できませんでした",
-    );
+    await expect(page.getByRole("alert")).toContainText("絵の状態を取得できませんでした");
     await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
     await expect(annotationDetail(page, "ログイン")).toHaveCount(0);
     expect(mock.saveRequests).toHaveLength(0);

@@ -69,7 +69,7 @@ describe("AnnotationDetail", () => {
 
     const input = screen.getByLabelText("名前");
     expect(input).toBeDisabled();
-    expect(input).toHaveAccessibleDescription(/注釈から外してあります/);
+    expect(input).toHaveAccessibleDescription(/絵から外してあります/);
   });
 
   // キャンバスからまだ聞いていない（null）うちは、外したことにしない（`canvasIds`
@@ -448,7 +448,7 @@ describe("AnnotationDetail", () => {
     expect(screen.queryByRole("button", { name: "絵解く" })).toBeNull();
     expect(
       screen.getByText(
-        "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
+        "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
       ),
     ).toBeInTheDocument();
     // 押せない粒度と種別も同じ文を指す。
@@ -456,7 +456,7 @@ describe("AnnotationDetail", () => {
       const select = screen.getByRole("combobox", { name });
       expect(select).toBeDisabled();
       expect(select).toHaveAccessibleDescription(
-        "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
+        "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
       );
     }
   });
