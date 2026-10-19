@@ -102,7 +102,7 @@ var wantMappings = map[string]wantMapping{
 
 	"usecase.ErrLLMUnavailable": {
 		usecase.ErrLLMUnavailable, http.StatusBadGateway, apitypes.ErrorCodeLlmUnavailable},
-	// LLM の呼び出しの失敗は打ち手で分ける（ADR 0086）。上流の混雑は 429 にも
+	// LLM の呼び出しの失敗は打ち手で分ける（ADR 0087）。上流の混雑は 429 にも
 	// rate_limited にもしない。etoki 自身の上限（ADR 0044）とは相手が違う。
 	"usecase.ErrLLMTruncated": {
 		usecase.ErrLLMTruncated, http.StatusBadGateway, apitypes.ErrorCodeLlmTruncated},
@@ -124,7 +124,7 @@ var notMapped = map[string]string{
 	"port.ErrConflict":      "usecase.ErrSceneConflict に写して返す（ADR 0020）",
 	"port.ErrAlreadyExists": "usecase.ErrAlreadyMember に写して返す",
 	// LLMClient の実装が名乗る原因。ユースケース層が入れ子にせず写し替える
-	// （llmCallError、ADR 0086）。
+	// （llmCallError、ADR 0087）。
 	"port.ErrLLMTruncated":  "usecase.ErrLLMTruncated に写して返す",
 	"port.ErrLLMRefused":    "usecase.ErrLLMRefused に写して返す",
 	"port.ErrLLMOverloaded": "usecase.ErrLLMOverloaded に写して返す",

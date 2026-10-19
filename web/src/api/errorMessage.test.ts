@@ -206,7 +206,7 @@ describe("ERROR_MESSAGES", () => {
     expect(ERROR_MESSAGES.rate_limited).not.toBe(ERROR_MESSAGES.concurrency_limited);
   });
 
-  // LLM の呼び出しの失敗は打ち手で分けた（ADR 0086）。畳むと、打ち切りでも
+  // LLM の呼び出しの失敗は打ち手で分けた（ADR 0087）。畳むと、打ち切りでも
   // 混雑でも「鍵を確かめて」と言うことになる。
   const llmCallFailures = [
     ERROR_MESSAGES.llm_unavailable,
@@ -228,7 +228,7 @@ describe("ERROR_MESSAGES", () => {
     }
   });
 
-  // 上流の混雑と etoki 自身の上限は、どちらも待つ話だが相手が違う（ADR 0044 / 0086）。
+  // 上流の混雑と etoki 自身の上限は、どちらも待つ話だが相手が違う（ADR 0044 / 0087）。
   it("上流の混雑は etoki 自身の上限と別の文言を持つ", () => {
     expect(ERROR_MESSAGES.llm_overloaded).not.toBe(ERROR_MESSAGES.rate_limited);
     expect(ERROR_MESSAGES.llm_overloaded).toContain("LLM 側");

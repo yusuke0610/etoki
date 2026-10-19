@@ -55,7 +55,7 @@ func (h *handlers) failLLM(c *gin.Context, err, rejected error) {
 
 // llmCallFailures は「呼び出しそのものが失敗した」ことを表す sentinel。
 //
-// 画面に返す code は原因ごとに分けてある（ADR 0086）が、**記録の出し分けは
+// 画面に返す code は原因ごとに分けてある（ADR 0087）が、**記録の出し分けは
 // 分けない。** どれも出力を受け取れなかった上流の失敗で、分ける前の
 // ErrLLMUnavailable と同じ扱いにする。ここに足し忘れると、その原因だけ記録から
 // 消える。

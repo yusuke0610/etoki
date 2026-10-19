@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-// LLM の呼び出しが失敗した原因のうち、打ち手が違うもの（ADR 0086）。
+// LLM の呼び出しが失敗した原因のうち、打ち手が違うもの（ADR 0087）。
 //
 // **外部の LLMClient 実装は返さなくてよい。** 返さなければ、ユースケース層は
 // 原因の分からない失敗として扱い、画面には `llm_unavailable` の文が出る。
@@ -88,7 +88,7 @@ type Usage struct {
 //
 // 失敗の原因は ErrLLMTruncated / ErrLLMRefused / ErrLLMOverloaded で名乗れる。
 // **名乗るかどうかは実装の任意**で、名乗らない失敗も同じように扱われる
-// （画面の案内が原因に合わせて変わらないだけ。ADR 0086）。
+// （画面の案内が原因に合わせて変わらないだけ。ADR 0087）。
 type LLMClient interface {
 	Complete(ctx context.Context, req VisionRequest) (VisionResponse, error)
 }

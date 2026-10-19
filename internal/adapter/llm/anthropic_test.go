@@ -490,7 +490,7 @@ func TestComplete_HTTPErrors(t *testing.T) {
 	}
 }
 
-// 失敗の原因は、打ち手が違うものだけ port の sentinel で名乗る（ADR 0086）。
+// 失敗の原因は、打ち手が違うものだけ port の sentinel で名乗る（ADR 0087）。
 //
 // **名乗る sentinel は 1 つだけ**であることまで見る。429 を打ち切りとしても
 // 名乗る、のような取り違えは文言の断言では気づけない。401 や 400 は

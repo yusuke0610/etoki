@@ -27,7 +27,7 @@ var (
 	// 原因も打ち手も違うので、呼び出し側が区別できるよう分けている。
 	//
 	// 打ち切り・拒否・上流の混雑は別の sentinel に分けてある（llmcall.go、
-	// ADR 0086）。LLMClient の実装がそれを名乗らなかったときは、ここに落ちる。
+	// ADR 0087）。LLMClient の実装がそれを名乗らなかったときは、ここに落ちる。
 	ErrLLMUnavailable = errors.New("etoki: llm call failed")
 )
 

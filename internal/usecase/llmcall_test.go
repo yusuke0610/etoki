@@ -13,7 +13,7 @@ import (
 
 // llmCallers は LLM を叩く 2 つの経路。**写し替えはどちらも同じ**であることを、
 // 同じ表で回して確かめる。片方だけ写すと、同じ打ち切りが経路によって別の
-// code になる（ADR 0086）。
+// code になる（ADR 0087）。
 var llmCallers = map[string]func(t *testing.T, llm *fakeLLM) error{
 	"解釈": func(t *testing.T, llm *fakeLLM) error {
 		svc, _ := newInterpretService(t, newBoard(interpretScene), llm)

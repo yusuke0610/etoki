@@ -618,7 +618,7 @@ test.describe("解釈と作成", () => {
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 
-  // LLM の呼び出しの失敗は打ち手で分ける（#291、ADR 0086）。打ち切りは鍵の
+  // LLM の呼び出しの失敗は打ち手で分ける（#291、ADR 0087）。打ち切りは鍵の
   // 問題ではないので、「API キーを確かめて」と言わない。ローカル LLM の既定の
   // コンテキスト長で起きる（README「ローカル LLM を使う」）。
   test("応答が打ち切られたら、鍵ではなくコンテキスト長を案内する", async ({ page }) => {

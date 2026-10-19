@@ -61,7 +61,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   target_not_selected:
     "作成先が選ばれていません。リポジトリと Project を選んでください。",
   project_field_missing: "作成先の Project に必要なフィールドがありません。",
-  // LLM の呼び出しの失敗は打ち手で分ける（ADR 0086）。**どれも「解釈」と
+  // LLM の呼び出しの失敗は打ち手で分ける（ADR 0087）。**どれも「解釈」と
   // 言い切らない。** 図の生成でも同じ code が返る。
   // llm_unavailable は原因を名乗らなかった失敗の受け皿でもある（差し込んだ
   // 実装が名乗らない、認証、接続先の誤り）。鍵と接続に決めつけない。

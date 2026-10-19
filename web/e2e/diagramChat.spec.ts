@@ -184,7 +184,7 @@ test.describe("図のドラフト", () => {
   });
 
   // 上流の混雑は etoki 自身の上限（rate_limited）とも、設定の誤り
-  // （llm_unavailable）とも打ち手が違う（ADR 0086）。図の生成でも同じ code が
+  // （llm_unavailable）とも打ち手が違う（ADR 0087）。図の生成でも同じ code が
   // 返るので、文言が「解釈」と言い切っていないことも見る。
   test("LLM 側が混んでいたら、時間をおくよう案内する", async ({ page }) => {
     const mock = baseMock();

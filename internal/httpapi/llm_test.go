@@ -36,7 +36,7 @@ func TestFailLLM_LogsByCause(t *testing.T) {
 			status:   http.StatusBadGateway,
 			wantLog:  `level=ERROR msg="llm call failed"`,
 		},
-		// 原因ごとに code を分けても、呼び出しの失敗として記録する（ADR 0086）。
+		// 原因ごとに code を分けても、呼び出しの失敗として記録する（ADR 0087）。
 		// 分けた sentinel を記録の側に足し忘れると、その原因だけ記録から消える。
 		"解釈: 打ち切りも呼び出しの失敗として Error": {
 			err:      fmt.Errorf("wrap: %w", usecase.ErrLLMTruncated),

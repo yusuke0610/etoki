@@ -87,4 +87,4 @@
 | [0082](0082-logo-as-outlined-svg.md)                             | ロゴは字を輪郭にした SVG で持ち、色は絵の側に固定する                    | 置き換え済み（0084） |
 | [0083](0083-setup-hints-from-the-wiring.md)                      | 設定の案内に載せる環境変数の名前は、配線だけが持つ                       | 採用                 |
 | [0084](0084-logo-wordmark-in-ui-typeface.md)                     | ロゴは UI の書体で書いた名前の文字にし、字の色はテーマから引く           | 採用                 |
-| [0086](0086-split-llm-call-failures-by-remedy.md)                | LLM の呼び出しの失敗は、打ち手ごとに code を分ける                       | 採用                 |
+| [0087](0087-split-llm-call-failures-by-remedy.md)                | LLM の呼び出しの失敗は、打ち手ごとに code を分ける                       | 採用                 |

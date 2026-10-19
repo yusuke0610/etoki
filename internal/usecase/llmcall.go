@@ -7,7 +7,7 @@ import (
 	"github.com/yusuke0610/etoki/port"
 )
 
-// LLM の呼び出しが失敗した原因のうち、打ち手が違うもの（ADR 0086）。
+// LLM の呼び出しが失敗した原因のうち、打ち手が違うもの（ADR 0087）。
 //
 // 解釈と図のドラフト生成の両方で返る。原因が分からない失敗は
 // ErrLLMUnavailable（interpretation.go）のまま。

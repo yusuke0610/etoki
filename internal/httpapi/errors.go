@@ -101,7 +101,7 @@ var errorMappings = []errorMapping{
 
 	// 上流の失敗。500 に丸めると、開発者は自分の設定を疑えない。
 	{usecase.ErrLLMUnavailable, http.StatusBadGateway, apitypes.ErrorCodeLlmUnavailable},
-	// LLM の呼び出しの失敗のうち、打ち手が違うもの（ADR 0086）。
+	// LLM の呼び出しの失敗のうち、打ち手が違うもの（ADR 0087）。
 	// llm_unavailable に畳むと、画面は鍵と接続を疑わせることしか言えない。
 	//
 	// **上流の混雑を rate_limited / concurrency_limited に畳まない。** どれも

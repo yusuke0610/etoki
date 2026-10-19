@@ -331,7 +331,7 @@ func extractText(resp apiResponse, maxTokens int) (string, error) {
 // 停止理由と使用量が分からないことだけを伝える。
 //
 // どの場合も port.ErrLLMTruncated を名乗る。誰が切ったかは画面の code では
-// 分けず、続く文（詳細）に残す（ADR 0086）。
+// 分けず、続く文（詳細）に残す（ADR 0087）。
 func truncatedError(outputTokens, maxTokens int) error {
 	switch {
 	case outputTokens <= 0:
@@ -353,7 +353,7 @@ func truncatedError(outputTokens, maxTokens int) error {
 //
 // 429 と 5xx（Anthropic の過負荷 529 を含む）は port.ErrLLMOverloaded を
 // 名乗る。時間をおけば通る見込みのある失敗で、設定を見直しても直らない
-// （ADR 0086）。それ以外の 4xx（401 / 403 / 400 など）は名乗らない。鍵・
+// （ADR 0087）。それ以外の 4xx（401 / 403 / 400 など）は名乗らない。鍵・
 // 権限・リクエストの形の話で、打ち手は設定の側にある。
 func statusError(status int, raw []byte) error {
 	var detail string

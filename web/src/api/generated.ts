@@ -854,7 +854,7 @@ export interface components {
          *     **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
          *
-         *     LLM の呼び出しの失敗も打ち手で分ける（ADR 0086）。打ち切り
+         *     LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
          *     （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
          *     （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
          *     LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
