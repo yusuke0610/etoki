@@ -267,8 +267,11 @@ test.describe("ボード", () => {
     await installApi(page, mock);
     await page.goto("/");
 
+    // カードは名前のボタンを持つ項目。ロールや状態はボタンの外にある（#311）。
     const card = (name: string) =>
-      page.locator(".board-list").getByRole("button", { name, exact: true });
+      page
+        .locator(".board-list li")
+        .filter({ has: page.getByRole("button", { name, exact: true }) });
     // 3 状態とも 1 件ずつあるボード。並びは未作成・作成済み・変更あり。
     await expect(card(BOARD_NAME).locator(".badge:not(.badge-role)")).toHaveText([
       "未作成 1",
@@ -299,8 +302,11 @@ test.describe("ボード", () => {
     await installApi(page, mock);
     await page.goto("/");
 
+    // カードは名前のボタンを持つ項目。ロールや状態はボタンの外にある（#311）。
     const card = (name: string) =>
-      page.locator(".board-list").getByRole("button", { name, exact: true });
+      page
+        .locator(".board-list li")
+        .filter({ has: page.getByRole("button", { name, exact: true }) });
     await expect(card(BOARD_NAME).locator(".badge-role")).toHaveText("オーナー");
     await expect(card("editor のブレスト").locator(".badge-role")).toHaveText(
       "編集できる",
@@ -313,10 +319,9 @@ test.describe("ボード", () => {
     await expect(updated).toHaveAttribute("datetime", board().updatedAt);
     await expect(updated).toHaveText(/^更新: /);
     // 名前はボード名だけ。ロール・更新時刻・状態は説明として結ぶ。
-    await expect(card(BOARD_NAME)).toHaveAccessibleName(BOARD_NAME);
-    await expect(card(BOARD_NAME)).toHaveAccessibleDescription(
-      /オーナー 更新: .* 未作成 1/,
-    );
+    const open = card(BOARD_NAME).getByRole("button");
+    await expect(open).toHaveAccessibleName(BOARD_NAME);
+    await expect(open).toHaveAccessibleDescription(/オーナー 更新: .* 未作成 1/);
   });
 
   // ボードで作成してから戻ると、件数が変わっている。読み直さないと「未作成 1」が
@@ -338,8 +343,8 @@ test.describe("ボード", () => {
 
     await expect(
       page
-        .locator(".board-list")
-        .getByRole("button", { name: BOARD_NAME, exact: true })
+        .locator(".board-list li")
+        .filter({ has: page.getByRole("button", { name: BOARD_NAME, exact: true }) })
         .locator(".badge:not(.badge-role)"),
     ).toHaveText(["作成済み 3"]);
   });
@@ -377,8 +382,8 @@ test.describe("ボード", () => {
     await openBoard(page, BOARD_NAME);
     await backToList(page);
     const badges = page
-      .locator(".board-list")
-      .getByRole("button", { name: BOARD_NAME, exact: true })
+      .locator(".board-list li")
+      .filter({ has: page.getByRole("button", { name: BOARD_NAME, exact: true }) })
       .locator(".badge:not(.badge-role)");
     await expect(badges).toHaveText(["作成済み 3"]);
 
