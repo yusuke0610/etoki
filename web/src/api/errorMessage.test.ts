@@ -218,4 +218,27 @@ describe("ERROR_MESSAGES", () => {
 
     expect(new Set(messages).size).toBe(messages.length);
   });
+
+  // 切れると: 押したあとに「フィールドがありません」とだけ出て、GitHub 側で
+  // 何を作ればよいのかを英文の詳細から読み解くことになる（#292）。
+  it("フィールドが足りないときは、何を作るかと次の打ち手を言う", () => {
+    const message = ERROR_MESSAGES.project_field_missing;
+
+    expect(message).toContain("種別を表す単一選択のフィールド");
+    expect(message).toContain("epic");
+    expect(message).toContain("issue");
+    expect(message).toContain("親を表すテキストのフィールド");
+    expect(message).toContain("GitHub 側で作って");
+    expect(message).toContain("押し直せば");
+    expect(message).toContain("ボードはそのままで");
+  });
+
+  // 切れると: 名前を変える設定（種別と親のフィールド名）を入れた構成で、画面が
+  // 既定の名前を案内し続ける。名前は詳細に出るサーバーの本文が持つ（#292）。
+  it("フィールドが足りないときも、フィールドの名前は書かない", () => {
+    const message = ERROR_MESSAGES.project_field_missing;
+
+    expect(message).not.toMatch(/\bKind\b/);
+    expect(message).not.toMatch(/\bParent\b/);
+  });
 });

@@ -415,7 +415,9 @@ function DraftItemFields({
             <option value="create">新しく作る</option>
           </select>
           {!updatesPrevious && (
-            <span className="hint">解釈では既存の draft issue の更新でした。</span>
+            <span className="hint">
+              絵解きの結果では、既存の draft issue の更新でした。
+            </span>
           )}
         </div>
       )}

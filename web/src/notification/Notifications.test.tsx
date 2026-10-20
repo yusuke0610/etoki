@@ -64,11 +64,11 @@ describe("Notifications", () => {
   it("複数出しても両方読める", () => {
     const { notify } = setup();
     notify({ kind: "error", message: "保存できませんでした" });
-    notify({ kind: "error", message: "注釈の状態を取得できませんでした" });
+    notify({ kind: "error", message: "絵の状態を取得できませんでした" });
 
     const alerts = screen.getAllByRole("alert");
     expect(alerts).toHaveLength(2);
-    expect(alerts[0]).toHaveTextContent("注釈の状態を取得できませんでした");
+    expect(alerts[0]).toHaveTextContent("絵の状態を取得できませんでした");
     expect(alerts[1]).toHaveTextContent("保存できませんでした");
   });
 
