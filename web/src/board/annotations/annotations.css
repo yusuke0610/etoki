@@ -242,21 +242,51 @@
 }
 
 /*
- * カード全体を覆うボタン（#201）。押すと注釈の詳細を開く。中身は名前・状態・
- * 要約 1 行と、開くことを示す `›` だけ。
+ * カード（#201）。押すと注釈の詳細を開く。中身は名前・状態・要約 1 行と、
+ * 開くことを示す `›` だけ。
+ *
+ * **押せるのは名前のボタンで、それがカード全体を覆う**（`::after`）。ボタンの
+ * 中身を名前だけにして、見えている文字と名前を揃えるため（WCAG 2.5.3、#311）。
+ * 状態と要約は覆いの下にあるので、どこを押してもボタンに届く。
  */
-.annotation-open {
+.annotation-card {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: 100%;
-  padding: 0 var(--space-6) 0 0;
+  padding-right: var(--space-6);
+}
+
+.annotation-open {
+  padding: 0;
   border: none;
   background: none;
   color: inherit;
+  font: inherit;
+  font-size: var(--text-lg);
+  font-weight: 600;
   text-align: left;
+  overflow-wrap: anywhere;
   cursor: pointer;
+}
+
+.annotation-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * 焦点の輪は名前ではなく覆い（カード全体）に出す。押して開く範囲はカード全体
+ * なので。輪の形はブラウザの既定（`auto`）のまま。
+ */
+.annotation-open:focus-visible {
+  outline: none;
+}
+
+.annotation-open:focus-visible::after {
+  outline: auto;
+  outline-offset: 2px;
 }
 
 .annotation:has(.annotation-open:hover) {
@@ -268,12 +298,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-}
-
-.annotation-open-name {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  overflow-wrap: anywhere;
 }
 
 .annotation-open-summary {
