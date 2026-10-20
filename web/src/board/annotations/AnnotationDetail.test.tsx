@@ -464,7 +464,8 @@ describe("AnnotationDetail", () => {
     it("未作成なら、まだ絵解きしていないと言う", () => {
       render(<AnnotationDetail {...withState("uncreated")} />);
 
-      expect(screen.getByText(/まだ絵解きしていません/)).toBeInTheDocument();
+      const hint = screen.getByText(/まだ絵解きしていません/);
+      expect(hint).toHaveTextContent(/作るものの下書きを出します/);
     });
 
     it("作成済みなら「まだ」と言わず、GitHub にあることと更新の候補を言う", () => {
@@ -472,6 +473,11 @@ describe("AnnotationDetail", () => {
 
       expect(screen.queryByText(/まだ絵解きしていません/)).toBeNull();
       const hint = screen.getByText(/GitHub にあります/);
+      // 開き直すと結果が消えることも言う。言わないと、出ていないのを作っていない印と読む。
+      expect(hint).toHaveTextContent(/画面を開いているあいだしか持たない/);
+      expect(hint).toHaveTextContent(
+        /開き直したり保存したりすると、ここには出なくなります/,
+      );
       expect(hint).toHaveTextContent(/前回作ったものの更新を候補にした下書き/);
       expect(hint).toHaveTextContent(/押しただけでは何も作りません/);
       expect(hint).toHaveTextContent(/項目ごとに選べます/);
@@ -488,6 +494,7 @@ describe("AnnotationDetail", () => {
       expect(hint).toHaveTextContent(/押しただけでは何も作りません/);
       expect(hint).toHaveTextContent(/項目ごとに選べます/);
       expect(hint).toHaveTextContent(/一致しないという印/);
+      expect(hint).toHaveTextContent(/中身を書き換えていなくても付く/);
       expect(hint).not.toHaveTextContent(/変わりました/);
       expect(hint).not.toHaveTextContent(/GitHub にあります/);
     });
