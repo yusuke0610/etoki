@@ -474,6 +474,7 @@ describe("AnnotationDetail", () => {
       const hint = screen.getByText(/GitHub にあります/);
       expect(hint).toHaveTextContent(/前回作ったものの更新を候補にした下書き/);
       expect(hint).toHaveTextContent(/押しただけでは何も作りません/);
+      expect(hint).toHaveTextContent(/項目ごとに選べます/);
       // 変更ありの文を出していないこと。共通の後半だけでは取り違えても通る。
       expect(hint).not.toHaveTextContent(/一致しない/);
     });
@@ -485,6 +486,7 @@ describe("AnnotationDetail", () => {
       expect(screen.queryByText(/まだ絵解きしていません/)).toBeNull();
       const hint = screen.getByText(/前回作ったものの更新を候補にした下書き/);
       expect(hint).toHaveTextContent(/押しただけでは何も作りません/);
+      expect(hint).toHaveTextContent(/項目ごとに選べます/);
       expect(hint).toHaveTextContent(/一致しないという印/);
       expect(hint).not.toHaveTextContent(/変わりました/);
       expect(hint).not.toHaveTextContent(/GitHub にあります/);
