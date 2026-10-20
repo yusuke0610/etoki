@@ -363,7 +363,7 @@ test.describe("解釈と作成", () => {
     await expect(detail.getByText("2 回目の読み解き")).toBeVisible();
 
     // 並ぶのは 2 件。引き直した直後は新しいほうが出ている。
-    const history = detail.getByLabel("解釈結果");
+    const history = detail.getByLabel("絵解きの結果");
     await expect(history.locator("option")).toHaveCount(2);
 
     // 選び直すと前の結果に戻る。
@@ -382,7 +382,7 @@ test.describe("解釈と作成", () => {
     await interpret(card);
     await expect(detail.getByText("ログインの入口")).toBeVisible();
 
-    await expect(detail.getByLabel("解釈結果")).toHaveCount(0);
+    await expect(detail.getByLabel("絵解きの結果")).toHaveCount(0);
   });
 
   test("作成すると件数が出て、状態が作成済みに変わる", async ({ page }) => {
@@ -532,7 +532,7 @@ test.describe("解釈と作成", () => {
     await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
     await interpret(card);
-    const history = detail.getByLabel("解釈結果");
+    const history = detail.getByLabel("絵解きの結果");
     await expect(history.locator("option")).toHaveCount(2);
     // 引き直した解釈は別の下書き。こちらから作ったものは無い。
     await expect(detail.getByLabel("e1 を作成する")).toBeChecked();
@@ -665,7 +665,7 @@ test.describe("解釈と作成", () => {
     // 解釈のやり直しは開発者が決める。ここで勝手に解釈し直して作成を続けない。
     // 409 は 6 つの原因が同居するので、打ち手は code から引いて出す（#86）。
     await expect(
-      detail.getByText("解釈のあとにボードが変わりました", { exact: false }),
+      detail.getByText("絵解きのあとにボードが変わりました", { exact: false }),
     ).toBeVisible();
     await expect(card.getByText("未作成")).toBeVisible();
   });

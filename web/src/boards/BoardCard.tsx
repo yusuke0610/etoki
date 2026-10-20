@@ -89,12 +89,12 @@ function StateBadges({ counts }: { counts: AnnotationCounts | null }) {
   // シーンを読めなかったボード。一覧全体は失敗させず、このボードだけそう書く
   // （#207）。「注釈なし」にすると、読めなかったことが 0 件に化ける。
   if (counts === null) {
-    return <span className="hint">注釈の状態を読めません</span>;
+    return <span className="hint">絵の状態を読めません</span>;
   }
 
   const shown = STATE_ORDER.filter((state) => counts[state] > 0);
   if (shown.length === 0) {
-    return <span className="badge badge-none">注釈なし</span>;
+    return <span className="badge badge-none">絵なし</span>;
   }
   return (
     <>

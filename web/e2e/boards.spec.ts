@@ -135,7 +135,7 @@ test.describe("ボード", () => {
       page.getByRole("heading", { name: "注文フローのブレスト", level: 1 }),
     ).toBeVisible();
     // 囲むのは人なので、開いた時点では注釈が無い。
-    await expect(page.getByText("保存済みの注釈はありません。")).toBeVisible();
+    await expect(page.getByText("保存済みの絵はありません。")).toBeVisible();
     // 作ったあとは空白に戻す。次のボードが前の選択を引き継ぐと、選んだ覚えの
     // ない絵が出る。
     await backToList(page);
@@ -281,12 +281,12 @@ test.describe("ボード", () => {
     await expect(card(partial.name).locator(".badge:not(.badge-role)")).toHaveText([
       "未作成 1",
     ]);
-    // すべて 0 件なら「注釈なし」。何も出さないと、読めなかったのと区別できない。
+    // すべて 0 件なら「絵なし」。何も出さないと、読めなかったのと区別できない。
     await expect(card(empty.name).locator(".badge:not(.badge-role)")).toHaveText([
-      "注釈なし",
+      "絵なし",
     ]);
     // 読めなかったボードは 0 件に化けさせない。一覧のほかのボードは出る（#207）。
-    await expect(card(broken.name)).toContainText("注釈の状態を読めません");
+    await expect(card(broken.name)).toContainText("絵の状態を読めません");
     await expect(card(broken.name).locator(".badge:not(.badge-role)")).toHaveCount(0);
   });
 

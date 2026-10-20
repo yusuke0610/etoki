@@ -86,7 +86,7 @@ test.describe("changed の注釈を更新する", () => {
     // 印は消える。LLM が言ったこととの差は残す。
     await expect(updating.getByText("更新", { exact: true })).toBeHidden();
     await expect(
-      updating.getByText("解釈では既存の draft issue の更新でした"),
+      updating.getByText("絵解きの結果では、既存の draft issue の更新でした"),
     ).toBeVisible();
 
     // そこへは書かないので、更新先は取り残しに戻る（押す前に見せる）。
