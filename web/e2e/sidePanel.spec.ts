@@ -102,7 +102,7 @@ test.describe("右のパネル", () => {
     const rail = page.getByRole("navigation", { name: "パネル" });
     await expect(
       rail.getByRole("button", {
-        name: "絵解いた、未作成 1 件、変更あり 1 件",
+        name: "絵解いた 未作成 1 件 変更あり 1 件",
         exact: true,
       }),
     ).toBeVisible();
