@@ -9,6 +9,16 @@ import type { Interpretation, InterpretationJob } from "../../api/types";
  */
 export const JOB_POLL_INTERVAL_MS = 1500;
 
+/**
+ * 見に行く呼び出しが続けて失敗してよい回数。
+ *
+ * 解釈は数分かかり、そのあいだに何十回も見に行く。1 回の通信の失敗で待つのを
+ * やめると、ジョブはサーバーで走り続けて結果ができるのに、画面は失敗を出す。
+ * 押し直したときにジョブが終わっていれば、同じ入力でもう一度課金する。
+ * 上限を置くのは、サーバーが落ちたままのときに待ち続けないため。
+ */
+export const JOB_POLL_MAX_FAILURES = 5;
+
 /** ジョブが走り終わった結果。 */
 export type JobOutcome =
   { kind: "done"; result: Interpretation } | { kind: "failed"; error: ApiError };
@@ -20,8 +30,10 @@ export type JobOutcome =
  * **ジョブを止めるのではない。** 画面を離れても、解釈はサーバーで走り続ける。
  * やめたときは `undefined` を返す。
  *
- * 見に行く呼び出しが失敗したら、その例外をそのまま投げる。ジョブが消えていれば
- * 404、サーバーに届かなければネットワークの失敗で、呼び出し側が失敗として見せる。
+ * **一時的な失敗（届かない・5xx）は見に行き直す。** 続けて
+ * `JOB_POLL_MAX_FAILURES` 回失敗したら、最後の例外を投げる。4xx（ジョブが消えた
+ * 404、権限を失った 403 など）は見に行き直しても変わらないので、すぐ投げる。
+ * 呼び出し側が失敗として見せる。
  */
 export async function awaitJob(
   boardId: string,
@@ -29,16 +41,29 @@ export async function awaitJob(
   isCurrent: () => boolean,
   intervalMs: number = JOB_POLL_INTERVAL_MS,
 ): Promise<JobOutcome | undefined> {
+  let failures = 0;
   for (;;) {
     if (!isCurrent()) return undefined;
-    const job = await boardsApi.interpretationJob(boardId, jobId);
+    let job: InterpretationJob | undefined;
+    try {
+      job = await boardsApi.interpretationJob(boardId, jobId);
+      failures = 0;
+    } catch (e) {
+      failures += 1;
+      if (!isTransient(e) || failures >= JOB_POLL_MAX_FAILURES) throw e;
+    }
     if (!isCurrent()) return undefined;
 
-    const outcome = outcomeOf(job);
+    const outcome = job && outcomeOf(job);
     if (outcome) return outcome;
 
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
+}
+
+/** 見に行き直せば通りうる失敗か。サーバーが答えた 4xx は、何度見ても同じ。 */
+function isTransient(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status >= 500;
 }
 
 /** 走り終わっていればその結果を、走っていれば undefined を返す。 */

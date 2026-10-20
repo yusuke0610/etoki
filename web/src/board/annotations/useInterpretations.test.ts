@@ -11,6 +11,7 @@ import type {
   SyncItem,
 } from "../../api/types";
 import { exportAnnotationImage } from "../../excalidraw/image";
+import { JOB_POLL_MAX_FAILURES } from "./interpretationJobs";
 import { useInterpretations } from "./useInterpretations";
 
 // 画像の書き出しは canvas が要るので jsdom では動かない（`web/CLAUDE.md`）。
@@ -126,6 +127,46 @@ describe("useInterpretations", () => {
 
     expect(s.getJob).toHaveBeenCalledTimes(3);
     expect(hook.current.states.a1?.runs[0]?.result.summary).toBe("終わった");
+  });
+
+  it("見に行く呼び出しが一時的に失敗しても、待つのをやめずに結果を積む", async () => {
+    const s = stubApi();
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockRejectedValueOnce(new ApiError(502, "internal", "bad gateway"))
+      .mockResolvedValue(done("j1", "取り直せた"));
+    const { result: hook } = render();
+
+    await act(() => hook.current.interpret("a1"));
+
+    expect(hook.current.states.a1?.failure).toBeUndefined();
+    expect(hook.current.states.a1?.runs[0]?.result.summary).toBe("取り直せた");
+  });
+
+  it("一時的な失敗が上限まで続いたら、失敗として出す", async () => {
+    const s = stubApi();
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob.mockRejectedValue(new TypeError("Failed to fetch"));
+    const { result: hook } = render();
+
+    await act(() => hook.current.interpret("a1"));
+
+    expect(s.getJob).toHaveBeenCalledTimes(JOB_POLL_MAX_FAILURES);
+    expect(hook.current.states.a1?.failure?.message).toMatch(/^解釈できませんでした/);
+    expect(hook.current.states.a1?.running).toBe(false);
+  });
+
+  it("ジョブが消えていたら（404）、見に行き直さずに失敗として出す", async () => {
+    const s = stubApi();
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob.mockRejectedValue(new ApiError(404, "not_found", "not found"));
+    const { result: hook } = render();
+
+    await act(() => hook.current.interpret("a1"));
+
+    expect(s.getJob).toHaveBeenCalledTimes(1);
+    expect(hook.current.states.a1?.failure?.message).toMatch(/^解釈できませんでした/);
   });
 
   it("受け取り終えたジョブは、サーバーに捨てさせる", async () => {
