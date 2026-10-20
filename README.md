@@ -373,7 +373,11 @@ GitHub Apps から取り消すか、App の所有者が利用者ごとに REST A
 と Organization の permissions にしか `Projects` が現れないためです。
 
 `https://github.com/users/<login>/projects/N` を作成先にしようとすると、
-リポジトリの一覧までは通り、Project の取得で 502 になります。
+リポジトリの一覧までは通り、Project の取得が 403（`forbidden_project`）で
+拒まれます。作成先の選択画面には「プロジェクトを取得できませんでした: GitHub が
+このリポジトリの Project を見せませんでした。書く権限が無いか、GitHub App で
+動かしているなら個人アカウントの Project には触れません」と出ます。権限を
+見直しても直りません。詳細を開くと次の本文が見えます。
 
 ```text
 github graphql: FORBIDDEN: Resource not accessible by integration

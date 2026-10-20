@@ -12,6 +12,7 @@ import { ITEM_KIND_LABEL, itemKinds } from "./annotationLabel";
 import { createControlOf, CreationResult } from "./CreationSection";
 import { DetailBand, type InterpretControl } from "./DetailBand";
 import { groupByEpic } from "./interpretation";
+import { creationNotice } from "./itemSummary";
 import { ItemLink } from "./panelParts";
 import {
   blockingReasons,
@@ -21,6 +22,7 @@ import {
   leftBehindItemIds,
   markCreated,
   orphanedLocalIds,
+  selectedActions,
   setBody,
   setKind,
   setTitle,
@@ -158,14 +160,13 @@ export function DraftEditor({
   const selectedCount = draft.items.filter((d) => d.selected).length;
   const leftBehindItems = previous.filter((it) => leftBehind.has(it.itemId));
   // 押せるときに帯に出す文。**取り消せないことと作る先を、押す直前に言う。**
-  // ボタンは主となる操作の緑で、赤にしない（#203）。取り残しは本文の中にも
-  // 一覧で出すが、帯を下端に固定するとスクロールで見えなくなりうるので、
-  // 件数をここにも添える（作成ボタンの手前に出す約束、`web/CLAUDE.md`）。
-  const notice =
-    `作成は取り消せません。選んだ ${selectedCount} 件を ${targetLabel ?? "作成先"} に作ります。` +
-    (leftBehindItems.length > 0
-      ? `前回作った ${leftBehindItems.length} 件は書き換わりません。`
-      : "");
+  // 作るものと書き換えるものは分けて数える（#289）。ボタンは主となる操作の緑で、
+  // 赤にしない（#203）。
+  const notice = creationNotice(
+    selectedActions(draft),
+    targetLabel ?? "作成先",
+    leftBehindItems.length,
+  );
 
   return (
     <>

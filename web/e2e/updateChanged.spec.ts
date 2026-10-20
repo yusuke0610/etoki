@@ -105,6 +105,39 @@ test.describe("changed の注釈を更新する", () => {
     ]);
   });
 
+  // 押す直前に読むのは帯の文（#289）。項目ごとの印は本文が長いと見える範囲に
+  // 入らないので、帯でも作るものと書き換えるものを分けて数える。**ボタンの説明
+  // として引く。** 読み上げに届いていることまで一緒に見る（ADR 0039）。
+  test("押す直前の帯が、作るものと書き換えるものを分けて言う", async ({ page }) => {
+    await openBoardWithMock(page, matchedInterpretationMock());
+
+    const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
+    await interpret(card);
+
+    const create = detail.getByRole("button", { name: "GitHub に作成する" });
+    await expect(create).toHaveAccessibleDescription(
+      "作成も更新も取り消せません。acme/web › #1 ロードマップ に 1 件を作り、1 件を書き換えます。" +
+        "前回作った 1 件は書き換わりません。",
+    );
+
+    // 書き換えるものだけになったら、作るとは言わない。
+    await detail.getByLabel("i2 を作成する").uncheck();
+    await expect(create).toHaveAccessibleDescription(
+      "更新は取り消せません。acme/web › #1 ロードマップ の draft issue 1 件を書き換えます。" +
+        "前回作った 1 件は書き換わりません。",
+    );
+
+    // 新しく作るに倒すと、その項目は作るほうに数え、更新先は取り残しに戻る。
+    await detail
+      .getByLabel("i1 を更新するか新しく作るか")
+      .selectOption({ label: "新しく作る" });
+    await expect(create).toHaveAccessibleDescription(
+      "作成は取り消せません。選んだ 1 件を acme/web › #1 ロードマップ に作ります。" +
+        "前回作った 2 件は書き換わりません。",
+    );
+  });
+
   // LLM が「新しく作る」と答えた項目には指す先が無い。選ばせるものが無い。
   test("新規の項目には切り替えを出さない", async ({ page }) => {
     await openBoardWithMock(page, matchedInterpretationMock());

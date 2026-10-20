@@ -6,6 +6,7 @@ import {
   describeFailure,
   ERROR_MESSAGES,
   mermaidPasteFailure,
+  PROJECT_LIST_MESSAGES,
   partialCreationFailure,
   sceneFileUnreadableFailure,
   sceneUnreadableFailure,
@@ -45,6 +46,40 @@ describe("describeFailure", () => {
       message: "できませんでした: サーバーからの説明",
       detail: "",
     });
+  });
+
+  // 場面ごとの上書き（ADR 0034、#293）。作成先の選択で Project を引いて拒まれた
+  // ときは、リポジトリの権限だけを案内すると直らない場合がある。
+  it("場面の上書きに載っている code は、表より上書きの文を出す", () => {
+    const e = new ApiError(403, "forbidden_project", "github graphql: FORBIDDEN");
+
+    expect(
+      describeFailure("プロジェクトを取得できませんでした", e, PROJECT_LIST_MESSAGES),
+    ).toEqual({
+      message: `プロジェクトを取得できませんでした: ${PROJECT_LIST_MESSAGES.forbidden_project}`,
+      detail: "github graphql: FORBIDDEN",
+    });
+    // 上書きは表を書き換えない。作成で拒まれた場面は元の文のまま。
+    expect(describeFailure("作成できませんでした", e).message).toBe(
+      `作成できませんでした: ${ERROR_MESSAGES.forbidden_project}`,
+    );
+  });
+
+  // 上書きに無い code まで消すと、その場面で起きたほかの失敗が何も言えなくなる。
+  it("場面の上書きに無い code は、表の文を出す", () => {
+    const e = new ApiError(502, "github_unavailable", "hint");
+
+    expect(
+      describeFailure("プロジェクトを取得できませんでした", e, PROJECT_LIST_MESSAGES)
+        .message,
+    ).toBe(`プロジェクトを取得できませんでした: ${ERROR_MESSAGES.github_unavailable}`);
+  });
+
+  // 原因を決めつけない（#293）。書く権限と、GitHub App で個人アカウントの
+  // Project に触れないことの両方を並べる。
+  it("Project の取得を拒まれた場面では、権限と個人アカウントの両方を言う", () => {
+    expect(PROJECT_LIST_MESSAGES.forbidden_project).toContain("書く権限");
+    expect(PROJECT_LIST_MESSAGES.forbidden_project).toContain("個人アカウント");
   });
 
   // 例外の中身は画面に出さない（`web/CLAUDE.md`）。畳んだ側にも置かない。

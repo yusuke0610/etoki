@@ -218,6 +218,42 @@ test.describe("スクリーンショット", () => {
     await shot(page, "20-target-truncated");
   });
 
+  // 作成先の Project が出ない・取れないときの案内（#293）。0 件と、取得を
+  // 拒まれたときで、どちらも原因を決めつけずに並べていることを残す。
+  test("作成先の Project が出ない・取れない状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    const target = unselectedBoard();
+    mock.boards = [summarize(target)];
+    mock.details = { [target.id]: target };
+    mock.annotations = { [target.id]: [] };
+    mock.projects["acme/web"] = {
+      status: 403,
+      body: {
+        code: "forbidden_project",
+        error:
+          "etoki: forbidden: github graphql: FORBIDDEN: Resource not accessible by integration",
+      },
+    };
+    mock.projects["acme/api"] = { status: 200, body: [] };
+
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+
+    await picker(page)
+      .getByRole("button", { name: /acme\/api/ })
+      .click();
+    await picker(page).getByText("紐づく Project が無いか").waitFor();
+    await shot(page, "54-target-projects-empty");
+
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+    await page.getByRole("alert").waitFor();
+    await shot(page, "55-target-projects-forbidden");
+  });
+
   // 固定済みでも表示名は取り直せる（ADR 0037）。確定していることと、名前だけは
   // 直せることが同じ場所で読める必要があるので撮る。
   test("固定済みの作成先と、名前の取り直しを撮る", async ({ page }) => {
@@ -479,9 +515,16 @@ test.describe("スクリーンショット", () => {
 
     await openBoardWithMock(page, mock);
     await page
-      .getByText("読むだけの権限で開いています。編集・解釈・作成はできません。")
+      .getByText(
+        "読むだけの権限で開いています。編集・解釈・作成はできず、etoki AI も使えません。",
+      )
       .waitFor();
     await shot(page, "13-viewer");
+
+    // 消した編集系の操作の理由（#295）。owner 専用の理由と並ぶ姿を残す。
+    const menu = await openBoardMenu(page);
+    await menu.getByText("編集できる人だけです", { exact: false }).waitFor();
+    await shot(page, "56-viewer-menu");
   });
 
   // 一覧を作成先ごとの節に分けた姿（ADR 0019、#200）。ボードが 1 枚の 01 では
