@@ -16,7 +16,7 @@ type Props = {
 
 /** いまできることの説明。scope は `read` の 1 つだけ（ADR 0076）。 */
 const READ_SCOPE_LABEL =
-  "ボードの一覧と、注釈の状態・GitHub に作った draft issue・実行の履歴を読みます。解釈や作成はしません。";
+  "ボードの一覧と、絵の状態・GitHub に作った draft issue・実行の履歴を読みます。絵解きや作成はしません。";
 
 /**
  * MCP のクライアントに、ボードを読むことを許すかを訊く画面（ADR 0076）。

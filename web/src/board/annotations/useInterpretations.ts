@@ -129,7 +129,7 @@ export function useInterpretations({
           ...prev,
           [annotationId]: failInterpretation(
             prev[annotationId],
-            describeFailure("解釈できませんでした", e),
+            describeFailure("絵解きできませんでした", e),
           ),
         }));
         return;
@@ -152,7 +152,7 @@ export function useInterpretations({
           ...prev,
           [annotationId]: failInterpretation(
             prev[annotationId],
-            describeFailure("解釈できませんでした", outcome.error),
+            describeFailure("絵解きできませんでした", outcome.error),
           ),
         }));
       }
@@ -203,7 +203,7 @@ export function useInterpretations({
           ...prev,
           [annotationId]: failInterpretation(
             prev[annotationId],
-            describeFailure("解釈できませんでした", e),
+            describeFailure("絵解きできませんでした", e),
           ),
         }));
         return;

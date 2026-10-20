@@ -141,7 +141,7 @@ test.describe("図のドラフト", () => {
     await expect(page.getByLabel("図への指示")).toHaveValue("注文から出荷までの流れ");
   });
 
-  // 実行の上限は解釈と 1 つの枠を共有する（ADR 0044）。**文言が「解釈」だけを
+  // 実行の上限は解釈と 1 つの枠を共有する（ADR 0044）。**文言が「絵解き」だけを
   // 指していると、こちら側で見たときに食い違う。**
   test("実行の上限に当たったら、解釈と共通の枠だと分かる文言を出す", async ({ page }) => {
     const mock = baseMock();
@@ -185,7 +185,7 @@ test.describe("図のドラフト", () => {
 
   // 上流の混雑は etoki 自身の上限（rate_limited）とも、設定の誤り
   // （llm_unavailable）とも打ち手が違う（ADR 0087）。図の生成でも同じ code が
-  // 返るので、文言が「解釈」と言い切っていないことも見る。
+  // 返るので、文言が「絵解き」（前の語では「解釈」）と言い切っていないことも見る。
   test("LLM 側が混んでいたら、時間をおくよう案内する", async ({ page }) => {
     const mock = baseMock();
     mock.diagramDraft = {
@@ -206,6 +206,7 @@ test.describe("図のドラフト", () => {
     const notice = page.getByText("LLM 側が混んでいるか", { exact: false });
     await expect(notice).toBeVisible();
     await expect(notice).toContainText("時間をおいて");
+    await expect(notice).not.toContainText("絵解き");
     await expect(notice).not.toContainText("解釈");
     // 書いた指示は消さない。待って押し直せる。
     await expect(page.getByLabel("図への指示")).toHaveValue("注文から出荷までの流れ");
