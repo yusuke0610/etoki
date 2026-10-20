@@ -114,7 +114,7 @@ export type ApiMock = {
   /** `owner/name` をキーにした Projects v2。 */
   projects: Record<string, Reply<Project[]>>;
   /**
-   * Project の ID をキーにした、作成に要るフィールドを確かめた結果（ADR 0086）。
+   * Project の ID をキーにした、作成に要るフィールドを確かめた結果（ADR 0088）。
    *
    * 無い Project は揃っている（`ok`）として返す。全 spec に書かせないため。
    */

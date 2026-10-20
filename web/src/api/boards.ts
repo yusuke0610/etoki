@@ -367,7 +367,7 @@ export const githubApi = {
       `/api/github/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/projects`,
     ),
 
-  // 作成に要るフィールドが揃っているか（ADR 0086）。**表示のための材料で、判定に
+  // 作成に要るフィールドが揃っているか（ADR 0088）。**表示のための材料で、判定に
   // 使わない。** 問い合わせに失敗したときはサーバーが 200 の unknown で返す。
   projectFields: (projectId: string) =>
     request<ProjectFieldsCheck>(

@@ -24,7 +24,7 @@ export async function installGitHubRoutes(page: Page, mock: ApiMock): Promise<vo
     },
   );
 
-  // 作成に要るフィールドの確認（ADR 0086）。**GET だけを受ける。** ほかの
+  // 作成に要るフィールドの確認（ADR 0088）。**GET だけを受ける。** ほかの
   // メソッドはキャッチオールに落とす（`.claude/rules/e2e-mocks.md`）。
   await page.route(
     (url) => /^\/api\/github\/projects\/[^/]+\/fields$/.test(url.pathname),

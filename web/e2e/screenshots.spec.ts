@@ -258,7 +258,7 @@ test.describe("スクリーンショット", () => {
     await shot(page, "55-target-projects-forbidden");
   });
 
-  // 作成先を選んだときに、作成に要るフィールドが足りないと見せる（ADR 0086）。
+  // 作成先を選んだときに、作成に要るフィールドが足りないと見せる（ADR 0088）。
   // 足りないものだけが並び、確定のボタンは止めていないことを残す。
   test("選んだ Project にフィールドが足りない状態を撮る", async ({ page }) => {
     const mock = baseMock();

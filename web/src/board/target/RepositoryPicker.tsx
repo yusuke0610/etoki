@@ -35,7 +35,7 @@ type Props = {
  * どれかを既定で選んだり、1 件しか無いときに自動で確定したりしない。
  * 作成先は取り返しのつかない選択なので、開発者に選ばせる（中核思想 3）。
  *
- * **Project は押して選び、確定は別のボタンで行う**（ADR 0086）。選んだときに
+ * **Project は押して選び、確定は別のボタンで行う**（ADR 0088）。選んだときに
  * 作成に要るフィールドが揃っているかを 1 度だけ確かめて見せる。押した瞬間に
  * 確定すると、確かめた結果を見せる前に画面が切り替わる。**結果で確定を止めない。**
  * 判定は作成のときに GitHub が返したもので決まる。
@@ -135,7 +135,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
    * Project を選ぶ。**確定はしない。** 作成に要るフィールドを 1 度だけ確かめる。
    *
    * 引くのは押したときだけ。一覧を出しただけでは引かない（Project の数だけ
-   * 問い合わせが増える、ADR 0086）。
+   * 問い合わせが増える、ADR 0088）。
    */
   const chooseProject = useCallback(async (project: Project) => {
     const request = ++fieldsRequest.current;
@@ -331,7 +331,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           </h2>
           {/*
             確かめた結果は状態として出す（失敗の帯にしない）。足りなくても
-            選べるので、選ぶ前の注意書きとして読ませる（ADR 0086）。
+            選べるので、選ぶ前の注意書きとして読ませる（ADR 0088）。
           */}
           <p
             className={fieldsCheck?.status === "missing" ? "hint fields-missing" : "hint"}

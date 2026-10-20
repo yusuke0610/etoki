@@ -63,7 +63,7 @@ func (h *handlers) listRepositoryProjects(c *gin.Context) {
 }
 
 // checkProjectFields は作成先の Project に、作成に要るフィールドが揃っているかを
-// 返す（ADR 0086）。
+// 返す（ADR 0088）。
 //
 // **GitHub に問い合わせられなかったことは 200 の unknown で返る。** 失敗に写すのは
 // 入力の誤りだけで、それはユースケースが決める。表示のための材料なので、GitHub が

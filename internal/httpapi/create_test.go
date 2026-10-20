@@ -952,7 +952,7 @@ func TestListRepositories_UnavailableWithoutGitHub(t *testing.T) {
 	}
 }
 
-// 作成先の Project のフィールドを確かめる口（ADR 0086）。足りない役割を返し、
+// 作成先の Project のフィールドを確かめる口（ADR 0088）。足りない役割を返し、
 // 名前は返さない。
 //
 // 切れると: 画面が足りないものを並べられないか、契約に無い形（null や名前）が
@@ -1006,7 +1006,7 @@ func TestCheckProjectFields_OKHasEmptyArray(t *testing.T) {
 }
 
 // GitHub に問い合わせられなければ 200 の unknown。一覧の口のように 502 に
-// しない（ADR 0086）。
+// しない（ADR 0088）。
 //
 // 切れると: GitHub が一時的に落ちているだけで、選択の画面に失敗が出る。
 func TestCheckProjectFields_UnknownWhenGitHubFails(t *testing.T) {

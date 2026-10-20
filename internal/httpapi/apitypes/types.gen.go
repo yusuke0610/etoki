@@ -1186,7 +1186,7 @@ type Project struct {
 //     倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
 type ProjectAccess string
 
-// ProjectFieldRequirement 作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0086）。
+// ProjectFieldRequirement 作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0088）。
 //
 // - `kind_epic` … 種別を表す単一選択のフィールドの選択肢 epic
 // - `kind_issue` … 同じフィールドの選択肢 issue

@@ -993,7 +993,7 @@ paths:
       operationId: checkProjectFields
       summary: 作成先の Project に、作成に要るフィールドが揃っているかを返す
       description: |
-        作成先を選ぶ画面が、Project を選んだときに 1 度だけ引く（ADR 0086）。
+        作成先を選ぶ画面が、Project を選んだときに 1 度だけ引く（ADR 0088）。
         draft issue の種別と親は Project のカスタムフィールドで表すので
         （ADR 0006）、足りないと作成は 422 `project_field_missing` で止まる。
         それを押す前に見せるための口。
@@ -2173,7 +2173,7 @@ components:
     ProjectFieldRequirement:
       type: string
       description: |
-        作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0086）。
+        作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0088）。
 
         - `kind_epic` … 種別を表す単一選択のフィールドの選択肢 epic
         - `kind_issue` … 同じフィールドの選択肢 issue

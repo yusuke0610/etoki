@@ -19,7 +19,7 @@ import { ApiError } from "./boards";
 import type { ErrorCode, ProjectFieldRequirement } from "./types";
 
 /**
- * 作成に要るフィールドの、役割ごとの言い方（#292、ADR 0086）。
+ * 作成に要るフィールドの、役割ごとの言い方（#292、ADR 0088）。
  *
  * **`project_field_missing` を言うための部品なので、失敗の文言を持つこの
  * モジュールに置く。** 押した後の文（全部を並べる）と、作成先を選んだときの
@@ -61,7 +61,7 @@ function projectFieldsPhrase(fields: readonly ProjectFieldRequirement[]): string
 }
 
 /**
- * 作成先を選んだときに、足りないフィールドを言う（ADR 0086）。
+ * 作成先を選んだときに、足りないフィールドを言う（ADR 0088）。
  *
  * **確かめた結果を判定に使わない。** 選ぶことは止めず、作成のときに止まることだけ
  * を言う。実際に止まるかは、作成のときに GitHub が返したもので決まる。
@@ -117,7 +117,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   // 何を作ればよいかまで言う（#292）。足りないと分かるのは押したあとで、
   // 「フィールドがありません」だけでは GitHub 側で何を作るのかが読めない。
   // 何が要るかの言い方は `PROJECT_FIELD_PARTS` に置き、押す前の表示
-  // （`missingProjectFieldsMessage`）と同じ部品から組む（ADR 0030 / 0086）。
+  // （`missingProjectFieldsMessage`）と同じ部品から組む（ADR 0030 / 0088）。
   // **フィールドの名前は書かない。** 名前は設定で変わり、知っているのは起動の
   // 配線だけ（環境変数の名前を書かない ADR 0083 と同じ理由）。名前はサーバーの
   // 本文として「詳細」に出る。

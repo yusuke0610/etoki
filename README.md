@@ -307,7 +307,7 @@ repo の read はリポジトリの一覧に使います。無いと選択肢が
 親子も無い draft issue が並ぶだけになるためです。
 
 作成先の Project を選んだときにも確かめて、足りないものを見せます
-（[ADR 0086](docs/adr/0086-check-project-fields-when-choosing.md)）。**選ぶのは
+（[ADR 0088](docs/adr/0088-check-project-fields-when-choosing.md)）。**選ぶのは
 止めません。** 先にブレストを始めて、フィールドは作成までに足せば足ります。
 
 ### GitHub App でログインする

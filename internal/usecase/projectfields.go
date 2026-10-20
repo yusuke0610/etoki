@@ -122,7 +122,7 @@ func describeMissingFields(missing []ProjectFieldRequirement, names ProjectField
 //
 // **判定ではない。** 実際に作れるかは作成時に GitHub が返したものが正しい。これは
 // 画面に出すための材料で、これを見て選択や作成を止めることはしない
-// （`ProjectAccess` と同じ、ADR 0017 / 0086）。
+// （`ProjectAccess` と同じ、ADR 0017 / 0088）。
 type ProjectFieldsStatus string
 
 // ProjectFieldsStatus の取りうる値。

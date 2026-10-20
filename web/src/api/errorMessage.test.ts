@@ -245,7 +245,7 @@ describe("ERROR_MESSAGES", () => {
 });
 
 describe("missingProjectFieldsMessage", () => {
-  // 押す前に足りないものだけを並べる（ADR 0086）。
+  // 押す前に足りないものだけを並べる（ADR 0088）。
   // 切れると: 揃っているものまで「ありません」と出て、作る必要の無いものを作りにいかせる。
   it("足りないものだけを並べる", () => {
     const message = missingProjectFieldsMessage(["kind_issue"]);
