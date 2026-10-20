@@ -450,6 +450,32 @@ test.describe("スクリーンショット", () => {
     await shot(page, "20-error-notice");
   });
 
+  // 作成先の Project にフィールドが足りずに止まった画面（#292）。何を作るかが
+  // 前に出ていて、名前は畳んだ詳細にあることを、詳細を開いた状態で残す。
+  test("フィールドが足りずに作成が止まった状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.createItems = {
+      status: 422,
+      body: {
+        code: "project_field_missing",
+        error:
+          'etoki: required project field is missing: single select "Kind" with option "epic", single select "Kind" with option "issue", text "Parent"',
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const alert = detail.getByRole("alert");
+    await alert.waitFor();
+    await alert.locator("summary").click();
+    await alert.scrollIntoViewIfNeeded();
+    await shot(page, "57-project-field-missing");
+  });
+
   // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある
   // （ADR 0017）。
   test("メンバーの一覧を撮る", async ({ page }) => {
@@ -516,7 +542,7 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
     await page
       .getByText(
-        "読むだけの権限で開いています。編集・解釈・作成はできず、etoki AI も使えません。",
+        "読むだけの権限で開いています。編集・絵解き・作成はできず、etoki AI も使えません。",
       )
       .waitFor();
     await shot(page, "13-viewer");
@@ -711,7 +737,7 @@ test.describe("スクリーンショット", () => {
       body: { ...interpretation(), summary: "粒度を変えてもう一度読み解きました。" },
     };
     await interpret(card);
-    await detail.getByLabel("解釈結果").waitFor();
+    await detail.getByLabel("絵解きの結果").waitFor();
     await shot(page, "24-interpretation-history");
   });
 
@@ -923,7 +949,7 @@ test.describe("スクリーンショット", () => {
     await detail
       .getByLabel("i1 を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
-    await detail.getByText("解釈では既存の draft issue の更新でした").waitFor();
+    await detail.getByText("絵解きの結果では、既存の draft issue の更新でした").waitFor();
     await shot(page, "31-update-to-create");
   });
 
@@ -951,7 +977,7 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
 
     const section = page.locator(".panel-section").filter({
-      has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
+      has: page.getByRole("heading", { name: "キャンバスに無い絵" }),
     });
     await section.getByText("二要素認証").waitFor();
     await shot(page, "32-detached-annotations");

@@ -184,7 +184,7 @@ test.describe("共有", () => {
 
     await expect(
       page.getByText(
-        "読むだけの権限で開いています。編集・解釈・作成はできず、etoki AI も使えません。",
+        "読むだけの権限で開いています。編集・絵解き・作成はできず、etoki AI も使えません。",
       ),
     ).toBeVisible();
     await expect(ekidokiButton(page)).toHaveCount(0);
@@ -198,10 +198,10 @@ test.describe("共有", () => {
     await expect(
       detail.getByRole("button", { name: "GitHub にある 2 件" }),
     ).toBeVisible();
-    await expect(detail.getByRole("button", { name: /^解釈/ })).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: /^絵解/ })).toHaveCount(0);
     await expect(
       detail.getByText(
-        "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
+        "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
       ),
     ).toBeVisible();
   });

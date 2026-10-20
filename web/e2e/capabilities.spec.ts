@@ -93,7 +93,7 @@ test.describe("設定していない機能", () => {
     );
     await expect(detail.getByText("GitHub が未設定です。")).toBeVisible();
     await expect(
-      detail.getByText("ブレストと解釈はこのまま続けられます。"),
+      detail.getByText("ブレストと絵解きはこのまま続けられます。"),
     ).toBeVisible();
   });
 
