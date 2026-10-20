@@ -228,7 +228,9 @@ describe("ERROR_MESSAGES", () => {
     expect(message).toContain("epic");
     expect(message).toContain("issue");
     expect(message).toContain("親を表すテキストのフィールド");
+    expect(message).toContain("GitHub 側で作って");
     expect(message).toContain("押し直せば");
+    expect(message).toContain("ボードはそのままで");
   });
 
   // 切れると: 名前を変える設定（種別と親のフィールド名）を入れた構成で、画面が
