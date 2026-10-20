@@ -699,6 +699,9 @@ test.describe("解釈と作成", () => {
     await expect(alert).toContainText("親を表すテキストのフィールド");
     await expect(alert).toContainText("押し直せば");
     // 名前は畳んだ側にだけ置く。前に出すと、名前を変えた構成で嘘になる。
+    const message = alert.locator(".error-message");
+    await expect(message).not.toContainText("Kind");
+    await expect(message).not.toContainText("Parent");
     const body = alert.getByText('single select "Kind"', { exact: false });
     await expect(body).toBeHidden();
     await alert.getByText("詳細", { exact: true }).click();
