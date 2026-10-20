@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 
 import type { BoardListEntry, SessionStatus } from "../api/types";
-import logoMarkUrl from "../app/logoMark.svg";
 import type { Theme } from "../app/theme";
+import { Wordmark } from "../app/Wordmark";
 import { UserMenu } from "../auth/UserMenu";
 import { ConnectionsDialog } from "../connections/ConnectionsDialog";
 import type { TemplateChoice } from "../excalidraw/template";
@@ -108,10 +108,9 @@ export function BoardListPage({
         見出しの位置が構成ごとに動かないようにする。
       */}
       <header className="list-header">
+        {/* ロゴが名前を持つので、見出しの名前は「etoki」のまま（ADR 0084）。 */}
         <h1 className="brand">
-          {/* ロゴは飾り。名前は文字が持つ（ADR 0082）。 */}
-          <img className="brand-logo" src={logoMarkUrl} alt="" width={32} height={32} />
-          etoki
+          <Wordmark height={26} />
         </h1>
         <div className="list-header-actions">
           {/*

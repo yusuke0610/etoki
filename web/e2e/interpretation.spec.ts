@@ -4,9 +4,11 @@ import { emptyScene } from "./helpers/boardData";
 import {
   annotationCard,
   annotationDetail,
+  backToList,
   drawRectangle,
   interpret,
   openAnnotationDetail,
+  openBoard,
   openBoardWithMock,
 } from "./helpers/board";
 import {
@@ -14,11 +16,40 @@ import {
   baseMock,
   board,
   BOARD_ID,
+  BOARD_NAME,
   createdRun,
   interpretation,
 } from "./helpers/fixtures";
 
 test.describe("解釈と作成", () => {
+  // 解釈はサーバーのジョブとして走る（ADR 0085、#307）。画面を離れて戻っても止まらず、
+  // 戻ったら「絵解き中」が続き、終わったら結果が出る。以前は戻ると画面だけが忘れ、
+  // 押し直すと走っている解釈に当たって弾かれた。
+  test("絵解きの最中にボード一覧へ戻って開き直しても、続きが見え、終わったら結果が出る", async ({
+    page,
+  }) => {
+    const base = baseMock();
+    base.interpretJobRunning = true;
+    const mock = await openBoardWithMock(page, base);
+
+    let detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await expect(detail.getByRole("button", { name: "絵解き中…" })).toBeVisible();
+
+    await backToList(page);
+    await openBoard(page, BOARD_NAME);
+
+    detail = await openAnnotationDetail(page, "ログイン");
+    await expect(detail.getByRole("button", { name: "絵解き中…" })).toBeVisible();
+    // 戻ったあとに押し直したのではない。走っているジョブを引き直しただけ。
+    expect(mock.interpretRequests).toHaveLength(1);
+
+    mock.interpretJobRunning = false;
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    // 受け取り終えたジョブは捨てる。
+    await expect.poll(() => mock.jobDiscards.length).toBe(1);
+  });
+
   test("絵解くまで作成のボタンは出ない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 

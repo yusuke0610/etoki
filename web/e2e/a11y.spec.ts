@@ -533,6 +533,22 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    /*
+     * 読むだけの権限でメニューを開いた状態（#295）。消した編集系の理由と
+     * owner 専用の理由がどちらも本文で出る。上の検査は owner で開くので、
+     * どちらの文も一度も掛かっていない。
+     */
+    test("読むだけの権限でメニューを開いた状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.details[BOARD_ID] = { ...board(), role: "viewer" };
+      mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
+      await openBoardWithMock(page, mock);
+      const menu = await openBoardMenu(page);
+      await menu.getByText("編集できる人だけです", { exact: false }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     test("ボードの一覧", async ({ page }) => {
       await installApi(page, baseMock());
 

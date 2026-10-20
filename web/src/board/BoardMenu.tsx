@@ -107,11 +107,20 @@ export function BoardMenu({
       {/*
         名前はブレストの中身に属する表示物なので、editor にも直させる
         （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
+
+        **読むだけの人には、消した編集系の理由を 1 文だけ出す**（#295）。
+        名前の変更・取り込み・表（とキャンバスの背景・リセット）は消えるのに、並ぶ owner 専用の操作には理由が
+        ある、では形が揃わない（`.claude/rules/async-ui.md`）。項目ごとに同じ
+        文を並べると埋もれるので（ADR 0030）、最初に編集系が並ぶここに
+        まとめる。右のパネルの帯はスマホでは畳まれていて見えない（ADR 0075）
+        ので、その代わりにはならない。
       */}
-      {canEdit && (
+      {canEdit ? (
         <MainMenu.Item className="etoki-menu-item" icon={renameIcon} onSelect={onRename}>
           名前を変更
         </MainMenu.Item>
+      ) : (
+        <MenuNote>{VIEWER_EDIT_NOTE}</MenuNote>
       )}
       {/*
         共有はボードそのものの管理なので、右のパネル（ボードの中身に対する作業）
@@ -263,6 +272,14 @@ export function BoardMenu({
     </MainMenu>
   );
 }
+
+/**
+ * 読むだけの人に、メニューから消した編集系の操作の理由を言う文（#295）。
+ *
+ * 並ぶ owner 専用の文（「〜できるのはオーナーだけです」）と形を揃える。
+ * 「編集できる」はロールの表示名（`ROLE_LABELS`）と同じ語。
+ */
+const VIEWER_EDIT_NOTE = "名前の変更・取り込み・表などを使えるのは、編集できる人だけです";
 
 /**
  * メニューの中に出す、押せない理由の文（ADR 0066）。

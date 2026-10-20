@@ -229,6 +229,56 @@ test.describe("作成先の選択", () => {
     await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeHidden();
   });
 
+  // 切れると: 候補は書ける Project に絞っているのに「無い」とだけ言い、読める
+  // だけの Project を持つ人に作る必要の無いものを作りにいかせる（#293）。
+  // 無いのか書けないのかは区別できないので、両方を言う（ADR 0017）。
+  test("Project が 0 件なら、無いか書く権限が無いかの両方を言う", async ({ page }) => {
+    const mock = withUnselected();
+    mock.projects["acme/web"] = { status: 200, body: [] };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openUnselected(page);
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+
+    await expect(picker(page).getByText("紐づく Project が無いか")).toBeVisible();
+    await expect(picker(page).getByText("書く権限がありません")).toBeVisible();
+  });
+
+  // 切れると: GitHub App で個人アカウントの Project を辿って拒まれたのに、
+  // リポジトリの権限を見直すよう案内する。見直しても直らない（#293）。
+  test("Project の取得を拒まれたら、権限と個人アカウントの両方を言う", async ({
+    page,
+  }) => {
+    const mock = withUnselected();
+    mock.projects["acme/web"] = {
+      status: 403,
+      body: {
+        code: "forbidden_project",
+        error:
+          "etoki: forbidden: github graphql: FORBIDDEN: Resource not accessible by integration",
+      },
+    };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await openUnselected(page);
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("プロジェクトを取得できませんでした");
+    await expect(alert).toContainText("書く権限が無いか");
+    await expect(alert).toContainText("個人アカウントの Project には触れません");
+    // 作成で拒まれたときの文（リポジトリの権限だけを言う）は出さない。
+    await expect(alert).not.toContainText("リポジトリの権限を確かめてください");
+    // 取れなかったのに読み込み中と出し続けない。
+    await expect(picker(page).getByText("読み込み中…")).toHaveCount(0);
+  });
+
   test("リポジトリの取得に失敗したら、選択画面にその旨を出す", async ({ page }) => {
     const mock = withUnselected();
     mock.repositories = {
@@ -304,7 +354,9 @@ test.describe("作成先の選択", () => {
     await picker(page)
       .getByRole("button", { name: /acme\/api/ })
       .click();
-    await expect(page.getByText("紐づく Projects v2 がありません")).toBeVisible();
+    await expect(
+      page.getByText("書き込める Projects v2 が紐づいていません"),
+    ).toBeVisible();
 
     // やめればブレストに戻れる。未選択のときは戻る先が無いので出さない。
     await page.getByRole("button", { name: "やめる" }).click();

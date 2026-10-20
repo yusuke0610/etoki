@@ -50,6 +50,8 @@ var errorMappings = []errorMapping{
 	// 他人のボードの存在を確かめられる（ADR 0016 / 0017）。
 	{usecase.ErrBoardNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 	{usecase.ErrAnnotationNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
+	// 他人のジョブも別のボードのジョブもここに来る（ADR 0085）。
+	{usecase.ErrInterpretationJobNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 	{port.ErrNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 
 	// 403 は 2 層ある。**畳まない。** etoki のロール不足は owner に頼めば済み、

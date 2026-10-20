@@ -5,7 +5,7 @@ import { ANNOTATION_IDS, BOARD_ID, baseMock } from "./helpers/fixtures";
 import type { ApiMock } from "./helpers/api";
 
 /**
- * 囲みの名前（#249、ADR 0079）。注釈の詳細の名前欄で、frame の `name` を書き換える。
+ * 囲みの名前（#249、ADR 0079）。注釈の詳細の見出しの名前を押して、frame の `name` を書き換える（#305）。
  *
  * **守りたいのは、名前がシーンの frame に載ること。** 表示だけ変えて `name` に
  * 書かないと、キャンバスのラベルとも、解釈の入力（`content_hash`）とも食い違う。
@@ -21,8 +21,14 @@ test.describe("囲みの名前", () => {
 
   async function rename(page: Page, name: string): Promise<void> {
     const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "ログイン" }).click();
     await detail.getByLabel("名前").fill(name);
     await detail.getByLabel("名前").press("Enter");
+    // 確定すると見出しの名前が新しい名前になる（保存を待たない）。ダイアログの
+    // 名前は見出しの名前から引くので、同じ面が新しい名前で見つかる。
+    await expect(
+      page.getByRole("dialog", { name: `絵解き ${name}`, exact: true }),
+    ).toBeVisible();
   }
 
   test("名前を確定すると未保存になり、保存したシーンの frame に載る", async ({
@@ -44,10 +50,18 @@ test.describe("囲みの名前", () => {
     const mock = await openBoardWithMock(page, baseMock());
 
     const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "ログイン" }).click();
     await detail.getByLabel("名前").fill("ログインの入口");
     await detail.getByRole("button", { name: "絵解く" }).click();
 
-    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    // 押した処理が名前を確定するので、面の名前は新しい名前になっている。
+    const renamed = page.getByRole("dialog", {
+      name: "絵解き ログインの入口",
+      exact: true,
+    });
+    await expect(
+      renamed.getByRole("button", { name: "GitHub に作成する" }),
+    ).toBeVisible();
     expect(savedName(mock)).toBe("ログインの入口");
     expect(mock.interpretRequests).toHaveLength(1);
   });

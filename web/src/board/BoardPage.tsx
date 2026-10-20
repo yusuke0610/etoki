@@ -316,7 +316,13 @@ export function BoardPage({
     select: showInterpretation,
     recordCreated,
     discardAll: discardInterpretations,
-  } = useInterpretations({ api, boardId: board.id, annotations });
+  } = useInterpretations({
+    api,
+    boardId: board.id,
+    annotations,
+    // 未設定のうちは引かない。capabilities が届くまで（null）も待つ。
+    enabled: capabilities?.interpretation === true,
+  });
   // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
   const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
   // 右のパネルを畳んでいるか（#202）。端末ごとに覚えた値で始める。
@@ -1049,7 +1055,7 @@ export function BoardPage({
     onSelect: showInterpretation,
     unavailable: interpretationUnavailable,
   };
-  // 作る先の見出し。帯の「選んだ N 件を … に作ります」に出す。作成先が未選択の
+  // 作る先の見出し。押す直前の帯の文（`creationNotice`）に出す。作成先が未選択の
   // ボードでは作成まで進めないので null。
   const targetLabel =
     board.projectId === ""

@@ -268,7 +268,7 @@ test.describe("スマホ", () => {
     // 右端の帯は出さない。画面の右端をキャンバスから取らない。
     await expect(page.locator(".side-panel-rail")).toHaveCount(0);
     // 注釈には手を打つ必要がある件数を添える（畳んだ帯と同じ）。
-    const opener = boardBar(page).getByRole("button", { name: /^絵解いた、/ });
+    const opener = boardBar(page).getByRole("button", { name: /^絵解いた / });
     await expect(opener).toContainText("未作成");
 
     await opener.click();
@@ -334,7 +334,7 @@ test.describe("スマホ", () => {
     await expect(detail).toHaveCount(0);
     await expect(page.locator(".side-panel")).toBeHidden();
     await expect(
-      boardBar(page).getByRole("button", { name: /^絵解いた(、|$)/ }),
+      boardBar(page).getByRole("button", { name: /^絵解いた( |$)/ }),
     ).toBeFocused();
   });
 
