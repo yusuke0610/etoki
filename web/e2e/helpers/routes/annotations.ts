@@ -43,7 +43,8 @@ export async function installAnnotationRoutes(page: Page, mock: ApiMock): Promis
 
   // 解釈は始めるのと受け取るのが別のリクエスト（ADR 0085）。始めたジョブは
   // ここで覚え、取りに来たら `mock.interpret` の応答で終わらせる。
-  const jobs = new Map<string, string>();
+  // サーバーと同じく、ジョブはボードで絞る。始めたときのボードを控える。
+  const jobs = new Map<string, { boardId: string; annotationId: string }>();
   let seq = 0;
   const jobOf = (
     id: string,
@@ -84,10 +85,12 @@ export async function installAnnotationRoutes(page: Page, mock: ApiMock): Promis
         return;
       }
 
-      const annotationId = new URL(route.request().url()).pathname.split("/")[5] ?? "";
+      const segments = new URL(route.request().url()).pathname.split("/");
+      const boardId = segments[3] ?? "";
+      const annotationId = segments[5] ?? "";
       seq += 1;
       const id = `job-${seq}`;
-      jobs.set(id, annotationId);
+      jobs.set(id, { boardId, annotationId });
       await json(route, 202, {
         id,
         annotationId,
@@ -104,10 +107,13 @@ export async function installAnnotationRoutes(page: Page, mock: ApiMock): Promis
         await route.fallback();
         return;
       }
+      const boardId = new URL(route.request().url()).pathname.split("/")[3] ?? "";
       await json(
         route,
         200,
-        [...jobs].map(([id, annotationId]) => jobOf(id, annotationId, false)),
+        [...jobs]
+          .filter(([, job]) => job.boardId === boardId)
+          .map(([id, job]) => jobOf(id, job.annotationId, false)),
       );
     },
   );
@@ -115,24 +121,27 @@ export async function installAnnotationRoutes(page: Page, mock: ApiMock): Promis
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/interpretation-jobs\/[^/]+$/.test(url.pathname),
     async (route) => {
-      const id = new URL(route.request().url()).pathname.split("/")[5] ?? "";
-      const annotationId = jobs.get(id);
+      const segments = new URL(route.request().url()).pathname.split("/");
+      const id = segments[5] ?? "";
+      const job = jobs.get(id);
+      const method = route.request().method();
 
-      if (route.request().method() === "DELETE") {
+      if (method !== "GET" && method !== "DELETE") {
+        await route.fallback();
+        return;
+      }
+      // 知らない ID も別のボードのジョブも 404（実物の find と同じ）。
+      if (job === undefined || job.boardId !== segments[3]) {
+        await json(route, 404, { code: "not_found", error: "not found" });
+        return;
+      }
+      if (method === "DELETE") {
         mock.jobDiscards.push(id);
         jobs.delete(id);
         await route.fulfill({ status: 204 });
         return;
       }
-      if (route.request().method() !== "GET") {
-        await route.fallback();
-        return;
-      }
-      if (annotationId === undefined) {
-        await json(route, 404, { code: "not_found", error: "not found" });
-        return;
-      }
-      await json(route, 200, jobOf(id, annotationId, true));
+      await json(route, 200, jobOf(id, job.annotationId, true));
     },
   );
 
