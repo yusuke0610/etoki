@@ -174,6 +174,9 @@ type handlers struct {
 	annotations *usecase.AnnotationService
 	// interpretations は nil でもよい。その場合は 503 を返す。
 	interpretations *usecase.InterpretationService
+	// interpretationJobs は interpretations を、リクエストから切り離して走らせる
+	// （ADR 0085）。nil の条件は interpretations と同じ。
+	interpretationJobs *usecase.InterpretationJobs
 	// diagrams はプロンプトからの図のドラフト生成。nil でもよい。
 	//
 	// interpretations と同じ LLM の設定で決まるが、**別々に持つ。** 使えるかを

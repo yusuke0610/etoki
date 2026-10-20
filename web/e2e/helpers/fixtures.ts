@@ -509,6 +509,8 @@ export function baseMock(): ApiMock {
     detached: {},
     interpret: { status: 200, body: interpretation() },
     interpretRequests: [],
+    interpretJobRunning: false,
+    jobDiscards: [],
     createRequests: [],
     diagramDraft: { status: 200, body: diagramDraft() },
     diagramRequests: [],
