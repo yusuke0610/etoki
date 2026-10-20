@@ -124,13 +124,16 @@ func NewRouter(deps Deps) *gin.Engine {
 		boards:          deps.Boards,
 		annotations:     deps.Annotations,
 		interpretations: deps.Interpretations,
-		diagrams:        deps.Diagrams,
-		creations:       deps.Creations,
-		catalog:         deps.Catalog,
-		members:         deps.Members,
-		access:          deps.Access,
-		auth:            deps.Auth,
-		oauth:           oauth,
+		// ジョブの置き場はルーターが作る。メモリだけに持つ状態で、ルーターと同じ
+		// 寿命であればよい（ADR 0085）。
+		interpretationJobs: newInterpretationJobs(deps.Interpretations),
+		diagrams:           deps.Diagrams,
+		creations:          deps.Creations,
+		catalog:            deps.Catalog,
+		members:            deps.Members,
+		access:             deps.Access,
+		auth:               deps.Auth,
+		oauth:              oauth,
 		// 文書を取りに行けても、認可サーバーを組み立てていなければ載せる先が無い。
 		oauthMetadataDocuments: oauth != nil && deps.OAuthMetadataDocuments,
 		publicURL:              deps.PublicURL,
@@ -218,6 +221,10 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 解釈と作成は別のエンドポイントに保つ。解釈結果を見た開発者が
 		// 明示的に作成を叩く（中核思想 3）。
 		api.POST("/boards/:id/annotations/:annotationId/interpret", h.interpretAnnotation)
+		// 解釈は始めるのと受け取るのが別のリクエスト（ADR 0085）。
+		api.GET("/boards/:id/interpretation-jobs", h.listInterpretationJobs)
+		api.GET("/boards/:id/interpretation-jobs/:jobId", h.getInterpretationJob)
+		api.DELETE("/boards/:id/interpretation-jobs/:jobId", h.discardInterpretationJob)
 		api.POST("/boards/:id/annotations/:annotationId/items", h.createItems)
 
 		// MCP のクライアントへの許可（ADR 0076）。同意の返事は POST なので
@@ -303,4 +310,12 @@ func widenBody(c *gin.Context, limit int64) {
 // 方針のため、ヘルスチェックが副作用を持たないようにしている。
 func handleHealthz(c *gin.Context) {
 	c.JSON(http.StatusOK, apitypes.HealthResponse{Status: "ok"})
+}
+
+// newInterpretationJobs は解釈のジョブの置き場を作る。解釈が無いときは nil。
+func newInterpretationJobs(svc *usecase.InterpretationService) *usecase.InterpretationJobs {
+	if svc == nil {
+		return nil
+	}
+	return usecase.NewInterpretationJobs(svc)
 }
