@@ -24,14 +24,32 @@ export type TabSpec = {
 };
 
 /**
- * 畳んだ帯（と、スマホの上の帯）でタブを開くボタンの名前と、添える件数。
+ * 畳んだ帯（と、スマホの上の帯）でタブを開くボタンの中身。**ボタンの名前は
+ * この中身から作る。**
+ *
  * **件数まで名前に入れる。** 縦書きの帯では見た目の区切りに頼れず、上の帯でも
  * 同じ名前で引けるようにしておく（#199）。
+ *
+ * **`aria-label` で名前を別に書かない。** 見えている「未作成 1」と名前の
+ * 「未作成 1 件」がずれ、見えている文字を読み上げて押す音声操作で当たらない
+ * （WCAG 2.5.3、#311）。読み上げにだけ要る「件」は、見た目から隠して中身に
+ * 足す。区切りはバッジの前後にブラウザが空白を入れるので足さない。名前は
+ * 「絵解いた 未作成 1 件 変更あり 1 件」になる。
+ * `upright` は縦書きの帯で数字を横に寝かせないため。
  */
-export function panelOpener(tab: TabSpec): { name: string; badges: RailBadge[] } {
+export function PanelOpenerLabel({ tab, upright }: { tab: TabSpec; upright: boolean }) {
   const badges = (tab.railBadges ?? []).filter((b) => b.count > 0);
-  const name = [tab.label, ...badges.map((b) => `${b.label} ${b.count} 件`)].join("、");
-  return { name, badges };
+  return (
+    <>
+      <span>{tab.label}</span>
+      {badges.map((b) => (
+        <span key={b.state} className={`badge badge-${b.state}`}>
+          {b.label} {upright ? <span className="upright">{b.count}</span> : b.count}
+          <span className="visually-hidden"> 件</span>
+        </span>
+      ))}
+    </>
+  );
 }
 
 type Props = {
@@ -161,33 +179,24 @@ export function SidePanel({
     <>
       {collapsed && rail && (
         <nav className="side-panel-rail" aria-label="パネル">
-          {tabs.map((tab) => {
-            const { name, badges } = panelOpener(tab);
-            return (
-              <button
-                key={tab.id}
-                ref={(el) => {
-                  if (el) railButtons.current.set(tab.id, el);
-                  else railButtons.current.delete(tab.id);
-                }}
-                type="button"
-                className="side-panel-rail-tab"
-                aria-label={name}
-                aria-expanded={false}
-                aria-controls={SIDE_PANEL_ID}
-                // 開いたときに戻る先が見て分かるように、選んでいたタブを示す。
-                aria-current={tab.id === active ? "true" : undefined}
-                onClick={() => expand(tab.id)}
-              >
-                <span>{tab.label}</span>
-                {badges.map((b) => (
-                  <span key={b.state} className={`badge badge-${b.state}`}>
-                    {b.label} <span className="upright">{b.count}</span>
-                  </span>
-                ))}
-              </button>
-            );
-          })}
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              ref={(el) => {
+                if (el) railButtons.current.set(tab.id, el);
+                else railButtons.current.delete(tab.id);
+              }}
+              type="button"
+              className="side-panel-rail-tab"
+              aria-expanded={false}
+              aria-controls={SIDE_PANEL_ID}
+              // 開いたときに戻る先が見て分かるように、選んでいたタブを示す。
+              aria-current={tab.id === active ? "true" : undefined}
+              onClick={() => expand(tab.id)}
+            >
+              <PanelOpenerLabel tab={tab} upright />
+            </button>
+          ))}
         </nav>
       )}
 

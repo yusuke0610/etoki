@@ -14,16 +14,17 @@ type Props = {
 };
 
 /**
- * ボード一覧のカード（#200）。**カード全体を 1 つのボタンにする。** 押すと
- * ボードを開く。
+ * ボード一覧のカード（#200）。**カード全体を押すと** ボードを開く。
  *
- * **ボタンの名前はボード名だけにする。** ロール・更新時刻・状態は説明として
- * 結ぶ。全部を名前にすると、名前で引く読み上げと E2E の両方で長すぎる
- * （注釈のカードと同じ形）。
+ * **ボタンの中身はボード名だけにする。** ロール・更新時刻・状態はボタンの外に
+ * 置き、説明として結ぶ。カード全体を押せるのは、ボタンがカードを覆う
+ * （`boards.css` の `.board-card-open::after`）ため。中身ごとボタンにして名前を
+ * ボード名だけに絞ると、見えている文字が名前に含まれず、見えている文字を
+ * 読み上げて押す音声操作で当たらない（WCAG 2.5.3、#311）。全部を名前にすると、
+ * 名前で引く読み上げと E2E の両方で長すぎる（注釈のカードと同じ形）。
  */
 export function BoardCard({ board, now, onOpen }: Props) {
   const ids = {
-    name: `board-card-name-${board.id}`,
     role: `board-card-role-${board.id}`,
     updated: `board-card-updated-${board.id}`,
     states: `board-card-states-${board.id}`,
@@ -38,46 +39,43 @@ export function BoardCard({ board, now, onOpen }: Props) {
   ];
 
   return (
-    <li>
-      <button
-        type="button"
-        // 作成先が未選択のカードは枠を破線にする。開くと作成先の選択から
-        // 始まるので、ほかのカードと同じ見た目だと押した先で驚く。
-        className={`board-card${unselected ? " unselected" : ""}`}
-        aria-labelledby={ids.name}
-        aria-describedby={described.join(" ")}
-        onClick={() => onOpen(board.id)}
-      >
-        <span className="board-card-head">
-          <span id={ids.name} className="board-card-name">
-            {board.name}
-          </span>
-          {/*
-            自分が何をできるのかは、開く前から見えている（ADR 0017）。共有された
-            ボードが並ぶと「開けるが書けない」が普通に起きる。**オーナーのボードにも
-            出す**（#200 で決めた）。出し分けると、出ていないことの意味を覚えて
-            おく必要がある。
-          */}
-          <span id={ids.role} className="badge badge-role">
-            {ROLE_LABELS[board.role]}
-          </span>
+    // 作成先が未選択のカードは枠を破線にする。開くと作成先の選択から
+    // 始まるので、ほかのカードと同じ見た目だと押した先で驚く。
+    <li className={`board-card${unselected ? " unselected" : ""}`}>
+      <span className="board-card-head">
+        <button
+          type="button"
+          className="board-card-open"
+          aria-describedby={described.join(" ")}
+          onClick={() => onOpen(board.id)}
+        >
+          {board.name}
+        </button>
+        {/*
+          自分が何をできるのかは、開く前から見えている（ADR 0017）。共有された
+          ボードが並ぶと「開けるが書けない」が普通に起きる。**オーナーのボードにも
+          出す**（#200 で決めた）。出し分けると、出ていないことの意味を覚えて
+          おく必要がある。
+        */}
+        <span id={ids.role} className="badge badge-role">
+          {ROLE_LABELS[board.role]}
         </span>
-        <time id={ids.updated} className="board-card-updated" dateTime={board.updatedAt}>
-          {updatedLabel(board.updatedAt, now)}
-        </time>
-        <span id={ids.states} className="board-card-states">
-          <StateBadges counts={board.annotationCounts} />
+      </span>
+      <time id={ids.updated} className="board-card-updated" dateTime={board.updatedAt}>
+        {updatedLabel(board.updatedAt, now)}
+      </time>
+      <span id={ids.states} className="board-card-states">
+        <StateBadges counts={board.annotationCounts} />
+      </span>
+      {unselected && (
+        // 作成先を選べるのはオーナーだけ（ADR 0017）。押した先で何が起きるかを
+        // 開く前に言う。
+        <span id={ids.note} className="hint board-card-note">
+          {board.role === "owner"
+            ? "開くと作成先を選べます"
+            : "作成先はオーナーが選びます"}
         </span>
-        {unselected && (
-          // 作成先を選べるのはオーナーだけ（ADR 0017）。押した先で何が起きるかを
-          // 開く前に言う。
-          <span id={ids.note} className="hint board-card-note">
-            {board.role === "owner"
-              ? "開くと作成先を選べます"
-              : "作成先はオーナーが選びます"}
-          </span>
-        )}
-      </button>
+      )}
     </li>
   );
 }

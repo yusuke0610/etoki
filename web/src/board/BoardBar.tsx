@@ -1,6 +1,11 @@
 import { type ReactNode, useEffect, useRef } from "react";
 
-import { panelOpener, SIDE_PANEL_ID, type SidePanelTab, type TabSpec } from "./SidePanel";
+import {
+  PanelOpenerLabel,
+  SIDE_PANEL_ID,
+  type SidePanelTab,
+  type TabSpec,
+} from "./SidePanel";
 
 /** 上の帯でパネルを開くボタンの id。注釈の詳細が閉じたときの焦点の戻り先に使う。 */
 export function boardBarButtonId(tab: SidePanelTab): string {
@@ -49,34 +54,25 @@ export function BoardBar({ tabs, active, panelOpen, onOpen, context }: Props) {
   return (
     <div className="board-bar board-bar-row">
       <nav className="board-bar-panels" aria-label="パネル">
-        {tabs.map((tab) => {
-          const { name, badges } = panelOpener(tab);
-          return (
-            <button
-              key={tab.id}
-              ref={(el) => {
-                if (el) buttons.current.set(tab.id, el);
-                else buttons.current.delete(tab.id);
-              }}
-              id={boardBarButtonId(tab.id)}
-              type="button"
-              aria-label={name}
-              aria-expanded={panelOpen && tab.id === active}
-              aria-controls={SIDE_PANEL_ID}
-              onClick={() => {
-                opener.current = tab.id;
-                onOpen(tab.id);
-              }}
-            >
-              <span>{tab.label}</span>
-              {badges.map((b) => (
-                <span key={b.state} className={`badge badge-${b.state}`}>
-                  {b.label} {b.count}
-                </span>
-              ))}
-            </button>
-          );
-        })}
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            ref={(el) => {
+              if (el) buttons.current.set(tab.id, el);
+              else buttons.current.delete(tab.id);
+            }}
+            id={boardBarButtonId(tab.id)}
+            type="button"
+            aria-expanded={panelOpen && tab.id === active}
+            aria-controls={SIDE_PANEL_ID}
+            onClick={() => {
+              opener.current = tab.id;
+              onOpen(tab.id);
+            }}
+          >
+            <PanelOpenerLabel tab={tab} upright={false} />
+          </button>
+        ))}
       </nav>
       {context}
     </div>

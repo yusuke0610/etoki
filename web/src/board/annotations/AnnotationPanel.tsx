@@ -132,7 +132,6 @@ export function AnnotationPanel({
               const onCanvas =
                 frames.canvasIds === null || frames.canvasIds.includes(a.id);
               const selected = frames.selectedIds.includes(a.id);
-              const nameId = `annotation-name-${a.id}`;
               const stateId = `annotation-state-${a.id}`;
               const summaryId = `annotation-summary-${a.id}`;
               const unconfirmed = a.unconfirmedItems?.length ?? 0;
@@ -146,26 +145,29 @@ export function AnnotationPanel({
                   aria-current={selected ? "true" : undefined}
                 >
                   {/*
-                    カード全体を 1 つのボタンにして、押したら詳細を開く。
-                    **キャンバスに無い注釈も押せる。** 詳細で GitHub にあるものや
-                    履歴を読めるようにするため。押せないのは詳細の「キャンバスで
-                    見る」のほう（ADR 0022）。
+                    カード全体を押すと詳細を開く。**キャンバスに無い注釈も押せる。**
+                    詳細で GitHub にあるものや履歴を読めるようにするため。押せない
+                    のは詳細の「キャンバスで見る」のほう（ADR 0022）。
 
-                    名前は注釈の見出しだけにし、状態と要約は説明として結ぶ。
-                    全部を名前にすると、名前で引く読み上げと E2E の両方で長すぎる。
+                    **ボタンの中身は名前だけにする。** 状態と要約はボタンの外に
+                    置き、説明として結ぶ。カード全体を押せるのは、ボタンがカードを
+                    覆う（`annotations.css` の `.annotation-open::after`）ため。
+                    中身ごとボタンにして名前を見出しだけに絞ると、見えている文字が
+                    名前に含まれず、見えている文字を読み上げて押す音声操作で当たら
+                    ない（WCAG 2.5.3、#311）。全部を名前にすると、名前で引く
+                    読み上げと E2E の両方で長すぎる。
                   */}
-                  <button
-                    type="button"
-                    className="annotation-open"
-                    id={annotationCardButtonId(a.id)}
-                    aria-labelledby={nameId}
-                    aria-describedby={`${stateId} ${summaryId}`}
-                    onClick={() => onOpenDetail(a.id)}
-                  >
+                  <div className="annotation-card">
                     <span className="annotation-open-head">
-                      <span id={nameId} className="annotation-open-name">
+                      <button
+                        type="button"
+                        className="annotation-open"
+                        id={annotationCardButtonId(a.id)}
+                        aria-describedby={`${stateId} ${summaryId}`}
+                        onClick={() => onOpenDetail(a.id)}
+                      >
                         {labels.get(a.id)}
-                      </span>
+                      </button>
                       <span id={stateId} className={`badge badge-${a.state}`}>
                         {STATE_LABEL[a.state]}
                       </span>
@@ -176,7 +178,7 @@ export function AnnotationPanel({
                     <span className="annotation-open-chevron" aria-hidden="true">
                       ›
                     </span>
-                  </button>
+                  </div>
 
                   {/*
                     **押さなくても見えている必要があるもの**は、ボタンの外に
