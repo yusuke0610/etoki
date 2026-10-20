@@ -42,7 +42,7 @@ func (h *handlers) failLLM(c *gin.Context, err, rejected error) {
 		c.AbortWithStatus(statusClientClosedRequest)
 		return
 
-	case isLLMCallFailure(err):
+	case usecase.IsLLMCallFailure(err):
 		// 呼び出しそのものの失敗。API キーはアダプタ側でエラーに載せていない。
 		h.logger.ErrorContext(c.Request.Context(), "llm call failed",
 			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
@@ -53,27 +53,4 @@ func (h *handlers) failLLM(c *gin.Context, err, rejected error) {
 	}
 
 	h.fail(c, err)
-}
-
-// llmCallFailures は「呼び出しそのものが失敗した」ことを表す sentinel。
-//
-// 画面に返す code は原因ごとに分けてある（ADR 0087）が、**記録の出し分けは
-// 分けない。** どれも出力を受け取れなかった上流の失敗で、分ける前の
-// ErrLLMUnavailable と同じ扱いにする。ここに足し忘れると、その原因だけ記録から
-// 消える。
-var llmCallFailures = []error{
-	usecase.ErrLLMUnavailable,
-	usecase.ErrLLMTruncated,
-	usecase.ErrLLMRefused,
-	usecase.ErrLLMOverloaded,
-}
-
-// isLLMCallFailure は err が llmCallFailures のどれかかを返す。
-func isLLMCallFailure(err error) bool {
-	for _, s := range llmCallFailures {
-		if errors.Is(err, s) {
-			return true
-		}
-	}
-	return false
 }

@@ -29,6 +29,34 @@ var (
 	ErrLLMOverloaded = errors.New("etoki: llm upstream is busy")
 )
 
+// llmCallFailures は「呼び出しそのものが失敗した」ことを表す sentinel。
+//
+// 画面に返す code は原因ごとに分けてある（ADR 0087）が、**記録の出し分けは
+// 分けない。** どれも出力を受け取れなかった上流の失敗で、分ける前の
+// ErrLLMUnavailable と同じ扱いにする。ここに足し忘れると、その原因だけ記録から
+// 消える。
+var llmCallFailures = []error{
+	ErrLLMUnavailable,
+	ErrLLMTruncated,
+	ErrLLMRefused,
+	ErrLLMOverloaded,
+}
+
+// IsLLMCallFailure は err が LLM の呼び出しそのものの失敗かを返す。
+//
+// 記録を残す場所は 2 つある。リクエストで走る図のドラフト生成は httpapi の
+// failLLM、リクエストから切り離した解釈は InterpretationJobs.logFailure
+// （ADR 0085）。**どちらもここで判定する。** 片方で列挙し直すと、足した原因が
+// もう片方の記録から消える。
+func IsLLMCallFailure(err error) bool {
+	for _, s := range llmCallFailures {
+		if errors.Is(err, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // llmCauses は port の sentinel を、ユースケース層の sentinel に写す表。
 var llmCauses = []struct {
 	port, usecase error
