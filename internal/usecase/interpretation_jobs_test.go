@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -550,4 +551,40 @@ func TestJobs_PanicInLLMFailsTheJobAndFreesSlot(t *testing.T) {
 	if done.Status != usecase.InterpretationJobFailed {
 		t.Errorf("Status = %q, want failed（プロセスを落とさず、このジョブの失敗にする）", done.Status)
 	}
+}
+
+func TestJobs_StartAfterSceneChangedMakesNewJob(t *testing.T) {
+	t.Parallel()
+
+	llm := newGatedLLM(validLLMOutput)
+	jobs, boards := newJobs(t, llm)
+	ctx := asUser(t.Context(), "u1")
+
+	first, err := jobs.Start(ctx, "board-1", "annot-1", nil)
+	if err != nil {
+		t.Fatalf("Start() = %v", err)
+	}
+
+	// 保存で注釈の中身が変わった。枠は 1 つなので、前のジョブを捨ててから始める。
+	boards.board.Scene = strings.Replace(interpretScene, "返金導線が無い", "返金導線を足す", 1)
+	if err := jobs.Discard(ctx, "board-1", first.ID); err != nil {
+		t.Fatalf("Discard() = %v", err)
+	}
+
+	var second usecase.InterpretationJob
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		second, err = jobs.Start(ctx, "board-1", "annot-1", nil)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, usecase.ErrConcurrencyLimited) || time.Now().After(deadline) {
+			t.Fatalf("Start() = %v", err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if second.ID == first.ID {
+		t.Errorf("ID = %q, want 新しいジョブ（内容が変わった注釈に古いジョブを返さない）", second.ID)
+	}
+	close(llm.release)
 }

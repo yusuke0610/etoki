@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -90,8 +91,10 @@ type InterpretationJobs struct {
 // interpretationJob は InterpretationJobs の中の 1 件。外へは InterpretationJob の
 // コピーで返す。
 type interpretationJob struct {
-	actor      string
-	boardID    string
+	actor   string
+	boardID string
+	// hash は始めたときの注釈の内容。同じ注釈 ID でも、保存で内容が変われば別の入力。
+	hash       domain.ContentHash
 	job        InterpretationJob
 	finishedAt time.Time
 	cancel     context.CancelFunc
@@ -166,7 +169,7 @@ func randomJobID() string {
 // 認可と入力の検証、枠の確保までは呼び出しの中で行う。404 / 400 / 429 は
 // 始める時点で返り、ジョブにならない（ADR 0044）。
 //
-// **同じ操作者が同じ注釈をまだ解釈している最中なら、新しく始めず、そのジョブを
+// **同じ操作者が同じ注釈（保存済みの内容が同じもの）をまだ解釈している最中なら、新しく始めず、そのジョブを
 // 返す。** 二度押しや、戻って押し直したときに、同じ入力で LLM を二度叩いて
 // 二度課金しない。そのとき images は読まない。別の注釈は枠に弾かれる（429）。
 func (j *InterpretationJobs) Start(
@@ -183,8 +186,9 @@ func (j *InterpretationJobs) Start(
 	}
 
 	actor := actorOf(ctx)
+	hash := p.scene.AnnotationHash(p.annotation)
 	for _, e := range j.jobs {
-		if e.actor == actor && e.boardID == boardID &&
+		if e.actor == actor && e.boardID == boardID && e.hash == hash &&
 			e.job.AnnotationID == annotationID && e.job.Status == InterpretationJobRunning {
 			return e.job, nil
 		}
@@ -203,6 +207,7 @@ func (j *InterpretationJobs) Start(
 	e := &interpretationJob{
 		actor:   actor,
 		boardID: boardID,
+		hash:    hash,
 		job: InterpretationJob{
 			ID:           j.newID(),
 			AnnotationID: annotationID,
