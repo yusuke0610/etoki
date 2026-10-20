@@ -493,7 +493,11 @@ func runForTest(t *testing.T, srv *etoki.Server) {
 	go func() { done <- srv.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		// 止めたあとの Run は nil を返す（Shutdown が通った）。ここで捨てると、
+		// 片付けが失敗しても気づけない。
+		if err := <-done; err != nil {
+			t.Errorf("Run after cancel: %v", err)
+		}
 	})
 	waitForListener(t, srv.Addr())
 }

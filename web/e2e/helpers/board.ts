@@ -44,7 +44,7 @@ export async function chooseFromMenu(page: Page, name: string): Promise<void> {
 export async function openPanelTab(page: Page, name: string): Promise<Locator> {
   // 畳んでいれば帯から開く（#202）。帯のボタンの名前は件数まで含むので、
   // タブの名前で始まるものを引く。
-  const opener = new RegExp(`^${name}(、|$)`);
+  const opener = new RegExp(`^${name}( |$)`);
   const rail = page.locator(".side-panel-rail");
   const bar = page.locator(".board-bar-panels");
   if (await rail.isVisible()) {
@@ -159,7 +159,7 @@ export async function waitForBoard(page: Page, name: string): Promise<void> {
   // 「絵解いた」を待つ。
   if ((await page.locator('.board[data-layout="phone"]').count()) > 0) {
     await expect(
-      page.locator(".board-bar-panels").getByRole("button", { name: /^絵解いた(、|$)/ }),
+      page.locator(".board-bar-panels").getByRole("button", { name: /^絵解いた( |$)/ }),
     ).toBeVisible();
     return;
   }

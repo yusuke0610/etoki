@@ -79,6 +79,17 @@ const ETOKI_INSIDE_CANVAS = [
 ];
 
 /**
+ * 既定では無効でも、etoki が守ると決めた規則。
+ *
+ * **`label-content-name-mismatch`（WCAG 2.5.3、Level A）。** 見えている文字が
+ * 名前に含まれていること。音声で操作する利用者は、見えている文字を読み上げて
+ * 押す。axe-core 4.13 までは実験扱いで既定では無効だったので、名前を見出しだけに
+ * 絞ったカードが検査されないまま通っていた（#311）。版によって既定が変わっても
+ * 検査が抜けないよう、ここで明示する。
+ */
+const ENABLED = ["label-content-name-mismatch"];
+
+/**
  * etoki が書いた DOM に axe を掛け、違反が無いことを確かめる。
  *
  * **`.excalidraw` は外す。** ライブラリ自身の DOM に出る指摘は etoki には
@@ -102,7 +113,10 @@ const ETOKI_INSIDE_CANVAS = [
  */
 export async function expectNoAxeViolations(page: Page): Promise<void> {
   // 包含を 1 つでも指定すると、既定の「文書全体」が外れる。`body` から始める。
-  let builder = new AxeBuilder({ page }).include("body").exclude(".excalidraw");
+  let builder = new AxeBuilder({ page })
+    .include("body")
+    .exclude(".excalidraw")
+    .options({ rules: Object.fromEntries(ENABLED.map((id) => [id, { enabled: true }])) });
   for (const selector of ETOKI_INSIDE_CANVAS) builder = builder.include(selector);
   const results = await builder.analyze();
 
