@@ -700,7 +700,8 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   除いて掛ける。** ライブラリ自身の DOM に etoki は手を入れられない。**ただし
   etoki が拡張点に載せた部品（右上・下の帯・メニューの etoki の項目）は包含し
   直している**（`web/e2e/helpers/a11y.ts` の `ETOKI_INSIDE_CANVAS`、ADR 0065）。
-  **部品を拡張点に足したら、そこにも足す。** そこの部品の**色のコントラストは
+  **部品を拡張点に足したら、そこにも足す。** ライブラリが描いた部品でも、etoki が
+  手を入れたもの（名前を付けたメニューの入口、#299）は戻す。そこの部品の**色のコントラストは
   axe では判定できない**（ライブラリの層に重なって背景が決まらず、違反ではなく
   判定不能になる）。効くのは構造の検査だけなので、色はトークンの側で守る。
   **開かないと DOM に出ない領域は、開いた状態を 1 つずつ足す。** 図のドラフト・
@@ -927,6 +928,12 @@ cd web && bunx playwright test --ui
   手を入れているので、Excalidraw を上げると黙って戻りうる。
   `web/e2e/excalidrawMermaid.spec.ts` と `src/excalidraw/excalidrawMermaid.test.ts`
   が落ちたら、隠し方と判定の写しを見直す。
+- **Excalidraw のメニューの入口（≡）の名前は etoki が付けている**（#299、
+  ADR 0039 の追記）。0.18.1 の `MainMenu` は名前を渡す口を持たないので、
+  `useMenuTriggerName` が `data-testid="main-menu-trigger"` のボタンに
+  `aria-label` を付け、作り直されたら付け直す。Excalidraw を上げて印が変わると
+  黙って外れる。**メニューを開く spec がまとめて落ちたら**（`openBoardMenu` は
+  入口を名前で引く）、まずここを疑う。
 - **`web/vite.config.ts` の `test.include`** — vitest の既定は `*.spec.ts` も
   拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の

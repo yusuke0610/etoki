@@ -73,14 +73,18 @@ const ETOKI_INSIDE_CANVAS = [
   ".excalidraw .board-context",
   ".excalidraw .etoki-menu-item",
   ".excalidraw .menu-note",
+  // メニューの入口そのものは Excalidraw が描くが、名前は etoki が付けている
+  // （`useMenuTriggerName`、#299）。付け損ねたら `button-name` で落ちる。
+  '.excalidraw [data-testid="main-menu-trigger"]',
 ];
 
 /**
  * etoki が書いた DOM に axe を掛け、違反が無いことを確かめる。
  *
- * **`.excalidraw` は外す。** 掛けた時点で Excalidraw 自身のメニューボタンが
- * `button-name` に引っかかっており、etoki には直せない。外さないと、直せない
- * 指摘が常時 1 件出続ける検査になり、やがて誰も見なくなる（ADR 0039）。
+ * **`.excalidraw` は外す。** ライブラリ自身の DOM に出る指摘は etoki には
+ * 直せない。外さないと、直せない指摘が出続ける検査になり、やがて誰も見なく
+ * なる（ADR 0039）。掛けた時点で出ていたメニューの入口の `button-name` は、
+ * etoki が名前を付けて戻した（#299）。
  *
  * **ただし etoki が拡張点に載せた部品は戻す**（`ETOKI_INSIDE_CANVAS`）。axe は
  * 包含と除外が重なると深いほうを採るので、除外の中の包含で戻せる。戻さないと、
