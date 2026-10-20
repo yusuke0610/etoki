@@ -99,10 +99,15 @@
   gap: var(--space-6);
 }
 
+/*
+ * カード（#200）。**押せるのはボード名のボタンで、それがカード全体を覆う**
+ * （`::after`）。ボタンの中身を名前だけにして、見えている文字と名前を揃えるため
+ * （WCAG 2.5.3、#311）。ロールや状態は覆いの下にあるので、どこを押しても
+ * ボタンに届く。
+ */
 .board-card {
+  position: relative;
   box-sizing: border-box;
-  width: 100%;
-  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -112,12 +117,9 @@
   border-radius: var(--radius-md);
   background: var(--color-bg);
   color: var(--color-text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
-.board-card:hover {
+.board-card:has(.board-card-open:hover) {
   background: var(--color-hover);
 }
 
@@ -133,10 +135,37 @@
   gap: var(--space-4);
 }
 
-.board-card-name {
+.board-card-open {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
   font-size: var(--text-lg);
   font-weight: 600;
+  text-align: left;
   overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.board-card-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * 焦点の輪は名前ではなく覆い（カード全体）に出す。押して開く範囲はカード全体
+ * なので。輪の形はブラウザの既定（`auto`）のまま。
+ */
+.board-card-open:focus-visible {
+  outline: none;
+}
+
+.board-card-open:focus-visible::after {
+  outline: auto;
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
 }
 
 .board-card-updated {

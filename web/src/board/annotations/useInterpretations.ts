@@ -1,5 +1,5 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { boardsApi } from "../../api/boards";
 import { describeFailure } from "../../api/errorMessage";
@@ -14,12 +14,21 @@ import {
   startInterpretation,
   type InterpretationState,
 } from "./interpretationHistory";
+import { awaitJob, JOB_POLL_INTERVAL_MS } from "./interpretationJobs";
 
 type Options = {
   api: ExcalidrawImperativeAPI | null;
   boardId: string;
   /** 保存済みシーンの注釈。解釈したときの粒度を控えるのに使う。 */
   annotations: AnnotationStatus[];
+  /**
+   * 解釈を使えるか。使えるときだけ、開いたときに走っているジョブを引く。
+   *
+   * 未設定のサーバーに引くと 503 が返るだけで、利用者に見せるものが無い。
+   */
+  enabled: boolean;
+  /** ジョブを見に行く間隔。テストが待たずに済むよう差し替えられる。 */
+  pollIntervalMs?: number;
 };
 
 export type InterpretOptions = {
@@ -44,22 +53,115 @@ export type Interpretations = {
     items: SyncItem[],
   ) => void;
   /**
-   * 引いた解釈と、走っている解釈の応答をすべて捨てる。
+   * 引いた解釈と、走っている解釈をすべて捨てる。サーバーのジョブも止める。
    *
    * 呼ぶのは保存だけ。**何を捨てるかの一覧は `BoardPage` の 1 箇所にある**（#146）。
    */
   discardAll: () => void;
 };
 
-/** 注釈を解釈させ、引いた解釈を注釈ごとに積む（#146 で `BoardPage` から切り出し）。 */
+/**
+ * 注釈を解釈させ、引いた解釈を注釈ごとに積む（#146 で `BoardPage` から切り出し）。
+ *
+ * **解釈はサーバーのジョブとして走る**（ADR 0085）。ここは始めて、終わるまで
+ * 見に行き、結果を積む。画面を離れても解釈は止まらず、開き直したときに走って
+ * いるぶんを引いて続きを見に行く。
+ */
 export function useInterpretations({
   api,
   boardId,
   annotations,
+  enabled,
+  pollIntervalMs = JOB_POLL_INTERVAL_MS,
 }: Options): Interpretations {
   const [states, setStates] = useState<Record<string, InterpretationState>>({});
   // 実行中の解釈を無効にするための世代。useState の初期化関数で 1 度だけ作る。
   const [generations] = useState(createGenerations);
+
+  // 見に行くのをやめる印。**ジョブは止めない。** 立てるのは effect で、StrictMode が
+  // effect を 2 回走らせても、2 回目で立て直す。
+  const alive = useRef(false);
+  // 保存で捨てた回数。始めたあと、応答が返る前に保存が挟まったかを見る。世代は
+  // 「同じ注釈の新しい要求」でも進むので、そちらでは区別できない。
+  const epoch = useRef(0);
+  // いま手元で追っているジョブ。保存で捨てるときに、サーバーのジョブも止める。
+  const jobIds = useRef(new Set<string>());
+  // 復元のとき、実行した粒度を控えるのに最新の一覧を読む。依存に入れると、一覧が
+  // 変わるたびにジョブを引き直す。
+  const latestAnnotations = useRef(annotations);
+  useEffect(() => {
+    latestAnnotations.current = annotations;
+  }, [annotations]);
+
+  /** ジョブを要らないものとして捨てる。失敗しても何もしない。 */
+  const discardJob = useCallback(
+    (jobId: string) => {
+      jobIds.current.delete(jobId);
+      // 捨て損ねても、保持の期限（1 時間）で消える。画面に出すものが無い。
+      boardsApi.discardInterpretationJob(boardId, jobId).catch(() => undefined);
+    },
+    [boardId],
+  );
+
+  /**
+   * ジョブが走り終わるまで見に行き、結果か失敗を積む。
+   *
+   * **捨てるべき応答を捨てる責任は世代側にあり、履歴は返ってきたものを積むだけ。**
+   * 世代が古くなったときはジョブを捨てない。同じ注釈を押し直すと、サーバーは
+   * 走っているジョブを返すので、新しい要求も同じジョブを見ている。
+   */
+  const settle = useCallback(
+    async (
+      annotationId: string,
+      generation: number,
+      jobId: string,
+      granularity: Granularity,
+    ) => {
+      const isCurrent = () =>
+        alive.current && generations.isCurrent(annotationId, generation);
+
+      let outcome;
+      try {
+        outcome = await awaitJob(boardId, jobId, isCurrent, pollIntervalMs);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setStates((prev) => ({
+          ...prev,
+          [annotationId]: failInterpretation(
+            prev[annotationId],
+            describeFailure("解釈できませんでした", e),
+          ),
+        }));
+        return;
+      }
+      if (!outcome || !isCurrent()) return;
+
+      if (outcome.kind === "done") {
+        const { result } = outcome;
+        setStates((prev) => ({
+          ...prev,
+          [annotationId]: addInterpretation(prev[annotationId], {
+            id: generation,
+            at: new Date().toISOString(),
+            granularity,
+            result,
+          }),
+        }));
+      } else {
+        setStates((prev) => ({
+          ...prev,
+          [annotationId]: failInterpretation(
+            prev[annotationId],
+            describeFailure("解釈できませんでした", outcome.error),
+          ),
+        }));
+      }
+      // 受け取り終えた。残すとサーバーのメモリに溜まり、開き直したときに同じ結果が
+      // もう一度出る。
+      discardJob(jobId);
+    },
+    [boardId, discardJob, generations, pollIntervalMs],
+  );
 
   /**
    * 注釈を解釈させる。
@@ -70,9 +172,9 @@ export function useInterpretations({
   const interpret = useCallback(
     async (annotationId: string, options?: InterpretOptions) => {
       // 応答を受け取ったとき、これがまだ最新の要求かを判断できるようにする。
-      // 履歴に積むかどうかもこれで決める。**捨てるべき応答を捨てる責任は
-      // 世代側にあり、履歴は返ってきたものを積むだけ。**
+      // 履歴に積むかどうかもこれで決める。
       const generation = generations.start(annotationId);
+      const startedEpoch = epoch.current;
       // 実行したときの粒度を控える。並べて見比べるとき、同じ指定で引き直した
       // のか指定を変えたのかが読めないと選ぶ理由が無い。判定に使う粒度は
       // これまでどおり保存済みシーン側（AnnotationStatus）のもの。
@@ -86,6 +188,7 @@ export function useInterpretations({
         [annotationId]: startInterpretation(prev[annotationId]),
       }));
 
+      let jobId: string;
       try {
         // 画像は画面から書き出す。テキストは保存済みシーンから取るので、
         // 未保存なら保存してから呼ぶ（ADR 0018 / 0077、`BoardPage` の
@@ -93,17 +196,7 @@ export function useInterpretations({
         const image = api ? await exportAnnotationImage(api, annotationId) : undefined;
         if (!generations.isCurrent(annotationId, generation)) return;
 
-        const result = await boardsApi.interpret(boardId, annotationId, image);
-        if (!generations.isCurrent(annotationId, generation)) return;
-        setStates((prev) => ({
-          ...prev,
-          [annotationId]: addInterpretation(prev[annotationId], {
-            id: generation,
-            at: new Date().toISOString(),
-            granularity,
-            result,
-          }),
-        }));
+        jobId = (await boardsApi.interpret(boardId, annotationId, image)).id;
       } catch (e) {
         if (!generations.isCurrent(annotationId, generation)) return;
         setStates((prev) => ({
@@ -113,10 +206,69 @@ export function useInterpretations({
             describeFailure("解釈できませんでした", e),
           ),
         }));
+        return;
       }
+
+      // 始めている間に保存が挟まった。保存前のシーンの解釈なので、受け取らずに
+      // サーバーでも止める。
+      if (epoch.current !== startedEpoch) {
+        discardJob(jobId);
+        return;
+      }
+      if (!generations.isCurrent(annotationId, generation)) return;
+
+      jobIds.current.add(jobId);
+      await settle(annotationId, generation, jobId, granularity);
     },
-    [annotations, api, boardId, generations],
+    [annotations, api, boardId, discardJob, generations, settle],
   );
+
+  // 開いたとき、走っている解釈と、終わったが受け取っていない解釈を画面に戻す。
+  // **ボードごとに 1 回だけ引く。** 注釈ごとには引かない（`web/CLAUDE.md`）。
+  useEffect(() => {
+    alive.current = true;
+    if (!enabled) {
+      return () => {
+        alive.current = false;
+      };
+    }
+
+    let cancelled = false;
+    const startedEpoch = epoch.current;
+    void (async () => {
+      let jobs;
+      try {
+        jobs = await boardsApi.interpretationJobs(boardId);
+      } catch {
+        // 復元は付け足し。引けなくても、押せば始められる。
+        return;
+      }
+      if (cancelled) return;
+
+      for (const job of jobs) {
+        // 引いているあいだに保存が挟まった。保存前のシーンの解釈は受け取らない。
+        if (epoch.current !== startedEpoch) {
+          discardJob(job.id);
+          continue;
+        }
+        const annotationId = job.annotationId;
+        const generation = generations.start(annotationId);
+        const granularity =
+          latestAnnotations.current.find((a) => a.id === annotationId)?.granularity ?? "";
+        jobIds.current.add(job.id);
+        setStates((prev) => ({
+          ...prev,
+          [annotationId]: startInterpretation(prev[annotationId]),
+        }));
+        void settle(annotationId, generation, job.id, granularity);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      alive.current = false;
+    };
+  }, [boardId, discardJob, enabled, generations, settle]);
 
   /**
    * 見る解釈を選び直す。
@@ -149,9 +301,13 @@ export function useInterpretations({
   );
 
   const discardAll = useCallback(() => {
+    epoch.current += 1;
     generations.invalidateAll();
     setStates({});
-  }, [generations]);
+    // サーバーで走っているものも止める。残すと、保存前のシーンを解釈した結果が
+    // 開き直したときに戻り、走っているあいだ枠を握り続ける。
+    for (const jobId of [...jobIds.current]) discardJob(jobId);
+  }, [discardJob, generations]);
 
   return useMemo(
     () => ({ states, interpret, select, recordCreated, discardAll }),
