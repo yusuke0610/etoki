@@ -269,29 +269,22 @@ describe("AnnotationDetail", () => {
     expect(screen.getByRole("button", { name: "絵解く" })).toHaveFocus();
   });
 
-  // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈の名前を
-  // 変えると「変更あり」になることを、変える前に言う。未作成なら影響が無いので
-  // 出さない。
-  it("作成済みの注釈にだけ、名前を変えると変更ありになることを添える", () => {
-    const detailProps = props();
-    const { unmount } = render(<AnnotationDetail {...detailProps} />);
-    expect(
-      screen.getByRole("button", { name: "ログイン" }),
-    ).not.toHaveAccessibleDescription();
-    unmount();
-
+  // 名前は `content_hash` の入力ではない（#303、ADR 0079）。作成済みの注釈でも、
+  // 名前を変えて「変更あり」になることは無いので、そうなると添えない。
+  it("作成済みの注釈でも、名前を変えると変更ありになるとは添えない", () => {
     render(
       <AnnotationDetail
-        {...detailProps}
+        {...props()}
         annotations={[
           { id: "frame-1", name: "ログイン", granularity: "", state: "created" },
         ]}
       />,
     );
-    expect(screen.getByRole("button", { name: "ログイン" })).toHaveAccessibleDescription(
-      /変えると「変更あり」になります/,
-    );
-    expect(startRename()).toHaveAccessibleDescription(/変えると「変更あり」になります/);
+    expect(
+      screen.getByRole("button", { name: "ログイン" }),
+    ).not.toHaveAccessibleDescription();
+    expect(startRename()).not.toHaveAccessibleDescription();
+    expect(screen.queryByText(/「変更あり」になります/)).toBeNull();
   });
 
   // 選択欄が書く先はキャンバスの要素で、保存済みの値（annotations）は次の保存

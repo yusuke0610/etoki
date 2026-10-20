@@ -145,7 +145,8 @@ func TestAnnotations_MissingKindIsUnspecified(t *testing.T) {
 // 抽出の中核：frameId の直接の子と、containerId で図形に紐づくラベルの両方を集める。
 //
 // 後者を辿らないと、図形の中に書かれた文字がまるごとハッシュから抜ける。
-// frame の名前も入力に含める。
+// frame の名前も解釈の入力に含める。名前は解釈の材料なので、ハッシュから
+// 外しても（TestAnnotationHash_IgnoresOwnName）ここからは外さない（#303）。
 func TestAnnotationTexts_FollowsFrameAndContainer(t *testing.T) {
 	t.Parallel()
 
@@ -363,6 +364,66 @@ func TestAnnotationHash_GranularityMatters(t *testing.T) {
 	if epic.AnnotationHash(epic.Annotations()[0]) ==
 		issue.AnnotationHash(issue.Annotations()[0]) {
 		t.Error("粒度を変えてもハッシュが変わらない")
+	}
+}
+
+// 囲み自身の名前はハッシュの入力に入らない（#303）。
+//
+// 名前は人が読む見出しで、付け替えただけで「変更あり」に落ちると、状態を
+// 戻す道が絵解き直し（LLM と作成）しか無い。解釈の入力には残す
+// （TestAnnotationTexts_FollowsFrameAndContainer）ので、次に絵解けば新しい
+// 名前で読まれる。外す・付ける・変えるの 3 つとも、子のテキストが同じなら
+// 同じハッシュになる。
+func TestAnnotationHash_IgnoresOwnName(t *testing.T) {
+	t.Parallel()
+
+	frame := func(name string) string {
+		return fmt.Sprintf(`{"id":"annot-1","type":"frame","name":%s,
+		                     "customData":{"etoki":{"granularity":"epic"}}}`, name)
+	}
+	hash := func(t *testing.T, frameJSON string) domain.ContentHash {
+		t.Helper()
+		s := scene(t, frameJSON, childText)
+		return s.AnnotationHash(s.Annotations()[0])
+	}
+
+	cases := []struct {
+		name          string
+		before, after string
+	}{
+		{"名前を変える", `"決済まわり"`, `"支払いの流れ"`},
+		{"名前の無い囲みに名前を付ける", `null`, `"決済まわり"`},
+		{"名前を外す", `"決済まわり"`, `""`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if before, after := hash(t, frame(tc.before)), hash(t, frame(tc.after)); before != after {
+				t.Errorf("名前だけ変えてハッシュが変わった: %s → %s", before, after)
+			}
+		})
+	}
+}
+
+// 名前を付けた囲みのハッシュは、子のテキストとメタデータだけから出した値と
+// 一致する（#303）。
+//
+// **名前の無い囲みは、名前を外す前とハッシュが変わらない**ことの裏付けでもある。
+// 名前を「空として」入力に混ぜる実装（区切りだけ残る形）は上のテストを通るが、
+// ここで落ちる。そうなると、名前を付けていない作成済みの囲みまで、導入した
+// 時点で一斉に「変更あり」に見える。
+func TestAnnotationHash_IsChildTextsAndMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	s := scene(t, annotFrame, childText, childShape, boundLabel)
+
+	want := domain.ComputeContentHash([]domain.TextElement{
+		{ID: "t1", Text: "Stripe の SDK が古い"},
+		{ID: "t2", Text: "Webhook の冪等化"},
+	}, domain.GranularityEpic, domain.DiagramKindUnspecified)
+
+	if got := s.AnnotationHash(s.Annotations()[0]); got != want {
+		t.Errorf("AnnotationHash = %s, want %s（子のテキストとメタデータだけの値）", got, want)
 	}
 }
 
