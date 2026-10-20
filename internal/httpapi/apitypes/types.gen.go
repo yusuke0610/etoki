@@ -199,6 +199,27 @@ func (e Granularity) Valid() bool {
 	}
 }
 
+// Defines values for InterpretationJobStatus.
+const (
+	InterpretationJobStatusFailed    InterpretationJobStatus = "failed"
+	InterpretationJobStatusRunning   InterpretationJobStatus = "running"
+	InterpretationJobStatusSucceeded InterpretationJobStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the InterpretationJobStatus enum.
+func (e InterpretationJobStatus) Valid() bool {
+	switch e {
+	case InterpretationJobStatusFailed:
+		return true
+	case InterpretationJobStatusRunning:
+		return true
+	case InterpretationJobStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ItemKind.
 const (
 	ItemKindEpic  ItemKind = "epic"
@@ -1035,6 +1056,35 @@ type Interpretation struct {
 	Summary     string            `json:"summary"`
 }
 
+// InterpretationJob 1 回の解釈の、いまの様子（ADR 0085）。
+//
+// - `running` … 走っている
+// - `succeeded` … 終わった。`result` に結果が入る
+// - `failed` … 失敗した。`error` に理由が入る。打ち手は `error.code` で分ける
+//
+// 一覧には `result` を載せない。取るのは 1 件ずつの取得。
+type InterpretationJob struct {
+	AnnotationID string `json:"annotationId"`
+
+	// Error 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+	Error *ErrorResponse `json:"error,omitempty"`
+	ID    string         `json:"id"`
+
+	// Result LLM が注釈をどう解釈したか。
+	//
+	// `summary` は GitHub には作らない。作成前に「こう読んだ」を見せるためだけに
+	// 使う（ADR 0006）。
+	//
+	// 作成のリクエストボディとしてもこの形をそのまま使う。開発者が確認した
+	// 結果を送り返す、という流れなので別の型にしない。
+	Result    *Interpretation         `json:"result,omitempty"`
+	StartedAt time.Time               `json:"startedAt"`
+	Status    InterpretationJobStatus `json:"status"`
+}
+
+// InterpretationJobStatus defines model for InterpretationJob.Status.
+type InterpretationJobStatus string
+
 // InterpretedItem 解釈結果に含まれる draft issue 1 件。まだ作成はしていない
 type InterpretedItem struct {
 	Body string `json:"body"`
@@ -1425,6 +1475,9 @@ type AnnotationID = string
 
 // BoardID defines model for BoardId.
 type BoardID = string
+
+// JobID defines model for JobId.
+type JobID = string
 
 // ProjectID defines model for ProjectId.
 type ProjectID = string

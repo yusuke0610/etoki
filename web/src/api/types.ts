@@ -114,6 +114,13 @@ export type InterpretRequest = Schemas["InterpretRequest"];
  */
 export type Interpretation = Schemas["Interpretation"];
 
+/**
+ * 1 回の解釈の、いまの様子（ADR 0085）。
+ *
+ * 解釈は始めるリクエストと受け取るリクエストが別。画面を離れても走り続ける。
+ */
+export type InterpretationJob = Schemas["InterpretationJob"];
+
 /** 作成した run。途中で失敗しても、作れたぶんは items に入る。 */
 export type CreatedRun = Schemas["CreatedRun"];
 

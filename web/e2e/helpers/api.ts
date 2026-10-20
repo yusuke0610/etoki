@@ -87,6 +87,20 @@ export type ApiMock = {
    * ので、送れたかどうかは実ブラウザでしか分からない（ADR 0018）。
    */
   interpretRequests: InterpretRequest[];
+  /**
+   * 解釈のジョブを「走っている」ままにする（ADR 0085）。
+   *
+   * 実物の解釈は始めたリクエストとは別に走り、結果は取りに行くまで届かない。
+   * 立てている間は、取りに行っても `running` を返す。下ろすと、同じジョブが
+   * `interpret` の応答で終わる。画面を離れて戻る spec が、走っている最中を作るために使う。
+   */
+  interpretJobRunning: boolean;
+  /**
+   * 捨てさせたジョブの ID。届いた順に積む。
+   *
+   * 受け取り終えたジョブを捨てているか、保存で止めているかは、ここにしか現れない。
+   */
+  jobDiscards: string[];
   createItems: Reply<CreatedRun>;
   /**
    * 作成で受け取ったリクエストボディ。届いた順に積む。

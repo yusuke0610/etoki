@@ -67,7 +67,17 @@ export function itemKinds(): ItemKind[] {
 export function annotationLabel(name: string, index: number): string {
   // 「絵1」「絵2」（#248）。名前の代わりに補うだけで、frame の `name` には書かない
   // （`name` は `content_hash` の入力で、書くと状態が変わる、ADR 0036）。
-  return name.trim() === "" ? `絵${index + 1}` : name;
+  return name.trim() === "" ? numberedLabel(index) : name;
+}
+
+/**
+ * 名前の無い注釈の番号の見出し（「絵1」）。一覧の位置から導く。
+ *
+ * 詳細は名前をキャンバスの値で出すので、名前を消した直後は保存済みの名前から
+ * 作った見出しではなく、これを直接使う（旧名が見出しに残らない）。
+ */
+export function numberedLabel(index: number): string {
+  return `絵${index + 1}`;
 }
 
 /**

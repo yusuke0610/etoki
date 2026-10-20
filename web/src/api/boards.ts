@@ -26,6 +26,7 @@ import type {
   ErrorResponse,
   GenerateDiagramRequest,
   Interpretation,
+  InterpretationJob,
   Invitee,
   InviteMemberRequest,
   Project,
@@ -241,19 +242,40 @@ export const boardsApi = {
   access: (id: string) => request<BoardAccess>(`/api/boards/${id}/access`),
 
   /**
-   * 注釈を LLM に解釈させる。
+   * 注釈の解釈を始める。LLM の応答は待たず、ジョブを返す（ADR 0085）。
    *
-   * テキストを読むのは保存済みシーン。GitHub には何も作らない。
+   * テキストを読むのは保存済みシーン。GitHub には何も作らない。結果は
+   * `interpretationJob` で取る。**同じ注釈がまだ解釈中なら、走っているジョブが
+   * 返る。**
    *
    * `image` は注釈範囲を写した画像で、矢印やグルーピングのようにテキストに
    * 現れない構造を渡す（ADR 0018）。画像は画面から書き出すので、保存済みシーン
    * と揃っているあいだしか呼んではならない。
    */
   interpret: (boardId: string, annotationId: string, image?: AnnotationImage) =>
-    request<Interpretation>(
+    request<InterpretationJob>(
       `/api/boards/${boardId}/annotations/${annotationId}/interpret`,
       { method: "POST", body: JSON.stringify({ image } satisfies InterpretRequest) },
     ),
+
+  /**
+   * 自分の解釈のジョブ。結果は載らない。
+   *
+   * ボードを開いたときに 1 回だけ引く。走っている解釈と、終わったが受け取って
+   * いない解釈を、画面に戻すため。
+   */
+  interpretationJobs: (boardId: string) =>
+    request<InterpretationJob[]>(`/api/boards/${boardId}/interpretation-jobs`),
+
+  /** 解釈のジョブ 1 件。読んでも消えない。 */
+  interpretationJob: (boardId: string, jobId: string) =>
+    request<InterpretationJob>(`/api/boards/${boardId}/interpretation-jobs/${jobId}`),
+
+  /** 解釈のジョブを要らないものとして捨てる。走っていれば止まる。 */
+  discardInterpretationJob: (boardId: string, jobId: string) =>
+    request<void>(`/api/boards/${boardId}/interpretation-jobs/${jobId}`, {
+      method: "DELETE",
+    }),
 
   /**
    * プロンプトから図のドラフトを生成する。
