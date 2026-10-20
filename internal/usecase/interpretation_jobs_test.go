@@ -529,3 +529,25 @@ func TestJobs_FreesSlotWhenFinished(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 }
+
+type panicLLM struct{}
+
+func (panicLLM) Complete(context.Context, port.VisionRequest) (port.VisionResponse, error) {
+	panic("adapter bug")
+}
+
+func TestJobs_PanicInLLMFailsTheJobAndFreesSlot(t *testing.T) {
+	t.Parallel()
+
+	jobs, _ := newJobs(t, panicLLM{})
+	ctx := asUser(t.Context(), "u1")
+
+	job, err := jobs.Start(ctx, "board-1", "annot-1", nil)
+	if err != nil {
+		t.Fatalf("Start() = %v", err)
+	}
+	done := waitJob(t, jobs, ctx, job.ID)
+	if done.Status != usecase.InterpretationJobFailed {
+		t.Errorf("Status = %q, want failed（プロセスを落とさず、このジョブの失敗にする）", done.Status)
+	}
+}

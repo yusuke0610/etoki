@@ -219,7 +219,7 @@ func (j *InterpretationJobs) Start(
 		defer release()
 		defer e.cancel()
 
-		result, err := j.svc.execute(runCtx, boardID, annotationID, p)
+		result, err := j.run(runCtx, boardID, annotationID, p)
 		// **枠を戻してから終わりを書く。** 逆だと、終わったと読めたのに次の Start が
 		// 枠に弾かれる瞬間ができる。
 		release()
@@ -227,6 +227,24 @@ func (j *InterpretationJobs) Start(
 	}()
 
 	return started, nil
+}
+
+// run は execute を呼び、panic を失敗として返す。
+//
+// **リクエストの goroutine ではないので、Gin の Recovery が受けない。** アダプタの
+// panic が、そのままプロセスごと落とす。落とさず、このジョブの失敗にする。
+func (j *InterpretationJobs) run(
+	ctx context.Context, boardID, annotationID string, p preparedInterpretation,
+) (result InterpretationResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			j.svc.logger.Error("interpretation panicked",
+				slog.String("board", boardID), slog.String("annotation", annotationID),
+				slog.Any("panic", r))
+			err = errors.New("etoki: interpretation panicked")
+		}
+	}()
+	return j.svc.execute(ctx, boardID, annotationID, p)
 }
 
 // finish は結果を書く。取り消されて表から消えたジョブにも書くが、誰にも読まれない。
