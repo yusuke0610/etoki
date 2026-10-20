@@ -255,6 +255,15 @@ describe("missingProjectFieldsMessage", () => {
     expect(message).not.toContain("親を表すテキストのフィールド");
   });
 
+  it("epic の選択肢だけが足りないときは、epic だけを並べる", () => {
+    const message = missingProjectFieldsMessage(["kind_epic"]);
+
+    expect(message).toContain("種別を表す単一選択のフィールド（選択肢 epic）");
+    // 「draft issue」は文の後半に出るので、選択肢の括弧の中だけを見る。
+    expect(message).not.toMatch(/選択肢 [^）]*issue/);
+    expect(message).not.toContain("親を表すテキストのフィールド");
+  });
+
   it("親だけが足りないときは、種別のフィールドを言わない", () => {
     const message = missingProjectFieldsMessage(["parent"]);
 
@@ -267,6 +276,7 @@ describe("missingProjectFieldsMessage", () => {
     const message = missingProjectFieldsMessage(["parent"]);
 
     expect(message).toContain("このまま選べます");
+    expect(message).toContain("GitHub 側で作るまで");
     expect(message).toContain("作成は止まります");
   });
 

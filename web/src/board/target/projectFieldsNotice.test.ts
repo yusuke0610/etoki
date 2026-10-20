@@ -36,6 +36,8 @@ describe("projectFieldsNotice", () => {
 
     expect(notice).toContain("確かめられませんでした");
     expect(notice).toContain("このまま選べます");
+    // 確かめられなくても、作成のときに止まって案内することは変わらない。
+    expect(notice).toContain("作成のときに止まって何が要るかを出します");
     expect(notice).not.toContain("揃っています");
     expect(notice).not.toContain("ありません");
   });
