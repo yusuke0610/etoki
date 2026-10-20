@@ -721,16 +721,88 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 注釈を LLM に解釈させる
-         * @description GitHub には何も作らず、sync_runs にも書かない。何を作るかは結果を見た
+         * 注釈の解釈を始める
+         * @description LLM の応答は待たず、ジョブを返す。結果は `getInterpretationJob` で取る
+         *     （ADR 0085）。解釈は 1〜数分かかるので、リクエストに結びつけると画面を
+         *     離れた時点で受け取り手がいなくなる。
+         *
+         *     GitHub には何も作らず、sync_runs にも書かない。何を作るかは結果を見た
          *     開発者が別途トリガーする（中核思想 3）。
          *
          *     テキストは保存済みシーンから取る。`image` はフロントが書き出した注釈
          *     範囲の画像で、矢印やグルーピングのようにテキストに現れない構造を渡す
          *     ためのもの（ADR 0018）。ボディごと省略できる。
+         *
+         *     **同じ利用者が同じボードの同じ注釈（保存済みの内容が同じもの）をまだ
+         *     解釈している最中なら、新しく始めず、走っているジョブを返す。** そのとき
+         *     画像は読まない。保存で内容が変わっていれば別の入力なので、新しく始める
+         *     （画像も使う）。別の利用者のジョブは共有しない（その利用者の枠で新しく
+         *     始める）。別の注釈を解釈している最中は 429（`concurrency_limited`）。
          */
         post: operations["interpretAnnotation"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/interpretation-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 自分の解釈のジョブを返す
+         * @description ボードを開き直したとき、走っている解釈と、終わっているが受け取って
+         *     いない解釈を知るための口（ADR 0085）。始めた順。**結果は含めない。**
+         *     取るのは `getInterpretationJob`。
+         *
+         *     自分が始めたものだけ。他の利用者のジョブは存在も見せない。
+         */
+        get: operations["listInterpretationJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/interpretation-jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 解釈のジョブの ID */
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 解釈のジョブを返す
+         * @description 走っていれば `running`。終わっていれば結果か失敗の理由を載せる。
+         *     **読んでも消えない。** 返事が途中で失われたとき、読んだ時点で消えていると
+         *     課金した結果を二度と取れない。要らなくなったら `discardInterpretationJob`
+         *     （ADR 0085）。
+         */
+        get: operations["getInterpretationJob"];
+        put?: never;
+        post?: never;
+        /**
+         * 解釈のジョブを要らないものとして捨てる
+         * @description 走っていれば止める。終わっていれば結果を捨てる。**取り消しと受け取り済みを
+         *     同じ操作にしてある。** どちらも言いたいことは「このジョブはもう要らない」で
+         *     同じ（ADR 0085）。捨てたジョブは `getInterpretationJob` でも
+         *     `listInterpretationJobs` でも出ない。
+         */
+        delete: operations["discardInterpretationJob"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1655,6 +1727,25 @@ export interface components {
             contentHash: string;
             items: components["schemas"]["InterpretedItem"][];
         };
+        /**
+         * @description 1 回の解釈の、いまの様子（ADR 0085）。
+         *
+         *     - `running` … 走っている
+         *     - `succeeded` … 終わった。`result` に結果が入る
+         *     - `failed` … 失敗した。`error` に理由が入る。打ち手は `error.code` で分ける
+         *
+         *     一覧には `result` を載せない。取るのは 1 件ずつの取得。
+         */
+        InterpretationJob: {
+            id: string;
+            annotationId: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed";
+            /** Format: date-time */
+            startedAt: string;
+            result?: components["schemas"]["Interpretation"];
+            error?: components["schemas"]["ErrorResponse"];
+        };
         /** @description 作成した run。途中で失敗しても、作れたぶんは items に入る */
         CreatedRun: {
             /** Format: int64 */
@@ -1855,6 +1946,8 @@ export interface components {
         BoardId: string;
         /** @description 注釈にした frame の要素 ID */
         AnnotationId: string;
+        /** @description 解釈のジョブの ID */
+        JobId: string;
         /**
          * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
          *     指し先としては使えない（ADR 0015）。
@@ -2879,13 +2972,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 解釈の結果 */
-            200: {
+            /** @description 始めた、または走っているジョブ */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Interpretation"];
+                    "application/json": components["schemas"]["InterpretationJob"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -2895,8 +2988,8 @@ export interface operations {
             413: components["responses"]["RequestTooLarge"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
-            /** @description LLM の呼び出しに失敗した、または出力がスキーマを満たさなかった */
-            502: {
+            /** @description LLM が設定されていない */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2904,6 +2997,107 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+        };
+    };
+    listInterpretationJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ジョブ。無ければ空配列 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterpretationJob"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            /** @description LLM が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getInterpretationJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 解釈のジョブの ID */
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ジョブ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterpretationJob"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            /** @description LLM が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    discardInterpretationJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description 解釈のジョブの ID */
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 捨てた */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
             /** @description LLM が設定されていない */
             503: {
                 headers: {

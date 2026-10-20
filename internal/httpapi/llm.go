@@ -18,7 +18,8 @@ import (
 // 区別するためだけに置く。
 const statusClientClosedRequest = 499
 
-// failLLM は LLM を叩く実行（解釈と図のドラフト生成）のエラーを応答にする。
+// failLLM は LLM を叩く実行（図のドラフト生成。解釈はジョブで走る、ADR 0085）の
+// エラーを応答にする。
 //
 // 写し替えは errors.go の表が持つ。LLM 側の失敗を 500 に丸めないのはそちらの
 // 責任で、ここに残すのは記録だけ。
@@ -31,7 +32,8 @@ func (h *handlers) failLLM(c *gin.Context, err, rejected error) {
 	switch {
 	case errors.Is(err, usecase.ErrLLMUnavailable) &&
 		errors.Is(err, context.Canceled) && c.Request.Context().Err() != nil:
-		// 解釈は 1〜数分かかるので、待っている間のリロードや離脱で起きる。上流の
+		// 図のドラフト生成は数十秒かかるので、待っている間のリロードや離脱で起きる
+		// （解釈はリクエストから切り離してあり、ここを通らない、ADR 0085）。上流の
 		// 障害ではなく、利用者が止めただけ。**リクエストの ctx が切れていることも
 		// 条件にする。** ctx が生きているのに Canceled で返るものは、こちらの都合で
 		// 切ったものではないので、障害として扱う。
