@@ -88,9 +88,18 @@ export async function installAnnotationRoutes(page: Page, mock: ApiMock): Promis
       const segments = new URL(route.request().url()).pathname.split("/");
       const boardId = segments[3] ?? "";
       const annotationId = segments[5] ?? "";
-      seq += 1;
-      const id = `job-${seq}`;
-      jobs.set(id, { boardId, annotationId });
+      // 実行中の同じ注釈には、新しく始めず走っているジョブを返す（実物と同じ）。
+      const running = mock.interpretJobRunning
+        ? [...jobs].find(
+            ([, job]) => job.boardId === boardId && job.annotationId === annotationId,
+          )?.[0]
+        : undefined;
+      let id = running;
+      if (id === undefined) {
+        seq += 1;
+        id = `job-${seq}`;
+        jobs.set(id, { boardId, annotationId });
+      }
       await json(route, 202, {
         id,
         annotationId,
