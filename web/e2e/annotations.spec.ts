@@ -207,7 +207,7 @@ test.describe("注釈の状態", () => {
     // 「キャンバスで見る」でそのフレームが選ばれ、パネルに外す口が出る。
     const detail = await openAnnotationDetail(page, "ログイン");
     await detail.getByRole("button", { name: "キャンバスで見る" }).click();
-    await page.getByRole("button", { name: /の注釈を外す/ }).click();
+    await page.getByRole("button", { name: /を絵から外す/ }).click();
 
     await expect(page.locator(".annotation-overlay-frame")).toHaveCount(1);
   });
@@ -217,7 +217,7 @@ test.describe("注釈の状態", () => {
     mock.annotations[BOARD_ID] = [];
     await openBoardWithMock(page, mock);
 
-    await expect(page.getByText("保存済みの注釈はありません。")).toBeVisible();
+    await expect(page.getByText("保存済みの絵はありません。")).toBeVisible();
   });
 });
 

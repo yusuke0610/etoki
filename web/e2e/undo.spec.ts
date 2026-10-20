@@ -97,7 +97,7 @@ test.describe("元に戻す", () => {
     // 「キャンバスで見る」で詳細を閉じてフレームを選び、パネルの下から外す（#201）。
     const detail = await openAnnotationDetail(page, "ログイン");
     await detail.getByRole("button", { name: "キャンバスで見る" }).click();
-    await page.getByRole("button", { name: /の注釈を外す/ }).click();
+    await page.getByRole("button", { name: /を絵から外す/ }).click();
     await expect(page.locator(".annotation-overlay-frame")).toHaveCount(1);
 
     await undo(page);
