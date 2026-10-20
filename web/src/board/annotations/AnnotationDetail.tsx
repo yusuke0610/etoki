@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   AnnotationStatus,
@@ -13,7 +13,7 @@ import {
   GRANULARITY_LABEL,
   OFF_CANVAS_NOTICE,
   STATE_LABEL,
-  annotationLabels,
+  numberedLabel,
 } from "./annotationLabel";
 import { annotationCardButtonId } from "./AnnotationPanel";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "../diagram/diagramLabels";
@@ -220,12 +220,12 @@ export function AnnotationDetail({
   // 見出しを組むところで落ち、開いてもいない詳細の境界が右のパネルと並んで
   // 2 つ目の「表示できませんでした」を出す。
   if (visited.size === 0) return null;
-  const labels = annotationLabels(annotations);
 
   return (
     <>
       {[...visited].map((id) => {
-        const annotation = annotations.find((a) => a.id === id);
+        const index = annotations.findIndex((a) => a.id === id);
+        const annotation = annotations[index];
         // 保存で注釈が消えたら面も出さない。描いたまま残すと、一覧に無い注釈の
         // 下書きが開いたまま取り残される。
         if (!annotation) return null;
@@ -238,7 +238,7 @@ export function AnnotationDetail({
               else sections.current.delete(id);
             }}
             annotation={annotation}
-            label={labels.get(id) ?? ""}
+            numberLabel={numberedLabel(index)}
             open={id === openId}
             onClose={() => close(id)}
             onShowOnCanvas={() => {
@@ -267,7 +267,7 @@ export function AnnotationDetail({
 function AnnotationFace({
   sectionRef,
   annotation: a,
-  label,
+  numberLabel,
   open,
   onClose,
   onShowOnCanvas,
@@ -282,7 +282,7 @@ function AnnotationFace({
 }: {
   sectionRef: (el: HTMLElement | null) => void;
   annotation: AnnotationStatus;
-  label: string;
+  numberLabel: string;
   open: boolean;
   onClose: () => void;
   onShowOnCanvas: () => void;
@@ -331,26 +331,52 @@ function AnnotationFace({
   // しか書かない（`setAnnotationName`）ので、押せると入力した名前が黙って消える。
   // **まだ聞いていない（null）うちは外したことにしない**（`canvasIds` と同じ）。
   const unmarked = onCanvas && frames.names !== null && canvasName === undefined;
+  // 見出しに出す名前もキャンバスの値にする。保存済みの値のままだと、確定した
+  // のに見出しが古い名前のまま次の保存まで残る。名前が無いときは番号の見出し。
+  const heading = name.trim() === "" ? numberLabel : name;
+  // 名前を変える口は見出しの隣のラベル（#305）。押すと欄になり、`nameDraft` が
+  // 非 null のあいだが「書いている途中」。
+  const canRename = canEdit && onCanvas && !unmarked;
   const [nameDraft, setNameDraft] = useState<string | null>(null);
+  // 書いている途中で押せる条件を失ったら（読むだけに変わった・注釈から外した・
+  // キャンバスから消えた）、書きかけを捨てて欄を閉じる。書く口が書けない対象に
+  // 確定させると入力が黙って消え、条件が戻ったとき古い書きかけが欄ごと復活する。
+  // effect ではなく描画中に捨てるのは、1 回ぶんの古い欄を描かないため。
+  if (!canRename && nameDraft !== null) setNameDraft(null);
+  // 欄を開いた時点の名前。「変えたか」はこれと比べる。確定時のキャンバスの名前と
+  // 比べると、キャンバスの名前が分かる前（保存済みの値から始めた）に開いた下書きを、
+  // 触っていないのに古い名前としてキャンバスへ書き戻す。
+  const draftStart = useRef("");
+  const labelRef = useRef<HTMLButtonElement>(null);
+  // 欄を閉じたあとに焦点をラベルへ戻すか。Enter と Escape だけ戻す。欄を離れて
+  // 確定したときは、離れた先の焦点を奪わない。
+  const refocusLabel = useRef(false);
+  useEffect(() => {
+    if (nameDraft === null && refocusLabel.current) {
+      refocusLabel.current = false;
+      labelRef.current?.focus();
+    }
+  }, [nameDraft]);
+  // 欄が出た一度だけ焦点を入れる。ref を毎回作り直すと、打つたびに奪い直す。
+  const focusNameInput = useCallback((el: HTMLInputElement | null) => {
+    el?.focus();
+    el?.select();
+  }, []);
   const commitName = () => {
     if (nameDraft === null) return;
     setNameDraft(null);
+    // 開いた時点と同じ条件を確定でも見る。
+    if (!canRename) return;
     // 変えていないのに書くと、開いて閉じただけで未保存になる。前後の空白は
     // 書く側（`setAnnotationName`）が落とすので、比べるのも落としてから。
-    if (nameDraft.trim() !== name.trim()) frames.onChangeName(id, nameDraft);
+    if (nameDraft.trim() !== draftStart.current.trim()) {
+      frames.onChangeName(id, nameDraft);
+    }
   };
   // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈で
   // 変えると「変更あり」になる。未作成なら影響が無いので言わない。
-  const nameNote = canEdit && !unmarked && a.state !== "uncreated";
-  const nameDescribedBy =
-    [
-      !canEdit && viewerId,
-      !onCanvas && missingId,
-      canEdit && unmarked && unmarkedId,
-      nameNote && nameNoteId,
-    ]
-      .filter(Boolean)
-      .join(" ") || undefined;
+  const nameNote = canRename && a.state !== "uncreated";
+  const nameDescribedBy = nameNote ? nameNoteId : undefined;
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape") return;
@@ -404,9 +430,68 @@ function AnnotationFace({
             2 つをつないで読ませる（`aria-labelledby`）。
           */}
           <h2 id={headingId}>絵解き</h2>
-          <span id={labelId} className="annotation-detail-label">
-            {label}
-          </span>
+          {canRename && nameDraft !== null ? (
+            <>
+              {/*
+                ダイアログの名前は `labelId` から引く。書いている最中は欄の値が
+                動くので、そのまま指すと名前が打つたびに変わる。隠した行に確定済みの
+                名前を残して、そちらを指させる（`hidden` の要素も名前には使える）。
+              */}
+              <span id={labelId} hidden>
+                {heading}
+              </span>
+              <input
+                ref={focusNameInput}
+                className="annotation-detail-label annotation-detail-rename-input"
+                aria-label="名前"
+                aria-describedby={nameDescribedBy}
+                value={nameDraft}
+                placeholder="名前を付ける"
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={commitName}
+                onKeyDown={(e) => {
+                  // 日本語の変換を確定する Enter では書かない。書くと、変換の途中の
+                  // 名前がキャンバスに載る。
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    refocusLabel.current = true;
+                    commitName();
+                  } else if (e.key === "Escape") {
+                    // 書きかけを捨てるだけにする。面まで閉じると、書きかけを捨てた
+                    // つもりで面ごと閉じる。
+                    e.stopPropagation();
+                    refocusLabel.current = true;
+                    setNameDraft(null);
+                  }
+                }}
+              />
+            </>
+          ) : canRename ? (
+            // 名前そのものを押して変える（#305）。frame の `name` に書くので、
+            // キャンバスのラベルにも同じ名前が出る。
+            <button
+              type="button"
+              id={labelId}
+              ref={labelRef}
+              className="annotation-detail-label annotation-detail-rename"
+              aria-describedby={nameDescribedBy}
+              onClick={() => {
+                draftStart.current = name;
+                setNameDraft(name);
+              }}
+            >
+              {heading}
+              <span aria-hidden="true" className="annotation-detail-rename-mark">
+                ✎
+              </span>
+            </button>
+          ) : (
+            // 変えられない理由は本文に出している（読むだけ・注釈から外した・
+            // キャンバスに無い）。
+            <span id={labelId} className="annotation-detail-label">
+              {heading}
+            </span>
+          )}
           <span className={`badge badge-${a.state}`}>{STATE_LABEL[a.state]}</span>
           {/*
             キャンバスでその frame を選ぶ口（ADR 0022）。カードを押すと詳細が
@@ -433,34 +518,6 @@ function AnnotationFace({
         </div>
 
         <div className="annotation-detail-meta">
-          {/*
-            名前（#249）。frame の `name` に書くので、キャンバスのラベルにも同じ
-            名前が出る。キャンバスに無い注釈（未保存で消した frame）には書けない。
-          */}
-          <label className="granularity annotation-name">
-            名前
-            <input
-              value={nameDraft ?? name}
-              placeholder="名前を付ける"
-              disabled={!canEdit || !onCanvas || unmarked}
-              aria-describedby={nameDescribedBy}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                // 日本語の変換を確定する Enter では書かない。書くと、変換の途中の
-                // 名前がキャンバスに載る。
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  commitName();
-                } else if (e.key === "Escape" && nameDraft !== null) {
-                  // 書きかけがあれば、それを捨てるだけにする。面まで閉じると、
-                  // 書きかけを捨てたつもりで面ごと閉じる。
-                  e.stopPropagation();
-                  setNameDraft(null);
-                }
-              }}
-            />
-          </label>
           <label className="granularity">
             粒度
             {/* 押せない理由は本文の下にある読むだけの案内を指す（ADR 0039）。 */}

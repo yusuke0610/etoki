@@ -127,34 +127,64 @@ func NewInterpretationService(
 func (s *InterpretationService) Interpret(
 	ctx context.Context, boardID, annotationID string, images []port.Image,
 ) (InterpretationResult, error) {
+	p, err := s.prepare(ctx, boardID, annotationID, images)
+	if err != nil {
+		return InterpretationResult{}, err
+	}
+
+	release, err := s.limits.Acquire(ctx)
+	if err != nil {
+		return InterpretationResult{}, err
+	}
+	defer release()
+
+	return s.execute(ctx, boardID, annotationID, p)
+}
+
+// preparedInterpretation は LLM を叩く前に揃えた入力。
+type preparedInterpretation struct {
+	scene      domain.Scene
+	annotation domain.Annotation
+	images     []port.Image
+	previous   []domain.PreviousItem
+}
+
+// prepare は認可と入力の検証を済ませ、LLM に渡す入力を揃える。
+//
+// **枠はここでは取らない。** 認可も入力の検証もすべて通ってから取るので
+// （ADR 0044）、404 や 400 で返るリクエストは枠を消費しない。取る側は
+// Interpret と InterpretationJobs.Start で、どちらも prepare の直後に取る。
+func (s *InterpretationService) prepare(
+	ctx context.Context, boardID, annotationID string, images []port.Image,
+) (preparedInterpretation, error) {
 	// 解釈は LLM を叩く外部呼び出しなので editor 以上に限る。viewer に許すのは
 	// 「閲覧」ではない（ADR 0017）。
 	acc, err := s.access(ctx, boardID, port.RoleEditor)
 	if err != nil {
-		return InterpretationResult{}, err
+		return preparedInterpretation{}, err
 	}
 
 	// LLM を叩く前に弾く。弾くと決めた入力で呼ぶと、結果は捨てるのに課金だけ
 	// 発生する。
 	if err := validateImages(images); err != nil {
-		return InterpretationResult{}, err
+		return preparedInterpretation{}, err
 	}
 
 	scene, err := domain.ParseScene([]byte(acc.Board.Scene))
 	if err != nil {
-		return InterpretationResult{}, err
+		return preparedInterpretation{}, err
 	}
 
 	annotation, ok := findAnnotation(scene, annotationID)
 	if !ok {
-		return InterpretationResult{}, fmt.Errorf("%w: %s", ErrAnnotationNotFound, annotationID)
+		return preparedInterpretation{}, fmt.Errorf("%w: %s", ErrAnnotationNotFound, annotationID)
 	}
 
 	// 粒度と種別が未知の値ならここで止める。既定に倒して解釈を進めると、開発者が
 	// 指定したつもりの制約が黙って外れる。保存の入口でも見ているが、検査を入れる
 	// 前に保存されたシーンがありうるので、読む側でも見る。
 	if err := annotation.CheckMeta(); err != nil {
-		return InterpretationResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		return preparedInterpretation{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	// 前回までに作ったものを見せて、「これは前回のどれの更新か」を答えさせる。
@@ -162,20 +192,22 @@ func (s *InterpretationService) Interpret(
 	// （中核思想 2、ADR 0026）。決めるのは開発者で、これは候補にすぎない。
 	saved, err := s.mappings.ListItemsByAnnotation(ctx, boardID, annotationID)
 	if err != nil {
-		return InterpretationResult{}, err
+		return preparedInterpretation{}, err
 	}
-	previous := toPreviousItems(saved)
 
-	// **枠を取るのは LLM を叩く直前**（ADR 0044）。認可も入力の検証もすべて
-	// 通ってから取るので、404 や 400 で返るリクエストは枠を消費しない。
-	// 当たったときは 1 回も呼ばない。呼んでから捨てると課金だけが発生する。
-	release, err := s.limits.Acquire(ctx)
-	if err != nil {
-		return InterpretationResult{}, err
-	}
-	defer release()
+	return preparedInterpretation{
+		scene:      scene,
+		annotation: annotation,
+		images:     images,
+		previous:   toPreviousItems(saved),
+	}, nil
+}
 
-	in, usage, err := s.complete(ctx, annotation, scene.AnnotationTexts(annotationID), images, previous)
+// execute は枠を取った状態で LLM を呼び、結果を返す。実績もここで残す。
+func (s *InterpretationService) execute(
+	ctx context.Context, boardID, annotationID string, p preparedInterpretation,
+) (InterpretationResult, error) {
+	in, usage, err := s.complete(ctx, p.annotation, p.scene.AnnotationTexts(annotationID), p.images, p.previous)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されているので、
 	// 成功したときだけ記録すると、実績が実際より小さく見える（ADR 0031）。
 	s.logUsage(ctx, boardID, annotationID, usage, err)
@@ -185,7 +217,7 @@ func (s *InterpretationService) Interpret(
 
 	return InterpretationResult{
 		Interpretation: in,
-		ContentHash:    string(scene.AnnotationHash(annotation)),
+		ContentHash:    string(p.scene.AnnotationHash(p.annotation)),
 	}, nil
 }
 
