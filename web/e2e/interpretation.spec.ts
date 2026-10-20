@@ -363,7 +363,7 @@ test.describe("解釈と作成", () => {
     await expect(detail.getByText("2 回目の読み解き")).toBeVisible();
 
     // 並ぶのは 2 件。引き直した直後は新しいほうが出ている。
-    const history = detail.getByLabel("解釈結果");
+    const history = detail.getByLabel("絵解きの結果");
     await expect(history.locator("option")).toHaveCount(2);
 
     // 選び直すと前の結果に戻る。
@@ -382,7 +382,7 @@ test.describe("解釈と作成", () => {
     await interpret(card);
     await expect(detail.getByText("ログインの入口")).toBeVisible();
 
-    await expect(detail.getByLabel("解釈結果")).toHaveCount(0);
+    await expect(detail.getByLabel("絵解きの結果")).toHaveCount(0);
   });
 
   test("作成すると件数が出て、状態が作成済みに変わる", async ({ page }) => {
@@ -532,7 +532,7 @@ test.describe("解釈と作成", () => {
     await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
     await interpret(card);
-    const history = detail.getByLabel("解釈結果");
+    const history = detail.getByLabel("絵解きの結果");
     await expect(history.locator("option")).toHaveCount(2);
     // 引き直した解釈は別の下書き。こちらから作ったものは無い。
     await expect(detail.getByLabel("e1 を作成する")).toBeChecked();
@@ -665,8 +665,48 @@ test.describe("解釈と作成", () => {
     // 解釈のやり直しは開発者が決める。ここで勝手に解釈し直して作成を続けない。
     // 409 は 6 つの原因が同居するので、打ち手は code から引いて出す（#86）。
     await expect(
-      detail.getByText("解釈のあとにボードが変わりました", { exact: false }),
+      detail.getByText("絵解きのあとにボードが変わりました", { exact: false }),
     ).toBeVisible();
+    await expect(card.getByText("未作成")).toBeVisible();
+  });
+
+  // 切れると: いちばん手間をかけたあとで「フィールドがありません」とだけ出て、
+  // 何を作ればよいかを英文から読み解くことになる（#292）。名前は設定で変わる
+  // ので前に出さず、サーバーの本文として詳細に残す（ADR 0034 / 0083）。
+  test("Project にフィールドが足りないと、何を作るかを前に出し、名前は詳細に置く", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.createItems = {
+      status: 422,
+      body: {
+        code: "project_field_missing",
+        error:
+          'etoki: required project field is missing: single select "Kind" with option "epic", single select "Kind" with option "issue", text "Parent"',
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const alert = detail.getByRole("alert");
+    await expect(alert).toContainText("作成できませんでした");
+    await expect(alert).toContainText("種別を表す単一選択のフィールド");
+    await expect(alert).toContainText("選択肢 epic と issue");
+    await expect(alert).toContainText("親を表すテキストのフィールド");
+    await expect(alert).toContainText("押し直せば");
+    // 名前は畳んだ側にだけ置く。前に出すと、名前を変えた構成で嘘になる。
+    const message = alert.locator(".error-message");
+    await expect(message).not.toContainText("Kind");
+    await expect(message).not.toContainText("Parent");
+    const body = alert.getByText('single select "Kind"', { exact: false });
+    await expect(body).toBeHidden();
+    await alert.getByText("詳細", { exact: true }).click();
+    await expect(body).toBeVisible();
+    // 作らずに止まる。種別も親子も無い draft issue を並べない（ADR 0006）。
     await expect(card.getByText("未作成")).toBeVisible();
   });
 });

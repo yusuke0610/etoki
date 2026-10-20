@@ -153,7 +153,7 @@ describe("useInterpretations", () => {
     await act(() => hook.current.interpret("a1"));
 
     expect(s.getJob).toHaveBeenCalledTimes(JOB_POLL_MAX_FAILURES);
-    expect(hook.current.states.a1?.failure?.message).toMatch(/^解釈できませんでした/);
+    expect(hook.current.states.a1?.failure?.message).toMatch(/^絵解きできませんでした/);
     expect(hook.current.states.a1?.running).toBe(false);
   });
 
@@ -166,7 +166,7 @@ describe("useInterpretations", () => {
     await act(() => hook.current.interpret("a1"));
 
     expect(s.getJob).toHaveBeenCalledTimes(1);
-    expect(hook.current.states.a1?.failure?.message).toMatch(/^解釈できませんでした/);
+    expect(hook.current.states.a1?.failure?.message).toMatch(/^絵解きできませんでした/);
   });
 
   it("受け取り終えたジョブは、サーバーに捨てさせる", async () => {
@@ -191,7 +191,7 @@ describe("useInterpretations", () => {
     await act(() => hook.current.interpret("a1"));
 
     const failure = hook.current.states.a1?.failure;
-    expect(failure?.message).toMatch(/^解釈できませんでした: /);
+    expect(failure?.message).toMatch(/^絵解きできませんでした: /);
     expect(failure?.detail).toBe("401");
     expect(hook.current.states.a1?.running).toBe(false);
     expect(s.discard).toHaveBeenCalledWith("b1", "j1");
@@ -210,7 +210,10 @@ describe("useInterpretations", () => {
 
     expect(s.interpret).toHaveBeenCalledTimes(2);
     const state = hook.current.states.a1;
-    expect(state?.failure).toEqual({ message: "解釈できませんでした: boom", detail: "" });
+    expect(state?.failure).toEqual({
+      message: "絵解きできませんでした: boom",
+      detail: "",
+    });
     expect(state?.runs.map((r) => r.result.summary)).toEqual(["一つ目"]);
   });
 

@@ -29,7 +29,7 @@ function interpretation(summary: string): Interpretation {
   return { summary, contentHash: "h1", items: [] };
 }
 
-const failure: Failure = { message: "解釈できませんでした", detail: "" };
+const failure: Failure = { message: "絵解きできませんでした", detail: "" };
 
 describe("解釈の履歴", () => {
   it("解釈が返ると先頭に積まれ、それが選ばれる", () => {

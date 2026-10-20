@@ -84,16 +84,16 @@ const REINTERPRET_HINT =
 function beforeInterpretationHint(syncState: SyncState): string {
   switch (syncState) {
     case "uncreated":
-      return "まだ絵解きしていません。「絵解く」を押すと、この注釈を読んで、作るものの下書きを出します。";
+      return "まだ絵解きしていません。「絵解く」を押すと、この絵を読んで、作るものの下書きを出します。";
     case "created":
       return (
-        "この注釈から作ったものが GitHub にあります。絵解きの結果は画面を開いているあいだしか" +
+        "この絵から作ったものが GitHub にあります。絵解きの結果は画面を開いているあいだしか" +
         "持たないので、開き直したり保存したりすると、ここには出なくなります。" +
         REINTERPRET_HINT
       );
     case "changed":
       return (
-        "「変更あり」は、前回作ったときの記録といまの注釈が一致しないという印で、" +
+        "「変更あり」は、前回作ったときの記録といまの絵が一致しないという印で、" +
         "中身を書き換えていなくても付くことがあります。" +
         REINTERPRET_HINT
       );
@@ -168,7 +168,7 @@ export function InterpretationSection({
       {stale && !running && (
         <p className="hint">
           未保存の変更があります。「{interpret.label}」を押すと保存してから読みます。
-          保存すると、ほかの注釈のぶんも含めて、これまでの絵解きの結果を捨てます。
+          保存すると、ほかの絵のぶんも含めて、これまでの絵解きの結果を捨てます。
         </p>
       )}
 
@@ -245,7 +245,7 @@ function InterpretationHistory({
 
   return (
     <div className="interpretation-history">
-      <label htmlFor={selectId}>解釈結果</label>
+      <label htmlFor={selectId}>絵解きの結果</label>
       <select
         id={selectId}
         value={selectedId ?? ""}
