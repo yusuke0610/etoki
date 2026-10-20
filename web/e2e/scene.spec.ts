@@ -256,6 +256,9 @@ test.describe("シーンの保存", () => {
     await expect(page.locator(".conflict")).toContainText(
       "いまの内容をメニュー（≡）の「書き出し」で控えてから、開き直してください。",
     );
+    // 「≡」は目で探す人のための添え書きで、読み上げには入れない。入口の名前は
+    // 「メニュー」で、記号まで読むと名前と食い違う。
+    await expect(page.locator('.conflict [aria-hidden="true"]')).toHaveText("（≡）");
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
