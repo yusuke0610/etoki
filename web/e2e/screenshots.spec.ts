@@ -586,7 +586,7 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
     await page
       .getByText(
-        "読むだけの権限で開いています。編集・解釈・作成はできず、etoki AI も使えません。",
+        "読むだけの権限で開いています。編集・絵解き・作成はできず、etoki AI も使えません。",
       )
       .waitFor();
     await shot(page, "13-viewer");
@@ -781,7 +781,7 @@ test.describe("スクリーンショット", () => {
       body: { ...interpretation(), summary: "粒度を変えてもう一度読み解きました。" },
     };
     await interpret(card);
-    await detail.getByLabel("解釈結果").waitFor();
+    await detail.getByLabel("絵解きの結果").waitFor();
     await shot(page, "24-interpretation-history");
   });
 
@@ -993,7 +993,7 @@ test.describe("スクリーンショット", () => {
     await detail
       .getByLabel("i1 を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
-    await detail.getByText("解釈では既存の draft issue の更新でした").waitFor();
+    await detail.getByText("絵解きの結果では、既存の draft issue の更新でした").waitFor();
     await shot(page, "31-update-to-create");
   });
 
@@ -1021,7 +1021,7 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
 
     const section = page.locator(".panel-section").filter({
-      has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
+      has: page.getByRole("heading", { name: "キャンバスに無い絵" }),
     });
     await section.getByText("二要素認証").waitFor();
     await shot(page, "32-detached-annotations");

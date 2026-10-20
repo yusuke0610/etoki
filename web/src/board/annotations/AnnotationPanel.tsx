@@ -109,7 +109,7 @@ export function AnnotationPanel({
       {!canEdit && (
         <p className="hint" role="status">
           {
-            "読むだけの権限で開いています。編集・解釈・作成はできず、etoki AI も使えません。"
+            "読むだけの権限で開いています。編集・絵解き・作成はできず、etoki AI も使えません。"
           }
         </p>
       )}
@@ -120,12 +120,12 @@ export function AnnotationPanel({
           ものではないので Tab の順には入れない。
         */}
         <h3 id={ANNOTATION_LIST_HEADING_ID} tabIndex={-1}>
-          注釈 {annotations.length} 件
+          絵 {annotations.length} 件
           {stale && <span className="stale"> （未保存の変更あり）</span>}
         </h3>
 
         {annotations.length === 0 ? (
-          <p className="hint">保存済みの注釈はありません。</p>
+          <p className="hint">保存済みの絵はありません。</p>
         ) : (
           <ul className="annotation-list">
             {sortByState(annotations).map((a) => {
@@ -216,7 +216,9 @@ export function AnnotationPanel({
       <section className="panel-section">
         <h3>選択中のフレーム</h3>
         {!canEdit ? (
-          <p className="hint">注釈を付け外しできるのは編集できる人だけです。</p>
+          <p className="hint">
+            フレームを絵にしたり外したりできるのは、編集できる人だけです。
+          </p>
         ) : frames.markable.length === 0 && frames.unmarkable.length === 0 ? (
           <p className="hint">
             フレームツール（F）で囲んでから、そのフレームを選択してください。
@@ -231,7 +233,7 @@ export function AnnotationPanel({
               <li key={frame.id}>
                 <button type="button" onClick={() => frames.onMark(frame.id, "")}>
                   {frameLabel(frame.name)}
-                  <span className="kind">を注釈にする</span>
+                  <span className="kind">を絵にする</span>
                 </button>
               </li>
             ))}
@@ -239,7 +241,7 @@ export function AnnotationPanel({
               <li key={frame.id}>
                 <button type="button" onClick={() => frames.onUnmark(frame.id)}>
                   {labels.get(frame.id) ?? frameLabel(frame.name)}
-                  <span className="kind">の注釈を外す</span>
+                  <span className="kind">を絵から外す</span>
                 </button>
               </li>
             ))}

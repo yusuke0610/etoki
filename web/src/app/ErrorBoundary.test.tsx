@@ -27,7 +27,7 @@ function Boom(): never {
 describe("ErrorBoundary", () => {
   it("子が落ちても真っ白にせず、理由と出口を出す", () => {
     render(
-      <ErrorBoundary name="注釈パネル" recovery="remount">
+      <ErrorBoundary name="「絵解いた」パネル" recovery="remount">
         <Boom />
       </ErrorBoundary>,
     );
@@ -40,14 +40,14 @@ describe("ErrorBoundary", () => {
   // ぶんは、ここで流さなければ console のスタックだけになる。
   it("受け止めた例外を log.error に流す", () => {
     render(
-      <ErrorBoundary name="注釈パネル" recovery="remount">
+      <ErrorBoundary name="「絵解いた」パネル" recovery="remount">
         <Boom />
       </ErrorBoundary>,
     );
 
     expect(logError).toHaveBeenCalledOnce();
     const [message, error] = logError.mock.calls[0] ?? [];
-    expect(message).toContain("注釈パネル");
+    expect(message).toContain("「絵解いた」パネル");
     // 例外は文字列化せずに渡す。console がスタックを展開するため。
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe(BOOM);
@@ -57,7 +57,7 @@ describe("ErrorBoundary", () => {
   // だけで、打てる手は変わらない。
   it("例外の中身は画面に出さない", () => {
     render(
-      <ErrorBoundary name="注釈パネル" recovery="remount">
+      <ErrorBoundary name="「絵解いた」パネル" recovery="remount">
         <Boom />
       </ErrorBoundary>,
     );
@@ -76,7 +76,7 @@ describe("ErrorBoundary", () => {
     }
 
     render(
-      <ErrorBoundary name="注釈パネル" recovery="remount">
+      <ErrorBoundary name="「絵解いた」パネル" recovery="remount">
         <Flaky />
       </ErrorBoundary>,
     );
