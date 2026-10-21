@@ -10,6 +10,7 @@ import {
   leftBehindItemIds,
   markCreated,
   orphanedLocalIds,
+  renamedEpics,
   selectedActions,
   setBody,
   setKind,
@@ -303,6 +304,116 @@ describe("leftBehindItemIds", () => {
 
     draft = setUpdatesPrevious(draft, "n1", false);
     expect([...leftBehindItemIds(draft, previous)]).toEqual(["PVTI_a"]);
+  });
+});
+
+// 取り残した子の Parent は前の epic のタイトルを指したまま残る（#298）。それを
+// 押す前に言うために、今回の作成でタイトルが変わる epic を拾う。
+describe("renamedEpics", () => {
+  const previous: SyncItem[] = [
+    {
+      itemId: "PVTI_e",
+      kind: "epic",
+      title: "ログイン基盤",
+      body: "",
+      localId: "e1",
+      action: "created",
+      confirmed: true,
+    },
+    {
+      itemId: "PVTI_i",
+      kind: "issue",
+      title: "パスワード再設定",
+      body: "",
+      localId: "i1",
+      parentLocalId: "e1",
+      action: "created",
+      confirmed: true,
+    },
+  ];
+
+  function draftWith(items: InterpretedItem[]) {
+    return createDraft({ summary: "s", contentHash: "h", items });
+  }
+
+  it("前の epic を別のタイトルで書き換えるなら、前と後のタイトルを返す", () => {
+    const draft = draftWith([
+      {
+        localId: "e1",
+        kind: "epic",
+        title: "認証基盤",
+        body: "",
+        previousItemId: "PVTI_e",
+      },
+    ]);
+
+    expect(renamedEpics(draft, previous)).toEqual([
+      { from: "ログイン基盤", to: "認証基盤" },
+    ]);
+  });
+
+  it("同じタイトルのまま書き換えるなら、何も返さない", () => {
+    const draft = draftWith([
+      {
+        localId: "e1",
+        kind: "epic",
+        title: "ログイン基盤",
+        body: "",
+        previousItemId: "PVTI_e",
+      },
+    ]);
+
+    expect(renamedEpics(draft, previous)).toEqual([]);
+  });
+
+  // 手直しで変えたタイトルも数える。送るのは手直しのあとの値なので。
+  it("下書きでタイトルを手直ししたら、その値で比べる", () => {
+    let draft = draftWith([
+      {
+        localId: "e1",
+        kind: "epic",
+        title: "ログイン基盤",
+        body: "",
+        previousItemId: "PVTI_e",
+      },
+    ]);
+    draft = setTitle(draft, "e1", "認証まわり");
+
+    expect(renamedEpics(draft, previous)).toEqual([
+      { from: "ログイン基盤", to: "認証まわり" },
+    ]);
+  });
+
+  // 前の epic には書かないので、そのタイトルは変わらない。
+  it("選択を外したか、新しく作るに倒した epic は数えない", () => {
+    const base = draftWith([
+      {
+        localId: "e1",
+        kind: "epic",
+        title: "認証基盤",
+        body: "",
+        previousItemId: "PVTI_e",
+      },
+    ]);
+
+    expect(renamedEpics(toggleItem(base, "e1"), previous)).toEqual([]);
+    expect(renamedEpics(setUpdatesPrevious(base, "e1", false), previous)).toEqual([]);
+  });
+
+  // Parent が指すのは epic のタイトルだけ。issue のタイトルが変わっても、子は
+  // 親を失わない。
+  it("issue のタイトルが変わっても数えない", () => {
+    const draft = draftWith([
+      {
+        localId: "i1",
+        kind: "issue",
+        title: "再設定メール",
+        body: "",
+        previousItemId: "PVTI_i",
+      },
+    ]);
+
+    expect(renamedEpics(draft, previous)).toEqual([]);
   });
 });
 

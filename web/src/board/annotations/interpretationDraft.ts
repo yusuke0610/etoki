@@ -368,6 +368,38 @@ export function leftBehindItemIds(draft: Draft, previous: SyncItem[]): Set<strin
   return new Set(previous.map((it) => it.itemId).filter((id) => !claimed.has(id)));
 }
 
+/** 今回の作成でタイトルが変わる epic。前のタイトルと、書き換えたあとのタイトル。 */
+export type RenamedEpic = { from: string; to: string };
+
+/**
+ * 今回の作成で、前に作った epic のタイトルを書き換えるもの（#298、ADR 0026）。
+ *
+ * GitHub の `Parent` は親の epic をタイトルで指す（ADR 0006）。epic のタイトルを
+ * 書き換えると、今回送らない子（取り残し）の `Parent` は前のタイトルを指したまま
+ * 残り、親を失う。**それを押す前に言うために拾う。** 張り直しはしない（中核思想 3）。
+ *
+ * **どの子がどの epic に属していたかは結びつけない。** 前回までのものは item ごとに
+ * 最新の記録を畳んだもので、`localId` は記録した実行ごとに振り直される。実行を
+ * またいで `parentLocalId` を照らすと、別の epic に結びつけうる。言うのは「この
+ * epic に属していたものは」までにする。
+ *
+ * 比べるのは送るときの値（手直しのあと）。送り先は送るときと同じ規則で決める
+ * （`targetItemIdOf`）。この下書きから作ったものは、もう送らないので数えない。
+ */
+export function renamedEpics(draft: Draft, previous: SyncItem[]): RenamedEpic[] {
+  const out: RenamedEpic[] = [];
+  for (const d of draft.items) {
+    if (!d.selected || d.createdItemId || d.item.kind !== "epic") continue;
+    const target = targetItemIdOf(d);
+    if (!target) continue;
+    const before = previous.find((it) => it.itemId === target && it.kind === "epic");
+    if (before && before.title !== d.item.title) {
+      out.push({ from: before.title, to: d.item.title });
+    }
+  }
+  return out;
+}
+
 /** 選んだ項目のうち、新しく作るものと、前に作ったものを書き換えるものの数。 */
 export type SelectedActions = { create: number; update: number };
 

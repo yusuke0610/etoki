@@ -615,6 +615,74 @@ export function matchedInterpretationMock(): ApiMock {
   return mock;
 }
 
+/**
+ * 前回作った epic のタイトルが、今回の絵解きで変わる筋書き（#298）。
+ *
+ * 前回は epic「ログイン基盤」（`PVTI_epic`）と、その子の issue（`PVTI_child`）を
+ * 作った。今回の絵解きは epic を「認証基盤」に書き換え、子も更新の候補にする。
+ * 子の選択を外すと、子は今回送られず、GitHub の Parent が「ログイン基盤」を
+ * 指したまま残る。
+ */
+export function renamedEpicMock(): ApiMock {
+  const mock = baseMock();
+
+  mock.annotations[BOARD_ID] = (mock.annotations[BOARD_ID] ?? []).map((a) =>
+    a.id !== ANNOTATION_IDS.changed
+      ? a
+      : {
+          ...a,
+          items: [
+            {
+              itemId: "PVTI_epic",
+              kind: "epic",
+              title: "ログイン基盤",
+              body: "",
+              localId: "e9",
+              action: "created",
+              confirmed: true,
+            },
+            {
+              itemId: "PVTI_child",
+              kind: "issue",
+              title: "パスワード再設定",
+              body: "",
+              localId: "i9",
+              parentLocalId: "e9",
+              action: "created",
+              confirmed: true,
+            },
+          ],
+        },
+  );
+
+  mock.interpret = {
+    status: 200,
+    body: {
+      summary: "前回の続きとして読みました。",
+      contentHash: "sha256:e2e",
+      items: [
+        {
+          localId: "e1",
+          kind: "epic",
+          title: "認証基盤",
+          body: "",
+          previousItemId: "PVTI_epic",
+        },
+        {
+          localId: "i1",
+          kind: "issue",
+          title: "パスワード再設定",
+          body: "",
+          parentLocalId: "e1",
+          previousItemId: "PVTI_child",
+        },
+      ],
+    },
+  };
+
+  return mock;
+}
+
 /** MCP のクライアントの戻り先（同意したあとに遷移する先）。 */
 export const CONSENT_REDIRECT_URI = "http://127.0.0.1:33418/callback";
 
