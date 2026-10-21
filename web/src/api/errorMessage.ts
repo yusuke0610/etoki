@@ -16,7 +16,61 @@ import { MERMAID_MAX_TEXT_SIZE } from "../excalidraw/mermaid";
 import { ACCEPTED_KINDS_LABEL, type PasteFailure } from "../excalidraw/mermaidPaste";
 import { log } from "../app/logger";
 import { ApiError } from "./boards";
-import type { ErrorCode } from "./types";
+import type { ErrorCode, ProjectFieldRequirement } from "./types";
+
+/**
+ * 作成に要るフィールドの、役割ごとの言い方（#292、ADR 0088）。
+ *
+ * **`project_field_missing` を言うための部品なので、失敗の文言を持つこの
+ * モジュールに置く。** 押した後の文（全部を並べる）と、作成先を選んだときの
+ * 文（足りないものだけを並べる）が同じ部品から組まれる。別々に書くと、同じ
+ * 原因に 2 通りの言い方が残る（ADR 0030）。
+ *
+ * `Record` にすることが担保。役割は契約の enum なので、足して文言を書き忘れると
+ * `tsc` が落ちる。種別の 2 つは選択肢の名前だけを持ち、フィールドの言い方は
+ * `projectFieldsPhrase` が添える。**選択肢の epic / issue は書く。** 設定で
+ * 変わらない etoki の語彙（ADR 0006）。フィールドの名前は書かない。
+ */
+const PROJECT_FIELD_PARTS: Record<ProjectFieldRequirement, string> = {
+  kind_epic: "epic",
+  kind_issue: "issue",
+  parent: "親を表すテキストのフィールド",
+};
+
+/** 役割の全部。並びは `PROJECT_FIELD_PARTS` の並び（画面に出す順）。 */
+const ALL_PROJECT_FIELDS = Object.keys(PROJECT_FIELD_PARTS) as ProjectFieldRequirement[];
+
+/**
+ * 役割の並びを 1 つの句にする。種別の選択肢は 1 つのフィールドにまとめて言う。
+ *
+ * 例: 「種別を表す単一選択のフィールド（選択肢 epic と issue）と、親を表す
+ * テキストのフィールド」。
+ */
+function projectFieldsPhrase(fields: readonly ProjectFieldRequirement[]): string {
+  const options = ALL_PROJECT_FIELDS.filter(
+    (f) => f !== "parent" && fields.includes(f),
+  ).map((f) => PROJECT_FIELD_PARTS[f]);
+
+  const phrases: string[] = [];
+  if (options.length > 0) {
+    phrases.push(`種別を表す単一選択のフィールド（選択肢 ${options.join(" と ")}）`);
+  }
+  if (fields.includes("parent")) phrases.push(PROJECT_FIELD_PARTS.parent);
+
+  return phrases.join("と、");
+}
+
+/**
+ * 作成先を選んだときに、足りないフィールドを言う（ADR 0088）。
+ *
+ * **確かめた結果を判定に使わない。** 選ぶことは止めず、作成のときに止まることだけ
+ * を言う。実際に止まるかは、作成のときに GitHub が返したもので決まる。
+ */
+export function missingProjectFieldsMessage(
+  missing: readonly ProjectFieldRequirement[],
+): string {
+  return `この Project には、${projectFieldsPhrase(missing)}がありません。このまま選べますが、GitHub 側で作るまで draft issue の作成は止まります。`;
+}
 
 /**
  * code から利用者向けの文言を引く表。
@@ -63,12 +117,12 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "作成先が選ばれていません。リポジトリと Project を選んでください。",
   // 何を作ればよいかまで言う（#292）。足りないと分かるのは押したあとで、
   // 「フィールドがありません」だけでは GitHub 側で何を作るのかが読めない。
+  // 何が要るかの言い方は `PROJECT_FIELD_PARTS` に置き、押す前の表示
+  // （`missingProjectFieldsMessage`）と同じ部品から組む（ADR 0030 / 0088）。
   // **フィールドの名前は書かない。** 名前は設定で変わり、知っているのは起動の
   // 配線だけ（環境変数の名前を書かない ADR 0083 と同じ理由）。名前はサーバーの
-  // 本文として「詳細」に出る。**選択肢の epic / issue は書く。** これは設定で
-  // 変わらない etoki の語彙（ADR 0006）。
-  project_field_missing:
-    "作成先の Project に、種別を表す単一選択のフィールド（選択肢 epic と issue）と、親を表すテキストのフィールドが要ります。GitHub 側で作ってから押し直せば、ボードはそのままで続けられます。フィールドの名前は詳細にあります。",
+  // 本文として「詳細」に出る。
+  project_field_missing: `作成先の Project に、${projectFieldsPhrase(ALL_PROJECT_FIELDS)}が要ります。GitHub 側で作ってから押し直せば、ボードはそのままで続けられます。フィールドの名前は詳細にあります。`,
   // LLM の呼び出しの失敗は打ち手で分ける（ADR 0087）。**どれも「絵解き」と
   // 言い切らない。** 図の生成でも同じ code が返る。
   // llm_unavailable は原因を名乗らなかった失敗の受け皿でもある（差し込んだ

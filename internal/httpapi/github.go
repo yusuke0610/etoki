@@ -62,6 +62,38 @@ func (h *handlers) listRepositoryProjects(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+// checkProjectFields は作成先の Project に、作成に要るフィールドが揃っているかを
+// 返す（ADR 0088）。
+//
+// **GitHub に問い合わせられなかったことは 200 の unknown で返る。** 失敗に写すのは
+// 入力の誤りだけで、それはユースケースが決める。表示のための材料なので、GitHub が
+// 落ちているだけで選択の画面に失敗を出さない。
+func (h *handlers) checkProjectFields(c *gin.Context) {
+	if h.catalog == nil {
+		h.githubNotConfigured(c)
+		return
+	}
+
+	projectID := c.Param("projectId")
+	check, err := h.catalog.CheckProjectFields(c.Request.Context(), projectID)
+	if err != nil {
+		h.failCatalog(c, err)
+		return
+	}
+
+	// nil を返すと JSON が null になる。足りないものが無くても配列にする。
+	missing := make([]apitypes.ProjectFieldRequirement, 0, len(check.Missing))
+	for _, m := range check.Missing {
+		missing = append(missing, apitypes.ProjectFieldRequirement(m))
+	}
+
+	c.JSON(http.StatusOK, apitypes.ProjectFieldsCheck{
+		ProjectID:     projectID,
+		Status:        apitypes.ProjectFieldsStatus(check.Status),
+		MissingFields: missing,
+	})
+}
+
 // failCatalog は一覧取得のエラーを応答にする。
 //
 // **既定が 502 なのがここだけ違う。** 表に無いものを 500 にすると etoki の

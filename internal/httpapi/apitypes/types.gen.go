@@ -268,6 +268,48 @@ func (e ProjectAccess) Valid() bool {
 	}
 }
 
+// Defines values for ProjectFieldRequirement.
+const (
+	ProjectFieldRequirementKindEpic  ProjectFieldRequirement = "kind_epic"
+	ProjectFieldRequirementKindIssue ProjectFieldRequirement = "kind_issue"
+	ProjectFieldRequirementParent    ProjectFieldRequirement = "parent"
+)
+
+// Valid indicates whether the value is a known member of the ProjectFieldRequirement enum.
+func (e ProjectFieldRequirement) Valid() bool {
+	switch e {
+	case ProjectFieldRequirementKindEpic:
+		return true
+	case ProjectFieldRequirementKindIssue:
+		return true
+	case ProjectFieldRequirementParent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectFieldsStatus.
+const (
+	ProjectFieldsStatusMissing ProjectFieldsStatus = "missing"
+	ProjectFieldsStatusOk      ProjectFieldsStatus = "ok"
+	ProjectFieldsStatusUnknown ProjectFieldsStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProjectFieldsStatus enum.
+func (e ProjectFieldsStatus) Valid() bool {
+	switch e {
+	case ProjectFieldsStatusMissing:
+		return true
+	case ProjectFieldsStatusOk:
+		return true
+	case ProjectFieldsStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RunOutcome.
 const (
 	RunOutcomeComplete   RunOutcome = "complete"
@@ -1217,6 +1259,40 @@ type Project struct {
 //     倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
 type ProjectAccess string
 
+// ProjectFieldRequirement 作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0088）。
+//
+// - `kind_epic` … 種別を表す単一選択のフィールドの選択肢 epic
+// - `kind_issue` … 同じフィールドの選択肢 issue
+// - `parent` … 親を表すテキストのフィールド
+type ProjectFieldRequirement string
+
+// ProjectFieldsCheck 作成先の Project のフィールドを確かめた結果。表示のための材料で、判定には使わない
+type ProjectFieldsCheck struct {
+	// MissingFields 足りないもの。`status` が `missing` のときだけ要素を持ち、それ以外は
+	// 空配列
+	MissingFields []ProjectFieldRequirement `json:"missingFields"`
+
+	// ProjectID 確かめた Project。画面は選び直しの前後で応答を取り違えないよう、
+	// これで照合する
+	ProjectID string `json:"projectId"`
+
+	// Status 作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+	//
+	// - `ok` … 揃っている
+	// - `missing` … 足りないものがある。何が足りないかは `missingFields`
+	// - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+	//   **ok / missing のどちらにも倒さない**
+	Status ProjectFieldsStatus `json:"status"`
+}
+
+// ProjectFieldsStatus 作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+//
+//   - `ok` … 揃っている
+//   - `missing` … 足りないものがある。何が足りないかは `missingFields`
+//   - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+//     **ok / missing のどちらにも倒さない**
+type ProjectFieldsStatus string
+
 // RenameBoardRequest 改名のリクエストボディ。
 //
 // 名前だけを持つ。作成先やシーンを一緒に送れる形にすると、この経路でも
@@ -1425,6 +1501,9 @@ type BoardID = string
 
 // JobID defines model for JobId.
 type JobID = string
+
+// ProjectID defines model for ProjectId.
+type ProjectID = string
 
 // RepositoryName defines model for RepositoryName.
 type RepositoryName = string

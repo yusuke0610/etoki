@@ -6,6 +6,7 @@ import {
   describeFailure,
   ERROR_MESSAGES,
   mermaidPasteFailure,
+  missingProjectFieldsMessage,
   PROJECT_LIST_MESSAGES,
   partialCreationFailure,
   sceneFileUnreadableFailure,
@@ -274,6 +275,62 @@ describe("ERROR_MESSAGES", () => {
   // 既定の名前を案内し続ける。名前は詳細に出るサーバーの本文が持つ（#292）。
   it("フィールドが足りないときも、フィールドの名前は書かない", () => {
     const message = ERROR_MESSAGES.project_field_missing;
+
+    expect(message).not.toMatch(/\bKind\b/);
+    expect(message).not.toMatch(/\bParent\b/);
+  });
+});
+
+describe("missingProjectFieldsMessage", () => {
+  // 押す前に足りないものだけを並べる（ADR 0088）。
+  // 切れると: 揃っているものまで「ありません」と出て、作る必要の無いものを作りにいかせる。
+  it("足りないものだけを並べる", () => {
+    const message = missingProjectFieldsMessage(["kind_issue"]);
+
+    expect(message).toContain("種別を表す単一選択のフィールド（選択肢 issue）");
+    expect(message).not.toContain("epic");
+    expect(message).not.toContain("親を表すテキストのフィールド");
+  });
+
+  it("epic の選択肢だけが足りないときは、epic だけを並べる", () => {
+    const message = missingProjectFieldsMessage(["kind_epic"]);
+
+    expect(message).toContain("種別を表す単一選択のフィールド（選択肢 epic）");
+    // 「draft issue」は文の後半に出るので、選択肢の括弧の中だけを見る。
+    expect(message).not.toMatch(/選択肢 [^）]*issue/);
+    expect(message).not.toContain("親を表すテキストのフィールド");
+  });
+
+  it("親だけが足りないときは、種別のフィールドを言わない", () => {
+    const message = missingProjectFieldsMessage(["parent"]);
+
+    expect(message).toContain("親を表すテキストのフィールド");
+    expect(message).not.toContain("種別");
+  });
+
+  // 選ぶことは止めない。止まるのは作成のとき（中核思想 3）。
+  it("選べることと、作成で止まることを言う", () => {
+    const message = missingProjectFieldsMessage(["parent"]);
+
+    expect(message).toContain("このまま選べます");
+    expect(message).toContain("GitHub 側で作るまで");
+    expect(message).toContain("作成は止まります");
+  });
+
+  // 押す前と押した後で、何が要るかの言い方が同じ（ADR 0030）。
+  // 切れると: 片方だけ直した日に、同じ原因に 2 通りの言い方が並ぶ。
+  it("全部足りないときの言い方は、押した後の文と同じ", () => {
+    const phrase =
+      "種別を表す単一選択のフィールド（選択肢 epic と issue）と、親を表すテキストのフィールド";
+
+    expect(missingProjectFieldsMessage(["kind_epic", "kind_issue", "parent"])).toContain(
+      phrase,
+    );
+    expect(ERROR_MESSAGES.project_field_missing).toContain(phrase);
+  });
+
+  it("フィールドの名前は書かない", () => {
+    const message = missingProjectFieldsMessage(["kind_epic", "kind_issue", "parent"]);
 
     expect(message).not.toMatch(/\bKind\b/);
     expect(message).not.toMatch(/\bParent\b/);

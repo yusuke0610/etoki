@@ -608,6 +608,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/github/projects/{projectId}/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Projects v2 の GraphQL の node ID（`Project.id`） */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 作成先の Project に、作成に要るフィールドが揃っているかを返す
+         * @description 作成先を選ぶ画面が、Project を選んだときに 1 度だけ引く（ADR 0088）。
+         *     draft issue の種別と親は Project のカスタムフィールドで表すので
+         *     （ADR 0006）、足りないと作成は 422 `project_field_missing` で止まる。
+         *     それを押す前に見せるための口。
+         *
+         *     **判定ではない。** 実際に作れるかは作成時に GitHub が返したものが正しい。
+         *     これを見て選択も作成も止めない。GitHub に問い合わせられなかったときは
+         *     エラーにせず `unknown` を返す（`ProjectAccess` と同じ扱い、ADR 0017）。
+         *
+         *     **フィールドの名前は返さない。** 名前は設定で変わり、知っているのは起動の
+         *     配線だけ。返すのは足りない役割（`ProjectFieldRequirement`）まで。
+         */
+        get: operations["checkProjectFields"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards/{id}/annotations": {
         parameters: {
             query?: never;
@@ -1314,6 +1347,39 @@ export interface components {
             url: string;
         };
         /**
+         * @description 作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0088）。
+         *
+         *     - `kind_epic` … 種別を表す単一選択のフィールドの選択肢 epic
+         *     - `kind_issue` … 同じフィールドの選択肢 issue
+         *     - `parent` … 親を表すテキストのフィールド
+         * @enum {string}
+         */
+        ProjectFieldRequirement: "kind_epic" | "kind_issue" | "parent";
+        /**
+         * @description 作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+         *
+         *     - `ok` … 揃っている
+         *     - `missing` … 足りないものがある。何が足りないかは `missingFields`
+         *     - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+         *       **ok / missing のどちらにも倒さない**
+         * @enum {string}
+         */
+        ProjectFieldsStatus: "ok" | "missing" | "unknown";
+        /** @description 作成先の Project のフィールドを確かめた結果。表示のための材料で、判定には使わない */
+        ProjectFieldsCheck: {
+            /**
+             * @description 確かめた Project。画面は選び直しの前後で応答を取り違えないよう、
+             *     これで照合する
+             */
+            projectId: string;
+            status: components["schemas"]["ProjectFieldsStatus"];
+            /**
+             * @description 足りないもの。`status` が `missing` のときだけ要素を持ち、それ以外は
+             *     空配列
+             */
+            missingFields: components["schemas"]["ProjectFieldRequirement"][];
+        };
+        /**
          * @description ボード作成のリクエストボディ。
          *
          *     **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
@@ -1962,6 +2028,8 @@ export interface components {
         UserId: string;
         /** @description リポジトリ所有者の login */
         RepositoryOwner: string;
+        /** @description Projects v2 の GraphQL の node ID（`Project.id`） */
+        ProjectId: string;
         /** @description リポジトリ名 */
         RepositoryName: string;
     };
@@ -2841,6 +2909,42 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description GitHub が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    checkProjectFields: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Projects v2 の GraphQL の node ID（`Project.id`） */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 確かめた結果。確かめられなかったときも 200 で `unknown` を返す */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectFieldsCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
             /** @description GitHub が設定されていない */
             503: {
                 headers: {
