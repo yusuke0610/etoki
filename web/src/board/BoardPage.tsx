@@ -703,7 +703,8 @@ export function BoardPage({
 
   /**
    * 注釈の名前を書き換える（#249）。frame の `name` に書くので、キャンバスの
-   * ラベルにも同じ名前が出る。作成済みなら状態は「変更あり」になる（ADR 0036）。
+   * ラベルにも同じ名前が出る。名前は `content_hash` に入らないので、作成済みでも
+   * 状態は変わらない（#303、ADR 0079）。
    */
   const handleChangeAnnotationName = useCallback(
     (frameId: string, name: string) => {
