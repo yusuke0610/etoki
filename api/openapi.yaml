@@ -1660,6 +1660,13 @@ components:
 
         **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
         畳むと画面が「何を設定すればよいか」を言えなくなる。
+
+        LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
+        （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+        （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+        LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+        混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+        別の code で返る。
       enum:
         - invalid_input
         - request_too_large
@@ -1680,6 +1687,9 @@ components:
         - target_not_selected
         - project_field_missing
         - llm_unavailable
+        - llm_truncated
+        - llm_refused
+        - llm_overloaded
         - interpretation_failed
         - diagram_failed
         - diagram_chat_too_long

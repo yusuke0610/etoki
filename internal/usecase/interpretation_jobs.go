@@ -275,7 +275,7 @@ func (j *InterpretationJobs) finish(e *interpretationJob, result InterpretationR
 // （failLLM）は通らない。
 func (j *InterpretationJobs) logFailure(e *interpretationJob, err error) {
 	switch {
-	case errors.Is(err, ErrLLMUnavailable):
+	case IsLLMCallFailure(err):
 		j.svc.logger.Error("llm call failed",
 			slog.String("board", e.boardID), slog.String("annotation", e.job.AnnotationID),
 			slog.Any("error", err))

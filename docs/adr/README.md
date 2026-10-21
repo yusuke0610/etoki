@@ -89,3 +89,4 @@
 | [0084](0084-logo-wordmark-in-ui-typeface.md)                     | ロゴは UI の書体で書いた名前の文字にし、字の色はテーマから引く               | 採用                 |
 | [0085](0085-interpretation-as-server-side-job.md)                | 解釈をリクエストから切り離し、サーバー側のジョブとして走らせる               | 採用                 |
 | [0086](0086-screen-vocabulary-e-and-ekidoki.md)                  | 画面の語彙を「絵」「絵解き」に揃え、「フレーム」は Excalidraw の枠だけを指す | 採用                 |
+| [0087](0087-split-llm-call-failures-by-remedy.md)                | LLM の呼び出しの失敗は、打ち手ごとに code を分ける                           | 採用                 |

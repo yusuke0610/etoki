@@ -490,6 +490,107 @@ func TestComplete_HTTPErrors(t *testing.T) {
 	}
 }
 
+// 失敗の原因は、打ち手が違うものだけ port の sentinel で名乗る（ADR 0087）。
+//
+// **名乗る sentinel は 1 つだけ**であることまで見る。429 を打ち切りとしても
+// 名乗る、のような取り違えは文言の断言では気づけない。401 や 400 は
+// どれも名乗らない。設定の側に打ち手がある失敗を「待てば直る」に寄せると、
+// 鍵の誤りを待ち続けることになる。
+func TestComplete_NamesTheCause(t *testing.T) {
+	t.Parallel()
+
+	sentinels := map[string]error{
+		"ErrLLMTruncated":  port.ErrLLMTruncated,
+		"ErrLLMRefused":    port.ErrLLMRefused,
+		"ErrLLMOverloaded": port.ErrLLMOverloaded,
+	}
+
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   string // 空ならどれも名乗らない
+	}{
+		{
+			name:   "max_tokens で打ち切り",
+			status: http.StatusOK,
+			body: `{"content":[{"type":"text","text":"{"}],"stop_reason":"max_tokens",` +
+				`"usage":{"input_tokens":3233,"output_tokens":863}}`,
+			want: "ErrLLMTruncated",
+		},
+		{
+			// コンテキスト長が尽きた。途中までの本文が入っていても成功にしない。
+			name:   "model_context_window_exceeded で打ち切り",
+			status: http.StatusOK,
+			body: `{"content":[{"type":"text","text":"{\"summary\":"}],` +
+				`"stop_reason":"model_context_window_exceeded","usage":{"input_tokens":990000,"output_tokens":12}}`,
+			want: "ErrLLMTruncated",
+		},
+		{
+			name:   "拒否",
+			status: http.StatusOK,
+			body:   `{"content":[],"stop_reason":"refusal","stop_details":{"category":"cyber"}}`,
+			want:   "ErrLLMRefused",
+		},
+		{
+			name:   "429 レート制限",
+			status: http.StatusTooManyRequests,
+			body:   `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`,
+			want:   "ErrLLMOverloaded",
+		},
+		{
+			name:   "500 向こうのエラー",
+			status: http.StatusInternalServerError,
+			body:   `{"type":"error","error":{"type":"api_error","message":"internal"}}`,
+			want:   "ErrLLMOverloaded",
+		},
+		{
+			// Anthropic の過負荷。標準の定数に無いので数値で書く。
+			name:   "529 過負荷",
+			status: 529,
+			body:   `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`,
+			want:   "ErrLLMOverloaded",
+		},
+		{
+			name:   "401 認証エラー",
+			status: http.StatusUnauthorized,
+			body:   `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`,
+		},
+		{
+			name:   "400 リクエストの誤り",
+			status: http.StatusBadRequest,
+			body:   `{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}`,
+		},
+		{
+			// 200 で本文が無いのは原因が分からない。名乗らない。
+			name:   "本文のブロックが無い",
+			status: http.StatusOK,
+			body:   `{"content":[],"stop_reason":"end_turn"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := newClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = io.WriteString(w, tt.body)
+			})
+
+			_, err := c.Complete(t.Context(), port.VisionRequest{Text: "x"})
+			if err == nil {
+				t.Fatal("Complete() = nil, want error")
+			}
+			for name, sentinel := range sentinels {
+				if got := errors.Is(err, sentinel); got != (name == tt.want) {
+					t.Errorf("errors.Is(%v, %s) = %v, want %v", err, name, got, name == tt.want)
+				}
+			}
+		})
+	}
+}
+
 // newBlockingServer は応答を返さないサーバーを返す。
 //
 // 後片付けで必ずハンドラを解放する。httptest.Server.Close は処理中の

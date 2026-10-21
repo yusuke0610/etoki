@@ -649,6 +649,37 @@ test.describe("解釈と作成", () => {
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 
+  // LLM の呼び出しの失敗は打ち手で分ける（#291、ADR 0087）。打ち切りは鍵の
+  // 問題ではないので、「API キーを確かめて」と言わない。ローカル LLM の既定の
+  // コンテキスト長で起きる（README「ローカル LLM を使う」）。
+  test("応答が打ち切られたら、鍵ではなくコンテキスト長を案内する", async ({ page }) => {
+    const mock = baseMock();
+    mock.interpret = {
+      status: 502,
+      body: {
+        code: "llm_truncated",
+        error:
+          "etoki: llm output was truncated (attempt 2): etoki: llm response truncated: " +
+          "stopped at 1504 output tokens, before our limit of 16000",
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+
+    await expect(
+      detail.getByText("途中で打ち切られました", { exact: false }),
+    ).toBeVisible();
+    await expect(detail.getByText("コンテキスト長", { exact: false })).toBeVisible();
+    await expect(detail.getByText("API キー", { exact: false })).toHaveCount(0);
+    // 誰が切ったかの手掛かりは畳んだ側にだけ置く（#86）。
+    await expect(detail.getByText("before our limit", { exact: false })).toBeHidden();
+    await detail.getByText("詳細", { exact: true }).click();
+    await expect(detail.getByText("before our limit", { exact: false })).toBeVisible();
+  });
+
   test("解釈時点とシーンが食い違うと、作成は 409 で止まる", async ({ page }) => {
     const mock = baseMock();
     mock.createItems = {

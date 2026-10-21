@@ -90,6 +90,9 @@ const (
 	ErrorCodeInviteeChanged              ErrorCode = "invitee_changed"
 	ErrorCodeLastOwner                   ErrorCode = "last_owner"
 	ErrorCodeLlmNotConfigured            ErrorCode = "llm_not_configured"
+	ErrorCodeLlmOverloaded               ErrorCode = "llm_overloaded"
+	ErrorCodeLlmRefused                  ErrorCode = "llm_refused"
+	ErrorCodeLlmTruncated                ErrorCode = "llm_truncated"
 	ErrorCodeLlmUnavailable              ErrorCode = "llm_unavailable"
 	ErrorCodeLoginRequired               ErrorCode = "login_required"
 	ErrorCodeMcpConnectionsNotConfigured ErrorCode = "mcp_connections_not_configured"
@@ -144,6 +147,12 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeLastOwner:
 		return true
 	case ErrorCodeLlmNotConfigured:
+		return true
+	case ErrorCodeLlmOverloaded:
+		return true
+	case ErrorCodeLlmRefused:
+		return true
+	case ErrorCodeLlmTruncated:
 		return true
 	case ErrorCodeLlmUnavailable:
 		return true
@@ -933,6 +942,13 @@ type DiagramTurn struct {
 //
 // **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
 // 畳むと画面が「何を設定すればよいか」を言えなくなる。
+//
+// LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
+// （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+// （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+// LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+// 混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+// 別の code で返る。
 type ErrorCode string
 
 // ErrorResponse 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
@@ -947,6 +963,13 @@ type ErrorResponse struct {
 	//
 	// **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
 	// 畳むと画面が「何を設定すればよいか」を言えなくなる。
+	//
+	// LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
+	// （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+	// （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+	// LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+	// 混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+	// 別の code で返る。
 	Code ErrorCode `json:"code"`
 
 	// Error 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
