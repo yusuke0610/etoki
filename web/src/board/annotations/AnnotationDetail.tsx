@@ -300,7 +300,6 @@ function AnnotationFace({
   const labelId = `annotation-detail-label-${id}`;
   const missingId = `annotation-detail-missing-${id}`;
   const viewerId = `annotation-detail-viewer-${id}`;
-  const nameNoteId = `annotation-detail-name-note-${id}`;
   const unmarkedId = `annotation-detail-unmarked-${id}`;
   const itemsRegionId = `annotation-detail-items-${id}`;
   const runsRegionId = `annotation-detail-runs-${id}`;
@@ -373,10 +372,6 @@ function AnnotationFace({
       frames.onChangeName(id, nameDraft);
     }
   };
-  // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈で
-  // 変えると「変更あり」になる。未作成なら影響が無いので言わない。
-  const nameNote = canRename && a.state !== "uncreated";
-  const nameDescribedBy = nameNote ? nameNoteId : undefined;
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape") return;
@@ -444,7 +439,6 @@ function AnnotationFace({
                 ref={focusNameInput}
                 className="annotation-detail-label annotation-detail-rename-input"
                 aria-label="名前"
-                aria-describedby={nameDescribedBy}
                 value={nameDraft}
                 placeholder="名前を付ける"
                 onChange={(e) => setNameDraft(e.target.value)}
@@ -474,7 +468,6 @@ function AnnotationFace({
               id={labelId}
               ref={labelRef}
               className="annotation-detail-label annotation-detail-rename"
-              aria-describedby={nameDescribedBy}
               onClick={() => {
                 draftStart.current = name;
                 setNameDraft(name);
@@ -602,11 +595,6 @@ function AnnotationFace({
         {canEdit && unmarked && (
           <p className="hint" id={unmarkedId}>
             このフレームは絵から外してあります。名前を変えるには、もう一度絵にしてください。
-          </p>
-        )}
-        {nameNote && (
-          <p className="hint" id={nameNoteId}>
-            名前も絵解きの入力です。変えると「変更あり」になります。
           </p>
         )}
       </header>

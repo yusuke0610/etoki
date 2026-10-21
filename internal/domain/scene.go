@@ -213,7 +213,31 @@ func (s Scene) Annotations() []Annotation {
 	return annotations
 }
 
-// AnnotationTexts は注釈に属するテキスト要素を返す。
+// AnnotationTexts は注釈に属するテキスト要素を返す。解釈の入力になる。
+//
+// 先頭に frame の名前を置き（名前があれば）、続けて子のテキストを並べる
+// （childTexts）。名前は解釈の材料なので入れるが、**ハッシュには入れない**
+// （AnnotationHash、ADR 0079）。
+func (s Scene) AnnotationTexts(annotationID string) []TextElement {
+	children := s.childTexts(annotationID)
+	name := s.frameName(annotationID)
+	if name == "" {
+		return children
+	}
+	return append([]TextElement{{ID: annotationID, Text: name}}, children...)
+}
+
+// frameName は注釈の frame の名前を返す。名前が無ければ空文字。
+func (s Scene) frameName(annotationID string) string {
+	for _, e := range s.Elements {
+		if !e.IsDeleted && e.ID == annotationID && e.Type == elementTypeFrame {
+			return e.Name
+		}
+	}
+	return ""
+}
+
+// childTexts は注釈の中に描かれたテキスト要素を返す。frame の名前は含まない。
 //
 // 集める経路は 2 つある。
 //
@@ -221,23 +245,17 @@ func (s Scene) Annotations() []Annotation {
 //   - frame の子である図形に紐づくラベル（containerId が子の ID と一致）
 //
 // 後者を辿らないと、図形の中に書かれた文字がまるごとハッシュから抜ける。
-// frame の名前も含める。LLM への入力になる以上、変えたら「変更あり」に
-// なるべきであるため。
 //
 // **入れ子の frame は辿らない**（ADR 0047）。内側の frame に入れた要素は
 // frameId が内側を指すので、ここには出てこない。1 段だけを見る形は
 // TestAnnotationTexts_DoesNotFollowNestedFrames が固定している。境界を描く
 // テンプレートが frame ではなく矩形を使うのは、この線を越えないため。
-func (s Scene) AnnotationTexts(annotationID string) []TextElement {
+func (s Scene) childTexts(annotationID string) []TextElement {
 	childIDs := make(map[string]struct{})
-	var frameName string
 
 	for _, e := range s.Elements {
 		if e.IsDeleted {
 			continue
-		}
-		if e.ID == annotationID && e.Type == elementTypeFrame {
-			frameName = e.Name
 		}
 		if e.FrameID != nil && *e.FrameID == annotationID {
 			childIDs[e.ID] = struct{}{}
@@ -246,11 +264,6 @@ func (s Scene) AnnotationTexts(annotationID string) []TextElement {
 
 	seen := make(map[string]struct{})
 	var texts []TextElement
-
-	if frameName != "" {
-		seen[annotationID] = struct{}{}
-		texts = append(texts, TextElement{ID: annotationID, Text: frameName})
-	}
 
 	for _, e := range s.Elements {
 		if e.IsDeleted || e.Type != elementTypeText {
@@ -278,6 +291,12 @@ func (s Scene) AnnotationTexts(annotationID string) []TextElement {
 }
 
 // AnnotationHash は注釈のハッシュを算出する。
+//
+// 入力は子のテキストとメタデータ（粒度と図の種別）。**frame 自身の名前は
+// 入れない**（ADR 0079、#303）。名前は人が読む見出しで、付け替えただけで
+// 「変更あり」になると、状態を戻す道が絵解き直し（LLM と作成）しか無い。
+// 名前は解釈の入力（AnnotationTexts）には残るので、次に絵解けば新しい名前で
+// 読まれる。
 func (s Scene) AnnotationHash(a Annotation) ContentHash {
-	return ComputeContentHash(s.AnnotationTexts(a.ID), a.Granularity, a.Kind)
+	return ComputeContentHash(s.childTexts(a.ID), a.Granularity, a.Kind)
 }
