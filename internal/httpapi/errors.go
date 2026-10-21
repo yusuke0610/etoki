@@ -92,7 +92,7 @@ var errorMappings = []errorMapping{
 	// LLM を叩く実行の上限（ADR 0044）。**1 つに畳まない。** ステータスは
 	// 同じでも、時間をおく話と、いま走っているぶんの終わりを待つ話で、次に
 	// することが違う。**上流の LLM が混んでいる場合とも別**で、そちらは
-	// llm_unavailable として 502 に出る。
+	// llm_overloaded として 502 に出る（下）。
 	{usecase.ErrRateLimited, http.StatusTooManyRequests, apitypes.ErrorCodeRateLimited},
 	{usecase.ErrConcurrencyLimited, http.StatusTooManyRequests,
 		apitypes.ErrorCodeConcurrencyLimited},
@@ -103,6 +103,16 @@ var errorMappings = []errorMapping{
 
 	// 上流の失敗。500 に丸めると、開発者は自分の設定を疑えない。
 	{usecase.ErrLLMUnavailable, http.StatusBadGateway, apitypes.ErrorCodeLlmUnavailable},
+	// LLM の呼び出しの失敗のうち、打ち手が違うもの（ADR 0087）。
+	// llm_unavailable に畳むと、画面は鍵と接続を疑わせることしか言えない。
+	//
+	// **上流の混雑を rate_limited / concurrency_limited に畳まない。** どれも
+	// 待つ話だが、あちらは etoki 自身が置いた上限（ADR 0044、429）で、こちらは
+	// 向こうが断った。相手が違うので、待つ長さも、続いたときに見直すものも違う。
+	// ステータスも 429 にしない。etoki に対する要求が多すぎたわけではない。
+	{usecase.ErrLLMTruncated, http.StatusBadGateway, apitypes.ErrorCodeLlmTruncated},
+	{usecase.ErrLLMRefused, http.StatusBadGateway, apitypes.ErrorCodeLlmRefused},
+	{usecase.ErrLLMOverloaded, http.StatusBadGateway, apitypes.ErrorCodeLlmOverloaded},
 	{usecase.ErrInterpretationFailed, http.StatusBadGateway, apitypes.ErrorCodeInterpretationFailed},
 	{usecase.ErrDiagramFailed, http.StatusBadGateway, apitypes.ErrorCodeDiagramFailed},
 	{usecase.ErrCreationIncomplete, http.StatusBadGateway, apitypes.ErrorCodeCreationIncomplete},

@@ -6,6 +6,7 @@ import {
   describeFailure,
   ERROR_MESSAGES,
   mermaidPasteFailure,
+  missingProjectFieldsMessage,
   PROJECT_LIST_MESSAGES,
   partialCreationFailure,
   sceneFileUnreadableFailure,
@@ -206,6 +207,43 @@ describe("ERROR_MESSAGES", () => {
     expect(ERROR_MESSAGES.rate_limited).not.toBe(ERROR_MESSAGES.concurrency_limited);
   });
 
+  // LLM の呼び出しの失敗は打ち手で分けた（ADR 0087）。畳むと、打ち切りでも
+  // 混雑でも「鍵を確かめて」と言うことになる。
+  const llmCallFailures = [
+    ERROR_MESSAGES.llm_unavailable,
+    ERROR_MESSAGES.llm_truncated,
+    ERROR_MESSAGES.llm_refused,
+    ERROR_MESSAGES.llm_overloaded,
+  ];
+
+  it("LLM の呼び出しの失敗の 4 つは別々の文言を持つ", () => {
+    expect(new Set(llmCallFailures).size).toBe(llmCallFailures.length);
+  });
+
+  // 図の生成でも同じ code が返る。片方の名前で書くと、もう片方で食い違う。
+  // 環境変数の名前も書かない（ADR 0083）。差し込んだ実装は読まない。
+  // 画面の語は「絵解き」（ADR 0086）。前の語の「解釈」も残っていないことを見る。
+  it("LLM の呼び出しの失敗は「絵解き」と言い切らず、環境変数の名前を書かない", () => {
+    for (const message of llmCallFailures) {
+      expect(message).not.toContain("絵解き");
+      expect(message).not.toContain("解釈");
+      expect(message).not.toMatch(/ETOKI_/);
+    }
+  });
+
+  // 上流の混雑と etoki 自身の上限は、どちらも待つ話だが相手が違う（ADR 0044 / 0087）。
+  it("上流の混雑は etoki 自身の上限と別の文言を持つ", () => {
+    expect(ERROR_MESSAGES.llm_overloaded).not.toBe(ERROR_MESSAGES.rate_limited);
+    expect(ERROR_MESSAGES.llm_overloaded).toContain("LLM 側");
+  });
+
+  // 文言が違うことだけでは、打ち手を言わない汎用の文に変えても通る。打ち手そのものを見る。
+  it("打ち切りはコンテキスト長を、拒否は頼み方と渡した内容を見直すよう案内する", () => {
+    expect(ERROR_MESSAGES.llm_truncated).toContain("コンテキスト長");
+    expect(ERROR_MESSAGES.llm_refused).toContain("頼み方");
+    expect(ERROR_MESSAGES.llm_refused).toContain("渡した内容");
+  });
+
   // 設定するものが違うので畳まない。畳むと「何を設定すればよいか」を言えない。
   it("未設定の 4 つは別々の文言を持つ", () => {
     const messages = [
@@ -237,6 +275,62 @@ describe("ERROR_MESSAGES", () => {
   // 既定の名前を案内し続ける。名前は詳細に出るサーバーの本文が持つ（#292）。
   it("フィールドが足りないときも、フィールドの名前は書かない", () => {
     const message = ERROR_MESSAGES.project_field_missing;
+
+    expect(message).not.toMatch(/\bKind\b/);
+    expect(message).not.toMatch(/\bParent\b/);
+  });
+});
+
+describe("missingProjectFieldsMessage", () => {
+  // 押す前に足りないものだけを並べる（ADR 0088）。
+  // 切れると: 揃っているものまで「ありません」と出て、作る必要の無いものを作りにいかせる。
+  it("足りないものだけを並べる", () => {
+    const message = missingProjectFieldsMessage(["kind_issue"]);
+
+    expect(message).toContain("種別を表す単一選択のフィールド（選択肢 issue）");
+    expect(message).not.toContain("epic");
+    expect(message).not.toContain("親を表すテキストのフィールド");
+  });
+
+  it("epic の選択肢だけが足りないときは、epic だけを並べる", () => {
+    const message = missingProjectFieldsMessage(["kind_epic"]);
+
+    expect(message).toContain("種別を表す単一選択のフィールド（選択肢 epic）");
+    // 「draft issue」は文の後半に出るので、選択肢の括弧の中だけを見る。
+    expect(message).not.toMatch(/選択肢 [^）]*issue/);
+    expect(message).not.toContain("親を表すテキストのフィールド");
+  });
+
+  it("親だけが足りないときは、種別のフィールドを言わない", () => {
+    const message = missingProjectFieldsMessage(["parent"]);
+
+    expect(message).toContain("親を表すテキストのフィールド");
+    expect(message).not.toContain("種別");
+  });
+
+  // 選ぶことは止めない。止まるのは作成のとき（中核思想 3）。
+  it("選べることと、作成で止まることを言う", () => {
+    const message = missingProjectFieldsMessage(["parent"]);
+
+    expect(message).toContain("このまま選べます");
+    expect(message).toContain("GitHub 側で作るまで");
+    expect(message).toContain("作成は止まります");
+  });
+
+  // 押す前と押した後で、何が要るかの言い方が同じ（ADR 0030）。
+  // 切れると: 片方だけ直した日に、同じ原因に 2 通りの言い方が並ぶ。
+  it("全部足りないときの言い方は、押した後の文と同じ", () => {
+    const phrase =
+      "種別を表す単一選択のフィールド（選択肢 epic と issue）と、親を表すテキストのフィールド";
+
+    expect(missingProjectFieldsMessage(["kind_epic", "kind_issue", "parent"])).toContain(
+      phrase,
+    );
+    expect(ERROR_MESSAGES.project_field_missing).toContain(phrase);
+  });
+
+  it("フィールドの名前は書かない", () => {
+    const message = missingProjectFieldsMessage(["kind_epic", "kind_issue", "parent"]);
 
     expect(message).not.toMatch(/\bKind\b/);
     expect(message).not.toMatch(/\bParent\b/);

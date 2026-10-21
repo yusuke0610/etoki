@@ -237,6 +237,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 作成先を選ぶための一覧。ここで選んだ Project をボードに設定する。
 		api.GET("/github/repositories", h.listRepositories)
 		api.GET("/github/repositories/:owner/:repo/projects", h.listRepositoryProjects)
+		api.GET("/github/projects/:projectId/fields", h.checkProjectFields)
 	}
 
 	// 画面の配信は最後に置く。ルートに当たらなかったものだけを見るので、

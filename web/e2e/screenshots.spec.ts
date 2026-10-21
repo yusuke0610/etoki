@@ -7,6 +7,7 @@ import {
   annotationDetail,
   chooseFromMenu,
   chooseTarget,
+  confirmProject,
   drawRectangle,
   interpret,
   newBoardDialog,
@@ -191,6 +192,9 @@ test.describe("スクリーンショット", () => {
     await shot(page, "06-target-projects");
 
     await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+    await picker(page).getByText("作成に要るフィールドが揃っています").waitFor();
+    await shot(page, "06-target-project-chosen");
+    await confirmProject(page);
     await page.locator(".badge-target").waitFor();
     // バッジはキャンバスより先に出る。ここで待たないと Excalidraw の
     // 「Loading scene...」を撮ってしまい、報告に使えない画像になる。
@@ -252,6 +256,45 @@ test.describe("スクリーンショット", () => {
       .click();
     await page.getByRole("alert").waitFor();
     await shot(page, "55-target-projects-forbidden");
+  });
+
+  // 作成先を選んだときに、作成に要るフィールドが足りないと見せる（ADR 0088）。
+  // 足りないものだけが並び、確定のボタンは止めていないことを残す。
+  test("選んだ Project にフィールドが足りない状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    const target = unselectedBoard();
+    mock.boards = [summarize(target)];
+    mock.details = { [target.id]: target };
+    mock.annotations = { [target.id]: [] };
+    mock.projectFields = {
+      PVT_1: {
+        status: 200,
+        body: {
+          projectId: "PVT_1",
+          status: "missing",
+          missingFields: ["kind_issue", "parent"],
+        },
+      },
+      PVT_2: {
+        status: 200,
+        body: { projectId: "PVT_2", status: "unknown", missingFields: [] },
+      },
+    };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+
+    await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+    await picker(page).getByText("がありません", { exact: false }).waitFor();
+    await shot(page, "58-target-fields-missing");
+
+    await picker(page).getByRole("button", { name: "#4 技術的負債" }).click();
+    await picker(page).getByText("確かめられませんでした", { exact: false }).waitFor();
+    await shot(page, "59-target-fields-unknown");
   });
 
   // 固定済みでも表示名は取り直せる（ADR 0037）。確定していることと、名前だけは
@@ -442,6 +485,7 @@ test.describe("スクリーンショット", () => {
       .getByRole("button", { name: /acme\/web/ })
       .click();
     await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+    await confirmProject(page);
 
     const alert = page.getByRole("alert");
     await alert.waitFor();
