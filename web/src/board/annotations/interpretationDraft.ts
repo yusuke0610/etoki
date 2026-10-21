@@ -5,11 +5,24 @@ import type {
   ItemKind,
   SyncItem,
 } from "../../api/types";
+import { groupByEpic } from "./interpretation";
 
 /** 解釈結果の 1 件と、それを作るかどうか。 */
 export type DraftItem = {
   item: InterpretedItem;
   selected: boolean;
+
+  /**
+   * 読み上げの名前に使う番号（「1 件目のタイトル」、#300）。1 から。
+   *
+   * **内部 ID（`localId`）を名前にしない。** 読み上げで e1 / i2 のような記号が
+   * 聞こえ、どの項目かを隣の欄まで進んで推し量ることになる。
+   *
+   * **絵解いた時点の、画面に並ぶ順で振り、手直しでは変えない。** 編集の途中で
+   * 名前が変わらないこと（ADR 0024）が先にある。種別を変えると画面の並びは
+   * 組み直される（`groupByEpic`）ので、そのあとは番号と並びがずれうる。
+   */
+  ordinal: number;
 
   /**
    * 前回作ったものを書き換えるか、新しく作るか。
@@ -64,12 +77,20 @@ export type Draft = {
 
 /** 解釈結果をそのまま下書きにする。既定は全件作る。 */
 export function createDraft(result: Interpretation): Draft {
+  // 画面に並ぶ順（epic ごとにまとめ、親の無い issue は末尾）。
+  const shown = groupByEpic(result.items).flatMap((g) => [
+    ...(g.epic ? [g.epic] : []),
+    ...g.issues,
+  ]);
+  const ordinal = new Map(shown.map((item, i) => [item.localId, i + 1]));
+
   return {
     summary: result.summary,
     contentHash: result.contentHash,
     items: result.items.map((item) => ({
       item,
       selected: true,
+      ordinal: ordinal.get(item.localId) ?? 0,
       updatesPrevious: Boolean(item.previousItemId),
     })),
   };

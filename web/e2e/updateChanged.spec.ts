@@ -23,12 +23,12 @@ test.describe("changed の注釈を更新する", () => {
     // **印だけに絞って引く。** 同じ行には切り替えの選択肢（「更新する」）も
     // 並ぶので、前方一致で引くと 2 つ見つかる。
     const updating = detail.locator(".draft-item").filter({
-      has: page.getByLabel("i1 のタイトル"),
+      has: page.getByLabel("1 件目のタイトル"),
     });
     await expect(updating.getByText("更新", { exact: true })).toBeVisible();
 
     const creating = detail.locator(".draft-item").filter({
-      has: page.getByLabel("i2 のタイトル"),
+      has: page.getByLabel("2 件目のタイトル"),
     });
     await expect(creating.getByText("更新", { exact: true })).toBeHidden();
   });
@@ -56,7 +56,7 @@ test.describe("changed の注釈を更新する", () => {
     const detail = annotationDetail(page, "セッション管理");
     await interpret(card);
 
-    await detail.getByLabel("i1 を作成する").uncheck();
+    await detail.getByLabel("1 件目を作成する").uncheck();
 
     const leftBehind = detail.locator(".left-behind");
     await expect(leftBehind).toContainText("2 件");
@@ -75,12 +75,12 @@ test.describe("changed の注釈を更新する", () => {
     await interpret(card);
 
     const updating = detail.locator(".draft-item").filter({
-      has: page.getByLabel("i1 のタイトル"),
+      has: page.getByLabel("1 件目のタイトル"),
     });
     await expect(updating.getByText("更新", { exact: true })).toBeVisible();
 
     await detail
-      .getByLabel("i1 を更新するか新しく作るか")
+      .getByLabel("1 件目を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
 
     // 印は消える。LLM が言ったこととの差は残す。
@@ -122,7 +122,7 @@ test.describe("changed の注釈を更新する", () => {
     );
 
     // 書き換えるものだけになったら、作るとは言わない。
-    await detail.getByLabel("i2 を作成する").uncheck();
+    await detail.getByLabel("2 件目を作成する").uncheck();
     await expect(create).toHaveAccessibleDescription(
       "更新は取り消せません。acme/web › #1 ロードマップ の draft issue 1 件を書き換えます。" +
         "前回作った 1 件は書き換わりません。",
@@ -130,7 +130,7 @@ test.describe("changed の注釈を更新する", () => {
 
     // 新しく作るに倒すと、その項目は作るほうに数え、更新先は取り残しに戻る。
     await detail
-      .getByLabel("i1 を更新するか新しく作るか")
+      .getByLabel("1 件目を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
     await expect(create).toHaveAccessibleDescription(
       "作成は取り消せません。選んだ 1 件を acme/web › #1 ロードマップ に作ります。" +
@@ -146,8 +146,8 @@ test.describe("changed の注釈を更新する", () => {
     const detail = annotationDetail(page, "セッション管理");
     await interpret(card);
 
-    await expect(detail.getByLabel("i1 を更新するか新しく作るか")).toBeVisible();
-    await expect(detail.getByLabel("i2 を更新するか新しく作るか")).toBeHidden();
+    await expect(detail.getByLabel("1 件目を更新するか新しく作るか")).toBeVisible();
+    await expect(detail.getByLabel("2 件目を更新するか新しく作るか")).toBeHidden();
   });
 
   // 件数だけでは GitHub 側に何が増えたのか分からない。更新は増えない。

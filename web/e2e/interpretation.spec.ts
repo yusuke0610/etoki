@@ -150,16 +150,20 @@ test.describe("解釈と作成", () => {
     ).toBeVisible();
 
     // タイトルは手直しできるので入力欄に出る（ADR 0024）。
-    await expect(detail.getByLabel("e1 の種別")).toHaveValue("epic");
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
-    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("1 件目の種別")).toHaveValue("epic");
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("ログイン基盤");
+    await expect(detail.getByLabel("2 件目のタイトル")).toHaveValue(
       "メールとパスワードでログインする",
     );
-    await expect(detail.getByLabel("i2 のタイトル")).toHaveValue("ログイン失敗を数える");
+    await expect(detail.getByLabel("3 件目のタイトル")).toHaveValue(
+      "ログイン失敗を数える",
+    );
 
     // 親子は epic の下に issue が入る形で出る（ADR 0006）。
-    const epic = detail.locator("li").filter({ has: page.getByLabel("e1 のタイトル") });
-    await expect(epic.getByLabel("i1 のタイトル")).toBeVisible();
+    const epic = detail
+      .locator("li")
+      .filter({ has: page.getByLabel("1 件目のタイトル") });
+    await expect(epic.getByLabel("2 件目のタイトル")).toBeVisible();
   });
 
   // 作成は取り消せない（ADR 0009）。押す前に本文が読めていなければならない。
@@ -172,10 +176,10 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await expect(detail.getByLabel("e1 の本文")).toBeVisible();
-    await expect(detail.getByLabel("e1 の本文")).toHaveValue("入口をまとめる");
-    await expect(detail.getByLabel("i1 の本文")).toBeVisible();
-    await expect(detail.getByLabel("i1 の本文")).toHaveValue("フォームと検証");
+    await expect(detail.getByLabel("1 件目の本文")).toBeVisible();
+    await expect(detail.getByLabel("1 件目の本文")).toHaveValue("入口をまとめる");
+    await expect(detail.getByLabel("2 件目の本文")).toBeVisible();
+    await expect(detail.getByLabel("2 件目の本文")).toHaveValue("フォームと検証");
   });
 
   // 作るのか書き換えるのかは、どの項目でも押す前に読める（ADR 0026、#201）。
@@ -189,7 +193,7 @@ test.describe("解釈と作成", () => {
 
     const epic = detail
       .locator(".draft-item")
-      .filter({ has: page.getByLabel("e1 のタイトル") });
+      .filter({ has: page.getByLabel("1 件目のタイトル") });
     await expect(epic.getByText("新規", { exact: true })).toBeVisible();
     await expect(detail.getByText("作るもの（3 件を選択中）")).toBeVisible();
   });
@@ -203,7 +207,7 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("i2 を作成する").uncheck();
+    await detail.getByLabel("3 件目を作成する").uncheck();
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     // モックの応答は固定なので、この件数は「作成が終わった」ことの目印。
@@ -226,10 +230,10 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("1 件目を作成する").uncheck();
 
-    await expect(detail.getByLabel("i1 を作成する")).not.toBeChecked();
-    await expect(detail.getByLabel("i2 を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("2 件目を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("3 件目を作成する")).not.toBeChecked();
   });
 
   // 親を失ったことは黙って起こさない。作られるものが変わっている。
@@ -240,8 +244,8 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("e1 を作成する").uncheck();
-    await detail.getByLabel("i1 を作成する").check();
+    await detail.getByLabel("1 件目を作成する").uncheck();
+    await detail.getByLabel("2 件目を作成する").check();
 
     await expect(
       detail.getByText("epic に属さない issue として作られます。"),
@@ -267,8 +271,8 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("i1 のタイトル").fill("OAuth でログインする");
-    await detail.getByLabel("i1 の本文").fill("認可コードフローで受ける");
+    await detail.getByLabel("2 件目のタイトル").fill("OAuth でログインする");
+    await detail.getByLabel("2 件目の本文").fill("認可コードフローで受ける");
 
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
@@ -289,7 +293,7 @@ test.describe("解釈と作成", () => {
     await interpret(card);
 
     // epic を外すと配下も外れるので、これで 3 件とも外れる。
-    await detail.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("1 件目を作成する").uncheck();
 
     await expect(
       detail.getByRole("button", { name: "GitHub に作成する" }),
@@ -319,8 +323,8 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "セッション管理");
     await interpret(card);
 
-    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue("期限切れを弾く");
-    await expect(detail.getByLabel("i1 の種別")).toHaveCount(0);
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("期限切れを弾く");
+    await expect(detail.getByLabel("1 件目の種別")).toHaveCount(0);
   });
 
   // 解釈をやり直したら、前の結果に対する手直しは捨てる。残すと、いま画面に
@@ -332,15 +336,15 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("i1 のタイトル").fill("書き換えたタイトル");
-    await detail.getByLabel("i2 を作成する").uncheck();
+    await detail.getByLabel("2 件目のタイトル").fill("書き換えたタイトル");
+    await detail.getByLabel("3 件目を作成する").uncheck();
 
     await interpret(card);
 
-    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("2 件目のタイトル")).toHaveValue(
       "メールとパスワードでログインする",
     );
-    await expect(detail.getByLabel("i2 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("3 件目を作成する")).toBeChecked();
   });
 
   // LLM の出力は同じ入力でも揺れる。引き直した結果が前より悪かったときに
@@ -483,7 +487,7 @@ test.describe("解釈と作成", () => {
 
     // 下書き側でも、その項目は選び直せない。送り先の ID が分からないので、
     // もう一度送ると重複する。
-    const checkbox = detail.getByLabel("i1 を作成する");
+    const checkbox = detail.getByLabel("2 件目を作成する");
     await expect(checkbox).not.toBeChecked();
     await expect(checkbox).toBeDisabled();
     // 押せない理由は本文に出す（ADR 0039）。title に隠さない。
@@ -514,8 +518,8 @@ test.describe("解釈と作成", () => {
     const button = detail.getByRole("button", { name: "GitHub に作成する" });
     await expect(button).toBeDisabled();
     await expect(detail.getByText("作るものが 1 件も選ばれていません。")).toBeVisible();
-    for (const id of ["e1", "i1", "i2"]) {
-      await expect(detail.getByLabel(`${id} を作成する`)).not.toBeChecked();
+    for (const n of [1, 2, 3]) {
+      await expect(detail.getByLabel(`${n} 件目を作成する`)).not.toBeChecked();
     }
     expect(mock.createRequests).toHaveLength(1);
   });
@@ -535,11 +539,11 @@ test.describe("解釈と作成", () => {
     const history = detail.getByLabel("絵解きの結果");
     await expect(history.locator("option")).toHaveCount(2);
     // 引き直した解釈は別の下書き。こちらから作ったものは無い。
-    await expect(detail.getByLabel("e1 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("1 件目を作成する")).toBeChecked();
 
     await history.selectOption({ index: 1 });
-    for (const id of ["e1", "i1", "i2"]) {
-      await expect(detail.getByLabel(`${id} を作成する`)).not.toBeChecked();
+    for (const n of [1, 2, 3]) {
+      await expect(detail.getByLabel(`${n} 件目を作成する`)).not.toBeChecked();
     }
   });
 
@@ -565,15 +569,15 @@ test.describe("解釈と作成", () => {
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
     await expect(detail.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
 
-    await expect(detail.getByLabel("e1 を作成する")).not.toBeChecked();
-    await expect(detail.getByLabel("i1 を作成する")).toBeChecked();
-    await expect(detail.getByLabel("i2 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("1 件目を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("2 件目を作成する")).toBeChecked();
+    await expect(detail.getByLabel("3 件目を作成する")).toBeChecked();
     // epic が外れたままなら、子は親なしで作られることを先に見せる。
     await expect(
       detail.getByText("epic に属さない issue として作られます。"),
     ).toHaveCount(2);
 
-    await detail.getByLabel("e1 を作成する").check();
+    await detail.getByLabel("1 件目を作成する").check();
     await expect(detail.getByText("作成した draft issue を書き換えます。")).toBeVisible();
     await expect(
       detail.getByText("epic に属さない issue として作られます。"),
