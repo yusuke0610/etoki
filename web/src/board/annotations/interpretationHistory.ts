@@ -58,6 +58,14 @@ export type InterpretationState = {
   runs: InterpretationRun[];
   /** いま見ている解釈の id。1 件も無ければ null。 */
   selectedId: number | null;
+  /**
+   * 走っているサーバーのジョブ（ADR 0085）。始めて、ジョブが分かってから入る。
+   *
+   * **取り消しはこれがあるときだけ出す**（#330）。始める途中（画像の書き出しと
+   * 始める要求の往復）で取り消せると、同じ絵を押し直したときに同じジョブが返る
+   * 仕組みと競合し、押し直した側のジョブまで捨てうる。
+   */
+  jobId?: string;
 };
 
 /** まだ一度も解釈していない状態。 */
@@ -76,7 +84,22 @@ export const emptyInterpretation: InterpretationState = {
 export function startInterpretation(
   prev: InterpretationState = emptyInterpretation,
 ): InterpretationState {
-  return { ...prev, running: true, failure: undefined };
+  return { ...prev, running: true, failure: undefined, jobId: undefined };
+}
+
+/** 走っているジョブが分かった。 */
+export function trackJob(prev: InterpretationState, jobId: string): InterpretationState {
+  return { ...prev, jobId };
+}
+
+/**
+ * 解釈を取り消した（#330）。
+ *
+ * **失敗にはしない。** 押した人が止めたので、失敗の帯で知らせることが無い。
+ * 過去の結果と選択は残す（引き直しを始める前と同じ）。
+ */
+export function cancelInterpretation(prev: InterpretationState): InterpretationState {
+  return { ...prev, running: false, jobId: undefined };
 }
 
 /**
@@ -103,7 +126,7 @@ export function failInterpretation(
   prev: InterpretationState = emptyInterpretation,
   failure: Failure,
 ): InterpretationState {
-  return { ...prev, running: false, failure };
+  return { ...prev, running: false, failure, jobId: undefined };
 }
 
 /**

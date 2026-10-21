@@ -25,6 +25,7 @@ function props(): ComponentProps<typeof AnnotationDetail> {
       states: {},
       onInterpret: vi.fn(),
       onSelect: vi.fn(),
+      onCancel: vi.fn(),
       unavailable: null,
     },
     creation: {
@@ -588,6 +589,56 @@ describe("AnnotationDetail", () => {
 
       expect(screen.getByRole("button", { name: "絵解き中…" })).toBeDisabled();
       expect(screen.queryByText(/ほかの囲みを絵解き中/)).toBeNull();
+    });
+  });
+
+  // 走っている絵解きを、押した人が止められる（#330）。
+  describe("絵解きの取り消し", () => {
+    function withState(state: { running: boolean; jobId?: string }) {
+      const detailProps = props();
+      return {
+        ...detailProps,
+        interpretation: {
+          ...detailProps.interpretation,
+          states: { "frame-1": { ...state, runs: [], selectedId: null } },
+        },
+      };
+    }
+
+    it("走っているジョブがあれば取り消しを出し、押すと取り消す", () => {
+      const detailProps = withState({ running: true, jobId: "job-1" });
+      render(<AnnotationDetail {...detailProps} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "絵解きを取り消す" }));
+      expect(detailProps.interpretation.onCancel).toHaveBeenCalledWith("frame-1");
+    });
+
+    // ジョブが分かる前に取り消せると、押し直したときに同じジョブが返る仕組みと
+    // 競合する（`InterpretationState.jobId`）。
+    it("ジョブが分かる前は出さない", () => {
+      render(<AnnotationDetail {...withState({ running: true })} />);
+
+      expect(screen.getByRole("button", { name: "絵解き中…" })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: "絵解きを取り消す" })).toBeNull();
+    });
+
+    it("走っていなければ出さない", () => {
+      render(<AnnotationDetail {...withState({ running: false })} />);
+
+      expect(screen.queryByRole("button", { name: "絵解きを取り消す" })).toBeNull();
+    });
+
+    // 押したボタンが消えるので、焦点が body に落ちる。「絵解く」へ戻す。
+    it("取り消したら、焦点を「絵解く」へ戻す", () => {
+      const running = withState({ running: true, jobId: "job-1" });
+      const { rerender } = render(<AnnotationDetail {...running} />);
+
+      const cancel = screen.getByRole("button", { name: "絵解きを取り消す" });
+      cancel.focus();
+      fireEvent.click(cancel);
+      rerender(<AnnotationDetail {...withState({ running: false })} />);
+
+      expect(screen.getByRole("button", { name: "絵解く" })).toHaveFocus();
     });
   });
 

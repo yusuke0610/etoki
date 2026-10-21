@@ -314,6 +314,7 @@ export function BoardPage({
     states: interpretations,
     interpret,
     select: showInterpretation,
+    cancel: cancelInterpretation,
     recordCreated,
     discardAll: discardInterpretations,
   } = useInterpretations({
@@ -1053,6 +1054,7 @@ export function BoardPage({
       void interpretAfterSave(id);
     },
     onSelect: showInterpretation,
+    onCancel: cancelInterpretation,
     unavailable: interpretationUnavailable,
   };
   // 作る先の見出し。押す直前の帯の文（`creationNotice`）に出す。作成先が未選択の
