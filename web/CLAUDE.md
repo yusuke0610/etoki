@@ -61,9 +61,9 @@
   - **名前は `AnnotationMeta` に入れず、frame の `name` に書く**
     （`setAnnotationName`、ADR 0079）。`AnnotationMeta` は Go 側と同じ形を持つ
     `customData.etoki` の写しで、名前を足すとそちらと共有のテストデータまで動く。
-    `name` は `content_hash` の入力なので、作成済みの注釈の名前を変えると
-    「変更あり」になる。**名前が変わらなければ書かない。** 書くと、何も変えて
-    いないのに未保存になり、「元に戻す」にも積まれる。
+    `name` は解釈の入力だが `content_hash` には入らないので、作成済みの注釈の
+    名前を変えても状態は変わらない（#303）。**名前が変わらなければ書かない。**
+    書くと、何も変えていないのに未保存になり、「元に戻す」にも積まれる。
   - **名前欄は確定したときだけ書く**（Enter か、欄を離れたとき）。1 文字ごとに
     書くと、打つたびに未保存になり「元に戻す」に 1 文字ずつ積まれる。**変換中の
     Enter では書かない**（`isComposing`）。**「絵解く」は押しても焦点を奪わない**
@@ -699,10 +699,12 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   コードの隣でしか読めない。
 - **描かないと分からないものは axe が見る**（同じ spec）。実際の色の
   コントラストと、`aria-describedby` の指す先が実在するか。**`.excalidraw` は
-  除いて掛ける。** ライブラリ自身の DOM に etoki は手を入れられない。**ただし
-  etoki が拡張点に載せた部品（右上・下の帯・メニューの etoki の項目）は包含し
-  直している**（`web/e2e/helpers/a11y.ts` の `ETOKI_INSIDE_CANVAS`、ADR 0065）。
-  **部品を拡張点に足したら、そこにも足す。** そこの部品の**色のコントラストは
+  除いて掛ける。** etoki が手を入れていないライブラリの DOM は、違反が出ても
+  etoki には直せない。**ただし etoki が手を入れた部品は包含し直している**
+  （`web/e2e/helpers/a11y.ts` の `ETOKI_INSIDE_CANVAS`、ADR 0065 / 0039）。拡張点に
+  載せた部品（右上・下の帯・メニューの etoki の項目）と、ライブラリが描いて
+  etoki が名前を付けたメニューの入口（#299）がそれ。**部品を拡張点に足したら、
+  そこにも足す。** そこの部品の**色のコントラストは
   axe では判定できない**（ライブラリの層に重なって背景が決まらず、違反ではなく
   判定不能になる）。効くのは構造の検査だけなので、色はトークンの側で守る。
   **開かないと DOM に出ない領域は、開いた状態を 1 つずつ足す。** 図のドラフト・
@@ -938,6 +940,12 @@ cd web && bunx playwright test --ui
   手を入れているので、Excalidraw を上げると黙って戻りうる。
   `web/e2e/excalidrawMermaid.spec.ts` と `src/excalidraw/excalidrawMermaid.test.ts`
   が落ちたら、隠し方と判定の写しを見直す。
+- **Excalidraw のメニューの入口（≡）の名前は etoki が付けている**（#299、
+  ADR 0039 の追記）。0.18.1 の `MainMenu` は名前を渡す口を持たないので、
+  `useMenuTriggerName` が `data-testid="main-menu-trigger"` のボタンに
+  `aria-label` を付け、作り直されたら付け直す。Excalidraw を上げて印が変わると
+  黙って外れる。**メニューを開く spec がまとめて落ちたら**（`openBoardMenu` は
+  入口を名前で引く）、まずここを疑う。
 - **`web/vite.config.ts` の `test.include`** — vitest の既定は `*.spec.ts` も
   拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の

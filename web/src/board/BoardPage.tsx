@@ -86,6 +86,7 @@ import {
   useDragEdgeScroll,
 } from "./useCanvasScroll";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
+import { useMenuTriggerName } from "./useMenuTriggerName";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
 
@@ -703,7 +704,8 @@ export function BoardPage({
 
   /**
    * 注釈の名前を書き換える（#249）。frame の `name` に書くので、キャンバスの
-   * ラベルにも同じ名前が出る。作成済みなら状態は「変更あり」になる（ADR 0036）。
+   * ラベルにも同じ名前が出る。名前は `content_hash` に入らないので、作成済みでも
+   * 状態は変わらない（#303、ADR 0079）。
    */
   const handleChangeAnnotationName = useCallback(
     (frameId: string, name: string) => {
@@ -990,6 +992,8 @@ export function BoardPage({
   );
   useArrowKeyScroll(api, visibleCanvas);
   useDragEdgeScroll(api, visibleCanvas);
+  // etoki の操作を収めたメニューの入口に、読み上げの名前を付ける（#299）。
+  useMenuTriggerName(canvasFrame, api);
 
   // 設定していない機能は、押す前に理由を出す（ADR 0030）。null は使える、
   // または「まだ確かめていない」。
@@ -1342,11 +1346,20 @@ export function BoardPage({
         上書きしなかったことと、いま何ができるのかを本文で出す。バッジに畳むと
         「保存できていない」ことしか伝わらず、相手の変更を消したのかどうかが
         読めない（ADR 0020）。
+
+        **控える手段の場所まで言う**（#244 の追記）。「控えて」だけでは、何で控える
+        のかが分からずここで止まる。手段はメニューの「書き出し」（ADR 0045）で、
+        保存済みではなくキャンバスから出すので、弾かれた描き足しも入る。帯に同じ
+        ボタンを並べず場所を言うのは、書き出しの口を 1 つに寄せているため。
+        「≡」はアイコンを見て探す人のためのもので、読み上げではメニューの名前が
+        そのまま入口の名前になる（#299）。
       */}
       {conflicted && (
         <p className="conflict" role="alert">
           {"他の人がこのボードを保存しました。上書きしないよう未保存のまま残しています。"}
-          {"いまの内容を控えてから開き直してください。"}
+          {"いまの内容をメニュー"}
+          <span aria-hidden="true">（≡）</span>
+          {"の「書き出し」で控えてから、開き直してください。"}
         </p>
       )}
 

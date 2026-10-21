@@ -10,7 +10,7 @@
 boards.scene （SQLite に保存された Excalidraw シーン JSON）
    ↓ domain.ParseScene
 Scene.Annotations()           … customData.etoki を持つ frame 要素
-   ↓ Scene.AnnotationTexts(id)  … frameId と containerId の両方を辿る
+   ↓ Scene.AnnotationHash(a)    … 子のテキスト（frameId と containerId の両方を辿る）
    ↓ domain.ComputeContentHash  … 正規化して SHA-256（粒度と図の種別も入力）
 現在のハッシュ
    ↕ 比較（domain.DecideState）
@@ -29,6 +29,12 @@ UI は未保存の変更があることを表示する。
   で固定してある。善意で「直さない」こと。メタデータは粒度と図の種別
   （ADR 0047）の 2 つで、どちらも解釈のプロンプトに載るので、変えたら
   「変更あり」になる必要がある。
+  - **注釈の frame 自身の名前は入れない**（ADR 0079、#303）。解釈の入力
+    （`Scene.AnnotationTexts`）には先頭に入るが、ハッシュは子のテキスト
+    （`childTexts`）から出す。名前を付け替えただけで「変更あり」に落ちると、
+    戻す道が絵解き直ししか無い。**2 つの関数を 1 つに戻さないこと。** 戻すと
+    名前がまたハッシュに入る。`TestAnnotationHash_IgnoresOwnName` と
+    `TestAnnotationHash_IsChildTextsAndMetadataOnly` が落ちる。
   - **指定なしでも入力に書く**（ADR 0047）。書かない形にすれば種別を持つ前の
     値と一致させられるが、算出の入力が種別の有無で分岐する。一度きりの移行の
     ために恒久的な分岐を抱えない、という判断。**代償は移行時に一度だけ払う**

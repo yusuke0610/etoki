@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "@playwright/test";
 
 import { holdCreate, holdSave, installApi, type ApiMock } from "./helpers/api";
@@ -238,6 +240,34 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
     // 相手のシーンはそのまま。上書きしていないことをモック側でも確かめる。
     expect(mock.details[BOARD_ID]?.scene).toBe(board().scene);
+  });
+
+  // 衝突の帯は「控えてから開き直して」と言う。**控える手段の場所まで言い、
+  // 言ったとおりにすると、弾かれた描き足しが手元に残る**（#244 の追記）。
+  // 手段を言わないと、ここで止まる人が出る。
+  test("衝突の帯が言うとおりに書き出すと、弾かれた描き足しが残る", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+    const saved = (JSON.parse(board().scene) as { elements: unknown[] }).elements.length;
+    mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
+
+    await drawRectangle(page);
+    await saveScene(page);
+
+    await expect(page.locator(".conflict")).toContainText(
+      "いまの内容をメニュー（≡）の「書き出し」で控えてから、開き直してください。",
+    );
+    // 「≡」は目で探す人のための添え書きで、読み上げには入れない。入口の名前は
+    // 「メニュー」で、記号まで読むと名前と食い違う。
+    await expect(page.locator('.conflict [aria-hidden="true"]')).toHaveText("（≡）");
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      chooseFromMenu(page, "書き出し"),
+    ]);
+    const scene = JSON.parse(await readFile(await download.path(), "utf-8")) as {
+      elements: unknown[];
+    };
+    expect(scene.elements.length).toBe(saved + 1);
   });
 
   // 上限を超えたシーンは保存できない（ADR 0038）。**描いたものは失われない**

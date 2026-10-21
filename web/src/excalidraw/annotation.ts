@@ -189,8 +189,8 @@ export function setAnnotationKind(
  *
  * **名前は frame の `name` そのものに書く。** キャンバスのラベルにも同じ名前が
  * 出るので、一覧とキャンバスの名前が揃う（ADR 0022 の「どのフレームか」）。
- * `name` は `content_hash` の入力なので、作成済みの注釈の名前を変えると状態は
- * 「変更あり」になる（ADR 0036）。表示用の名前を `customData` に別に持つ案は
+ * `name` は解釈の入力だが `content_hash` には入らないので、作成済みの注釈の名前を
+ * 変えても状態は変わらない（#303）。表示用の名前を `customData` に別に持つ案は
  * 採らない。Go 側の `AnnotationMeta` と共有のテストデータまで動く（ADR 0079）。
  *
  * 前後の空白は落とし、空なら名前を外す（Excalidraw の既定の null）。**名前が
