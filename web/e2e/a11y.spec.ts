@@ -501,6 +501,33 @@ test.describe("押せない理由が本文として読める", () => {
  * **ライトとダークの両方で掛ける**（ADR 0055）。色は変数を差し替えるだけなので、
  * 片方で通っても、もう片方の文字色が AA を切っていることは見えない。
  */
+/*
+ * キャンバスのメニューの入口（≡）の名前（#299）。入口は Excalidraw が描く
+ * アイコンだけのボタンで、名前は etoki が外から付けている（`useMenuTriggerName`）。
+ * 「ボード一覧へ戻る」の口はこのメニューの中にしか無い。
+ *
+ * **置き方を切り替えても名前が残ることを見る。** Excalidraw は広い画面と
+ * スマホで入口を作り直すので、開いた時点の 1 つにだけ付ける形だと、切り替えた
+ * あとの入口が名前を失う。axe は開いた時点の置き方でしか掛けていない。
+ */
+test.describe("メニューの入口の名前", () => {
+  test("広い画面からスマホの幅に変えても、入口は名前を持つ", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    const trigger = page.getByRole("button", { name: "メニュー", exact: true });
+    await expect(trigger).toBeVisible();
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.locator(".board")).toHaveAttribute("data-layout", "phone");
+    await expect(trigger).toBeVisible();
+
+    // 名前で引いた入口が、本当にメニューを開く入口であること。
+    await trigger.click();
+    await expect(
+      page.getByRole("button", { name: "ボード一覧へ戻る", exact: true }),
+    ).toBeVisible();
+  });
+});
+
 for (const colorScheme of ["light", "dark"] as const) {
   test.describe(`axe（etoki が書いた DOM・${colorScheme}）`, () => {
     test.use({ colorScheme });

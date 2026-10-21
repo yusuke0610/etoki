@@ -86,6 +86,7 @@ import {
   useDragEdgeScroll,
 } from "./useCanvasScroll";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
+import { useMenuTriggerName } from "./useMenuTriggerName";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
 
@@ -991,6 +992,8 @@ export function BoardPage({
   );
   useArrowKeyScroll(api, visibleCanvas);
   useDragEdgeScroll(api, visibleCanvas);
+  // etoki の操作を収めたメニューの入口に、読み上げの名前を付ける（#299）。
+  useMenuTriggerName(canvasFrame, api);
 
   // 設定していない機能は、押す前に理由を出す（ADR 0030）。null は使える、
   // または「まだ確かめていない」。
