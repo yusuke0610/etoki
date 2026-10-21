@@ -478,6 +478,18 @@ describe("AnnotationDetail", () => {
       expect(hint).not.toHaveTextContent(/一致しない/);
     });
 
+    // 矢印や図形だけを描き直しても「変更あり」にならない（#301）。状態が動かない
+    // ことを言わないと、作成済みのままなのを「読み直す必要が無い」印と読む。
+    it("作成済みなら、矢印や図形だけの変更では「変更あり」にならないことを言う", () => {
+      render(<AnnotationDetail {...withState("created")} />);
+
+      const hint = screen.getByText(/GitHub にあります/);
+      expect(hint).toHaveTextContent(/矢印や図形、置き場所、絵の名前だけを直しても/);
+      expect(hint).toHaveTextContent(/「作成済み」のまま/);
+      // 何を変えれば「変更あり」になるかも言う。言わないと、どこまでが検知の外かが読めない。
+      expect(hint).toHaveTextContent(/絵の中の文字・粒度・種別/);
+    });
+
     // 中身が同じでも changed になりうる（ADR 0047）ので、変わったとは言い切らない。
     it("変更ありなら、押しても作らないことを言い、変わったとは断定しない", () => {
       render(<AnnotationDetail {...withState("changed")} />);
