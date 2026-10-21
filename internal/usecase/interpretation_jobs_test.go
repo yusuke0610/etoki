@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -295,6 +296,48 @@ func TestJobs_FailureKeepsReasonKind(t *testing.T) {
 			}
 			if done.Result != nil {
 				t.Error("失敗したジョブに Result が入っている")
+			}
+		})
+	}
+}
+
+// ジョブの失敗はリクエストに結びつかないので、HTTP 層の記録（failLLM）を通らない。
+// 原因ごとに分けた sentinel（ADR 0087）も、ジョブの側で呼び出しの失敗として残す。
+// 記録の側に足し忘れると、その原因だけ記録から消える。
+func TestJobs_LogsEveryLLMCallFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"cause unknown", errors.New("connection refused")},
+		{"truncated", fmt.Errorf("stop: %w", port.ErrLLMTruncated)},
+		{"refused", fmt.Errorf("stop: %w", port.ErrLLMRefused)},
+		{"overloaded", fmt.Errorf("529: %w", port.ErrLLMOverloaded)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			buf, logger := captureLogs()
+			svc := usecase.NewInterpretationService(
+				&fakeBoards{board: newBoard(interpretScene), owner: "u1"}, &fakeMappings{},
+				&fakeLLM{err: tt.err}, newLimiter(),
+				usecase.WithMaxAttempts(1), usecase.WithLogger(logger))
+			jobs := usecase.NewInterpretationJobs(svc)
+			ctx := asUser(t.Context(), "u1")
+
+			job, err := jobs.Start(ctx, "board-1", "annot-1", nil)
+			if err != nil {
+				t.Fatalf("Start() = %v", err)
+			}
+			// 記録は結果を書くのと同じロックの中で残すので、終わったと読めた時点で
+			// 書き終わっている。
+			waitJob(t, jobs, ctx, job.ID)
+
+			if got := buf.String(); !strings.Contains(got, `level=ERROR msg="llm call failed"`) {
+				t.Errorf("log = %q, want llm call failed", got)
 			}
 		})
 	}

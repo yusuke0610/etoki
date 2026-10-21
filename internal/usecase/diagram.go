@@ -274,7 +274,7 @@ func (s *DiagramService) complete(
 		resp, err := s.llm.Complete(ctx, llmReq)
 		if err != nil {
 			// 接続やモデル側の失敗は指摘で直る問題ではないので再送しない。
-			return "", usage, fmt.Errorf("%w (attempt %d): %w", ErrLLMUnavailable, attempt, err)
+			return "", usage, llmCallError(attempt, err)
 		}
 		usage.addTokens(resp.Usage)
 
