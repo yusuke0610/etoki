@@ -484,7 +484,9 @@ describe("AnnotationDetail", () => {
       render(<AnnotationDetail {...withState("created")} />);
 
       const hint = screen.getByText(/GitHub にあります/);
-      expect(hint).toHaveTextContent(/矢印や図形、置き場所、絵の名前だけを直しても/);
+      expect(hint).toHaveTextContent(
+        /矢印や図形、貼った画像、置き場所、絵の名前だけを直しても/,
+      );
       expect(hint).toHaveTextContent(/「作成済み」のまま/);
       // 何を変えれば「変更あり」になるかも言う。言わないと、どこまでが検知の外かが読めない。
       expect(hint).toHaveTextContent(/絵の中の文字・粒度・種別/);
