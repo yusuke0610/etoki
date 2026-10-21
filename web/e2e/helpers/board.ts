@@ -203,6 +203,16 @@ export async function chooseTarget(
 ): Promise<void> {
   await picker(page).getByRole("button", { name: repository }).click();
   await picker(page).getByRole("button", { name: project }).click();
+  // Project は押して選び、確定は別のボタンで行う（ADR 0088）。
+  await confirmProject(page);
+}
+
+/**
+ * 選んだ Project を作成先として確定する（ADR 0088）。確かめた結果を待たない。
+ * 結果で確定を止めない、が画面の約束なので、待たずに押せることもここで通る。
+ */
+export async function confirmProject(page: Page): Promise<void> {
+  await picker(page).getByRole("button", { name: "この Project にする" }).click();
 }
 
 /** 注釈 1 つぶんのカード。名前で絞り込む。 */

@@ -608,6 +608,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/github/projects/{projectId}/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Projects v2 の GraphQL の node ID（`Project.id`） */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 作成先の Project に、作成に要るフィールドが揃っているかを返す
+         * @description 作成先を選ぶ画面が、Project を選んだときに 1 度だけ引く（ADR 0088）。
+         *     draft issue の種別と親は Project のカスタムフィールドで表すので
+         *     （ADR 0006）、足りないと作成は 422 `project_field_missing` で止まる。
+         *     それを押す前に見せるための口。
+         *
+         *     **判定ではない。** 実際に作れるかは作成時に GitHub が返したものが正しい。
+         *     これを見て選択も作成も止めない。GitHub に問い合わせられなかったときは
+         *     エラーにせず `unknown` を返す（`ProjectAccess` と同じ扱い、ADR 0017）。
+         *
+         *     **フィールドの名前は返さない。** 名前は設定で変わり、知っているのは起動の
+         *     配線だけ。返すのは足りない役割（`ProjectFieldRequirement`）まで。
+         */
+        get: operations["checkProjectFields"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards/{id}/annotations": {
         parameters: {
             query?: never;
@@ -925,9 +958,16 @@ export interface components {
          *
          *     **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
          *     畳むと画面が「何を設定すればよいか」を言えなくなる。
+         *
+         *     LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
+         *     （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+         *     （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+         *     LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+         *     混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+         *     別の code で返る。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
+        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "llm_truncated" | "llm_refused" | "llm_overloaded" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -1305,6 +1345,39 @@ export interface components {
              *     どちらなのかを知らない（ADR 0025）
              */
             url: string;
+        };
+        /**
+         * @description 作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0088）。
+         *
+         *     - `kind_epic` … 種別を表す単一選択のフィールドの選択肢 epic
+         *     - `kind_issue` … 同じフィールドの選択肢 issue
+         *     - `parent` … 親を表すテキストのフィールド
+         * @enum {string}
+         */
+        ProjectFieldRequirement: "kind_epic" | "kind_issue" | "parent";
+        /**
+         * @description 作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+         *
+         *     - `ok` … 揃っている
+         *     - `missing` … 足りないものがある。何が足りないかは `missingFields`
+         *     - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+         *       **ok / missing のどちらにも倒さない**
+         * @enum {string}
+         */
+        ProjectFieldsStatus: "ok" | "missing" | "unknown";
+        /** @description 作成先の Project のフィールドを確かめた結果。表示のための材料で、判定には使わない */
+        ProjectFieldsCheck: {
+            /**
+             * @description 確かめた Project。画面は選び直しの前後で応答を取り違えないよう、
+             *     これで照合する
+             */
+            projectId: string;
+            status: components["schemas"]["ProjectFieldsStatus"];
+            /**
+             * @description 足りないもの。`status` が `missing` のときだけ要素を持ち、それ以外は
+             *     空配列
+             */
+            missingFields: components["schemas"]["ProjectFieldRequirement"][];
         };
         /**
          * @description ボード作成のリクエストボディ。
@@ -1955,6 +2028,8 @@ export interface components {
         UserId: string;
         /** @description リポジトリ所有者の login */
         RepositoryOwner: string;
+        /** @description Projects v2 の GraphQL の node ID（`Project.id`） */
+        ProjectId: string;
         /** @description リポジトリ名 */
         RepositoryName: string;
     };
@@ -2834,6 +2909,42 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description GitHub が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    checkProjectFields: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Projects v2 の GraphQL の node ID（`Project.id`） */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 確かめた結果。確かめられなかったときも 200 で `unknown` を返す */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectFieldsCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
             /** @description GitHub が設定されていない */
             503: {
                 headers: {

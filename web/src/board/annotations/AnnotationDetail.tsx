@@ -653,6 +653,7 @@ function AnnotationFace({
           <InterpretationSection
             annotationId={id}
             granularity={a.granularity}
+            syncState={a.state}
             state={interpretation.states[id]}
             creation={creation.states[id]}
             saving={creation.saving}

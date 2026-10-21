@@ -90,6 +90,9 @@ const (
 	ErrorCodeInviteeChanged              ErrorCode = "invitee_changed"
 	ErrorCodeLastOwner                   ErrorCode = "last_owner"
 	ErrorCodeLlmNotConfigured            ErrorCode = "llm_not_configured"
+	ErrorCodeLlmOverloaded               ErrorCode = "llm_overloaded"
+	ErrorCodeLlmRefused                  ErrorCode = "llm_refused"
+	ErrorCodeLlmTruncated                ErrorCode = "llm_truncated"
 	ErrorCodeLlmUnavailable              ErrorCode = "llm_unavailable"
 	ErrorCodeLoginRequired               ErrorCode = "login_required"
 	ErrorCodeMcpConnectionsNotConfigured ErrorCode = "mcp_connections_not_configured"
@@ -144,6 +147,12 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeLastOwner:
 		return true
 	case ErrorCodeLlmNotConfigured:
+		return true
+	case ErrorCodeLlmOverloaded:
+		return true
+	case ErrorCodeLlmRefused:
+		return true
+	case ErrorCodeLlmTruncated:
 		return true
 	case ErrorCodeLlmUnavailable:
 		return true
@@ -253,6 +262,48 @@ func (e ProjectAccess) Valid() bool {
 	case ProjectAccessDenied:
 		return true
 	case ProjectAccessUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectFieldRequirement.
+const (
+	ProjectFieldRequirementKindEpic  ProjectFieldRequirement = "kind_epic"
+	ProjectFieldRequirementKindIssue ProjectFieldRequirement = "kind_issue"
+	ProjectFieldRequirementParent    ProjectFieldRequirement = "parent"
+)
+
+// Valid indicates whether the value is a known member of the ProjectFieldRequirement enum.
+func (e ProjectFieldRequirement) Valid() bool {
+	switch e {
+	case ProjectFieldRequirementKindEpic:
+		return true
+	case ProjectFieldRequirementKindIssue:
+		return true
+	case ProjectFieldRequirementParent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectFieldsStatus.
+const (
+	ProjectFieldsStatusMissing ProjectFieldsStatus = "missing"
+	ProjectFieldsStatusOk      ProjectFieldsStatus = "ok"
+	ProjectFieldsStatusUnknown ProjectFieldsStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProjectFieldsStatus enum.
+func (e ProjectFieldsStatus) Valid() bool {
+	switch e {
+	case ProjectFieldsStatusMissing:
+		return true
+	case ProjectFieldsStatusOk:
+		return true
+	case ProjectFieldsStatusUnknown:
 		return true
 	default:
 		return false
@@ -933,6 +984,13 @@ type DiagramTurn struct {
 //
 // **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
 // 畳むと画面が「何を設定すればよいか」を言えなくなる。
+//
+// LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
+// （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+// （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+// LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+// 混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+// 別の code で返る。
 type ErrorCode string
 
 // ErrorResponse 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
@@ -947,6 +1005,13 @@ type ErrorResponse struct {
 	//
 	// **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
 	// 畳むと画面が「何を設定すればよいか」を言えなくなる。
+	//
+	// LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
+	// （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+	// （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+	// LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+	// 混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+	// 別の code で返る。
 	Code ErrorCode `json:"code"`
 
 	// Error 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
@@ -1194,6 +1259,40 @@ type Project struct {
 //     倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
 type ProjectAccess string
 
+// ProjectFieldRequirement 作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0088）。
+//
+// - `kind_epic` … 種別を表す単一選択のフィールドの選択肢 epic
+// - `kind_issue` … 同じフィールドの選択肢 issue
+// - `parent` … 親を表すテキストのフィールド
+type ProjectFieldRequirement string
+
+// ProjectFieldsCheck 作成先の Project のフィールドを確かめた結果。表示のための材料で、判定には使わない
+type ProjectFieldsCheck struct {
+	// MissingFields 足りないもの。`status` が `missing` のときだけ要素を持ち、それ以外は
+	// 空配列
+	MissingFields []ProjectFieldRequirement `json:"missingFields"`
+
+	// ProjectID 確かめた Project。画面は選び直しの前後で応答を取り違えないよう、
+	// これで照合する
+	ProjectID string `json:"projectId"`
+
+	// Status 作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+	//
+	// - `ok` … 揃っている
+	// - `missing` … 足りないものがある。何が足りないかは `missingFields`
+	// - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+	//   **ok / missing のどちらにも倒さない**
+	Status ProjectFieldsStatus `json:"status"`
+}
+
+// ProjectFieldsStatus 作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+//
+//   - `ok` … 揃っている
+//   - `missing` … 足りないものがある。何が足りないかは `missingFields`
+//   - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+//     **ok / missing のどちらにも倒さない**
+type ProjectFieldsStatus string
+
 // RenameBoardRequest 改名のリクエストボディ。
 //
 // 名前だけを持つ。作成先やシーンを一緒に送れる形にすると、この経路でも
@@ -1402,6 +1501,9 @@ type BoardID = string
 
 // JobID defines model for JobId.
 type JobID = string
+
+// ProjectID defines model for ProjectId.
+type ProjectID = string
 
 // RepositoryName defines model for RepositoryName.
 type RepositoryName = string

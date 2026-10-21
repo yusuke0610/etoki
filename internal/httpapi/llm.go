@@ -42,8 +42,8 @@ func (h *handlers) failLLM(c *gin.Context, err, rejected error) {
 		c.AbortWithStatus(statusClientClosedRequest)
 		return
 
-	case errors.Is(err, usecase.ErrLLMUnavailable):
-		// 認証や接続の失敗。API キーはアダプタ側でエラーに載せていない。
+	case usecase.IsLLMCallFailure(err):
+		// 呼び出しそのものの失敗。API キーはアダプタ側でエラーに載せていない。
 		h.logger.ErrorContext(c.Request.Context(), "llm call failed",
 			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
 

@@ -18,7 +18,7 @@ var (
 
 	// ErrConcurrencyLimited は同時に走っている実行が上限に達したことを表す。
 	//
-	// **上流の LLM が混んでいることではない。** そちらは ErrLLMUnavailable。
+	// **上流の LLM が混んでいることではない。** そちらは ErrLLMOverloaded。
 	// 混同すると、画面が「設定を確かめる」と「少し待つ」を言い分けられない。
 	ErrConcurrencyLimited = errors.New("etoki: too many concurrent llm calls")
 )

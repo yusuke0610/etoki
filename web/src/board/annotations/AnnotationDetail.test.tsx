@@ -441,6 +441,58 @@ describe("AnnotationDetail", () => {
     expect(screen.queryByRole("button", { name: "GitHub に作成する" })).toBeNull();
   });
 
+  // 引いた解釈はメモリにしか無い（#39）ので、開き直すと作成済みでも変更ありでも
+  // 「引く前」の本文になる。状態で分けないと、作成済みなのに「まだ」と言い、変更
+  // ありの次の一手が無い（#290）。
+  describe("解釈の前の本文は、同期の状態で分ける", () => {
+    function withState(state: "uncreated" | "created" | "changed") {
+      return {
+        ...props(),
+        annotations: [
+          { id: "frame-1", name: "ログイン", granularity: "" as const, state },
+        ],
+      };
+    }
+
+    it("未作成なら、まだ絵解きしていないと言う", () => {
+      render(<AnnotationDetail {...withState("uncreated")} />);
+
+      const hint = screen.getByText(/まだ絵解きしていません/);
+      expect(hint).toHaveTextContent(/作るものの下書きを出します/);
+    });
+
+    it("作成済みなら「まだ」と言わず、GitHub にあることと更新の候補を言う", () => {
+      render(<AnnotationDetail {...withState("created")} />);
+
+      expect(screen.queryByText(/まだ絵解きしていません/)).toBeNull();
+      const hint = screen.getByText(/GitHub にあります/);
+      // 開き直すと結果が消えることも言う。言わないと、出ていないのを作っていない印と読む。
+      expect(hint).toHaveTextContent(/画面を開いているあいだしか持たない/);
+      expect(hint).toHaveTextContent(
+        /開き直したり保存したりすると、ここには出なくなります/,
+      );
+      expect(hint).toHaveTextContent(/前回作ったものの更新を候補にした下書き/);
+      expect(hint).toHaveTextContent(/押しただけでは何も作りません/);
+      expect(hint).toHaveTextContent(/項目ごとに選べます/);
+      // 変更ありの文を出していないこと。共通の後半だけでは取り違えても通る。
+      expect(hint).not.toHaveTextContent(/一致しない/);
+    });
+
+    // 中身が同じでも changed になりうる（ADR 0047）ので、変わったとは言い切らない。
+    it("変更ありなら、押しても作らないことを言い、変わったとは断定しない", () => {
+      render(<AnnotationDetail {...withState("changed")} />);
+
+      expect(screen.queryByText(/まだ絵解きしていません/)).toBeNull();
+      const hint = screen.getByText(/前回作ったものの更新を候補にした下書き/);
+      expect(hint).toHaveTextContent(/押しただけでは何も作りません/);
+      expect(hint).toHaveTextContent(/項目ごとに選べます/);
+      expect(hint).toHaveTextContent(/一致しないという印/);
+      expect(hint).toHaveTextContent(/中身を書き換えていなくても付く/);
+      expect(hint).not.toHaveTextContent(/変わりました/);
+      expect(hint).not.toHaveTextContent(/GitHub にあります/);
+    });
+  });
+
   // 未保存でも押させる。押した操作の中で保存してから読む（#247、`BoardPage`）。
   // 止めると、粒度や種別を選び直した直後に押せなくなる。保存がほかの注釈の結果も
   // 捨てることは本文で言う。

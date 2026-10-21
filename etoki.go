@@ -334,7 +334,11 @@ func New(opts Options) (*Server, error) {
 			opts.Boards, opts.Mappings, opts.GitHub, locks,
 			usecase.WithFieldNames(opts.KindFieldName, opts.ParentFieldName),
 		)
-		deps.Catalog = usecase.NewGitHubCatalogService(opts.GitHub)
+		// 名前は作成と同じ値を渡す。押す前の確認が別の名前を見ると、確認と
+		// 作成の答えが食い違う（#292）。
+		deps.Catalog = usecase.NewGitHubCatalogService(opts.GitHub,
+			usecase.ProjectFieldNames{Kind: opts.KindFieldName, Parent: opts.ParentFieldName},
+			opts.Logger)
 	}
 
 	handler := httpapi.NewRouter(deps)

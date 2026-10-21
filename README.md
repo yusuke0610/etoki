@@ -256,8 +256,8 @@ Messages API 形状（`/v1/messages`）も公開していて、0.34.4 では
 応じて 4k / 32k / 256k で、4k だと入力と出力の合計が 4096 トークンに達した時点で
 `stop_reason` が `max_tokens` になります（etoki が送る上限の 16000 には届いて
 いなくても）。解釈は再送のたびに入力が増えるので、4k では 2 回目で切れやすく
-なります。`etoki: llm call failed ... response truncated: stopped at N output tokens,
-before our limit` と出たら、Ollama 側で広げてください。
+なります。「LLM の応答が途中で打ち切られました」と出て、詳細に
+`stopped at N output tokens, before our limit` とあれば、Ollama 側で広げてください。
 
 ```sh
 OLLAMA_CONTEXT_LENGTH=16384 ollama serve
@@ -305,6 +305,10 @@ repo の read はリポジトリの一覧に使います。無いと選択肢が
 名前は `ETOKI_GITHUB_KIND_FIELD` / `ETOKI_GITHUB_PARENT_FIELD` で変えられます。
 足りない場合、作成は実行せずに何を作ればよいかを返します。黙って作ると種別も
 親子も無い draft issue が並ぶだけになるためです。
+
+作成先の Project を選んだときにも確かめて、足りないものを見せます
+（[ADR 0088](docs/adr/0088-check-project-fields-when-choosing.md)）。**選ぶのは
+止めません。** 先にブレストを始めて、フィールドは作成までに足せば足ります。
 
 ### GitHub App でログインする
 
