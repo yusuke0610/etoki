@@ -634,6 +634,8 @@ export function BoardPage({
   // 図のドラフト（LLM に作らせる・mermaid を貼る・置く）。`useDiagramDraft`。
   const {
     chat,
+    prompt: diagramPrompt,
+    setPrompt: setDiagramPrompt,
     generate: generateDiagram,
     changeKind: handleChangeKind,
     placeDraft,
@@ -647,6 +649,9 @@ export function BoardPage({
     updateElements,
     // 置いた図を見せる。スマホでは全面のパネルがキャンバスを隠している（#199）。
     onPlaced: closePhonePanel,
+    // 未設定のうちは引かない。capabilities が届くまで（null）も待つ。viewer には
+    // 生成の口を出さない（下の `canEdit`）ので、引いても見せる先が無い。
+    enabled: capabilities?.diagramDraft === true && canEdit,
   });
 
   /**
@@ -1289,6 +1294,8 @@ export function BoardPage({
                   <ErrorBoundary name="図のドラフト" recovery="remount">
                     <DiagramChatPanel
                       chat={chat}
+                      prompt={diagramPrompt}
+                      onPromptChange={setDiagramPrompt}
                       onChangeKind={handleChangeKind}
                       onSend={generateDiagram}
                       onPlace={() => void placeDraft()}

@@ -37,8 +37,8 @@ var wantMappings = map[string]wantMapping{
 		usecase.ErrBoardNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 	"usecase.ErrAnnotationNotFound": {
 		usecase.ErrAnnotationNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
-	"usecase.ErrInterpretationJobNotFound": {
-		usecase.ErrInterpretationJobNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
+	"usecase.ErrJobNotFound": {
+		usecase.ErrJobNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 	"port.ErrNotFound": {
 		port.ErrNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 

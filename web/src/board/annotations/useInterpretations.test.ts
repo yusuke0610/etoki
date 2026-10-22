@@ -11,7 +11,7 @@ import type {
   SyncItem,
 } from "../../api/types";
 import { exportAnnotationImage } from "../../excalidraw/image";
-import { JOB_POLL_MAX_FAILURES } from "./interpretationJobs";
+import { JOB_POLL_MAX_FAILURES } from "../jobPolling";
 import { useInterpretations } from "./useInterpretations";
 
 // 画像の書き出しは canvas が要るので jsdom では動かない（`web/CLAUDE.md`）。
