@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { boardsApi } from "../api/boards";
 import type { BoardDetail, BoardTarget } from "../api/types";
@@ -16,6 +16,8 @@ export type NewBoardFlow = {
   template: TemplateChoice;
   /** 作成しようとしているボードの名前。null なら作成中ではない。 */
   creating: string | null;
+  /** 作成先を選ばずに作っているあいだ（`createWithoutTarget`）。 */
+  submitting: boolean;
   openDialog: () => void;
   setName: (name: string) => void;
   setTemplate: (template: TemplateChoice) => void;
@@ -39,6 +41,16 @@ export type NewBoardFlow = {
    * **失敗は投げる。** 作成先の選択（`RepositoryPicker`）が受けて表示する。
    */
   create: (target: BoardTarget) => Promise<BoardDetail | null>;
+  /**
+   * 作成先を選ばずに、ダイアログからそのまま作る（ADR 0090）。**GitHub が
+   * 未設定の構成でだけ使う。** 作成先の候補を引けないので、選択画面に進むと
+   * 行き止まりになる。進めなかった（名前が空・確認で断られた・作っている
+   * 最中）なら null。
+   *
+   * `confirm` の意味は `start` と同じ。**失敗は投げる。** ダイアログは開いた
+   * まま入力を残すので、呼ぶ側が通知で知らせる。
+   */
+  createWithoutTarget: (confirm: () => boolean) => Promise<BoardDetail | null>;
 };
 
 /**
@@ -54,8 +66,12 @@ export function useNewBoardFlow(): NewBoardFlow {
   const [template, setTemplate] = useState<TemplateChoice>(BLANK_TEMPLATE);
   // **作成先はボードを作る前に選ばせる**（ADR 0017）。書ける Project を持たない
   // 人はここで先へ進めず、それが「作成にはリポジトリへのアクセス権が要る」
-  // ことの表れになる。
+  // ことの表れになる。GitHub が未設定の構成だけは選ばずに作る（ADR 0090）。
   const [creating, setCreating] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  // 作成先を選ばずに作る口の二重押しを、押した時点で弾く。state だと同じ tick に
+  // 届いた 2 回目がまだ false を読み、同じ名前のボードが 2 枚できる。
+  const submittingRef = useRef(false);
 
   const openDialog = useCallback(() => setDialogOpen(true), []);
 
@@ -104,12 +120,36 @@ export function useNewBoardFlow(): NewBoardFlow {
     [creating, template],
   );
 
+  const createWithoutTarget = useCallback(
+    async (confirm: () => boolean) => {
+      if (submittingRef.current) return null;
+      // 進めない入力で確認だけ出さない（`start` と同じ順）。
+      if (!name.trim()) return null;
+      if (!confirm()) return null;
+
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        const board = await boardsApi.create(name.trim(), null, templateScene(template));
+        setDialogOpen(false);
+        setName("");
+        setTemplate(BLANK_TEMPLATE);
+        return board;
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    },
+    [name, template],
+  );
+
   return useMemo(
     () => ({
       dialogOpen,
       name,
       template,
       creating,
+      submitting,
       openDialog,
       setName,
       setTemplate,
@@ -118,18 +158,21 @@ export function useNewBoardFlow(): NewBoardFlow {
       backToDialog,
       leave,
       create,
+      createWithoutTarget,
     }),
     [
       dialogOpen,
       name,
       template,
       creating,
+      submitting,
       openDialog,
       start,
       cancel,
       backToDialog,
       leave,
       create,
+      createWithoutTarget,
     ],
   );
 }

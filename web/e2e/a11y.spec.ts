@@ -132,29 +132,6 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる（ADR 0021）。
-  // GitHub が未設定ならボードを作れない（作成先を選べない、ADR 0030）。名前と
-  // ひな形を決めたあとで行き止まりにしないよう、押す前に止めて理由を出す（#200）。
-  test("新しいボード：GitHub が未設定のとき", async ({ page }) => {
-    const mock = baseMock();
-    mock.capabilities = {
-      status: 200,
-      body: {
-        interpretation: true,
-        diagramDraft: true,
-        creation: false,
-        sharing: true,
-        mcpConnections: false,
-      },
-    };
-    await installApi(page, mock);
-    await page.goto("/");
-
-    await expectBlockedReason(
-      page.getByRole("button", { name: "新しいボード", exact: true }),
-      "GitHub が未設定です。",
-    );
-  });
-
   test("作成先を変更：未保存のとき", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
@@ -595,6 +572,28 @@ for (const colorScheme of ["light", "dark"] as const) {
       await installApi(page, baseMock());
       await page.goto("/");
       await newBoardDialog(page);
+
+      await expectNoAxeViolations(page);
+    });
+
+    // GitHub が未設定の構成では、作成先を選ばずに作ることをダイアログで言う
+    // （ADR 0090）。**その構成でしか出ない文**なので、上の検査には掛かっていない。
+    test("新しいボードのダイアログを開いた状態（GitHub が未設定）", async ({ page }) => {
+      const mock = baseMock();
+      mock.capabilities = {
+        status: 200,
+        body: {
+          interpretation: true,
+          diagramDraft: true,
+          creation: false,
+          sharing: true,
+          mcpConnections: false,
+        },
+      };
+      await installApi(page, mock);
+      await page.goto("/");
+      const dialog = await newBoardDialog(page);
+      await dialog.getByText("作成先は選ばずに作ります", { exact: false }).waitFor();
 
       await expectNoAxeViolations(page);
     });

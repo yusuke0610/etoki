@@ -20,9 +20,6 @@ export type BoardList = {
   fetchedAt: Date;
 };
 
-/** 「新しいボード」を押せない理由の id。理由は 1 つしか出さないので固定でよい。 */
-const NEW_BOARD_BLOCKED_ID = "new-board-blocked";
-
 type Props = {
   /** ログインしている相手。認証を設定していない構成では無い。 */
   user: SessionStatus["user"];
@@ -31,10 +28,12 @@ type Props = {
   boards: BoardList | null;
   onOpen: (id: string) => void;
   /**
-   * 新しいボードを作れない理由（GitHub が未設定）。作れるなら、または
-   * まだ確かめていなければ null（ADR 0030）。
+   * ボードを作るときと、作成先が未選択のボードを開くときに、作成先を選ぶか。
+   * GitHub が未設定と分かっている構成だけ false（ADR 0090）。**まだ確かめて
+   * いなければ true**（ADR 0030 の「引けていないうちは止めない」と同じ向きで、
+   * いつもの流れに倒す）。
    */
-  creationUnavailable: string | null;
+  choosesTarget: boolean;
   /**
    * MCP の接続を扱えない理由（ADR 0076）。扱えるなら、またはまだ確かめて
    * いなければ null（ADR 0030）。
@@ -48,9 +47,14 @@ type Props = {
     onOpen: () => void;
     onNameChange: (name: string) => void;
     onTemplateChange: (template: TemplateChoice) => void;
-    /** 名前を確定して作成先の選択に進む。ここではまだ作らない。 */
+    /**
+     * 名前を確定して作成先の選択に進む。ここではまだ作らない。作成先を選ばない
+     * 構成（`choosesTarget` が false）では、ここで作る。
+     */
     onNext: () => void;
     onCancel: () => void;
+    /** 作成先を選ばずに作っているあいだ。 */
+    submitting: boolean;
   };
 };
 
@@ -72,7 +76,7 @@ export function BoardListPage({
   onLogout,
   boards,
   onOpen,
-  creationUnavailable,
+  choosesTarget,
   connectionsUnavailable,
   dialog,
 }: Props) {
@@ -116,24 +120,16 @@ export function BoardListPage({
           <h2>ボード</h2>
           <div className="list-title-action">
             {/*
-              作れないことは押す前に見せる（ADR 0030）。押してから作成先の選択
-              画面で知らせると、名前とひな形を決めたあとで行き止まりになる。
-              **理由はボタンの隣に置く**（ADR 0066）。
+              **どの構成でも止めない**（ADR 0090）。GitHub が未設定なら作成先を
+              選ばずに作る。止めていたころは、LLM を設定しなくてもブレストだけ
+              先にできるという約束（ADR 0008）が、GitHub を設定するまで果たされ
+              なかった。
             */}
-            {creationUnavailable !== null && (
-              <p className="hint" id={NEW_BOARD_BLOCKED_ID}>
-                {creationUnavailable}
-              </p>
-            )}
             <button
               ref={newBoard}
               type="button"
               className="primary"
               onClick={dialog.onOpen}
-              disabled={creationUnavailable !== null}
-              aria-describedby={
-                creationUnavailable !== null ? NEW_BOARD_BLOCKED_ID : undefined
-              }
             >
               新しいボード
             </button>
@@ -168,6 +164,7 @@ export function BoardListPage({
                         key={board.id}
                         board={board}
                         now={boards.fetchedAt}
+                        choosesTarget={choosesTarget}
                         onOpen={onOpen}
                       />
                     ))}
@@ -185,6 +182,8 @@ export function BoardListPage({
         onNameChange={dialog.onNameChange}
         template={dialog.template}
         onTemplateChange={dialog.onTemplateChange}
+        choosesTarget={choosesTarget}
+        submitting={dialog.submitting}
         onNext={dialog.onNext}
         onCancel={dialog.onCancel}
         // 閉じたら「新しいボード」へ焦点を戻す。作成先の選択から戻って開き

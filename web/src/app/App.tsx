@@ -84,7 +84,8 @@ export function App() {
       }),
     [notify],
   );
-  // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
+  // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる（GitHub が
+  // 未設定の構成を除く、ADR 0090）。
   const [picking, setPicking] = useState(false);
   // 新しいボードを作るまでの流れ（`useNewBoardFlow`）。ダイアログの開閉と入力、
   // 作成先を選んでいる最中のボードの名前を持つ。
@@ -93,6 +94,7 @@ export function App() {
     name,
     template,
     creating,
+    submitting: creatingWithoutTarget,
     openDialog: openCreatingDialog,
     setName,
     setTemplate,
@@ -101,6 +103,7 @@ export function App() {
     backToDialog: backToCreatingDialog,
     leave: leaveCreating,
     create: createBoard,
+    createWithoutTarget: createBoardWithoutTarget,
   } = useNewBoardFlow();
   // ログイン状態（`useSession`）。session が null のあいだは問い合わせ中。
   const {
@@ -121,6 +124,11 @@ export function App() {
   // LLM や GitHub を設定しなくても etoki は起動する（ADR 0008）。設定していない
   // 機能は押した後に 503 で返るだけなので、押す前に見せるために引く。
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  // 作成先を選ぶか。GitHub が未設定と分かっている構成だけ選ばない（ADR 0090）。
+  // 候補を引けないので、選択画面に入ると行き止まりになる。**まだ確かめて
+  // いなければ選ぶ**（いつもの流れに倒す。ADR 0030 の「引けていないうちは
+  // 止めない」と同じ向き）。
+  const choosesTarget = unavailableReason(capabilities, "creation") === null;
   // 開いているボードに未保存の変更があるか。BoardPage から上がってくる。
   //
   // キャンバスから離れる導線はこちら側にあるので、判断の材料をここに置く。
@@ -359,11 +367,12 @@ export function App() {
     showLocation(NO_BOARD, "replace");
   }, [confirmDiscard, showLocation, startNewBoard]);
 
-  /** 作成先が決まったのでボードを作る。失敗は picker が表示する（`useNewBoardFlow`）。 */
-  const createWithTarget = useCallback(
-    async (target: BoardTarget) => {
-      const board = await createBoard(target);
-      if (board === null) return;
+  /**
+   * 作ったボードを開く。作成先を選んで作ったときも、選ばずに作ったときも
+   * 同じ形で開く。
+   */
+  const openCreated = useCallback(
+    async (board: BoardDetail) => {
       await reload();
       // 走っている取得を無効にする（ログアウトと同じ理由）。作ったボードを
       // 開いた直後に、前のボードの応答が着いて上書きするのを止める。
@@ -374,8 +383,35 @@ export function App() {
       // 作ったボードを開いた状態。**積む。** 「戻る」で作成の手前に戻れる。
       showLocation({ boardId: board.id, picking: false }, "push");
     },
-    [createBoard, openings, reload, showLocation],
+    [openings, reload, showLocation],
   );
+
+  /** 作成先が決まったのでボードを作る。失敗は picker が表示する（`useNewBoardFlow`）。 */
+  const createWithTarget = useCallback(
+    async (target: BoardTarget) => {
+      const board = await createBoard(target);
+      if (board === null) return;
+      await openCreated(board);
+    },
+    [createBoard, openCreated],
+  );
+
+  /**
+   * 作成先を選ばずに、ダイアログからそのまま作る（GitHub が未設定の構成、
+   * ADR 0090）。**失敗は通知で知らせる。** 選択画面を通らないので、失敗を
+   * 出す場所がほかに無い。ダイアログは開いたまま入力を残す。
+   */
+  const createWithoutTarget = useCallback(async () => {
+    let board: BoardDetail | null;
+    try {
+      board = await createBoardWithoutTarget(confirmDiscard);
+    } catch (e) {
+      showFailure(describeFailure("ボードを作成できませんでした", e));
+      return;
+    }
+    if (board === null) return;
+    await openCreated(board);
+  }, [confirmDiscard, createBoardWithoutTarget, openCreated, showFailure]);
 
   /**
    * サーバーが返したボードで手元を差し替える。
@@ -652,7 +688,7 @@ export function App() {
             onLogout={() => void logout()}
             boards={boards}
             onOpen={(id) => void open(id)}
-            creationUnavailable={unavailableReason(capabilities, "creation")}
+            choosesTarget={choosesTarget}
             connectionsUnavailable={unavailableReason(capabilities, "mcpConnections")}
             dialog={{
               open: creatingDialog,
@@ -661,11 +697,16 @@ export function App() {
               onOpen: openCreatingDialog,
               onNameChange: setName,
               onTemplateChange: setTemplate,
-              onNext: startCreating,
+              onNext: choosesTarget ? startCreating : () => void createWithoutTarget(),
               onCancel: cancelCreating,
+              submitting: creatingWithoutTarget,
             }}
           />
-        ) : picking || current.projectId === "" ? (
+        ) : picking || (current.projectId === "" && choosesTarget) ? (
+          // 未選択のボードは作成先の選択から始める（ADR 0014）。**GitHub が未設定と
+          // 分かっている構成では始めない**（ADR 0090）。候補を引けず、選べないまま
+          // 一覧へ戻るしかなくなる。キャンバスをそのまま開き、作成のところで
+          // 「GitHub が未設定」と言う（ADR 0030）。
           <RepositoryPicker
             key={current.id}
             title={current.name}

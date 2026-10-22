@@ -729,6 +729,50 @@ func TestNewPassesSetupHintsToRouter(t *testing.T) {
 	}
 }
 
+// unusedGitHub は「GitHub を設定した」状態を作るためだけの GitHubClient。
+//
+// 中身は呼ばない（呼べば埋め込んだ nil で落ちる）。New が見るのは nil かどうか
+// だけで、ここで確かめたいのはその分岐。
+type unusedGitHub struct{ port.GitHubClient }
+
+// 作成先を選ばずにボードを作れるのは、GitHub を組み立てていない構成だけ
+// （ADR 0090）。GitHub のある構成で省けると、「ボードの作成にはリポジトリへの
+// アクセス権が要る」（ADR 0017 の要件 1）が外れる。判定はユースケース層に
+// あり、どちらに倒すかを決めるのは New なので、分岐はここでしか確かめられない。
+func TestNew_CreatesBoardsWithoutTargetOnlyWithoutGitHub(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		github port.GitHubClient
+		want   int
+	}{
+		"GitHub なし": {github: nil, want: http.StatusCreated},
+		"GitHub あり": {github: unusedGitHub{}, want: http.StatusBadRequest},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := options(t, "")
+			opts.GitHub = tc.github
+			srv, err := etoki.New(opts)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+				"/api/boards", strings.NewReader(`{"name":"設計会"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Host = "127.0.0.1:8080"
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d (%s)", rec.Code, tc.want, rec.Body)
+			}
+		})
+	}
+}
+
 // fakeAuthenticator は「認証を設定した」状態を作るためだけの Authenticator。
 //
 // 中身は呼ばない。New が見るのは nil かどうかだけ。

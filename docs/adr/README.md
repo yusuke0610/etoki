@@ -91,3 +91,4 @@
 | [0086](0086-screen-vocabulary-e-and-ekidoki.md)                  | 画面の語彙を「絵」「絵解き」に揃え、「フレーム」は Excalidraw の枠だけを指す | 採用                 |
 | [0087](0087-split-llm-call-failures-by-remedy.md)                | LLM の呼び出しの失敗は、打ち手ごとに code を分ける                           | 採用                 |
 | [0088](0088-check-project-fields-when-choosing.md)               | 作成先を選んだときに、作成に要るフィールドが揃っているかを見せる             | 採用                 |
+| [0090](0090-boards-without-target-when-github-is-unset.md)       | GitHub を設定していない構成では、作成先を選ばずにボードを作れる              | 採用                 |

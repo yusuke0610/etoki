@@ -1,16 +1,34 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
+import { installApi, type ApiMock } from "./helpers/api";
+import { summarize } from "./helpers/boardData";
 import {
   annotationCard,
   annotationDetail,
   interpret,
+  newBoardDialog,
   openAnnotationDetail,
   openBoardMenu,
   openBoardWithMock,
   openShareDialog,
+  waitForBoard,
 } from "./helpers/board";
-import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
+import { BOARD_ID, baseMock, board, unselectedBoard } from "./helpers/fixtures";
+
+/** GitHub だけが未設定の構成（ADR 0030 / 0090）。 */
+function withoutGitHub(mock: ApiMock): ApiMock {
+  mock.capabilities = {
+    status: 200,
+    body: {
+      interpretation: true,
+      diagramDraft: true,
+      creation: false,
+      sharing: true,
+      mcpConnections: false,
+    },
+  };
+  return mock;
+}
 
 /**
  * 設定していない機能の見せ方（ADR 0030）。
@@ -97,36 +115,86 @@ test.describe("設定していない機能", () => {
     ).toBeVisible();
   });
 
-  // 表示名の取り直しは GitHub の Project 一覧を引く（ADR 0037）。設定して
-  // いない構成では押しても引けないので、押させずに理由を出す。
-  // ボードを作るには作成先が要り、GitHub が未設定だと選べない（ADR 0017）。
-  // 名前とひな形を決めて「次へ」を押した先で知らせると、決めた手間が無駄になる。
-  // **押す前に止める**（#200、ADR 0030 の残りを決めた）。
-  test("GitHub が未設定なら、新しいボードを押させず理由を出す", async ({ page }) => {
-    const mock = baseMock();
-    mock.capabilities = {
-      status: 200,
-      body: {
-        interpretation: true,
-        diagramDraft: true,
-        creation: false,
-        sharing: true,
-        mcpConnections: false,
-      },
-    };
+  // GitHub が未設定でもブレストを始められる（ADR 0090、#297）。作成先の候補を
+  // 引けないので、選ばずに作り、そのままキャンバスを開く。止めていたころは、
+  // LLM を設定しなくてもブレストだけ先にできるという約束（ADR 0008）が、
+  // GitHub を設定するまで果たされなかった。
+  //
+  // **送ったリクエストに作成先が無いことまで見る。** 画面が同じでも、選んだ体の
+  // 値を送る実装では未選択のボードにならない。
+  test("GitHub が未設定なら、作成先を選ばずにボードを作り、そのまま開く", async ({
+    page,
+  }) => {
+    const mock = withoutGitHub(baseMock());
     await installApi(page, mock);
     await page.goto("/");
 
-    const button = page.getByRole("button", { name: "新しいボード", exact: true });
-    // 黙って消さない。そういう操作があることは見えている。
-    await expect(button).toBeVisible();
-    await expect(button).toBeDisabled();
-    // 押した後に 503 で返る理由と同じ文言（`capability.ts`）。
-    await expect(button).toHaveAccessibleDescription(/GitHub が未設定です。/);
-    // 開けるボードは開ける。止めるのは作ることだけ。
+    const dialog = await newBoardDialog(page);
+    // 作成先の選択を挟まないことを、押す前に言う（中核思想 3）。
     await expect(
-      page.locator(".board-list").getByRole("button", { name: BOARD_NAME }),
-    ).toBeEnabled();
+      dialog.getByText("GitHub が未設定なので、作成先は選ばずに作ります。", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByText("設定したあとで開くと選べます。", { exact: false }),
+    ).toBeVisible();
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    // 選択画面へ進まず、ここで作るので「作成」と名乗る。
+    await expect(dialog.getByRole("button", { name: "次へ" })).toHaveCount(0);
+    const created = page.waitForRequest(
+      (req) => req.method() === "POST" && new URL(req.url()).pathname === "/api/boards",
+    );
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
+
+    const body = (await created).postDataJSON() as Record<string, unknown>;
+    expect(body.name).toBe("ブレスト");
+    for (const key of ["repositoryOwner", "repositoryName", "projectId"]) {
+      expect(body, key).not.toHaveProperty(key);
+    }
+    await waitForBoard(page, "ブレスト");
+    await expect(page.locator(".picker")).toHaveCount(0);
+  });
+
+  // 作成先が未選択のボードは、開くと作成先の選択から始まる（ADR 0014）。
+  // GitHub が未設定なら候補を引けず、選べないまま一覧へ戻るしかない。キャンバスを
+  // そのまま開く（ADR 0090）。**一覧のカードも「開くと作成先を選べます」と
+  // 言わない。** 言うと、押した先がキャンバスなのに約束と違う。
+  test("GitHub が未設定なら、作成先が未選択のボードもそのまま開く", async ({ page }) => {
+    const mock = withoutGitHub(baseMock());
+    const legacy = unselectedBoard();
+    mock.boards = [summarize(legacy), ...mock.boards];
+    mock.details[legacy.id] = legacy;
+    mock.annotations[legacy.id] = [];
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const card = page.locator(".board-list").getByRole("button", { name: legacy.name });
+    await expect(card).not.toHaveAccessibleDescription(/開くと作成先を選べます/);
+    await expect(page.locator(".board-card.unselected")).toHaveCount(0);
+    await card.click();
+
+    await waitForBoard(page, legacy.name);
+    await expect(page.locator(".picker")).toHaveCount(0);
+  });
+
+  // 作成先を省けるのは GitHub が未設定と分かっている構成だけ。使える機能を
+  // 引けていないうちは、いつもの流れ（作成先を選ぶ）に倒す。
+  test("使える機能を引けないうちは、新しいボードは作成先の選択へ進む", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.capabilities = { status: 500, body: { code: "internal", error: "boom" } };
+    await installApi(page, mock);
+    await page.goto("/");
+
+    const dialog = await newBoardDialog(page);
+    await expect(
+      dialog.getByText("作成先は選ばずに作ります", { exact: false }),
+    ).toHaveCount(0);
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    await dialog.getByRole("button", { name: "次へ" }).click();
+    await expect(page.locator(".picker")).toBeVisible();
   });
 
   // 確かめていないことを「使えない」に倒さない（中核思想 3）。
@@ -141,6 +209,8 @@ test.describe("設定していない機能", () => {
     ).toBeEnabled();
   });
 
+  // 表示名の取り直しは GitHub の Project 一覧を引く（ADR 0037）。設定して
+  // いない構成では押しても引けないので、押させずに理由を出す。
   test("GitHub が未設定なら、作成先の名前も取り直させない", async ({ page }) => {
     const mock = baseMock();
     mock.details[BOARD_ID] = { ...board(), targetLocked: true };
