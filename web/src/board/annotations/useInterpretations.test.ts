@@ -298,7 +298,7 @@ describe("useInterpretations", () => {
       void hook.current.interpret("a1");
     });
     await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
-    act(() => hook.current.cancel("a1"));
+    await act(() => hook.current.cancel("a1"));
 
     expect(s.discard).toHaveBeenCalledWith("b1", "j1");
     const state = hook.current.states.a1;
@@ -326,7 +326,7 @@ describe("useInterpretations", () => {
     act(() => {
       pending = hook.current.interpret("a1");
     });
-    act(() => hook.current.cancel("a1"));
+    await act(() => hook.current.cancel("a1"));
     expect(s.discard).not.toHaveBeenCalled();
     expect(hook.current.states.a1?.running).toBe(true);
 
@@ -349,7 +349,7 @@ describe("useInterpretations", () => {
       void hook.current.interpret("a1");
     });
     await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
-    act(() => hook.current.cancel("a1"));
+    await act(() => hook.current.cancel("a1"));
 
     await act(() => hook.current.interpret("a1"));
     expect(hook.current.states.a1?.runs[0]?.result.summary).toBe("やり直した");
@@ -363,10 +363,81 @@ describe("useInterpretations", () => {
     const { result: hook } = render();
 
     await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
-    act(() => hook.current.cancel("a1"));
+    await act(() => hook.current.cancel("a1"));
 
     expect(s.discard).toHaveBeenCalledWith("b1", "j1");
     expect(hook.current.states.a1?.running).toBe(false);
+  });
+
+  // 取り消しを送っても、サーバーが受けたとは限らない（#330 のレビュー）。受けて
+  // いないのに画面だけ止めると、ジョブは走り続けて枠を握り、開き直すと戻ってくる。
+  it("取り消しが失敗したら、絵解き中のまま見に行き続け、取り消せなかったと出す", async () => {
+    const s = stubApi();
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob.mockResolvedValue(job("j1", "running"));
+    s.discard.mockRejectedValueOnce(new ApiError(500, "internal", "boom"));
+    const { result: hook } = render();
+
+    act(() => {
+      void hook.current.interpret("a1");
+    });
+    await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
+    await act(() => hook.current.cancel("a1"));
+
+    const state = hook.current.states.a1;
+    expect(state?.running).toBe(true);
+    expect(state?.jobId).toBe("j1");
+    expect(state?.cancelling).toBe(false);
+    expect(state?.failure?.message).toMatch(/^絵解きを取り消せませんでした/);
+
+    // 見に行き続ける。押し直せば、もう一度取り消せる。
+    const calls = s.getJob.mock.calls.length;
+    await waitFor(() => expect(s.getJob.mock.calls.length).toBeGreaterThan(calls));
+    await act(() => hook.current.cancel("a1"));
+    expect(hook.current.states.a1?.running).toBe(false);
+  });
+
+  // 消えていた（受け取り済みや期限切れ）なら、サーバーにはもう無い。取り消せている。
+  it("取り消しが 404 なら、取り消せたものとして扱う", async () => {
+    const s = stubApi();
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob.mockResolvedValue(job("j1", "running"));
+    s.discard.mockRejectedValueOnce(new ApiError(404, "not_found", "gone"));
+    const { result: hook } = render();
+
+    act(() => {
+      void hook.current.interpret("a1");
+    });
+    await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
+    await act(() => hook.current.cancel("a1"));
+
+    expect(hook.current.states.a1?.running).toBe(false);
+    expect(hook.current.states.a1?.failure).toBeUndefined();
+  });
+
+  it("取り消しの返事を待つあいだは、取り消し中にする", async () => {
+    const s = stubApi();
+    const discarded = deferred<void>();
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob.mockResolvedValue(job("j1", "running"));
+    s.discard.mockReturnValueOnce(discarded.promise);
+    const { result: hook } = render();
+
+    act(() => {
+      void hook.current.interpret("a1");
+    });
+    await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = hook.current.cancel("a1");
+    });
+    expect(hook.current.states.a1?.cancelling).toBe(true);
+    expect(hook.current.states.a1?.running).toBe(true);
+
+    discarded.resolve();
+    await act(() => pending);
+    expect(hook.current.states.a1?.running).toBe(false);
+    expect(hook.current.states.a1?.cancelling).toBe(false);
   });
 
   it("画面を離れても、ジョブは止めない。見に行くのをやめるだけ", async () => {

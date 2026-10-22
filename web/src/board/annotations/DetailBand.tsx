@@ -18,6 +18,8 @@ export type InterpretControl = {
    * 待ち、ジョブが分かる前）は undefined で、口を出さない。
    */
   onCancel?: () => void;
+  /** 取り消しを送って、返事を待っているあいだ（`InterpretationState.cancelling`）。 */
+  cancelling?: boolean;
 };
 
 /** 帯の「GitHub に作成する」。解釈を 1 件選んでいるときだけ渡す。 */
@@ -65,6 +67,11 @@ export function DetailBand({
     refocusAfterCancel.current = false;
     interpretButton.current?.focus();
   }, [interpret.running]);
+  // 取り消せなかった（走ったまま返事が来た）。ボタンは残るので焦点も動かさない。
+  // 印を残すと、あとで解釈が終わったときに焦点が勝手に移る。
+  useEffect(() => {
+    if (interpret.running && !interpret.cancelling) refocusAfterCancel.current = false;
+  }, [interpret.running, interpret.cancelling]);
 
   return (
     <div className="annotation-detail-band">
@@ -95,7 +102,11 @@ export function DetailBand({
             interpret.onCancel?.();
           }}
         >
-          絵解きを取り消す
+          {/*
+            返事を待つあいだも押せるままにする（2 回目はフックが弾く）。止めると
+            焦点が落ち、取り消せなかったときに戻す先が無い。
+          */}
+          {interpret.cancelling ? "取り消し中…" : "絵解きを取り消す"}
         </button>
       )}
 

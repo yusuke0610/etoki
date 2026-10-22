@@ -1,17 +1,19 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { boardsApi } from "../../api/boards";
+import { ApiError, boardsApi } from "../../api/boards";
 import { describeFailure } from "../../api/errorMessage";
 import type { AnnotationStatus, Granularity, SyncItem } from "../../api/types";
 import { exportAnnotationImage } from "../../excalidraw/image";
 import { createGenerations } from "../generation";
 import {
   addInterpretation,
+  cancelFailed,
   cancelInterpretation,
   failInterpretation,
   recordCreated as recordCreatedIn,
   selectInterpretation,
+  startCancel,
   startInterpretation,
   trackJob,
   type InterpretationState,
@@ -54,8 +56,12 @@ export type Interpretations = {
    *
    * **ジョブが分かる前は何もしない**（`InterpretationState.jobId`）。画面は
    * `jobId` があるときだけ取り消しの口を出す。
+   *
+   * **サーバーが受けたと分かってから止める。** 取り消せなかったら走っている
+   * 扱いのまま理由を出す（`cancelFailed`）。失敗の状態はここで更新するので、
+   * 呼ぶ側は待たなくてよい（`void cancel(...)`）。
    */
-  cancel: (annotationId: string) => void;
+  cancel: (annotationId: string) => Promise<void>;
   /** 作ったものを、それを作った解釈に結びつける（ADR 0052）。 */
   recordCreated: (
     annotationId: string,
@@ -303,21 +309,55 @@ export function useInterpretations({
     };
   }, [boardId, discardJob, enabled, generations, settle, track]);
 
+  // 取り消しの返事を待っている注釈。同じ tick に届いた 2 回目を弾く（state は
+  // 描画のあとでしか新しくならない）。
+  const cancelling = useRef(new Set<string>());
+
   const cancel = useCallback(
-    (annotationId: string) => {
+    async (annotationId: string) => {
       const jobId = tracked.current.get(annotationId);
-      if (jobId === undefined) return;
+      if (jobId === undefined || cancelling.current.has(annotationId)) return;
+      cancelling.current.add(annotationId);
+      setStates((prev) => {
+        const state = prev[annotationId];
+        return state ? { ...prev, [annotationId]: startCancel(state) } : prev;
+      });
+
+      try {
+        await boardsApi.discardInterpretationJob(boardId, jobId);
+      } catch (e) {
+        // 404 はもうサーバーに無い（受け取り済みや期限切れ）。取り消せている。
+        if (!(e instanceof ApiError && e.status === 404)) {
+          setStates((prev) => {
+            const state = prev[annotationId];
+            if (!state) return prev;
+            return {
+              ...prev,
+              [annotationId]: cancelFailed(
+                state,
+                describeFailure("絵解きを取り消せませんでした", e),
+              ),
+            };
+          });
+          return;
+        }
+      } finally {
+        cancelling.current.delete(annotationId);
+      }
+
+      // 返事を待つあいだに終わって積まれたか、保存で捨てられた。止めるものが無い。
+      if (tracked.current.get(annotationId) !== jobId) return;
       tracked.current.delete(annotationId);
+      jobIds.current.delete(jobId);
       // 世代を進めて、見に行っているぶんを止める。止めたジョブを見に行き続けると、
       // 消えたジョブの 404 を失敗として出す。
       generations.start(annotationId);
-      discardJob(jobId);
       setStates((prev) => {
         const state = prev[annotationId];
         return state ? { ...prev, [annotationId]: cancelInterpretation(state) } : prev;
       });
     },
-    [discardJob, generations],
+    [boardId, generations],
   );
 
   /**

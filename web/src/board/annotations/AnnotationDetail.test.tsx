@@ -594,7 +594,11 @@ describe("AnnotationDetail", () => {
 
   // 走っている絵解きを、押した人が止められる（#330）。
   describe("絵解きの取り消し", () => {
-    function withState(state: { running: boolean; jobId?: string }) {
+    function withState(state: {
+      running: boolean;
+      jobId?: string;
+      cancelling?: boolean;
+    }) {
       const detailProps = props();
       return {
         ...detailProps,
@@ -615,6 +619,16 @@ describe("AnnotationDetail", () => {
 
     // ジョブが分かる前に取り消せると、押し直したときに同じジョブが返る仕組みと
     // 競合する（`InterpretationState.jobId`）。
+    it("取り消しの返事を待つあいだは、取り消し中と出す", () => {
+      render(
+        <AnnotationDetail
+          {...withState({ running: true, jobId: "job-1", cancelling: true })}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "取り消し中…" })).toBeEnabled();
+    });
+
     it("ジョブが分かる前は出さない", () => {
       render(<AnnotationDetail {...withState({ running: true })} />);
 

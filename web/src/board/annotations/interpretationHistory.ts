@@ -66,6 +66,12 @@ export type InterpretationState = {
    * 仕組みと競合し、押し直した側のジョブまで捨てうる。
    */
   jobId?: string;
+  /**
+   * 取り消しを送って、返事を待っているあいだ。**取り消せたと分かるまでは走って
+   * いる扱いのまま**（`running` は true）。サーバーが受けていないのに画面だけ
+   * 止めると、ジョブは走り続けて枠を握り、開き直すと戻ってくる。
+   */
+  cancelling?: boolean;
 };
 
 /** まだ一度も解釈していない状態。 */
@@ -84,7 +90,13 @@ export const emptyInterpretation: InterpretationState = {
 export function startInterpretation(
   prev: InterpretationState = emptyInterpretation,
 ): InterpretationState {
-  return { ...prev, running: true, failure: undefined, jobId: undefined };
+  return {
+    ...prev,
+    running: true,
+    failure: undefined,
+    jobId: undefined,
+    cancelling: undefined,
+  };
 }
 
 /** 走っているジョブが分かった。 */
@@ -99,7 +111,23 @@ export function trackJob(prev: InterpretationState, jobId: string): Interpretati
  * 過去の結果と選択は残す（引き直しを始める前と同じ）。
  */
 export function cancelInterpretation(prev: InterpretationState): InterpretationState {
-  return { ...prev, running: false, jobId: undefined };
+  return { ...prev, running: false, jobId: undefined, cancelling: false };
+}
+
+/** 取り消しを送った。返事が来るまでは走っている扱いのまま。 */
+export function startCancel(prev: InterpretationState): InterpretationState {
+  return { ...prev, cancelling: true, failure: undefined };
+}
+
+/**
+ * 取り消せなかった。**走っている扱いのまま、理由を出す。** 見に行くのも続ける
+ * ので、終われば結果が積まれる。押し直せば、もう一度取り消せる。
+ */
+export function cancelFailed(
+  prev: InterpretationState,
+  failure: Failure,
+): InterpretationState {
+  return { ...prev, cancelling: false, failure };
 }
 
 /**
@@ -126,7 +154,7 @@ export function failInterpretation(
   prev: InterpretationState = emptyInterpretation,
   failure: Failure,
 ): InterpretationState {
-  return { ...prev, running: false, failure, jobId: undefined };
+  return { ...prev, running: false, failure, jobId: undefined, cancelling: false };
 }
 
 /**

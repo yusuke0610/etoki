@@ -152,6 +152,7 @@ export function InterpretationSection({
     // 取り消せるのは、走っているジョブが分かってから（`InterpretationState.jobId`）。
     // 保存の待ちや、始める途中では出さない。
     onCancel: running && state?.jobId !== undefined ? onCancelInterpretation : undefined,
+    cancelling: state?.cancelling ?? false,
   };
 
   return (

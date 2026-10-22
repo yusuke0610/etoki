@@ -5,6 +5,7 @@ import type { Granularity, Interpretation, SyncItem } from "../../api/types";
 import { createGenerations } from "../generation";
 import {
   addInterpretation,
+  cancelFailed,
   cancelInterpretation,
   emptyInterpretation,
   failInterpretation,
@@ -13,6 +14,7 @@ import {
   recordCreated,
   selectedInterpretation,
   selectInterpretation,
+  startCancel,
   startInterpretation,
   trackJob,
   type InterpretationRun,
@@ -233,5 +235,30 @@ describe("走っているジョブ", () => {
     expect(cancelled.failure).toBeUndefined();
     expect(cancelled.runs.map((r) => r.id)).toEqual([1]);
     expect(cancelled.selectedId).toBe(1);
+  });
+});
+
+// 取り消しを送っても、サーバーが受けたと分かるまでは走っている扱いのまま。
+describe("取り消しの返事", () => {
+  it("返事を待つあいだは走ったまま、取り消し中にする", () => {
+    const state = startCancel(
+      trackJob(startInterpretation(emptyInterpretation), "job-1"),
+    );
+
+    expect(state.running).toBe(true);
+    expect(state.jobId).toBe("job-1");
+    expect(state.cancelling).toBe(true);
+  });
+
+  it("取り消せなかったら、走ったまま理由を出す", () => {
+    const pending = startCancel(
+      trackJob(startInterpretation(emptyInterpretation), "job-1"),
+    );
+    const state = cancelFailed(pending, failure);
+
+    expect(state.running).toBe(true);
+    expect(state.jobId).toBe("job-1");
+    expect(state.cancelling).toBe(false);
+    expect(state.failure).toBe(failure);
   });
 });
