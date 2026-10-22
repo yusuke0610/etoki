@@ -28,7 +28,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # e2e と同じく git の認証を使わない（codegen drift の git も作業ツリーを
+      # 見るだけ）。依存コードを動かす（make setup 以降）ので、checkout が
+      # .git に残すトークンを読ませない（#338）。
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@v31
         with:
