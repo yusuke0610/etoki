@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi, type ApiMock } from "./helpers/api";
+import { holdBoardList, installApi, type ApiMock } from "./helpers/api";
 import { summarize } from "./helpers/boardData";
 import {
   annotationCard,
@@ -154,6 +154,62 @@ test.describe("設定していない機能", () => {
     }
     await waitForBoard(page, "ブレスト");
     await expect(page.locator(".picker")).toHaveCount(0);
+  });
+
+  // 作ったら、一覧の読み直しを待たずに開く。待つと、ダイアログが閉じたあとの
+  // 一覧で別のボードを開けてしまい、読み直しのあとで作ったボードが確認なしに
+  // 上書きする。**読み直しを止めたまま開くことを見る。**
+  test("作ったボードは、一覧の読み直しを待たずに開く", async ({ page }) => {
+    const mock = withoutGitHub(baseMock());
+    await installApi(page, mock);
+    await page.goto("/");
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: board().name }),
+    ).toBeVisible();
+
+    let release: () => void = () => {};
+    await holdBoardList(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
+
+    await waitForBoard(page, "ブレスト");
+    release();
+  });
+
+  // 作れなかった理由はダイアログの中に出す。モーダルで開いたダイアログは
+  // 最上位の層に載るので、外の通知はその下に隠れて読めない。
+  test("作れなかったら、ダイアログの中に理由を出して入力を残す", async ({ page }) => {
+    const mock = withoutGitHub(baseMock());
+    await installApi(page, mock);
+    await page.route(
+      (url) => url.pathname === "/api/boards",
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.fallback();
+          return;
+        }
+        await route.fulfill({
+          status: 500,
+          json: { code: "internal", error: "boom" },
+        });
+      },
+    );
+    await page.goto("/");
+
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
+
+    await expect(dialog.getByRole("alert")).toContainText("ボードを作成できませんでした");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("ボード名")).toHaveValue("ブレスト");
+    await expect(dialog.getByRole("button", { name: "作成", exact: true })).toBeEnabled();
   });
 
   // 作成先が未選択のボードは、開くと作成先の選択から始まる（ADR 0014）。

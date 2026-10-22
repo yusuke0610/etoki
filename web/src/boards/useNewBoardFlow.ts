@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { boardsApi } from "../api/boards";
+import { describeFailure, type Failure } from "../api/errorMessage";
 import type { BoardDetail, BoardTarget } from "../api/types";
 import {
   BLANK_TEMPLATE,
@@ -18,6 +19,12 @@ export type NewBoardFlow = {
   creating: string | null;
   /** 作成先を選ばずに作っているあいだ（`createWithoutTarget`）。 */
   submitting: boolean;
+  /**
+   * 作成先を選ばずに作れなかった理由（`createWithoutTarget`）。ダイアログの中に
+   * 出す。**通知には出さない。** `showModal()` で開いたダイアログは最上位の層に
+   * 載り、外の通知はその下に隠れる。
+   */
+  failure: Failure | null;
   openDialog: () => void;
   setName: (name: string) => void;
   setTemplate: (template: TemplateChoice) => void;
@@ -47,8 +54,8 @@ export type NewBoardFlow = {
    * 行き止まりになる。進めなかった（名前が空・確認で断られた・作っている
    * 最中）なら null。
    *
-   * `confirm` の意味は `start` と同じ。**失敗は投げる。** ダイアログは開いた
-   * まま入力を残すので、呼ぶ側が通知で知らせる。
+   * `confirm` の意味は `start` と同じ。**失敗は投げずに `failure` に置き、null を
+   * 返す。** ダイアログは開いたまま入力を残し、理由をその中に出す。
    */
   createWithoutTarget: (confirm: () => boolean) => Promise<BoardDetail | null>;
 };
@@ -69,6 +76,7 @@ export function useNewBoardFlow(): NewBoardFlow {
   // ことの表れになる。GitHub が未設定の構成だけは選ばずに作る（ADR 0090）。
   const [creating, setCreating] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
   // 作成先を選ばずに作る口の二重押しを、押した時点で弾く。state だと同じ tick に
   // 届いた 2 回目がまだ false を読み、同じ名前のボードが 2 枚できる。
   const submittingRef = useRef(false);
@@ -96,6 +104,8 @@ export function useNewBoardFlow(): NewBoardFlow {
     setDialogOpen(false);
     setName("");
     setTemplate(BLANK_TEMPLATE);
+    // やめた入力で作れなかった理由を、次に開いたときに出さない。
+    setFailure(null);
   }, []);
 
   const backToDialog = useCallback(() => {
@@ -129,12 +139,17 @@ export function useNewBoardFlow(): NewBoardFlow {
 
       submittingRef.current = true;
       setSubmitting(true);
+      // 押し直したら前の理由は消す。残すと、作り直している最中にも前の失敗が出る。
+      setFailure(null);
       try {
         const board = await boardsApi.create(name.trim(), null, templateScene(template));
         setDialogOpen(false);
         setName("");
         setTemplate(BLANK_TEMPLATE);
         return board;
+      } catch (e) {
+        setFailure(describeFailure("ボードを作成できませんでした", e));
+        return null;
       } finally {
         submittingRef.current = false;
         setSubmitting(false);
@@ -150,6 +165,7 @@ export function useNewBoardFlow(): NewBoardFlow {
       template,
       creating,
       submitting,
+      failure,
       openDialog,
       setName,
       setTemplate,
@@ -166,6 +182,7 @@ export function useNewBoardFlow(): NewBoardFlow {
       template,
       creating,
       submitting,
+      failure,
       openDialog,
       start,
       cancel,

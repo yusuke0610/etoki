@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, boardsApi } from "../api/boards";
+import { describeFailure } from "../api/errorMessage";
 import type { BoardDetail, BoardTarget } from "../api/types";
 import { BLANK_TEMPLATE, templateScene } from "../excalidraw/template";
 import { useNewBoardFlow } from "./useNewBoardFlow";
@@ -258,23 +259,72 @@ describe("useNewBoardFlow の createWithoutTarget", () => {
     expect(result.current.dialogOpen).toBe(true);
   });
 
-  it("作れなかったら投げ、ダイアログと入力を残す", async () => {
-    vi.spyOn(boardsApi, "create").mockRejectedValue(
-      new ApiError(500, "test_unknown", "boom"),
-    );
+  // 理由はダイアログの中に出す（`failure`）。モーダルのダイアログの外に出す
+  // 通知は、ダイアログの下に隠れて読めない。
+  it("作れなかったら理由を持って null を返し、ダイアログと入力を残す", async () => {
+    const error = new ApiError(500, "test_unknown", "boom");
+    vi.spyOn(boardsApi, "create").mockRejectedValue(error);
     const { result } = typed("新しいボード");
     act(() => result.current.setTemplate("sequence"));
 
+    let board: BoardDetail | null = created;
     await act(async () => {
-      await expect(result.current.createWithoutTarget(() => true)).rejects.toThrow(
-        "boom",
-      );
+      board = await result.current.createWithoutTarget(() => true);
     });
 
+    expect(board).toBeNull();
+    expect(result.current.failure).toEqual(
+      describeFailure("ボードを作成できませんでした", error),
+    );
     expect(result.current.dialogOpen).toBe(true);
     expect(result.current.name).toBe("新しいボード");
     expect(result.current.template).toBe("sequence");
     expect(result.current.submitting).toBe(false);
+  });
+
+  it("押し直したら、作っているあいだは前の理由を出さない", async () => {
+    const create = vi
+      .spyOn(boardsApi, "create")
+      .mockRejectedValueOnce(new ApiError(500, "test_unknown", "boom"));
+    const { result } = typed("新しいボード");
+    await act(async () => {
+      await result.current.createWithoutTarget(() => true);
+    });
+    expect(result.current.failure).not.toBeNull();
+
+    let resolve: (b: BoardDetail) => void = () => {};
+    create.mockReturnValueOnce(
+      new Promise<BoardDetail>((r) => {
+        resolve = r;
+      }),
+    );
+    let retried: Promise<BoardDetail | null> = Promise.resolve(null);
+    act(() => {
+      retried = result.current.createWithoutTarget(() => true);
+    });
+
+    expect(result.current.submitting).toBe(true);
+    expect(result.current.failure).toBeNull();
+    await act(async () => {
+      resolve(created);
+      await retried;
+    });
+  });
+
+  it("やめたら理由を消し、次に開いたときに出さない", async () => {
+    vi.spyOn(boardsApi, "create").mockRejectedValue(
+      new ApiError(500, "test_unknown", "boom"),
+    );
+    const { result } = typed("新しいボード");
+    await act(async () => {
+      await result.current.createWithoutTarget(() => true);
+    });
+    expect(result.current.failure).not.toBeNull();
+
+    act(() => result.current.cancel());
+    act(() => result.current.openDialog());
+
+    expect(result.current.failure).toBeNull();
   });
 
   // 押した時点で弾く。state だと同じ tick の 2 回目がまだ false を読み、同じ

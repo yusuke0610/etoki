@@ -95,6 +95,7 @@ export function App() {
     template,
     creating,
     submitting: creatingWithoutTarget,
+    failure: creationFailure,
     openDialog: openCreatingDialog,
     setName,
     setTemplate,
@@ -370,10 +371,14 @@ export function App() {
   /**
    * 作ったボードを開く。作成先を選んで作ったときも、選ばずに作ったときも
    * 同じ形で開く。
+   *
+   * **一覧の読み直しを待たずに開く。** 待つあいだは一覧が触れる（作成先を
+   * 選ばずに作ったときは、ダイアログがもう閉じている）。そこで開いた別の
+   * ボードを、読み直しのあとで作ったボードが確認なしに上書きし、描き始めて
+   * いれば未保存の変更ごと捨てる。一覧は裏で読み直す（`closeBoard` と同じ）。
    */
   const openCreated = useCallback(
-    async (board: BoardDetail) => {
-      await reload();
+    (board: BoardDetail) => {
       // 走っている取得を無効にする（ログアウトと同じ理由）。作ったボードを
       // 開いた直後に、前のボードの応答が着いて上書きするのを止める。
       openings.invalidateAll();
@@ -382,6 +387,7 @@ export function App() {
       setCurrent({ ...board, files: {} });
       // 作ったボードを開いた状態。**積む。** 「戻る」で作成の手前に戻れる。
       showLocation({ boardId: board.id, picking: false }, "push");
+      void reload();
     },
     [openings, reload, showLocation],
   );
@@ -391,27 +397,20 @@ export function App() {
     async (target: BoardTarget) => {
       const board = await createBoard(target);
       if (board === null) return;
-      await openCreated(board);
+      openCreated(board);
     },
     [createBoard, openCreated],
   );
 
   /**
    * 作成先を選ばずに、ダイアログからそのまま作る（GitHub が未設定の構成、
-   * ADR 0090）。**失敗は通知で知らせる。** 選択画面を通らないので、失敗を
-   * 出す場所がほかに無い。ダイアログは開いたまま入力を残す。
+   * ADR 0090）。失敗はダイアログの中に出る（`useNewBoardFlow` の `failure`）。
    */
   const createWithoutTarget = useCallback(async () => {
-    let board: BoardDetail | null;
-    try {
-      board = await createBoardWithoutTarget(confirmDiscard);
-    } catch (e) {
-      showFailure(describeFailure("ボードを作成できませんでした", e));
-      return;
-    }
+    const board = await createBoardWithoutTarget(confirmDiscard);
     if (board === null) return;
-    await openCreated(board);
-  }, [confirmDiscard, createBoardWithoutTarget, openCreated, showFailure]);
+    openCreated(board);
+  }, [confirmDiscard, createBoardWithoutTarget, openCreated]);
 
   /**
    * サーバーが返したボードで手元を差し替える。
@@ -700,6 +699,7 @@ export function App() {
               onNext: choosesTarget ? startCreating : () => void createWithoutTarget(),
               onCancel: cancelCreating,
               submitting: creatingWithoutTarget,
+              failure: creationFailure,
             }}
           />
         ) : picking || (current.projectId === "" && choosesTarget) ? (

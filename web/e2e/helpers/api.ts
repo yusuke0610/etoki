@@ -440,6 +440,14 @@ export function holdBoardDetail(
   return holdRoute(page, (url) => url.pathname === `/api/boards/${boardId}`, "GET", hold);
 }
 
+/**
+ * ボードの一覧の取得を止める。解決するまで応答を返さない。止めるのは読み直し
+ * だけにしたいので、一覧が出てから呼ぶ。
+ */
+export function holdBoardList(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(page, (url) => url.pathname === "/api/boards", "GET", hold);
+}
+
 /** 作成先の設定を止める。解決するまで応答を返さない。 */
 export function holdSetTarget(page: Page, hold: Promise<void>): Promise<void> {
   return holdRoute(

@@ -970,7 +970,8 @@ export interface components {
             diagramDraft: boolean;
             /**
              * @description draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
-             *     引けない**ので、新しいボードも作れない（ADR 0017）
+             *     引けない**ので、ボードは作成先を選ばずに作る（ADR 0090）。ボード
+             *     そのものは false でも作れる
              */
             creation: boolean;
             /**

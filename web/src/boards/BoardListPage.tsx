@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 
+import type { Failure } from "../api/errorMessage";
 import type { BoardListEntry, SessionStatus } from "../api/types";
 import { Wordmark } from "../app/Wordmark";
 import { UserMenu } from "../auth/UserMenu";
@@ -55,6 +56,8 @@ type Props = {
     onCancel: () => void;
     /** 作成先を選ばずに作っているあいだ。 */
     submitting: boolean;
+    /** 作成先を選ばずに作れなかった理由。ダイアログの中に出す。 */
+    failure: Failure | null;
   };
 };
 
@@ -184,6 +187,7 @@ export function BoardListPage({
         onTemplateChange={dialog.onTemplateChange}
         choosesTarget={choosesTarget}
         submitting={dialog.submitting}
+        failure={dialog.failure}
         onNext={dialog.onNext}
         onCancel={dialog.onCancel}
         // 閉じたら「新しいボード」へ焦点を戻す。作成先の選択から戻って開き

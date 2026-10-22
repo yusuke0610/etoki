@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import type { Failure } from "../api/errorMessage";
+import { ErrorNotice } from "../app/ErrorNotice";
 import type { TemplateChoice } from "../excalidraw/template";
 import { TemplatePicker } from "./TemplatePicker";
 
@@ -17,6 +19,11 @@ type Props = {
   choosesTarget: boolean;
   /** 作成先を選ばずに作っているあいだ。`choosesTarget` が false のときだけ立つ。 */
   submitting: boolean;
+  /**
+   * 作成先を選ばずに作れなかった理由。**このダイアログの中に出す。** モーダルで
+   * 開いているあいだ、外の通知はダイアログの下に隠れて読めない。
+   */
+  failure: Failure | null;
   /**
    * 名前を確定して、作成先の選択へ進む。ここではまだ作らない。作成先を選ばない
    * 構成では、ここで作る。
@@ -48,6 +55,7 @@ export function NewBoardDialog({
   onTemplateChange,
   choosesTarget,
   submitting,
+  failure,
   onNext,
   onCancel,
   onClosed,
@@ -123,6 +131,7 @@ export function NewBoardDialog({
             が未設定なので、作成先は選ばずに作ります。設定したあとで開くと選べます。
           </p>
         )}
+        {failure && <ErrorNotice failure={failure} />}
         <div className="dialog-actions">
           {/* やめるのは控えめな操作（#203）。主となる操作は「次へ」の 1 つ。 */}
           <button

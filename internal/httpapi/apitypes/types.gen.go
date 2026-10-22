@@ -842,7 +842,8 @@ type BoardWithFiles struct {
 // 原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
 type Capabilities struct {
 	// Creation draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
-	// 引けない**ので、新しいボードも作れない（ADR 0017）
+	// 引けない**ので、ボードは作成先を選ばずに作る（ADR 0090）。ボード
+	// そのものは false でも作れる
 	Creation bool `json:"creation"`
 
 	// DiagramDraft プロンプトから図のドラフトを生成できるか。false は LLM が未設定。
