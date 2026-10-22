@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { Interpretation } from "../../api/types";
 import { AnnotationDetail } from "./AnnotationDetail";
 
 function props(): ComponentProps<typeof AnnotationDetail> {
@@ -483,13 +484,56 @@ describe("AnnotationDetail", () => {
     it("作成済みなら、矢印や図形だけの変更では「変更あり」にならないことを言う", () => {
       render(<AnnotationDetail {...withState("created")} />);
 
-      const hint = screen.getByText(/GitHub にあります/);
-      expect(hint).toHaveTextContent(
+      const note = screen.getByText(
         /矢印や図形、貼った画像、置き場所、絵の名前だけを直しても/,
       );
-      expect(hint).toHaveTextContent(/「作成済み」のまま/);
+      expect(note).toHaveTextContent(/「作成済み」のまま/);
       // 何を変えれば「変更あり」になるかも言う。言わないと、どこまでが検知の外かが読めない。
-      expect(hint).toHaveTextContent(/絵の中の文字・粒度・種別/);
+      expect(note).toHaveTextContent(/絵の中の文字・粒度・種別/);
+    });
+
+    // 作った直後は解釈を持ったまま作成済みになる。解釈の前の本文は消えるが、
+    // この案内まで一緒に消すと、描き直す前に知っておくことが画面から無くなる。
+    it("作成済みなら、絵解きの結果が出ていても、矢印や図形だけの変更の案内を出す", () => {
+      const detailProps = withState("created");
+      const interpretation: Interpretation = {
+        summary: "s",
+        contentHash: "h",
+        items: [],
+      };
+      render(
+        <AnnotationDetail
+          {...detailProps}
+          interpretation={{
+            ...detailProps.interpretation,
+            states: {
+              "frame-1": {
+                running: false,
+                runs: [
+                  {
+                    id: 1,
+                    at: "2026-01-01T00:00:00Z",
+                    granularity: "issue",
+                    result: interpretation,
+                  },
+                ],
+                selectedId: 1,
+              },
+            },
+          }}
+        />,
+      );
+
+      expect(screen.queryByText(/GitHub にあります/)).toBeNull();
+      expect(
+        screen.getByText(/矢印や図形、貼った画像、置き場所、絵の名前だけを直しても/),
+      ).toBeInTheDocument();
+    });
+
+    it("作成済みでなければ、矢印や図形だけの変更の案内は出さない", () => {
+      render(<AnnotationDetail {...withState("changed")} />);
+
+      expect(screen.queryByText(/矢印や図形、貼った画像/)).toBeNull();
     });
 
     // 中身が同じでも changed になりうる（ADR 0047）ので、変わったとは言い切らない。

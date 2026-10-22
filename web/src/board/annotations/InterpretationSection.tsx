@@ -82,6 +82,10 @@ const REINTERPRET_HINT =
  * ハッシュに矢印や画像を入れる案は採らない（ADR 0047 の追記）。言うのは状態が
  * 動かないことまでで、読み直すかは開発者が決める（中核思想 3）。
  *
+ * **解釈の前の本文には混ぜず、作成済みのあいだは結果の有無によらず出す。** 作った
+ * 直後は解釈を持ったまま状態が作成済みに変わり、作成済みの絵を読み直しても結果が
+ * 並ぶ。前の本文に混ぜると、そのどちらでも消える。
+ *
  * **`content_hash` の入力を変えたら、この文も同じコミットで直す。** 動く変更と
  * 動かない変更の両方を言っているので、片方だけ古くなる。
  */
@@ -108,7 +112,6 @@ function beforeInterpretationHint(syncState: SyncState): string {
       return (
         "この絵から作ったものが GitHub にあります。絵解きの結果は画面を開いているあいだしか" +
         "持たないので、開き直したり保存したりすると、ここには出なくなります。" +
-        SHAPE_ONLY_NOTE +
         REINTERPRET_HINT
       );
     case "changed":
@@ -180,6 +183,7 @@ export function InterpretationSection({
       {!running && runs.length === 0 && !state?.failure && (
         <p className="hint">{beforeInterpretationHint(syncState)}</p>
       )}
+      {!running && syncState === "created" && <p className="hint">{SHAPE_ONLY_NOTE}</p>}
       {/*
         未保存のあいだだけ、保存が入ることを言う。**保存は全部の注釈の引いた解釈と
         作成の状態を捨てる**ので、この注釈の前の結果も、ほかの注釈の結果も消える。
