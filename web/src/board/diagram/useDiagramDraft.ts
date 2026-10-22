@@ -1,5 +1,5 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { boardsApi } from "../../api/boards";
 import {
@@ -7,13 +7,14 @@ import {
   diagramNotPlaceableFailure,
   mermaidPasteFailure,
 } from "../../api/errorMessage";
-import type { DiagramKind } from "../../api/types";
+import type { DiagramJob, DiagramKind, GenerateDiagramRequest } from "../../api/types";
 import { log } from "../../app/logger";
 import type { SceneElement } from "../../excalidraw/annotation";
 import { draftOrigin, mermaidToElements, moveDraft } from "../../excalidraw/mermaid";
 import { pasteToElements } from "../../excalidraw/mermaidPaste";
 import { useReentryGuard } from "../exclusion";
 import { createGenerations } from "../generation";
+import { JOB_POLL_INTERVAL_MS, pollJob } from "../jobPolling";
 import {
   beginTurn,
   changeKind as changeChatKind,
@@ -21,6 +22,7 @@ import {
   conversionRetryPrompt,
   failTurn,
   historyOf,
+  resumeChat,
   startChat,
   type DiagramChat,
 } from "./diagramChat";
@@ -47,11 +49,23 @@ type Options = {
    * パネルに出した理由を読ませる。
    */
   onPlaced?: () => void;
+  /**
+   * 生成を使えるか。使えるときだけ、開いたときに走っているジョブを引く。
+   *
+   * LLM が未設定のサーバーや viewer に引いても、503 / 403 が返るだけで見せるものが
+   * 無い。
+   */
+  enabled: boolean;
+  /** ジョブを見に行く間隔。テストが待たずに済むよう差し替えられる。 */
+  pollIntervalMs?: number;
 };
 
 export type DiagramDrafting = {
   /** 図のドラフトのチャット。**フロントのメモリだけ**（ADR 0041）。 */
   chat: DiagramChat;
+  /** 図への指示の入力欄に書かれている文字列。 */
+  prompt: string;
+  setPrompt: (text: string) => void;
   /** プロンプトから図のドラフトを生成する。成立したら true。 */
   generate: (prompt: string, internal?: boolean) => Promise<boolean>;
   /** 図の種類を変える。変えたら会話ごと捨てる。 */
@@ -71,6 +85,10 @@ export type DiagramDrafting = {
  *
  * ボードを切り替えると BoardPage ごと作り直される（App の key）ので、会話も
  * 貼りかけの文字列も持ち越されない。
+ *
+ * **生成はサーバーのジョブとして走る**（ADR 0091）。ここは始めて、終わるまで
+ * 見に行き、結果を会話に積む。画面を離れても生成は止まらず、開き直したときに
+ * 受け取っていないぶんを会話ごと戻して続きを見に行く。
  */
 export function useDiagramDraft({
   api,
@@ -78,11 +96,17 @@ export function useDiagramDraft({
   currentElements,
   updateElements,
   onPlaced,
+  enabled,
+  pollIntervalMs = JOB_POLL_INTERVAL_MS,
 }: Options): DiagramDrafting {
   const [chat, setChat] = useState<DiagramChat>(() => startChat("todo"));
   // 生成の世代。**保存では無効にしない。** 生成は保存済みシーンを読まないので、
   // 保存しても前提が変わらない（解釈との非対称、ADR 0041）。
   const [generations] = useState(createGenerations);
+  // 図への指示の入力欄。**パネルではなくここで持つ。** 開き直したときに、走って
+  // いる生成の指示をここへ戻す（ADR 0091）。送っている最中の画面は、送った指示が
+  // 入力欄に残ったまま止まっているので、戻した画面もそれと同じにする。
+  const [prompt, setPrompt] = useState("");
   // mermaid の貼り付けパネルに貼られている文字列。**パネルではなくここで
   // 持つ。** 置けたときに消すのはここ（`pasteMermaid`）で、パネルは落ちたときに
   // 境界で作り直される（ADR 0027）。そちらで持つと、構文エラーを直している
@@ -95,6 +119,72 @@ export function useDiagramDraft({
   // 場所に置かれうる。
   const placing = useReentryGuard();
 
+  // 見に行くのをやめる印。**ジョブは止めない。** 立てるのは effect で、StrictMode が
+  // effect を 2 回走らせても、2 回目で立て直す。
+  const alive = useRef(false);
+  // 利用者が会話を動かした回数（送る・種類を変える）。開いたときにジョブを引く
+  // あいだに動かしていたら、引いたジョブで会話を上書きしない。
+  const touched = useRef(0);
+  // いま見に行っているジョブ。種類を変えて会話ごと捨てるとき、サーバーでも止める。
+  const tracking = useRef<string | null>(null);
+
+  /** ジョブを要らないものとして捨てる。失敗しても何もしない。 */
+  const discardJob = useCallback(
+    (jobId: string) => {
+      if (tracking.current === jobId) tracking.current = null;
+      // 捨て損ねても、保持の期限（1 時間）で消える。画面に出すものが無い。
+      boardsApi.discardDiagramJob(boardId, jobId).catch(() => undefined);
+    },
+    [boardId],
+  );
+
+  /**
+   * ジョブが走り終わるまで見に行き、結果か失敗を会話に積む。成立したら true。
+   *
+   * **捨てるべき応答を捨てる責任は世代側にある。** 世代が古くなったとき
+   * （種類を変えた、画面を離れた）は何も積まない。
+   */
+  const settle = useCallback(
+    async (generation: number, jobId: string, sentPrompt: string): Promise<boolean> => {
+      const isCurrent = () =>
+        alive.current && generations.isCurrent(DIAGRAM_KEY, generation);
+
+      let outcome;
+      try {
+        outcome = await pollJob(
+          () => boardsApi.diagramJob(boardId, jobId),
+          isCurrent,
+          pollIntervalMs,
+        );
+      } catch (e) {
+        if (!isCurrent()) return false;
+        // **パネルの中に出す。** 会話の続きで直せる失敗なので、画面上部の
+        // 通知に出すと、直す場所と理由が離れる。
+        setChat((prev) => failTurn(prev, describeFailure("生成できませんでした", e)));
+        return false;
+      }
+      if (!outcome || !isCurrent()) return false;
+
+      // 受け取り終えた。残すとサーバーのメモリに溜まり、開き直したときに同じ結果が
+      // もう一度出る。
+      discardJob(jobId);
+      if (outcome.kind === "failed") {
+        setChat((prev) =>
+          failTurn(prev, describeFailure("生成できませんでした", outcome.error)),
+        );
+        return false;
+      }
+
+      setChat((prev) => completeTurn(prev, outcome.result));
+      // 送った指示は往復に積まれた。入力欄に残すと、同じ指示を 2 度送りやすい。
+      // **送った指示のままのときだけ消す。** 投げ直しの指示は入力欄の文字列とは
+      // 別物なので、置く前に書いていた次の指示は残る。
+      setPrompt((current) => (current === sentPrompt ? "" : current));
+      return true;
+    },
+    [boardId, discardJob, generations, pollIntervalMs],
+  );
+
   /**
    * プロンプトから図のドラフトを生成する。
    *
@@ -105,30 +195,41 @@ export function useDiagramDraft({
    * 「保存してから」の制約が要らない（ADR 0041）。
    */
   const generate = useCallback(
-    async (prompt: string, internal = false): Promise<boolean> => {
+    async (text: string, internal = false): Promise<boolean> => {
+      touched.current += 1;
       const generation = generations.start(DIAGRAM_KEY);
       // 送るのはいまの会話。**成立した往復だけがここに積まれている**ので、
       // 失敗した指示を「返した図」つきで送ることにはならない。
-      const { kind } = chat;
-      const history = historyOf(chat);
-      setChat((prev) => beginTurn(prev, prompt, internal));
+      const body: GenerateDiagramRequest = {
+        kind: chat.kind,
+        prompt: text,
+        history: historyOf(chat),
+        internal,
+      };
+      setChat((prev) => beginTurn(prev, text, internal));
 
+      let jobId: string;
       try {
-        const draft = await boardsApi.generateDiagram(boardId, kind, prompt, history);
-        // 遅れて届いた応答を今の会話に混ぜない。種類を変えると会話ごと
-        // 捨てるので、そのあとに古い図が積まれると土台が食い違う。
-        if (!generations.isCurrent(DIAGRAM_KEY, generation)) return false;
-        setChat((prev) => completeTurn(prev, draft));
-        return true;
+        jobId = (await boardsApi.generateDiagram(boardId, body)).id;
       } catch (e) {
+        // 遅れて届いた応答を今の会話に混ぜない。種類を変えると会話ごと
+        // 捨てるので、そのあとに古い失敗が出ると土台が食い違う。
         if (!generations.isCurrent(DIAGRAM_KEY, generation)) return false;
-        // **パネルの中に出す。** 会話の続きで直せる失敗なので、画面上部の
-        // 通知に出すと、直す場所と理由が離れる。
         setChat((prev) => failTurn(prev, describeFailure("生成できませんでした", e)));
         return false;
       }
+
+      // 始めているあいだに種類を変えて、会話ごと捨てた。受け取らずにサーバーでも
+      // 止める。止めないと、捨てた会話の生成が枠を握り続ける。
+      if (!generations.isCurrent(DIAGRAM_KEY, generation)) {
+        discardJob(jobId);
+        return false;
+      }
+
+      tracking.current = jobId;
+      return settle(generation, jobId, text);
     },
-    [boardId, chat, generations],
+    [boardId, chat, discardJob, generations, settle],
   );
 
   /**
@@ -150,11 +251,61 @@ export function useDiagramDraft({
       const next = changeChatKind(chat, kind);
       if (next === chat) return;
 
+      touched.current += 1;
       generations.start(DIAGRAM_KEY);
+      // サーバーで走っている生成も止める。捨てた会話の生成が枠を握り続けると、
+      // 次の生成も解釈も 429 に弾かれる。
+      if (tracking.current !== null) discardJob(tracking.current);
       setChat(next);
     },
-    [chat, generations],
+    [chat, discardJob, generations],
   );
+
+  // 開いたとき、走っている生成と、終わったが受け取っていない生成を、会話ごと
+  // 画面に戻す（ADR 0091）。**ボードごとに 1 回だけ引く。**
+  useEffect(() => {
+    alive.current = true;
+    if (!enabled) {
+      return () => {
+        alive.current = false;
+      };
+    }
+
+    let cancelled = false;
+    const startedTouched = touched.current;
+    void (async () => {
+      let jobs: DiagramJob[];
+      try {
+        jobs = await boardsApi.diagramJobs(boardId);
+      } catch {
+        // 戻すのは付け足し。引けなくても、送れば始められる。
+        return;
+      }
+      // 引いているあいだに送ったか、種類を変えた。いまの会話を引いたジョブで
+      // 上書きしない。
+      if (cancelled || touched.current !== startedTouched) return;
+
+      const latest = jobs.at(-1);
+      if (latest === undefined) return;
+      // 会話は 1 本なので、戻すのはいちばん新しいもの 1 つ。ほかは捨て損ねた
+      // ものなので、ここで捨てる。
+      for (const job of jobs.slice(0, -1)) discardJob(job.id);
+
+      const { request } = latest;
+      const generation = generations.start(DIAGRAM_KEY);
+      setChat(resumeChat(request));
+      // 送っている最中の画面と同じく、送った指示を入力欄に戻す。投げ直しは
+      // 利用者の入力ではないので戻さない。
+      if (!request.internal) setPrompt(request.prompt);
+      tracking.current = latest.id;
+      void settle(generation, latest.id, request.prompt);
+    })();
+
+    return () => {
+      cancelled = true;
+      alive.current = false;
+    };
+  }, [boardId, discardJob, enabled, generations, settle]);
 
   /**
    * 変換した要素をキャンバスに置く。図のドラフトと貼り付けで共有する。
@@ -259,6 +410,8 @@ export function useDiagramDraft({
   return useMemo(
     () => ({
       chat,
+      prompt,
+      setPrompt,
       generate,
       changeKind,
       placeDraft,
@@ -266,6 +419,6 @@ export function useDiagramDraft({
       setPasteText,
       pasteMermaid,
     }),
-    [chat, generate, changeKind, placeDraft, pasteText, pasteMermaid],
+    [chat, prompt, generate, changeKind, placeDraft, pasteText, pasteMermaid],
   );
 }

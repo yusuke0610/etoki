@@ -12,13 +12,16 @@ import (
 	"github.com/yusuke0610/etoki/internal/usecase"
 )
 
-// generateDiagramDraft はプロンプトから図のドラフトを作って返す。
+// generateDiagramDraft は図のドラフトの生成を始めて、ジョブを返す。LLM の応答は
+// 待たない。
 //
-// **サーバーの状態を一切変えない**（ADR 0041）。DB にも GitHub にも触れず、
-// 会話も保存しない。キャンバスに置くかどうかは結果を見た開発者が決める
-// （中核思想 3）。
+// **会話は保存しない**（ADR 0041）。DB にも GitHub にも触れない。キャンバスに
+// 置くかどうかは結果を見た開発者が決める（中核思想 3）。
+//
+// **生成をリクエストに結びつけない**（ADR 0091）。結びつけると、生成中に画面を
+// 離れたあともサーバーは走り続けて枠を握り、戻って押し直すと 429 に弾かれる。
 func (h *handlers) generateDiagramDraft(c *gin.Context) {
-	if h.diagrams == nil {
+	if h.diagramJobs == nil {
 		h.llmNotConfigured(c)
 		return
 	}
@@ -28,18 +31,110 @@ func (h *handlers) generateDiagramDraft(c *gin.Context) {
 		return
 	}
 
-	draft, err := h.diagrams.Generate(c.Request.Context(), c.Param("id"), req)
+	job, err := h.diagramJobs.Start(c.Request.Context(), c.Param("id"), req)
 	if err != nil {
-		// 出力を弾いたのは、上限まで投げ直しても図が返らなかったとき。
-		h.failLLM(c, err, usecase.ErrDiagramFailed)
+		h.fail(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, apitypes.DiagramDraft{
-		Kind:           apitypes.DiagramKind(draft.Kind),
-		Mermaid:        draft.Mermaid,
-		TurnsRemaining: draft.TurnsRemaining,
-	})
+	c.JSON(http.StatusAccepted, toDiagramJobResponse(job, false))
+}
+
+// listDiagramJobs は自分の図のドラフト生成のジョブを返す。結果は含めない。
+func (h *handlers) listDiagramJobs(c *gin.Context) {
+	if h.diagramJobs == nil {
+		h.llmNotConfigured(c)
+		return
+	}
+
+	jobs, err := h.diagramJobs.List(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// nil を返すと JSON が null になる。常に配列にする。
+	out := make([]apitypes.DiagramJob, 0, len(jobs))
+	for _, job := range jobs {
+		out = append(out, toDiagramJobResponse(job, false))
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// getDiagramJob はジョブを 1 件返す。読んでも消えない。
+func (h *handlers) getDiagramJob(c *gin.Context) {
+	if h.diagramJobs == nil {
+		h.llmNotConfigured(c)
+		return
+	}
+
+	job, err := h.diagramJobs.Get(c.Request.Context(), c.Param("id"), c.Param("jobId"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, toDiagramJobResponse(job, true))
+}
+
+// discardDiagramJob はジョブを捨てる。走っていれば止める。
+func (h *handlers) discardDiagramJob(c *gin.Context) {
+	if h.diagramJobs == nil {
+		h.llmNotConfigured(c)
+		return
+	}
+
+	if err := h.diagramJobs.Discard(
+		c.Request.Context(), c.Param("id"), c.Param("jobId")); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// toDiagramJobResponse はジョブを境界の DTO に詰め替える。
+//
+// 失敗の理由は解釈のジョブと同じ写し方（jobErrorResponse）。withResult が false
+// なら結果は載せない（一覧）。**入力は常に載せる。** 開き直した画面が会話を
+// 戻すのに一覧から読む。
+func toDiagramJobResponse(job usecase.DiagramJob, withResult bool) apitypes.DiagramJob {
+	out := apitypes.DiagramJob{
+		ID:        job.ID,
+		Status:    apitypes.DiagramJobStatus(job.Status),
+		StartedAt: job.StartedAt,
+		Request:   toDiagramRequestResponse(job.Input),
+	}
+
+	if withResult && job.Result != nil {
+		out.Result = &apitypes.DiagramDraft{
+			Kind:           apitypes.DiagramKind(job.Result.Kind),
+			Mermaid:        job.Result.Mermaid,
+			TurnsRemaining: job.Result.TurnsRemaining,
+		}
+	}
+	if job.Err != nil {
+		out.Error = jobErrorResponse(job.Err)
+	}
+	return out
+}
+
+// toDiagramRequestResponse は受け取った入力を、送られてきた形に戻す。
+func toDiagramRequestResponse(req usecase.DiagramRequest) apitypes.GenerateDiagramRequest {
+	// nil を返すと JSON が null になる。往復が無くても空配列にする。
+	history := make([]apitypes.DiagramTurn, 0, len(req.History))
+	for _, t := range req.History {
+		history = append(history, apitypes.DiagramTurn{
+			Prompt: t.Prompt, Mermaid: t.Mermaid, Internal: t.Internal,
+		})
+	}
+
+	return apitypes.GenerateDiagramRequest{
+		Kind:     apitypes.DiagramKind(req.Kind),
+		Prompt:   req.Prompt,
+		History:  &history,
+		Internal: req.Internal,
+	}
 }
 
 // maxDiagramBody は生成のリクエストボディを読む上限。
@@ -77,14 +172,16 @@ func (h *handlers) bindDiagramRequest(c *gin.Context) (usecase.DiagramRequest, b
 	}
 
 	req := usecase.DiagramRequest{
-		Kind:   domain.DiagramKind(body.Kind),
-		Prompt: body.Prompt,
+		Kind:     domain.DiagramKind(body.Kind),
+		Prompt:   body.Prompt,
+		Internal: body.Internal,
 	}
 	if body.History != nil {
 		req.History = make([]usecase.DiagramTurn, 0, len(*body.History))
 		for _, t := range *body.History {
-			req.History = append(req.History,
-				usecase.DiagramTurn{Prompt: t.Prompt, Mermaid: t.Mermaid})
+			req.History = append(req.History, usecase.DiagramTurn{
+				Prompt: t.Prompt, Mermaid: t.Mermaid, Internal: t.Internal,
+			})
 		}
 	}
 

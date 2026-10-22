@@ -121,6 +121,14 @@ export type Interpretation = Schemas["Interpretation"];
  */
 export type InterpretationJob = Schemas["InterpretationJob"];
 
+/**
+ * 1 回の図のドラフト生成の、いまの様子（ADR 0091）。
+ *
+ * 解釈と同じく、始めるリクエストと受け取るリクエストが別。`request` は始めた
+ * ときに送った入力で、開き直した画面が会話を戻すのに使う。
+ */
+export type DiagramJob = Schemas["DiagramJob"];
+
 /** 作成した run。途中で失敗しても、作れたぶんは items に入る。 */
 export type CreatedRun = Schemas["CreatedRun"];
 
