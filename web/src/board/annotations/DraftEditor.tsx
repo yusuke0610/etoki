@@ -12,7 +12,7 @@ import { ITEM_KIND_LABEL, itemKinds } from "./annotationLabel";
 import { createControlOf, CreationResult } from "./CreationSection";
 import { DetailBand, type InterpretControl } from "./DetailBand";
 import { groupByEpic } from "./interpretation";
-import { creationNotice } from "./itemSummary";
+import { creationNotice, leftBehindParentNote } from "./itemSummary";
 import { ItemLink } from "./panelParts";
 import {
   blockingReasons,
@@ -22,6 +22,7 @@ import {
   leftBehindItemIds,
   markCreated,
   orphanedLocalIds,
+  renamedEpics,
   selectedActions,
   setBody,
   setKind,
@@ -163,6 +164,8 @@ export function DraftEditor({
 
   const selectedCount = draft.items.filter((d) => d.selected).length;
   const leftBehindItems = previous.filter((it) => leftBehind.has(it.itemId));
+  // epic のタイトルを書き換えると、触らない子の Parent は前のタイトルを指して残る（#298）。
+  const parentNote = leftBehindParentNote(renamedEpics(draft, previous), leftBehindItems);
   // 押せるときに帯に出す文。**取り消せないことと作る先を、押す直前に言う。**
   // 作るものと書き換えるものは分けて数える（#289）。ボタンは主となる操作の緑で、
   // 赤にしない（#203）。
@@ -203,7 +206,11 @@ export function DraftEditor({
         )}
       </div>
 
-      <LeftBehind items={leftBehindItems} projectLink={projectLink} />
+      <LeftBehind
+        items={leftBehindItems}
+        parentNote={parentNote}
+        projectLink={projectLink}
+      />
 
       <CreationResult state={creation} projectLink={projectLink} />
 
@@ -486,9 +493,15 @@ function DraftItemBody({
  */
 function LeftBehind({
   items,
+  parentNote,
   projectLink,
 }: {
   items: SyncItem[];
+  /**
+   * 触らない issue が親を失うことの案内（#298、`leftBehindParentNote`）。親を
+   * 失うものが無ければ undefined。「上の issue のうち」と言うので、一覧の下に出す。
+   */
+  parentNote: string | undefined;
   projectLink: ProjectLink | null;
 }) {
   if (items.length === 0) return null;
@@ -508,6 +521,7 @@ function LeftBehind({
           </li>
         ))}
       </ul>
+      {parentNote && <p className="hint">{parentNote}</p>}
     </div>
   );
 }

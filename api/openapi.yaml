@@ -1103,11 +1103,15 @@ paths:
     post:
       tags: [boards]
       operationId: generateDiagramDraft
-      summary: プロンプトから図のドラフトを生成する
+      summary: プロンプトから図のドラフトの生成を始める
       description: |
-        **サーバーの状態を一切変えない**（ADR 0041）。DB にも GitHub にも触れず、
-        会話も保存しない。返した mermaid をキャンバスに置くかどうかは、見てから
-        開発者が決める（中核思想 3）。
+        LLM の応答は待たず、ジョブを返す。結果は `getDiagramJob` で取る
+        （ADR 0091）。生成は数十秒かかり、解釈と同じ枠（ADR 0044）を取るので、
+        リクエストに結びつけると画面を離れたあとも枠を握ったまま残る。
+
+        **会話は保存しない**（ADR 0041）。DB にも GitHub にも触れない。ジョブが
+        入力を持つのは、捨てられるまで。返した mermaid をキャンバスに置くかどうかは、
+        見てから開発者が決める（中核思想 3）。
 
         **保存済みシーンを読まないので、未保存でも使える。** 解釈が保存を
         要求する（ADR 0018）のとは非対称だが、手抜きではなく副作用の有無から
@@ -1115,6 +1119,10 @@ paths:
 
         注釈でも解釈でもないので、パスはボードの直下に置く。囲みとは無関係で、
         キャンバスに何も無くても呼べる。
+
+        **同じ利用者が同じボードで、同じ入力（種類・指示・往復・`internal` の
+        すべて）の生成をまだ走らせている最中なら、新しく始めず、走っているジョブを
+        返す。** どこか 1 つでも違えば別の入力で、429（`concurrency_limited`）。
       requestBody:
         required: true
         content:
@@ -1122,12 +1130,12 @@ paths:
             schema:
               $ref: "#/components/schemas/GenerateDiagramRequest"
       responses:
-        "200":
-          description: 生成された図のドラフト
+        "202":
+          description: 始めた、または走っているジョブ
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DiagramDraft"
+                $ref: "#/components/schemas/DiagramJob"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1142,12 +1150,103 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
-        "502":
-          description: LLM の呼び出しに失敗した、または図が返らなかった
+        "503":
+          description: LLM が設定されていない
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /api/boards/{id}/diagram-jobs:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [boards]
+      operationId: listDiagramJobs
+      summary: 自分の図のドラフト生成のジョブを返す
+      description: |
+        ボードを開き直したとき、走っている生成と、終わっているが受け取って
+        いない生成を知るための口（ADR 0091）。始めた順。**結果は含めず、入力
+        （`request`）は含める。** 画面はそれで、どの指示への答えかを会話ごと戻す。
+        結果を取るのは `getDiagramJob`。
+
+        自分が始めたものだけ。他の利用者のジョブは存在も見せない。
+      responses:
+        "200":
+          description: ジョブ。無ければ空配列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DiagramJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: LLM が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/boards/{id}/diagram-jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [boards]
+      operationId: getDiagramJob
+      summary: 図のドラフト生成のジョブを返す
+      description: |
+        走っていれば `running`。終わっていれば結果か失敗の理由を載せる。
+        **読んでも消えない**（`getInterpretationJob` と同じ理由、ADR 0085）。
+        要らなくなったら `discardDiagramJob`。
+      responses:
+        "200":
+          description: ジョブ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagramJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: LLM が設定されていない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [boards]
+      operationId: discardDiagramJob
+      summary: 図のドラフト生成のジョブを要らないものとして捨てる
+      description: |
+        走っていれば止める。終わっていれば結果を捨てる（`discardInterpretationJob`
+        と同じ扱い、ADR 0085）。捨てたジョブは `getDiagramJob` でも
+        `listDiagramJobs` でも出ない。
+      responses:
+        "204":
+          description: 捨てた
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "503":
           description: LLM が設定されていない
           content:
@@ -1407,7 +1506,7 @@ components:
       name: jobId
       in: path
       required: true
-      description: 解釈のジョブの ID
+      description: ジョブの ID（解釈と図のドラフト生成で共通の形）
       schema:
         type: string
 
@@ -2785,6 +2884,14 @@ components:
         mermaid:
           type: string
           description: それに対して返った mermaid
+        internal:
+          type: boolean
+          description: |
+            利用者が書いた指示ではない（置けなかった図の変換の投げ直し）ことを表す。
+            **プロンプトには載せない。** 画面が会話を表示するための印で、ジョブから
+            会話を戻すとき（`DiagramJob.request`）にそのまま返すためだけに預かる
+            （ADR 0091）。省略は false
+          x-go-type-skip-optional-pointer: true
 
     GenerateDiagramRequest:
       type: object
@@ -2807,6 +2914,12 @@ components:
             捨てず、`diagram_chat_too_long` で返す**
           items:
             $ref: "#/components/schemas/DiagramTurn"
+        internal:
+          type: boolean
+          description: |
+            今回の指示が変換の投げ直しであることを表す（`DiagramTurn.internal` と
+            同じ印）。省略は false
+          x-go-type-skip-optional-pointer: true
 
     DiagramDraft:
       type: object
@@ -2875,6 +2988,36 @@ components:
           format: date-time
         result:
           $ref: "#/components/schemas/Interpretation"
+        error:
+          $ref: "#/components/schemas/ErrorResponse"
+
+    DiagramJob:
+      type: object
+      description: |
+        1 回の図のドラフト生成の、いまの様子（ADR 0091）。状態の意味は
+        `InterpretationJob` と同じ。
+
+        - `running` … 走っている
+        - `succeeded` … 終わった。`result` にドラフトが入る
+        - `failed` … 失敗した。`error` に理由が入る。打ち手は `error.code` で分ける
+
+        `request` は始めたときに送られた入力をそのまま返す。開き直した画面が、
+        どの指示への答えかを会話ごと戻すのに使う。一覧には `result` を載せない。
+        取るのは 1 件ずつの取得。
+      required: [id, status, startedAt, request]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        startedAt:
+          type: string
+          format: date-time
+        request:
+          $ref: "#/components/schemas/GenerateDiagramRequest"
+        result:
+          $ref: "#/components/schemas/DiagramDraft"
         error:
           $ref: "#/components/schemas/ErrorResponse"
 

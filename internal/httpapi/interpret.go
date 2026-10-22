@@ -103,7 +103,7 @@ func (h *handlers) discardInterpretationJob(c *gin.Context) {
 func toInterpretationJobResponse(job usecase.InterpretationJob, withResult bool) apitypes.InterpretationJob {
 	out := apitypes.InterpretationJob{
 		ID:           job.ID,
-		AnnotationID: job.AnnotationID,
+		AnnotationID: job.Input.AnnotationID,
 		Status:       apitypes.InterpretationJobStatus(job.Status),
 		StartedAt:    job.StartedAt,
 	}

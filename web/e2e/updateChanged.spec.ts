@@ -6,7 +6,7 @@ import {
   interpret,
   openBoardWithMock,
 } from "./helpers/board";
-import { matchedInterpretationMock } from "./helpers/fixtures";
+import { matchedInterpretationMock, renamedEpicMock } from "./helpers/fixtures";
 
 // 3 状態判定の changed には、これまで「重複を作るか、何もしないか」しか出口が
 // 無かった（ADR 0026）。作る前に何が起きるのかを見せる。
@@ -46,6 +46,32 @@ test.describe("changed の注釈を更新する", () => {
     await expect(leftBehind).toContainText("触らないほう");
     // 書き換わるほうは取り残しではない。
     await expect(leftBehind).not.toContainText("セッションの有効期限");
+  });
+
+  // epic のタイトルを書き換えるときに子を外すと、子の Parent は前のタイトルを
+  // 指したまま残り、親を失う（#298）。親を失うことは黙って起こさない（ADR 0024）。
+  test("epic のタイトルが変わるときに子を外すと、Parent が前のタイトルを指して残ると言う", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, renamedEpicMock());
+
+    const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
+    await interpret(card);
+
+    // 子も送るあいだは、親を失うものが無い。
+    await expect(detail.locator(".left-behind")).toHaveCount(0);
+
+    await detail.getByLabel("2 件目を作成する").uncheck();
+
+    const leftBehind = detail.locator(".left-behind");
+    await expect(leftBehind).toContainText("パスワード再設定");
+    await expect(leftBehind).toContainText(
+      "epic「ログイン基盤」のタイトルを「認証基盤」に書き換えます",
+    );
+    await expect(leftBehind).toContainText(
+      "GitHub の Parent が「ログイン基盤」を指したまま残ります",
+    );
   });
 
   // 外した項目は作られないので、その更新先は取り残しに戻る。押す前に見せる。

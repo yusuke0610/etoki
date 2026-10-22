@@ -1,7 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { openBoardWithMock, openPanelTab, saveScene } from "./helpers/board";
-import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
+import {
+  backToList,
+  openBoard,
+  openBoardWithMock,
+  openPanelTab,
+  saveScene,
+} from "./helpers/board";
+import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
 /**
  * プロンプトから図のドラフトを作るチャット（ADR 0041）。
@@ -103,6 +109,44 @@ test.describe("図のドラフト", () => {
     expect(second?.history).toHaveLength(1);
     expect(second?.history?.[0]?.prompt).toBe("注文から出荷までの流れ");
     expect(second?.history?.[0]?.mermaid).toContain("flowchart TD");
+  });
+
+  // 生成はサーバーのジョブとして走る（ADR 0091、#329）。画面を離れて戻っても
+  // 止まらず、戻ったら会話と送った指示が見え、終わったら図が出る。以前は戻ると
+  // 画面だけが忘れ、押し直すと走っている生成に当たって弾かれた。
+  test("生成の最中にボード一覧へ戻って開き直しても、会話ごと続きが見え、終わったら図が出る", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+    await openChat(page);
+
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+    await expect(page.locator(".diagram-mermaid")).toBeVisible();
+
+    mock.diagramJobRunning = true;
+    await page.getByLabel("図への指示").fill("返金の分岐も足して");
+    await page.getByRole("button", { name: "直す" }).click();
+    await expect(page.getByRole("button", { name: "生成中…" })).toBeVisible();
+
+    await backToList(page);
+    await openBoard(page, BOARD_NAME);
+    await openChat(page);
+
+    // どの指示への答えを待っているかが見える。送っている最中の画面と同じく、
+    // 送った指示が入力欄に残り、ここまでのやりとりも戻っている。
+    await expect(page.getByRole("button", { name: "生成中…" })).toBeVisible();
+    await expect(page.getByLabel("図への指示")).toHaveValue("返金の分岐も足して");
+    await expect(page.locator(".diagram-turns")).toContainText("注文から出荷までの流れ");
+    // 戻ったあとに送り直したのではない。走っているジョブを引き直しただけ。
+    expect(mock.diagramRequests).toHaveLength(2);
+
+    mock.diagramJobRunning = false;
+    await expect(page.locator(".diagram-mermaid")).toBeVisible();
+    await expect(page.locator(".diagram-turns")).toContainText("返金の分岐も足して");
+    await expect(page.getByLabel("図への指示")).toHaveValue("");
+    // 受け取り終えたジョブは捨てる。1 往復目と 2 往復目の 2 つ。
+    await expect.poll(() => mock.diagramJobDiscards.length).toBe(2);
   });
 
   // 積み上げた指示は前の種類の図に対するもの。引き継ぐと、シーケンス図への
