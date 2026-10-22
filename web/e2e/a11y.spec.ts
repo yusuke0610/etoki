@@ -16,6 +16,7 @@ import {
   openMermaidPaste,
   openPanelTab,
   picker,
+  saveButton,
   saveScene,
   ekidokiButton,
   openShareDialog,
@@ -321,8 +322,12 @@ test.describe("押せない理由が本文として読める", () => {
     await expect(menu.getByText("保存が終わるまで取り込めません")).toBeHidden();
   });
 
-  test("絵解き：取り込み中のとき", async ({ page }) => {
+  // 「保存」と「絵解き」は同じ式で止まり、1 つの理由を両方から指す（ADR 0089）。
+  // **「保存」は未保存のあいだしか出ない**ので、描いてから取り込む。描かずに
+  // 見ると、「保存」が理由を指していなくても通る。
+  test("保存と絵解き：取り込み中のとき", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
+    await drawRectangle(page);
 
     // loadFromBlob が使う FileReader を止め、ファイルを読んでいる状態を作る。
     await page.evaluate(() => {
@@ -346,18 +351,15 @@ test.describe("押せない理由が本文として読める", () => {
       ),
     });
 
-    await expectBlockedReason(
-      ekidokiButton(page),
-      "取り込みが終わるまで絵解きを始められません",
-    );
+    const reason = "取り込みが終わるまで保存も絵解きもできません";
+    await expectBlockedReason(saveButton(page), reason);
+    await expectBlockedReason(ekidokiButton(page), reason);
 
     await page.evaluate(() => {
       const release = Reflect.get(window, "releaseImport") as unknown;
       if (typeof release === "function") release();
     });
-    await expect(
-      page.getByText("取り込みが終わるまで絵解きを始められません"),
-    ).toBeHidden();
+    await expect(page.getByText(reason)).toBeHidden();
   });
 
   test("GitHub に作成する：取り込み中のとき", async ({ page }) => {
@@ -410,7 +412,10 @@ test.describe("押せない理由が本文として読める", () => {
   // 逆向き。作成中は保存させない。**押せない理由を `title` に置くと、この
   // テストが落ちる。** `disabled` なボタンはフォーカスも当たらないので、
   // ホバーできない利用者には届かない。
-  test("絵解き：作成中のとき", async ({ page }) => {
+  //
+  // 「保存」は未保存のあいだしか出ないので、作成を待つあいだに詳細を閉じて
+  // 描き足す。作成中も描くことは止めていない。
+  test("保存と絵解き：作成中のとき", async ({ page }) => {
     await installApi(page, baseMock());
     let release = () => {};
     await holdCreate(
@@ -428,13 +433,15 @@ test.describe("押せない理由が本文として読める", () => {
     await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
-    await expectBlockedReason(
-      ekidokiButton(page),
-      "作成が終わるまで絵解きを始められません",
-    );
+    const reason = "作成が終わるまで保存も絵解きもできません";
+    await expectBlockedReason(ekidokiButton(page), reason);
+
+    await detail.getByRole("button", { name: "閉じる" }).click();
+    await drawRectangle(page);
+    await expectBlockedReason(saveButton(page), reason);
 
     release();
-    await expect(page.getByText("作成が終わるまで絵解きを始められません")).toBeHidden();
+    await expect(page.getByText(reason)).toBeHidden();
   });
 
   // 理由を出す側が壊れたら落ちること自体を確かめる。**ここが落ちなければ、

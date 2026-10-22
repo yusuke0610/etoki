@@ -932,7 +932,8 @@ export function BoardPage({
   const saveBlocked = exclusive.reasonFor("saving");
 
   /**
-   * 保存を押せるか。**ボタンの `disabled` とショートカットで同じ式を使う。**
+   * 保存を押せるか。**ボタン（「保存」と「絵解き」）の `disabled` とショートカットで
+   * 同じ式を使う。**
    *
    * 2 つに分けて書くと、片方だけに条件を足したときに、押せないはずの経路が
    * キーボードからだけ通る。
@@ -1084,8 +1085,8 @@ export function BoardPage({
     ? "保存してから作成先を変更できます"
     : exclusive.reasonFor("changeTarget");
 
-  // 右上に出す。ボード名・未保存・「絵解き」（`BoardStatus`）。**描くたびに作り直さない**
-  // （ADR 0065）。依存にはプリミティブと、同一性の保たれた関数だけを置く。
+  // 右上に出す。ボード名・未保存・「保存」・「絵解き」（`BoardStatus`）。**描くたびに
+  // 作り直さない**（ADR 0065）。依存にはプリミティブと、同一性の保たれた関数だけを置く。
   const topRightUI = useMemo(
     () => (
       <BoardStatus
@@ -1096,9 +1097,10 @@ export function BoardPage({
         onRename={() => void rename()}
         dirty={dirty}
         canEdit={canEdit}
+        onSave={() => void save()}
         onEkidoki={() => void startEkidoki()}
-        canEkidoki={canSave}
-        ekidokiBlocked={saveBlocked}
+        canSave={canSave}
+        saveBlocked={saveBlocked}
         saving={saving}
       />
     ),
@@ -1110,6 +1112,7 @@ export function BoardPage({
       rename,
       dirty,
       canEdit,
+      save,
       startEkidoki,
       canSave,
       saveBlocked,
@@ -1387,7 +1390,8 @@ export function BoardPage({
           スマホの置き方では、右上と下の帯の中身をキャンバスの上の etoki の帯に
           移す（#199）。Excalidraw のモバイル用 UI では `Footer` が描かれず、
           状態を常に見せる約束（ADR 0064 / 0065）が崩れるため。1 段目はボード名・
-          未保存・「絵解き」で、**全面に開いたパネルと詳細もここは覆わない**（ADR 0021）。
+          未保存・「保存」・「絵解き」で、**全面に開いたパネルと詳細もここは覆わない**
+          （ADR 0021）。
         */}
         {phone && <div className="board-bar board-bar-status">{topRightUI}</div>}
         <div className="board-stage">
