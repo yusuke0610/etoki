@@ -63,7 +63,7 @@ func (g *gatedLLM) callCount() int {
 
 // newJobs はジョブを作る。ボードの持ち主は操作者 "u1"。
 func newJobs(
-	t *testing.T, llm port.LLMClient, opts ...usecase.InterpretationJobsOption,
+	t *testing.T, llm port.LLMClient, opts ...usecase.JobsOption,
 ) (*usecase.InterpretationJobs, *fakeBoards) {
 	t.Helper()
 
@@ -89,7 +89,7 @@ func waitJob(
 		if err != nil {
 			t.Fatalf("Get() = %v", err)
 		}
-		if job.Status != usecase.InterpretationJobRunning {
+		if job.Status != usecase.JobRunning {
 			return job
 		}
 		time.Sleep(2 * time.Millisecond)
@@ -109,13 +109,13 @@ func TestJobs_StartReturnsWithoutWaitingForLLM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start() = %v", err)
 	}
-	if job.ID == "" || job.Status != usecase.InterpretationJobRunning {
+	if job.ID == "" || job.Status != usecase.JobRunning {
 		t.Fatalf("job = %+v, want running with ID", job)
 	}
 
 	close(llm.release)
 	done := waitJob(t, jobs, ctx, job.ID)
-	if done.Status != usecase.InterpretationJobSucceeded || done.Result == nil {
+	if done.Status != usecase.JobSucceeded || done.Result == nil {
 		t.Fatalf("done = %+v, want succeeded with result", done)
 	}
 	if len(done.Result.Interpretation.Items) != 2 {
@@ -149,7 +149,7 @@ func TestJobs_KeepsRunningAfterRequestContextEnds(t *testing.T) {
 
 	close(llm.release)
 	done := waitJob(t, jobs, asUser(t.Context(), "u1"), job.ID)
-	if done.Status != usecase.InterpretationJobSucceeded {
+	if done.Status != usecase.JobSucceeded {
 		t.Errorf("Status = %q, want succeeded", done.Status)
 	}
 }
@@ -291,7 +291,7 @@ func TestJobs_FailureKeepsReasonKind(t *testing.T) {
 				t.Fatalf("Start() = %v", err)
 			}
 			done := waitJob(t, jobs, ctx, job.ID)
-			if done.Status != usecase.InterpretationJobFailed || !errors.Is(done.Err, tt.want) {
+			if done.Status != usecase.JobFailed || !errors.Is(done.Err, tt.want) {
 				t.Errorf("done = %+v, want failed with %v", done, tt.want)
 			}
 			if done.Result != nil {
@@ -301,7 +301,7 @@ func TestJobs_FailureKeepsReasonKind(t *testing.T) {
 	}
 }
 
-// ジョブの失敗はリクエストに結びつかないので、HTTP 層の記録（failLLM）を通らない。
+// ジョブの失敗はリクエストに結びつかないので、HTTP 層の記録を通らない。
 // 原因ごとに分けた sentinel（ADR 0087）も、ジョブの側で呼び出しの失敗として残す。
 // 記録の側に足し忘れると、その原因だけ記録から消える。
 func TestJobs_LogsEveryLLMCallFailure(t *testing.T) {
@@ -387,8 +387,8 @@ func TestJobs_ExpiresFinishedJobsAfterRetention(t *testing.T) {
 	mu.Lock()
 	now = now.Add(2 * time.Minute)
 	mu.Unlock()
-	if _, err := jobs.Get(ctx, "board-1", job.ID); !errors.Is(err, usecase.ErrInterpretationJobNotFound) {
-		t.Errorf("61 分後の Get() = %v, want ErrInterpretationJobNotFound", err)
+	if _, err := jobs.Get(ctx, "board-1", job.ID); !errors.Is(err, usecase.ErrJobNotFound) {
+		t.Errorf("61 分後の Get() = %v, want ErrJobNotFound", err)
 	}
 }
 
@@ -452,10 +452,10 @@ func TestJobs_ListIsScopedToBoardAndActor(t *testing.T) {
 	job, _ := jobs.Start(ctx, "board-1", "annot-1", nil)
 
 	list, err := jobs.List(ctx, "board-1")
-	if err != nil || len(list) != 1 || list[0].ID != job.ID || list[0].AnnotationID != "annot-1" {
+	if err != nil || len(list) != 1 || list[0].ID != job.ID || list[0].Input.AnnotationID != "annot-1" {
 		t.Fatalf("List() = %+v, %v, want 1 件", list, err)
 	}
-	if list[0].Status != usecase.InterpretationJobRunning {
+	if list[0].Status != usecase.JobRunning {
 		t.Errorf("Status = %q, want running", list[0].Status)
 	}
 
@@ -476,7 +476,7 @@ func TestJobs_ListOmitsResult(t *testing.T) {
 	waitJob(t, jobs, ctx, job.ID)
 
 	list, _ := jobs.List(ctx, "board-1")
-	if len(list) != 1 || list[0].Status != usecase.InterpretationJobSucceeded || list[0].Result != nil {
+	if len(list) != 1 || list[0].Status != usecase.JobSucceeded || list[0].Result != nil {
 		t.Errorf("List() = %+v, want 成功・結果なし", list)
 	}
 }
@@ -499,8 +499,8 @@ func TestJobs_DiscardRunningCancelsAndFreesSlot(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("取り消しても LLM の呼び出しの ctx が終わらない")
 	}
-	if _, err := jobs.Get(ctx, "board-1", job.ID); !errors.Is(err, usecase.ErrInterpretationJobNotFound) {
-		t.Errorf("取り消した後の Get() = %v, want ErrInterpretationJobNotFound", err)
+	if _, err := jobs.Get(ctx, "board-1", job.ID); !errors.Is(err, usecase.ErrJobNotFound) {
+		t.Errorf("取り消した後の Get() = %v, want ErrJobNotFound", err)
 	}
 
 	// 枠が戻って、また始められる。
@@ -530,8 +530,8 @@ func TestJobs_DiscardFinishedDropsResult(t *testing.T) {
 	if err := jobs.Discard(ctx, "board-1", job.ID); err != nil {
 		t.Fatalf("Discard() = %v", err)
 	}
-	if err := jobs.Discard(ctx, "board-1", job.ID); !errors.Is(err, usecase.ErrInterpretationJobNotFound) {
-		t.Errorf("2 回目の Discard() = %v, want ErrInterpretationJobNotFound", err)
+	if err := jobs.Discard(ctx, "board-1", job.ID); !errors.Is(err, usecase.ErrJobNotFound) {
+		t.Errorf("2 回目の Discard() = %v, want ErrJobNotFound", err)
 	}
 }
 
@@ -544,7 +544,7 @@ func TestJobs_TimeoutEndsStuckCall(t *testing.T) {
 
 	job, _ := jobs.Start(ctx, "board-1", "annot-1", nil)
 	done := waitJob(t, jobs, ctx, job.ID)
-	if done.Status != usecase.InterpretationJobFailed {
+	if done.Status != usecase.JobFailed {
 		t.Errorf("Status = %q, want failed（応えない LLM に枠を握らせ続けない）", done.Status)
 	}
 }
@@ -591,7 +591,7 @@ func TestJobs_PanicInLLMFailsTheJobAndFreesSlot(t *testing.T) {
 		t.Fatalf("Start() = %v", err)
 	}
 	done := waitJob(t, jobs, ctx, job.ID)
-	if done.Status != usecase.InterpretationJobFailed {
+	if done.Status != usecase.JobFailed {
 		t.Errorf("Status = %q, want failed（プロセスを落とさず、このジョブの失敗にする）", done.Status)
 	}
 }
