@@ -484,14 +484,16 @@ describe("AnnotationDetail", () => {
     it("作成済みなら、矢印や図形だけの変更では「変更あり」にならないことを言う", () => {
       render(<AnnotationDetail {...withState("created")} />);
 
+      // 置き場所は囲みの中に限る。囲みに出し入れすると所属が変わって動く。
       const note = screen.getByText(
-        /矢印や図形、貼った画像、置き場所、絵の名前だけを直しても/,
+        /矢印や図形、貼った画像、囲みの中での置き場所、絵の名前だけを直しても/,
       );
       expect(note).toHaveTextContent(/「作成済み」のまま/);
       // 何を変えれば「変更あり」になるかも言う。言わないと、どこまでが検知の外かが読めない。
       expect(note).toHaveTextContent(/絵の中の文字・粒度・種別/);
+      expect(note).toHaveTextContent(/文字を囲みに出し入れしたとき/);
       // 文字は要素の ID ごと見るので、文面が同じでも作り直せば動く。
-      expect(note).toHaveTextContent(/同じ文面でも文字を消して作り直したとき/);
+      expect(note).toHaveTextContent(/同じ文面でも消して作り直したとき/);
     });
 
     // 作った直後は解釈を持ったまま作成済みになる。解釈の前の本文は消えるが、
@@ -528,7 +530,7 @@ describe("AnnotationDetail", () => {
 
       expect(screen.queryByText(/GitHub にあります/)).toBeNull();
       expect(
-        screen.getByText(/矢印や図形、貼った画像、置き場所、絵の名前だけを直しても/),
+        screen.getByText(/矢印や図形、貼った画像、囲みの中での置き場所/),
       ).toBeInTheDocument();
     });
 
