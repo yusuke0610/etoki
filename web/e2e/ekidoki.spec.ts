@@ -174,7 +174,7 @@ test.describe("右上の「絵解き」", () => {
     expect(mock.saveRequests).toHaveLength(0);
   });
 
-  // 右上のボタンはどの注釈かを指していない。複数あるなら、選ぶのは人
+  // 右上の「絵解き」はどの注釈かを指していない。複数あるなら、選ぶのは人
   // （中核思想 3）。別のタブを開いていても、畳んでいても、注釈の一覧に戻す。
   test("注釈が複数なら、パネルの注釈の一覧を開く", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
