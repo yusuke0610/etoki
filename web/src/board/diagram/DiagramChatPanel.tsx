@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import type { DiagramKind } from "../../api/types";
 import { ErrorNotice } from "../../app/ErrorNotice";
 import { canSend, turnLabel, turnsRemaining, type DiagramChat } from "./diagramChat";
@@ -15,13 +13,19 @@ const UNAVAILABLE_ID = "diagram-unavailable";
 
 type Props = {
   chat: DiagramChat;
+  /**
+   * 図への指示の入力欄。**ここでは持たない**（`useDiagramDraft`）。開き直した
+   * ときに走っている生成の指示を戻すのも、生成できたときに消すのもあちら。
+   */
+  prompt: string;
+  onPromptChange: (text: string) => void;
   /** 図の種類を変える。**会話ごと捨てる**（`changeKind` を参照）。 */
   onChangeKind: (kind: DiagramKind) => void;
   /**
-   * 指示を送って生成する。生成できたかどうかを返す。
+   * 指示を送って生成する。
    *
-   * **返り値で入力を消すかどうかを決める。** 失敗したときに消すと、書いた
-   * 指示ごと失われ、同じことをもう一度打たせることになる。
+   * **入力を消すのは生成できたときだけで、消すのは送る側。** 失敗したときに
+   * 消すと、書いた指示ごと失われ、同じことをもう一度打たせることになる。
    */
   onSend: (prompt: string) => Promise<boolean>;
   /** いまのドラフトをキャンバスに置く。 */
@@ -47,23 +51,22 @@ type Props = {
  */
 export function DiagramChatPanel({
   chat,
+  prompt,
+  onPromptChange,
   onChangeKind,
   onSend,
   onPlace,
   unavailable,
 }: Props) {
-  const [prompt, setPrompt] = useState("");
-
   const generating = chat.pending !== null;
   const remaining = turnsRemaining(chat);
   const sendable = unavailable === null && canSend(chat, prompt);
 
-  const send = async () => {
+  const send = () => {
     if (!sendable) return;
-    // 生成できたときだけ消す。会話は下に積まれるので、成功したのに残すと
-    // 同じ指示を 2 度送りやすい。失敗したぶんは残して、直して送り直せる
+    // 生成できたら送る側が入力を消す。失敗したぶんは残して、直して送り直せる
     // ようにする（上限に当たった 413 もここを通る）。
-    if (await onSend(prompt)) setPrompt("");
+    void onSend(prompt);
   };
 
   return (
@@ -115,7 +118,7 @@ export function DiagramChatPanel({
           className="diagram-chat-form"
           onSubmit={(e) => {
             e.preventDefault();
-            void send();
+            send();
           }}
         >
           <textarea
@@ -129,7 +132,7 @@ export function DiagramChatPanel({
                 ? "例: 注文から出荷までの流れ"
                 : "例: 返金の分岐も足して"
             }
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => onPromptChange(e.target.value)}
           />
           <button
             type="submit"

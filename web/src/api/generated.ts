@@ -720,10 +720,14 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * プロンプトから図のドラフトを生成する
-         * @description **サーバーの状態を一切変えない**（ADR 0041）。DB にも GitHub にも触れず、
-         *     会話も保存しない。返した mermaid をキャンバスに置くかどうかは、見てから
-         *     開発者が決める（中核思想 3）。
+         * プロンプトから図のドラフトの生成を始める
+         * @description LLM の応答は待たず、ジョブを返す。結果は `getDiagramJob` で取る
+         *     （ADR 0091）。生成は数十秒かかり、解釈と同じ枠（ADR 0044）を取るので、
+         *     リクエストに結びつけると画面を離れたあとも枠を握ったまま残る。
+         *
+         *     **会話は保存しない**（ADR 0041）。DB にも GitHub にも触れない。ジョブが
+         *     入力を持つのは、捨てられるまで。返した mermaid をキャンバスに置くかどうかは、
+         *     見てから開発者が決める（中核思想 3）。
          *
          *     **保存済みシーンを読まないので、未保存でも使える。** 解釈が保存を
          *     要求する（ADR 0018）のとは非対称だが、手抜きではなく副作用の有無から
@@ -731,9 +735,74 @@ export interface paths {
          *
          *     注釈でも解釈でもないので、パスはボードの直下に置く。囲みとは無関係で、
          *     キャンバスに何も無くても呼べる。
+         *
+         *     **同じ利用者が同じボードで、同じ入力（種類・指示・往復・`internal` の
+         *     すべて）の生成をまだ走らせている最中なら、新しく始めず、走っているジョブを
+         *     返す。** どこか 1 つでも違えば別の入力で、429（`concurrency_limited`）。
          */
         post: operations["generateDiagramDraft"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/diagram-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 自分の図のドラフト生成のジョブを返す
+         * @description ボードを開き直したとき、走っている生成と、終わっているが受け取って
+         *     いない生成を知るための口（ADR 0091）。始めた順。**結果は含めず、入力
+         *     （`request`）は含める。** 画面はそれで、どの指示への答えかを会話ごと戻す。
+         *     結果を取るのは `getDiagramJob`。
+         *
+         *     自分が始めたものだけ。他の利用者のジョブは存在も見せない。
+         */
+        get: operations["listDiagramJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{id}/diagram-jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description ジョブの ID（解釈と図のドラフト生成で共通の形） */
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * 図のドラフト生成のジョブを返す
+         * @description 走っていれば `running`。終わっていれば結果か失敗の理由を載せる。
+         *     **読んでも消えない**（`getInterpretationJob` と同じ理由、ADR 0085）。
+         *     要らなくなったら `discardDiagramJob`。
+         */
+        get: operations["getDiagramJob"];
+        put?: never;
+        post?: never;
+        /**
+         * 図のドラフト生成のジョブを要らないものとして捨てる
+         * @description 走っていれば止める。終わっていれば結果を捨てる（`discardInterpretationJob`
+         *     と同じ扱い、ADR 0085）。捨てたジョブは `getDiagramJob` でも
+         *     `listDiagramJobs` でも出ない。
+         */
+        delete: operations["discardDiagramJob"];
         options?: never;
         head?: never;
         patch?: never;
@@ -813,7 +882,7 @@ export interface paths {
             path: {
                 /** @description ボードの ID */
                 id: components["parameters"]["BoardId"];
-                /** @description 解釈のジョブの ID */
+                /** @description ジョブの ID（解釈と図のドラフト生成で共通の形） */
                 jobId: components["parameters"]["JobId"];
             };
             cookie?: never;
@@ -1757,6 +1826,13 @@ export interface components {
             prompt: string;
             /** @description それに対して返った mermaid */
             mermaid: string;
+            /**
+             * @description 利用者が書いた指示ではない（置けなかった図の変換の投げ直し）ことを表す。
+             *     **プロンプトには載せない。** 画面が会話を表示するための印で、ジョブから
+             *     会話を戻すとき（`DiagramJob.request`）にそのまま返すためだけに預かる
+             *     （ADR 0091）。省略は false
+             */
+            internal?: boolean;
         };
         /**
          * @description 図のドラフトを 1 つ作るための入力。**保存済みシーンもキャンバスも
@@ -1774,6 +1850,11 @@ export interface components {
              *     捨てず、`diagram_chat_too_long` で返す**
              */
             history?: components["schemas"]["DiagramTurn"][];
+            /**
+             * @description 今回の指示が変換の投げ直しであることを表す（`DiagramTurn.internal` と
+             *     同じ印）。省略は false
+             */
+            internal?: boolean;
         };
         /**
          * @description 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
@@ -1825,6 +1906,28 @@ export interface components {
             /** Format: date-time */
             startedAt: string;
             result?: components["schemas"]["Interpretation"];
+            error?: components["schemas"]["ErrorResponse"];
+        };
+        /**
+         * @description 1 回の図のドラフト生成の、いまの様子（ADR 0091）。状態の意味は
+         *     `InterpretationJob` と同じ。
+         *
+         *     - `running` … 走っている
+         *     - `succeeded` … 終わった。`result` にドラフトが入る
+         *     - `failed` … 失敗した。`error` に理由が入る。打ち手は `error.code` で分ける
+         *
+         *     `request` は始めたときに送られた入力をそのまま返す。開き直した画面が、
+         *     どの指示への答えかを会話ごと戻すのに使う。一覧には `result` を載せない。
+         *     取るのは 1 件ずつの取得。
+         */
+        DiagramJob: {
+            id: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed";
+            /** Format: date-time */
+            startedAt: string;
+            request: components["schemas"]["GenerateDiagramRequest"];
+            result?: components["schemas"]["DiagramDraft"];
             error?: components["schemas"]["ErrorResponse"];
         };
         /** @description 作成した run。途中で失敗しても、作れたぶんは items に入る */
@@ -2027,7 +2130,7 @@ export interface components {
         BoardId: string;
         /** @description 注釈にした frame の要素 ID */
         AnnotationId: string;
-        /** @description 解釈のジョブの ID */
+        /** @description ジョブの ID（解釈と図のドラフト生成で共通の形） */
         JobId: string;
         /**
          * @description etoki が発番した利用者の ID。login ではない。login は改名で変わるので、
@@ -3036,13 +3139,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 生成された図のドラフト */
-            200: {
+            /** @description 始めた、または走っているジョブ */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DiagramDraft"];
+                    "application/json": components["schemas"]["DiagramJob"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -3052,8 +3155,8 @@ export interface operations {
             413: components["responses"]["DiagramChatTooLong"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
-            /** @description LLM の呼び出しに失敗した、または図が返らなかった */
-            502: {
+            /** @description LLM が設定されていない */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3061,6 +3164,107 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+        };
+    };
+    listDiagramJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ジョブ。無ければ空配列 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramJob"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            /** @description LLM が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDiagramJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description ジョブの ID（解釈と図のドラフト生成で共通の形） */
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ジョブ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramJob"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            /** @description LLM が設定されていない */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    discardDiagramJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+                /** @description ジョブの ID（解釈と図のドラフト生成で共通の形） */
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 捨てた */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
             /** @description LLM が設定されていない */
             503: {
                 headers: {
@@ -3161,7 +3365,7 @@ export interface operations {
             path: {
                 /** @description ボードの ID */
                 id: components["parameters"]["BoardId"];
-                /** @description 解釈のジョブの ID */
+                /** @description ジョブの ID（解釈と図のドラフト生成で共通の形） */
                 jobId: components["parameters"]["JobId"];
             };
             cookie?: never;
@@ -3199,7 +3403,7 @@ export interface operations {
             path: {
                 /** @description ボードの ID */
                 id: components["parameters"]["BoardId"];
-                /** @description 解釈のジョブの ID */
+                /** @description ジョブの ID（解釈と図のドラフト生成で共通の形） */
                 jobId: components["parameters"]["JobId"];
             };
             cookie?: never;

@@ -514,6 +514,8 @@ export function baseMock(): ApiMock {
     createRequests: [],
     diagramDraft: { status: 200, body: diagramDraft() },
     diagramRequests: [],
+    diagramJobRunning: false,
+    diagramJobDiscards: [],
     createItems: { status: 201, body: createdRun() },
     // 既定は認証を設定していない構成。ログインの導線を見る spec だけが
     // 書き換える。

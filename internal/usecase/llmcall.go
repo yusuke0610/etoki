@@ -44,10 +44,9 @@ var llmCallFailures = []error{
 
 // IsLLMCallFailure は err が LLM の呼び出しそのものの失敗かを返す。
 //
-// 記録を残す場所は 2 つある。リクエストで走る図のドラフト生成は httpapi の
-// failLLM、リクエストから切り離した解釈は InterpretationJobs.logFailure
-// （ADR 0085）。**どちらもここで判定する。** 片方で列挙し直すと、足した原因が
-// もう片方の記録から消える。
+// 記録を残すのは、解釈と図のドラフト生成で共有するジョブの置き場
+// （jobTable.logFailure、ADR 0085 / 0091）。**判定はここに置く。** 記録の側で
+// 列挙し直すと、足した原因が記録から消える。
 func IsLLMCallFailure(err error) bool {
 	for _, s := range llmCallFailures {
 		if errors.Is(err, s) {
@@ -78,8 +77,8 @@ var llmCauses = []struct {
 //
 // 名乗らなければ ErrLLMUnavailable に落とす。外部の LLMClient 実装は名乗らなくて
 // よい（port の doc コメント）。こちらは元のエラーを %w のまま包む。
-// context.Canceled を辿って「待っていた相手がいなくなった」を見分けるのに
-// 使っている（httpapi の failLLM）。
+// context.Canceled を辿って、取り消したジョブを障害として記録しないのに使っている
+// （jobTable.finish）。
 func llmCallError(attempt int, err error) error {
 	for _, c := range llmCauses {
 		if errors.Is(err, c.port) {

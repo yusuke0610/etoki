@@ -43,6 +43,27 @@ func (e BoardRole) Valid() bool {
 	}
 }
 
+// Defines values for DiagramJobStatus.
+const (
+	DiagramJobStatusFailed    DiagramJobStatus = "failed"
+	DiagramJobStatusRunning   DiagramJobStatus = "running"
+	DiagramJobStatusSucceeded DiagramJobStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the DiagramJobStatus enum.
+func (e DiagramJobStatus) Valid() bool {
+	switch e {
+	case DiagramJobStatusFailed:
+		return true
+	case DiagramJobStatusRunning:
+		return true
+	case DiagramJobStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DiagramKind.
 const (
 	DiagramKindArchitecture DiagramKind = "architecture"
@@ -956,6 +977,36 @@ type DiagramDraft struct {
 	TurnsRemaining int `json:"turnsRemaining"`
 }
 
+// DiagramJob 1 回の図のドラフト生成の、いまの様子（ADR 0091）。状態の意味は
+// `InterpretationJob` と同じ。
+//
+// - `running` … 走っている
+// - `succeeded` … 終わった。`result` にドラフトが入る
+// - `failed` … 失敗した。`error` に理由が入る。打ち手は `error.code` で分ける
+//
+// `request` は始めたときに送られた入力をそのまま返す。開き直した画面が、
+// どの指示への答えかを会話ごと戻すのに使う。一覧には `result` を載せない。
+// 取るのは 1 件ずつの取得。
+type DiagramJob struct {
+	// Error 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+	Error *ErrorResponse `json:"error,omitempty"`
+	ID    string         `json:"id"`
+
+	// Request 図のドラフトを 1 つ作るための入力。**保存済みシーンもキャンバスも
+	// 読まない**（ADR 0041）ので、未保存でも使える。
+	Request GenerateDiagramRequest `json:"request"`
+
+	// Result 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
+	// 見てから開発者が決める（中核思想 3）。mermaid を Excalidraw の要素に
+	// するのはフロントの仕事（ADR 0040）。
+	Result    *DiagramDraft    `json:"result,omitempty"`
+	StartedAt time.Time        `json:"startedAt"`
+	Status    DiagramJobStatus `json:"status"`
+}
+
+// DiagramJobStatus defines model for DiagramJob.Status.
+type DiagramJobStatus string
+
 // DiagramKind 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
 // プロンプトから生成するドラフトが同じ 5 種を指す。
 //
@@ -975,6 +1026,12 @@ type DiagramKind string
 // **サーバーは会話を保存しない**（ADR 0041）ので、ここまでの往復は毎回
 // まるごと送る。会話は成果物ではなく、成果物はキャンバス。
 type DiagramTurn struct {
+	// Internal 利用者が書いた指示ではない（置けなかった図の変換の投げ直し）ことを表す。
+	// **プロンプトには載せない。** 画面が会話を表示するための印で、ジョブから
+	// 会話を戻すとき（`DiagramJob.request`）にそのまま返すためだけに預かる
+	// （ADR 0091）。省略は false
+	Internal bool `json:"internal,omitempty"`
+
 	// Mermaid それに対して返った mermaid
 	Mermaid string `json:"mermaid"`
 
@@ -1033,6 +1090,10 @@ type GenerateDiagramRequest struct {
 	// History ここまでのやりとり。1 回目は空。**上限を超えたら黙って古いものを
 	// 捨てず、`diagram_chat_too_long` で返す**
 	History *[]DiagramTurn `json:"history,omitempty"`
+
+	// Internal 今回の指示が変換の投げ直しであることを表す（`DiagramTurn.internal` と
+	// 同じ印）。省略は false
+	Internal bool `json:"internal,omitempty"`
 
 	// Kind 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
 	// プロンプトから生成するドラフトが同じ 5 種を指す。

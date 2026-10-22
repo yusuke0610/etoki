@@ -6,6 +6,7 @@ import { describeFailure } from "../../api/errorMessage";
 import type { AnnotationStatus, Granularity, SyncItem } from "../../api/types";
 import { exportAnnotationImage } from "../../excalidraw/image";
 import { createGenerations } from "../generation";
+import { JOB_POLL_INTERVAL_MS } from "../jobPolling";
 import {
   addInterpretation,
   failInterpretation,
@@ -14,7 +15,7 @@ import {
   startInterpretation,
   type InterpretationState,
 } from "./interpretationHistory";
-import { awaitJob, JOB_POLL_INTERVAL_MS } from "./interpretationJobs";
+import { awaitJob } from "./interpretationJobs";
 
 type Options = {
   api: ExcalidrawImperativeAPI | null;
