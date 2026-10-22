@@ -9,6 +9,7 @@ import {
   conversionRetryPrompt,
   failTurn,
   historyOf,
+  resumeChat,
   startChat,
   turnLabel,
   turnsRemaining,
@@ -180,17 +181,85 @@ describe("内部の投げ直しを見分ける", () => {
     expect(turnLabel(chat.turns[0]!)).toBe("注文の流れ");
   });
 
-  // 印は画面のためだけにある。契約にあるのは prompt と mermaid の 2 つだけ
-  // （ADR 0011）。載せたまま送ると、契約に無いキーが混ざる。
-  it("サーバーには印を送らない。文言は投げ直しのものを送る", () => {
-    const chat = retry();
+  // 印は契約の `internal` で送る（ADR 0091）。サーバーはプロンプトに載せず、
+  // ジョブから会話を戻すときに印ごと返す。落とすと、戻した会話で投げ直しが
+  // 利用者の指示として並ぶ。
+  it("印も契約のキーとして送る。文言は投げ直しのものを送る", () => {
+    const chat = completeTurn(
+      beginTurn(retry(), "返金も足して"),
+      draft("flowchart TD\n  A --> B --> C"),
+    );
 
     expect(historyOf(chat)).toEqual([
       {
         prompt: conversionRetryPrompt("Parse error on line 2"),
         mermaid: "flowchart TD\n  A --> B",
+        internal: true,
+      },
+      {
+        prompt: "返金も足して",
+        mermaid: "flowchart TD\n  A --> B --> C",
+        internal: false,
       },
     ]);
+  });
+});
+
+// 開き直した画面は、受け取っていない生成を会話ごと戻す（ADR 0091）。
+describe("resumeChat", () => {
+  it("送っている最中の形に戻す。往復と印も戻す", () => {
+    const chat = resumeChat({
+      kind: "sequence",
+      prompt: "返金も足して",
+      history: [
+        { prompt: "注文の流れ", mermaid: "sequenceDiagram\n  A->>B: 注文" },
+        { prompt: "投げ直し", mermaid: "sequenceDiagram\n  A->>B: 注文", internal: true },
+      ],
+    });
+
+    expect(chat.kind).toBe("sequence");
+    expect(chat.turns).toEqual([
+      {
+        prompt: "注文の流れ",
+        mermaid: "sequenceDiagram\n  A->>B: 注文",
+        internal: false,
+      },
+      { prompt: "投げ直し", mermaid: "sequenceDiagram\n  A->>B: 注文", internal: true },
+    ]);
+    expect(chat.pending).toEqual({ prompt: "返金も足して", internal: false });
+    expect(chat.failure).toBeNull();
+  });
+
+  it("今回の指示が投げ直しなら、その印も戻す", () => {
+    const chat = resumeChat({ kind: "todo", prompt: "直して", internal: true });
+
+    expect(chat.turns).toEqual([]);
+    expect(chat.pending).toEqual({ prompt: "直して", internal: true });
+  });
+
+  // 残りの往復を数えるのはサーバー。往復の mermaid からドラフトを組み立てると、
+  // 残りをこちらで数えることになる。
+  it("直前のドラフトは戻さない", () => {
+    const chat = resumeChat({
+      kind: "todo",
+      prompt: "直して",
+      history: [{ prompt: "注文の流れ", mermaid: "flowchart TD\n  A" }],
+    });
+
+    expect(chat.draft).toBeNull();
+    expect(turnsRemaining(chat)).toBeNull();
+  });
+
+  it("戻した会話に結果を積むと、送った指示の往復になる", () => {
+    const chat = completeTurn(
+      resumeChat({ kind: "todo", prompt: "直して", internal: true }),
+      draft("flowchart TD\n  A --> B", 8),
+    );
+
+    expect(chat.turns).toEqual([
+      { prompt: "直して", mermaid: "flowchart TD\n  A --> B", internal: true },
+    ]);
+    expect(turnsRemaining(chat)).toBe(8);
   });
 });
 
