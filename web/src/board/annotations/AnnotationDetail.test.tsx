@@ -538,6 +538,30 @@ describe("AnnotationDetail", () => {
       expect(screen.queryByText(/矢印や図形、貼った画像/)).toBeNull();
     });
 
+    // 失敗を出しているあいだは、解釈の前の本文と同じく出さない。読むのは失敗のほう。
+    it("作成済みでも、絵解きの失敗を出しているあいだは案内を出さない", () => {
+      const detailProps = withState("created");
+      render(
+        <AnnotationDetail
+          {...detailProps}
+          interpretation={{
+            ...detailProps.interpretation,
+            states: {
+              "frame-1": {
+                running: false,
+                runs: [],
+                selectedId: null,
+                failure: { message: "絵解きできませんでした", detail: "" },
+              },
+            },
+          }}
+        />,
+      );
+
+      expect(screen.getByText(/絵解きできませんでした/)).toBeInTheDocument();
+      expect(screen.queryByText(/矢印や図形、貼った画像/)).toBeNull();
+    });
+
     // 中身が同じでも changed になりうる（ADR 0047）ので、変わったとは言い切らない。
     it("変更ありなら、押しても作らないことを言い、変わったとは断定しない", () => {
       render(<AnnotationDetail {...withState("changed")} />);

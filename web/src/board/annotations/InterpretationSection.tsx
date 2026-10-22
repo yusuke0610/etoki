@@ -86,7 +86,10 @@ const REINTERPRET_HINT =
  *
  * **解釈の前の本文には混ぜず、作成済みのあいだは結果の有無によらず出す。** 作った
  * 直後は解釈を持ったまま状態が作成済みに変わり、作成済みの絵を読み直しても結果が
- * 並ぶ。前の本文に混ぜると、そのどちらでも消える。
+ * 並ぶ。前の本文に混ぜると、そのどちらでも消える。**走っているあいだと、失敗を
+ * 出しているあいだは出さない**（前の本文と同じ）。読むべきなのはそちらの表示。
+ * 解釈をまだ引いていない（`state` が無い）ときは出す。開いただけの作成済みの絵が、
+ * この案内のいちばんの出番。
  *
  * **`content_hash` の入力を変えたら、この文も同じコミットで直す。** 動く変更と
  * 動かない変更の両方を言っているので、片方だけ古くなる。
@@ -186,7 +189,9 @@ export function InterpretationSection({
       {!running && runs.length === 0 && !state?.failure && (
         <p className="hint">{beforeInterpretationHint(syncState)}</p>
       )}
-      {!running && syncState === "created" && <p className="hint">{SHAPE_ONLY_NOTE}</p>}
+      {!running && !state?.failure && syncState === "created" && (
+        <p className="hint">{SHAPE_ONLY_NOTE}</p>
+      )}
       {/*
         未保存のあいだだけ、保存が入ることを言う。**保存は全部の注釈の引いた解釈と
         作成の状態を捨てる**ので、この注釈の前の結果も、ほかの注釈の結果も消える。
