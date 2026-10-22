@@ -58,6 +58,38 @@ describe("createDraft", () => {
   });
 });
 
+// 読み上げの名前に使う番号（#300）。内部 ID（e1 / i2）を名前にすると、読み上げで
+// 内部の記号が聞こえる。**編集の途中で名前を変えない**（ADR 0024）ので、番号は
+// 絵解いた時点で振り、手直しでは変えない。
+describe("番号", () => {
+  function ordinals(draft: Draft): Record<string, number> {
+    return Object.fromEntries(draft.items.map((d) => [d.item.localId, d.ordinal]));
+  }
+
+  // LLM の返した順ではなく、画面に並ぶ順（epic ごとにまとめ、親の無い issue は末尾）。
+  it("絵解いた時点の、画面に並ぶ順で 1 から振る", () => {
+    const draft = createDraft({
+      summary: "s",
+      contentHash: "h",
+      items: [epic("e1"), epic("e2"), issue("i1", "e2"), issue("i2"), issue("i3", "e1")],
+    });
+
+    expect(ordinals(draft)).toEqual({ e1: 1, i3: 2, e2: 3, i1: 4, i2: 5 });
+  });
+
+  // 種別を変えると画面の並びは組み直されるが、名前は変えない。
+  it("種別やタイトルを手直ししても、番号は変えない", () => {
+    let draft = createDraft(sample());
+    const before = ordinals(draft);
+
+    draft = setKind(draft, "i1", "epic");
+    draft = setTitle(draft, "e1", "書き換えた");
+    draft = toggleItem(draft, "i3");
+
+    expect(ordinals(draft)).toEqual(before);
+  });
+});
+
 describe("toggleItem", () => {
   it("issue を外すと、その 1 件だけが外れる", () => {
     const draft = toggleItem(createDraft(sample()), "i1");
