@@ -389,7 +389,9 @@ export type RenamedEpic = { from: string; to: string };
 export function renamedEpics(draft: Draft, previous: SyncItem[]): RenamedEpic[] {
   const out: RenamedEpic[] = [];
   for (const d of draft.items) {
-    if (!d.selected || d.createdItemId || d.item.kind !== "epic") continue;
+    // **下書きの種別は見ない。** epic を issue に倒しても、前の epic を書き換える
+    // なら、子の Parent が指す前のタイトルは消える。
+    if (!d.selected || d.createdItemId) continue;
     const target = targetItemIdOf(d);
     if (!target) continue;
     const before = previous.find((it) => it.itemId === target && it.kind === "epic");

@@ -400,6 +400,24 @@ describe("renamedEpics", () => {
     expect(renamedEpics(setUpdatesPrevious(base, "e1", false), previous)).toEqual([]);
   });
 
+  // 前の epic を書き換えるなら、下書きで issue に倒しても子は親を失う。
+  it("下書きで種別を issue に変えても、前の epic のタイトルが変わるなら数える", () => {
+    let draft = draftWith([
+      {
+        localId: "e1",
+        kind: "epic",
+        title: "認証基盤",
+        body: "",
+        previousItemId: "PVTI_e",
+      },
+    ]);
+    draft = setKind(draft, "e1", "issue");
+
+    expect(renamedEpics(draft, previous)).toEqual([
+      { from: "ログイン基盤", to: "認証基盤" },
+    ]);
+  });
+
   // Parent が指すのは epic のタイトルだけ。issue のタイトルが変わっても、子は
   // 親を失わない。
   it("issue のタイトルが変わっても数えない", () => {
