@@ -490,6 +490,8 @@ describe("AnnotationDetail", () => {
       expect(note).toHaveTextContent(/「作成済み」のまま/);
       // 何を変えれば「変更あり」になるかも言う。言わないと、どこまでが検知の外かが読めない。
       expect(note).toHaveTextContent(/絵の中の文字・粒度・種別/);
+      // 文字は要素の ID ごと見るので、文面が同じでも作り直せば動く。
+      expect(note).toHaveTextContent(/同じ文面でも文字を消して作り直したとき/);
     });
 
     // 作った直後は解釈を持ったまま作成済みになる。解釈の前の本文は消えるが、
