@@ -20,9 +20,7 @@ import type {
   BoardTarget,
   BoardTargetDisplay,
   CreatedRun,
-  DiagramDraft,
-  DiagramKind,
-  DiagramTurn,
+  DiagramJob,
   ErrorResponse,
   GenerateDiagramRequest,
   Interpretation,
@@ -278,24 +276,39 @@ export const boardsApi = {
     }),
 
   /**
-   * プロンプトから図のドラフトを生成する。
+   * プロンプトから図のドラフトの生成を始める。LLM の応答は待たず、ジョブを返す
+   * （ADR 0091）。結果は `diagramJob` で取る。
    *
-   * **サーバーの状態を一切変えない**（ADR 0041）。保存済みシーンも読まないので、
-   * 解釈と違って**未保存でも呼べる**。返るのは mermaid だけで、キャンバスには
-   * 何も置かれていない。置くかどうかは見てから決める（中核思想 3）。
+   * **会話は保存されない**（ADR 0041）。保存済みシーンも読まないので、解釈と
+   * 違って**未保存でも呼べる**。返るのは mermaid だけで、キャンバスには何も
+   * 置かれていない。置くかどうかは見てから決める（中核思想 3）。
    *
-   * `history` はここまでのやりとり。**サーバーは会話を持たない**ので、続きを
-   * 頼むときは毎回まるごと送る。
+   * `history` はここまでのやりとり。続きを頼むときは毎回まるごと送る。**同じ
+   * 入力の生成がまだ走っていれば、走っているジョブが返る。**
    */
-  generateDiagram: (
-    boardId: string,
-    kind: DiagramKind,
-    prompt: string,
-    history: DiagramTurn[],
-  ) =>
-    request<DiagramDraft>(`/api/boards/${boardId}/diagram-draft`, {
+  generateDiagram: (boardId: string, body: GenerateDiagramRequest) =>
+    request<DiagramJob>(`/api/boards/${boardId}/diagram-draft`, {
       method: "POST",
-      body: JSON.stringify({ kind, prompt, history } satisfies GenerateDiagramRequest),
+      body: JSON.stringify(body satisfies GenerateDiagramRequest),
+    }),
+
+  /**
+   * 自分の図のドラフト生成のジョブ。結果は載らず、入力（`request`）は載る。
+   *
+   * ボードを開いたときに 1 回だけ引く。走っている生成と、終わったが受け取って
+   * いない生成を、会話ごと画面に戻すため。
+   */
+  diagramJobs: (boardId: string) =>
+    request<DiagramJob[]>(`/api/boards/${boardId}/diagram-jobs`),
+
+  /** 図のドラフト生成のジョブ 1 件。読んでも消えない。 */
+  diagramJob: (boardId: string, jobId: string) =>
+    request<DiagramJob>(`/api/boards/${boardId}/diagram-jobs/${jobId}`),
+
+  /** 図のドラフト生成のジョブを要らないものとして捨てる。走っていれば止まる。 */
+  discardDiagramJob: (boardId: string, jobId: string) =>
+    request<void>(`/api/boards/${boardId}/diagram-jobs/${jobId}`, {
+      method: "DELETE",
     }),
 
   /**

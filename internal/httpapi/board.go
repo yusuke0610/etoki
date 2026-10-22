@@ -184,6 +184,9 @@ type handlers struct {
 	// 作れるか」という別の問いで、1 つに畳むと画面がどちらのボタンを止めれば
 	// よいのかを決められなくなる。
 	diagrams *usecase.DiagramService
+	// diagramJobs は diagrams を、リクエストから切り離して走らせる
+	// （ADR 0091）。nil の条件は diagrams と同じ。
+	diagramJobs *usecase.DiagramJobs
 	// creations は nil でもよい。その場合は 503 を返す。
 	creations *usecase.CreationService
 	// catalog は作成先の候補一覧。nil でもよい。その場合は 503 を返す。
