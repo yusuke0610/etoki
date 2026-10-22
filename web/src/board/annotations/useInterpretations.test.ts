@@ -440,6 +440,100 @@ describe("useInterpretations", () => {
     expect(hook.current.states.a1?.cancelling).toBe(false);
   });
 
+  // サーバーは取り消しを受けた時点でジョブを消すので、返事より先に、見に行った
+  // ほうが 404 を受けうる（#333 のレビュー）。それを失敗として出すと、取り消した
+  // ものが「絵解きできませんでした」になる。
+  it("取り消しの返事を待つあいだに見に行って 404 が返っても、失敗にしない", async () => {
+    const s = stubApi();
+    const discarded = deferred<void>();
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob.mockResolvedValue(job("j1", "running"));
+    s.discard.mockReturnValueOnce(discarded.promise);
+    const { result: hook } = render();
+
+    act(() => {
+      void hook.current.interpret("a1");
+    });
+    await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = hook.current.cancel("a1");
+    });
+    s.getJob.mockRejectedValue(new ApiError(404, "not_found", "gone"));
+    const calls = s.getJob.mock.calls.length;
+    await waitFor(() => expect(s.getJob.mock.calls.length).toBeGreaterThan(calls));
+    // 返事が来るまでは、取り消し中のまま待つ。
+    expect(hook.current.states.a1?.failure).toBeUndefined();
+    expect(hook.current.states.a1?.cancelling).toBe(true);
+
+    discarded.resolve();
+    await act(() => pending);
+    const state = hook.current.states.a1;
+    expect(state?.running).toBe(false);
+    expect(state?.failure).toBeUndefined();
+  });
+
+  // 取り消すは「要らない」の意味なので、返事を待つあいだに終わった結果も積まない。
+  it("取り消しの返事を待つあいだに終わっても、取り消せたら結果を積まない", async () => {
+    const s = stubApi();
+    const discarded = deferred<void>();
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob.mockResolvedValue(job("j1", "running"));
+    s.discard.mockReturnValueOnce(discarded.promise);
+    const { result: hook } = render();
+
+    act(() => {
+      void hook.current.interpret("a1");
+    });
+    await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = hook.current.cancel("a1");
+    });
+    s.getJob.mockResolvedValue(done("j1", "間に合った"));
+    const calls = s.getJob.mock.calls.length;
+    await waitFor(() => expect(s.getJob.mock.calls.length).toBeGreaterThan(calls));
+    expect(hook.current.states.a1?.runs).toEqual([]);
+
+    discarded.resolve();
+    await act(() => pending);
+    expect(hook.current.states.a1?.running).toBe(false);
+    expect(hook.current.states.a1?.runs).toEqual([]);
+  });
+
+  // 取り消せなかったなら、ジョブは止まっていない。届いた結果はそのまま受け取る。
+  it("取り消しが失敗したら、返事を待つあいだに終わった結果を積む", async () => {
+    const s = stubApi();
+    let failDiscard!: (e: unknown) => void;
+    s.interpret.mockResolvedValue(job("j1", "running"));
+    s.getJob.mockResolvedValue(job("j1", "running"));
+    s.discard.mockReturnValueOnce(
+      new Promise<void>((_, reject) => {
+        failDiscard = reject;
+      }),
+    );
+    const { result: hook } = render();
+
+    act(() => {
+      void hook.current.interpret("a1");
+    });
+    await waitFor(() => expect(hook.current.states.a1?.jobId).toBe("j1"));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = hook.current.cancel("a1");
+    });
+    s.getJob.mockResolvedValue(done("j1", "止まらなかった"));
+    const calls = s.getJob.mock.calls.length;
+    await waitFor(() => expect(s.getJob.mock.calls.length).toBeGreaterThan(calls));
+
+    failDiscard(new ApiError(500, "internal", "boom"));
+    await act(() => pending);
+    await waitFor(() =>
+      expect(hook.current.states.a1?.runs[0]?.result.summary).toBe("止まらなかった"),
+    );
+    expect(hook.current.states.a1?.running).toBe(false);
+  });
+
   it("画面を離れても、ジョブは止めない。見に行くのをやめるだけ", async () => {
     const s = stubApi();
     s.interpret.mockResolvedValue(job("j1", "running"));

@@ -63,9 +63,11 @@ test.describe("解釈と作成", () => {
     await detail.getByRole("button", { name: "絵解く" }).click();
     await expect(detail.getByRole("button", { name: "絵解き中…" })).toBeVisible();
 
-    const discarded = page.waitForRequest(
+    // 届いたかではなく、返事まで待つ。モックは返事の前にジョブを消すので、その
+    // あいだに見に行くと 404 が返る。そこを越えたあとの画面を確かめたい。
+    const discarded = page.waitForResponse(
       (r) =>
-        r.method() === "DELETE" &&
+        r.request().method() === "DELETE" &&
         /^\/api\/boards\/[^/]+\/interpretation-jobs\/[^/]+$/.test(
           new URL(r.url()).pathname,
         ),

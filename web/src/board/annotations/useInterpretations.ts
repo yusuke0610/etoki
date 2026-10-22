@@ -107,6 +107,10 @@ export function useInterpretations({
   // 同じものを持つが、押した時点の値を読むためにこちらも持つ（state は描画の
   // あとでしか新しくならない）。
   const tracked = useRef(new Map<string, string>());
+  // 取り消しの返事を待っている注釈と、その取り消しが片づくまでの約束。同じ tick に
+  // 届いた 2 回目の取り消しを弾き（state は描画のあとでしか新しくならない）、
+  // 待つあいだに見に行った結果を、取り消しの成否が出るまで留める（`settle`）。
+  const cancelling = useRef(new Map<string, Promise<void>>());
   // 復元のとき、実行した粒度を控えるのに最新の一覧を読む。依存に入れると、一覧が
   // 変わるたびにジョブを引き直す。
   const latestAnnotations = useRef(annotations);
@@ -148,11 +152,20 @@ export function useInterpretations({
           tracked.current.delete(annotationId);
       };
 
+      // 取り消しの返事を待っているなら、その成否が出てから受け取る。サーバーは
+      // 取り消しを受けた時点でジョブを消すので、返事より先に 404 が届きうる。取り
+      // 消せていれば世代が進んでいるので手を引き、取り消せなかったなら届いたものを
+      // そのまま扱う（ジョブは止まっていない）。
+      const currentAfterCancel = async () => {
+        await cancelling.current.get(annotationId);
+        return isCurrent();
+      };
+
       let outcome;
       try {
         outcome = await awaitJob(boardId, jobId, isCurrent, pollIntervalMs);
       } catch (e) {
-        if (!isCurrent()) return;
+        if (!(await currentAfterCancel())) return;
         untrack();
         setStates((prev) => ({
           ...prev,
@@ -163,7 +176,7 @@ export function useInterpretations({
         }));
         return;
       }
-      if (!outcome || !isCurrent()) return;
+      if (!outcome || !(await currentAfterCancel())) return;
       untrack();
 
       if (outcome.kind === "done") {
@@ -310,20 +323,9 @@ export function useInterpretations({
     };
   }, [boardId, discardJob, enabled, generations, settle, track]);
 
-  // 取り消しの返事を待っている注釈。同じ tick に届いた 2 回目を弾く（state は
-  // 描画のあとでしか新しくならない）。
-  const cancelling = useRef(new Set<string>());
-
-  const cancel = useCallback(
-    async (annotationId: string) => {
-      const jobId = tracked.current.get(annotationId);
-      if (jobId === undefined || cancelling.current.has(annotationId)) return;
-      cancelling.current.add(annotationId);
-      setStates((prev) => {
-        const state = prev[annotationId];
-        return state ? { ...prev, [annotationId]: startCancel(state) } : prev;
-      });
-
+  /** サーバーのジョブを取り消し、取り消せたら画面も止める。失敗は state に出す。 */
+  const discardTracked = useCallback(
+    async (annotationId: string, jobId: string) => {
       try {
         await boardsApi.discardInterpretationJob(boardId, jobId);
       } catch (e) {
@@ -342,11 +344,9 @@ export function useInterpretations({
           });
           return;
         }
-      } finally {
-        cancelling.current.delete(annotationId);
       }
 
-      // 返事を待つあいだに終わって積まれたか、保存で捨てられた。止めるものが無い。
+      // 返事を待つあいだに保存で捨てられた。止めるものが無い。
       if (tracked.current.get(annotationId) !== jobId) return;
       tracked.current.delete(annotationId);
       jobIds.current.delete(jobId);
@@ -359,6 +359,26 @@ export function useInterpretations({
       });
     },
     [boardId, generations],
+  );
+
+  const cancel = useCallback(
+    async (annotationId: string) => {
+      const jobId = tracked.current.get(annotationId);
+      if (jobId === undefined || cancelling.current.has(annotationId)) return;
+      setStates((prev) => {
+        const state = prev[annotationId];
+        return state ? { ...prev, [annotationId]: startCancel(state) } : prev;
+      });
+
+      const settled = discardTracked(annotationId, jobId);
+      cancelling.current.set(annotationId, settled);
+      try {
+        await settled;
+      } finally {
+        cancelling.current.delete(annotationId);
+      }
+    },
+    [discardTracked],
   );
 
   /**
