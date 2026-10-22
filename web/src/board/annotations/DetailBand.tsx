@@ -97,6 +97,8 @@ export function DetailBand({
       {interpret.onCancel && (
         <button
           type="button"
+          // 作業から離れる操作なので控えめ（`controls.css`）。
+          className="quiet"
           onClick={() => {
             refocusAfterCancel.current = true;
             interpret.onCancel?.();
