@@ -36,7 +36,9 @@ DevForge では FastAPI が実行時に OpenAPI を吐くため、backend のス
 いま `router.go` を読めば分かる。潰したいのは契約の二重管理であって、
 ルーティングの記述ではない。
 
-生成器のバージョンは devShell（`flake.lock`）が固定する。`go.mod` の `tool`
+`oapi-codegen` のバージョンは devShell（`flake.lock`）が固定する。
+`openapi-typescript` は `web/package.json` の devDependencies にあり、`bun.lock` が
+固定する（ADR 0035）。`go.mod` の `tool`
 ディレクティブでも固定できるが、`oapi-codegen` を require に足すと kin-openapi
 一式がアプリの依存グラフに乗り、`x/net` や `x/crypto` といった共有依存まで
 引き上げられる。動かすものの依存だけを `go.mod` に置くという方針を優先した
@@ -52,5 +54,5 @@ DevForge では FastAPI が実行時に OpenAPI を吐くため、backend のス
 - フロントが古い形のレスポンスを期待していると、`tsc` が落ちるようになった。
   以前はブラウザで踏むまで分からなかった。
 - 生成物の形は生成器のバージョンに依存する。`nix flake update` が
-  `oapi-codegen` や `openapi-typescript` を動かすと差分が出るため、更新の
-  コミットには再生成も含める必要がある。
+  `oapi-codegen` を、`bun update` が `openapi-typescript` を動かすと差分が出る
+  ため、更新のコミットには再生成も含める必要がある。
