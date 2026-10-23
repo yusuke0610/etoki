@@ -51,6 +51,8 @@ type InterpretationSectionProps = {
   interpretationBusyElsewhere: boolean;
   onInterpret: () => void;
   onSelectInterpretation: (runId: number) => void;
+  /** 走っている解釈を取り消す（#330）。 */
+  onCancelInterpretation: () => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
 };
 
@@ -157,6 +159,7 @@ export function InterpretationSection({
   interpretationBusyElsewhere,
   onInterpret,
   onSelectInterpretation,
+  onCancelInterpretation,
   onCreate,
 }: InterpretationSectionProps) {
   const running = state?.running ?? false;
@@ -177,6 +180,10 @@ export function InterpretationSection({
       interpretationUnavailable ??
       (interpretationBusyElsewhere ? BUSY_ELSEWHERE_REASON : null),
     onInterpret,
+    // 取り消せるのは、走っているジョブが分かってから（`InterpretationState.jobId`）。
+    // 保存の待ちや、始める途中では出さない。
+    onCancel: running && state?.jobId !== undefined ? onCancelInterpretation : undefined,
+    cancelling: state?.cancelling ?? false,
   };
 
   return (

@@ -14,6 +14,7 @@ import {
   openAnnotationDetail,
   openBoard,
   openBoardWithMock,
+  saveButton,
   saveScene,
   waitForBoard,
   ekidokiButton,
@@ -410,6 +411,30 @@ test.describe("シーンの保存", () => {
     await saved;
 
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  });
+
+  // キーボードの無い端末でも保存だけができる（#296、ADR 0089）。**未保存の
+  // あいだだけ出す。** 保存済みで出すと、押しても書くものの無いボタンが
+  // 「絵解き」の隣に残る。
+  //
+  // 押しても絵解きの面を開かないことは `BoardStatus.test.tsx` が見る。ここで
+  // 「開いていない」を見ても、「絵解き」が開くのは保存のあとの取り直しを
+  // 待ってからなので、取り違えた配線でも見るのが先なら通ってしまう。
+  test("「保存」は未保存のあいだだけ出て、押すと保存する", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+    const save = saveButton(page);
+    await expect(save).toHaveCount(0);
+
+    await drawRectangle(page);
+    await expect(save).toBeVisible();
+    // ショートカットは見える文にせず、読み上げにだけ伝える（ADR 0089）。
+    // キーボードの無い端末で、押せない口を案内しないため。
+    await expect(save).toHaveAttribute("aria-keyshortcuts", "Control+S Meta+S");
+    await save.click();
+
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    await expect(save).toHaveCount(0);
+    expect(mock.saveRequests).toHaveLength(1);
   });
 
   // **押せないときも既定の動作は止める。** 「保存できなかった」の代わりに
