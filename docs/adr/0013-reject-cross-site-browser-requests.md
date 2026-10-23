@@ -121,8 +121,8 @@ Origin の検証はそのまま CSRF の対策になる。
 ## 追記（#168、画面の応答のヘッダ）
 
 **画面の応答には `Content-Security-Policy: frame-ancestors 'none'` と
-`X-Content-Type-Options: nosniff` だけを付ける**（`internal/httpapi/webui.go` の
-`setWebUIHeaders`）。
+`X-Content-Type-Options: nosniff` だけを付ける。** どのヘッダを付けるかが判断
+そのものなので、ヘッダ名はここに書く。
 
 - **どのページからも埋め込ませない。** 認証を設定していない構成では cookie が
   要らないので、埋め込まれた時点で etoki の API もそのまま通る。Origin は自分
@@ -131,7 +131,7 @@ Origin の検証はそのまま CSRF の対策になる。
 - **CSP はこの 1 指令だけにする。** `script-src` のような指令まで置くと、Vite が
   配る画面（`make dev`）と etoki が配る画面（`make start`）で通る / 通らないが
   分かれる。埋め込みの禁止は配信元に依らない。
-- **埋め込みの禁止は dev でも付ける**（`web/vite.config.ts` の `server.headers`）。
+- **埋め込みの禁止は dev でも付ける**（Vite の開発サーバーの応答にも）。
   MCP の同意の画面（ADR 0076）は dev では Vite から配るので、無いと埋め込んで
   「許可する」を押させる形で code を取られうる。
 - `X-Frame-Options` は置かない。`frame-ancestors` を解さないブラウザ向けの重複で、
