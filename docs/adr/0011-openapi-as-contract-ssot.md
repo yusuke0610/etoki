@@ -54,5 +54,5 @@ DevForge では FastAPI が実行時に OpenAPI を吐くため、backend のス
 - フロントが古い形のレスポンスを期待していると、`tsc` が落ちるようになった。
   以前はブラウザで踏むまで分からなかった。
 - 生成物の形は生成器のバージョンに依存する。`nix flake update` が
-  `oapi-codegen` を、`bun update` が `openapi-typescript` を動かすと差分が出る
-  ため、更新のコミットには再生成も含める必要がある。
+  `oapi-codegen` を、`web/` で回す `bun update` が `openapi-typescript` を動かすと
+  差分が出るため、更新のコミットには再生成も含める必要がある。
