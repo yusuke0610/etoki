@@ -262,18 +262,24 @@ describe("ERROR_MESSAGES", () => {
   // サーバーの本文として詳細に出る。認証の基盤は差し替えられる（ADR 0015）ので、
   // 「GitHub App を設定」と言い切ると、別の基盤を差した構成で存在しない設定を
   // 案内する。
+  //
+  // 何が足りないかも句で見る。共通の案内だけだと、別の機能の文に差し替えても通る。
   it.each([
-    "llm_not_configured",
-    "github_not_configured",
-    "auth_not_configured",
-    "sharing_not_configured",
-    "mcp_connections_not_configured",
-  ] as const)("%s は起動する側で設定すると言い、何で満たすかは言わない", (code) => {
-    const message = ERROR_MESSAGES[code];
+    ["llm_not_configured", "LLM が未設定"],
+    ["github_not_configured", "GitHub が未設定"],
+    ["auth_not_configured", "認証が未設定"],
+    ["sharing_not_configured", "共有には認証の設定が必要"],
+    ["mcp_connections_not_configured", "MCP のクライアントへの接続には認証の設定が必要"],
+  ] as const)(
+    "%s は足りないもの（%s）と起動する側で設定することを言い、何で満たすかは言わない",
+    (code, lacking) => {
+      const message = ERROR_MESSAGES[code];
 
-    expect(message).toContain("etoki を起動する側で設定してください");
-    expect(message).not.toMatch(/GitHub App|ETOKI_/);
-  });
+      expect(message).toContain(lacking);
+      expect(message).toContain("etoki を起動する側で設定してください");
+      expect(message).not.toMatch(/GitHub App|ETOKI_/);
+    },
+  );
 
   // 切れると: 押したあとに「フィールドがありません」とだけ出て、GitHub 側で
   // 何を作ればよいのかを英文の詳細から読み解くことになる（#292）。
