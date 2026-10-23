@@ -92,3 +92,4 @@
 | [0087](0087-split-llm-call-failures-by-remedy.md)                | LLM の呼び出しの失敗は、打ち手ごとに code を分ける                           | 採用                 |
 | [0088](0088-check-project-fields-when-choosing.md)               | 作成先を選んだときに、作成に要るフィールドが揃っているかを見せる             | 採用                 |
 | [0091](0091-diagram-draft-as-server-side-job.md)                 | 図のドラフト生成もサーバー側のジョブにし、会話はジョブの入力から戻す         | 採用                 |
+| [0092](0092-only-scene-saves-advance-the-version.md)             | 版を進めるのはシーンの保存だけにし、ほかの書き込みの応答の版は基準にしない   | 採用                 |

@@ -127,17 +127,15 @@ func (f *fakeBoards) UpdateName(_ context.Context, _, _, name string) error {
 	return nil
 }
 
-func (f *fakeBoards) UpdateTarget(
-	context.Context, string, string, port.BoardTarget, time.Time,
-) error {
+func (f *fakeBoards) UpdateTarget(context.Context, string, string, port.BoardTarget) error {
 	f.writes++
 	return nil
 }
 
-// UpdateTargetDisplay は表示用の 3 つだけを書く。作成先には触らない
-// （ADR 0037）。実装と同じ形にしておかないと、触ったことをフェイクが吸収する。
+// UpdateTargetDisplay は表示用の 3 つだけを書く。作成先にも版にも触らない
+// （ADR 0037 / 0092）。実装と同じ形にしておかないと、触ったことをフェイクが吸収する。
 func (f *fakeBoards) UpdateTargetDisplay(
-	_ context.Context, _, _ string, d port.BoardTargetDisplay, updatedAt time.Time,
+	_ context.Context, _, _ string, d port.BoardTargetDisplay,
 ) error {
 	f.writes++
 	f.display = d
@@ -145,7 +143,6 @@ func (f *fakeBoards) UpdateTargetDisplay(
 		f.board.Target.ProjectNumber = d.ProjectNumber
 		f.board.Target.ProjectTitle = d.ProjectTitle
 		f.board.Target.ProjectURL = d.ProjectURL
-		f.board.UpdatedAt = updatedAt
 	}
 	return nil
 }

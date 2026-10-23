@@ -616,7 +616,7 @@ func TestUpdateTargetDisplay_RejectsOtherOwners(t *testing.T) {
 
 	display := port.BoardTargetDisplay{ProjectTitle: "書き換えた名前"}
 	if err := repo.UpdateTargetDisplay(
-		t.Context(), "user-b", "board-a", display, baseTime,
+		t.Context(), "user-b", "board-a", display,
 	); !errors.Is(err, port.ErrNotFound) {
 		t.Fatalf("UpdateTargetDisplay = %v, want ErrNotFound", err)
 	}
@@ -638,7 +638,7 @@ func TestUpdateTarget_RejectsOtherOwners(t *testing.T) {
 	seedOwnedBoard(t, db, "board-a", "user-a")
 
 	target := port.BoardTarget{RepositoryOwner: "evil", RepositoryName: "repo", ProjectID: "PVT_x"}
-	if err := repo.UpdateTarget(t.Context(), "user-b", "board-a", target, baseTime); !errors.Is(err, port.ErrNotFound) {
+	if err := repo.UpdateTarget(t.Context(), "user-b", "board-a", target); !errors.Is(err, port.ErrNotFound) {
 		t.Fatalf("UpdateTarget = %v, want ErrNotFound", err)
 	}
 

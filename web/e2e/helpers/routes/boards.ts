@@ -346,6 +346,8 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
       }
 
       const target = route.request().postDataJSON() as BoardTarget;
+      // **版は動かさない**（ADR 0092）。改名と同じで、動かすモックにすると、
+      // 作成先の設定のあとに保存が 409 になる実装でも E2E が緑のままになる。
       const next: BoardDetail = {
         ...detail,
         ...target,
@@ -399,6 +401,7 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
         return;
       }
 
+      // **版は動かさない**（ADR 0092）。上の作成先の設定と同じ理由。
       const next: BoardDetail = {
         ...detail,
         projectNumber: display.projectNumber ?? 0,

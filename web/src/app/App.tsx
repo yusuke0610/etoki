@@ -392,8 +392,16 @@ export function App() {
     (board: BoardDetail) => {
       // **画像は持ち越す。** 応答（`BoardDetail`）は画像を運ばない（ADR 0074）。
       // この経路ではキャンバスを作り直さないので、画像はキャンバスが持っている。
+      //
+      // **版（`updatedAt`）も持ち越す**（ADR 0092 / 0020）。改名も表示名の取り直しも
+      // 版を動かさないので、応答の版はサーバーのいまの版で、開いたあとに別の
+      // メンバーが保存していればその版になる。それを手元に置くと保存の基準が
+      // 進み（`useSceneSave`）、読み込んでいない相手の保存を次の保存が黙って
+      // 上書きする。版を動かすのはシーンの保存とキャンバスの読み直しだけ。
       setCurrent((open) =>
-        open?.id === board.id ? { ...board, files: open.files } : open,
+        open?.id === board.id
+          ? { ...board, files: open.files, updatedAt: open.updatedAt }
+          : open,
       );
       void reload();
     },

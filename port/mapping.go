@@ -372,22 +372,24 @@ type BoardRepository interface {
 	// シーンを触っていないのに衝突として読まれることになるので、基準を取らない
 	// 書き込みで版を前に出さない（ClaimUnowned と同じ考え方）。
 	UpdateName(ctx context.Context, actor, id, name string) error
-	// UpdateTarget は作成先と更新時刻だけを更新する。Scene は変えない。
+	// UpdateTarget は作成先だけを更新する。Scene は変えない。
+	//
+	// **更新時刻は進めない**（UpdateName と同じ、ADR 0092）。版を動かすのは
+	// シーンの保存だけ。作成先を設定しただけで進めると、そのボードを開いている
+	// 別のメンバーの次の保存が、誰もシーンを触っていないのに断られる。
 	//
 	// 固定済みかどうかはここでは見ない。判断に sync_runs が要るため、
 	// ユースケース層が担う（ADR 0014）。
-	UpdateTarget(ctx context.Context, actor, id string, t BoardTarget, updatedAt time.Time) error
-	// UpdateTargetDisplay は作成先の表示用スナップショットと更新時刻だけを
-	// 更新する。**作成先そのものは変えない。**
+	UpdateTarget(ctx context.Context, actor, id string, t BoardTarget) error
+	// UpdateTargetDisplay は作成先の表示用スナップショットだけを更新する。
+	// **作成先そのものも、更新時刻も変えない**（ADR 0037 / 0092）。
 	//
 	// 固定済みのボードでも通る唯一の経路（ADR 0037）。作成先の 3 列を書ける
 	// ようにしないこと。書けるようにすると、固定が意味を失う。
 	//
 	// 送られた ID が保存されている作成先と同じかどうかはここでは見ない。
 	// 引き当ててから比べる必要があるので、ユースケース層が担う。
-	UpdateTargetDisplay(
-		ctx context.Context, actor, id string, d BoardTargetDisplay, updatedAt time.Time,
-	) error
+	UpdateTargetDisplay(ctx context.Context, actor, id string, d BoardTargetDisplay) error
 	// Delete はボードを消す。存在しない、または操作者がメンバーでなければ
 	// ErrNotFound。
 	//

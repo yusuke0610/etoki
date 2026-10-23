@@ -274,32 +274,35 @@ func (r *BoardRepository) UpdateName(ctx context.Context, actor, id, name string
 		name, id, actor)
 }
 
-// UpdateTarget は作成先と更新時刻だけを更新する。
+// UpdateTarget は作成先だけを更新する。
+//
+// **updated_at は SET に書かない**（UpdateName と同じ、ADR 0092）。版を動かすのは
+// シーンの保存だけ。
 func (r *BoardRepository) UpdateTarget(
-	ctx context.Context, actor, id string, t port.BoardTarget, updatedAt time.Time,
+	ctx context.Context, actor, id string, t port.BoardTarget,
 ) error {
 	return r.exec(ctx, "board "+id,
 		`UPDATE boards
 		 SET repository_owner = ?, repository_name = ?, project_id = ?,
-		     project_number = ?, project_title = ?, project_url = ?,
-		     updated_at = ?
+		     project_number = ?, project_title = ?, project_url = ?
 		 WHERE id = ? AND `+memberExists,
 		t.RepositoryOwner, t.RepositoryName, t.ProjectID,
-		t.ProjectNumber, t.ProjectTitle, t.ProjectURL, formatTime(updatedAt), id, actor)
+		t.ProjectNumber, t.ProjectTitle, t.ProjectURL, id, actor)
 }
 
-// UpdateTargetDisplay は作成先の表示用スナップショットと更新時刻だけを更新する。
+// UpdateTargetDisplay は作成先の表示用スナップショットだけを更新する。
 //
 // **作成先の 3 列は SET に書かない。** 固定後に通る唯一の経路なので、ここが
-// 書けるようになると固定が意味を失う（ADR 0037）。
+// 書けるようになると固定が意味を失う（ADR 0037）。**updated_at も書かない**
+// （ADR 0092）。
 func (r *BoardRepository) UpdateTargetDisplay(
-	ctx context.Context, actor, id string, d port.BoardTargetDisplay, updatedAt time.Time,
+	ctx context.Context, actor, id string, d port.BoardTargetDisplay,
 ) error {
 	return r.exec(ctx, "board "+id,
 		`UPDATE boards
-		 SET project_number = ?, project_title = ?, project_url = ?, updated_at = ?
+		 SET project_number = ?, project_title = ?, project_url = ?
 		 WHERE id = ? AND `+memberExists,
-		d.ProjectNumber, d.ProjectTitle, d.ProjectURL, formatTime(updatedAt), id, actor)
+		d.ProjectNumber, d.ProjectTitle, d.ProjectURL, id, actor)
 }
 
 // memberExists は更新系で操作者がメンバーであることを確かめる述語。

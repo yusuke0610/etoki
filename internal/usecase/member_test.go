@@ -410,14 +410,12 @@ func (b *blockingMembers) FileSizes(context.Context, string) (map[string]int64, 
 	return nil, nil
 }
 
-func (b *blockingMembers) UpdateTarget(
-	context.Context, string, string, port.BoardTarget, time.Time,
-) error {
+func (b *blockingMembers) UpdateTarget(context.Context, string, string, port.BoardTarget) error {
 	return nil
 }
 
 func (b *blockingMembers) UpdateTargetDisplay(
-	context.Context, string, string, port.BoardTargetDisplay, time.Time,
+	context.Context, string, string, port.BoardTargetDisplay,
 ) error {
 	return nil
 }

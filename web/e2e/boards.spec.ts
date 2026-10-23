@@ -458,6 +458,33 @@ test.describe("ボード", () => {
     expect(saved.elements.filter((el) => el.type === "rectangle")).toHaveLength(1);
   });
 
+  // **改名の応答で、保存の基準を進めない**（ADR 0092 / 0020）。開いたあとに別の
+  // メンバーが保存していると、改名の応答はその版を載せて返る。それで基準を
+  // 差し替えると、読み込んでいない相手の保存を、こちらの次の保存が黙って上書き
+  // する。ここが切れると、App が応答の `updatedAt` ごと手元を差し替える実装が通る。
+  test("他の人が保存したあとに改名しても、こちらの保存は上書きせずに知らせる", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+
+    // こちらが開いた後に、他の人が保存した状況。版が進むので基準は古くなる。
+    mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
+
+    await drawRectangle(page);
+    await chooseFromMenu(page, "名前を変更");
+    await page.getByLabel("ボードの名前").fill("会議中に改名");
+    await page.getByRole("button", { name: "名前を保存" }).click();
+    await expect(
+      page.getByRole("heading", { name: "会議中に改名", level: 1 }),
+    ).toBeVisible();
+
+    await saveScene(page);
+
+    await expect(page.getByText("他の人がこのボードを保存しました")).toBeVisible();
+    // 相手のシーンはそのまま。上書きしていないことをモック側でも確かめる。
+    expect(mock.details[BOARD_ID]?.scene).toBe(board().scene);
+  });
+
   test("名前を空にしたままでは保存できない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 

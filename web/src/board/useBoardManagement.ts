@@ -180,7 +180,7 @@ export function useTargetRefresh({
   onError,
 }: {
   board: BoardDetail;
-  /** 取り直したので、手元のボードを差し替えてもらう（版も進む）。 */
+  /** 取り直したので、手元のボードを差し替えてもらう（版は動かない、ADR 0092）。 */
   onTargetRefreshed: (board: BoardDetail) => void;
   onError: (failure: Failure) => void;
 }): TargetRefresh {

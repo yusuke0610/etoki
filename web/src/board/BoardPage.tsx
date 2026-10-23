@@ -165,13 +165,13 @@ type Props = {
   /**
    * 作成先の表示名を取り直したので、手元のボードを差し替えてもらう。
    *
-   * 版（`updatedAt`）も進むので、持ち主である App が持ち替える必要がある。
+   * 版（`updatedAt`）は動かない（ADR 0092）。保存の基準は据え置く。
    */
   onTargetRefreshed: (board: BoardDetail) => void;
   /**
    * 名前を変えたので、手元のボードを差し替えてもらう。
    *
-   * 版（`updatedAt`）は動かないので、保存の基準は据え置きでよい（ADR 0020）。
+   * 版（`updatedAt`）は動かないので、保存の基準は据え置く（ADR 0020 / 0092）。
    */
   onRenamed: (board: BoardDetail) => void;
   /**

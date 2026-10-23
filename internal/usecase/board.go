@@ -529,7 +529,7 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 		return fmt.Errorf("%w: %s", ErrTargetLocked, id)
 	}
 
-	return s.boards.UpdateTarget(ctx, actorOf(ctx), id, t, s.now())
+	return s.boards.UpdateTarget(ctx, actorOf(ctx), id, t)
 }
 
 // RefreshTargetDisplay は作成先の表示用スナップショットだけを更新する。
@@ -572,7 +572,7 @@ func (s *BoardService) RefreshTargetDisplay(
 		return fmt.Errorf("%w: %s", ErrTargetMismatch, id)
 	}
 
-	return s.boards.UpdateTargetDisplay(ctx, actorOf(ctx), id, d, s.now())
+	return s.boards.UpdateTargetDisplay(ctx, actorOf(ctx), id, d)
 }
 
 // TargetLocked はそのボードの作成先が固定済みかどうかを返す。
