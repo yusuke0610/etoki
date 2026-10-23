@@ -10,7 +10,7 @@
 boards.scene （SQLite に保存された Excalidraw シーン JSON）
    ↓ domain.ParseScene
 Scene.Annotations()           … customData.etoki を持つ frame 要素
-   ↓ Scene.AnnotationTexts(id)  … frameId と containerId の両方を辿る
+   ↓ Scene.AnnotationHash(a)    … 子のテキスト（frameId と containerId の両方を辿る）
    ↓ domain.ComputeContentHash  … 正規化して SHA-256（粒度と図の種別も入力）
 現在のハッシュ
    ↕ 比較（domain.DecideState）
@@ -29,6 +29,12 @@ UI は未保存の変更があることを表示する。
   で固定してある。善意で「直さない」こと。メタデータは粒度と図の種別
   （ADR 0047）の 2 つで、どちらも解釈のプロンプトに載るので、変えたら
   「変更あり」になる必要がある。
+  - **注釈の frame 自身の名前は入れない**（ADR 0079、#303）。解釈の入力
+    （`Scene.AnnotationTexts`）には先頭に入るが、ハッシュは子のテキスト
+    （`childTexts`）から出す。名前を付け替えただけで「変更あり」に落ちると、
+    戻す道が絵解き直ししか無い。**2 つの関数を 1 つに戻さないこと。** 戻すと
+    名前がまたハッシュに入る。`TestAnnotationHash_IgnoresOwnName` と
+    `TestAnnotationHash_IsChildTextsAndMetadataOnly` が落ちる。
   - **指定なしでも入力に書く**（ADR 0047）。書かない形にすれば種別を持つ前の
     値と一致させられるが、算出の入力が種別の有無で分岐する。一度きりの移行の
     ために恒久的な分岐を抱えない、という判断。**代償は移行時に一度だけ払う**
@@ -91,6 +97,12 @@ UI は未保存の変更があることを表示する。
     次の 1 往復として行う。
   - **会話の上限は回数と長さの 2 つ**（`MaxDiagramTurns` / `MaxDiagramChatBytes`）。
     当たったら黙って古いやりとりを捨てず 413 で返す。
+  - **リクエストから切り離したジョブで走る**（`DiagramJobs`、ADR 0091）。
+    **置き場は解釈と 1 つ**（`jobTable`）で、止める手・枠を戻す順・panic の
+    扱い・見せる範囲を 2 箇所に書かない。ジョブが入力を持つのは捨てられるまでで、
+    会話の保存ではない。**同じものを返す鍵は入力の全部**（種類・指示・往復・
+    `internal`）。`internal`（変換の投げ直しの印）はプロンプトに載せず、預かって
+    返すだけ。
 - **LLM を叩く実行には上限がある**（ADR 0044）。`usecase.LLMLimiter` が
   **利用者ごとに**、同時実行の数と窓の中の回数を見る。ボード単位ではない。
   ボードで絞ると招待した相手が自分のボードを作れば素通りし、プロセス全体で
@@ -110,13 +122,20 @@ UI は未保存の変更があることを表示する。
   - **待たせず 429 で断り、code を 2 つに分ける**（`rate_limited` /
     `concurrency_limited`）。時間をおく話と、いま走っているぶんの終わりを待つ話で
     打ち手が違う。**上流の LLM が混んでいる場合とも別**で、そちらは
-    `llm_unavailable` の 502。
+    `llm_overloaded` の 502（ADR 0087）。
   - **状態はメモリだけ。再起動で消える。** 依るのは `BoardLocks` と同じ前提
     （SQLite を複数プロセスで共有しない）で、DB に表を作らない。
   - **既定で効くのは同時実行だけ。** 回数の既定値は置かない。妥当な値は料金
     プランと使い方で決まる外の世界の値で、抱えると必ず誰かに合わない
     （ADR 0031 が金額を持たない理由と同じ）。**残り枠も返さない。** 無い上限の
     残りを常時レスポンスに載せることになる。
+- **LLM の呼び出しの失敗は打ち手で分ける**（ADR 0087）。打ち切り・拒否・上流の
+  混雑は、アダプタが `port.ErrLLMTruncated` / `ErrLLMRefused` / `ErrLLMOverloaded`
+  を名乗り、ユースケース層が自分の sentinel に写す。**写すのは `llmCallError` の
+  1 箇所で、解釈も図の生成もそこを通す。** **port の sentinel は `%v` で文言だけ
+  残し、入れ子にしない**（httpapi の表は「sentinel は入れ子にならない」前提）。
+  名乗らない失敗は `ErrLLMUnavailable` に落ち、元のエラーは `%w` のまま
+  （`context.Canceled` を辿るため）。**どれも再送しない。**
 - **シーンの保存は版を照合する（ADR 0020）。** リクエストの `baseUpdatedAt` が
   いまの `updated_at` と違えば 409。**照合は `UPDATE` と同じ 1 文に置く。**
   先に読んで比べる形にすると、比べてから書くまでの隙間に入った保存を上書きする。

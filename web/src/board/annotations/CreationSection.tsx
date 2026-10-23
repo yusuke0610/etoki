@@ -46,7 +46,7 @@ export function createControlOf({
   if (creationUnavailable !== null) {
     return {
       kind: "unavailable",
-      text: `${creationUnavailable}ブレストと解釈はこのまま続けられます。`,
+      text: `${creationUnavailable}ブレストと絵解きはこのまま続けられます。`,
     };
   }
 
@@ -55,7 +55,7 @@ export function createControlOf({
   if (projectAccess === "denied") {
     return {
       kind: "unavailable",
-      text: "この Project に書き込む権限がありません。ブレストと解釈はこのまま続けられます。",
+      text: "この Project に書き込む権限がありません。ブレストと絵解きはこのまま続けられます。",
     };
   }
 

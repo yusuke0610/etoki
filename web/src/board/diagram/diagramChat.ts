@@ -1,5 +1,10 @@
 import type { Failure } from "../../api/errorMessage";
-import type { DiagramDraft, DiagramKind, DiagramTurn } from "../../api/types";
+import type {
+  DiagramDraft,
+  DiagramKind,
+  DiagramTurn,
+  GenerateDiagramRequest,
+} from "../../api/types";
 
 /**
  * 会話に積まれた 1 往復。
@@ -10,8 +15,9 @@ import type { DiagramDraft, DiagramKind, DiagramTurn } from "../../api/types";
  * メッセージが混ざるので、そのまま「ここまでのやりとり」に並べると、書いた
  * 覚えのない英文が自分の指示として出る。
  *
- * **サーバーには印を送らない**（`historyOf` が落とす）。契約にあるのは
- * `prompt` と `mermaid` の 2 つだけ（ADR 0011）。
+ * **印は契約の `internal` で送る**（ADR 0091）。サーバーはプロンプトに載せず、
+ * ジョブから会話を戻すときに印ごと返す。戻した会話で印が消えると、投げ直しが
+ * 利用者の指示として並ぶ。
  */
 export type ChatTurn = DiagramTurn & { internal: boolean };
 
@@ -24,7 +30,8 @@ type PendingTurn = { prompt: string; internal: boolean };
  * **フロントのメモリだけで持つ**（ADR 0041）。保存すると「誰の会話か」
  * 「他のメンバーに見えるか」が立ち上がる。**会話は成果物ではなく、成果物は
  * キャンバス。** ボードを切り替えたら捨てる（`BoardPage` は `key={board.id}`
- * で作り直されるので、持ち越されない）。
+ * で作り直されるので、持ち越されない）。**受け取っていない生成だけは、開き
+ * 直したときにジョブの入力から戻る**（`resumeChat`、ADR 0091）。
  */
 export type DiagramChat = {
   /** 何の図を描かせるか。会話の途中では変えない（下の `changeKind` を参照）。 */
@@ -112,13 +119,42 @@ export function canSend(chat: DiagramChat, prompt: string): boolean {
 }
 
 /**
- * サーバーに送るやりとり。**画面のための印は落とす。**
+ * サーバーに送るやりとり。**契約にあるキーだけを送る**（ADR 0011）。
  *
- * 契約にあるのは `prompt` と `mermaid` の 2 つだけ（ADR 0011）。`internal` を
- * 載せたまま送ると、契約に無いキーが混ざる。
+ * 内部の投げ直しの印（`internal`）も契約のキーなので送る（ADR 0091）。落とすと、
+ * 開き直したときにジョブから戻した会話で、投げ直しが利用者の指示として並ぶ。
  */
 export function historyOf(chat: DiagramChat): DiagramTurn[] {
-  return chat.turns.map(({ prompt, mermaid }) => ({ prompt, mermaid }));
+  return chat.turns.map(({ prompt, mermaid, internal }) => ({
+    prompt,
+    mermaid,
+    internal,
+  }));
+}
+
+/**
+ * ジョブの入力から会話を戻す（ADR 0091）。
+ *
+ * 開き直した画面は、受け取っていない生成の答えを、どの指示へのものかと一緒に
+ * 出す。**送っている最中の形に戻す。** 結果はこのあと見に行って積む
+ * （`completeTurn` / `failTurn`）。
+ *
+ * **直前のドラフトは戻さない。** 残りの往復を数えるのはサーバーで
+ * （`turnsRemaining`）、ジョブが返すのは今回の結果のぶんだけ。往復の mermaid から
+ * ドラフトを組み立てると、残りの回数をこちらで数えることになる。
+ */
+export function resumeChat(request: GenerateDiagramRequest): DiagramChat {
+  return {
+    kind: request.kind,
+    turns: (request.history ?? []).map(({ prompt, mermaid, internal }) => ({
+      prompt,
+      mermaid,
+      internal: internal ?? false,
+    })),
+    pending: { prompt: request.prompt, internal: request.internal ?? false },
+    draft: null,
+    failure: null,
+  };
 }
 
 /**

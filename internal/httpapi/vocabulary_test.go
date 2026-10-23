@@ -31,6 +31,9 @@ func TestVocabulary_MatchesContract(t *testing.T) {
 		dir  string // domain / port の側のパッケージ（リポジトリのルートから）
 		// onlyInDomain は契約に出ない domain の値と、出ない理由。
 		onlyInDomain map[string]string
+		// apiNames は契約の側の型の名前。省略すると name と同じ。契約は口ごとに
+		// 列挙を inline で持つので、1 つの型が別の名前で複数出ることがある。
+		apiNames []string
 	}{
 		{
 			name: "DiagramKind", dir: "internal/domain",
@@ -51,6 +54,20 @@ func TestVocabulary_MatchesContract(t *testing.T) {
 			name: "BoardRole", dir: "port",
 		},
 		{
+			// 作成先の Project のフィールドの確認（ADR 0088）。境界に出るのは
+			// usecase の型で、domain / port には無い。
+			name: "ProjectFieldRequirement", dir: "internal/usecase",
+		},
+		{
+			name: "ProjectFieldsStatus", dir: "internal/usecase",
+		},
+		{
+			// ジョブの状態（ADR 0085 / 0091）。usecase では解釈と図のドラフト生成で
+			// 1 つの型だが、契約はジョブの型ごとに inline の enum を持つ。
+			name: "JobStatus", dir: "internal/usecase",
+			apiNames: []string{"InterpretationJobStatus", "DiagramJobStatus"},
+		},
+		{
 			name: "RunOutcome", dir: "port",
 			// 記録していなかった頃の run。契約では lastRunOutcome の省略で表す（ADR 0043）。
 			onlyInDomain: map[string]string{"": "不明は省略で表す"},
@@ -62,7 +79,6 @@ func TestVocabulary_MatchesContract(t *testing.T) {
 			t.Parallel()
 
 			domain := stringConsts(t, filepath.Join("..", "..", tc.dir), tc.name)
-			api := stringConsts(t, "apitypes", tc.name)
 
 			// 例外が実在すること。消えた値の例外を残すと、表が嘘をつく。
 			for v := range tc.onlyInDomain {
@@ -78,9 +94,16 @@ func TestVocabulary_MatchesContract(t *testing.T) {
 				}
 			}
 
-			if !slices.Equal(want, api) {
-				t.Errorf("%s.%s = %q, 契約 = %q（例外を除く）。片方にだけ値がある",
-					tc.dir, tc.name, domain, api)
+			apiNames := tc.apiNames
+			if apiNames == nil {
+				apiNames = []string{tc.name}
+			}
+			for _, name := range apiNames {
+				api := stringConsts(t, "apitypes", name)
+				if !slices.Equal(want, api) {
+					t.Errorf("%s.%s = %q, 契約の %s = %q（例外を除く）。片方にだけ値がある",
+						tc.dir, tc.name, domain, name, api)
+				}
 			}
 		})
 	}

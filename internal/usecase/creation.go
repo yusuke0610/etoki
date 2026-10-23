@@ -85,12 +85,11 @@ var (
 // 読み込んだ board から取る（ADR 0014）。
 type CreationService struct {
 	boardGuard
-	mappings    port.MappingRepository
-	github      port.GitHubClient
-	locks       *BoardLocks
-	kindField   string
-	parentField string
-	now         func() time.Time
+	mappings   port.MappingRepository
+	github     port.GitHubClient
+	locks      *BoardLocks
+	fieldNames ProjectFieldNames
+	now        func() time.Time
 }
 
 // CreationServiceOption は CreationService の設定を差し替える。
@@ -100,10 +99,10 @@ type CreationServiceOption func(*CreationService)
 func WithFieldNames(kind, parent string) CreationServiceOption {
 	return func(s *CreationService) {
 		if kind != "" {
-			s.kindField = kind
+			s.fieldNames.Kind = kind
 		}
 		if parent != "" {
-			s.parentField = parent
+			s.fieldNames.Parent = parent
 		}
 	}
 }
@@ -124,13 +123,12 @@ func NewCreationService(
 	opts ...CreationServiceOption,
 ) *CreationService {
 	s := &CreationService{
-		boardGuard:  boardGuard{boards: boards},
-		mappings:    mappings,
-		github:      github,
-		locks:       locks,
-		kindField:   DefaultKindFieldName,
-		parentField: DefaultParentFieldName,
-		now:         time.Now,
+		boardGuard: boardGuard{boards: boards},
+		mappings:   mappings,
+		github:     github,
+		locks:      locks,
+		fieldNames: ProjectFieldNames{}.withDefaults(),
+		now:        time.Now,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -475,56 +473,25 @@ func (s *CreationService) writeDraftIssue(
 	return ref, port.ActionUpdated, nil
 }
 
-// projectFields は作成に必要なカスタムフィールドの ID。
-type projectFields struct {
-	kindID        string
-	epicOptionID  string
-	issueOptionID string
-	parentID      string
-}
-
 // resolveFields は種別と親のフィールド ID を名前から解決する。
+//
+// 何が足りないかの判定は `matchProjectFields` に任せる。押す前の確認と同じ
+// 判定を通すため（#292）。
 func (s *CreationService) resolveFields(ctx context.Context, projectID string) (projectFields, error) {
 	all, err := s.github.ListProjectFields(ctx, projectID)
 	if err != nil {
 		return projectFields{}, err
 	}
 
-	var out projectFields
-
-	for _, f := range all {
-		switch f.Name {
-		case s.kindField:
-			for _, o := range f.Options {
-				switch strings.ToLower(o.Name) {
-				case string(domain.KindEpic):
-					out.kindID, out.epicOptionID = f.ID, o.ID
-				case string(domain.KindIssue):
-					out.kindID, out.issueOptionID = f.ID, o.ID
-				}
-			}
-		case s.parentField:
-			out.parentID = f.ID
-		}
-	}
-
-	// 何が足りないかを具体的に返す。「フィールドがありません」だけでは、
-	// 開発者は GitHub 側で何を作ればよいのか分からない。
-	var missing []string
-	if out.epicOptionID == "" {
-		missing = append(missing, fmt.Sprintf("single select %q with option %q", s.kindField, domain.KindEpic))
-	}
-	if out.issueOptionID == "" {
-		missing = append(missing, fmt.Sprintf("single select %q with option %q", s.kindField, domain.KindIssue))
-	}
-	if out.parentID == "" {
-		missing = append(missing, fmt.Sprintf("text %q", s.parentField))
-	}
+	fields, missing := matchProjectFields(all, s.fieldNames)
+	// 何が足りないかを名前つきで返す。画面は code から役割を言い、名前はこの
+	// 本文として「詳細」に出る。名前が無いと GitHub 側で何を作ればよいか分からない。
 	if len(missing) > 0 {
-		return projectFields{}, fmt.Errorf("%w: %s", ErrProjectFieldMissing, strings.Join(missing, ", "))
+		return projectFields{}, fmt.Errorf("%w: %s",
+			ErrProjectFieldMissing, describeMissingFields(missing, s.fieldNames))
 	}
 
-	return out, nil
+	return fields, nil
 }
 
 // toPortKind はドメインの種別を境界の DTO に詰め替える。

@@ -1,5 +1,5 @@
 import type { SyncItem } from "../../api/types";
-import type { SelectedActions } from "./interpretationDraft";
+import type { RenamedEpic, SelectedActions } from "./interpretationDraft";
 
 /**
  * 作る / 書き換えるものの内訳を 1 行にする（ADR 0026）。
@@ -33,6 +33,37 @@ export function creationNotice(
     return `更新は取り消せません。${target} の draft issue ${update} 件を書き換えます。${tail}`;
   }
   return `作成も更新も取り消せません。${target} に ${create} 件を作り、${update} 件を書き換えます。${tail}`;
+}
+
+/**
+ * 触らないほうの issue が、親の epic を失うことの案内（#298）。
+ *
+ * epic のタイトルを書き換えると、今回送らない issue の `Parent`（親のタイトル、
+ * ADR 0006）は前のタイトルを指したまま残る。**親を失うことは黙って起こさない**
+ * （ADR 0024）。張り直すかは開発者が選ぶ。今回の絵解きで選び直せば張り直される。
+ *
+ * どの issue がどの epic に属していたかは結びつけない（`renamedEpics`）ので、
+ * 「属していたものは」と条件で言う。タイトルが変わる epic が無いか、触らない
+ * ものに issue が無ければ、親を失うものは無いので何も言わない。
+ */
+export function leftBehindParentNote(
+  renamed: RenamedEpic[],
+  leftBehind: SyncItem[],
+): string | undefined {
+  if (renamed.length === 0 || !leftBehind.some((it) => it.kind === "issue")) {
+    return undefined;
+  }
+
+  const changes = renamed
+    .map(({ from, to }) => `epic「${from}」のタイトルを「${to}」に`)
+    .join("、");
+  const which = renamed.length === 1 ? "この epic" : "これらの epic";
+  const before = renamed.map(({ from }) => `「${from}」`).join("・");
+  return (
+    `今回、${changes}書き換えます。` +
+    `上の issue のうち、${which} に属していたものは、` +
+    `GitHub の Parent が${before}を指したまま残ります。`
+  );
 }
 
 /**

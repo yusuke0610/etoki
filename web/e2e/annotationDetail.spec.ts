@@ -37,13 +37,13 @@ test.describe("注釈の詳細", () => {
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
-    await detail.getByLabel("e1 のタイトル").fill("ログイン基盤（手直し済み）");
+    await detail.getByLabel("1 件目のタイトル").fill("ログイン基盤（手直し済み）");
 
     await detail.getByRole("button", { name: "閉じる" }).click();
     await expect(detail).toHaveCount(0);
     await card.locator(".annotation-open").click();
 
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue(
       "ログイン基盤（手直し済み）",
     );
   });
@@ -56,16 +56,16 @@ test.describe("注釈の詳細", () => {
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
-    await detail.getByLabel("e1 のタイトル").fill("ログイン基盤（手直し済み）");
+    await detail.getByLabel("1 件目のタイトル").fill("ログイン基盤（手直し済み）");
 
     // 開くのは 1 つずつ。別の注釈を解釈すると、そちらに切り替わる。
     await interpret(annotationCard(page, "パスワード再設定"));
     const other = annotationDetail(page, "パスワード再設定");
-    await expect(other.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+    await expect(other.getByLabel("1 件目のタイトル")).toHaveValue("ログイン基盤");
     await expect(detail).toHaveCount(0);
 
     await card.locator(".annotation-open").click();
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue(
       "ログイン基盤（手直し済み）",
     );
   });
@@ -207,7 +207,7 @@ test.describe("注釈の詳細", () => {
     // 控える粒度も保存し直した値にする。押した時点の epic を控えると、issue で
     // 読んだ結果に「粒度 epic」と書いた行が付く。行は 2 回引くと並ぶ。
     await detail.getByRole("button", { name: "絵解き直す" }).click();
-    const runs = detail.getByLabel("解釈結果").locator("option");
+    const runs = detail.getByLabel("絵解きの結果").locator("option");
     await expect(runs).toHaveCount(2);
     await expect(runs.nth(1)).toContainText("粒度 issue");
   });
@@ -225,7 +225,7 @@ test.describe("注釈の詳細", () => {
     )
       .getByRole("button", { name: "キャンバスで見る" })
       .click();
-    await page.getByRole("button", { name: /の注釈を外す/ }).click();
+    await page.getByRole("button", { name: /を絵から外す/ }).click();
     const detail = await openAnnotationDetail(page, "ログイン");
     await detail.getByRole("button", { name: "絵解く" }).click();
 
@@ -316,9 +316,7 @@ test.describe("注釈の詳細", () => {
 
     await detail.getByRole("button", { name: "絵解く" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(
-      "注釈の状態を取得できませんでした",
-    );
+    await expect(page.getByRole("alert")).toContainText("絵の状態を取得できませんでした");
 
     // 「読まなかった」は、取得を直して押し直し、結果が出てから数える。1 回目で
     // 読んでいたら 2 件になる。
@@ -394,7 +392,7 @@ test.describe("注釈の詳細", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
     await expect(detail).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: /^注釈 2 件/ })).toBeFocused();
+    await expect(page.getByRole("heading", { name: /^絵 2 件/ })).toBeFocused();
   });
 
   // 解釈は LLM を待つので時間がかかる。待つあいだに閉じてキャンバスへ戻れるが、
@@ -417,7 +415,7 @@ test.describe("注釈の詳細", () => {
     await expect(detail.getByText("絵解きしています…")).toBeVisible();
 
     release();
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("ログイン基盤");
   });
 
   // 切れると: 詳細が開いているあいだに同じ注釈のカードをキーボードで押しても、
@@ -444,7 +442,7 @@ test.describe("注釈の詳細", () => {
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("ログイン基盤");
 
     // 詳細はキャンバスの上に開いているので、開いたまま描き足せない。保存は未保存
     // でなくても押せ、どの保存でも解釈は捨てられる。

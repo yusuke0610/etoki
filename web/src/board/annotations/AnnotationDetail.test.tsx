@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { Interpretation } from "../../api/types";
 import { AnnotationDetail } from "./AnnotationDetail";
 
 function props(): ComponentProps<typeof AnnotationDetail> {
@@ -25,6 +26,7 @@ function props(): ComponentProps<typeof AnnotationDetail> {
       states: {},
       onInterpret: vi.fn(),
       onSelect: vi.fn(),
+      onCancel: vi.fn(),
       unavailable: null,
     },
     creation: {
@@ -99,7 +101,7 @@ describe("AnnotationDetail", () => {
     );
 
     expect(screen.queryByRole("button", { name: "ログイン" })).not.toBeInTheDocument();
-    expect(screen.getByText(/注釈から外してあります/)).toBeInTheDocument();
+    expect(screen.getByText(/絵から外してあります/)).toBeInTheDocument();
   });
 
   // キャンバスからまだ聞いていない（null）うちは、外したことにしない（`canvasIds`
@@ -269,29 +271,22 @@ describe("AnnotationDetail", () => {
     expect(screen.getByRole("button", { name: "絵解く" })).toHaveFocus();
   });
 
-  // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈の名前を
-  // 変えると「変更あり」になることを、変える前に言う。未作成なら影響が無いので
-  // 出さない。
-  it("作成済みの注釈にだけ、名前を変えると変更ありになることを添える", () => {
-    const detailProps = props();
-    const { unmount } = render(<AnnotationDetail {...detailProps} />);
-    expect(
-      screen.getByRole("button", { name: "ログイン" }),
-    ).not.toHaveAccessibleDescription();
-    unmount();
-
+  // 名前は `content_hash` の入力ではない（#303、ADR 0079）。作成済みの注釈でも、
+  // 名前を変えて「変更あり」になることは無いので、そうなると添えない。
+  it("作成済みの注釈でも、名前を変えると変更ありになるとは添えない", () => {
     render(
       <AnnotationDetail
-        {...detailProps}
+        {...props()}
         annotations={[
           { id: "frame-1", name: "ログイン", granularity: "", state: "created" },
         ]}
       />,
     );
-    expect(screen.getByRole("button", { name: "ログイン" })).toHaveAccessibleDescription(
-      /変えると「変更あり」になります/,
-    );
-    expect(startRename()).toHaveAccessibleDescription(/変えると「変更あり」になります/);
+    expect(
+      screen.getByRole("button", { name: "ログイン" }),
+    ).not.toHaveAccessibleDescription();
+    expect(startRename()).not.toHaveAccessibleDescription();
+    expect(screen.queryByText(/「変更あり」になります/)).toBeNull();
   });
 
   // 選択欄が書く先はキャンバスの要素で、保存済みの値（annotations）は次の保存
@@ -448,6 +443,143 @@ describe("AnnotationDetail", () => {
     expect(screen.queryByRole("button", { name: "GitHub に作成する" })).toBeNull();
   });
 
+  // 引いた解釈はメモリにしか無い（#39）ので、開き直すと作成済みでも変更ありでも
+  // 「引く前」の本文になる。状態で分けないと、作成済みなのに「まだ」と言い、変更
+  // ありの次の一手が無い（#290）。
+  describe("解釈の前の本文は、同期の状態で分ける", () => {
+    function withState(state: "uncreated" | "created" | "changed") {
+      return {
+        ...props(),
+        annotations: [
+          { id: "frame-1", name: "ログイン", granularity: "" as const, state },
+        ],
+      };
+    }
+
+    it("未作成なら、まだ絵解きしていないと言う", () => {
+      render(<AnnotationDetail {...withState("uncreated")} />);
+
+      const hint = screen.getByText(/まだ絵解きしていません/);
+      expect(hint).toHaveTextContent(/作るものの下書きを出します/);
+    });
+
+    it("作成済みなら「まだ」と言わず、GitHub にあることと更新の候補を言う", () => {
+      render(<AnnotationDetail {...withState("created")} />);
+
+      expect(screen.queryByText(/まだ絵解きしていません/)).toBeNull();
+      const hint = screen.getByText(/GitHub にあります/);
+      // 開き直すと結果が消えることも言う。言わないと、出ていないのを作っていない印と読む。
+      expect(hint).toHaveTextContent(/画面を開いているあいだしか持たない/);
+      expect(hint).toHaveTextContent(
+        /開き直したり保存したりすると、ここには出なくなります/,
+      );
+      expect(hint).toHaveTextContent(/前回作ったものの更新を候補にした下書き/);
+      expect(hint).toHaveTextContent(/押しただけでは何も作りません/);
+      expect(hint).toHaveTextContent(/項目ごとに選べます/);
+      // 変更ありの文を出していないこと。共通の後半だけでは取り違えても通る。
+      expect(hint).not.toHaveTextContent(/一致しない/);
+    });
+
+    // 矢印や図形だけを描き直しても「変更あり」にならない（#301）。状態が動かない
+    // ことを言わないと、作成済みのままなのを「読み直す必要が無い」印と読む。
+    it("作成済みなら、矢印や図形だけの変更では「変更あり」にならないことを言う", () => {
+      render(<AnnotationDetail {...withState("created")} />);
+
+      // 置き場所は囲みの中に限る。囲みに出し入れすると所属が変わって動く。
+      const note = screen.getByText(
+        /矢印や図形、貼った画像、囲みの中での置き場所、絵の名前だけを直しても/,
+      );
+      expect(note).toHaveTextContent(/「作成済み」のまま/);
+      // 何を変えれば「変更あり」になるかも言う。言わないと、どこまでが検知の外かが読めない。
+      expect(note).toHaveTextContent(/絵の中の文字・粒度・種別/);
+      expect(note).toHaveTextContent(/文字を囲みに出し入れしたとき/);
+      // 文字は要素の ID ごと見るので、文面が同じでも作り直せば動く。
+      expect(note).toHaveTextContent(/同じ文面でも消して作り直したとき/);
+    });
+
+    // 作った直後は解釈を持ったまま作成済みになる。解釈の前の本文は消えるが、
+    // この案内まで一緒に消すと、描き直す前に知っておくことが画面から無くなる。
+    it("作成済みなら、絵解きの結果が出ていても、矢印や図形だけの変更の案内を出す", () => {
+      const detailProps = withState("created");
+      const interpretation: Interpretation = {
+        summary: "s",
+        contentHash: "h",
+        items: [],
+      };
+      render(
+        <AnnotationDetail
+          {...detailProps}
+          interpretation={{
+            ...detailProps.interpretation,
+            states: {
+              "frame-1": {
+                running: false,
+                runs: [
+                  {
+                    id: 1,
+                    at: "2026-01-01T00:00:00Z",
+                    granularity: "issue",
+                    result: interpretation,
+                  },
+                ],
+                selectedId: 1,
+              },
+            },
+          }}
+        />,
+      );
+
+      expect(screen.queryByText(/GitHub にあります/)).toBeNull();
+      expect(
+        screen.getByText(/矢印や図形、貼った画像、囲みの中での置き場所/),
+      ).toBeInTheDocument();
+    });
+
+    it("作成済みでなければ、矢印や図形だけの変更の案内は出さない", () => {
+      render(<AnnotationDetail {...withState("changed")} />);
+
+      expect(screen.queryByText(/矢印や図形、貼った画像/)).toBeNull();
+    });
+
+    // 失敗を出しているあいだは、解釈の前の本文と同じく出さない。読むのは失敗のほう。
+    it("作成済みでも、絵解きの失敗を出しているあいだは案内を出さない", () => {
+      const detailProps = withState("created");
+      render(
+        <AnnotationDetail
+          {...detailProps}
+          interpretation={{
+            ...detailProps.interpretation,
+            states: {
+              "frame-1": {
+                running: false,
+                runs: [],
+                selectedId: null,
+                failure: { message: "絵解きできませんでした", detail: "" },
+              },
+            },
+          }}
+        />,
+      );
+
+      expect(screen.getByText(/絵解きできませんでした/)).toBeInTheDocument();
+      expect(screen.queryByText(/矢印や図形、貼った画像/)).toBeNull();
+    });
+
+    // 中身が同じでも changed になりうる（ADR 0047）ので、変わったとは言い切らない。
+    it("変更ありなら、押しても作らないことを言い、変わったとは断定しない", () => {
+      render(<AnnotationDetail {...withState("changed")} />);
+
+      expect(screen.queryByText(/まだ絵解きしていません/)).toBeNull();
+      const hint = screen.getByText(/前回作ったものの更新を候補にした下書き/);
+      expect(hint).toHaveTextContent(/押しただけでは何も作りません/);
+      expect(hint).toHaveTextContent(/項目ごとに選べます/);
+      expect(hint).toHaveTextContent(/一致しないという印/);
+      expect(hint).toHaveTextContent(/中身を書き換えていなくても付く/);
+      expect(hint).not.toHaveTextContent(/変わりました/);
+      expect(hint).not.toHaveTextContent(/GitHub にあります/);
+    });
+  });
+
   // 未保存でも押させる。押した操作の中で保存してから読む（#247、`BoardPage`）。
   // 止めると、粒度や種別を選び直した直後に押せなくなる。保存がほかの注釈の結果も
   // 捨てることは本文で言う。
@@ -546,13 +678,77 @@ describe("AnnotationDetail", () => {
     });
   });
 
+  // 走っている絵解きを、押した人が止められる（#330）。
+  describe("絵解きの取り消し", () => {
+    function withState(state: {
+      running: boolean;
+      jobId?: string;
+      cancelling?: boolean;
+    }) {
+      const detailProps = props();
+      return {
+        ...detailProps,
+        interpretation: {
+          ...detailProps.interpretation,
+          states: { "frame-1": { ...state, runs: [], selectedId: null } },
+        },
+      };
+    }
+
+    it("走っているジョブがあれば取り消しを出し、押すと取り消す", () => {
+      const detailProps = withState({ running: true, jobId: "job-1" });
+      render(<AnnotationDetail {...detailProps} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "絵解きを取り消す" }));
+      expect(detailProps.interpretation.onCancel).toHaveBeenCalledWith("frame-1");
+    });
+
+    // ジョブが分かる前に取り消せると、押し直したときに同じジョブが返る仕組みと
+    // 競合する（`InterpretationState.jobId`）。
+    it("取り消しの返事を待つあいだは、取り消し中と出す", () => {
+      render(
+        <AnnotationDetail
+          {...withState({ running: true, jobId: "job-1", cancelling: true })}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "取り消し中…" })).toBeEnabled();
+    });
+
+    it("ジョブが分かる前は出さない", () => {
+      render(<AnnotationDetail {...withState({ running: true })} />);
+
+      expect(screen.getByRole("button", { name: "絵解き中…" })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: "絵解きを取り消す" })).toBeNull();
+    });
+
+    it("走っていなければ出さない", () => {
+      render(<AnnotationDetail {...withState({ running: false })} />);
+
+      expect(screen.queryByRole("button", { name: "絵解きを取り消す" })).toBeNull();
+    });
+
+    // 押したボタンが消えるので、焦点が body に落ちる。「絵解く」へ戻す。
+    it("取り消したら、焦点を「絵解く」へ戻す", () => {
+      const running = withState({ running: true, jobId: "job-1" });
+      const { rerender } = render(<AnnotationDetail {...running} />);
+
+      const cancel = screen.getByRole("button", { name: "絵解きを取り消す" });
+      cancel.focus();
+      fireEvent.click(cancel);
+      rerender(<AnnotationDetail {...withState({ running: false })} />);
+
+      expect(screen.getByRole("button", { name: "絵解く" })).toHaveFocus();
+    });
+  });
+
   it("読むだけの権限では帯を出さず、その理由を出す", () => {
     render(<AnnotationDetail {...props()} canEdit={false} />);
 
     expect(screen.queryByRole("button", { name: "絵解く" })).toBeNull();
     expect(
       screen.getByText(
-        "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
+        "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
       ),
     ).toBeInTheDocument();
     // 押せない粒度と種別も同じ文を指す。
@@ -560,7 +756,7 @@ describe("AnnotationDetail", () => {
       const select = screen.getByRole("combobox", { name });
       expect(select).toBeDisabled();
       expect(select).toHaveAccessibleDescription(
-        "読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。",
+        "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
       );
     }
   });

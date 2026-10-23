@@ -36,6 +36,8 @@ export type InterpretationProps = {
    * 引き直しは「戻せない操作」になる。
    */
   onSelect: (annotationId: string, runId: number) => void;
+  /** 走っている解釈を取り消す（#330）。ジョブが分かる前は何もしない。 */
+  onCancel: (annotationId: string) => void;
   /**
    * LLM が未設定なら理由。使えるなら null（ADR 0030）。
    *
@@ -300,7 +302,6 @@ function AnnotationFace({
   const labelId = `annotation-detail-label-${id}`;
   const missingId = `annotation-detail-missing-${id}`;
   const viewerId = `annotation-detail-viewer-${id}`;
-  const nameNoteId = `annotation-detail-name-note-${id}`;
   const unmarkedId = `annotation-detail-unmarked-${id}`;
   const itemsRegionId = `annotation-detail-items-${id}`;
   const runsRegionId = `annotation-detail-runs-${id}`;
@@ -373,10 +374,6 @@ function AnnotationFace({
       frames.onChangeName(id, nameDraft);
     }
   };
-  // 名前は解釈の入力で `content_hash` にも入る（ADR 0036）。作成済みの注釈で
-  // 変えると「変更あり」になる。未作成なら影響が無いので言わない。
-  const nameNote = canRename && a.state !== "uncreated";
-  const nameDescribedBy = nameNote ? nameNoteId : undefined;
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape") return;
@@ -444,7 +441,6 @@ function AnnotationFace({
                 ref={focusNameInput}
                 className="annotation-detail-label annotation-detail-rename-input"
                 aria-label="名前"
-                aria-describedby={nameDescribedBy}
                 value={nameDraft}
                 placeholder="名前を付ける"
                 onChange={(e) => setNameDraft(e.target.value)}
@@ -474,7 +470,6 @@ function AnnotationFace({
               id={labelId}
               ref={labelRef}
               className="annotation-detail-label annotation-detail-rename"
-              aria-describedby={nameDescribedBy}
               onClick={() => {
                 draftStart.current = name;
                 setNameDraft(name);
@@ -601,12 +596,7 @@ function AnnotationFace({
         </div>
         {canEdit && unmarked && (
           <p className="hint" id={unmarkedId}>
-            このフレームは注釈から外してあります。名前を変えるには、もう一度注釈にしてください。
-          </p>
-        )}
-        {nameNote && (
-          <p className="hint" id={nameNoteId}>
-            名前も絵解きの入力です。変えると「変更あり」になります。
+            このフレームは絵から外してあります。名前を変えるには、もう一度絵にしてください。
           </p>
         )}
       </header>
@@ -665,6 +655,7 @@ function AnnotationFace({
           <InterpretationSection
             annotationId={id}
             granularity={a.granularity}
+            syncState={a.state}
             state={interpretation.states[id]}
             creation={creation.states[id]}
             saving={creation.saving}
@@ -686,6 +677,7 @@ function AnnotationFace({
               interpretation.onInterpret(id);
             }}
             onSelectInterpretation={(runId) => interpretation.onSelect(id, runId)}
+            onCancelInterpretation={() => interpretation.onCancel(id)}
             onCreate={(interpretationId, result) =>
               creation.onCreate(id, interpretationId, result)
             }
@@ -695,7 +687,7 @@ function AnnotationFace({
           // 読むだけの人には帯を出さず、なぜ無いのかを言う。押せない名前・粒度・
           // 種別もここを指す。
           <p className="hint" id={viewerId}>
-            読むだけの権限で開いています。名前・粒度・種別は変えられず、解釈と作成もできません。
+            読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。
           </p>
         )}
       </div>

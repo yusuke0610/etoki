@@ -43,7 +43,7 @@ test.describe("キャンバスに無い注釈", () => {
     await openBoardWithMock(page, withDetached());
 
     const section = page.locator(".panel-section").filter({
-      has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
+      has: page.getByRole("heading", { name: "キャンバスに無い絵" }),
     });
 
     await expect(section.getByText("GitHub にある 1 件")).toBeVisible();
@@ -94,7 +94,7 @@ test.describe("キャンバスに無い注釈", () => {
     await openBoardWithMock(page, mock);
 
     const section = page.locator(".panel-section").filter({
-      has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
+      has: page.getByRole("heading", { name: "キャンバスに無い絵" }),
     });
 
     await section.getByText("実行の履歴").click();
@@ -118,9 +118,7 @@ test.describe("キャンバスに無い注釈", () => {
   test("消えた注釈が無ければ節ごと出さない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await expect(
-      page.getByRole("heading", { name: "キャンバスに無い注釈" }),
-    ).toBeHidden();
+    await expect(page.getByRole("heading", { name: "キャンバスに無い絵" })).toBeHidden();
   });
 
   // 3 状態も名前も無い。状態の一覧に混ぜると「押せない注釈」が並ぶ。
@@ -128,7 +126,7 @@ test.describe("キャンバスに無い注釈", () => {
     await openBoardWithMock(page, withDetached());
 
     const states = page.locator(".panel-section").filter({
-      has: page.getByRole("heading", { name: /^注釈 \d+ 件/ }),
+      has: page.getByRole("heading", { name: /^絵 \d+ 件/ }),
     });
 
     await expect(states.getByText("消した囲みで作った epic")).toBeHidden();

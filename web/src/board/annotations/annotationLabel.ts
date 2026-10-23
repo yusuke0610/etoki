@@ -66,7 +66,7 @@ export function itemKinds(): ItemKind[] {
  */
 export function annotationLabel(name: string, index: number): string {
   // 「絵1」「絵2」（#248）。名前の代わりに補うだけで、frame の `name` には書かない
-  // （`name` は `content_hash` の入力で、書くと状態が変わる、ADR 0036）。
+  // （`name` は解釈の入力で、書くと一覧の位置の番号を LLM が名前として読む、ADR 0078）。
   return name.trim() === "" ? numberedLabel(index) : name;
 }
 

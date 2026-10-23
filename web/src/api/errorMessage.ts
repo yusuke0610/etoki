@@ -16,7 +16,61 @@ import { MERMAID_MAX_TEXT_SIZE } from "../excalidraw/mermaid";
 import { ACCEPTED_KINDS_LABEL, type PasteFailure } from "../excalidraw/mermaidPaste";
 import { log } from "../app/logger";
 import { ApiError } from "./boards";
-import type { ErrorCode } from "./types";
+import type { ErrorCode, ProjectFieldRequirement } from "./types";
+
+/**
+ * 作成に要るフィールドの、役割ごとの言い方（#292、ADR 0088）。
+ *
+ * **`project_field_missing` を言うための部品なので、失敗の文言を持つこの
+ * モジュールに置く。** 押した後の文（全部を並べる）と、作成先を選んだときの
+ * 文（足りないものだけを並べる）が同じ部品から組まれる。別々に書くと、同じ
+ * 原因に 2 通りの言い方が残る（ADR 0030）。
+ *
+ * `Record` にすることが担保。役割は契約の enum なので、足して文言を書き忘れると
+ * `tsc` が落ちる。種別の 2 つは選択肢の名前だけを持ち、フィールドの言い方は
+ * `projectFieldsPhrase` が添える。**選択肢の epic / issue は書く。** 設定で
+ * 変わらない etoki の語彙（ADR 0006）。フィールドの名前は書かない。
+ */
+const PROJECT_FIELD_PARTS: Record<ProjectFieldRequirement, string> = {
+  kind_epic: "epic",
+  kind_issue: "issue",
+  parent: "親を表すテキストのフィールド",
+};
+
+/** 役割の全部。並びは `PROJECT_FIELD_PARTS` の並び（画面に出す順）。 */
+const ALL_PROJECT_FIELDS = Object.keys(PROJECT_FIELD_PARTS) as ProjectFieldRequirement[];
+
+/**
+ * 役割の並びを 1 つの句にする。種別の選択肢は 1 つのフィールドにまとめて言う。
+ *
+ * 例: 「種別を表す単一選択のフィールド（選択肢 epic と issue）と、親を表す
+ * テキストのフィールド」。
+ */
+function projectFieldsPhrase(fields: readonly ProjectFieldRequirement[]): string {
+  const options = ALL_PROJECT_FIELDS.filter(
+    (f) => f !== "parent" && fields.includes(f),
+  ).map((f) => PROJECT_FIELD_PARTS[f]);
+
+  const phrases: string[] = [];
+  if (options.length > 0) {
+    phrases.push(`種別を表す単一選択のフィールド（選択肢 ${options.join(" と ")}）`);
+  }
+  if (fields.includes("parent")) phrases.push(PROJECT_FIELD_PARTS.parent);
+
+  return phrases.join("と、");
+}
+
+/**
+ * 作成先を選んだときに、足りないフィールドを言う（ADR 0088）。
+ *
+ * **確かめた結果を判定に使わない。** 選ぶことは止めず、作成のときに止まることだけ
+ * を言う。実際に止まるかは、作成のときに GitHub が返したもので決まる。
+ */
+export function missingProjectFieldsMessage(
+  missing: readonly ProjectFieldRequirement[],
+): string {
+  return `この Project には、${projectFieldsPhrase(missing)}がありません。このまま選べますが、GitHub 側で作るまで draft issue の作成は止まります。`;
+}
 
 /**
  * code から利用者向けの文言を引く表。
@@ -45,9 +99,10 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   scene_conflict: "他の人が先に保存しました。いまの内容を控えて、開き直してください。",
   target_locked: "作成先はもう変えられません。最初の draft issue を作ったためです。",
   target_mismatch: "作成先が変わっています。ボードを開き直してください。",
-  content_hash_mismatch: "解釈のあとにボードが変わりました。解釈からやり直してください。",
+  content_hash_mismatch:
+    "絵解きのあとにボードが変わりました。絵解きからやり直してください。",
   previous_item_unknown:
-    "更新先がこの注釈のものではありません。解釈からやり直してください。",
+    "更新先がこの絵のものではありません。絵解きからやり直してください。",
   already_member: "すでにメンバーです。",
   // 確認してから押すまでのあいだに、改名で空いた login を別人が取った（ADR 0053）。
   // 確認で見せた相手とは違うので、もう一度確かめてもらう。
@@ -60,8 +115,30 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "貼った画像が大きすぎて保存できません。画像を減らすか、小さいものに貼り替えてください。",
   target_not_selected:
     "作成先が選ばれていません。リポジトリと Project を選んでください。",
-  project_field_missing: "作成先の Project に必要なフィールドがありません。",
-  llm_unavailable: "LLM を呼び出せませんでした。API キーと接続を確かめてください。",
+  // 何を作ればよいかまで言う（#292）。足りないと分かるのは押したあとで、
+  // 「フィールドがありません」だけでは GitHub 側で何を作るのかが読めない。
+  // 何が要るかの言い方は `PROJECT_FIELD_PARTS` に置き、押す前の表示
+  // （`missingProjectFieldsMessage`）と同じ部品から組む（ADR 0030 / 0088）。
+  // **フィールドの名前は書かない。** 名前は設定で変わり、知っているのは起動の
+  // 配線だけ（環境変数の名前を書かない ADR 0083 と同じ理由）。名前はサーバーの
+  // 本文として「詳細」に出る。
+  project_field_missing: `作成先の Project に、${projectFieldsPhrase(ALL_PROJECT_FIELDS)}が要ります。GitHub 側で作ってから押し直せば、ボードはそのままで続けられます。フィールドの名前は詳細にあります。`,
+  // LLM の呼び出しの失敗は打ち手で分ける（ADR 0087）。**どれも「絵解き」と
+  // 言い切らない。** 図の生成でも同じ code が返る。
+  // llm_unavailable は原因を名乗らなかった失敗の受け皿でもある（差し込んだ
+  // 実装が名乗らない、認証、接続先の誤り）。鍵と接続に決めつけない。
+  llm_unavailable:
+    "LLM を呼び出せませんでした。API キー・接続先・モデルなどの設定を確かめてください。",
+  // 向こうのコンテキスト長か出力の上限で切れた。頼み直しても同じところで切れる。
+  // ローカル LLM の既定のコンテキスト長で起きやすい（README「ローカル LLM を使う」）。
+  llm_truncated:
+    "LLM の応答が途中で打ち切られました。ローカル LLM ならコンテキスト長か出力の上限を広げてください。そうでなければ、一度に頼む量を減らして試してください。",
+  llm_refused:
+    "LLM が応答を断りました。頼み方や、渡した内容（描いたもの・指示）を見直してください。",
+  // 向こうが混んでいる。**rate_limited と言い分ける。** あちらは etoki 自身の
+  // 上限で、こちらは LLM 側。5xx も含むので、続くなら向こうの状態を見る。
+  llm_overloaded:
+    "LLM 側が混んでいるか、一時的に応答できません。時間をおいてから試してください。続くようなら接続先の状態を確かめてください。",
   interpretation_failed:
     "LLM の出力が期待した形になりませんでした。もう一度試してください。",
   // 接続はできたが図が返らなかった。llm_unavailable と打ち手が違う。あちらは
@@ -74,12 +151,12 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "会話が長くなりすぎました。新しい会話として最初から指示し直してください。",
   // LLM を叩く実行の上限（ADR 0044）。**打ち手が違うので畳まない。**
   // 片方は待つ長さの話、もう片方は「もう 1 つ走っている」話。
-  // **「解釈」と言い切らない。** 枠は図のドラフト生成と共有なので、こちらは
+  // **「絵解き」と言い切らない。** 枠は図のドラフト生成と共有なので、こちらは
   // 図の側にも出る。片方の名前で書くと、もう片方で見たときに食い違う。
   rate_limited:
     "実行できる回数の上限に達しました。しばらく時間をおいてから試してください。",
   concurrency_limited:
-    "解釈か図の生成がまだ実行中です。終わるのを待ってから試してください。",
+    "絵解きか図の生成がまだ実行中です。終わるのを待ってから試してください。",
   creation_incomplete:
     "draft issue を 1 件も作れませんでした。GitHub 側の状態を確かめてください。",
   github_unavailable:

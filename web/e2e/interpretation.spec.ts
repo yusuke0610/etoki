@@ -50,6 +50,38 @@ test.describe("解釈と作成", () => {
     await expect.poll(() => mock.jobDiscards.length).toBe(1);
   });
 
+  // 走っている絵解きは、押した人が止められる（#330）。止めないと上限まで枠を
+  // 握り、ほかの絵も押せない。止めたら失敗の帯は出さず、また押せる。
+  test("走っている絵解きを取り消すと、サーバーのジョブを止め、また絵解ける", async ({
+    page,
+  }) => {
+    const base = baseMock();
+    base.interpretJobRunning = true;
+    const mock = await openBoardWithMock(page, base);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await expect(detail.getByRole("button", { name: "絵解き中…" })).toBeVisible();
+
+    // 届いたかではなく、返事まで待つ。モックは返事の前にジョブを消すので、その
+    // あいだに見に行くと 404 が返る。そこを越えたあとの画面を確かめたい。
+    const discarded = page.waitForResponse(
+      (r) =>
+        r.request().method() === "DELETE" &&
+        /^\/api\/boards\/[^/]+\/interpretation-jobs\/[^/]+$/.test(
+          new URL(r.url()).pathname,
+        ),
+    );
+    await detail.getByRole("button", { name: "絵解きを取り消す" }).click();
+    await discarded;
+
+    expect(mock.jobDiscards).toHaveLength(1);
+    await expect(detail.getByRole("button", { name: "絵解く" })).toBeEnabled();
+    await expect(detail.getByRole("button", { name: "絵解き中…" })).toHaveCount(0);
+    // 取り消しは失敗ではない。
+    await expect(detail.getByText(/絵解きできませんでした/)).toHaveCount(0);
+  });
+
   test("絵解くまで作成のボタンは出ない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
@@ -150,16 +182,20 @@ test.describe("解釈と作成", () => {
     ).toBeVisible();
 
     // タイトルは手直しできるので入力欄に出る（ADR 0024）。
-    await expect(detail.getByLabel("e1 の種別")).toHaveValue("epic");
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
-    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("1 件目の種別")).toHaveValue("epic");
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("ログイン基盤");
+    await expect(detail.getByLabel("2 件目のタイトル")).toHaveValue(
       "メールとパスワードでログインする",
     );
-    await expect(detail.getByLabel("i2 のタイトル")).toHaveValue("ログイン失敗を数える");
+    await expect(detail.getByLabel("3 件目のタイトル")).toHaveValue(
+      "ログイン失敗を数える",
+    );
 
     // 親子は epic の下に issue が入る形で出る（ADR 0006）。
-    const epic = detail.locator("li").filter({ has: page.getByLabel("e1 のタイトル") });
-    await expect(epic.getByLabel("i1 のタイトル")).toBeVisible();
+    const epic = detail
+      .locator("li")
+      .filter({ has: page.getByLabel("1 件目のタイトル") });
+    await expect(epic.getByLabel("2 件目のタイトル")).toBeVisible();
   });
 
   // 作成は取り消せない（ADR 0009）。押す前に本文が読めていなければならない。
@@ -172,10 +208,10 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await expect(detail.getByLabel("e1 の本文")).toBeVisible();
-    await expect(detail.getByLabel("e1 の本文")).toHaveValue("入口をまとめる");
-    await expect(detail.getByLabel("i1 の本文")).toBeVisible();
-    await expect(detail.getByLabel("i1 の本文")).toHaveValue("フォームと検証");
+    await expect(detail.getByLabel("1 件目の本文")).toBeVisible();
+    await expect(detail.getByLabel("1 件目の本文")).toHaveValue("入口をまとめる");
+    await expect(detail.getByLabel("2 件目の本文")).toBeVisible();
+    await expect(detail.getByLabel("2 件目の本文")).toHaveValue("フォームと検証");
   });
 
   // 作るのか書き換えるのかは、どの項目でも押す前に読める（ADR 0026、#201）。
@@ -189,7 +225,7 @@ test.describe("解釈と作成", () => {
 
     const epic = detail
       .locator(".draft-item")
-      .filter({ has: page.getByLabel("e1 のタイトル") });
+      .filter({ has: page.getByLabel("1 件目のタイトル") });
     await expect(epic.getByText("新規", { exact: true })).toBeVisible();
     await expect(detail.getByText("作るもの（3 件を選択中）")).toBeVisible();
   });
@@ -203,7 +239,7 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("i2 を作成する").uncheck();
+    await detail.getByLabel("3 件目を作成する").uncheck();
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
     // モックの応答は固定なので、この件数は「作成が終わった」ことの目印。
@@ -226,10 +262,10 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("1 件目を作成する").uncheck();
 
-    await expect(detail.getByLabel("i1 を作成する")).not.toBeChecked();
-    await expect(detail.getByLabel("i2 を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("2 件目を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("3 件目を作成する")).not.toBeChecked();
   });
 
   // 親を失ったことは黙って起こさない。作られるものが変わっている。
@@ -240,8 +276,8 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("e1 を作成する").uncheck();
-    await detail.getByLabel("i1 を作成する").check();
+    await detail.getByLabel("1 件目を作成する").uncheck();
+    await detail.getByLabel("2 件目を作成する").check();
 
     await expect(
       detail.getByText("epic に属さない issue として作られます。"),
@@ -267,8 +303,8 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("i1 のタイトル").fill("OAuth でログインする");
-    await detail.getByLabel("i1 の本文").fill("認可コードフローで受ける");
+    await detail.getByLabel("2 件目のタイトル").fill("OAuth でログインする");
+    await detail.getByLabel("2 件目の本文").fill("認可コードフローで受ける");
 
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
@@ -289,7 +325,7 @@ test.describe("解釈と作成", () => {
     await interpret(card);
 
     // epic を外すと配下も外れるので、これで 3 件とも外れる。
-    await detail.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("1 件目を作成する").uncheck();
 
     await expect(
       detail.getByRole("button", { name: "GitHub に作成する" }),
@@ -319,8 +355,8 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "セッション管理");
     await interpret(card);
 
-    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue("期限切れを弾く");
-    await expect(detail.getByLabel("i1 の種別")).toHaveCount(0);
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("期限切れを弾く");
+    await expect(detail.getByLabel("1 件目の種別")).toHaveCount(0);
   });
 
   // 解釈をやり直したら、前の結果に対する手直しは捨てる。残すと、いま画面に
@@ -332,15 +368,15 @@ test.describe("解釈と作成", () => {
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
 
-    await detail.getByLabel("i1 のタイトル").fill("書き換えたタイトル");
-    await detail.getByLabel("i2 を作成する").uncheck();
+    await detail.getByLabel("2 件目のタイトル").fill("書き換えたタイトル");
+    await detail.getByLabel("3 件目を作成する").uncheck();
 
     await interpret(card);
 
-    await expect(detail.getByLabel("i1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("2 件目のタイトル")).toHaveValue(
       "メールとパスワードでログインする",
     );
-    await expect(detail.getByLabel("i2 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("3 件目を作成する")).toBeChecked();
   });
 
   // LLM の出力は同じ入力でも揺れる。引き直した結果が前より悪かったときに
@@ -363,7 +399,7 @@ test.describe("解釈と作成", () => {
     await expect(detail.getByText("2 回目の読み解き")).toBeVisible();
 
     // 並ぶのは 2 件。引き直した直後は新しいほうが出ている。
-    const history = detail.getByLabel("解釈結果");
+    const history = detail.getByLabel("絵解きの結果");
     await expect(history.locator("option")).toHaveCount(2);
 
     // 選び直すと前の結果に戻る。
@@ -382,7 +418,7 @@ test.describe("解釈と作成", () => {
     await interpret(card);
     await expect(detail.getByText("ログインの入口")).toBeVisible();
 
-    await expect(detail.getByLabel("解釈結果")).toHaveCount(0);
+    await expect(detail.getByLabel("絵解きの結果")).toHaveCount(0);
   });
 
   test("作成すると件数が出て、状態が作成済みに変わる", async ({ page }) => {
@@ -483,7 +519,7 @@ test.describe("解釈と作成", () => {
 
     // 下書き側でも、その項目は選び直せない。送り先の ID が分からないので、
     // もう一度送ると重複する。
-    const checkbox = detail.getByLabel("i1 を作成する");
+    const checkbox = detail.getByLabel("2 件目を作成する");
     await expect(checkbox).not.toBeChecked();
     await expect(checkbox).toBeDisabled();
     // 押せない理由は本文に出す（ADR 0039）。title に隠さない。
@@ -514,8 +550,8 @@ test.describe("解釈と作成", () => {
     const button = detail.getByRole("button", { name: "GitHub に作成する" });
     await expect(button).toBeDisabled();
     await expect(detail.getByText("作るものが 1 件も選ばれていません。")).toBeVisible();
-    for (const id of ["e1", "i1", "i2"]) {
-      await expect(detail.getByLabel(`${id} を作成する`)).not.toBeChecked();
+    for (const n of [1, 2, 3]) {
+      await expect(detail.getByLabel(`${n} 件目を作成する`)).not.toBeChecked();
     }
     expect(mock.createRequests).toHaveLength(1);
   });
@@ -532,14 +568,14 @@ test.describe("解釈と作成", () => {
     await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
 
     await interpret(card);
-    const history = detail.getByLabel("解釈結果");
+    const history = detail.getByLabel("絵解きの結果");
     await expect(history.locator("option")).toHaveCount(2);
     // 引き直した解釈は別の下書き。こちらから作ったものは無い。
-    await expect(detail.getByLabel("e1 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("1 件目を作成する")).toBeChecked();
 
     await history.selectOption({ index: 1 });
-    for (const id of ["e1", "i1", "i2"]) {
-      await expect(detail.getByLabel(`${id} を作成する`)).not.toBeChecked();
+    for (const n of [1, 2, 3]) {
+      await expect(detail.getByLabel(`${n} 件目を作成する`)).not.toBeChecked();
     }
   });
 
@@ -565,15 +601,15 @@ test.describe("解釈と作成", () => {
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
     await expect(detail.getByText("途中で失敗しました（1 件は作成済み）")).toBeVisible();
 
-    await expect(detail.getByLabel("e1 を作成する")).not.toBeChecked();
-    await expect(detail.getByLabel("i1 を作成する")).toBeChecked();
-    await expect(detail.getByLabel("i2 を作成する")).toBeChecked();
+    await expect(detail.getByLabel("1 件目を作成する")).not.toBeChecked();
+    await expect(detail.getByLabel("2 件目を作成する")).toBeChecked();
+    await expect(detail.getByLabel("3 件目を作成する")).toBeChecked();
     // epic が外れたままなら、子は親なしで作られることを先に見せる。
     await expect(
       detail.getByText("epic に属さない issue として作られます。"),
     ).toHaveCount(2);
 
-    await detail.getByLabel("e1 を作成する").check();
+    await detail.getByLabel("1 件目を作成する").check();
     await expect(detail.getByText("作成した draft issue を書き換えます。")).toBeVisible();
     await expect(
       detail.getByText("epic に属さない issue として作られます。"),
@@ -649,6 +685,37 @@ test.describe("解釈と作成", () => {
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 
+  // LLM の呼び出しの失敗は打ち手で分ける（#291、ADR 0087）。打ち切りは鍵の
+  // 問題ではないので、「API キーを確かめて」と言わない。ローカル LLM の既定の
+  // コンテキスト長で起きる（README「ローカル LLM を使う」）。
+  test("応答が打ち切られたら、鍵ではなくコンテキスト長を案内する", async ({ page }) => {
+    const mock = baseMock();
+    mock.interpret = {
+      status: 502,
+      body: {
+        code: "llm_truncated",
+        error:
+          "etoki: llm output was truncated (attempt 2): etoki: llm response truncated: " +
+          "stopped at 1504 output tokens, before our limit of 16000",
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+
+    await expect(
+      detail.getByText("途中で打ち切られました", { exact: false }),
+    ).toBeVisible();
+    await expect(detail.getByText("コンテキスト長", { exact: false })).toBeVisible();
+    await expect(detail.getByText("API キー", { exact: false })).toHaveCount(0);
+    // 誰が切ったかの手掛かりは畳んだ側にだけ置く（#86）。
+    await expect(detail.getByText("before our limit", { exact: false })).toBeHidden();
+    await detail.getByText("詳細", { exact: true }).click();
+    await expect(detail.getByText("before our limit", { exact: false })).toBeVisible();
+  });
+
   test("解釈時点とシーンが食い違うと、作成は 409 で止まる", async ({ page }) => {
     const mock = baseMock();
     mock.createItems = {
@@ -665,8 +732,48 @@ test.describe("解釈と作成", () => {
     // 解釈のやり直しは開発者が決める。ここで勝手に解釈し直して作成を続けない。
     // 409 は 6 つの原因が同居するので、打ち手は code から引いて出す（#86）。
     await expect(
-      detail.getByText("解釈のあとにボードが変わりました", { exact: false }),
+      detail.getByText("絵解きのあとにボードが変わりました", { exact: false }),
     ).toBeVisible();
+    await expect(card.getByText("未作成")).toBeVisible();
+  });
+
+  // 切れると: いちばん手間をかけたあとで「フィールドがありません」とだけ出て、
+  // 何を作ればよいかを英文から読み解くことになる（#292）。名前は設定で変わる
+  // ので前に出さず、サーバーの本文として詳細に残す（ADR 0034 / 0083）。
+  test("Project にフィールドが足りないと、何を作るかを前に出し、名前は詳細に置く", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.createItems = {
+      status: 422,
+      body: {
+        code: "project_field_missing",
+        error:
+          'etoki: required project field is missing: single select "Kind" with option "epic", single select "Kind" with option "issue", text "Parent"',
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const alert = detail.getByRole("alert");
+    await expect(alert).toContainText("作成できませんでした");
+    await expect(alert).toContainText("種別を表す単一選択のフィールド");
+    await expect(alert).toContainText("選択肢 epic と issue");
+    await expect(alert).toContainText("親を表すテキストのフィールド");
+    await expect(alert).toContainText("押し直せば");
+    // 名前は畳んだ側にだけ置く。前に出すと、名前を変えた構成で嘘になる。
+    const message = alert.locator(".error-message");
+    await expect(message).not.toContainText("Kind");
+    await expect(message).not.toContainText("Parent");
+    const body = alert.getByText('single select "Kind"', { exact: false });
+    await expect(body).toBeHidden();
+    await alert.getByText("詳細", { exact: true }).click();
+    await expect(body).toBeVisible();
+    // 作らずに止まる。種別も親子も無い draft issue を並べない（ADR 0006）。
     await expect(card.getByText("未作成")).toBeVisible();
   });
 });

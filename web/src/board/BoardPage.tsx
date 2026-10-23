@@ -87,6 +87,7 @@ import {
   useDragEdgeScroll,
 } from "./useCanvasScroll";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
+import { useMenuTriggerName } from "./useMenuTriggerName";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
 
@@ -314,6 +315,7 @@ export function BoardPage({
     states: interpretations,
     interpret,
     select: showInterpretation,
+    cancel: cancelInterpretation,
     recordCreated,
     discardAll: discardInterpretations,
   } = useInterpretations({
@@ -491,7 +493,7 @@ export function BoardPage({
         return next.annotations;
       } catch (e) {
         if (request !== annotationsRequest.current) return latestAnnotations.current;
-        onError(describeFailure("注釈の状態を取得できませんでした", e), {
+        onError(describeFailure("絵の状態を取得できませんでした", e), {
           key: ANNOTATIONS_FAILED,
         });
         return null;
@@ -636,6 +638,8 @@ export function BoardPage({
   // 図のドラフト（LLM に作らせる・mermaid を貼る・置く）。`useDiagramDraft`。
   const {
     chat,
+    prompt: diagramPrompt,
+    setPrompt: setDiagramPrompt,
     generate: generateDiagram,
     changeKind: handleChangeKind,
     placeDraft,
@@ -649,6 +653,9 @@ export function BoardPage({
     updateElements,
     // 置いた図を見せる。スマホでは全面のパネルがキャンバスを隠している（#199）。
     onPlaced: closePhonePanel,
+    // 未設定のうちは引かない。capabilities が届くまで（null）も待つ。viewer には
+    // 生成の口を出さない（下の `canEdit`）ので、引いても見せる先が無い。
+    enabled: capabilities?.diagramDraft === true && canEdit,
   });
 
   /**
@@ -707,7 +714,8 @@ export function BoardPage({
 
   /**
    * 注釈の名前を書き換える（#249）。frame の `name` に書くので、キャンバスの
-   * ラベルにも同じ名前が出る。作成済みなら状態は「変更あり」になる（ADR 0036）。
+   * ラベルにも同じ名前が出る。名前は `content_hash` に入らないので、作成済みでも
+   * 状態は変わらない（#303、ADR 0079）。
    */
   const handleChangeAnnotationName = useCallback(
     (frameId: string, name: string) => {
@@ -994,6 +1002,8 @@ export function BoardPage({
   );
   useArrowKeyScroll(api, visibleCanvas);
   useDragEdgeScroll(api, visibleCanvas);
+  // etoki の操作を収めたメニューの入口に、読み上げの名前を付ける（#299）。
+  useMenuTriggerName(canvasFrame, api);
 
   // 設定していない機能は、押す前に理由を出す（ADR 0030）。null は使える、
   // または「まだ確かめていない」。
@@ -1053,6 +1063,7 @@ export function BoardPage({
       void interpretAfterSave(id);
     },
     onSelect: showInterpretation,
+    onCancel: cancelInterpretation,
     unavailable: interpretationUnavailable,
   };
   // 作る先の見出し。押す直前の帯の文（`creationNotice`）に出す。作成先が未選択の
@@ -1248,7 +1259,7 @@ export function BoardPage({
       // 数えるのは注釈の一覧と同じく保存済みシーンが基準。
       railBadges: railBadgesOf(annotations),
       content: (
-        <ErrorBoundary name="注釈パネル" recovery="remount">
+        <ErrorBoundary name="「絵解いた」パネル" recovery="remount">
           <AnnotationPanel
             annotations={annotations}
             detached={detached}
@@ -1289,6 +1300,8 @@ export function BoardPage({
                   <ErrorBoundary name="図のドラフト" recovery="remount">
                     <DiagramChatPanel
                       chat={chat}
+                      prompt={diagramPrompt}
+                      onPromptChange={setDiagramPrompt}
                       onChangeKind={handleChangeKind}
                       onSend={generateDiagram}
                       onPlace={() => void placeDraft()}
@@ -1348,11 +1361,20 @@ export function BoardPage({
         上書きしなかったことと、いま何ができるのかを本文で出す。バッジに畳むと
         「保存できていない」ことしか伝わらず、相手の変更を消したのかどうかが
         読めない（ADR 0020）。
+
+        **控える手段の場所まで言う**（#244 の追記）。「控えて」だけでは、何で控える
+        のかが分からずここで止まる。手段はメニューの「書き出し」（ADR 0045）で、
+        保存済みではなくキャンバスから出すので、弾かれた描き足しも入る。帯に同じ
+        ボタンを並べず場所を言うのは、書き出しの口を 1 つに寄せているため。
+        「≡」はアイコンを見て探す人のためのもので、読み上げではメニューの名前が
+        そのまま入口の名前になる（#299）。
       */}
       {conflicted && (
         <p className="conflict" role="alert">
           {"他の人がこのボードを保存しました。上書きしないよう未保存のまま残しています。"}
-          {"いまの内容を控えてから開き直してください。"}
+          {"いまの内容をメニュー"}
+          <span aria-hidden="true">（≡）</span>
+          {"の「書き出し」で控えてから、開き直してください。"}
         </p>
       )}
 
@@ -1430,7 +1452,7 @@ export function BoardPage({
                   **枠も境界で包む。** 包まずに落ちると外側の 1 枚が受けることになり、
                   キャンバスごと外れて未保存のブレストが消える（ADR 0027）。
                 */}
-                <ErrorBoundary name="注釈の枠" recovery="remount">
+                <ErrorBoundary name="絵の枠" recovery="remount">
                   <AnnotationOverlay boxes={overlayBoxes} />
                 </ErrorBoundary>
               </div>
@@ -1439,7 +1461,7 @@ export function BoardPage({
                 **`.excalidraw` の外に置く。** 中に入れると色の変数がぶつかり、
                 axe が色を判定できない（ADR 0065）。
               */}
-              <ErrorBoundary name="解釈の結果" recovery="remount">
+              <ErrorBoundary name="絵解きの結果" recovery="remount">
                 <AnnotationDetail
                   openId={detailId}
                   openRequest={detailRequest}

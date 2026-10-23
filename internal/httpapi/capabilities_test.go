@@ -29,7 +29,7 @@ func TestGetCapabilities(t *testing.T) {
 				boards, &stubLLM{text: validInterpretation}, newLimiter()),
 			Creations: usecase.NewCreationService(
 				boards, mappings, gh, usecase.NewBoardLocks()),
-			Catalog: usecase.NewGitHubCatalogService(gh),
+			Catalog: usecase.NewGitHubCatalogService(gh, usecase.ProjectFieldNames{}, nil),
 			Members: usecase.NewBoardMemberService(boards, nil, usecase.NewBoardLocks()),
 			Access:  usecase.NewBoardAccessService(boards, gh, nil),
 		}
@@ -178,6 +178,7 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 		{http.MethodPost, interpretPath(id, "annot-1"), apitypes.ErrorCodeLlmNotConfigured},
 		{http.MethodPost, "/api/boards/" + id + "/diagram-draft", apitypes.ErrorCodeLlmNotConfigured},
 		{http.MethodGet, "/api/github/repositories", apitypes.ErrorCodeGithubNotConfigured},
+		{http.MethodGet, "/api/github/projects/PVT_1/fields", apitypes.ErrorCodeGithubNotConfigured},
 		{http.MethodGet, "/api/boards/" + id + "/members", apitypes.ErrorCodeSharingNotConfigured},
 		{http.MethodGet, "/api/boards/" + id + "/invitee?login=bob", apitypes.ErrorCodeSharingNotConfigured},
 		{http.MethodGet, "/api/oauth/grants", apitypes.ErrorCodeMcpConnectionsNotConfigured},

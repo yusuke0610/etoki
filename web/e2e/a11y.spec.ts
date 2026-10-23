@@ -15,6 +15,7 @@ import {
   openBoardWithMock,
   openMermaidPaste,
   openPanelTab,
+  picker,
   saveScene,
   ekidokiButton,
   openShareDialog,
@@ -107,7 +108,7 @@ test.describe("押せない理由が本文として読める", () => {
     await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     // epic を外すと、それを親に持つ issue も一緒に外れる。3 件とも外れる。
-    await detail.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("1 件目を作成する").uncheck();
 
     await expectBlockedReason(
       detail.getByRole("button", { name: "GitHub に作成する" }),
@@ -468,7 +469,7 @@ test.describe("押せない理由が本文として読める", () => {
     await detail.locator(".unconfirmed-items").waitFor();
 
     await expectBlockedReason(
-      detail.getByLabel("i1 を作成する"),
+      detail.getByLabel("2 件目を作成する"),
       /この下書きからは送り直せません/,
     );
   });
@@ -500,6 +501,33 @@ test.describe("押せない理由が本文として読める", () => {
  * **ライトとダークの両方で掛ける**（ADR 0055）。色は変数を差し替えるだけなので、
  * 片方で通っても、もう片方の文字色が AA を切っていることは見えない。
  */
+/*
+ * キャンバスのメニューの入口（≡）の名前（#299）。入口は Excalidraw が描く
+ * アイコンだけのボタンで、名前は etoki が外から付けている（`useMenuTriggerName`）。
+ * 「ボード一覧へ戻る」の口はこのメニューの中にしか無い。
+ *
+ * **置き方を切り替えても名前が残ることを見る。** Excalidraw は広い画面と
+ * スマホで入口を作り直すので、開いた時点の 1 つにだけ付ける形だと、切り替えた
+ * あとの入口が名前を失う。axe は開いた時点の置き方でしか掛けていない。
+ */
+test.describe("メニューの入口の名前", () => {
+  test("広い画面からスマホの幅に変えても、入口は名前を持つ", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    const trigger = page.getByRole("button", { name: "メニュー", exact: true });
+    await expect(trigger).toBeVisible();
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.locator(".board")).toHaveAttribute("data-layout", "phone");
+    await expect(trigger).toBeVisible();
+
+    // 名前で引いた入口が、本当にメニューを開く入口であること。
+    await trigger.click();
+    await expect(
+      page.getByRole("button", { name: "ボード一覧へ戻る", exact: true }),
+    ).toBeVisible();
+  });
+});
+
 for (const colorScheme of ["light", "dark"] as const) {
   test.describe(`axe（etoki が書いた DOM・${colorScheme}）`, () => {
     test.use({ colorScheme });
@@ -581,6 +609,30 @@ for (const colorScheme of ["light", "dark"] as const) {
         .getByRole("button", { name: "使い方", exact: true })
         .click();
       await page.getByRole("dialog", { name: "etoki の使い方" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    /*
+     * 作成先の Project を選んで、足りないフィールドが出た状態（ADR 0088）。
+     * **選ぶまで DOM に出ない**ので、ほかの検査には掛かっていない。注意の色の
+     * コントラストはここでしか測れない。
+     */
+    test("作成先の Project を選び、足りないフィールドが出た状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.projectFields = {
+        PVT_1: {
+          status: 200,
+          body: { projectId: "PVT_1", status: "missing", missingFields: ["parent"] },
+        },
+      };
+      await openBoardWithMock(page, mock);
+      await chooseFromMenu(page, "作成先を変更");
+      await picker(page)
+        .getByRole("button", { name: /acme\/web/ })
+        .click();
+      await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+      await picker(page).getByText("がありません", { exact: false }).waitFor();
 
       await expectNoAxeViolations(page);
     });

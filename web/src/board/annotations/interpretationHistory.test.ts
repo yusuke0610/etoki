@@ -5,6 +5,8 @@ import type { Granularity, Interpretation, SyncItem } from "../../api/types";
 import { createGenerations } from "../generation";
 import {
   addInterpretation,
+  cancelFailed,
+  cancelInterpretation,
   emptyInterpretation,
   failInterpretation,
   interpretationOrderLabel,
@@ -12,7 +14,9 @@ import {
   recordCreated,
   selectedInterpretation,
   selectInterpretation,
+  startCancel,
   startInterpretation,
+  trackJob,
   type InterpretationRun,
 } from "./interpretationHistory";
 
@@ -29,7 +33,7 @@ function interpretation(summary: string): Interpretation {
   return { summary, contentHash: "h1", items: [] };
 }
 
-const failure: Failure = { message: "解釈できませんでした", detail: "" };
+const failure: Failure = { message: "絵解きできませんでした", detail: "" };
 
 describe("解釈の履歴", () => {
   it("解釈が返ると先頭に積まれ、それが選ばれる", () => {
@@ -194,5 +198,67 @@ describe("作ったものの記録", () => {
     state = recordCreated(state, 1, [syncItem("e1", "PVTI_a")]);
 
     expect(state.selectedId).toBe(2);
+  });
+});
+
+// 取り消しは、走っているジョブが分かっているときだけ出す（#330）。始める途中で
+// 取り消せると、押し直したときに同じジョブが返る仕組みと競合する。
+describe("走っているジョブ", () => {
+  it("始めた時点ではジョブは分からず、分かってから持つ", () => {
+    const started = startInterpretation(emptyInterpretation);
+    expect(started.jobId).toBeUndefined();
+
+    expect(trackJob(started, "job-1").jobId).toBe("job-1");
+  });
+
+  it("結果が返るか失敗すると、ジョブは手放す", () => {
+    const tracked = trackJob(startInterpretation(emptyInterpretation), "job-1");
+
+    expect(addInterpretation(tracked, run(1)).jobId).toBeUndefined();
+    expect(failInterpretation(tracked, failure).jobId).toBeUndefined();
+  });
+
+  it("押し直すと、前のジョブは手放してから始める", () => {
+    const tracked = trackJob(startInterpretation(emptyInterpretation), "job-1");
+
+    expect(startInterpretation(tracked).jobId).toBeUndefined();
+  });
+
+  // 取り消しは失敗ではない。失敗の帯を出さず、前の結果と選択は残す。
+  it("取り消すと走るのをやめ、失敗にはせず、前の結果は残す", () => {
+    let state = addInterpretation(emptyInterpretation, run(1));
+    state = trackJob(startInterpretation(state), "job-2");
+
+    const cancelled = cancelInterpretation(state);
+    expect(cancelled.running).toBe(false);
+    expect(cancelled.jobId).toBeUndefined();
+    expect(cancelled.failure).toBeUndefined();
+    expect(cancelled.runs.map((r) => r.id)).toEqual([1]);
+    expect(cancelled.selectedId).toBe(1);
+  });
+});
+
+// 取り消しを送っても、サーバーが受けたと分かるまでは走っている扱いのまま。
+describe("取り消しの返事", () => {
+  it("返事を待つあいだは走ったまま、取り消し中にする", () => {
+    const state = startCancel(
+      trackJob(startInterpretation(emptyInterpretation), "job-1"),
+    );
+
+    expect(state.running).toBe(true);
+    expect(state.jobId).toBe("job-1");
+    expect(state.cancelling).toBe(true);
+  });
+
+  it("取り消せなかったら、走ったまま理由を出す", () => {
+    const pending = startCancel(
+      trackJob(startInterpretation(emptyInterpretation), "job-1"),
+    );
+    const state = cancelFailed(pending, failure);
+
+    expect(state.running).toBe(true);
+    expect(state.jobId).toBe("job-1");
+    expect(state.cancelling).toBe(false);
+    expect(state.failure).toBe(failure);
   });
 });

@@ -121,6 +121,14 @@ export type Interpretation = Schemas["Interpretation"];
  */
 export type InterpretationJob = Schemas["InterpretationJob"];
 
+/**
+ * 1 回の図のドラフト生成の、いまの様子（ADR 0091）。
+ *
+ * 解釈と同じく、始めるリクエストと受け取るリクエストが別。`request` は始めた
+ * ときに送った入力で、開き直した画面が会話を戻すのに使う。
+ */
+export type DiagramJob = Schemas["DiagramJob"];
+
 /** 作成した run。途中で失敗しても、作れたぶんは items に入る。 */
 export type CreatedRun = Schemas["CreatedRun"];
 
@@ -162,6 +170,12 @@ export type SetMemberRoleRequest = Schemas["SetMemberRoleRequest"];
 
 /** 作成先の Project に書けるかどうかの、いまの状態。判定ではない。 */
 export type ProjectAccess = Schemas["ProjectAccess"];
+
+/** 作成に要るフィールドのうちの 1 つ。名前ではなく役割で表す（ADR 0088）。 */
+export type ProjectFieldRequirement = Schemas["ProjectFieldRequirement"];
+
+/** 作成先の Project のフィールドを確かめた結果。判定ではない（ADR 0088）。 */
+export type ProjectFieldsCheck = Schemas["ProjectFieldsCheck"];
 
 /** そのボードで何ができるか。etoki 側と GitHub 側を別々に持つ。 */
 export type BoardAccess = Schemas["BoardAccess"];

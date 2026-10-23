@@ -8,11 +8,15 @@ import { BOARD_NAME } from "./fixtures";
  *
  * **閉じたメニューの中身は DOM に無い。** 「出さない」を `toHaveCount(0)` で
  * 見るときも、先にここを通す。開かずに見ると、出していても常に通る。
+ *
+ * **入口は読み上げの名前で引く**（#299）。名前は Excalidraw ではなく etoki が
+ * 付けている（`useMenuTriggerName`）。ライブラリを上げて付け損ねると、メニューを
+ * 開く spec がまとめて落ちる。
  */
 export async function openBoardMenu(page: Page): Promise<Locator> {
   const menu = page.locator(".excalidraw .dropdown-menu");
   if (!(await menu.isVisible())) {
-    await page.locator('[data-testid="main-menu-trigger"]').click();
+    await page.getByRole("button", { name: "メニュー", exact: true }).click();
   }
   await expect(menu).toBeVisible();
   return menu;
@@ -203,6 +207,16 @@ export async function chooseTarget(
 ): Promise<void> {
   await picker(page).getByRole("button", { name: repository }).click();
   await picker(page).getByRole("button", { name: project }).click();
+  // Project は押して選び、確定は別のボタンで行う（ADR 0088）。
+  await confirmProject(page);
+}
+
+/**
+ * 選んだ Project を作成先として確定する（ADR 0088）。確かめた結果を待たない。
+ * 結果で確定を止めない、が画面の約束なので、待たずに押せることもここで通る。
+ */
+export async function confirmProject(page: Page): Promise<void> {
+  await picker(page).getByRole("button", { name: "この Project にする" }).click();
 }
 
 /** 注釈 1 つぶんのカード。名前で絞り込む。 */

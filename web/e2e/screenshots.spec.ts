@@ -7,6 +7,7 @@ import {
   annotationDetail,
   chooseFromMenu,
   chooseTarget,
+  confirmProject,
   drawRectangle,
   interpret,
   newBoardDialog,
@@ -99,8 +100,8 @@ test.describe("スクリーンショット", () => {
 
     // 作れた項目は選択が外れ、同じ解釈からは新規に作れない（ADR 0052）。
     // 選び直すと書き換えになることを、下書きの側で読める画面を撮る。
-    await detail.getByLabel("e1 を作成する").check();
-    await detail.getByLabel("e1 を作成する").scrollIntoViewIfNeeded();
+    await detail.getByLabel("1 件目を作成する").check();
+    await detail.getByLabel("1 件目を作成する").scrollIntoViewIfNeeded();
     await shot(page, "04-created-draft");
   });
 
@@ -126,12 +127,12 @@ test.describe("スクリーンショット", () => {
     await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     // 親を外して子だけ戻した状態。構造が変わったことが出ているかを見る。
-    await detail.getByLabel("e1 を作成する").uncheck();
-    await detail.getByLabel("i1 を作成する").check();
+    await detail.getByLabel("1 件目を作成する").uncheck();
+    await detail.getByLabel("2 件目を作成する").check();
     await shot(page, "17-interpretation-selected");
 
     // 1 件も選ばれていないと押せない。理由が読めるかを見る。
-    await detail.getByLabel("i1 を作成する").uncheck();
+    await detail.getByLabel("2 件目を作成する").uncheck();
     // 理由が出るのを待ってから撮る。待たないと、まだ止まっていない画面が
     // 写る。
     await detail.getByText("作るものが 1 件も選ばれていません。").waitFor();
@@ -191,6 +192,9 @@ test.describe("スクリーンショット", () => {
     await shot(page, "06-target-projects");
 
     await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+    await picker(page).getByText("作成に要るフィールドが揃っています").waitFor();
+    await shot(page, "06-target-project-chosen");
+    await confirmProject(page);
     await page.locator(".badge-target").waitFor();
     // バッジはキャンバスより先に出る。ここで待たないと Excalidraw の
     // 「Loading scene...」を撮ってしまい、報告に使えない画像になる。
@@ -252,6 +256,45 @@ test.describe("スクリーンショット", () => {
       .click();
     await page.getByRole("alert").waitFor();
     await shot(page, "55-target-projects-forbidden");
+  });
+
+  // 作成先を選んだときに、作成に要るフィールドが足りないと見せる（ADR 0088）。
+  // 足りないものだけが並び、確定のボタンは止めていないことを残す。
+  test("選んだ Project にフィールドが足りない状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    const target = unselectedBoard();
+    mock.boards = [summarize(target)];
+    mock.details = { [target.id]: target };
+    mock.annotations = { [target.id]: [] };
+    mock.projectFields = {
+      PVT_1: {
+        status: 200,
+        body: {
+          projectId: "PVT_1",
+          status: "missing",
+          missingFields: ["kind_issue", "parent"],
+        },
+      },
+      PVT_2: {
+        status: 200,
+        body: { projectId: "PVT_2", status: "unknown", missingFields: [] },
+      },
+    };
+
+    await installApi(page, mock);
+    await page.goto("/");
+    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+
+    await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+    await picker(page).getByText("がありません", { exact: false }).waitFor();
+    await shot(page, "58-target-fields-missing");
+
+    await picker(page).getByRole("button", { name: "#4 技術的負債" }).click();
+    await picker(page).getByText("確かめられませんでした", { exact: false }).waitFor();
+    await shot(page, "59-target-fields-unknown");
   });
 
   // 固定済みでも表示名は取り直せる（ADR 0037）。確定していることと、名前だけは
@@ -469,12 +512,39 @@ test.describe("スクリーンショット", () => {
       .getByRole("button", { name: /acme\/web/ })
       .click();
     await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+    await confirmProject(page);
 
     const alert = page.getByRole("alert");
     await alert.waitFor();
     // 畳んだ側に何が入っているかも報告に写す。開いた状態で撮る。
     await alert.locator("summary").click();
     await shot(page, "20-error-notice");
+  });
+
+  // 作成先の Project にフィールドが足りずに止まった画面（#292）。何を作るかが
+  // 前に出ていて、名前は畳んだ詳細にあることを、詳細を開いた状態で残す。
+  test("フィールドが足りずに作成が止まった状態を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.createItems = {
+      status: 422,
+      body: {
+        code: "project_field_missing",
+        error:
+          'etoki: required project field is missing: single select "Kind" with option "epic", single select "Kind" with option "issue", text "Parent"',
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).click();
+
+    const alert = detail.getByRole("alert");
+    await alert.waitFor();
+    await alert.locator("summary").click();
+    await alert.scrollIntoViewIfNeeded();
+    await shot(page, "57-project-field-missing");
   });
 
   // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある
@@ -543,7 +613,7 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
     await page
       .getByText(
-        "読むだけの権限で開いています。編集・解釈・作成はできず、etoki AI も使えません。",
+        "読むだけの権限で開いています。編集・絵解き・作成はできず、etoki AI も使えません。",
       )
       .waitFor();
     await shot(page, "13-viewer");
@@ -738,7 +808,7 @@ test.describe("スクリーンショット", () => {
       body: { ...interpretation(), summary: "粒度を変えてもう一度読み解きました。" },
     };
     await interpret(card);
-    await detail.getByLabel("解釈結果").waitFor();
+    await detail.getByLabel("絵解きの結果").waitFor();
     await shot(page, "24-interpretation-history");
   });
 
@@ -948,9 +1018,9 @@ test.describe("スクリーンショット", () => {
     const detail = annotationDetail(page, "セッション管理");
     await interpret(card);
     await detail
-      .getByLabel("i1 を更新するか新しく作るか")
+      .getByLabel("1 件目を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
-    await detail.getByText("解釈では既存の draft issue の更新でした").waitFor();
+    await detail.getByText("絵解きの結果では、既存の draft issue の更新でした").waitFor();
     await shot(page, "31-update-to-create");
   });
 
@@ -978,7 +1048,7 @@ test.describe("スクリーンショット", () => {
     await openBoardWithMock(page, mock);
 
     const section = page.locator(".panel-section").filter({
-      has: page.getByRole("heading", { name: "キャンバスに無い注釈" }),
+      has: page.getByRole("heading", { name: "キャンバスに無い絵" }),
     });
     await section.getByText("二要素認証").waitFor();
     await shot(page, "32-detached-annotations");

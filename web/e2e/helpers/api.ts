@@ -21,6 +21,7 @@ import type {
   OAuthDecisionRequest,
   OAuthGrant,
   Project,
+  ProjectFieldsCheck,
   RepositoryList,
   SaveSceneRequest,
   SessionStatus,
@@ -110,11 +111,28 @@ export type ApiMock = {
    */
   createRequests: Interpretation[];
   /**
-   * 図のドラフト生成の応答（ADR 0041）。
+   * 図のドラフト生成の応答（ADR 0041）。生成はジョブとして走り（ADR 0091）、
+   * 2xx の本文はジョブの結果、502 はジョブの失敗になる。それ以外は始める時点で
+   * 返る。
    *
    * **注釈で引かない。** この口はボードの直下にあり、囲みとは無関係。
    */
   diagramDraft: Reply<DiagramDraft>;
+  /**
+   * 図のドラフト生成のジョブを「走っている」ままにする（ADR 0091）。
+   *
+   * 立てている間は、取りに行っても `running` を返す。下ろすと、同じジョブが
+   * `diagramDraft` の応答で終わる。画面を離れて戻る spec が、走っている最中を
+   * 作るために使う。
+   */
+  diagramJobRunning: boolean;
+  /**
+   * 捨てさせた図のドラフト生成のジョブの ID。届いた順に積む。
+   *
+   * 受け取り終えたジョブを捨てているか、種類を変えて止めているかは、ここにしか
+   * 現れない。
+   */
+  diagramJobDiscards: string[];
   /**
    * 生成で受け取ったリクエストボディ。届いた順に積む。
    *
@@ -126,6 +144,14 @@ export type ApiMock = {
   repositories: Reply<RepositoryList>;
   /** `owner/name` をキーにした Projects v2。 */
   projects: Record<string, Reply<Project[]>>;
+  /**
+   * Project の ID をキーにした、作成に要るフィールドを確かめた結果（ADR 0088）。
+   *
+   * 無い Project は揃っている（`ok`）として返す。全 spec に書かせないため。
+   */
+  projectFields?: Record<string, Reply<ProjectFieldsCheck>>;
+  /** 確かめに来た Project の ID。届いた順に積む。選んだときだけ引くことを見る。 */
+  projectFieldsRequests?: string[];
   /**
    * いま使える機能。既定は全部そろった構成。
    *

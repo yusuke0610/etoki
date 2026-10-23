@@ -45,6 +45,11 @@ type DiagramTurn struct {
 	Prompt string
 	// Mermaid はそれに対して返した mermaid。
 	Mermaid string
+	// Internal は、利用者が書いた指示ではない（変換の投げ直し）ことを表す。
+	//
+	// **プロンプトには載せない。** 画面のための印で、ジョブから会話を戻すときに
+	// そのまま返すためだけに預かる（ADR 0091）。
+	Internal bool
 }
 
 // DiagramRequest は図のドラフトを 1 つ作るための入力。
@@ -55,6 +60,8 @@ type DiagramRequest struct {
 	Prompt string
 	// History はここまでのやりとり。1 回目は空。
 	History []DiagramTurn
+	// Internal は今回の指示が変換の投げ直しであることを表す（DiagramTurn.Internal）。
+	Internal bool
 }
 
 // DiagramDraft は生成した図のドラフト。
@@ -153,18 +160,12 @@ func NewDiagramService(
 // **保存済みシーンを読まない。** 入力はプロンプトだけなので、解釈と違って
 // 「保存してからでないと使えない」という制約が要らない（ADR 0041）。手抜き
 // ではなく、副作用の有無から出る非対称。
+//
+// 画面からはリクエストに結びつけず、DiagramJobs で走らせる（ADR 0091）。
 func (s *DiagramService) Generate(
 	ctx context.Context, boardID string, req DiagramRequest,
 ) (DiagramDraft, error) {
-	// 生成は LLM を叩く外部呼び出しなので editor 以上に限る。viewer に許すのは
-	// 「閲覧」ではない（ADR 0017、解釈と同じ理由）。
-	if _, err := s.access(ctx, boardID, port.RoleEditor); err != nil {
-		return DiagramDraft{}, err
-	}
-
-	// LLM を叩く前に弾く。弾くと決めた入力で呼ぶと、結果は捨てるのに課金だけ
-	// 発生する。
-	if err := s.validate(req); err != nil {
+	if err := s.prepare(ctx, boardID, req); err != nil {
 		return DiagramDraft{}, err
 	}
 
@@ -176,6 +177,30 @@ func (s *DiagramService) Generate(
 	}
 	defer release()
 
+	return s.execute(ctx, boardID, req)
+}
+
+// prepare は認可と入力の検証を済ませる。
+//
+// **枠はここでは取らない。** 認可も入力の検証もすべて通ってから取るので
+// （ADR 0044）、404 や 400 で返るリクエストは枠を消費しない。取る側は
+// Generate と DiagramJobs.Start で、どちらも prepare の直後に取る。
+func (s *DiagramService) prepare(ctx context.Context, boardID string, req DiagramRequest) error {
+	// 生成は LLM を叩く外部呼び出しなので editor 以上に限る。viewer に許すのは
+	// 「閲覧」ではない（ADR 0017、解釈と同じ理由）。
+	if _, err := s.access(ctx, boardID, port.RoleEditor); err != nil {
+		return err
+	}
+
+	// LLM を叩く前に弾く。弾くと決めた入力で呼ぶと、結果は捨てるのに課金だけ
+	// 発生する。
+	return s.validate(req)
+}
+
+// execute は枠を取った状態で LLM を呼び、ドラフトを返す。実績もここで残す。
+func (s *DiagramService) execute(
+	ctx context.Context, boardID string, req DiagramRequest,
+) (DiagramDraft, error) {
 	mermaid, usage, err := s.complete(ctx, req)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されている（ADR 0031）。
 	s.logUsage(ctx, boardID, req.Kind, usage, err)
@@ -274,7 +299,7 @@ func (s *DiagramService) complete(
 		resp, err := s.llm.Complete(ctx, llmReq)
 		if err != nil {
 			// 接続やモデル側の失敗は指摘で直る問題ではないので再送しない。
-			return "", usage, fmt.Errorf("%w (attempt %d): %w", ErrLLMUnavailable, attempt, err)
+			return "", usage, llmCallError(attempt, err)
 		}
 		usage.addTokens(resp.Usage)
 

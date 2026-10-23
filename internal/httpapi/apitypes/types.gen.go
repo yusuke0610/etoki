@@ -43,6 +43,27 @@ func (e BoardRole) Valid() bool {
 	}
 }
 
+// Defines values for DiagramJobStatus.
+const (
+	DiagramJobStatusFailed    DiagramJobStatus = "failed"
+	DiagramJobStatusRunning   DiagramJobStatus = "running"
+	DiagramJobStatusSucceeded DiagramJobStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the DiagramJobStatus enum.
+func (e DiagramJobStatus) Valid() bool {
+	switch e {
+	case DiagramJobStatusFailed:
+		return true
+	case DiagramJobStatusRunning:
+		return true
+	case DiagramJobStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DiagramKind.
 const (
 	DiagramKindArchitecture DiagramKind = "architecture"
@@ -90,6 +111,9 @@ const (
 	ErrorCodeInviteeChanged              ErrorCode = "invitee_changed"
 	ErrorCodeLastOwner                   ErrorCode = "last_owner"
 	ErrorCodeLlmNotConfigured            ErrorCode = "llm_not_configured"
+	ErrorCodeLlmOverloaded               ErrorCode = "llm_overloaded"
+	ErrorCodeLlmRefused                  ErrorCode = "llm_refused"
+	ErrorCodeLlmTruncated                ErrorCode = "llm_truncated"
 	ErrorCodeLlmUnavailable              ErrorCode = "llm_unavailable"
 	ErrorCodeLoginRequired               ErrorCode = "login_required"
 	ErrorCodeMcpConnectionsNotConfigured ErrorCode = "mcp_connections_not_configured"
@@ -144,6 +168,12 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeLastOwner:
 		return true
 	case ErrorCodeLlmNotConfigured:
+		return true
+	case ErrorCodeLlmOverloaded:
+		return true
+	case ErrorCodeLlmRefused:
+		return true
+	case ErrorCodeLlmTruncated:
 		return true
 	case ErrorCodeLlmUnavailable:
 		return true
@@ -253,6 +283,48 @@ func (e ProjectAccess) Valid() bool {
 	case ProjectAccessDenied:
 		return true
 	case ProjectAccessUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectFieldRequirement.
+const (
+	ProjectFieldRequirementKindEpic  ProjectFieldRequirement = "kind_epic"
+	ProjectFieldRequirementKindIssue ProjectFieldRequirement = "kind_issue"
+	ProjectFieldRequirementParent    ProjectFieldRequirement = "parent"
+)
+
+// Valid indicates whether the value is a known member of the ProjectFieldRequirement enum.
+func (e ProjectFieldRequirement) Valid() bool {
+	switch e {
+	case ProjectFieldRequirementKindEpic:
+		return true
+	case ProjectFieldRequirementKindIssue:
+		return true
+	case ProjectFieldRequirementParent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectFieldsStatus.
+const (
+	ProjectFieldsStatusMissing ProjectFieldsStatus = "missing"
+	ProjectFieldsStatusOk      ProjectFieldsStatus = "ok"
+	ProjectFieldsStatusUnknown ProjectFieldsStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProjectFieldsStatus enum.
+func (e ProjectFieldsStatus) Valid() bool {
+	switch e {
+	case ProjectFieldsStatusMissing:
+		return true
+	case ProjectFieldsStatusOk:
+		return true
+	case ProjectFieldsStatusUnknown:
 		return true
 	default:
 		return false
@@ -897,6 +969,36 @@ type DiagramDraft struct {
 	TurnsRemaining int `json:"turnsRemaining"`
 }
 
+// DiagramJob 1 回の図のドラフト生成の、いまの様子（ADR 0091）。状態の意味は
+// `InterpretationJob` と同じ。
+//
+// - `running` … 走っている
+// - `succeeded` … 終わった。`result` にドラフトが入る
+// - `failed` … 失敗した。`error` に理由が入る。打ち手は `error.code` で分ける
+//
+// `request` は始めたときに送られた入力をそのまま返す。開き直した画面が、
+// どの指示への答えかを会話ごと戻すのに使う。一覧には `result` を載せない。
+// 取るのは 1 件ずつの取得。
+type DiagramJob struct {
+	// Error 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+	Error *ErrorResponse `json:"error,omitempty"`
+	ID    string         `json:"id"`
+
+	// Request 図のドラフトを 1 つ作るための入力。**保存済みシーンもキャンバスも
+	// 読まない**（ADR 0041）ので、未保存でも使える。
+	Request GenerateDiagramRequest `json:"request"`
+
+	// Result 生成した図のドラフト。**キャンバスには置かれていない。** 置くかどうかは
+	// 見てから開発者が決める（中核思想 3）。mermaid を Excalidraw の要素に
+	// するのはフロントの仕事（ADR 0040）。
+	Result    *DiagramDraft    `json:"result,omitempty"`
+	StartedAt time.Time        `json:"startedAt"`
+	Status    DiagramJobStatus `json:"status"`
+}
+
+// DiagramJobStatus defines model for DiagramJob.Status.
+type DiagramJobStatus string
+
 // DiagramKind 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
 // プロンプトから生成するドラフトが同じ 5 種を指す。
 //
@@ -916,6 +1018,12 @@ type DiagramKind string
 // **サーバーは会話を保存しない**（ADR 0041）ので、ここまでの往復は毎回
 // まるごと送る。会話は成果物ではなく、成果物はキャンバス。
 type DiagramTurn struct {
+	// Internal 利用者が書いた指示ではない（置けなかった図の変換の投げ直し）ことを表す。
+	// **プロンプトには載せない。** 画面が会話を表示するための印で、ジョブから
+	// 会話を戻すとき（`DiagramJob.request`）にそのまま返すためだけに預かる
+	// （ADR 0091）。省略は false
+	Internal bool `json:"internal,omitempty"`
+
 	// Mermaid それに対して返った mermaid
 	Mermaid string `json:"mermaid"`
 
@@ -933,6 +1041,13 @@ type DiagramTurn struct {
 //
 // **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
 // 畳むと画面が「何を設定すればよいか」を言えなくなる。
+//
+// LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
+// （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+// （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+// LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+// 混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+// 別の code で返る。
 type ErrorCode string
 
 // ErrorResponse 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
@@ -947,6 +1062,13 @@ type ErrorResponse struct {
 	//
 	// **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
 	// 畳むと画面が「何を設定すればよいか」を言えなくなる。
+	//
+	// LLM の呼び出しの失敗も打ち手で分ける（ADR 0087）。打ち切り
+	// （`llm_truncated`）・拒否（`llm_refused`）・上流の混雑
+	// （`llm_overloaded`）と、それ以外の `llm_unavailable`。差し込んだ
+	// LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
+	// 混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
+	// 別の code で返る。
 	Code ErrorCode `json:"code"`
 
 	// Error 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
@@ -960,6 +1082,10 @@ type GenerateDiagramRequest struct {
 	// History ここまでのやりとり。1 回目は空。**上限を超えたら黙って古いものを
 	// 捨てず、`diagram_chat_too_long` で返す**
 	History *[]DiagramTurn `json:"history,omitempty"`
+
+	// Internal 今回の指示が変換の投げ直しであることを表す（`DiagramTurn.internal` と
+	// 同じ印）。省略は false
+	Internal bool `json:"internal,omitempty"`
 
 	// Kind 図の種類。**語彙はここ 1 つ**で、ブレストの出発点になるテンプレートと、
 	// プロンプトから生成するドラフトが同じ 5 種を指す。
@@ -1194,6 +1320,40 @@ type Project struct {
 //     倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
 type ProjectAccess string
 
+// ProjectFieldRequirement 作成に要るフィールドのうちの 1 つ。**名前ではなく役割で表す**（ADR 0088）。
+//
+// - `kind_epic` … 種別を表す単一選択のフィールドの選択肢 epic
+// - `kind_issue` … 同じフィールドの選択肢 issue
+// - `parent` … 親を表すテキストのフィールド
+type ProjectFieldRequirement string
+
+// ProjectFieldsCheck 作成先の Project のフィールドを確かめた結果。表示のための材料で、判定には使わない
+type ProjectFieldsCheck struct {
+	// MissingFields 足りないもの。`status` が `missing` のときだけ要素を持ち、それ以外は
+	// 空配列
+	MissingFields []ProjectFieldRequirement `json:"missingFields"`
+
+	// ProjectID 確かめた Project。画面は選び直しの前後で応答を取り違えないよう、
+	// これで照合する
+	ProjectID string `json:"projectId"`
+
+	// Status 作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+	//
+	// - `ok` … 揃っている
+	// - `missing` … 足りないものがある。何が足りないかは `missingFields`
+	// - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+	//   **ok / missing のどちらにも倒さない**
+	Status ProjectFieldsStatus `json:"status"`
+}
+
+// ProjectFieldsStatus 作成先の Project に、作成に要るフィールドが揃っているかの、いまの状態。
+//
+//   - `ok` … 揃っている
+//   - `missing` … 足りないものがある。何が足りないかは `missingFields`
+//   - `unknown` … 確かめられなかった（GitHub への問い合わせに失敗した）。
+//     **ok / missing のどちらにも倒さない**
+type ProjectFieldsStatus string
+
 // RenameBoardRequest 改名のリクエストボディ。
 //
 // 名前だけを持つ。作成先やシーンを一緒に送れる形にすると、この経路でも
@@ -1402,6 +1562,9 @@ type BoardID = string
 
 // JobID defines model for JobId.
 type JobID = string
+
+// ProjectID defines model for ProjectId.
+type ProjectID = string
 
 // RepositoryName defines model for RepositoryName.
 type RepositoryName = string

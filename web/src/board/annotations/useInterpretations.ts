@@ -1,20 +1,25 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { boardsApi } from "../../api/boards";
+import { ApiError, boardsApi } from "../../api/boards";
 import { describeFailure } from "../../api/errorMessage";
 import type { AnnotationStatus, Granularity, SyncItem } from "../../api/types";
 import { exportAnnotationImage } from "../../excalidraw/image";
 import { createGenerations } from "../generation";
+import { JOB_POLL_INTERVAL_MS } from "../jobPolling";
 import {
   addInterpretation,
+  cancelFailed,
+  cancelInterpretation,
   failInterpretation,
   recordCreated as recordCreatedIn,
   selectInterpretation,
+  startCancel,
   startInterpretation,
+  trackJob,
   type InterpretationState,
 } from "./interpretationHistory";
-import { awaitJob, JOB_POLL_INTERVAL_MS } from "./interpretationJobs";
+import { awaitJob } from "./interpretationJobs";
 
 type Options = {
   api: ExcalidrawImperativeAPI | null;
@@ -46,6 +51,18 @@ export type Interpretations = {
   interpret: (annotationId: string, options?: InterpretOptions) => Promise<void>;
   /** 見る解釈を選び直す。 */
   select: (annotationId: string, runId: number) => void;
+  /**
+   * 走っている解釈を取り消す（#330）。サーバーのジョブを止め、見に行くのも
+   * やめる。失敗にはしない。
+   *
+   * **ジョブが分かる前は何もしない**（`InterpretationState.jobId`）。画面は
+   * `jobId` があるときだけ取り消しの口を出す。
+   *
+   * **サーバーが受けたと分かってから止める。** 取り消せなかったら走っている
+   * 扱いのまま理由を出す（`cancelFailed`）。失敗の状態はここで更新するので、
+   * 呼ぶ側は待たなくてよい（`void cancel(...)`）。
+   */
+  cancel: (annotationId: string) => Promise<void>;
   /** 作ったものを、それを作った解釈に結びつける（ADR 0052）。 */
   recordCreated: (
     annotationId: string,
@@ -86,6 +103,14 @@ export function useInterpretations({
   const epoch = useRef(0);
   // いま手元で追っているジョブ。保存で捨てるときに、サーバーのジョブも止める。
   const jobIds = useRef(new Set<string>());
+  // 注釈ごとに、いま見に行っているジョブ。取り消すときに引く。state の `jobId` と
+  // 同じものを持つが、押した時点の値を読むためにこちらも持つ（state は描画の
+  // あとでしか新しくならない）。
+  const tracked = useRef(new Map<string, string>());
+  // 取り消しの返事を待っている注釈と、その取り消しが片づくまでの約束。同じ tick に
+  // 届いた 2 回目の取り消しを弾き（state は描画のあとでしか新しくならない）、
+  // 待つあいだに見に行った結果を、取り消しの成否が出るまで留める（`settle`）。
+  const cancelling = useRef(new Map<string, Promise<void>>());
   // 復元のとき、実行した粒度を控えるのに最新の一覧を読む。依存に入れると、一覧が
   // 変わるたびにジョブを引き直す。
   const latestAnnotations = useRef(annotations);
@@ -120,21 +145,39 @@ export function useInterpretations({
       const isCurrent = () =>
         alive.current && generations.isCurrent(annotationId, generation);
 
+      // 受け取り終えたら手放す。**古い世代は手放さない。** 押し直した新しい要求が
+      // 同じジョブを見ていることがあるので、それの取り消しの口まで消える。
+      const untrack = () => {
+        if (tracked.current.get(annotationId) === jobId)
+          tracked.current.delete(annotationId);
+      };
+
+      // 取り消しの返事を待っているなら、その成否が出てから受け取る。サーバーは
+      // 取り消しを受けた時点でジョブを消すので、返事より先に 404 が届きうる。取り
+      // 消せていれば世代が進んでいるので手を引き、取り消せなかったなら届いたものを
+      // そのまま扱う（ジョブは止まっていない）。
+      const currentAfterCancel = async () => {
+        await cancelling.current.get(annotationId);
+        return isCurrent();
+      };
+
       let outcome;
       try {
         outcome = await awaitJob(boardId, jobId, isCurrent, pollIntervalMs);
       } catch (e) {
-        if (!isCurrent()) return;
+        if (!(await currentAfterCancel())) return;
+        untrack();
         setStates((prev) => ({
           ...prev,
           [annotationId]: failInterpretation(
             prev[annotationId],
-            describeFailure("解釈できませんでした", e),
+            describeFailure("絵解きできませんでした", e),
           ),
         }));
         return;
       }
-      if (!outcome || !isCurrent()) return;
+      if (!outcome || !(await currentAfterCancel())) return;
+      untrack();
 
       if (outcome.kind === "done") {
         const { result } = outcome;
@@ -152,7 +195,7 @@ export function useInterpretations({
           ...prev,
           [annotationId]: failInterpretation(
             prev[annotationId],
-            describeFailure("解釈できませんでした", outcome.error),
+            describeFailure("絵解きできませんでした", outcome.error),
           ),
         }));
       }
@@ -162,6 +205,16 @@ export function useInterpretations({
     },
     [boardId, discardJob, generations, pollIntervalMs],
   );
+
+  /** 見に行くジョブを控える。保存と取り消しで、サーバーのジョブを止めるのに使う。 */
+  const track = useCallback((annotationId: string, jobId: string) => {
+    jobIds.current.add(jobId);
+    tracked.current.set(annotationId, jobId);
+    setStates((prev) => {
+      const state = prev[annotationId];
+      return state ? { ...prev, [annotationId]: trackJob(state, jobId) } : prev;
+    });
+  }, []);
 
   /**
    * 注釈を解釈させる。
@@ -203,7 +256,7 @@ export function useInterpretations({
           ...prev,
           [annotationId]: failInterpretation(
             prev[annotationId],
-            describeFailure("解釈できませんでした", e),
+            describeFailure("絵解きできませんでした", e),
           ),
         }));
         return;
@@ -217,10 +270,10 @@ export function useInterpretations({
       }
       if (!generations.isCurrent(annotationId, generation)) return;
 
-      jobIds.current.add(jobId);
+      track(annotationId, jobId);
       await settle(annotationId, generation, jobId, granularity);
     },
-    [annotations, api, boardId, discardJob, generations, settle],
+    [annotations, api, boardId, discardJob, generations, settle, track],
   );
 
   // 開いたとき、走っている解釈と、終わったが受け取っていない解釈を画面に戻す。
@@ -255,11 +308,11 @@ export function useInterpretations({
         const generation = generations.start(annotationId);
         const granularity =
           latestAnnotations.current.find((a) => a.id === annotationId)?.granularity ?? "";
-        jobIds.current.add(job.id);
         setStates((prev) => ({
           ...prev,
           [annotationId]: startInterpretation(prev[annotationId]),
         }));
+        track(annotationId, job.id);
         void settle(annotationId, generation, job.id, granularity);
       }
     })();
@@ -268,7 +321,65 @@ export function useInterpretations({
       cancelled = true;
       alive.current = false;
     };
-  }, [boardId, discardJob, enabled, generations, settle]);
+  }, [boardId, discardJob, enabled, generations, settle, track]);
+
+  /** サーバーのジョブを取り消し、取り消せたら画面も止める。失敗は state に出す。 */
+  const discardTracked = useCallback(
+    async (annotationId: string, jobId: string) => {
+      try {
+        await boardsApi.discardInterpretationJob(boardId, jobId);
+      } catch (e) {
+        // 404 はもうサーバーに無い（受け取り済みや期限切れ）。取り消せている。
+        if (!(e instanceof ApiError && e.status === 404)) {
+          setStates((prev) => {
+            const state = prev[annotationId];
+            if (!state) return prev;
+            return {
+              ...prev,
+              [annotationId]: cancelFailed(
+                state,
+                describeFailure("絵解きを取り消せませんでした", e),
+              ),
+            };
+          });
+          return;
+        }
+      }
+
+      // 返事を待つあいだに保存で捨てられた。止めるものが無い。
+      if (tracked.current.get(annotationId) !== jobId) return;
+      tracked.current.delete(annotationId);
+      jobIds.current.delete(jobId);
+      // 世代を進めて、見に行っているぶんを止める。止めたジョブを見に行き続けると、
+      // 消えたジョブの 404 を失敗として出す。
+      generations.start(annotationId);
+      setStates((prev) => {
+        const state = prev[annotationId];
+        return state ? { ...prev, [annotationId]: cancelInterpretation(state) } : prev;
+      });
+    },
+    [boardId, generations],
+  );
+
+  const cancel = useCallback(
+    async (annotationId: string) => {
+      const jobId = tracked.current.get(annotationId);
+      if (jobId === undefined || cancelling.current.has(annotationId)) return;
+      setStates((prev) => {
+        const state = prev[annotationId];
+        return state ? { ...prev, [annotationId]: startCancel(state) } : prev;
+      });
+
+      const settled = discardTracked(annotationId, jobId);
+      cancelling.current.set(annotationId, settled);
+      try {
+        await settled;
+      } finally {
+        cancelling.current.delete(annotationId);
+      }
+    },
+    [discardTracked],
+  );
 
   /**
    * 見る解釈を選び直す。
@@ -304,13 +415,14 @@ export function useInterpretations({
     epoch.current += 1;
     generations.invalidateAll();
     setStates({});
+    tracked.current.clear();
     // サーバーで走っているものも止める。残すと、保存前のシーンを解釈した結果が
     // 開き直したときに戻り、走っているあいだ枠を握り続ける。
     for (const jobId of [...jobIds.current]) discardJob(jobId);
   }, [discardJob, generations]);
 
   return useMemo(
-    () => ({ states, interpret, select, recordCreated, discardAll }),
-    [states, interpret, select, recordCreated, discardAll],
+    () => ({ states, interpret, select, cancel, recordCreated, discardAll }),
+    [states, interpret, select, cancel, recordCreated, discardAll],
   );
 }

@@ -128,6 +128,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 寿命であればよい（ADR 0085）。
 		interpretationJobs: newInterpretationJobs(deps.Interpretations),
 		diagrams:           deps.Diagrams,
+		diagramJobs:        newDiagramJobs(deps.Diagrams),
 		creations:          deps.Creations,
 		catalog:            deps.Catalog,
 		members:            deps.Members,
@@ -202,6 +203,10 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 図のドラフト。**注釈でも解釈でもないのでボードの直下に置く。**
 		// 囲みとは無関係で、キャンバスに何も無くても呼べる（ADR 0041）。
 		api.POST("/boards/:id/diagram-draft", h.generateDiagramDraft)
+		// 図のドラフトも、始めるのと受け取るのが別のリクエスト（ADR 0091）。
+		api.GET("/boards/:id/diagram-jobs", h.listDiagramJobs)
+		api.GET("/boards/:id/diagram-jobs/:jobId", h.getDiagramJob)
+		api.DELETE("/boards/:id/diagram-jobs/:jobId", h.discardDiagramJob)
 
 		api.GET("/boards/:id/annotations", h.listAnnotations)
 		// 過去の run。残しているだけで読めないと、履歴を残す理由（GitHub 側の
@@ -237,6 +242,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		// 作成先を選ぶための一覧。ここで選んだ Project をボードに設定する。
 		api.GET("/github/repositories", h.listRepositories)
 		api.GET("/github/repositories/:owner/:repo/projects", h.listRepositoryProjects)
+		api.GET("/github/projects/:projectId/fields", h.checkProjectFields)
 	}
 
 	// 画面の配信は最後に置く。ルートに当たらなかったものだけを見るので、
@@ -318,4 +324,12 @@ func newInterpretationJobs(svc *usecase.InterpretationService) *usecase.Interpre
 		return nil
 	}
 	return usecase.NewInterpretationJobs(svc)
+}
+
+// newDiagramJobs は図のドラフト生成のジョブの置き場を作る。生成が無いときは nil。
+func newDiagramJobs(svc *usecase.DiagramService) *usecase.DiagramJobs {
+	if svc == nil {
+		return nil
+	}
+	return usecase.NewDiagramJobs(svc)
 }
