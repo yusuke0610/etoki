@@ -250,9 +250,13 @@ export async function interpret(card: Locator): Promise<void> {
 }
 
 /**
- * シーンを保存する。**保存だけの口は `⌘/Ctrl+S`**（#145）。右上のボタンは
- * 「絵解き」で、保存のあとに絵解きの面かパネルを開く（#247）ので、保存だけを
- * 確かめたい spec はこちらを通す。
+ * シーンを保存する。**`⌘/Ctrl+S` を通す**（#145）。右上の「絵解き」は保存の
+ * あとに絵解きの面かパネルを開く（#247）ので、保存だけを確かめたい spec は
+ * こちらを通す。
+ *
+ * 右上の「保存」（`saveButton`）でないのは、あちらが未保存のあいだしか出ない
+ * から（ADR 0089）。保存済みのまま保存を走らせる spec（応答を止めて排他を見る
+ * もの）がある。
  */
 export async function saveScene(page: Page): Promise<void> {
   // **押せるようになるまで待つ。** ショートカットは「絵解き」と同じ式で止まる
@@ -265,6 +269,14 @@ export async function saveScene(page: Page): Promise<void> {
 /** 右上の「絵解き」。未保存なら保存してから、絵解きの面かパネルを開く（#247）。 */
 export function ekidokiButton(page: Page): Locator {
   return page.getByRole("button", { name: "絵解き", exact: true });
+}
+
+/**
+ * 右上の「保存」。未保存のあいだだけ出て、保存だけをする（ADR 0089）。名前の
+ * 変更中に出る「名前を保存」と取り違えないよう、名前は完全一致で引く。
+ */
+export function saveButton(page: Page): Locator {
+  return page.getByRole("button", { name: "保存", exact: true });
 }
 
 /**

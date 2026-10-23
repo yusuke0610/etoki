@@ -12,7 +12,7 @@ import { ITEM_KIND_LABEL, itemKinds } from "./annotationLabel";
 import { createControlOf, CreationResult } from "./CreationSection";
 import { DetailBand, type InterpretControl } from "./DetailBand";
 import { groupByEpic } from "./interpretation";
-import { creationNotice } from "./itemSummary";
+import { creationNotice, leftBehindParentNote } from "./itemSummary";
 import { ItemLink } from "./panelParts";
 import {
   blockingReasons,
@@ -22,6 +22,7 @@ import {
   leftBehindItemIds,
   markCreated,
   orphanedLocalIds,
+  renamedEpics,
   selectedActions,
   setBody,
   setKind,
@@ -135,9 +136,13 @@ export function DraftEditor({
   // Validate が弾く）。選ばせる理由が無いので種別は変えさせない。
   const editableKind = granularity !== "issue";
 
+  // 読み上げの名前に使う番号。絵解いた時点で振ってあり、手直しでは変えない。
+  const ordinals = new Map(draft.items.map((d) => [d.item.localId, d.ordinal]));
+
   const fields = (item: InterpretedItem) => (
     <DraftItemFields
       item={item}
+      ordinal={ordinals.get(item.localId) ?? 0}
       annotationId={annotationId}
       selected={selected.get(item.localId) ?? false}
       createdItem={createdItems.has(item.localId)}
@@ -159,6 +164,8 @@ export function DraftEditor({
 
   const selectedCount = draft.items.filter((d) => d.selected).length;
   const leftBehindItems = previous.filter((it) => leftBehind.has(it.itemId));
+  // epic のタイトルを書き換えると、触らない子の Parent は前のタイトルを指して残る（#298）。
+  const parentNote = leftBehindParentNote(renamedEpics(draft, previous), leftBehindItems);
   // 押せるときに帯に出す文。**取り消せないことと作る先を、押す直前に言う。**
   // 作るものと書き換えるものは分けて数える（#289）。ボタンは主となる操作の緑で、
   // 赤にしない（#203）。
@@ -199,7 +206,11 @@ export function DraftEditor({
         )}
       </div>
 
-      <LeftBehind items={leftBehindItems} projectLink={projectLink} />
+      <LeftBehind
+        items={leftBehindItems}
+        parentNote={parentNote}
+        projectLink={projectLink}
+      />
 
       <CreationResult state={creation} projectLink={projectLink} />
 
@@ -222,11 +233,13 @@ export function DraftEditor({
 /**
  * 解釈結果 1 件ぶんの、作るかどうかと中身。
  *
- * ラベルは `localId` で分ける。一覧に同じ役割の入力が何組も並ぶので、
- * タイトルで分けると編集の途中でラベルが変わってしまう。
+ * ラベルは番号（`DraftItem.ordinal`）で分ける。一覧に同じ役割の入力が何組も
+ * 並ぶので、タイトルで分けると編集の途中でラベルが変わってしまう（ADR 0024）。
+ * `localId` で分けると、読み上げで内部 ID（e1 / i2）が聞こえる（#300）。
  */
 function DraftItemFields({
   item,
+  ordinal,
   annotationId,
   selected,
   createdItem,
@@ -243,6 +256,8 @@ function DraftItemFields({
   onUpdatesPrevious,
 }: {
   item: InterpretedItem;
+  /** 読み上げの名前に使う番号（`DraftItem.ordinal`）。 */
+  ordinal: number;
   /**
    * 説明文の id を注釈ごとに分けるために持つ。
    *
@@ -307,7 +322,7 @@ function DraftItemFields({
           // 下の本文に出す（ADR 0039）。title に隠さない。
           disabled={frozen || locked}
           onChange={onToggle}
-          aria-label={`${item.localId} を作成する`}
+          aria-label={`${ordinal} 件目を作成する`}
           aria-describedby={locked ? unconfirmedId : undefined}
         />
 
@@ -317,7 +332,7 @@ function DraftItemFields({
             value={item.kind}
             disabled={frozen}
             onChange={(e) => onKind(e.target.value as ItemKind)}
-            aria-label={`${item.localId} の種別`}
+            aria-label={`${ordinal} 件目の種別`}
           >
             {itemKinds().map((k) => (
               <option key={k} value={k}>
@@ -334,7 +349,7 @@ function DraftItemFields({
           value={item.title}
           disabled={frozen}
           onChange={(e) => onTitle(e.target.value)}
-          aria-label={`${item.localId} のタイトル`}
+          aria-label={`${ordinal} 件目のタイトル`}
         />
 
         {/*
@@ -409,7 +424,7 @@ function DraftItemFields({
             value={updatesPrevious ? "update" : "create"}
             disabled={frozen}
             onChange={(e) => onUpdatesPrevious(e.target.value === "update")}
-            aria-label={`${item.localId} を更新するか新しく作るか`}
+            aria-label={`${ordinal} 件目を更新するか新しく作るか`}
           >
             <option value="update">更新する</option>
             <option value="create">新しく作る</option>
@@ -428,12 +443,7 @@ function DraftItemFields({
       */}
       {orphan && <p className="hint">epic に属さない issue として作られます。</p>}
 
-      <DraftItemBody
-        localId={item.localId}
-        body={item.body}
-        frozen={frozen}
-        onBody={onBody}
-      />
+      <DraftItemBody ordinal={ordinal} body={item.body} frozen={frozen} onBody={onBody} />
     </div>
   );
 }
@@ -448,12 +458,12 @@ function DraftItemFields({
  * 整形すると「確認したもの」と「作られるもの」がずれる。
  */
 function DraftItemBody({
-  localId,
+  ordinal,
   body,
   frozen,
   onBody,
 }: {
-  localId: string;
+  ordinal: number;
   body: string;
   frozen: boolean;
   onBody: (body: string) => void;
@@ -466,7 +476,7 @@ function DraftItemBody({
       placeholder="本文なし"
       disabled={frozen}
       onChange={(e) => onBody(e.target.value)}
-      aria-label={`${localId} の本文`}
+      aria-label={`${ordinal} 件目の本文`}
     />
   );
 }
@@ -483,9 +493,15 @@ function DraftItemBody({
  */
 function LeftBehind({
   items,
+  parentNote,
   projectLink,
 }: {
   items: SyncItem[];
+  /**
+   * 触らない issue が親を失うことの案内（#298、`leftBehindParentNote`）。親を
+   * 失うものが無ければ undefined。「上の issue のうち」と言うので、一覧の下に出す。
+   */
+  parentNote: string | undefined;
   projectLink: ProjectLink | null;
 }) {
   if (items.length === 0) return null;
@@ -505,6 +521,7 @@ function LeftBehind({
           </li>
         ))}
       </ul>
+      {parentNote && <p className="hint">{parentNote}</p>}
     </div>
   );
 }

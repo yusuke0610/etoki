@@ -37,13 +37,13 @@ test.describe("注釈の詳細", () => {
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
-    await detail.getByLabel("e1 のタイトル").fill("ログイン基盤（手直し済み）");
+    await detail.getByLabel("1 件目のタイトル").fill("ログイン基盤（手直し済み）");
 
     await detail.getByRole("button", { name: "閉じる" }).click();
     await expect(detail).toHaveCount(0);
     await card.locator(".annotation-open").click();
 
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue(
       "ログイン基盤（手直し済み）",
     );
   });
@@ -56,16 +56,16 @@ test.describe("注釈の詳細", () => {
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
-    await detail.getByLabel("e1 のタイトル").fill("ログイン基盤（手直し済み）");
+    await detail.getByLabel("1 件目のタイトル").fill("ログイン基盤（手直し済み）");
 
     // 開くのは 1 つずつ。別の注釈を解釈すると、そちらに切り替わる。
     await interpret(annotationCard(page, "パスワード再設定"));
     const other = annotationDetail(page, "パスワード再設定");
-    await expect(other.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+    await expect(other.getByLabel("1 件目のタイトル")).toHaveValue("ログイン基盤");
     await expect(detail).toHaveCount(0);
 
     await card.locator(".annotation-open").click();
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue(
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue(
       "ログイン基盤（手直し済み）",
     );
   });
@@ -415,7 +415,7 @@ test.describe("注釈の詳細", () => {
     await expect(detail.getByText("絵解きしています…")).toBeVisible();
 
     release();
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("ログイン基盤");
   });
 
   // 切れると: 詳細が開いているあいだに同じ注釈のカードをキーボードで押しても、
@@ -442,7 +442,7 @@ test.describe("注釈の詳細", () => {
     const card = annotationCard(page, "ログイン");
     const detail = annotationDetail(page, "ログイン");
     await interpret(card);
-    await expect(detail.getByLabel("e1 のタイトル")).toHaveValue("ログイン基盤");
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("ログイン基盤");
 
     // 詳細はキャンバスの上に開いているので、開いたまま描き足せない。保存は未保存
     // でなくても押せ、どの保存でも解釈は捨てられる。

@@ -100,8 +100,8 @@ test.describe("スクリーンショット", () => {
 
     // 作れた項目は選択が外れ、同じ解釈からは新規に作れない（ADR 0052）。
     // 選び直すと書き換えになることを、下書きの側で読める画面を撮る。
-    await detail.getByLabel("e1 を作成する").check();
-    await detail.getByLabel("e1 を作成する").scrollIntoViewIfNeeded();
+    await detail.getByLabel("1 件目を作成する").check();
+    await detail.getByLabel("1 件目を作成する").scrollIntoViewIfNeeded();
     await shot(page, "04-created-draft");
   });
 
@@ -127,12 +127,12 @@ test.describe("スクリーンショット", () => {
     await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     // 親を外して子だけ戻した状態。構造が変わったことが出ているかを見る。
-    await detail.getByLabel("e1 を作成する").uncheck();
-    await detail.getByLabel("i1 を作成する").check();
+    await detail.getByLabel("1 件目を作成する").uncheck();
+    await detail.getByLabel("2 件目を作成する").check();
     await shot(page, "17-interpretation-selected");
 
     // 1 件も選ばれていないと押せない。理由が読めるかを見る。
-    await detail.getByLabel("i1 を作成する").uncheck();
+    await detail.getByLabel("2 件目を作成する").uncheck();
     // 理由が出るのを待ってから撮る。待たないと、まだ止まっていない画面が
     // 写る。
     await detail.getByText("作るものが 1 件も選ばれていません。").waitFor();
@@ -1012,7 +1012,7 @@ test.describe("スクリーンショット", () => {
     const detail = annotationDetail(page, "セッション管理");
     await interpret(card);
     await detail
-      .getByLabel("i1 を更新するか新しく作るか")
+      .getByLabel("1 件目を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
     await detail.getByText("絵解きの結果では、既存の draft issue の更新でした").waitFor();
     await shot(page, "31-update-to-create");
@@ -1245,6 +1245,19 @@ test.describe("幅ごとのスクリーンショット", () => {
       await page.getByRole("button", { name: "パネルを閉じる" }).click();
       await page.getByRole("navigation", { name: "パネル" }).waitFor();
       await shot(page, "52-overlay-collapsed");
+    });
+
+    // タブレット（#296）。未保存のあいだ、右上に「保存」が「絵解き」の隣に出る。
+    // 押せない `⌘/Ctrl+S` の案内が出ていないかを画像で見る（ADR 0089）。
+    test.describe("タッチの端末", () => {
+      test.use({ hasTouch: true });
+
+      test("未保存の右上を撮る", async ({ page }) => {
+        await openBoardWithMock(page, baseMock());
+        await drawRectangle(page);
+        await page.getByText("未保存", { exact: true }).waitFor();
+        await shot(page, "60-overlay-touch-unsaved");
+      });
     });
   });
 });

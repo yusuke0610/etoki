@@ -36,6 +36,8 @@ export type InterpretationProps = {
    * 引き直しは「戻せない操作」になる。
    */
   onSelect: (annotationId: string, runId: number) => void;
+  /** 走っている解釈を取り消す（#330）。ジョブが分かる前は何もしない。 */
+  onCancel: (annotationId: string) => void;
   /**
    * LLM が未設定なら理由。使えるなら null（ADR 0030）。
    *
@@ -675,6 +677,7 @@ function AnnotationFace({
               interpretation.onInterpret(id);
             }}
             onSelectInterpretation={(runId) => interpretation.onSelect(id, runId)}
+            onCancelInterpretation={() => interpretation.onCancel(id)}
             onCreate={(interpretationId, result) =>
               creation.onCreate(id, interpretationId, result)
             }
