@@ -1225,5 +1225,18 @@ test.describe("幅ごとのスクリーンショット", () => {
       await page.getByRole("navigation", { name: "パネル" }).waitFor();
       await shot(page, "52-overlay-collapsed");
     });
+
+    // タブレット（#296）。未保存のあいだ、右上に「保存」が「絵解き」の隣に出る。
+    // 押せない `⌘/Ctrl+S` の案内が出ていないかを画像で見る（ADR 0089）。
+    test.describe("タッチの端末", () => {
+      test.use({ hasTouch: true });
+
+      test("未保存の右上を撮る", async ({ page }) => {
+        await openBoardWithMock(page, baseMock());
+        await drawRectangle(page);
+        await page.getByText("未保存", { exact: true }).waitFor();
+        await shot(page, "60-overlay-touch-unsaved");
+      });
+    });
   });
 });

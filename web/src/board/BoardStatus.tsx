@@ -8,28 +8,39 @@ type Props = {
   onRename: () => void;
   dirty: boolean;
   canEdit: boolean;
+  /** 「保存」。保存だけをする（`⌘/Ctrl+S` と同じ口、ADR 0089）。 */
+  onSave: () => void;
   /** 「絵解き」。未保存なら保存してから、絵解きの面を開く（`BoardPage`、#247）。 */
   onEkidoki: () => void;
-  canEkidoki: boolean;
-  /** 「絵解き」を押せない理由。押せるなら null（`exclusion.ts` の表から引く）。 */
-  ekidokiBlocked: string | null;
-  /** 「絵解き」の中で保存しているあいだ。 */
+  /** 「保存」と「絵解き」を押せるか。どちらも保存を始めるので、同じ式で止まる。 */
+  canSave: boolean;
+  /**
+   * 「保存」と「絵解き」を押せない理由。押せるなら null（`exclusion.ts` の表の
+   * `saving` 行から引く）。
+   */
+  saveBlocked: string | null;
+  /** 保存しているあいだ（「保存」「絵解き」`⌘/Ctrl+S` のどれから始めても）。 */
   saving: boolean;
 };
 
 /**
- * 右上に出す。ボード名と、未保存かどうかと、「絵解き」（ADR 0065）。#230 で
- * `BoardPage` から切り出し。
+ * 右上に出す。ボード名と、未保存かどうかと、「保存」と「絵解き」（ADR 0065）。
+ * #230 で `BoardPage` から切り出し。
  *
  * **「絵解き」は保存を内包する**（#247）。保存が要るのは etoki の都合（状態の
  * 判定と解釈のテキストが保存済みシーンを基準にする、ADR 0018）で、押す人が
- * 知らなくてよい。保存だけをしたいときは `⌘/Ctrl+S`（#145）。
+ * 知らなくてよい。
+ *
+ * **保存だけの口は、未保存のあいだ「未保存」の隣にボタンで出す**（ADR 0089）。
+ * `⌘/Ctrl+S` だけにすると、キーボードの無い端末では保存のたびに絵解きの面が
+ * 開く。**幅でも入力の種類でも出し分けない**（ADR 0075 の「別の境目を持たない」）。
  *
  * **これだけは拡張点のメニューに入れない。** いちばん押すものであり、作成中や
  * 取り込み中に止まる理由（一時的な理由）がいちばん出る場所でもある。待たされて
  * いる本人が見ている場所で理由が読めないと意味が無い（ADR 0066）。
  *
- * **ボード名を隣に置く。** どのボードを絵解きするのかが、ボタンの隣で読める。
+ * **ボード名を隣に置く。** 何を保存し、どのボードを絵解きするのかが、ボタンの
+ * 隣で読める。
  *
  * Excalidraw の `renderTopRightUI` に載る。**描くたびに作り直さない**（ADR 0065）。
  * 要素を `useMemo` で持つのは `BoardPage`。
@@ -42,11 +53,15 @@ export function BoardStatus({
   onRename,
   dirty,
   canEdit,
+  onSave,
   onEkidoki,
-  canEkidoki,
-  ekidokiBlocked,
+  canSave,
+  saveBlocked,
   saving,
 }: Props) {
+  // 押せない理由は 1 つだけ出し、押せないボタンの全部から指す。2 つ並べても、
+  // 止めている操作も待てば解けることも同じなので、読む量が増えるだけになる。
+  const describedBy = saveBlocked !== null ? "save-blocked" : undefined;
   return (
     <div className="board-status etoki-ui">
       {nameDraft === null ? (
@@ -80,7 +95,7 @@ export function BoardStatus({
             autoFocus
           />
           {/*
-            「保存」とは書かない。隣にシーンの保存ボタンが並んでいるので、
+            「保存」とは書かない。未保存のあいだは隣にシーンの「保存」が並ぶので、
             同じ文言だと何を保存するのかが読めない。
           */}
           <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
@@ -96,22 +111,32 @@ export function BoardStatus({
           </button>
         </form>
       )}
-      {/*
-        未保存のあいだだけ、保存だけの口（ショートカット）を出す。**「絵解き」の
-        隣には置かない。** 並べると絵解きのショートカットに読める。**`title` に
-        隠さない**（ADR 0039）。
-
-        修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
-        それを見ていないので、片方だけ出すともう片方の利用者には嘘になる。
-      */}
       {dirty && <span className="dirty">未保存</span>}
-      {dirty && canEdit && (
-        <span className="hint save-shortcut">
-          <kbd className="shortcut">⌘/Ctrl+S</kbd> で保存
-        </span>
-      )}
       {canEdit && (
         <>
+          {/*
+            保存だけの口（ADR 0089）。**未保存のあいだだけ出す。** 保存済みなら
+            押しても書くものが無く、「絵解き」の隣に押す意味の無いボタンが残る。
+
+            **ふつうの格にする**（主となる操作は 1 つの面に 1 つ、#203）。緑は
+            「絵解き」のまま。
+
+            ショートカットは `aria-keyshortcuts` で伝え、見える文にはしない。
+            キーボードの無い端末で、押せない口を案内することになる（#296）。
+            修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
+            それを見ていない。
+          */}
+          {dirty && (
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={!canSave}
+              aria-describedby={describedBy}
+              aria-keyshortcuts="Control+S Meta+S"
+            >
+              {saving ? "保存中…" : "保存"}
+            </button>
+          )}
           {/*
             取り消せない操作と保存は相互に排他する。**押せない理由を title に
             隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
@@ -121,14 +146,14 @@ export function BoardStatus({
             type="button"
             className="primary"
             onClick={onEkidoki}
-            disabled={!canEkidoki}
-            aria-describedby={ekidokiBlocked !== null ? "ekidoki-blocked" : undefined}
+            disabled={!canSave}
+            aria-describedby={describedBy}
           >
             {saving ? "準備中…" : "絵解き"}
           </button>
-          {ekidokiBlocked !== null && (
-            <span className="hint" id="ekidoki-blocked">
-              {ekidokiBlocked}
+          {saveBlocked !== null && (
+            <span className="hint" id="save-blocked">
+              {saveBlocked}
             </span>
           )}
         </>
