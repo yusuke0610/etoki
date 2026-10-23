@@ -481,6 +481,8 @@ test.describe("スクリーンショット", () => {
     await page.goto("/");
     const dialog = await newBoardDialog(page);
     await dialog.getByLabel("ボード名").fill("ブレスト");
+    // 撮りたいのは未設定の側。capabilities が遅れて届くと、選ぶ側の表示を撮る。
+    await dialog.getByText("作成先は選ばずに作ります", { exact: false }).waitFor();
     await shot(page, "61-new-board-without-github");
   });
 

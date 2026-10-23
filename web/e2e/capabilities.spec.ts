@@ -5,6 +5,7 @@ import { summarize } from "./helpers/boardData";
 import {
   annotationCard,
   annotationDetail,
+  backToList,
   interpret,
   newBoardDialog,
   openAnnotationDetail,
@@ -186,6 +187,52 @@ test.describe("設定していない機能", () => {
 
     await waitForBoard(page, "ブレスト");
     release();
+  });
+
+  // 作成の応答を待つあいだも「戻る」で別のボードを開ける。応答で作ったボードに
+  // 切り替えると、開いたボードを確認なしに外し、描き始めていれば未保存の変更
+  // ごと捨てる。**送ったあとに別のボードを開いたら、作ったボードは開かない。**
+  test("作成を待つあいだに戻って開いたボードを、作成の応答で外さない", async ({
+    page,
+  }) => {
+    const mock = withoutGitHub(baseMock());
+    await openBoardWithMock(page, mock);
+    await backToList(page);
+
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === "/api/boards",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        await held;
+        await route.fallback();
+      },
+    );
+
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
+    await page.goBack();
+    await waitForBoard(page, board().name);
+
+    // 応答を扱い終えた印として、そのあとの一覧の読み直しを待つ。
+    const listReload = page.waitForResponse(
+      (r) =>
+        r.request().method() === "GET" && new URL(r.url()).pathname === "/api/boards",
+    );
+    release();
+    await listReload;
+
+    await expect(
+      page.getByRole("heading", { name: board().name, level: 1 }),
+    ).toBeVisible();
+    // **完全一致で引く。** 戻って開いたボードの名前も「ブレスト」を含む。
+    await expect(
+      page.getByRole("heading", { name: "ブレスト", exact: true, level: 1 }),
+    ).toHaveCount(0);
   });
 
   // 作れなかった理由はダイアログの中に出す。モーダルで開いたダイアログは

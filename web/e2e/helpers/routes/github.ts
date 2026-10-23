@@ -30,6 +30,8 @@ export async function installGitHubRoutes(page: Page, mock: ApiMock): Promise<vo
   await page.route(
     (url) => url.pathname === "/api/github/repositories",
     async (route) => {
+      // **GET だけを受ける**（`.claude/rules/e2e-mocks.md`）。下の 2 つも同じ。
+      if (route.request().method() !== "GET") return route.fallback();
       if (githubUnset(mock)) return githubNotConfigured(route);
       await json(route, mock.repositories.status, mock.repositories.body);
     },
@@ -38,6 +40,7 @@ export async function installGitHubRoutes(page: Page, mock: ApiMock): Promise<vo
   await page.route(
     (url) => /^\/api\/github\/repositories\/[^/]+\/[^/]+\/projects$/.test(url.pathname),
     async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
       if (githubUnset(mock)) return githubNotConfigured(route);
       const segments = new URL(route.request().url()).pathname.split("/");
       // /api/github/repositories/<owner>/<repo>/projects

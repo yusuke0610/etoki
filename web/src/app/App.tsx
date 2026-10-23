@@ -376,9 +376,19 @@ export function App() {
    * 選ばずに作ったときは、ダイアログがもう閉じている）。そこで開いた別の
    * ボードを、読み直しのあとで作ったボードが確認なしに上書きし、描き始めて
    * いれば未保存の変更ごと捨てる。一覧は裏で読み直す（`closeBoard` と同じ）。
+   *
+   * **送ったあとに別の場所へ移っていたら開かない。** 作成の応答を待つあいだも
+   * 「戻る」で別のボードを開ける。そこで作ったボードに切り替えると、同じ理由で
+   * 開いたボードを確認なしに外す。`generation` は送る前に控えた世代で、戻る /
+   * 進むも閉じるも世代を進めるので、移ったことはそれで分かる。作ったボードは
+   * 一覧に出るので、そこから開ける。
    */
   const openCreated = useCallback(
-    (board: BoardDetail) => {
+    (board: BoardDetail, generation: number) => {
+      if (!openings.isCurrent(OPENING, generation)) {
+        void reload();
+        return;
+      }
       // 走っている取得を無効にする（ログアウトと同じ理由）。作ったボードを
       // 開いた直後に、前のボードの応答が着いて上書きするのを止める。
       openings.invalidateAll();
@@ -395,11 +405,13 @@ export function App() {
   /** 作成先が決まったのでボードを作る。失敗は picker が表示する（`useNewBoardFlow`）。 */
   const createWithTarget = useCallback(
     async (target: BoardTarget) => {
+      // 送る前の世代を控える。待つあいだに移ったら開かない（`openCreated`）。
+      const generation = openings.start(OPENING);
       const board = await createBoard(target);
       if (board === null) return;
-      openCreated(board);
+      openCreated(board, generation);
     },
-    [createBoard, openCreated],
+    [createBoard, openCreated, openings],
   );
 
   /**
@@ -407,10 +419,11 @@ export function App() {
    * ADR 0090）。失敗はダイアログの中に出る（`useNewBoardFlow` の `failure`）。
    */
   const createWithoutTarget = useCallback(async () => {
+    const generation = openings.start(OPENING);
     const board = await createBoardWithoutTarget(confirmDiscard);
     if (board === null) return;
-    openCreated(board);
-  }, [confirmDiscard, createBoardWithoutTarget, openCreated]);
+    openCreated(board, generation);
+  }, [confirmDiscard, createBoardWithoutTarget, openCreated, openings]);
 
   /**
    * サーバーが返したボードで手元を差し替える。
