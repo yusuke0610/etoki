@@ -13,6 +13,7 @@ import type {
 
 import type { ApiMock } from "../api";
 import { annotationsOfScene, emptyScene, listEntry, summarize } from "../boardData";
+import { githubUnset } from "./github";
 import { boardIdOf, json, ownerOnly } from "./respond";
 
 /** ボードそのもの（一覧・作成・取得・改名・削除）と、シーンの保存・作成先。 */
@@ -74,17 +75,16 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
           target.repositoryOwner !== "" &&
           target.repositoryName !== "" &&
           target.projectId !== "";
+        // 表示用の 3 つは、送らなかったのとゼロ値を送ったのを区別しない。サーバーは
+        // 生成型の値で受けるので、どちらもゼロ値の作成先になる。
         const omitted =
           target.repositoryOwner === "" &&
           target.repositoryName === "" &&
           target.projectId === "" &&
-          target.projectNumber === undefined &&
-          target.projectTitle === undefined &&
-          target.projectUrl === undefined;
-        const caps = mock.capabilities.body;
-        const githubUnset =
-          mock.capabilities.status === 200 && "creation" in caps && !caps.creation;
-        if (!selected && !(githubUnset && omitted)) {
+          (target.projectNumber ?? 0) === 0 &&
+          (target.projectTitle ?? "") === "" &&
+          (target.projectUrl ?? "") === "";
+        if (!selected && !(githubUnset(mock) && omitted)) {
           await json(route, 400, {
             code: "invalid_input",
             error: "repository and project are required",

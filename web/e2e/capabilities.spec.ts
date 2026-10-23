@@ -176,7 +176,13 @@ test.describe("設定していない機能", () => {
     );
     const dialog = await newBoardDialog(page);
     await dialog.getByLabel("ボード名").fill("ブレスト");
+    // 読み直しに行ったことも見る。開いたことだけだと、読み直しを消しても通る。
+    const listReload = page.waitForRequest(
+      (request) =>
+        request.method() === "GET" && new URL(request.url()).pathname === "/api/boards",
+    );
     await dialog.getByRole("button", { name: "作成", exact: true }).click();
+    await listReload;
 
     await waitForBoard(page, "ブレスト");
     release();
