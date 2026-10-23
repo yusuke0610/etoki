@@ -698,6 +698,66 @@ func TestDeletion_CountsFoldedItems(t *testing.T) {
 	}
 }
 
+// **届いたか分からない書き込みも、確定とは別に数える**（ADR 0042 の追記、0056）。
+// 確定の件数に混ぜると「N 件作った」が嘘になり、数えないと、未確定しか無い
+// ボードで「作成した記録はありません」と言って消させる。削除すれば、GitHub を
+// 確かめにいく手掛かり（注釈の詳細の記録）も消える。
+func TestDeletion_CountsUnconfirmedWritesSeparately(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	mappings := &fakeMappings{runs: []port.SyncRun{
+		{
+			BoardID: "board-1", AnnotationID: "annot-1",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionCreated, Confirmed: true},
+			},
+		},
+		{
+			// 応答を失った作成と、確定させられていない更新。どちらも残る。
+			BoardID: "board-1", AnnotationID: "annot-1",
+			Items: []port.SyncItem{
+				{LocalID: "i1", Action: port.ActionCreated},
+				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionUpdated},
+			},
+		},
+		{
+			// 確定させられていない更新のあとに、同じ item へ書けた。解けた
+			// 不確かさなので数えない。
+			BoardID: "board-1", AnnotationID: "annot-2",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_2", LocalID: "e1", Action: port.ActionUpdated},
+			},
+		},
+		{
+			BoardID: "board-1", AnnotationID: "annot-2",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_2", LocalID: "e1", Action: port.ActionUpdated, Confirmed: true},
+			},
+		},
+		// 別のボードの書き込みは数えない。
+		{
+			BoardID: "board-2", AnnotationID: "annot-9",
+			Items: []port.SyncItem{{LocalID: "e1", Action: port.ActionCreated}},
+		},
+	}}
+	svc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks())
+
+	d, err := svc.Deletion(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("Deletion() = %v", err)
+	}
+	if d.RecordedItemCount != 2 {
+		t.Errorf("RecordedItemCount = %d, want 2（未確定を混ぜない）", d.RecordedItemCount)
+	}
+	if d.UnconfirmedWriteCount != 2 {
+		t.Errorf("UnconfirmedWriteCount = %d, want 2", d.UnconfirmedWriteCount)
+	}
+	if boards.writes != 0 {
+		t.Errorf("見せるだけの口が書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
 // 一度も作っていないボードは 0 件。件数が無いことと引けなかったことを混ぜない。
 func TestDeletion_ZeroWithoutRuns(t *testing.T) {
 	t.Parallel()
@@ -711,6 +771,9 @@ func TestDeletion_ZeroWithoutRuns(t *testing.T) {
 	}
 	if d.RecordedItemCount != 0 {
 		t.Errorf("RecordedItemCount = %d, want 0", d.RecordedItemCount)
+	}
+	if d.UnconfirmedWriteCount != 0 {
+		t.Errorf("UnconfirmedWriteCount = %d, want 0", d.UnconfirmedWriteCount)
 	}
 }
 

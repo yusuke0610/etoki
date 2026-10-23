@@ -899,10 +899,16 @@ test.describe("スクリーンショット", () => {
   });
 
   // 削除の確認。**GitHub 側に何が残るのかが読める文言になっているか**を画像で
-  // 見る（ADR 0042）。件数と「残る」がどちらも出ていること。
+  // 見る（ADR 0042）。件数と「残る」がどちらも出ていること。届いたか分からない
+  // 書き込み（ADR 0056）も並べ、2 つの段落が混ざって読めないことを確かめる。
   test("削除の確認を撮る", async ({ page }) => {
     const mock = baseMock();
-    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    mock.deletion = {
+      [BOARD_ID]: {
+        status: 200,
+        body: { recordedItemCount: 3, unconfirmedWriteCount: 2 },
+      },
+    };
     await openBoardWithMock(page, mock);
 
     await chooseFromMenu(page, "ボードを削除");

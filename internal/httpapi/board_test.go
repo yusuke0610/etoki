@@ -218,8 +218,9 @@ func TestGetBoardDeletion(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
 	}
-	if got := decode[apitypes.BoardDeletion](t, rec); got.RecordedItemCount != 0 {
-		t.Fatalf("作成前の recordedItemCount = %d, want 0", got.RecordedItemCount)
+	if got := decode[apitypes.BoardDeletion](t, rec); got.RecordedItemCount != 0 ||
+		got.UnconfirmedWriteCount != 0 {
+		t.Fatalf("作成前の deletion = %+v, want どちらも 0", got)
 	}
 
 	for _, action := range []port.SyncAction{port.ActionCreated, port.ActionUpdated} {
@@ -248,6 +249,27 @@ func TestGetBoardDeletion(t *testing.T) {
 	// run は 2 件、items は延べ 3 件だが、畳み込むと 2 件。
 	if got := decode[apitypes.BoardDeletion](t, rec); got.RecordedItemCount != 2 {
 		t.Errorf("recordedItemCount = %d, want 2", got.RecordedItemCount)
+	}
+
+	// 応答を失った作成は、記録の件数に混ぜずに別に数える（ADR 0042 の追記）。
+	if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+		BoardID: id, AnnotationID: "annot-2", ContentHash: "hash-2",
+		CreatedAt: fixedTime, Outcome: port.OutcomeIncomplete, Error: "Post ...: EOF",
+		Items: []port.SyncItem{{
+			Kind: port.KindIssue, Title: "応答を失った作成", LocalID: "i1",
+			Action: port.ActionCreated, CreatedAt: fixedTime,
+		}},
+	}); err != nil {
+		t.Fatalf("SaveRun: %v", err)
+	}
+
+	rec = do(t, r, http.MethodGet, "/api/boards/"+id+"/deletion", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+	got := decode[apitypes.BoardDeletion](t, rec)
+	if got.RecordedItemCount != 2 || got.UnconfirmedWriteCount != 1 {
+		t.Errorf("deletion = %+v, want recordedItemCount 2 / unconfirmedWriteCount 1", got)
 	}
 }
 

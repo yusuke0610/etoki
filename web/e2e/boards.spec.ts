@@ -471,7 +471,12 @@ test.describe("ボード", () => {
   // 消せないので、何が失われるのかを見せてから確認させる（ADR 0042、中核思想 3）。
   test("削除は、GitHub 側に残るものを見せてから確認させる", async ({ page }) => {
     const mock = baseMock();
-    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    mock.deletion = {
+      [BOARD_ID]: {
+        status: 200,
+        body: { recordedItemCount: 3, unconfirmedWriteCount: 0 },
+      },
+    };
     await openBoardWithMock(page, mock);
 
     await chooseFromMenu(page, "ボードを削除");
@@ -481,12 +486,37 @@ test.describe("ボード", () => {
     const confirm = page.getByRole("alertdialog");
     await expect(confirm).toContainText("draft issue が 3 件記録されています");
     await expect(confirm).toContainText("GitHub 側の draft issue は削除されません");
+    // 届いたか分からない書き込みが無ければ、その話はしない。
+    await expect(confirm).not.toContainText("届いたか分からない");
 
     // やめれば何も起きない。ボードは開いたまま。
     await confirm.getByRole("button", { name: "やめる" }).click();
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
     expect(mock.details[BOARD_ID]).toBeDefined();
+  });
+
+  // **届いたか分からない書き込みしか無いボードで「記録はありません」と言わない**
+  // （ADR 0042 の追記、0056）。GitHub に draft issue が作られているかもしれず、
+  // 削除すると、それを確かめにいく手掛かり（注釈の詳細の記録）も消える。
+  test("届いたか分からない書き込みがあれば、削除の確認でそう言う", async ({ page }) => {
+    const mock = baseMock();
+    mock.deletion = {
+      [BOARD_ID]: {
+        status: 200,
+        body: { recordedItemCount: 0, unconfirmedWriteCount: 2 },
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    await chooseFromMenu(page, "ボードを削除");
+
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText("届いたか分からない書き込みが 2 件あります");
+    await expect(confirm).toContainText("作られているかもしれません");
+    await expect(confirm).toContainText("確かめる手掛かりも消えます");
+    await expect(confirm).toContainText("注釈の詳細の記録にしかありません");
+    await expect(confirm).not.toContainText("記録はありません");
   });
 
   test("削除すると一覧から消え、キャンバスが閉じる", async ({ page }) => {

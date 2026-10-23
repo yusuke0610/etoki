@@ -1321,6 +1321,16 @@ export interface components {
          */
         BoardDeletion: {
             /**
+             * @description GitHub に届いたか分からない書き込みの件数（ADR 0056）。注釈の詳細の
+             *     `unconfirmedItems` と同じ数え方で、あとで確定の記録が付いたものは
+             *     含まない。
+             *
+             *     **`recordedItemCount` には混ぜない**（ADR 0042）。draft issue の件数
+             *     ではなく書き込みの回数で、作られた draft issue があるかどうかは
+             *     etoki には分からない。削除すると、それを確かめにいく手掛かりも消える
+             */
+            unconfirmedWriteCount: number;
+            /**
              * @description そのボードから作成したと etoki が記録している draft issue の件数。
              *
              *     数え方は注釈のカードに出している「いま GitHub に在る N 件」と同じ

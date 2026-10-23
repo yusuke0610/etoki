@@ -325,6 +325,10 @@ type BoardDeletion struct {
 	// **GitHub 上でまだ在るかどうかは分からない**（ADR 0007）。記録の件数で
 	// あって現況ではない。
 	RecordedItemCount int
+	// UnconfirmedWriteCount は GitHub に届いたか分からない書き込みの件数
+	// （ADR 0056）。**RecordedItemCount に混ぜない。** draft issue の件数では
+	// なく書き込みの回数で、作られたかどうかは分からない。
+	UnconfirmedWriteCount int
 }
 
 // Deletion は削除で失われるものを返す。
@@ -358,7 +362,19 @@ func (s *BoardService) Deletion(ctx context.Context, id string) (BoardDeletion, 
 		count += len(items)
 	}
 
-	return BoardDeletion{RecordedItemCount: count}, nil
+	// **届いたか分からない書き込みも別に数える**（ADR 0042 の追記）。数えないと、
+	// 未確定しか無いボードで「作成した記録はありません」と言って消させる。
+	// 注釈の詳細の `unconfirmedItems` と同じ口から採る。
+	unconfirmedByAnnotation, err := s.mappings.ListUnconfirmedItemsByBoard(ctx, id)
+	if err != nil {
+		return BoardDeletion{}, err
+	}
+	unconfirmed := 0
+	for _, items := range unconfirmedByAnnotation {
+		unconfirmed += len(items)
+	}
+
+	return BoardDeletion{RecordedItemCount: count, UnconfirmedWriteCount: unconfirmed}, nil
 }
 
 // Delete はボードを消す。

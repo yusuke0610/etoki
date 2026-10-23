@@ -530,6 +530,15 @@ type BoardDeletion struct {
 	// 分からない**（ADR 0007）ので、これは記録の件数であって現況では
 	// ない
 	RecordedItemCount int `json:"recordedItemCount"`
+
+	// UnconfirmedWriteCount GitHub に届いたか分からない書き込みの件数（ADR 0056）。注釈の詳細の
+	// `unconfirmedItems` と同じ数え方で、あとで確定の記録が付いたものは
+	// 含まない。
+	//
+	// **`recordedItemCount` には混ぜない**（ADR 0042）。draft issue の件数
+	// ではなく書き込みの回数で、作られた draft issue があるかどうかは
+	// etoki には分からない。削除すると、それを確かめにいく手掛かりも消える
+	UnconfirmedWriteCount int `json:"unconfirmedWriteCount"`
 }
 
 // BoardDetail シーンと作成先の固定状態を加えたボード
