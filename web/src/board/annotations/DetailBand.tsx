@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 /** 帯の「絵解く」。 */
 export type InterpretControl = {
   /** 説明文の id を注釈ごとに分けるために持つ。詳細は注釈の数だけ描いたまま残る。 */
@@ -11,6 +13,13 @@ export type InterpretControl = {
    */
   blocked: string | null;
   onInterpret: () => void;
+  /**
+   * 走っている解釈を取り消す（#330）。取り消せないあいだ（走っていない、保存の
+   * 待ち、ジョブが分かる前）は undefined で、口を出さない。
+   */
+  onCancel?: () => void;
+  /** 取り消しを送って、返事を待っているあいだ（`InterpretationState.cancelling`）。 */
+  cancelling?: boolean;
 };
 
 /** 帯の「GitHub に作成する」。解釈を 1 件選んでいるときだけ渡す。 */
@@ -49,9 +58,25 @@ export function DetailBand({
   const createNoticeId = `create-notice-${interpret.annotationId}`;
   const createReady = create?.kind === "ready" ? create : null;
 
+  // 取り消しを押すと、押したボタンが消える。焦点を「絵解く」へ戻す。押せるように
+  // なるのは描き直したあとなので、押した処理の中ではなく、走るのをやめてから移す。
+  const interpretButton = useRef<HTMLButtonElement>(null);
+  const refocusAfterCancel = useRef(false);
+  useEffect(() => {
+    if (interpret.running || !refocusAfterCancel.current) return;
+    refocusAfterCancel.current = false;
+    interpretButton.current?.focus();
+  }, [interpret.running]);
+  // 取り消せなかった（走ったまま返事が来た）。ボタンは残るので焦点も動かさない。
+  // 印を残すと、あとで解釈が終わったときに焦点が勝手に移る。
+  useEffect(() => {
+    if (interpret.running && !interpret.cancelling) refocusAfterCancel.current = false;
+  }, [interpret.running, interpret.cancelling]);
+
   return (
     <div className="annotation-detail-band">
       <button
+        ref={interpretButton}
         type="button"
         onClick={interpret.onInterpret}
         // **押しても焦点を奪わない。** 名前の欄（#249）は欄を離れたときに確定する
@@ -64,6 +89,28 @@ export function DetailBand({
       >
         {interpret.running ? "絵解き中…" : interpret.label}
       </button>
+      {/*
+        走っているあいだ、押した人が止められる（#330）。止めないと上限（10 分、
+        ADR 0085）まで枠を握り、ほかの絵も図のドラフトも押せない。止めるのは
+        押したときだけで、画面を離れても止めない（#307）。
+      */}
+      {interpret.onCancel && (
+        <button
+          type="button"
+          // 作業から離れる操作なので控えめ（`controls.css`）。
+          className="quiet"
+          onClick={() => {
+            refocusAfterCancel.current = true;
+            interpret.onCancel?.();
+          }}
+        >
+          {/*
+            返事を待つあいだも押せるままにする（2 回目はフックが弾く）。止めると
+            焦点が落ち、取り消せなかったときに戻す先が無い。
+          */}
+          {interpret.cancelling ? "取り消し中…" : "絵解きを取り消す"}
+        </button>
+      )}
 
       <div className="annotation-detail-band-text">
         {interpret.blocked !== null && (

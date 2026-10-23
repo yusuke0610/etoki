@@ -50,6 +50,38 @@ test.describe("解釈と作成", () => {
     await expect.poll(() => mock.jobDiscards.length).toBe(1);
   });
 
+  // 走っている絵解きは、押した人が止められる（#330）。止めないと上限まで枠を
+  // 握り、ほかの絵も押せない。止めたら失敗の帯は出さず、また押せる。
+  test("走っている絵解きを取り消すと、サーバーのジョブを止め、また絵解ける", async ({
+    page,
+  }) => {
+    const base = baseMock();
+    base.interpretJobRunning = true;
+    const mock = await openBoardWithMock(page, base);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await expect(detail.getByRole("button", { name: "絵解き中…" })).toBeVisible();
+
+    // 届いたかではなく、返事まで待つ。モックは返事の前にジョブを消すので、その
+    // あいだに見に行くと 404 が返る。そこを越えたあとの画面を確かめたい。
+    const discarded = page.waitForResponse(
+      (r) =>
+        r.request().method() === "DELETE" &&
+        /^\/api\/boards\/[^/]+\/interpretation-jobs\/[^/]+$/.test(
+          new URL(r.url()).pathname,
+        ),
+    );
+    await detail.getByRole("button", { name: "絵解きを取り消す" }).click();
+    await discarded;
+
+    expect(mock.jobDiscards).toHaveLength(1);
+    await expect(detail.getByRole("button", { name: "絵解く" })).toBeEnabled();
+    await expect(detail.getByRole("button", { name: "絵解き中…" })).toHaveCount(0);
+    // 取り消しは失敗ではない。
+    await expect(detail.getByText(/絵解きできませんでした/)).toHaveCount(0);
+  });
+
   test("絵解くまで作成のボタンは出ない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
