@@ -5,11 +5,24 @@ import type {
   ItemKind,
   SyncItem,
 } from "../../api/types";
+import { groupByEpic } from "./interpretation";
 
 /** 解釈結果の 1 件と、それを作るかどうか。 */
 export type DraftItem = {
   item: InterpretedItem;
   selected: boolean;
+
+  /**
+   * 読み上げの名前に使う番号（「1 件目のタイトル」、#300）。1 から。
+   *
+   * **内部 ID（`localId`）を名前にしない。** 読み上げで e1 / i2 のような記号が
+   * 聞こえ、どの項目かを隣の欄まで進んで推し量ることになる。
+   *
+   * **絵解いた時点の、画面に並ぶ順で振り、手直しでは変えない。** 編集の途中で
+   * 名前が変わらないこと（ADR 0024）が先にある。種別を変えると画面の並びは
+   * 組み直される（`groupByEpic`）ので、そのあとは番号と並びがずれうる。
+   */
+  ordinal: number;
 
   /**
    * 前回作ったものを書き換えるか、新しく作るか。
@@ -64,12 +77,20 @@ export type Draft = {
 
 /** 解釈結果をそのまま下書きにする。既定は全件作る。 */
 export function createDraft(result: Interpretation): Draft {
+  // 画面に並ぶ順（epic ごとにまとめ、親の無い issue は末尾）。
+  const shown = groupByEpic(result.items).flatMap((g) => [
+    ...(g.epic ? [g.epic] : []),
+    ...g.issues,
+  ]);
+  const ordinal = new Map(shown.map((item, i) => [item.localId, i + 1]));
+
   return {
     summary: result.summary,
     contentHash: result.contentHash,
     items: result.items.map((item) => ({
       item,
       selected: true,
+      ordinal: ordinal.get(item.localId) ?? 0,
       updatesPrevious: Boolean(item.previousItemId),
     })),
   };
@@ -366,6 +387,40 @@ export function leftBehindItemIds(draft: Draft, previous: SyncItem[]): Set<strin
   }
 
   return new Set(previous.map((it) => it.itemId).filter((id) => !claimed.has(id)));
+}
+
+/** 今回の作成でタイトルが変わる epic。前のタイトルと、書き換えたあとのタイトル。 */
+export type RenamedEpic = { from: string; to: string };
+
+/**
+ * 今回の作成で、前に作った epic のタイトルを書き換えるもの（#298、ADR 0026）。
+ *
+ * GitHub の `Parent` は親の epic をタイトルで指す（ADR 0006）。epic のタイトルを
+ * 書き換えると、今回送らない子（取り残し）の `Parent` は前のタイトルを指したまま
+ * 残り、親を失う。**それを押す前に言うために拾う。** 張り直しはしない（中核思想 3）。
+ *
+ * **どの子がどの epic に属していたかは結びつけない。** 前回までのものは item ごとに
+ * 最新の記録を畳んだもので、`localId` は記録した実行ごとに振り直される。実行を
+ * またいで `parentLocalId` を照らすと、別の epic に結びつけうる。言うのは「この
+ * epic に属していたものは」までにする。
+ *
+ * 比べるのは送るときの値（手直しのあと）。送り先は送るときと同じ規則で決める
+ * （`targetItemIdOf`）。この下書きから作ったものは、もう送らないので数えない。
+ */
+export function renamedEpics(draft: Draft, previous: SyncItem[]): RenamedEpic[] {
+  const out: RenamedEpic[] = [];
+  for (const d of draft.items) {
+    // **下書きの種別は見ない。** epic を issue に倒しても、前の epic を書き換える
+    // なら、子の Parent が指す前のタイトルは消える。
+    if (!d.selected || d.createdItemId) continue;
+    const target = targetItemIdOf(d);
+    if (!target) continue;
+    const before = previous.find((it) => it.itemId === target && it.kind === "epic");
+    if (before && before.title !== d.item.title) {
+      out.push({ from: before.title, to: d.item.title });
+    }
+  }
+  return out;
 }
 
 /** 選んだ項目のうち、新しく作るものと、前に作ったものを書き換えるものの数。 */

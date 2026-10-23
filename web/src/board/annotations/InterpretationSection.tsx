@@ -51,6 +51,8 @@ type InterpretationSectionProps = {
   interpretationBusyElsewhere: boolean;
   onInterpret: () => void;
   onSelectInterpretation: (runId: number) => void;
+  /** 走っている解釈を取り消す（#330）。 */
+  onCancelInterpretation: () => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
 };
 
@@ -69,6 +71,37 @@ const BUSY_ELSEWHERE_REASON = "ほかの囲みを絵解き中です。終わっ�
 const REINTERPRET_HINT =
   "「絵解く」を押すと読み直して、前回作ったものの更新を候補にした下書きを出します。" +
   "押しただけでは何も作りません。更新するか新しく作るかは、作る前に項目ごとに選べます。";
+
+/**
+ * 作成済みのまま描き直したときに、状態が動かないものの案内（#301）。
+ *
+ * `content_hash` が見るのは囲みの中の文字・粒度・種別だけで、矢印・図形・貼った
+ * 画像・座標は見ない（`internal/domain/hash.go`、仕様として固定してある）。囲みの名前も
+ * 外してある（#321）。**文字は文面と要素の ID の組で見る**ので、同じ文面でも
+ * 消して作り直すと動く。**どの文字が囲みの中かは座標ではなく所属（`frameId`）で
+ * 決まる**ので、囲みの中で動かすだけなら動かず、囲みに出し入れすると動く。
+ * 「置き場所」を囲みの中に限って言うのはそのため。動く側に書いておかないと、
+ * そうして付いた「変更あり」の理由が読めない。一方で解釈は囲みの画像も読む（ADR 0018）ので、矢印を
+ * 描き直すと LLM が読むものは変わる。**状態が動かないことを言わないと、
+ * 「作成済み」のままなのを、読み直す必要が無い印と読む。**
+ *
+ * ハッシュに矢印や画像を入れる案は採らない（ADR 0047 の追記）。言うのは状態が
+ * 動かないことまでで、読み直すかは開発者が決める（中核思想 3）。
+ *
+ * **解釈の前の本文には混ぜず、作成済みのあいだは結果の有無によらず出す。** 作った
+ * 直後は解釈を持ったまま状態が作成済みに変わり、作成済みの絵を読み直しても結果が
+ * 並ぶ。前の本文に混ぜると、そのどちらでも消える。**走っているあいだと、失敗を
+ * 出しているあいだは出さない**（前の本文と同じ）。読むべきなのはそちらの表示。
+ * 解釈をまだ引いていない（`state` が無い）ときは出す。開いただけの作成済みの絵が、
+ * この案内のいちばんの出番。
+ *
+ * **`content_hash` の入力を変えたら、この文も同じコミットで直す。** 動く変更と
+ * 動かない変更の両方を言っているので、片方だけ古くなる。
+ */
+const SHAPE_ONLY_NOTE =
+  "矢印や図形、貼った画像、囲みの中での置き場所、絵の名前だけを直しても「作成済み」の" +
+  "ままです（「変更あり」になるのは、絵の中の文字・粒度・種別を変えたとき。文字を" +
+  "囲みに出し入れしたときや、同じ文面でも消して作り直したときも含みます）。";
 
 /**
  * 解釈を引く前の本文。注釈の 3 状態で分ける。
@@ -126,6 +159,7 @@ export function InterpretationSection({
   interpretationBusyElsewhere,
   onInterpret,
   onSelectInterpretation,
+  onCancelInterpretation,
   onCreate,
 }: InterpretationSectionProps) {
   const running = state?.running ?? false;
@@ -146,6 +180,10 @@ export function InterpretationSection({
       interpretationUnavailable ??
       (interpretationBusyElsewhere ? BUSY_ELSEWHERE_REASON : null),
     onInterpret,
+    // 取り消せるのは、走っているジョブが分かってから（`InterpretationState.jobId`）。
+    // 保存の待ちや、始める途中では出さない。
+    onCancel: running && state?.jobId !== undefined ? onCancelInterpretation : undefined,
+    cancelling: state?.cancelling ?? false,
   };
 
   return (
@@ -159,6 +197,9 @@ export function InterpretationSection({
       */}
       {!running && runs.length === 0 && !state?.failure && (
         <p className="hint">{beforeInterpretationHint(syncState)}</p>
+      )}
+      {!running && !state?.failure && syncState === "created" && (
+        <p className="hint">{SHAPE_ONLY_NOTE}</p>
       )}
       {/*
         未保存のあいだだけ、保存が入ることを言う。**保存は全部の注釈の引いた解釈と

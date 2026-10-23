@@ -92,6 +92,19 @@ test.describe("ボタンの格", () => {
     await expect(ekidokiButton(page)).toHaveClass(PRIMARY);
   });
 
+  // 走っている絵解きを止めるのは、作業から離れる操作（#330）。
+  test("絵解きを取り消すのは控えめ", async ({ page }) => {
+    const mock = baseMock();
+    mock.interpretJobRunning = true;
+    await openBoardWithMock(page, mock);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    await expect(detail.getByRole("button", { name: "絵解きを取り消す" })).toHaveClass(
+      QUIET,
+    );
+  });
+
   test("ボードの削除は取り消せない操作、やめるのは控えめ", async ({ page }) => {
     const mock = baseMock();
     mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 0 } } };

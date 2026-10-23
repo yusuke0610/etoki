@@ -109,7 +109,7 @@ test.describe("押せない理由が本文として読める", () => {
     await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
 
     // epic を外すと、それを親に持つ issue も一緒に外れる。3 件とも外れる。
-    await detail.getByLabel("e1 を作成する").uncheck();
+    await detail.getByLabel("1 件目を作成する").uncheck();
 
     await expectBlockedReason(
       detail.getByRole("button", { name: "GitHub に作成する" }),
@@ -476,7 +476,7 @@ test.describe("押せない理由が本文として読める", () => {
     await detail.locator(".unconfirmed-items").waitFor();
 
     await expectBlockedReason(
-      detail.getByLabel("i1 を作成する"),
+      detail.getByLabel("2 件目を作成する"),
       /この下書きからは送り直せません/,
     );
   });

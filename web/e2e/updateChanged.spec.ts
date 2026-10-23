@@ -6,7 +6,7 @@ import {
   interpret,
   openBoardWithMock,
 } from "./helpers/board";
-import { matchedInterpretationMock } from "./helpers/fixtures";
+import { matchedInterpretationMock, renamedEpicMock } from "./helpers/fixtures";
 
 // 3 状態判定の changed には、これまで「重複を作るか、何もしないか」しか出口が
 // 無かった（ADR 0026）。作る前に何が起きるのかを見せる。
@@ -23,12 +23,12 @@ test.describe("changed の注釈を更新する", () => {
     // **印だけに絞って引く。** 同じ行には切り替えの選択肢（「更新する」）も
     // 並ぶので、前方一致で引くと 2 つ見つかる。
     const updating = detail.locator(".draft-item").filter({
-      has: page.getByLabel("i1 のタイトル"),
+      has: page.getByLabel("1 件目のタイトル"),
     });
     await expect(updating.getByText("更新", { exact: true })).toBeVisible();
 
     const creating = detail.locator(".draft-item").filter({
-      has: page.getByLabel("i2 のタイトル"),
+      has: page.getByLabel("2 件目のタイトル"),
     });
     await expect(creating.getByText("更新", { exact: true })).toBeHidden();
   });
@@ -48,6 +48,32 @@ test.describe("changed の注釈を更新する", () => {
     await expect(leftBehind).not.toContainText("セッションの有効期限");
   });
 
+  // epic のタイトルを書き換えるときに子を外すと、子の Parent は前のタイトルを
+  // 指したまま残り、親を失う（#298）。親を失うことは黙って起こさない（ADR 0024）。
+  test("epic のタイトルが変わるときに子を外すと、Parent が前のタイトルを指して残ると言う", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, renamedEpicMock());
+
+    const card = annotationCard(page, "セッション管理");
+    const detail = annotationDetail(page, "セッション管理");
+    await interpret(card);
+
+    // 子も送るあいだは、親を失うものが無い。
+    await expect(detail.locator(".left-behind")).toHaveCount(0);
+
+    await detail.getByLabel("2 件目を作成する").uncheck();
+
+    const leftBehind = detail.locator(".left-behind");
+    await expect(leftBehind).toContainText("パスワード再設定");
+    await expect(leftBehind).toContainText(
+      "epic「ログイン基盤」のタイトルを「認証基盤」に書き換えます",
+    );
+    await expect(leftBehind).toContainText(
+      "GitHub の Parent が「ログイン基盤」を指したまま残ります",
+    );
+  });
+
   // 外した項目は作られないので、その更新先は取り残しに戻る。押す前に見せる。
   test("更新する項目を外すと取り残しが増える", async ({ page }) => {
     await openBoardWithMock(page, matchedInterpretationMock());
@@ -56,7 +82,7 @@ test.describe("changed の注釈を更新する", () => {
     const detail = annotationDetail(page, "セッション管理");
     await interpret(card);
 
-    await detail.getByLabel("i1 を作成する").uncheck();
+    await detail.getByLabel("1 件目を作成する").uncheck();
 
     const leftBehind = detail.locator(".left-behind");
     await expect(leftBehind).toContainText("2 件");
@@ -75,12 +101,12 @@ test.describe("changed の注釈を更新する", () => {
     await interpret(card);
 
     const updating = detail.locator(".draft-item").filter({
-      has: page.getByLabel("i1 のタイトル"),
+      has: page.getByLabel("1 件目のタイトル"),
     });
     await expect(updating.getByText("更新", { exact: true })).toBeVisible();
 
     await detail
-      .getByLabel("i1 を更新するか新しく作るか")
+      .getByLabel("1 件目を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
 
     // 印は消える。LLM が言ったこととの差は残す。
@@ -122,7 +148,7 @@ test.describe("changed の注釈を更新する", () => {
     );
 
     // 書き換えるものだけになったら、作るとは言わない。
-    await detail.getByLabel("i2 を作成する").uncheck();
+    await detail.getByLabel("2 件目を作成する").uncheck();
     await expect(create).toHaveAccessibleDescription(
       "更新は取り消せません。acme/web › #1 ロードマップ の draft issue 1 件を書き換えます。" +
         "前回作った 1 件は書き換わりません。",
@@ -130,7 +156,7 @@ test.describe("changed の注釈を更新する", () => {
 
     // 新しく作るに倒すと、その項目は作るほうに数え、更新先は取り残しに戻る。
     await detail
-      .getByLabel("i1 を更新するか新しく作るか")
+      .getByLabel("1 件目を更新するか新しく作るか")
       .selectOption({ label: "新しく作る" });
     await expect(create).toHaveAccessibleDescription(
       "作成は取り消せません。選んだ 1 件を acme/web › #1 ロードマップ に作ります。" +
@@ -146,8 +172,8 @@ test.describe("changed の注釈を更新する", () => {
     const detail = annotationDetail(page, "セッション管理");
     await interpret(card);
 
-    await expect(detail.getByLabel("i1 を更新するか新しく作るか")).toBeVisible();
-    await expect(detail.getByLabel("i2 を更新するか新しく作るか")).toBeHidden();
+    await expect(detail.getByLabel("1 件目を更新するか新しく作るか")).toBeVisible();
+    await expect(detail.getByLabel("2 件目を更新するか新しく作るか")).toBeHidden();
   });
 
   // 件数だけでは GitHub 側に何が増えたのか分からない。更新は増えない。
