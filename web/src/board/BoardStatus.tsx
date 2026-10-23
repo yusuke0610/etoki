@@ -80,8 +80,8 @@ export function BoardStatus({
             autoFocus
           />
           {/*
-            「保存」とは書かない。隣にシーンの保存ボタンが並んでいるので、
-            同じ文言だと何を保存するのかが読めない。
+            「保存」とは書かない。同じ並びに「⌘/Ctrl+S で保存」（シーンの保存）が
+            出るので、同じ文言だと何を保存するのかが読めない。
           */}
           <button type="submit" disabled={renaming || nameDraft.trim() === ""}>
             {renaming ? "変更中…" : "名前を保存"}

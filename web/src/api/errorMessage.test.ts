@@ -245,7 +245,7 @@ describe("ERROR_MESSAGES", () => {
   });
 
   // 設定するものが違うので畳まない。畳むと「何を設定すればよいか」を言えない。
-  it("未設定の 4 つは別々の文言を持つ", () => {
+  it("未設定の文言はそれぞれ別々に持つ", () => {
     const messages = [
       ERROR_MESSAGES.llm_not_configured,
       ERROR_MESSAGES.github_not_configured,
@@ -255,6 +255,24 @@ describe("ERROR_MESSAGES", () => {
     ];
 
     expect(new Set(messages).size).toBe(messages.length);
+  });
+
+  // 言うのは、何が足りないかと、起動する側で設定するものだということまで
+  // （ADR 0083）。何で満たすか（GitHub App、環境変数の名前）は配線が決めることで、
+  // サーバーの本文として詳細に出る。認証の基盤は差し替えられる（ADR 0015）ので、
+  // 「GitHub App を設定」と言い切ると、別の基盤を差した構成で存在しない設定を
+  // 案内する。
+  it.each([
+    "llm_not_configured",
+    "github_not_configured",
+    "auth_not_configured",
+    "sharing_not_configured",
+    "mcp_connections_not_configured",
+  ] as const)("%s は起動する側で設定すると言い、何で満たすかは言わない", (code) => {
+    const message = ERROR_MESSAGES[code];
+
+    expect(message).toContain("etoki を起動する側で設定してください");
+    expect(message).not.toMatch(/GitHub App|ETOKI_/);
   });
 
   // 切れると: 押したあとに「フィールドがありません」とだけ出て、GitHub 側で

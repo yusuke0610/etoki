@@ -662,7 +662,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    // 図のドラフトのチャットは、右のパネルのタブの 1 つ（ADR 0041 / 0065）。
+    // 図のドラフトのチャットは、右のパネルのタブの 1 つ（ADR 0065）。
     // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
     // 生成結果を出したところまで開けて、`.diagram-mermaid` と
     // 「ここまでのやりとり」まで含めて見る。
