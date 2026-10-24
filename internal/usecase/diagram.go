@@ -155,36 +155,15 @@ func NewDiagramService(
 	return s
 }
 
-// Generate はプロンプトから図のドラフトを作る。
+// prepare は認可と入力の検証を済ませる。
 //
 // **保存済みシーンを読まない。** 入力はプロンプトだけなので、解釈と違って
 // 「保存してからでないと使えない」という制約が要らない（ADR 0041）。手抜き
 // ではなく、副作用の有無から出る非対称。
 //
-// 画面からはリクエストに結びつけず、DiagramJobs で走らせる（ADR 0091）。
-func (s *DiagramService) Generate(
-	ctx context.Context, boardID string, req DiagramRequest,
-) (DiagramDraft, error) {
-	if err := s.prepare(ctx, boardID, req); err != nil {
-		return DiagramDraft{}, err
-	}
-
-	// **枠を取るのは LLM を叩く直前**（ADR 0044）。解釈と同じ枠を見るので、
-	// 片方で使い切ればもう片方も断られる。
-	release, err := s.limits.Acquire(ctx)
-	if err != nil {
-		return DiagramDraft{}, err
-	}
-	defer release()
-
-	return s.execute(ctx, boardID, req)
-}
-
-// prepare は認可と入力の検証を済ませる。
-//
 // **枠はここでは取らない。** 認可も入力の検証もすべて通ってから取るので
-// （ADR 0044）、404 や 400 で返るリクエストは枠を消費しない。取る側は
-// Generate と DiagramJobs.Start で、どちらも prepare の直後に取る。
+// （ADR 0044）、404 や 400 で返るリクエストは枠を消費しない。取るのは
+// DiagramJobs.Start（jobTable.start）で、prepare の直後に取る。
 func (s *DiagramService) prepare(ctx context.Context, boardID string, req DiagramRequest) error {
 	// 生成は LLM を叩く外部呼び出しなので editor 以上に限る。viewer に許すのは
 	// 「閲覧」ではない（ADR 0017、解釈と同じ理由）。

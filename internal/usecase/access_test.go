@@ -53,14 +53,17 @@ func TestRolePermissions(t *testing.T) {
 		}},
 		{"解釈", func(ctx context.Context, boards *fakeBoards) error {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
-			_, err := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, newLimiter()).
-				Interpret(ctx, "board-1", "annot-1", nil)
+			// 判定は始める時点で済む（jobTable.start の prepare）。走らせたあとの
+			// ジョブは LLM しか触らないので、待たずに返してよい。
+			_, err := usecase.NewInterpretationJobs(usecase.NewInterpretationService(
+				boards, &fakeMappings{}, llm, newLimiter())).
+				Start(ctx, "board-1", "annot-1", nil)
 			return err
 		}},
 		{"図のドラフト", func(ctx context.Context, boards *fakeBoards) error {
 			llm := &fakeLLM{responses: []string{validMermaid}}
-			_, err := usecase.NewDiagramService(boards, llm, newLimiter()).
-				Generate(ctx, "board-1", req("段取り"))
+			_, err := usecase.NewDiagramJobs(usecase.NewDiagramService(boards, llm, newLimiter())).
+				Start(ctx, "board-1", req("段取り"))
 			return err
 		}},
 		{"作成", func(ctx context.Context, boards *fakeBoards) error {

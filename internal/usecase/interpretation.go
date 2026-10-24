@@ -119,31 +119,6 @@ func NewInterpretationService(
 	return s
 }
 
-// Interpret は注釈範囲を LLM に解釈させ、スキーマを満たした結果を返す。
-//
-// テキストを読むのは保存済みシーンである。フロントで編集中の内容は反映されない。
-//
-// images は注釈範囲を写した画像で、矢印やグルーピングのようにテキストに現れない
-// 構造を渡すためのもの。空でもよく、その場合はテキストだけで解釈する。画像は
-// フロントが画面から書き出すため、保存済みシーンと一致している保証はここには
-// 無い。揃えるのは UI の責務にしてある（ADR 0018）。
-func (s *InterpretationService) Interpret(
-	ctx context.Context, boardID, annotationID string, images []port.Image,
-) (InterpretationResult, error) {
-	p, err := s.prepare(ctx, boardID, annotationID, images)
-	if err != nil {
-		return InterpretationResult{}, err
-	}
-
-	release, err := s.limits.Acquire(ctx)
-	if err != nil {
-		return InterpretationResult{}, err
-	}
-	defer release()
-
-	return s.execute(ctx, boardID, annotationID, p)
-}
-
 // preparedInterpretation は LLM を叩く前に揃えた入力。
 type preparedInterpretation struct {
 	scene      domain.Scene
@@ -154,9 +129,16 @@ type preparedInterpretation struct {
 
 // prepare は認可と入力の検証を済ませ、LLM に渡す入力を揃える。
 //
+// テキストを読むのは保存済みシーンである。フロントで編集中の内容は反映されない。
+//
+// images は注釈範囲を写した画像で、矢印やグルーピングのようにテキストに現れない
+// 構造を渡すためのもの。空でもよく、その場合はテキストだけで解釈する。画像は
+// フロントが画面から書き出すため、保存済みシーンと一致している保証はここには
+// 無い。揃えるのは UI の責務にしてある（ADR 0018）。
+//
 // **枠はここでは取らない。** 認可も入力の検証もすべて通ってから取るので
-// （ADR 0044）、404 や 400 で返るリクエストは枠を消費しない。取る側は
-// Interpret と InterpretationJobs.Start で、どちらも prepare の直後に取る。
+// （ADR 0044）、404 や 400 で返るリクエストは枠を消費しない。取るのは
+// InterpretationJobs.Start（jobTable.start）で、prepare の直後に取る。
 func (s *InterpretationService) prepare(
 	ctx context.Context, boardID, annotationID string, images []port.Image,
 ) (preparedInterpretation, error) {

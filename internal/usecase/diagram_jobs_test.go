@@ -30,19 +30,32 @@ func waitDiagramJob(
 ) usecase.DiagramJob {
 	t.Helper()
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		job, err := jobs.Get(ctx, "board-1", id)
-		if err != nil {
-			t.Fatalf("Get() = %v", err)
-		}
-		if job.Status != usecase.JobRunning {
-			return job
-		}
-		time.Sleep(2 * time.Millisecond)
+	return waitDone(t, func() (usecase.DiagramJob, error) {
+		return jobs.Get(ctx, "board-1", id)
+	})
+}
+
+// generate は図のドラフト生成を本番と同じ経路（DiagramJobs）で走らせ、終わるまで
+// 待つ。返し方は interpret と同じ。
+func generate(
+	t *testing.T, svc *usecase.DiagramService, ctx context.Context,
+	boardID string, req usecase.DiagramRequest,
+) (usecase.DiagramDraft, error) {
+	t.Helper()
+
+	jobs := usecase.NewDiagramJobs(svc)
+	job, err := jobs.Start(ctx, boardID, req)
+	if err != nil {
+		return usecase.DiagramDraft{}, err
 	}
-	t.Fatal("ジョブが終わらない")
-	return usecase.DiagramJob{}
+
+	job = waitDone(t, func() (usecase.DiagramJob, error) {
+		return jobs.Get(ctx, boardID, job.ID)
+	})
+	if job.Status == usecase.JobFailed {
+		return usecase.DiagramDraft{}, job.Err
+	}
+	return *job.Result, nil
 }
 
 // chatReq は 2 往復目の入力。往復と、内部の投げ直しの印まで持つ。
