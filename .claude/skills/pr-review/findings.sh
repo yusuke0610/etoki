@@ -22,16 +22,20 @@ gh pr view "$pr" --json reviews \
 
 # スレッドの先頭コメントだけを取る。返信は CodeRabbit の確認応答か、こちらが
 # 返した理由で、どちらも決着済みの記録である。解決済みのスレッドも落とす。
-# reviewThreads は 1 ページ最大 100 件までしか返さないため、hasNextPage が
-# 立っている間は endCursor を渡して全ページを回る。回さないと 101 件目以降の
-# 未解決スレッドを取りこぼす（#127）。
-# $owner / $name / $pr / $after は GraphQL の変数で、シェルに展開させてはいけない。
+# reviewThreads は 1 ページ最大 100 件までしか返さないため、--paginate で全ページを
+# 回る。gh は pageInfo.hasNextPage が立っている間、endCursor を $endCursor に
+# 渡して次を引く（変数名はこの名前でなければならない）。回さないと 101 件目以降の
+# 未解決スレッドを取りこぼす（#127）。--jq はページごとに掛かる。
+#
+# 絞り込みも --jq で行い、単体の jq を呼ばない。jq は devShell に無く、足すと
+# 固定する道具が 1 つ増える（ADR 0002）。
+# $owner / $name / $pr / $endCursor は GraphQL の変数で、シェルに展開させてはいけない。
 # shellcheck disable=SC2016
 query='
-query($owner:String!,$name:String!,$pr:Int!,$after:String){
+query($owner:String!,$name:String!,$pr:Int!,$endCursor:String){
   repository(owner:$owner,name:$name){
     pullRequest(number:$pr){
-      reviewThreads(first:100, after:$after){
+      reviewThreads(first:100, after:$endCursor){
         pageInfo{ hasNextPage endCursor }
         nodes{ id isResolved path line
                comments(first:1){ nodes{ author{login} body } } }
@@ -40,28 +44,13 @@ query($owner:String!,$name:String!,$pr:Int!,$after:String){
   }
 }'
 
-nodes_file="$(mktemp)"
-trap 'rm -f "$nodes_file"' EXIT
-cursor=""
-while :; do
-	args=(-f query="$query" -F owner="${nwo%%/*}" -F name="${nwo##*/}" -F pr="$pr")
-	if [ -n "$cursor" ]; then
-		args+=(-F after="$cursor")
-	fi
-	page="$(gh api graphql "${args[@]}" --jq '.data.repository.pullRequest.reviewThreads')"
-	jq -c '.nodes[]' <<<"$page" >>"$nodes_file"
-	if [ "$(jq -r '.pageInfo.hasNextPage' <<<"$page")" != "true" ]; then
-		break
-	fi
-	cursor="$(jq -r '.pageInfo.endCursor' <<<"$page")"
-done
-nodes="$(jq -sc '.' "$nodes_file")"
-
 # author.login の null 正規化は上と同じ理由（#127）。
-threads="$(jq -r '.[]
+threads="$(gh api graphql --paginate -f query="$query" \
+	-F owner="${nwo%%/*}" -F name="${nwo##*/}" -F pr="$pr" \
+	--jq '.data.repository.pullRequest.reviewThreads.nodes[]
 	      | select(.isResolved | not)
 	      | select((.comments.nodes[0].author.login // "") | test("coderabbit"))
-	      | "\n--- \(.path):\(.line // "?")  thread=\(.id) ---\n\(.comments.nodes[0].body)"' <<<"$nodes" |
+	      | "\n--- \(.path):\(.line // "?")  thread=\(.id) ---\n\(.comments.nodes[0].body)"' |
 	perl -0777 -pe '
 	    s{<details>.*?</details>}{}gs;
 	    s{</?details>|<summary>.*?</summary>}{}gs;

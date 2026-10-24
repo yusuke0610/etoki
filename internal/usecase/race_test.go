@@ -113,9 +113,7 @@ func (r *racingBoards) Find(_ context.Context, actor, id string) (*port.BoardAcc
 	return &port.BoardAccess{Board: r.board, Role: port.RoleOwner}, nil
 }
 
-func (r *racingBoards) UpdateTarget(
-	_ context.Context, _, _ string, t port.BoardTarget, _ time.Time,
-) error {
+func (r *racingBoards) UpdateTarget(_ context.Context, _, _ string, t port.BoardTarget) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -125,7 +123,7 @@ func (r *racingBoards) UpdateTarget(
 }
 
 func (r *racingBoards) UpdateTargetDisplay(
-	_ context.Context, _, _ string, d port.BoardTargetDisplay, _ time.Time,
+	_ context.Context, _, _ string, d port.BoardTargetDisplay,
 ) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

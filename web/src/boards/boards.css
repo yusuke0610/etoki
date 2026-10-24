@@ -142,7 +142,10 @@
   background: var(--color-hover);
 }
 
-/* 作成先が未選択のカード。開くと作成先の選択から始まることを、枠で先に見せる。 */
+/*
+ * 開くと作成先の選択から始まるカード。それを枠で先に見せる。作成先が未選択でも、
+ * GitHub が未設定の構成では選択に入らないので付けない（`BoardCard`、ADR 0090）。
+ */
 .board-card.unselected {
   border-style: dashed;
 }

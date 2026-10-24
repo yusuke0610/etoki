@@ -1574,7 +1574,7 @@ func TestBoard_TargetDisplayNameRoundTrip(t *testing.T) {
 		ProjectTitle:    "技術的負債",
 		ProjectURL:      "https://github.com/users/acme/projects/7",
 	}
-	if err := repo.UpdateTarget(t.Context(), "", "board-1", updated, baseTime); err != nil {
+	if err := repo.UpdateTarget(t.Context(), "", "board-1", updated); err != nil {
 		t.Fatalf("UpdateTarget: %v", err)
 	}
 
@@ -1584,6 +1584,13 @@ func TestBoard_TargetDisplayNameRoundTrip(t *testing.T) {
 	}
 	if got.Board.Target != updated {
 		t.Errorf("Target = %+v, want %+v", got.Board.Target, updated)
+	}
+	// **作成先の設定で版を進めてはいけない**（ADR 0092）。改名と同じで、
+	// 進めると開いている別のメンバーの次の保存が理由なく 409 になる。ここが
+	// 切れると、SET に updated_at を戻した実装が素通りする。
+	if !got.Board.UpdatedAt.Equal(baseTime) {
+		t.Errorf("UpdatedAt = %v, want %v（作成先の設定で進めてはいけない）",
+			got.Board.UpdatedAt, baseTime)
 	}
 }
 
@@ -1617,7 +1624,7 @@ func TestBoard_UpdateTargetDisplayKeepsTarget(t *testing.T) {
 		ProjectTitle:  "改名後のロードマップ",
 		ProjectURL:    "https://github.com/orgs/acme/projects/4",
 	}
-	if err := repo.UpdateTargetDisplay(t.Context(), "", "board-1", display, baseTime); err != nil {
+	if err := repo.UpdateTargetDisplay(t.Context(), "", "board-1", display); err != nil {
 		t.Fatalf("UpdateTargetDisplay: %v", err)
 	}
 
@@ -1632,6 +1639,12 @@ func TestBoard_UpdateTargetDisplayKeepsTarget(t *testing.T) {
 	want.ProjectURL = display.ProjectURL
 	if got.Board.Target != want {
 		t.Errorf("Target = %+v, want %+v", got.Board.Target, want)
+	}
+	// **表示名の取り直しで版を進めてはいけない**（ADR 0092）。固定後も owner が
+	// 押せる口なので、進めると同じボードを描いている人の保存がその場で断られる。
+	if !got.Board.UpdatedAt.Equal(baseTime) {
+		t.Errorf("UpdatedAt = %v, want %v（表示名の取り直しで進めてはいけない）",
+			got.Board.UpdatedAt, baseTime)
 	}
 }
 

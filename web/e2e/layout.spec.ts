@@ -213,13 +213,56 @@ test.describe("重ねる", () => {
 
     expect(await page.locator(".canvas").boundingBox()).toEqual(before);
   });
+
+  // タブレット（#296 の再現 3）。キーボードが無いので `⌘/Ctrl+S` は押せない。
+  // 保存だけの口は押せる形（「保存」）で出し、押せない口の案内は出さない
+  // （ADR 0089）。**幅でも入力の種類でも出し分けない**ので、ここで見るのは
+  // タッチの端末でも同じものが出て、指で押せること。
+  test.describe("タッチの端末", () => {
+    test.use({ hasTouch: true });
+
+    test("描くと右上に「保存」が出て、指で押すと保存する", async ({ page }) => {
+      const mock = await openBoardWithMock(page, baseMock());
+      await drawRectangle(page);
+
+      const status = page.locator(".excalidraw .board-status");
+      await expect(status.getByText("未保存", { exact: true })).toBeVisible();
+      await expect(status).not.toContainText("⌘/Ctrl+S");
+      await status.getByRole("button", { name: "保存", exact: true }).tap();
+
+      await expect(status.getByText("未保存", { exact: true })).toBeHidden();
+      expect(mock.saveRequests).toHaveLength(1);
+    });
+  });
 });
 
 test.describe("スマホ", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
-  // スマホにはキーボードが無いことが多く、保存だけの口（`⌘/Ctrl+S`）は出さない。
-  // 保存は「絵解き」が挟む（ADR 0077）。押すと保存してから、パネルを全面に開く。
+  // キーボードの無い端末でも保存だけができる（#296、ADR 0089）。「絵解き」で
+  // 保存すると全面のパネルが開き、描き続けるには閉じて戻ることになる。押しても
+  // 開かないことは `BoardStatus.test.tsx` が見る（`scene.spec.ts` の同じ理由）。
+  test("描くと上の帯に「保存」が出て、画面に収まり、押すと保存する", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+    await drawRectangle(page);
+
+    const status = page.locator(".board-bar-status");
+    const save = status.getByRole("button", { name: "保存", exact: true });
+    await expect(status.getByText("未保存", { exact: true })).toBeVisible();
+    // 名前の隣に 2 つ並んでも、画面からはみ出さない。
+    for (const button of [save, ekidokiButton(page)]) {
+      const box = await button.boundingBox();
+      if (!box) throw new Error("上の帯のボタンが表示されていない");
+      expect(box.x + box.width).toBeLessThanOrEqual(375);
+    }
+    await save.click();
+
+    await expect(status.getByText("未保存", { exact: true })).toBeHidden();
+    await expect(save).toHaveCount(0);
+    expect(mock.saveRequests).toHaveLength(1);
+  });
+
+  // 「絵解き」は保存を内包する（ADR 0077）。押すと保存してから、パネルを全面に開く。
   test("描くと上の帯に「未保存」が出て、「絵解き」で保存してパネルを開く", async ({
     page,
   }) => {
@@ -228,7 +271,6 @@ test.describe("スマホ", () => {
 
     const status = page.locator(".board-bar-status");
     await expect(status.getByText("未保存", { exact: true })).toBeVisible();
-    await expect(status.getByText("⌘/Ctrl+S")).toBeHidden();
     await status.getByRole("button", { name: "絵解き", exact: true }).click();
     await expect(status.getByText("未保存", { exact: true })).toBeHidden();
     expect(mock.saveRequests).toHaveLength(1);
@@ -354,7 +396,7 @@ test.describe("スマホ", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 
-  // 通知は下に出す。上の帯（ボード名・未保存・「絵解き」と、ロール・作成先）は状態を
+  // 通知は下に出す。上の帯（ボード名・未保存・「保存」・「絵解き」と、ロール・作成先）は状態を
   // 出しているので覆わない。
   test("通知は上の帯に重ならない", async ({ page }) => {
     const notification = await showSaveFailure(page);

@@ -16,6 +16,7 @@ import {
   openMermaidPaste,
   openPanelTab,
   picker,
+  saveButton,
   saveScene,
   ekidokiButton,
   openShareDialog,
@@ -132,29 +133,6 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる（ADR 0021）。
-  // GitHub が未設定ならボードを作れない（作成先を選べない、ADR 0030）。名前と
-  // ひな形を決めたあとで行き止まりにしないよう、押す前に止めて理由を出す（#200）。
-  test("新しいボード：GitHub が未設定のとき", async ({ page }) => {
-    const mock = baseMock();
-    mock.capabilities = {
-      status: 200,
-      body: {
-        interpretation: true,
-        diagramDraft: true,
-        creation: false,
-        sharing: true,
-        mcpConnections: false,
-      },
-    };
-    await installApi(page, mock);
-    await page.goto("/");
-
-    await expectBlockedReason(
-      page.getByRole("button", { name: "新しいボード", exact: true }),
-      "GitHub が未設定です。",
-    );
-  });
-
   test("作成先を変更：未保存のとき", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
     await drawRectangle(page);
@@ -321,8 +299,12 @@ test.describe("押せない理由が本文として読める", () => {
     await expect(menu.getByText("保存が終わるまで取り込めません")).toBeHidden();
   });
 
-  test("絵解き：取り込み中のとき", async ({ page }) => {
+  // 「保存」と「絵解き」は同じ式で止まり、1 つの理由を両方から指す（ADR 0089）。
+  // **「保存」は未保存のあいだしか出ない**ので、描いてから取り込む。描かずに
+  // 見ると、「保存」が理由を指していなくても通る。
+  test("保存と絵解き：取り込み中のとき", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
+    await drawRectangle(page);
 
     // loadFromBlob が使う FileReader を止め、ファイルを読んでいる状態を作る。
     await page.evaluate(() => {
@@ -346,18 +328,15 @@ test.describe("押せない理由が本文として読める", () => {
       ),
     });
 
-    await expectBlockedReason(
-      ekidokiButton(page),
-      "取り込みが終わるまで絵解きを始められません",
-    );
+    const reason = "取り込みが終わるまで保存も絵解きもできません";
+    await expectBlockedReason(saveButton(page), reason);
+    await expectBlockedReason(ekidokiButton(page), reason);
 
     await page.evaluate(() => {
       const release = Reflect.get(window, "releaseImport") as unknown;
       if (typeof release === "function") release();
     });
-    await expect(
-      page.getByText("取り込みが終わるまで絵解きを始められません"),
-    ).toBeHidden();
+    await expect(page.getByText(reason)).toBeHidden();
   });
 
   test("GitHub に作成する：取り込み中のとき", async ({ page }) => {
@@ -410,7 +389,10 @@ test.describe("押せない理由が本文として読める", () => {
   // 逆向き。作成中は保存させない。**押せない理由を `title` に置くと、この
   // テストが落ちる。** `disabled` なボタンはフォーカスも当たらないので、
   // ホバーできない利用者には届かない。
-  test("絵解き：作成中のとき", async ({ page }) => {
+  //
+  // 「保存」は未保存のあいだしか出ないので、作成を待つあいだに詳細を閉じて
+  // 描き足す。作成中も描くことは止めていない。
+  test("保存と絵解き：作成中のとき", async ({ page }) => {
     await installApi(page, baseMock());
     let release = () => {};
     await holdCreate(
@@ -428,13 +410,15 @@ test.describe("押せない理由が本文として読める", () => {
     await interpret(card);
     await detail.getByRole("button", { name: "GitHub に作成する" }).click();
 
-    await expectBlockedReason(
-      ekidokiButton(page),
-      "作成が終わるまで絵解きを始められません",
-    );
+    const reason = "作成が終わるまで保存も絵解きもできません";
+    await expectBlockedReason(ekidokiButton(page), reason);
+
+    await detail.getByRole("button", { name: "閉じる" }).click();
+    await drawRectangle(page);
+    await expectBlockedReason(saveButton(page), reason);
 
     release();
-    await expect(page.getByText("作成が終わるまで絵解きを始められません")).toBeHidden();
+    await expect(page.getByText(reason)).toBeHidden();
   });
 
   // 理由を出す側が壊れたら落ちること自体を確かめる。**ここが落ちなければ、
@@ -599,6 +583,28 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    // GitHub が未設定の構成では、作成先を選ばずに作ることをダイアログで言う
+    // （ADR 0090）。**その構成でしか出ない文**なので、上の検査には掛かっていない。
+    test("新しいボードのダイアログを開いた状態（GitHub が未設定）", async ({ page }) => {
+      const mock = baseMock();
+      mock.capabilities = {
+        status: 200,
+        body: {
+          interpretation: true,
+          diagramDraft: true,
+          creation: false,
+          sharing: true,
+          mcpConnections: false,
+        },
+      };
+      await installApi(page, mock);
+      await page.goto("/");
+      const dialog = await newBoardDialog(page);
+      await dialog.getByText("作成先は選ばずに作ります", { exact: false }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     // 使い方のダイアログ（ADR 0081）。開かないと DOM に出ない。動画の下の説明と
     // ページ送りのボタンまで含めて見る。
     test("使い方のダイアログを開いた状態", async ({ page }) => {
@@ -676,7 +682,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    // 図のドラフトのチャットは、右のパネルのタブの 1 つ（ADR 0041 / 0065）。
+    // 図のドラフトのチャットは、右のパネルのタブの 1 つ（ADR 0065）。
     // **開かないと DOM に出ない**ので、上の 2 つでは一度も掛かっていない。
     // 生成結果を出したところまで開けて、`.diagram-mermaid` と
     // 「ここまでのやりとり」まで含めて見る。
@@ -774,7 +780,12 @@ for (const colorScheme of ["light", "dark"] as const) {
     test("削除の確認を開いた状態", async ({ page }) => {
       const mock = baseMock();
       // 件数は文言そのもの。0 件だと分岐の片方しか描かれない。
-      mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+      mock.deletion = {
+        [BOARD_ID]: {
+          status: 200,
+          body: { recordedItemCount: 3, unconfirmedWriteCount: 0 },
+        },
+      };
       await openBoardWithMock(page, mock);
 
       await chooseFromMenu(page, "ボードを削除");

@@ -124,7 +124,7 @@ test.describe("ボード", () => {
     const body = request.postDataJSON() as { scene?: string };
     expect(body.scene, "ひな形のシーンが送られていない").toBeTruthy();
     expect(body.scene).toContain("利用者");
-    // **ひな形は絵だけを置く**（ADR 0045）。frame を配ると、注釈にできる枠を
+    // **ひな形は絵だけを置く**（ADR 0047）。frame を配ると、注釈にできる枠を
     // etoki が作ったことになり、「frame は人が引く」線が黙って崩れる。
     expect(body.scene).not.toContain('"type":"frame"');
     // 注釈のメタデータも載らない。**種別が載る先は人が引いた frame** で、
@@ -458,6 +458,33 @@ test.describe("ボード", () => {
     expect(saved.elements.filter((el) => el.type === "rectangle")).toHaveLength(1);
   });
 
+  // **改名の応答で、保存の基準を進めない**（ADR 0092 / 0020）。開いたあとに別の
+  // メンバーが保存していると、改名の応答はその版を載せて返る。それで基準を
+  // 差し替えると、読み込んでいない相手の保存を、こちらの次の保存が黙って上書き
+  // する。ここが切れると、App が応答の `updatedAt` ごと手元を差し替える実装が通る。
+  test("他の人が保存したあとに改名しても、こちらの保存は上書きせずに知らせる", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+
+    // こちらが開いた後に、他の人が保存した状況。版が進むので基準は古くなる。
+    mock.details[BOARD_ID] = { ...board(), updatedAt: "2026-08-05T09:45:00Z" };
+
+    await drawRectangle(page);
+    await chooseFromMenu(page, "名前を変更");
+    await page.getByLabel("ボードの名前").fill("会議中に改名");
+    await page.getByRole("button", { name: "名前を保存" }).click();
+    await expect(
+      page.getByRole("heading", { name: "会議中に改名", level: 1 }),
+    ).toBeVisible();
+
+    await saveScene(page);
+
+    await expect(page.getByText("他の人がこのボードを保存しました")).toBeVisible();
+    // 相手のシーンはそのまま。上書きしていないことをモック側でも確かめる。
+    expect(mock.details[BOARD_ID]?.scene).toBe(board().scene);
+  });
+
   test("名前を空にしたままでは保存できない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
@@ -471,7 +498,12 @@ test.describe("ボード", () => {
   // 消せないので、何が失われるのかを見せてから確認させる（ADR 0042、中核思想 3）。
   test("削除は、GitHub 側に残るものを見せてから確認させる", async ({ page }) => {
     const mock = baseMock();
-    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    mock.deletion = {
+      [BOARD_ID]: {
+        status: 200,
+        body: { recordedItemCount: 3, unconfirmedWriteCount: 0 },
+      },
+    };
     await openBoardWithMock(page, mock);
 
     await chooseFromMenu(page, "ボードを削除");
@@ -481,12 +513,37 @@ test.describe("ボード", () => {
     const confirm = page.getByRole("alertdialog");
     await expect(confirm).toContainText("draft issue が 3 件記録されています");
     await expect(confirm).toContainText("GitHub 側の draft issue は削除されません");
+    // 届いたか分からない書き込みが無ければ、その話はしない。
+    await expect(confirm).not.toContainText("届いたか分からない");
 
     // やめれば何も起きない。ボードは開いたまま。
     await confirm.getByRole("button", { name: "やめる" }).click();
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: BOARD_NAME, level: 1 })).toBeVisible();
     expect(mock.details[BOARD_ID]).toBeDefined();
+  });
+
+  // **届いたか分からない書き込みしか無いボードで「記録はありません」と言わない**
+  // （ADR 0042 の追記、0056）。GitHub に draft issue が作られているかもしれず、
+  // 削除すると、それを確かめにいく手掛かり（注釈の詳細の記録）も消える。
+  test("届いたか分からない書き込みがあれば、削除の確認でそう言う", async ({ page }) => {
+    const mock = baseMock();
+    mock.deletion = {
+      [BOARD_ID]: {
+        status: 200,
+        body: { recordedItemCount: 0, unconfirmedWriteCount: 2 },
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    await chooseFromMenu(page, "ボードを削除");
+
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText("届いたか分からない書き込みが 2 件あります");
+    await expect(confirm).toContainText("作られているかもしれません");
+    await expect(confirm).toContainText("確かめる手掛かりも消えます");
+    await expect(confirm).toContainText("注釈の詳細の記録にしかありません");
+    await expect(confirm).not.toContainText("記録はありません");
   });
 
   test("削除すると一覧から消え、キャンバスが閉じる", async ({ page }) => {

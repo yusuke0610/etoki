@@ -84,7 +84,8 @@ export function App() {
       }),
     [notify],
   );
-  // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる。
+  // 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる（GitHub が
+  // 未設定の構成を除く、ADR 0090）。
   const [picking, setPicking] = useState(false);
   // 新しいボードを作るまでの流れ（`useNewBoardFlow`）。ダイアログの開閉と入力、
   // 作成先を選んでいる最中のボードの名前を持つ。
@@ -93,6 +94,8 @@ export function App() {
     name,
     template,
     creating,
+    submitting: creatingWithoutTarget,
+    failure: creationFailure,
     openDialog: openCreatingDialog,
     setName,
     setTemplate,
@@ -101,6 +104,7 @@ export function App() {
     backToDialog: backToCreatingDialog,
     leave: leaveCreating,
     create: createBoard,
+    createWithoutTarget: createBoardWithoutTarget,
   } = useNewBoardFlow();
   // ログイン状態（`useSession`）。session が null のあいだは問い合わせ中。
   const {
@@ -121,6 +125,11 @@ export function App() {
   // LLM や GitHub を設定しなくても etoki は起動する（ADR 0008）。設定していない
   // 機能は押した後に 503 で返るだけなので、押す前に見せるために引く。
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  // 作成先を選ぶか。GitHub が未設定と分かっている構成だけ選ばない（ADR 0090）。
+  // 候補を引けないので、選択画面に入ると行き止まりになる。**まだ確かめて
+  // いなければ選ぶ**（いつもの流れに倒す。ADR 0030 の「引けていないうちは
+  // 止めない」と同じ向き）。
+  const choosesTarget = unavailableReason(capabilities, "creation") === null;
   // 開いているボードに未保存の変更があるか。BoardPage から上がってくる。
   //
   // キャンバスから離れる導線はこちら側にあるので、判断の材料をここに置く。
@@ -359,12 +368,27 @@ export function App() {
     showLocation(NO_BOARD, "replace");
   }, [confirmDiscard, showLocation, startNewBoard]);
 
-  /** 作成先が決まったのでボードを作る。失敗は picker が表示する（`useNewBoardFlow`）。 */
-  const createWithTarget = useCallback(
-    async (target: BoardTarget) => {
-      const board = await createBoard(target);
-      if (board === null) return;
-      await reload();
+  /**
+   * 作ったボードを開く。作成先を選んで作ったときも、選ばずに作ったときも
+   * 同じ形で開く。
+   *
+   * **一覧の読み直しを待たずに開く。** 待つあいだは一覧が触れる（作成先を
+   * 選ばずに作ったときは、ダイアログがもう閉じている）。そこで開いた別の
+   * ボードを、読み直しのあとで作ったボードが確認なしに上書きし、描き始めて
+   * いれば未保存の変更ごと捨てる。一覧は裏で読み直す（`closeBoard` と同じ）。
+   *
+   * **送ったあとに別の場所へ移っていたら開かない。** 作成の応答を待つあいだも
+   * 「戻る」で別のボードを開ける。そこで作ったボードに切り替えると、同じ理由で
+   * 開いたボードを確認なしに外す。`generation` は送る前に控えた世代で、戻る /
+   * 進むも閉じるも世代を進めるので、移ったことはそれで分かる。作ったボードは
+   * 一覧に出るので、そこから開ける。
+   */
+  const openCreated = useCallback(
+    (board: BoardDetail, generation: number) => {
+      if (!openings.isCurrent(OPENING, generation)) {
+        void reload();
+        return;
+      }
       // 走っている取得を無効にする（ログアウトと同じ理由）。作ったボードを
       // 開いた直後に、前のボードの応答が着いて上書きするのを止める。
       openings.invalidateAll();
@@ -373,9 +397,33 @@ export function App() {
       setCurrent({ ...board, files: {} });
       // 作ったボードを開いた状態。**積む。** 「戻る」で作成の手前に戻れる。
       showLocation({ boardId: board.id, picking: false }, "push");
+      void reload();
     },
-    [createBoard, openings, reload, showLocation],
+    [openings, reload, showLocation],
   );
+
+  /** 作成先が決まったのでボードを作る。失敗は picker が表示する（`useNewBoardFlow`）。 */
+  const createWithTarget = useCallback(
+    async (target: BoardTarget) => {
+      // 送る前の世代を控える。待つあいだに移ったら開かない（`openCreated`）。
+      const generation = openings.start(OPENING);
+      const board = await createBoard(target);
+      if (board === null) return;
+      openCreated(board, generation);
+    },
+    [createBoard, openCreated, openings],
+  );
+
+  /**
+   * 作成先を選ばずに、ダイアログからそのまま作る（GitHub が未設定の構成、
+   * ADR 0090）。失敗はダイアログの中に出る（`useNewBoardFlow` の `failure`）。
+   */
+  const createWithoutTarget = useCallback(async () => {
+    const generation = openings.start(OPENING);
+    const board = await createBoardWithoutTarget(confirmDiscard);
+    if (board === null) return;
+    openCreated(board, generation);
+  }, [confirmDiscard, createBoardWithoutTarget, openCreated, openings]);
 
   /**
    * サーバーが返したボードで手元を差し替える。
@@ -392,8 +440,16 @@ export function App() {
     (board: BoardDetail) => {
       // **画像は持ち越す。** 応答（`BoardDetail`）は画像を運ばない（ADR 0074）。
       // この経路ではキャンバスを作り直さないので、画像はキャンバスが持っている。
+      //
+      // **版（`updatedAt`）も持ち越す**（ADR 0092 / 0020）。改名も表示名の取り直しも
+      // 版を動かさないので、応答の版はサーバーのいまの版で、開いたあとに別の
+      // メンバーが保存していればその版になる。それを手元に置くと保存の基準が
+      // 進み（`useSceneSave`）、読み込んでいない相手の保存を次の保存が黙って
+      // 上書きする。版を動かすのはシーンの保存とキャンバスの読み直しだけ。
       setCurrent((open) =>
-        open?.id === board.id ? { ...board, files: open.files } : open,
+        open?.id === board.id
+          ? { ...board, files: open.files, updatedAt: open.updatedAt }
+          : open,
       );
       void reload();
     },
@@ -652,7 +708,7 @@ export function App() {
             onLogout={() => void logout()}
             boards={boards}
             onOpen={(id) => void open(id)}
-            creationUnavailable={unavailableReason(capabilities, "creation")}
+            choosesTarget={choosesTarget}
             connectionsUnavailable={unavailableReason(capabilities, "mcpConnections")}
             theme={theme}
             dialog={{
@@ -662,11 +718,17 @@ export function App() {
               onOpen: openCreatingDialog,
               onNameChange: setName,
               onTemplateChange: setTemplate,
-              onNext: startCreating,
+              onNext: choosesTarget ? startCreating : () => void createWithoutTarget(),
               onCancel: cancelCreating,
+              submitting: creatingWithoutTarget,
+              failure: creationFailure,
             }}
           />
-        ) : picking || current.projectId === "" ? (
+        ) : picking || (current.projectId === "" && choosesTarget) ? (
+          // 未選択のボードは作成先の選択から始める（ADR 0014）。**GitHub が未設定と
+          // 分かっている構成では始めない**（ADR 0090）。候補を引けず、選べないまま
+          // 一覧へ戻るしかなくなる。キャンバスをそのまま開き、作成のところで
+          // 「GitHub が未設定」と言う（ADR 0030）。
           <RepositoryPicker
             key={current.id}
             title={current.name}

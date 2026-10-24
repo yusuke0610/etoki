@@ -29,6 +29,8 @@ export function DeleteConfirm({ name, deletion, onConfirm, onCancel }: Props) {
   const focusOnOpen = useCallback((node: HTMLElement | null) => {
     node?.focus();
   }, []);
+  const recorded = deletion.losing.recordedItemCount;
+  const unconfirmed = deletion.losing.unconfirmedWriteCount;
 
   return (
     <section
@@ -45,13 +47,28 @@ export function DeleteConfirm({ name, deletion, onConfirm, onCancel }: Props) {
         {"シーンもメンバーも実行の記録も消えます。"}
         <strong>取り消せません。</strong>
       </p>
-      {deletion.losing.recordedItemCount > 0 ? (
+      {recorded > 0 && (
         <p>
-          {`このボードから作成した draft issue が ${deletion.losing.recordedItemCount} 件記録されています。`}
+          {`このボードから作成した draft issue が ${recorded} 件記録されています。`}
           {"GitHub 側の draft issue は削除されません（etoki からは消せません）。"}
           {"削除すると、その draft issue がどこから作られたのかを辿れなくなります。"}
         </p>
-      ) : (
+      )}
+      {/*
+        届いたか分からない書き込みは、記録の件数に混ぜずに別に言う（ADR 0042 の
+        追記、0056）。**これしか無いボードで「記録はありません」と言わない。**
+        draft issue が作られているかもしれず、確かめにいく手掛かりは注釈の詳細の
+        記録にしか無い。「失敗しました」とも書かない（web/CLAUDE.md）。
+      */}
+      {unconfirmed > 0 && (
+        <p>
+          {`GitHub に届いたか分からない書き込みが ${unconfirmed} 件あります。`}
+          {"draft issue が作られているかもしれません。"}
+          {"削除すると、それを確かめる手掛かりも消えます。"}
+          {"手掛かりは注釈の詳細の記録にしかありません。"}
+        </p>
+      )}
+      {recorded === 0 && unconfirmed === 0 && (
         <p>このボードから作成した draft issue の記録はありません。</p>
       )}
       <div className="delete-confirm-actions">

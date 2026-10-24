@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/yusuke0610/etoki/internal/adapter/cimd"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
 	"github.com/yusuke0610/etoki/internal/httpapi"
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
@@ -33,6 +35,8 @@ const (
 type oauthRouterOptions struct {
 	publicURL    string
 	metadataDocs bool
+	// fetcher は CIMD を取りに行くもの。nil なら取りに行かない。
+	fetcher usecase.ClientMetadataFetcher
 }
 
 // newOAuthRouter は認証と認可サーバーを組み立てたルーターを返す。
@@ -41,7 +45,7 @@ func newOAuthRouter(t *testing.T, opts oauthRouterOptions) (*gin.Engine, *stubPr
 
 	provider := &stubProvider{}
 	deps, _, db := newAuthDeps(t, provider)
-	deps.OAuth = usecaseOAuthServer(sqlite.NewOAuthGrantRepository(db))
+	deps.OAuth = usecase.NewOAuthServer(sqlite.NewOAuthGrantRepository(db), opts.fetcher)
 	deps.OAuthMetadataDocuments = opts.metadataDocs
 	deps.PublicURL = opts.publicURL
 	return httpapi.NewRouter(deps), provider, db
@@ -462,6 +466,40 @@ func TestAuthorize_OnlyForwardsToConsent(t *testing.T) {
 		}
 		if n != 0 {
 			t.Errorf("%s に %d 行書かれた", table, n)
+		}
+	}
+}
+
+// CIMD を取りに行って繋げなかった理由は、同意の画面の応答に載せない（#339、
+// ADR 0076 の追記）。Fetcher の単体テストは文を固定しているが、口まで通して
+// 見ないと、途中で詳細を足す形に戻っても気づけない。外から作れる Fetcher は
+// ループバックを必ず弾くので、弾いた宛先で通す（繋がらなかった宛先と同じ文）。
+func TestOAuthAuthorization_HidesClientMetadataFetchDetail(t *testing.T) {
+	t.Parallel()
+
+	r, _, _ := newOAuthRouter(t, oauthRouterOptions{
+		metadataDocs: true,
+		fetcher:      cimd.New(slog.New(slog.DiscardHandler)),
+	})
+	cookie := signIn(t, r)
+
+	// 名前で名乗らせる。解決したアドレスが応答に出ないことを見たい。
+	id := "https://localhost:8443/meta.json"
+	rec := withCookie(t, r, http.MethodGet,
+		"/api/oauth/authorization?request="+url.QueryEscape(authorizeQuery(id)), cookie)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body)
+	}
+	body := decode[apitypes.ErrorResponse](t, rec)
+	if body.Code != apitypes.ErrorCodeInvalidInput {
+		t.Errorf("code = %q", body.Code)
+	}
+	if !strings.Contains(body.Error, "could not reach "+id) {
+		t.Errorf("error = %q, want it to say the document could not be reached", body.Error)
+	}
+	for _, leak := range []string{"127.0.0.1", "::1", "dial tcp", "non-public"} {
+		if strings.Contains(body.Error, leak) {
+			t.Errorf("error = %q, leaks %q", body.Error, leak)
 		}
 	}
 }

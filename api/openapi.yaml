@@ -435,7 +435,9 @@ paths:
         **`updatedAt` は進めない。** あれはシーンの版であり、保存の照合基準
         （ADR 0020）として使われている。名前を直しただけで進めると、そのボードを
         開いている別のメンバーの次の保存が「他の人が保存しました」で断られる。
-        誰もシーンを触っていないのに衝突として読まれることになる。
+        誰もシーンを触っていないのに衝突として読まれることになる。応答の
+        `updatedAt` はサーバーのいまの版で、こちらが読み込んでいない保存を
+        含みうるので、保存の基準に使わない（ADR 0092）。
 
         変えられるのは editor 以上。作成先の変更（owner だけ）と揃えないのは、
         名前は取り消せない作成の行き先を決めるものではないため。
@@ -596,6 +598,10 @@ paths:
         （ADR 0014）。
 
         そのボードで draft issue を 1 件でも作った後は 409 を返す。
+
+        **`updatedAt` は進めない**（ADR 0092）。版を動かすのはシーンの保存だけ。
+        応答の `updatedAt` はサーバーのいまの版で、こちらが読み込んでいない
+        保存を含みうるので、保存の基準に使わない。
       requestBody:
         required: true
         content:
@@ -646,6 +652,9 @@ paths:
         `projectId` は「どの作成先の表示名か」を確かめるために伴う。保存されて
         いるものと違えば 409（`target_mismatch`）を返す。作成先を変えるのは
         `PUT /api/boards/{id}/target` のほうで、固定後は通らない。
+
+        **`updatedAt` は進めない**（ADR 0092）。応答の `updatedAt` を保存の基準に
+        使わないのも、`PUT /api/boards/{id}/target` と同じ。
 
         **etoki からは自動で取りにいかない。** 画面が押されたときに GitHub の
         Project 一覧を引き、その値をここへ送る（中核思想 3）。
@@ -1274,11 +1283,13 @@ paths:
         範囲の画像で、矢印やグルーピングのようにテキストに現れない構造を渡す
         ためのもの（ADR 0018）。ボディごと省略できる。
 
-        **同じ利用者が同じボードの同じ注釈（保存済みの内容が同じもの）をまだ
-        解釈している最中なら、新しく始めず、走っているジョブを返す。** そのとき
-        画像は読まない。保存で内容が変わっていれば別の入力なので、新しく始める
-        （画像も使う）。別の利用者のジョブは共有しない（その利用者の枠で新しく
-        始める）。別の注釈を解釈している最中は 429（`concurrency_limited`）。
+        **同じ利用者が同じボードの同じ注釈（解釈が読む保存済みの内容が同じもの）を
+        まだ解釈している最中なら、新しく始めず、走っているジョブを返す。** 内容は
+        frame の名前を含むテキストと、粒度・種別で見る。そのとき画像は読まないので、
+        線や図形だけを変えた保存は同じ入力として扱う。テキスト・名前・粒度・種別が
+        変わっていれば別の入力なので、走っているジョブは返さない（新しく始め、画像も
+        使う。枠が埋まっていれば 429）。別の利用者のジョブは共有しない（その利用者の
+        枠で新しく始める）。別の注釈を解釈している最中は 429（`concurrency_limited`）。
       requestBody:
         required: false
         description: |
@@ -1733,7 +1744,8 @@ components:
           type: boolean
           description: |
             draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
-            引けない**ので、新しいボードも作れない（ADR 0017）
+            引けない**ので、ボードは作成先を選ばずに作る（ADR 0090）。ボード
+            そのものは false でも作れる
         sharing:
           type: boolean
           description: |
@@ -2254,8 +2266,18 @@ components:
         **GitHub 側で何が起きるかは含まれない。** etoki は draft issue を
         消さないので、GitHub にはそのまま残る。ここが答えるのは「辿れなく
         なるのはどれだけか」という問いのほう。
-      required: [recordedItemCount]
+      required: [recordedItemCount, unconfirmedWriteCount]
       properties:
+        unconfirmedWriteCount:
+          type: integer
+          description: |
+            GitHub に届いたか分からない書き込みの件数（ADR 0056）。注釈の詳細の
+            `unconfirmedItems` と同じ数え方で、あとで確定の記録が付いたものは
+            含まない。
+
+            **`recordedItemCount` には混ぜない**（ADR 0042）。draft issue の件数
+            ではなく書き込みの回数で、作られた draft issue があるかどうかは
+            etoki には分からない。削除すると、それを確かめにいく手掛かりも消える
         recordedItemCount:
           type: integer
           description: |
@@ -2438,21 +2460,31 @@ components:
         **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
         （ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
         「ボードの作成にはリポジトリへのアクセス権が要る」はこれで満ちる
-        （ADR 0017）。
+        （ADR 0017）。`repositoryOwner` / `repositoryName` / `projectId` を
+        省くと 400。
 
-        副産物として、作成先が未選択のボードは新規には生まれなくなる。移行前の
-        ボードは未選択のまま残るので、`projectId` が空文字の経路は消えない。
-      required: [name, repositoryOwner, repositoryName, projectId]
+        **例外は GitHub を設定していない構成**（`capabilities.creation` が
+        false、ADR 0090）。作成先の候補を引けないので、3 つとも省けば作成先が
+        未選択のボードを作る。一部だけ送ったら 400。移行前のボードも未選択の
+        まま残るので、`projectId` が空文字の経路はどちらにしても消えない。
+      required: [name]
       properties:
         name:
           type: string
         repositoryOwner:
           type: string
+          description: 作成先リポジトリの所有者。省けるのは GitHub が未設定の構成だけ
+          x-go-type-skip-optional-pointer: true
         repositoryName:
           type: string
+          description: 作成先リポジトリの名前。省けるのは GitHub が未設定の構成だけ
+          x-go-type-skip-optional-pointer: true
         projectId:
           type: string
-          description: draft issue を作る Projects v2 の node ID
+          description: |
+            draft issue を作る Projects v2 の node ID。省けるのは GitHub が
+            未設定の構成だけ
+          x-go-type-skip-optional-pointer: true
         projectNumber:
           type: integer
           description: |

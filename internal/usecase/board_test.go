@@ -22,6 +22,90 @@ func newTarget() port.BoardTarget {
 	}
 }
 
+// 作成先は必須（ADR 0017）。「ボードの作成にはリポジトリへのアクセス権が要る」
+// はこの形で満たしている。既定のまま省けると、GitHub のある構成で要件 1 が外れる。
+func TestBoardCreate_RequiresTargetByDefault(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{}
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
+
+	_, err := svc.Create(t.Context(), "設計会", "", port.BoardTarget{})
+	if !errors.Is(err, usecase.ErrInvalidInput) {
+		t.Fatalf("Create() = %v, want ErrInvalidInput", err)
+	}
+	if boards.writes != 0 {
+		t.Errorf("作成先が無いのに書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
+// GitHub を組み立てていない構成では、作成先を選ばずに作れる（ADR 0090）。
+// 候補を引けないので、必須のままだとブレストを 1 枚も始められない。
+func TestBoardCreate_WithoutRequiredTargetAcceptsNoTarget(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{}
+	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
+		usecase.WithoutRequiredTarget())
+
+	b, err := svc.Create(t.Context(), "設計会", "", port.BoardTarget{})
+	if err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+	if b.Target != (port.BoardTarget{}) {
+		t.Errorf("Target = %+v, want 未選択（すべて空）", b.Target)
+	}
+	if boards.writes != 1 {
+		t.Errorf("writes = %d, want 1", boards.writes)
+	}
+}
+
+// 省けるのは丸ごと空のときだけ。一部だけ送られた作成先は弾く。通すと、
+// 選んでいないのに選びかけの値を持つボードができる。
+func TestBoardCreate_WithoutRequiredTargetRejectsPartialTarget(t *testing.T) {
+	t.Parallel()
+
+	for name, target := range map[string]port.BoardTarget{
+		"リポジトリだけ":    {RepositoryOwner: "acme", RepositoryName: "web"},
+		"Project だけ": {ProjectID: "PVT_1"},
+		"表示用の値だけ":    {ProjectTitle: "ロードマップ"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			boards := &fakeBoards{}
+			svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
+				usecase.WithoutRequiredTarget())
+
+			_, err := svc.Create(t.Context(), "設計会", "", target)
+			if !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("Create() = %v, want ErrInvalidInput", err)
+			}
+			if boards.writes != 0 {
+				t.Errorf("書き込んでいる: writes = %d", boards.writes)
+			}
+		})
+	}
+}
+
+// 省けるようにしても、選んだ作成先はそのまま持たせる。GitHub が無い構成で
+// 作成先を送ってくるのは画面の外の呼び出しだけだが、捨てると送った値が消えた
+// ことに呼び出し側が気づけない。
+func TestBoardCreate_WithoutRequiredTargetKeepsSelectedTarget(t *testing.T) {
+	t.Parallel()
+
+	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{}, usecase.NewBoardLocks(),
+		usecase.WithoutRequiredTarget())
+
+	b, err := svc.Create(t.Context(), "設計会", "", newTarget())
+	if err != nil {
+		t.Fatalf("Create() = %v", err)
+	}
+	if b.Target != newTarget() {
+		t.Errorf("Target = %+v, want %+v", b.Target, newTarget())
+	}
+}
+
 // run が 1 件も無いうちは選び直せる。ブレストを始める前なら GitHub 側に
 // 何も無いので、変えて困るものが無い。
 func TestSetTarget_SucceedsBeforeAnyRun(t *testing.T) {
@@ -698,6 +782,66 @@ func TestDeletion_CountsFoldedItems(t *testing.T) {
 	}
 }
 
+// **届いたか分からない書き込みも、確定とは別に数える**（ADR 0042 の追記、0056）。
+// 確定の件数に混ぜると「N 件作った」が嘘になり、数えないと、未確定しか無い
+// ボードで「作成した記録はありません」と言って消させる。削除すれば、GitHub を
+// 確かめにいく手掛かり（注釈の詳細の記録）も消える。
+func TestDeletion_CountsUnconfirmedWritesSeparately(t *testing.T) {
+	t.Parallel()
+
+	boards := &fakeBoards{board: newBoard(interpretScene)}
+	mappings := &fakeMappings{runs: []port.SyncRun{
+		{
+			BoardID: "board-1", AnnotationID: "annot-1",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionCreated, Confirmed: true},
+			},
+		},
+		{
+			// 応答を失った作成と、確定させられていない更新。どちらも残る。
+			BoardID: "board-1", AnnotationID: "annot-1",
+			Items: []port.SyncItem{
+				{LocalID: "i1", Action: port.ActionCreated},
+				{ItemID: "PVTI_1", LocalID: "e1", Action: port.ActionUpdated},
+			},
+		},
+		{
+			// 確定させられていない更新のあとに、同じ item へ書けた。解けた
+			// 不確かさなので数えない。
+			BoardID: "board-1", AnnotationID: "annot-2",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_2", LocalID: "e1", Action: port.ActionUpdated},
+			},
+		},
+		{
+			BoardID: "board-1", AnnotationID: "annot-2",
+			Items: []port.SyncItem{
+				{ItemID: "PVTI_2", LocalID: "e1", Action: port.ActionUpdated, Confirmed: true},
+			},
+		},
+		// 別のボードの書き込みは数えない。
+		{
+			BoardID: "board-2", AnnotationID: "annot-9",
+			Items: []port.SyncItem{{LocalID: "e1", Action: port.ActionCreated}},
+		},
+	}}
+	svc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks())
+
+	d, err := svc.Deletion(t.Context(), "board-1")
+	if err != nil {
+		t.Fatalf("Deletion() = %v", err)
+	}
+	if d.RecordedItemCount != 2 {
+		t.Errorf("RecordedItemCount = %d, want 2（未確定を混ぜない）", d.RecordedItemCount)
+	}
+	if d.UnconfirmedWriteCount != 2 {
+		t.Errorf("UnconfirmedWriteCount = %d, want 2", d.UnconfirmedWriteCount)
+	}
+	if boards.writes != 0 {
+		t.Errorf("見せるだけの口が書き込んでいる: writes = %d", boards.writes)
+	}
+}
+
 // 一度も作っていないボードは 0 件。件数が無いことと引けなかったことを混ぜない。
 func TestDeletion_ZeroWithoutRuns(t *testing.T) {
 	t.Parallel()
@@ -711,6 +855,9 @@ func TestDeletion_ZeroWithoutRuns(t *testing.T) {
 	}
 	if d.RecordedItemCount != 0 {
 		t.Errorf("RecordedItemCount = %d, want 0", d.RecordedItemCount)
+	}
+	if d.UnconfirmedWriteCount != 0 {
+		t.Errorf("UnconfirmedWriteCount = %d, want 0", d.UnconfirmedWriteCount)
 	}
 }
 

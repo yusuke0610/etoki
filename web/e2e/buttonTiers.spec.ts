@@ -3,11 +3,13 @@ import { expect, test } from "@playwright/test";
 import { installApi } from "./helpers/api";
 import {
   chooseFromMenu,
+  drawRectangle,
   newBoardDialog,
   openAnnotationDetail,
   openBoardWithMock,
   ekidokiButton,
   openShareDialog,
+  saveButton,
 } from "./helpers/board";
 import {
   authRequiredMock,
@@ -80,6 +82,16 @@ test.describe("ボタンの格", () => {
     await expect(detail.getByRole("button", { name: "閉じる" })).toHaveClass(QUIET);
   });
 
+  // 右上の主となる操作は「絵解き」の 1 つ。「保存」は未保存のあいだだけ隣に出る
+  // ふつうの操作で、緑を 2 つ並べない（ADR 0089、#203）。
+  test("保存はふつうの操作", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await drawRectangle(page);
+
+    await expect(saveButton(page)).not.toHaveClass(ANY_TIER);
+    await expect(ekidokiButton(page)).toHaveClass(PRIMARY);
+  });
+
   // 走っている絵解きを止めるのは、作業から離れる操作（#330）。
   test("絵解きを取り消すのは控えめ", async ({ page }) => {
     const mock = baseMock();
@@ -95,7 +107,12 @@ test.describe("ボタンの格", () => {
 
   test("ボードの削除は取り消せない操作、やめるのは控えめ", async ({ page }) => {
     const mock = baseMock();
-    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 0 } } };
+    mock.deletion = {
+      [BOARD_ID]: {
+        status: 200,
+        body: { recordedItemCount: 0, unconfirmedWriteCount: 0 },
+      },
+    };
     await openBoardWithMock(page, mock);
 
     await chooseFromMenu(page, "ボードを削除");

@@ -197,6 +197,14 @@ e2e が落ちたときは Playwright のレポートが artifact（`playwright-r
 ブランチで `make codegen` を回して同じコミットに含める。**赤いのは知らせであって、
 設定の不具合ではない。**
 
+**web の依存を手で足す・上げるときは、`web/bun.lock` も同じコミットに含める。**
+`make setup` は lockfile の版しか入れず、lockfile で `web/package.json` を満たせ
+なければ落ちる。CI も同じ入口なので、そういう PR は CI で落ちる（#338）。
+devShell の中で `cd web && bun add <パッケージ>`（上げるなら
+`bun update <パッケージ>`）を叩けば lockfile ごと書き換わる。**`package.json`
+だけを手で直したなら、`--frozen-lockfile` を付けずに `bun install` を 1 回叩いて
+lockfile を作り直す。**
+
 **`flake.lock` は Dependabot に出させない。** nix のエコシステムは選べるが
 有効にしていないので（理由は ADR 0035）、nixpkgs 側（Go / Bun / `oapi-codegen` /
 `playwright-driver`）は手で `nix flake update` を回す。回したあとに

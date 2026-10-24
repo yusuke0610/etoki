@@ -1,9 +1,11 @@
 package cimd
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -61,7 +63,7 @@ func TestFetch_RefusesLoopback(t *testing.T) {
 	t.Parallel()
 	srv, testFetcher, hits := newTestServer(t, serveDoc)
 
-	f := New()
+	f := New(slog.New(slog.DiscardHandler))
 	// TLS の検証で落ちたのではなく、繋ぐ前に止めたことを確かめるため、
 	// テスト用の Fetcher と同じ信頼の設定を渡す。
 	f.client.Transport.(*http.Transport).TLSClientConfig =
@@ -78,6 +80,82 @@ func TestFetch_RefusesLoopback(t *testing.T) {
 	}
 	if n := hits.Load(); n != 0 {
 		t.Errorf("サーバーに %d 回届いた", n)
+	}
+}
+
+// 繋げなかった理由は、エラーの文に載せずログにだけ残す（#339）。この文は同意の
+// 画面の応答に載る。**弾いた宛先と繋がらなかった宛先を同じ文にする**ことまで見る。
+// 分けると、名前が内部のアドレスに解決されるかが応答から読める。
+func TestFetch_UnreachableHidesConnectionDetail(t *testing.T) {
+	t.Parallel()
+
+	srv, testFetcher, _ := newTestServer(t, serveDoc)
+	// 名前で名乗らせる。解決したアドレス（127.0.0.1 / ::1）が文に出ないことを見たいので、
+	// client_id そのものにアドレスを含めない。
+	id := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1) + "/meta.json"
+
+	var blockedLog bytes.Buffer
+	blocked := New(slog.New(slog.NewTextHandler(&blockedLog, nil)))
+	blocked.client.Transport.(*http.Transport).TLSClientConfig =
+		testFetcher.client.Transport.(*http.Transport).TLSClientConfig
+
+	// 判定は外したまま、相手を止めて繋がらなくする。
+	var refusedLog bytes.Buffer
+	refused := testFetcher
+	refused.logger = slog.New(slog.NewTextHandler(&refusedLog, nil))
+	srv.Close()
+
+	for name, tc := range map[string]struct {
+		f   *Fetcher
+		log *bytes.Buffer
+	}{
+		"弾いた宛先":     {blocked, &blockedLog},
+		"繋がらなかった宛先": {refused, &refusedLog},
+	} {
+		_, err := tc.f.Fetch(t.Context(), id)
+		if err == nil {
+			t.Fatalf("%s: err = nil", name)
+		}
+		if got, want := err.Error(), "cimd: could not reach "+id; got != want {
+			t.Errorf("%s: err = %q, want %q", name, got, want)
+		}
+		if !strings.Contains(tc.log.String(), "client_id="+id) {
+			t.Errorf("%s: ログに client_id が無い: %s", name, tc.log)
+		}
+		// 詳細はログに残す。運用者が原因を追えなくならないように。
+		if !strings.Contains(tc.log.String(), "dial tcp") {
+			t.Errorf("%s: ログに接続の詳細が無い: %s", name, tc.log)
+		}
+	}
+	// 弾いたことは、文を変えても辿れる。
+	if _, err := blocked.Fetch(t.Context(), id); !errors.Is(err, errBlockedAddress) {
+		t.Errorf("err = %v, want errBlockedAddress", err)
+	}
+}
+
+// 本文を読んでいる途中で切れたときも、理由はログにだけ残す（#339）。読み込みの
+// 失敗の文は、etoki 側のアドレス（`read tcp <こちら>-><相手>`）を含みうる。
+func TestFetch_ReadFailureHidesDetail(t *testing.T) {
+	t.Parallel()
+
+	srv, f, _ := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		// 名乗った長さより短く書いて切る。
+		w.Header().Set("Content-Length", "100")
+		_, _ = w.Write([]byte(`{"client_id":`))
+	})
+	var log bytes.Buffer
+	f.logger = slog.New(slog.NewTextHandler(&log, nil))
+
+	id := srv.URL + "/meta.json"
+	_, err := f.Fetch(t.Context(), id)
+	if err == nil {
+		t.Fatal("err = nil")
+	}
+	if got, want := err.Error(), "cimd: could not read "+id; got != want {
+		t.Errorf("err = %q, want %q", got, want)
+	}
+	if !strings.Contains(log.String(), "unexpected EOF") {
+		t.Errorf("ログに読み込みの失敗が無い: %s", log.String())
 	}
 }
 
@@ -253,9 +331,9 @@ func TestFetch_RejectsNonHTTPSAndErrors(t *testing.T) {
 func TestNew_DoesNotUseProxy(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "http://proxy.example:3128")
 
-	tr, ok := New().client.Transport.(*http.Transport)
+	tr, ok := New(nil).client.Transport.(*http.Transport)
 	if !ok {
-		t.Fatalf("Transport = %T", New().client.Transport)
+		t.Fatalf("Transport = %T", New(nil).client.Transport)
 	}
 	if tr.Proxy != nil {
 		t.Error("プロキシを使う設定になっている")

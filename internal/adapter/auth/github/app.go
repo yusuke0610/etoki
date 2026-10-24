@@ -26,7 +26,8 @@ import (
 // ProviderName は Identity.Provider に入る値。
 const ProviderName = "github"
 
-// 既定のホスト。GHE では差し替える。
+// 既定のホスト。差し替えるのはテストだけ。**GHES に向けられるとは言わない**
+// （ADR 0050）。ConfigFromEnv はこれを読まず、GHES では確かめていない。
 const (
 	// DefaultAuthBaseURL は認可とトークン交換のホスト。api.github.com ではない。
 	DefaultAuthBaseURL = "https://github.com"

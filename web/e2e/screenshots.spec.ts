@@ -490,6 +490,29 @@ test.describe("スクリーンショット", () => {
     await shot(page, "21-not-configured");
   });
 
+  // GitHub が未設定の構成（ADR 0090、#297）。新しいボードは作成先を選ばずに
+  // 作るので、ダイアログの主となる操作が「作成」になり、そのことを言う文が出る。
+  test("GitHub が未設定のときの新しいボードのダイアログを撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = {
+      status: 200,
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: false,
+        sharing: false,
+        mcpConnections: false,
+      },
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    // 撮りたいのは未設定の側。capabilities が遅れて届くと、選ぶ側の表示を撮る。
+    await dialog.getByText("作成先は選ばずに作ります", { exact: false }).waitFor();
+    await shot(page, "61-new-board-without-github");
+  });
+
   // 失敗の見せ方（#86）。**打ち手を前に、サーバーの文言は畳んだ側に。**
   // 同じ 409 でもすべきことは違うので、code から引いた文を先に読ませる。
   test("失敗したときの見せ方を撮る", async ({ page }) => {
@@ -926,10 +949,16 @@ test.describe("スクリーンショット", () => {
   });
 
   // 削除の確認。**GitHub 側に何が残るのかが読める文言になっているか**を画像で
-  // 見る（ADR 0042）。件数と「残る」がどちらも出ていること。
+  // 見る（ADR 0042）。件数と「残る」がどちらも出ていること。届いたか分からない
+  // 書き込み（ADR 0056）も並べ、2 つの段落が混ざって読めないことを確かめる。
   test("削除の確認を撮る", async ({ page }) => {
     const mock = baseMock();
-    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+    mock.deletion = {
+      [BOARD_ID]: {
+        status: 200,
+        body: { recordedItemCount: 3, unconfirmedWriteCount: 2 },
+      },
+    };
     await openBoardWithMock(page, mock);
 
     await chooseFromMenu(page, "ボードを削除");
@@ -1251,6 +1280,19 @@ test.describe("幅ごとのスクリーンショット", () => {
       await page.getByRole("button", { name: "パネルを閉じる" }).click();
       await page.getByRole("navigation", { name: "パネル" }).waitFor();
       await shot(page, "52-overlay-collapsed");
+    });
+
+    // タブレット（#296）。未保存のあいだ、右上に「保存」が「絵解き」の隣に出る。
+    // 押せない `⌘/Ctrl+S` の案内が出ていないかを画像で見る（ADR 0089）。
+    test.describe("タッチの端末", () => {
+      test.use({ hasTouch: true });
+
+      test("未保存の右上を撮る", async ({ page }) => {
+        await openBoardWithMock(page, baseMock());
+        await drawRectangle(page);
+        await page.getByText("未保存", { exact: true }).waitFor();
+        await shot(page, "60-overlay-touch-unsaved");
+      });
     });
   });
 });

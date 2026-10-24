@@ -46,9 +46,9 @@ const (
 
 // DefaultAddr は Options.Addr が空のときに使うリッスンアドレス。
 //
-// etoki は単一ユーザーがローカルで動かすツールであり認証機構を持たない。
-// 既定でループバックだけにバインドするのはそのためで、公開インターフェースに
-// バインドしたい場合は利用者が明示的に Addr を指定する必要がある。
+// 認証は任意で、設定しない構成が既定であり続ける。既定でループバックだけに
+// バインドするのはそのためで（ADR 0016）、公開インターフェースにバインドしたい
+// 場合は利用者が明示的に Addr を指定する必要がある。
 const DefaultAddr = "127.0.0.1:8080"
 
 // cancelRequestsAfter は停止を始めてから、処理中のリクエストの ctx を切るまでの長さ。
@@ -89,10 +89,11 @@ const shutdownTimeout = cancelRequestsAfter + usecase.MaxCreationDrain
 // 保存できなくなる。
 //
 // **読み終えたあとのハンドラは切らない。** net/http は本文を読み終えると読み
-// 込みの期限を外すので、分単位で待つ解釈や、ctx で接続断を見る作成（ADR 0051）は
+// 込みの期限を外すので、ctx で接続断を見る作成（ADR 0051）は長くかかっても
 // この期限で止まらない。`TestRunReadTimeoutDoesNotCancelLongHandlers` が固定
 // している。WriteTimeout は同じ理由では置けない（応答を書き終えるまでの上限に
-// なるので、長い解釈が途中で切れる）。
+// なるので、長い作成が途中で切れる）。解釈と図のドラフト生成はジョブになり
+// （ADR 0085 / 0091）、リクエストの中では待たない。
 const readTimeout = 2 * time.Minute
 
 // idleTimeout はキープアライブの接続を、次のリクエストを待って開けておく上限（#64）。
@@ -285,8 +286,17 @@ func New(opts Options) (*Server, error) {
 	// 叩くので、片方だけ絞ると抜け道が残る（ADR 0044）。
 	llmLimiter := usecase.NewLLMLimiter(opts.LLMLimits)
 
+	// GitHub が無い構成では作成先の候補を引けないので、作成先を選ばずにボードを
+	// 作れるようにする（ADR 0090）。必須のままだとボードを 1 枚も作れず、LLM を
+	// 設定しなくてもブレストだけ先にできる、という約束（ADR 0008）が GitHub の
+	// 設定に縛られる。
+	var boardOpts []usecase.BoardServiceOption
+	if opts.GitHub == nil {
+		boardOpts = append(boardOpts, usecase.WithoutRequiredTarget())
+	}
+
 	deps := httpapi.Deps{
-		Boards:      usecase.NewBoardService(opts.Boards, opts.Mappings, locks),
+		Boards:      usecase.NewBoardService(opts.Boards, opts.Mappings, locks, boardOpts...),
 		Annotations: usecase.NewAnnotationService(opts.Boards, opts.Mappings),
 		// GitHub が nil でも組み立てる。確かめられないことは「分からない」と
 		// して返るので、権限の表示そのものを落とす理由が無い（ADR 0017）。
@@ -303,7 +313,7 @@ func New(opts Options) (*Server, error) {
 	if opts.Auth != nil && opts.OAuthGrants != nil {
 		var fetcher usecase.ClientMetadataFetcher
 		if opts.OAuthClientMetadataDocuments {
-			fetcher = cimd.New()
+			fetcher = cimd.New(opts.Logger)
 		}
 		deps.OAuth = usecase.NewOAuthServer(opts.OAuthGrants, fetcher)
 		deps.OAuthMetadataDocuments = opts.OAuthClientMetadataDocuments
