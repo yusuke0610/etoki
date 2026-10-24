@@ -53,8 +53,8 @@ ADR 0005 の「`LLMClient` は 1 回の呼び出しだけを担う」は崩し�
 ### 積むのは解釈 1 回ぶん
 
 1 回の解釈は最大 `maxAttempts` 回 LLM を呼ぶので、**呼び出し 1 回ぶんだけを
-見ても払った量にならない。** `InterpretationService.complete` が積んで返し、
-`InterpretationService.execute` が 1 行で残す。
+見ても払った量にならない。** `InterpretationService.complete`（呼び直しの手順は
+`llmRetry`）が積んで返し、`InterpretationService.execute` が 1 行で残す。
 
 - **呼んだ回数は呼ぶ前に数える。** 接続が落ちた回も「呼んだ」に含めないと、
   上限に対して実際に何回叩いているのかが読めない

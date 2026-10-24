@@ -195,7 +195,8 @@ func (s *InterpretationService) execute(
 	in, usage, err := s.complete(ctx, p.annotation, p.scene.AnnotationTexts(annotationID), p.images, p.previous)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されているので、
 	// 成功したときだけ記録すると、実績が実際より小さく見える（ADR 0031）。
-	s.logUsage(ctx, boardID, annotationID, usage, err)
+	logLLMUsage(ctx, s.logger, "interpretation llm usage", usage, err,
+		slog.String("boardId", boardID), slog.String("annotationId", annotationID))
 	if err != nil {
 		return InterpretationResult{}, err
 	}
@@ -253,54 +254,10 @@ func validateImages(images []port.Image) error {
 	return nil
 }
 
-// llmUsage は 1 回の解釈で LLM に払ったぶん。
-//
-// 呼び出し 1 回ぶんではなく**解釈 1 回ぶん**を積む。1 回の解釈は再送を含めて
-// 最大 maxAttempts 回 LLM を呼ぶので、1 回ぶんだけを見ても払った量にならない。
-type llmUsage struct {
-	// attempts は LLM を呼んだ回数。呼んだ時点で数えるので、その呼び出しが
-	// 失敗した場合も含む。
-	attempts     int
-	inputTokens  int
-	outputTokens int
-}
-
-// addTokens は 1 回ぶんの報告を積む。**attempts はここでは増やさない。**
-// 呼び出しが失敗した回にも数える必要があり、その回はここを通らない。
-//
-// port.Usage は埋めるかどうかが実装の任意なので、ここに 0 が来るのは
-// 「使っていない」ではなく「報告が無い」を意味する（ADR 0031）。足しても
-// 変わらないだけなので、区別せずそのまま積む。
-func (u *llmUsage) addTokens(usage port.Usage) {
-	u.inputTokens += usage.InputTokens
-	u.outputTokens += usage.OutputTokens
-}
-
-// logUsage は 1 回の解釈で LLM に払ったぶんを残す。
-//
-// **保存はしない**（ADR 0031）。表を持つと「誰の実績か」を決める必要があり、
-// それは絞り方（ボード単位 / 利用者単位）と揃えて決めるべき問いになる。
-//
-// **金額にしない。** モデルごとの単価は外の世界の値で、抱えると差し替える
-// たびに古くなる。残すのはトークン数と回数まで。
-func (s *InterpretationService) logUsage(
-	ctx context.Context, boardID, annotationID string, u llmUsage, err error,
-) {
-	s.logger.InfoContext(ctx, "interpretation llm usage",
-		slog.String("boardId", boardID),
-		slog.String("annotationId", annotationID),
-		slog.Int("attempts", u.attempts),
-		slog.Int("inputTokens", u.inputTokens),
-		slog.Int("outputTokens", u.outputTokens),
-		// 失敗したぶんも課金されている。成否を載せないと、払った量のうち
-		// どれだけが無駄だったのかが読めない。
-		slog.Bool("ok", err == nil),
-	)
-}
-
 // complete は検証を満たす出力が得られるまで、修正指示を添えて呼び直す。
 //
-// 払ったぶんは成否によらず返す。呼び出し側がそれを記録する。
+// 払ったぶんは成否によらず返す。呼び出し側がそれを記録する。呼び直しの手順は
+// 図のドラフト生成と同じで、llmRetry が持つ。
 func (s *InterpretationService) complete(
 	ctx context.Context, a domain.Annotation, texts []domain.TextElement, images []port.Image,
 	previous []domain.PreviousItem,
@@ -312,34 +269,16 @@ func (s *InterpretationService) complete(
 		Images: images,
 	}
 
-	var last error
-	var usage llmUsage
-
-	for attempt := 1; attempt <= s.maxAttempts; attempt++ {
-		// 呼ぶ前に数える。呼び出しが失敗した回も「呼んだ」に含めないと、
-		// 上限に対して実際に何回叩いているのかが読めない。
-		usage.attempts = attempt
-
-		resp, err := s.llm.Complete(ctx, req)
-		if err != nil {
-			// 接続やモデル側の失敗は修正指示で直る問題ではないので再送しない。
-			return domain.Interpretation{}, usage, llmCallError(attempt, err)
-		}
-		usage.addTokens(resp.Usage)
-
-		in, err := parseInterpretation(resp.Text, a.Granularity, previous)
-		if err == nil {
-			return in, usage, nil
-		}
-
-		last = err
-		// VisionRequest は 1 往復ぶんしか運べないので、会話履歴の代わりに
-		// 元の指示ごと組み立て直して自己完結させる。
-		req.Text = buildRetryMessage(base, resp.Text, err)
-	}
-
-	return domain.Interpretation{}, usage,
-		fmt.Errorf("%w (%d attempts): %w", ErrInterpretationFailed, s.maxAttempts, last)
+	return llmRetry[domain.Interpretation]{
+		maxAttempts: s.maxAttempts,
+		parse: func(text string) (domain.Interpretation, error) {
+			return parseInterpretation(text, a.Granularity, previous)
+		},
+		retryText: func(previousOutput string, err error) string {
+			return buildRetryMessage(base, previousOutput, err)
+		},
+		exhausted: ErrInterpretationFailed,
+	}.run(ctx, s.llm, req)
 }
 
 // parseInterpretation は LLM の出力テキストを解釈結果に変換して検証する。
