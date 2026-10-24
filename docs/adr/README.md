@@ -94,3 +94,4 @@
 | [0089](0089-save-button-while-unsaved.md)                        | 保存だけの口を、未保存のあいだ「未保存」の隣にボタンで出す                   | 採用                 |
 | [0090](0090-boards-without-target-when-github-is-unset.md)       | GitHub を設定していない構成では、作成先を選ばずにボードを作れる              | 採用                 |
 | [0091](0091-diagram-draft-as-server-side-job.md)                 | 図のドラフト生成もサーバー側のジョブにし、会話はジョブの入力から戻す         | 採用                 |
+| [0092](0092-only-scene-saves-advance-the-version.md)             | 版を進めるのはシーンの保存だけにし、ほかの書き込みの応答の版は基準にしない   | 採用                 |
