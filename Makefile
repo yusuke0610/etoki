@@ -75,7 +75,13 @@ help: ## ターゲット一覧を表示する
 
 setup: ## 依存関係を取得し DB を初期化する
 	go mod download
-	cd $(WEB_DIR) && bun install
+	@# lockfile の版だけを入れ、lockfile では package.json を満たせなければ落とす
+	@# （#338）。固定しないと bun は lockfile を黙って書き換え、レジストリから
+	@# 解決し直した版を入れる。CI もこの入口を通るので、レビューしていない版で
+	@# lint / test / E2E が走る。bun は CI=true でも固定しない。依存を足すときは
+	@# bun add などで lockfile を作り直し、一緒にコミットする（CONTRIBUTING.md の
+	@# 「依存の更新」）。
+	cd $(WEB_DIR) && bun install --frozen-lockfile
 	$(MAKE) migrate
 
 dev: ## バックエンドとフロントエンドを同時に起動する
