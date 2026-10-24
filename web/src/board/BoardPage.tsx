@@ -2,10 +2,8 @@ import { CaptureUpdateAction, Excalidraw, Footer } from "@excalidraw/excalidraw"
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { boardsApi } from "../api/boards";
 import {
   canvasMermaidPasteFailure,
-  describeFailure,
   sceneUnreadableFailure,
   type Failure,
 } from "../api/errorMessage";
@@ -14,7 +12,6 @@ import type {
   BoardDetail,
   BoardWithFiles,
   Capabilities,
-  DetachedAnnotation,
   DiagramKind,
   Granularity,
 } from "../api/types";
@@ -55,6 +52,10 @@ import {
 } from "./annotations/AnnotationDetail";
 import { AnnotationPanel } from "./annotations/AnnotationPanel";
 import { listed, useAnnotationDetail } from "./annotations/useAnnotationDetail";
+import {
+  ANNOTATIONS_FAILED,
+  useAnnotationStates,
+} from "./annotations/useAnnotationStates";
 import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
 import { useExclusion } from "./exclusion";
 import { useInterpretations } from "./annotations/useInterpretations";
@@ -120,10 +121,9 @@ const UI_OPTIONS = {
  * 開いたときに effect から出る失敗の通知。
  *
  * **effect から出すものには key を付ける。** 開発時の StrictMode では effect が
- * 2 回走るので、畳まないと同じ失敗が 2 件並ぶ。注釈の状態は保存や作成のたびにも
- * 取り直すので、読めたら下げる。
+ * 2 回走るので、畳まないと同じ失敗が 2 件並ぶ。注釈の状態のぶん
+ * （`ANNOTATIONS_FAILED`）は `useAnnotationStates` にある。
  */
-const ANNOTATIONS_FAILED = "annotations-failed";
 const SCENE_UNREADABLE = "scene-unreadable";
 
 type Props = {
@@ -252,12 +252,13 @@ export function BoardPage({
   );
 
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
-  const [annotations, setAnnotations] = useState<AnnotationStatus[]>([]);
-  // シーンから消えたのに GitHub 側にものが残っている注釈（#111）。
-  //
-  // **`annotations` と混ぜない。** 3 状態も名前も無いので、注釈のカードと
-  // 同じ形では出せない。同じ問い合わせで返るので、引く回数は増えない。
-  const [detached, setDetached] = useState<DetachedAnnotation[]>([]);
+  // 保存済みの注釈の状態（`useAnnotationStates`）。開いたら 1 度引き、保存と作成の
+  // あとに取り直す。`detached` は `annotations` と混ぜない（#111）。
+  const { annotations, detached, refreshAnnotations } = useAnnotationStates({
+    boardId: board.id,
+    onError,
+    dismiss: dismissHere,
+  });
   const [selectedFrames, setSelectedFrames] = useState<SelectableFrame[]>([]);
   // キャンバスにいま在る frame。状態欄のカードが飛べるかどうかの判定に使う。
   // 状態は保存済みシーンが基準なので、未保存で消したフレームは一覧に残る。
@@ -400,49 +401,6 @@ export function BoardPage({
     if (initialScene.unreadable)
       onError(sceneUnreadableFailure(), { key: SCENE_UNREADABLE });
   }, [initialScene, onError]);
-
-  // 状態の取得は初期表示・保存・作成から重なって走る。番号を振って最後に
-  // 投げたものだけ反映する。古い応答で上書きすると、作成済みの注釈が未作成に
-  // 巻き戻って見える。
-  const annotationsRequest = useRef(0);
-  // 最後に投げた取得。追い越された取得は、これの結果を返す。
-  const latestAnnotations = useRef<Promise<AnnotationStatus[] | null> | null>(null);
-
-  /**
-   * 注釈の状態を取り直し、反映した一覧を返す。取れなかったら null（通知は出す）。
-   *
-   * **成否を返す。** 取り直した一覧で開く先や読むかどうかを決める側
-   * （`startEkidoki` / `interpretAfterSave`）が待って使う。state は描き直すまで
-   * 古く、取れなかったときは前の一覧のまま残るので、どちらも判断に使えない。
-   * 追い越されたら、追い越した取得の結果を返す（反映されるのはそちらなので）。
-   */
-  const refreshAnnotations = useCallback((): Promise<AnnotationStatus[] | null> => {
-    const request = ++annotationsRequest.current;
-    const pending = (async (): Promise<AnnotationStatus[] | null> => {
-      try {
-        const next = await boardsApi.annotations(board.id);
-        if (request !== annotationsRequest.current) return latestAnnotations.current;
-        setAnnotations(next.annotations);
-        setDetached(next.detached);
-        dismissHere(ANNOTATIONS_FAILED);
-        return next.annotations;
-      } catch (e) {
-        if (request !== annotationsRequest.current) return latestAnnotations.current;
-        onError(describeFailure("絵の状態を取得できませんでした", e), {
-          key: ANNOTATIONS_FAILED,
-        });
-        return null;
-      }
-    })();
-    latestAnnotations.current = pending;
-    return pending;
-  }, [board.id, dismissHere, onError]);
-
-  // 開いたら注釈の状態を引く。state を置くのは応答が届いてから（`await` の後）で、
-  // effect の本体からは置かない。
-  useEffect(() => {
-    void refreshAnnotations();
-  }, [refreshAnnotations]);
 
   // いまのキャンバスの見え方。**state ではなく ref に持つ。** 重ねる枠の
   // 引き直しにしか使わないので、スクロールのたびに再描画を増やす理由が無い。
