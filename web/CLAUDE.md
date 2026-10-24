@@ -75,8 +75,8 @@
   要素のほかに背景色（`viewBackgroundColor`）が入っているのはそのため
   （ADR 0045）。スクロール位置や選択は保存が書かないので入れない。入れると
   開いただけで未保存になる。
-  **入口ごとに渡す。** `BoardPage` の `handleChange` / `updateElements` と
-  `useSceneSave` の `save` のどれかで渡し忘れると、同じシーンの署名が入口に
+  **入口ごとに渡す。** `useCanvasAnnotations` の `handleChange` / `updateElements`
+  と `useSceneSave` の `save` のどれかで渡し忘れると、同じシーンの署名が入口に
   よって食い違う。**署名は区切り
   文字で連結せず、JSON の構造で分ける。** 背景色も要素の id も取り込んだファイル
   から来るので、`|` や `:` を含む値が入りうる。連結すると違うシーンが同じ署名に
@@ -157,7 +157,7 @@
 - **etoki がキャンバスに加える変更は、人の操作として履歴に積む**（#144）。
   図のドラフト・mermaid の貼り付け・表・注釈の付け外しと種別・取り込みは、
   どれも開発者が押して起こした変更で、置き間違いを戻す手段が要る。
-  `BoardPage` の `updateElements` が
+  `useCanvasAnnotations` の `updateElements` が
   `captureUpdate: IMMEDIATELY` を渡す。既定（`EVENTUALLY`）のままだと積まれず、
   戻すと直前に描いたものが消える。**取り込みも積む。** 確認を経た置き換えだが、
   戻せるほうが失うものが少ない。選択だけを変える `updateScene` は既定のままにする。
