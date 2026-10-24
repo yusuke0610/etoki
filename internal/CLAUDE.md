@@ -393,6 +393,9 @@ UI は未保存の変更があることを表示する。
   （`BoardService.Deletion` / `GET /api/boards/{id}/deletion`）。件数は
   `ListItemsByBoard` の畳み込みから採る。注釈の詳細に出している「いま GitHub に
   在る N 件」と数え方を分けると、同じボードについて画面が 2 つの数を出す。
+  **届いたか分からない書き込みは別に数える**（`unconfirmedWriteCount`、ADR 0042 の
+  追記）。混ぜると記録の件数が嘘になり、数えないと未確定しか無いボードで「記録は
+  ありません」と言って消させる。
   **削除はボード単位のロックの中で行う。** 作成の途中で消すと、GitHub には
   draft issue ができたのに run を書けず、取り消せない作成が記録の無いまま残る
   （ADR 0009）。消える範囲を Go に書き下さないこと。`board_members` /

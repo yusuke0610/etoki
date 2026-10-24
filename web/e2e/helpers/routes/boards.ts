@@ -227,7 +227,10 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
         await json(route, reply.status, reply.body);
         return;
       }
-      await json(route, 200, { recordedItemCount: 0 } satisfies BoardDeletion);
+      await json(route, 200, {
+        recordedItemCount: 0,
+        unconfirmedWriteCount: 0,
+      } satisfies BoardDeletion);
     },
   );
 

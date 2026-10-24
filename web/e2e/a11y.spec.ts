@@ -766,7 +766,12 @@ for (const colorScheme of ["light", "dark"] as const) {
     test("削除の確認を開いた状態", async ({ page }) => {
       const mock = baseMock();
       // 件数は文言そのもの。0 件だと分岐の片方しか描かれない。
-      mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 3 } } };
+      mock.deletion = {
+        [BOARD_ID]: {
+          status: 200,
+          body: { recordedItemCount: 3, unconfirmedWriteCount: 0 },
+        },
+      };
       await openBoardWithMock(page, mock);
 
       await chooseFromMenu(page, "ボードを削除");

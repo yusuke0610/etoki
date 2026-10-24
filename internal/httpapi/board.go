@@ -379,7 +379,10 @@ func (h *handlers) getBoardDeletion(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, apitypes.BoardDeletion{RecordedItemCount: d.RecordedItemCount})
+	c.JSON(http.StatusOK, apitypes.BoardDeletion{
+		RecordedItemCount:     d.RecordedItemCount,
+		UnconfirmedWriteCount: d.UnconfirmedWriteCount,
+	})
 }
 
 // deleteBoard はボードを削除する。

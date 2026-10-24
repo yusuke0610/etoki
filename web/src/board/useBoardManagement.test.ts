@@ -98,7 +98,7 @@ describe("useRename", () => {
 });
 
 describe("useBoardDeletion", () => {
-  const losing: BoardDeletion = { recordedItemCount: 3 };
+  const losing: BoardDeletion = { recordedItemCount: 3, unconfirmedWriteCount: 0 };
 
   it("失われるものを引き終わるまで、確認を出さない", async () => {
     const pending = deferred<BoardDeletion>();

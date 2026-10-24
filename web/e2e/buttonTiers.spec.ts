@@ -107,7 +107,12 @@ test.describe("ボタンの格", () => {
 
   test("ボードの削除は取り消せない操作、やめるのは控えめ", async ({ page }) => {
     const mock = baseMock();
-    mock.deletion = { [BOARD_ID]: { status: 200, body: { recordedItemCount: 0 } } };
+    mock.deletion = {
+      [BOARD_ID]: {
+        status: 200,
+        body: { recordedItemCount: 0, unconfirmedWriteCount: 0 },
+      },
+    };
     await openBoardWithMock(page, mock);
 
     await chooseFromMenu(page, "ボードを削除");
