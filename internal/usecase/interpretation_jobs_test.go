@@ -596,38 +596,62 @@ func TestJobs_PanicInLLMFailsTheJobAndFreesSlot(t *testing.T) {
 	}
 }
 
-func TestJobs_StartAfterSceneChangedMakesNewJob(t *testing.T) {
+// 走っている最中に保存で解釈の入力が変わったら、そのジョブを返さない（ADR 0085）。
+//
+// **前のジョブを捨てずに始め直す。** 捨ててからだと、鍵が注釈 ID だけでも新しい
+// ジョブになって通る。枠は 1 つなので、返さなければ 429 に当たり、返すと err は
+// nil になる。
+func TestJobs_StartWhileRunningComparesSavedInput(t *testing.T) {
 	t.Parallel()
 
-	llm := newGatedLLM(validLLMOutput)
-	jobs, boards := newJobs(t, llm)
-	ctx := asUser(t.Context(), "u1")
+	tests := []struct {
+		name     string
+		from, to string
+		sameJob  bool
+	}{
+		{name: "子のテキストを変えた", from: "返金導線が無い", to: "返金導線を足す"},
+		// 名前はハッシュから外れたが（ADR 0079、#303）、解釈の入力には残っている。
+		{name: "囲みの名前を変えた", from: `"name":"決済まわり"`, to: `"name":"決済の整理"`},
+		{name: "粒度を変えた", from: `"granularity":""`, to: `"granularity":"epic"`},
+		// 線や図形はテキストに出ない。画像は鍵に入れないので、同じ入力として扱う。
+		{
+			name:    "線だけ足した",
+			from:    `{"id":"t9"`,
+			to:      `{"id":"a1","type":"arrow","frameId":"annot-1"},{"id":"t9"`,
+			sameJob: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	first, err := jobs.Start(ctx, "board-1", "annot-1", nil)
-	if err != nil {
-		t.Fatalf("Start() = %v", err)
-	}
+			llm := newGatedLLM(validLLMOutput)
+			jobs, boards := newJobs(t, llm)
+			ctx := asUser(t.Context(), "u1")
 
-	// 保存で注釈の中身が変わった。枠は 1 つなので、前のジョブを捨ててから始める。
-	boards.board.Scene = strings.Replace(interpretScene, "返金導線が無い", "返金導線を足す", 1)
-	if err := jobs.Discard(ctx, "board-1", first.ID); err != nil {
-		t.Fatalf("Discard() = %v", err)
-	}
+			first, err := jobs.Start(ctx, "board-1", "annot-1", nil)
+			if err != nil {
+				t.Fatalf("Start() = %v", err)
+			}
 
-	var second usecase.InterpretationJob
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		second, err = jobs.Start(ctx, "board-1", "annot-1", nil)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, usecase.ErrConcurrencyLimited) || time.Now().After(deadline) {
-			t.Fatalf("Start() = %v", err)
-		}
-		time.Sleep(2 * time.Millisecond)
+			changed := strings.Replace(interpretScene, tt.from, tt.to, 1)
+			if changed == interpretScene {
+				t.Fatalf("シーンが変わっていない（%q が無い）", tt.from)
+			}
+			boards.board.Scene = changed
+
+			second, err := jobs.Start(ctx, "board-1", "annot-1", nil)
+			if tt.sameJob {
+				if err != nil || second.ID != first.ID {
+					t.Errorf("Start() = (%q, %v), want 同じジョブ %q", second.ID, err, first.ID)
+				}
+			} else if !errors.Is(err, usecase.ErrConcurrencyLimited) {
+				t.Errorf("Start() = (%q, %v), want ErrConcurrencyLimited（古い入力のジョブを返さない）",
+					second.ID, err)
+			}
+
+			close(llm.release)
+			waitJob(t, jobs, ctx, first.ID)
+		})
 	}
-	if second.ID == first.ID {
-		t.Errorf("ID = %q, want 新しいジョブ（内容が変わった注釈に古いジョブを返さない）", second.ID)
-	}
-	close(llm.release)
 }

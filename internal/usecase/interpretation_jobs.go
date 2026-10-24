@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -56,7 +57,12 @@ func (j *InterpretationJobs) Start(
 			input: InterpretationJobInput{AnnotationID: annotationID},
 			// 同じ注釈 ID でも、保存で内容が変われば別の入力。保存前のシーンを
 			// 読んでいるジョブを返さない。
-			key: annotationID + "\x00" + string(p.scene.AnnotationHash(p.annotation)),
+			//
+			// **鍵は解釈が読むテキスト（AnnotationTexts）から作る。AnnotationHash
+			// ではない。** あちらは frame の名前を入れない（ADR 0079）ので、名前だけ
+			// 変えて保存し直すと、古い名前で走っているジョブが返る（ADR 0085）。
+			key: annotationID + "\x00" + string(domain.ComputeContentHash(
+				p.scene.AnnotationTexts(annotationID), p.annotation.Granularity, p.annotation.Kind)),
 			attrs: []any{
 				slog.String("board", boardID), slog.String("annotation", annotationID),
 			},
