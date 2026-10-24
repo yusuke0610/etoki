@@ -142,6 +142,21 @@ export const tableIcon = menuIcon(
 );
 
 /**
+ * etoki の使い方（`book`、ADR 0081）。**ヘルプとは違う絵にする。** すぐ上の
+ * Excalidraw のヘルプは疑問符で、あちらはキャンバスの操作の一覧、こちらは etoki
+ * の流れを見せる。
+ */
+export const tutorialIcon = menuIcon(
+  <>
+    <path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0" />
+    <path d="M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0" />
+    <path d="M3 6l0 13" />
+    <path d="M12 6l0 13" />
+    <path d="M21 6l0 13" />
+  </>,
+);
+
+/**
  * ボードを削除（`trash-x`）。**キャンバスのリセットとは違う絵にする。** あちらは
  * ごみ箱（`trash`）で、同じ絵だと、キャンバスの中身を消す操作とボードごと消す
  * 操作が見分けにくい。

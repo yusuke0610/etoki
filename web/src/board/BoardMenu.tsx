@@ -14,6 +14,7 @@ import {
   renameIcon,
   shareIcon,
   tableIcon,
+  tutorialIcon,
 } from "./menuIcons";
 import type { DeletionState } from "./useBoardManagement";
 
@@ -48,6 +49,8 @@ type Props = {
   /** 削除の確認がいまどこにいるか。null なら押されていない（ADR 0042）。 */
   deletion: DeletionState | null;
   onAskDelete: () => void;
+  /** 使い方を開く（ADR 0081）。 */
+  onOpenTutorial: () => void;
 };
 
 /**
@@ -93,6 +96,7 @@ export function BoardMenu({
   onAddTable,
   deletion,
   onAskDelete,
+  onOpenTutorial,
 }: Props) {
   return (
     <MainMenu>
@@ -226,6 +230,18 @@ export function BoardMenu({
       <MainMenu.DefaultItems.SaveAsImage />
       <MainMenu.DefaultItems.SearchMenu />
       <MainMenu.DefaultItems.Help />
+      {/*
+        ヘルプの隣に置く。あちらはキャンバスの操作、こちらは etoki の流れ
+        （描く → 囲む → 絵解く → 作る）。**誰にでも出す。** 見せるだけで、
+        ボードには触らない。
+      */}
+      <MainMenu.Item
+        className="etoki-menu-item"
+        icon={tutorialIcon}
+        onSelect={onOpenTutorial}
+      >
+        etoki の使い方
+      </MainMenu.Item>
       {canEdit && <MainMenu.DefaultItems.ClearCanvas />}
       <MainMenu.Separator />
       <MainMenu.DefaultItems.ToggleTheme />

@@ -605,6 +605,20 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    // 使い方のダイアログ（ADR 0081）。開かないと DOM に出ない。動画の下の説明と
+    // ページ送りのボタンまで含めて見る。
+    test("使い方のダイアログを開いた状態", async ({ page }) => {
+      await installApi(page, baseMock());
+      await page.goto("/");
+      await page
+        .locator(".list-header")
+        .getByRole("button", { name: "使い方", exact: true })
+        .click();
+      await page.getByRole("dialog", { name: "etoki の使い方" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     /*
      * 作成先の Project を選んで、足りないフィールドが出た状態（ADR 0088）。
      * **選ぶまで DOM に出ない**ので、ほかの検査には掛かっていない。注意の色の
