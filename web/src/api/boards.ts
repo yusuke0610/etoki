@@ -110,13 +110,15 @@ export const boardsApi = {
    * ボードを作る。
    *
    * **作成先は必須。** 候補は書ける Project だけに絞ってあるので、書ける先を
-   * 1 つも持たない人はここまで来られない（ADR 0017）。
+   * 1 つも持たない人はここまで来られない（ADR 0017）。**null を渡せるのは
+   * GitHub が未設定の構成だけ**（ADR 0090）。作成先を送らず、未選択のボードを
+   * 作る。GitHub のある構成で送らなければ 400 になる。
    *
    * `scene` はテンプレートから始めるときだけ渡す。**空白のときは送らない。**
    * 省略すると空のシーンで作るのはサーバーの既定で、手元で組み立てると同じ
    * ものが 2 箇所になる（`excalidraw/template.ts`）。
    */
-  create: (name: string, target: BoardTarget, scene?: string) =>
+  create: (name: string, target: BoardTarget | null, scene?: string) =>
     request<BoardDetail>("/api/boards", {
       method: "POST",
       body: JSON.stringify({

@@ -59,6 +59,8 @@ type BoardService struct {
 	locks    *BoardLocks
 	now      func() time.Time
 	newID    func() string
+	// targetOptional は作成先を選ばずにボードを作れるか（ADR 0090）。
+	targetOptional bool
 }
 
 // BoardServiceOption は BoardService の依存を差し替える。
@@ -67,6 +69,20 @@ type BoardServiceOption func(*BoardService)
 // WithClock は時刻の取得方法を差し替える。テストで時刻を固定するために使う。
 func WithClock(f func() time.Time) BoardServiceOption {
 	return func(s *BoardService) { s.now = f }
+}
+
+// WithoutRequiredTarget は、作成先を選ばずにボードを作れるようにする
+// （ADR 0090）。**GitHub を組み立てていない構成でだけ渡す。**
+//
+// その構成では作成先の候補を引けないので、作成先を必須にするとボードを
+// 1 枚も作れず、ブレストを始められない。作成先が守っていたもの（draft issue を
+// 作る先へのアクセス権、ADR 0017 の要件 1）は、draft issue を作れない構成では
+// 守る対象が無い。GitHub を設定したあとは、未選択のボードを開くと作成先の選択に
+// 入り（ADR 0014）、候補は書ける Project に絞ってある。
+//
+// 渡すかどうかを決めるのは配線（`etoki.New`）で、判定はここ 1 か所に置く。
+func WithoutRequiredTarget() BoardServiceOption {
+	return func(s *BoardService) { s.targetOptional = true }
 }
 
 // WithIDGenerator は ID の採番方法を差し替える。
@@ -104,6 +120,10 @@ func NewBoardService(
 // 書ける先を 1 つも持たない人はボードを作れない。「ボードの作成にはリポジトリ
 // へのアクセス権が要る」はこの形で満たす（ADR 0017）。
 //
+// **例外は GitHub を組み立てていない構成**（`WithoutRequiredTarget`、ADR 0090）。
+// そこでも作成先を省けるのは丸ごと空のときだけで、一部だけ送られた作成先は
+// 弾く。一部を残すと、選んでいないのに選びかけの値を持つボードができる。
+//
 // GitHub にここで問い合わせて確かめはしない。「どこかに書ける」は「その Project
 // に書ける」ではないし、GitHub 側の権限を etoki が判定に使わないという方針とも
 // 食い違う。
@@ -114,7 +134,7 @@ func (s *BoardService) Create(
 	if err != nil {
 		return port.Board{}, err
 	}
-	if !target.Selected() {
+	if !target.Selected() && (!s.targetOptional || target != (port.BoardTarget{})) {
 		return port.Board{}, fmt.Errorf(
 			"%w: repository and project are required", ErrInvalidInput)
 	}

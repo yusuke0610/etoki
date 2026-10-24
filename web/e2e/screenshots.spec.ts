@@ -463,6 +463,29 @@ test.describe("スクリーンショット", () => {
     await shot(page, "21-not-configured");
   });
 
+  // GitHub が未設定の構成（ADR 0090、#297）。新しいボードは作成先を選ばずに
+  // 作るので、ダイアログの主となる操作が「作成」になり、そのことを言う文が出る。
+  test("GitHub が未設定のときの新しいボードのダイアログを撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.capabilities = {
+      status: 200,
+      body: {
+        interpretation: false,
+        diagramDraft: false,
+        creation: false,
+        sharing: false,
+        mcpConnections: false,
+      },
+    };
+    await installApi(page, mock);
+    await page.goto("/");
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    // 撮りたいのは未設定の側。capabilities が遅れて届くと、選ぶ側の表示を撮る。
+    await dialog.getByText("作成先は選ばずに作ります", { exact: false }).waitFor();
+    await shot(page, "61-new-board-without-github");
+  });
+
   // 失敗の見せ方（#86）。**打ち手を前に、サーバーの文言は畳んだ側に。**
   // 同じ 409 でもすべきことは違うので、code から引いた文を先に読ませる。
   test("失敗したときの見せ方を撮る", async ({ page }) => {

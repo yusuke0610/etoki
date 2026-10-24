@@ -13,6 +13,7 @@ import type {
 
 import type { ApiMock } from "../api";
 import { annotationsOfScene, emptyScene, listEntry, summarize } from "../boardData";
+import { githubUnset } from "./github";
 import { boardIdOf, json, ownerOnly } from "./respond";
 
 /** ボードそのもの（一覧・作成・取得・改名・削除）と、シーンの保存・作成先。 */
@@ -20,7 +21,7 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
   let issued = 0;
 
   // 新しいボードは作成先を持って生まれる。作成先を選ばないと作れない
-  // （ADR 0017）。
+  // （ADR 0017）。GitHub が未設定の構成だけは、選ばずに作れる（ADR 0090）。
   /**
    * 作成のリクエストからボードを組み立てる。
    *
@@ -58,8 +59,39 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
         const req = route.request().postDataJSON() as {
           name: string;
           scene?: string;
-        } & BoardTarget;
-        const board = newBoard(req.name, req, req.scene);
+        } & Partial<BoardTarget>;
+        // **作成先の判定はサーバーと同じにする**（ADR 0017 / 0090）。省けるのは
+        // GitHub が未設定の構成で、3 つとも省いたときだけ。モックだけが緩いと、
+        // GitHub のある構成で作成先を送り忘れても緑になる。
+        const target = {
+          repositoryOwner: req.repositoryOwner ?? "",
+          repositoryName: req.repositoryName ?? "",
+          projectId: req.projectId ?? "",
+          projectNumber: req.projectNumber,
+          projectTitle: req.projectTitle,
+          projectUrl: req.projectUrl,
+        };
+        const selected =
+          target.repositoryOwner !== "" &&
+          target.repositoryName !== "" &&
+          target.projectId !== "";
+        // 表示用の 3 つは、送らなかったのとゼロ値を送ったのを区別しない。サーバーは
+        // 生成型の値で受けるので、どちらもゼロ値の作成先になる。
+        const omitted =
+          target.repositoryOwner === "" &&
+          target.repositoryName === "" &&
+          target.projectId === "" &&
+          (target.projectNumber ?? 0) === 0 &&
+          (target.projectTitle ?? "") === "" &&
+          (target.projectUrl ?? "") === "";
+        if (!selected && !(githubUnset(mock) && omitted)) {
+          await json(route, 400, {
+            code: "invalid_input",
+            error: "repository and project are required",
+          } satisfies ErrorResponse);
+          return;
+        }
+        const board = newBoard(req.name, target, req.scene);
         mock.boards = [summarize(board), ...mock.boards];
         mock.details[board.id] = board;
         // **保存されたシーンから注釈を立てる。** サーバーは保存済みシーンを
