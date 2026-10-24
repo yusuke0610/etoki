@@ -168,10 +168,11 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   // あれば使えるか」を変えた日に画面だけが古い案内を続ける。
   llm_not_configured: "LLM が未設定です。etoki を起動する側で設定してください。",
   github_not_configured: "GitHub が未設定です。etoki を起動する側で設定してください。",
-  auth_not_configured: "認証が未設定です。GitHub App の設定が必要です。",
-  sharing_not_configured: "共有には認証の設定が必要です。GitHub App を設定してください。",
+  auth_not_configured: "認証が未設定です。etoki を起動する側で設定してください。",
+  sharing_not_configured:
+    "共有には認証の設定が必要です。etoki を起動する側で設定してください。",
   mcp_connections_not_configured:
-    "MCP のクライアントへの接続には認証の設定が必要です。GitHub App を設定してください。",
+    "MCP のクライアントへの接続には認証の設定が必要です。etoki を起動する側で設定してください。",
 };
 
 /** 場面ごとに `ERROR_MESSAGES` の文を差し替える表。 */

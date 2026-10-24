@@ -60,8 +60,9 @@ export function useBoardTransfer({
   const exportScene = useCallback(() => {
     if (!api) return;
 
-    // 保存が送るのと同じバイト列。下の帯に出ている大きさが、そのまま
-    // 書き出したファイルの大きさになる。
+    // 下の帯に出ている大きさが、そのまま書き出したファイルの大きさになる
+    // （どちらも画像込み）。保存が送るのは画像を抜いたシーンなので、保存の
+    // バイト列とは違う（ADR 0074）。
     const url = URL.createObjectURL(
       new Blob([sceneJSON(api)], { type: "application/json" }),
     );
@@ -86,8 +87,8 @@ export function useBoardTransfer({
    * その保存の経路のまま効く。
    *
    * **引いた解釈は捨てない。** これはキャンバスの編集であって保存ではない。
-   * 捨てるのは保存したときだけで、それまでは未保存なので解釈は押せない
-   * （ADR 0018）。
+   * 捨てるのは保存したときだけ。取り込んだ時点で未保存になるので、次の絵解きが
+   * 保存を挟み、そこで捨てる（ADR 0077）。
    */
   const importScene = useCallback(
     async (file: File) => {
