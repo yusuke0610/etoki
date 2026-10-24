@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -40,10 +41,26 @@ const (
 // errBlockedAddress は繋がない先に繋ごうとしたことを表す。
 var errBlockedAddress = errors.New("cimd: refusing to connect to a non-public address")
 
+// opaqueError は、返す文と、ログに残す詳細を分けて持つ。
+//
+// **Error() は通信の詳細を言わない**（#339、ADR 0076 の追記）。この文は同意の画面の
+// 応答に載るが、net/http の失敗の文は名前を解決したあとのアドレスや、etoki 側の
+// アドレスを含む。そのまま返すと、ログインした誰でも etoki のホストから見た内部の
+// 名前の解決結果を読める。詳細は Fetch がログに残し、Unwrap で辿れるようにもしておく。
+type opaqueError struct {
+	msg   string
+	cause error
+}
+
+func (e *opaqueError) Error() string { return e.msg }
+func (e *opaqueError) Unwrap() error { return e.cause }
+
 // Fetcher は usecase.ClientMetadataFetcher の実装。
 type Fetcher struct {
 	client *http.Client
 	now    func() time.Time
+	// logger は返す文から外した通信の詳細の置き場。
+	logger *slog.Logger
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
@@ -56,9 +73,13 @@ type cacheEntry struct {
 
 var _ usecase.ClientMetadataFetcher = (*Fetcher)(nil)
 
-// New は Fetcher を作る。
-func New() *Fetcher {
-	return newFetcher(isBlocked, nil)
+// New は Fetcher を作る。logger が nil なら slog の既定を使う。
+func New(logger *slog.Logger) *Fetcher {
+	f := newFetcher(isBlocked, nil)
+	if logger != nil {
+		f.logger = logger
+	}
+	return f
 }
 
 // newFetcher は行き先の判定と TLS の設定を差し替えて作る。テストが
@@ -101,8 +122,9 @@ func newFetcher(blocked func(netip.Addr) bool, transport *http.Transport) *Fetch
 				return http.ErrUseLastResponse
 			},
 		},
-		now:   time.Now,
-		cache: map[string]cacheEntry{},
+		now:    time.Now,
+		logger: slog.Default(),
+		cache:  map[string]cacheEntry{},
 	}
 }
 
@@ -167,17 +189,22 @@ func (f *Fetcher) Fetch(ctx context.Context, clientID string) (usecase.ClientMet
 
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return usecase.ClientMetadata{}, fmt.Errorf("cimd: fetch %s: %w", clientID, err)
+		// **弾いた宛先も、名前が引けない・繋がらない宛先も同じ文にする。** 分けると、
+		// 名前が内部のアドレスに解決されるかが文の違いから読める。
+		return usecase.ClientMetadata{}, f.opaque(ctx, clientID, "cimd: could not reach "+clientID, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	// ここから先は、公開アドレスの相手に繋いだあと。状態コード・大きさ・JSON の誤りは
+	// 相手の文書についての話なので、そのまま返す。読み込みの失敗だけは通信の文
+	// （こちらのアドレスを含みうる）なので伏せる。
 	if resp.StatusCode != http.StatusOK {
 		return usecase.ClientMetadata{}, fmt.Errorf("cimd: fetch %s: status %d", clientID, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDocumentBytes+1))
 	if err != nil {
-		return usecase.ClientMetadata{}, fmt.Errorf("cimd: read %s: %w", clientID, err)
+		return usecase.ClientMetadata{}, f.opaque(ctx, clientID, "cimd: could not read "+clientID, err)
 	}
 	if len(body) > maxDocumentBytes {
 		return usecase.ClientMetadata{}, fmt.Errorf("cimd: %s is larger than %d bytes",
@@ -201,6 +228,13 @@ func (f *Fetcher) Fetch(ctx context.Context, clientID string) (usecase.ClientMet
 		f.store(clientID, meta, age)
 	}
 	return meta, nil
+}
+
+// opaque は通信の失敗をログに残し、詳細を言わない文のエラーにして返す。
+func (f *Fetcher) opaque(ctx context.Context, clientID, msg string, err error) error {
+	f.logger.WarnContext(ctx, "fetch client metadata document",
+		slog.String("client_id", clientID), slog.Any("error", err))
+	return &opaqueError{msg: msg, cause: err}
 }
 
 func (f *Fetcher) cached(clientID string) (usecase.ClientMetadata, bool) {

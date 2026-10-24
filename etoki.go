@@ -312,7 +312,7 @@ func New(opts Options) (*Server, error) {
 	if opts.Auth != nil && opts.OAuthGrants != nil {
 		var fetcher usecase.ClientMetadataFetcher
 		if opts.OAuthClientMetadataDocuments {
-			fetcher = cimd.New()
+			fetcher = cimd.New(opts.Logger)
 		}
 		deps.OAuth = usecase.NewOAuthServer(opts.OAuthGrants, fetcher)
 		deps.OAuthMetadataDocuments = opts.OAuthClientMetadataDocuments
