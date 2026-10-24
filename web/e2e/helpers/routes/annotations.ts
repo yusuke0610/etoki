@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import type {
   BoardAnnotations,
   Interpretation,
+  InterpretationResult,
   InterpretationJob,
   InterpretRequest,
 } from "../../../src/api/types";
@@ -60,7 +61,7 @@ export async function installAnnotationRoutes(page: Page, mock: ApiMock): Promis
       status: "succeeded",
       startedAt: "2026-10-19T09:00:00Z",
       // 2xx のときだけジョブが作られるので、本文は解釈の結果。
-      ...(withResult ? { result: mock.interpret.body as Interpretation } : {}),
+      ...(withResult ? { result: mock.interpret.body as InterpretationResult } : {}),
     };
   };
 

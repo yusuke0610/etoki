@@ -35,6 +35,7 @@ const created: BoardDetail = {
   projectTitle: "ロードマップ",
   projectUrl: "https://github.com/orgs/acme/projects/1",
   scene: "{}",
+  premise: "",
   targetLocked: false,
   sceneOverLimit: false,
 };

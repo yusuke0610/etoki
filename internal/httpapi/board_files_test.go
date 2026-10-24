@@ -142,6 +142,11 @@ func TestGetBoard_CarriesEveryDetailField(t *testing.T) {
 		strings.Repeat("x", usecase.MaxSceneBytes+1), id); err != nil {
 		t.Fatalf("update scene: %v", err)
 	}
+	// premise を空でなくする（ADR 0093）。空のままだと写し漏れと区別できない。
+	if rec := do(t, r, http.MethodPut, "/api/boards/"+id+"/premise",
+		map[string]string{"premise": "背景", "basePremise": ""}); rec.Code != http.StatusOK {
+		t.Fatalf("set premise: %d %s", rec.Code, rec.Body)
+	}
 
 	detail := decodeOK[map[string]any](t, do(t, r, http.MethodPatch,
 		"/api/boards/"+id, map[string]string{"name": "名前"}))

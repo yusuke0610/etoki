@@ -66,6 +66,9 @@ var errorMappings = []errorMapping{
 	// 409 は「いまの状態では通せない」。やり直せば通るとは限らないので 400 に
 	// しない。何をすればよいかは code ごとに違う。
 	{usecase.ErrSceneConflict, http.StatusConflict, apitypes.ErrorCodeSceneConflict},
+	// 背景の食い違い（ADR 0093）。シーンの衝突と打ち手が違う（読み直すのは
+	// キャンバスではなく背景）ので、同じ code に畳まない。
+	{usecase.ErrPremiseConflict, http.StatusConflict, apitypes.ErrorCodePremiseConflict},
 	{usecase.ErrTargetLocked, http.StatusConflict, apitypes.ErrorCodeTargetLocked},
 	// 固定とは別。作成先は動かせないが、送られた projectId が古いだけなら
 	// 開き直せば解ける（ADR 0037）。
@@ -88,6 +91,9 @@ var errorMappings = []errorMapping{
 	// 直す」ではなく「会話をやり直す」になるので、400 に畳まない（ADR 0041）。
 	{usecase.ErrDiagramChatTooLong, http.StatusRequestEntityTooLarge,
 		apitypes.ErrorCodeDiagramChatTooLong},
+	// 長すぎる背景（ADR 0093）。中身の誤りではなく長さで、打ち手は「短くする」。
+	{usecase.ErrPremiseTooLarge, http.StatusRequestEntityTooLarge,
+		apitypes.ErrorCodePremiseTooLarge},
 
 	// LLM を叩く実行の上限（ADR 0044）。**1 つに畳まない。** ステータスは
 	// 同じでも、時間をおく話と、いま走っているぶんの終わりを待つ話で、次に

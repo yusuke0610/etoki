@@ -66,6 +66,12 @@ export type BoardTargetDisplay = Schemas["BoardTargetDisplay"];
 /** 改名のリクエストボディ。名前だけを持つ。 */
 export type RenameBoardRequest = Schemas["RenameBoardRequest"];
 
+/**
+ * ボードの背景の書き換えのリクエストボディ（ADR 0093）。編集を始めた時点の
+ * 背景を伴い、食い違えば 409（`premise_conflict`）。
+ */
+export type SetPremiseRequest = Schemas["SetPremiseRequest"];
+
 /** シーン保存のリクエストボディ。編集の基準にした版と、足す画像を伴う。 */
 export type SaveSceneRequest = Schemas["SaveSceneRequest"];
 
@@ -120,6 +126,18 @@ export type Interpretation = Schemas["Interpretation"];
  * 解釈は始めるリクエストと受け取るリクエストが別。画面を離れても走り続ける。
  */
 export type InterpretationJob = Schemas["InterpretationJob"];
+
+/**
+ * 解釈の結果。`Interpretation` に、囲みの外から添えたもの（`context`）を加えた
+ * もの（ADR 0093）。作成のリクエストは `Interpretation` のまま送る。
+ */
+export type InterpretationResult = Schemas["InterpretationResult"];
+
+/** 解釈の入力に、囲みの外から添えたもの（ボードの背景と別の絵、ADR 0093）。 */
+export type InterpretationContext = Schemas["InterpretationContext"];
+
+/** 同じボードの別の絵から作ったもの 1 件。種別とタイトルだけ（ADR 0093）。 */
+export type OtherItem = Schemas["OtherItem"];
 
 /**
  * 1 回の図のドラフト生成の、いまの様子（ADR 0091）。

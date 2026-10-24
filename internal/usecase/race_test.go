@@ -138,6 +138,10 @@ func (r *racingBoards) Create(context.Context, port.Board, string) error { retur
 
 func (r *racingBoards) UpdateName(context.Context, string, string, string) error { return nil }
 
+func (r *racingBoards) UpdatePremise(context.Context, string, string, string, string) error {
+	return nil
+}
+
 func (r *racingBoards) Delete(context.Context, string, string) error { return nil }
 
 func (r *racingBoards) UpdateScene(

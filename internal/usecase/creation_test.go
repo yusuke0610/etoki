@@ -159,6 +159,8 @@ func (f *fakeGitHub) SetItemFieldValue(_ context.Context, projectID, itemID stri
 type fakeMappings struct {
 	runs    []port.SyncRun
 	saveErr error
+	// itemSeq は item に振った最後の ID。
+	itemSeq int64
 }
 
 func (f *fakeMappings) SaveRun(ctx context.Context, run port.SyncRun) (int64, error) {
@@ -173,6 +175,16 @@ func (f *fakeMappings) SaveRun(ctx context.Context, run port.SyncRun) (int64, er
 	// 実装と同じく採番する。ID を振らないと、履歴の並び（新しい順は id で
 	// 決める）をフェイクの上で確かめられない。
 	run.ID = int64(len(f.runs) + 1)
+	// item も実装（sync_items の AUTOINCREMENT）と同じく通しで採番する。
+	// 畳み込みが返す ID は最新の記録のもので、解釈に渡す別の絵のぶんは
+	// これで「最近作った・更新した順」に並べる（ADR 0093）。振らないと、
+	// 並べ方を取り違えた実装がフェイクの上で素通りする。
+	run.Items = slices.Clone(run.Items)
+	for i := range run.Items {
+		f.itemSeq++
+		run.Items[i].ID = f.itemSeq
+		run.Items[i].RunID = run.ID
+	}
 	f.runs = append(f.runs, run)
 	return run.ID, nil
 }

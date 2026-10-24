@@ -5,7 +5,7 @@ import type {
   DiagramKind,
   DiagramDraft,
   Granularity,
-  Interpretation,
+  InterpretationResult,
   OAuthGrant,
   Project,
   RepositoryList,
@@ -47,6 +47,8 @@ export function board(): BoardDetail {
     projectUrl: "https://github.com/orgs/acme/projects/1",
     targetLocked: false,
     sceneOverLimit: false,
+    // ボードの背景（ADR 0093）。既定は空（書いていない）。
+    premise: "",
   };
 }
 
@@ -415,10 +417,12 @@ export function historyRuns(): SyncRun[] {
   ];
 }
 
-export function interpretation(): Interpretation {
+export function interpretation(): InterpretationResult {
   return {
     summary: "ログインの入口まわりを 1 つの epic として読みました。",
     contentHash: "sha256:e2e",
+    // 囲みの外から添えたもの（ADR 0093）。既定は何も添えていない。
+    context: { premise: "", otherItems: [], omittedOtherItems: 0 },
     items: [
       { localId: "e1", kind: "epic", title: "ログイン基盤", body: "入口をまとめる" },
       {
@@ -601,6 +605,7 @@ export function matchedInterpretationMock(): ApiMock {
     body: {
       summary: "前回の続きとして読みました。",
       contentHash: "sha256:e2e",
+      context: { premise: "", otherItems: [], omittedOtherItems: 0 },
       items: [
         {
           localId: "i1",
@@ -662,6 +667,7 @@ export function renamedEpicMock(): ApiMock {
     body: {
       summary: "前回の続きとして読みました。",
       contentHash: "sha256:e2e",
+      context: { premise: "", otherItems: [], omittedOtherItems: 0 },
       items: [
         {
           localId: "e1",

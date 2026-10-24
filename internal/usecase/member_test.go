@@ -420,6 +420,10 @@ func (b *blockingMembers) UpdateTargetDisplay(
 	return nil
 }
 
+func (b *blockingMembers) UpdatePremise(context.Context, string, string, string, string) error {
+	return nil
+}
+
 func (b *blockingMembers) List(context.Context, string) ([]port.BoardAccess, error) {
 	return nil, nil
 }

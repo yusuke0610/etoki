@@ -147,6 +147,21 @@ func (f *fakeBoards) UpdateTargetDisplay(
 	return nil
 }
 
+// UpdatePremise は実装と同じく、いまの背景が base と一致するときだけ書く
+// （ADR 0093）。**更新時刻は動かさない**（ADR 0092）。素通しにすると、
+// ユースケースが基準を渡し忘れても緑のままになる。
+func (f *fakeBoards) UpdatePremise(_ context.Context, actor, id, base, premise string) error {
+	if f.board == nil || f.board.ID != id || f.owner != actor {
+		return port.ErrNotFound
+	}
+	if f.board.Premise != base {
+		return port.ErrConflict
+	}
+	f.writes++
+	f.board.Premise = premise
+	return nil
+}
+
 // Delete は実装と同じく操作者も突き合わせる。素通しにすると、絞り忘れを
 // フェイクが吸収する（ADR 0016）。消えたことは board を nil にして表す。
 func (f *fakeBoards) Delete(_ context.Context, actor, id string) error {

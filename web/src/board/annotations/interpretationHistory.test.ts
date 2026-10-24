@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Failure } from "../../api/errorMessage";
-import type { Granularity, Interpretation, SyncItem } from "../../api/types";
+import type { Granularity, InterpretationResult, SyncItem } from "../../api/types";
 import { createGenerations } from "../generation";
 import {
   addInterpretation,
@@ -29,8 +29,13 @@ function run(id: number, granularity: Granularity = ""): InterpretationRun {
   };
 }
 
-function interpretation(summary: string): Interpretation {
-  return { summary, contentHash: "h1", items: [] };
+function interpretation(summary: string): InterpretationResult {
+  return {
+    summary,
+    contentHash: "h1",
+    items: [],
+    context: { premise: "", otherItems: [], omittedOtherItems: 0 },
+  };
 }
 
 const failure: Failure = { message: "絵解きできませんでした", detail: "" };

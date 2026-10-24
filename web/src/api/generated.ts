@@ -402,6 +402,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/boards/{id}/premise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * ボードの背景を書き換える
+         * @description ボードの背景（画面では「ボードの背景」）だけを書き換える（ADR 0093）。
+         *     シーンも名前も作成先も触らない。
+         *
+         *     `basePremise` は編集を始めた時点の背景。いまの背景と食い違えば何も
+         *     書かずに 409（`premise_conflict`）を返す。先に保存した人の背景を、
+         *     古い本文から編集していた人が黙って上書きしないため。
+         *
+         *     **`updatedAt` は進めない**（ADR 0092）。背景はシーンではない。応答の
+         *     `updatedAt` を保存の基準に使わないのも改名と同じ。
+         *
+         *     背景は注釈のハッシュに入らないので、書き換えても注釈の 3 状態は
+         *     変わらない。変えられるのは editor 以上（改名と同じ）。
+         */
+        put: operations["setBoardPremise"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards/{id}/target/display": {
         parameters: {
             query?: never;
@@ -1048,7 +1082,7 @@ export interface components {
          *     別の code で返る。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "llm_truncated" | "llm_refused" | "llm_overloaded" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
+        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "premise_conflict" | "premise_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "llm_truncated" | "llm_refused" | "llm_overloaded" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -1309,6 +1343,14 @@ export interface components {
              *     持ち場のまま
              */
             sceneOverLimit: boolean;
+            /**
+             * @description ボードの背景（画面では「ボードの背景」、ADR 0093）。解釈のたびに
+             *     LLM へ添える、人が書く文。空文字は「書いていない」。
+             *
+             *     **一覧（`BoardSummary`）には載せない。** 一覧の画面は背景を
+             *     出さないので、全ボードぶんを返しても捨てるだけになる。
+             */
+            premise: string;
         };
         /** @description 開いたボード。`BoardDetail` に、貼った画像をすべて加えたもの（ADR 0074）。 */
         BoardWithFiles: components["schemas"]["BoardDetail"] & {
@@ -1525,6 +1567,24 @@ export interface components {
         RenameBoardRequest: {
             /** @description 新しい名前。空文字と空白だけは弾く */
             name: string;
+        };
+        /**
+         * @description ボードの背景の書き換えのリクエストボディ（ADR 0093）。
+         *
+         *     背景だけを持つ。シーンや作成先を一緒に送れる形にすると、この経路でも
+         *     それらを書けることになる（`RenameBoardRequest` と同じ理由）。
+         */
+        SetPremiseRequest: {
+            /**
+             * @description 新しい背景。改行を揃え、前後の空白を落として保存する。空白だけなら
+             *     空（書いていない）になる
+             */
+            premise: string;
+            /**
+             * @description 編集を始めた時点の背景（`BoardDetail.premise` で受け取ったもの）。
+             *     いまの背景と食い違えば 409（`premise_conflict`）
+             */
+            basePremise: string;
         };
         /**
          * @description シーン保存のリクエストボディ。
@@ -1927,8 +1987,47 @@ export interface components {
             status: "running" | "succeeded" | "failed";
             /** Format: date-time */
             startedAt: string;
-            result?: components["schemas"]["Interpretation"];
+            result?: components["schemas"]["InterpretationResult"];
             error?: components["schemas"]["ErrorResponse"];
+        };
+        /**
+         * @description 解釈の結果。`Interpretation` に、囲みの外から添えたもの（`context`）を
+         *     加えたもの（ADR 0093）。
+         *
+         *     **何を渡したかを結果と一緒に返す。** 黙って材料を足して結果だけを返すと、
+         *     出力がなぜそうなったかを読めない（中核思想 3）。
+         *
+         *     作成のリクエストボディは `Interpretation` のまま。`context` は確かめる
+         *     ためのもので、送り返すものではない。
+         */
+        InterpretationResult: components["schemas"]["Interpretation"] & {
+            context: components["schemas"]["InterpretationContext"];
+        };
+        /**
+         * @description 解釈の入力に、囲みの外から添えたもの（ADR 0093）。どれも注釈のハッシュに
+         *     入らない。
+         */
+        InterpretationContext: {
+            /**
+             * @description 渡したボードの背景。解釈を始めた時点のもので、空なら添えていない。
+             *     走っているあいだに背景が書き換わっても、ここは始めたときの背景のまま
+             */
+            premise: string;
+            /**
+             * @description 同じボードの別の絵から作ったもの。最近作った・更新したものから並べ、
+             *     上限までを渡す。シーンから消えた絵のぶんも含む
+             */
+            otherItems: components["schemas"]["OtherItem"][];
+            /** @description 上限で打ち切って渡さなかった件数。**上限の値そのものは返さない。** */
+            omittedOtherItems: number;
+        };
+        /**
+         * @description 同じボードの別の絵から作ったもの 1 件（ADR 0093）。渡すのは種別と
+         *     タイトルだけで、対応づけ（更新先）の候補にはしない
+         */
+        OtherItem: {
+            kind: components["schemas"]["ItemKind"];
+            title: string;
         };
         /**
          * @description 1 回の図のドラフト生成の、いまの様子（ADR 0091）。状態の意味は
@@ -2015,7 +2114,7 @@ export interface components {
          *
          *     **置き換わっても code が変わるとは限らない。** 自分の code を持つのは
          *     シーンの保存（`scene_too_large`）と図のドラフトの会話
-         *     （`diagram_chat_too_long`）だけ。**解釈の画像は上限だけが広く、超えたときは
+         *     （`diagram_chat_too_long`）と、ボードの背景（`premise_too_large`）だけ。**解釈の画像は上限だけが広く、超えたときは
          *     この code で返る。** 打ち手が「送っているものを見直す」で同じだから。
          *
          *     **`scene_too_large` に畳まない。** あちらの打ち手は「貼った画像を減らす」
@@ -2043,6 +2142,24 @@ export interface components {
          *     内容を直す」ではなく「貼った画像を減らす」になる。
          */
         SceneTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description ボードの背景が上限を超えている（`premise_too_large`、ADR 0093）。
+         *     **切り詰めずに弾く。** 切り詰めると、書いたつもりの背景が LLM に届いて
+         *     いないことに気づけない。
+         *
+         *     本文が口の読み込みの上限に当たったときも、この code で返す。同じ
+         *     「長すぎる」が本文の大きさしだいで 2 通りの code に割れないため。
+         *
+         *     **上限の値は返さない**（`RequestTooLarge` と同じ理由）。
+         */
+        PremiseTooLarge: {
             headers: {
                 [name: string]: unknown;
             };
@@ -2692,6 +2809,51 @@ export interface operations {
                 };
             };
             413: components["responses"]["RequestTooLarge"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    setBoardPremise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ボードの ID */
+                id: components["parameters"]["BoardId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPremiseRequest"];
+            };
+        };
+        responses: {
+            /** @description 書き換えたあとのボード */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description 編集を始めた時点の背景と、いまの背景が食い違う（`premise_conflict`）。
+             *     ほかの人が先に背景を書き換えた
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            413: components["responses"]["PremiseTooLarge"];
             500: components["responses"]["InternalError"];
         };
     };
