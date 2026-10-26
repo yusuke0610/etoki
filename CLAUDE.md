@@ -40,7 +40,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `internal/CLAUDE.md`               | 3 状態判定のデータフロー、メンバーと権限                               |
 | `web/CLAUDE.md`                    | E2E テスト、報告にブラウザの実行結果を添える、vite / playwright の設定 |
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
-| `.claude/rules/`                   | レビュー由来の落とし穴集（テーマ別。対象ファイルを読むと読み込まれる） |
+| `.claude/rules/`                   | レビュー由来の落とし穴と、狭い範囲でだけ要る約束（触ると読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
 | `.claude/skills/security-audit/`   | 定期のセキュリティ点検（`/security-audit`）と #64 の更新               |
@@ -112,9 +112,12 @@ devShell が有効になる（`nix develop` を毎回打たなくてよい）。
 
 ### 公開 API 面（`internal/` の外）
 
-`port/` と `etoki.go` だけが `internal/` の外にある。**これは意図的。** Go の
-`internal/` は他モジュールから import できないため、外部リポジトリが
+外部リポジトリから使えると約束しているのは `port/` と `etoki.go` だけ。**これは
+意図的。** Go の `internal/` は他モジュールから import できないため、外部リポジトリが
 `LLMClient` を実装して差し込むには公開されている必要がある（ADR 0001）。
+`internal/` の外にはほかに `cmd/`（実行ファイル）と `migrations/`（SQL を埋め込む
+だけのパッケージ）がある。`migrations/` は import できてしまうが、外から使う
+ことはサポートしない。どちらも公開 API 面に含めない。
 
 その帰結として:
 
