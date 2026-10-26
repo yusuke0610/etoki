@@ -105,18 +105,26 @@ func ginPathToContract(p string) string {
 // 契約のパスとメソッドの行。api/openapi.yaml は prettier が整形するので、パスは
 // paths の下に 2 つ、メソッドはその下に 4 つ字下げされている。
 //
-// **行末のコメントは許す**（`post: # note`）。許さないと、その口だけが契約から
-// 黙って抜け、ルーターにも無ければ両方向の照合をすり抜ける。
+// **YAML で意味の同じ書き方は読む。** 行末のコメント（`post: # note`）と、
+// 引用符で囲んだ鍵（`"post":` / `'/api/x':`、引用符は unquoteKey で先に外す）。
+// 読まないと、その口だけが契約から黙って抜け、ルーターにも無ければ両方向の
+// 照合をすり抜ける。
 //
-// 鍵の形だけを見る `*Key` は、読めなかった行を落とすためにある。パスの字下げに
-// あるのはパスの鍵だけで、メソッドの名前を鍵に持つ行はメソッドの行だけ。そこに
-// 当たって読めない行は、契約から口が抜けている。
+// それ以外の形は読まずに落とす。鍵の形だけを見る `*Key` はそのためにある。
+// パスの字下げにあるのはパスの鍵だけで、メソッドの名前を鍵に持つ行はメソッドの
+// 行だけ。そこに当たって読めない行は、契約から口が抜けている。
 var (
+	quotedKey         = regexp.MustCompile(`^(\s*)(?:"([^"]*)"|'([^']*)'):`)
 	contractPath      = regexp.MustCompile(`^  (/\S*):\s*(?:#.*)?$`)
 	contractPathKey   = regexp.MustCompile(`^  [^\s#]`)
 	contractMethod    = regexp.MustCompile(`^    (get|put|post|delete|patch|head|options|trace):\s*(?:#.*)?$`)
 	contractMethodKey = regexp.MustCompile(`^    (get|put|post|delete|patch|head|options|trace):`)
 )
+
+// unquoteKey は行頭の鍵を囲む引用符を外す（`  "/api/x":` → `  /api/x:`）。
+func unquoteKey(line string) string {
+	return quotedKey.ReplaceAllString(line, "$1$2$3:")
+}
 
 // contractRoutes は api/openapi.yaml の paths からパスとメソッドを読む。
 //
@@ -140,7 +148,8 @@ func contractRoutes(t *testing.T) []route {
 	)
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
-		line := sc.Text()
+		raw := sc.Text()
+		line := unquoteKey(raw)
 		switch {
 		case line == "paths:":
 			inPaths = true
@@ -154,7 +163,7 @@ func contractRoutes(t *testing.T) []route {
 			path = contractPath.FindStringSubmatch(line)[1]
 			perPath[path] = 0
 		case contractPathKey.MatchString(line):
-			t.Errorf("openapi.yaml のパスの行を読めなかった: %q", line)
+			t.Errorf("openapi.yaml のパスの行を読めなかった: %q", raw)
 			// 下に続くメソッドを、1 つ前のパスに付けない。
 			path = ""
 		case contractMethod.MatchString(line):
@@ -165,7 +174,7 @@ func contractRoutes(t *testing.T) []route {
 			out = append(out, route{method, path})
 			perPath[path]++
 		case contractMethodKey.MatchString(line):
-			t.Errorf("openapi.yaml のメソッドの行を読めなかった: %q", line)
+			t.Errorf("openapi.yaml のメソッドの行を読めなかった: %q", raw)
 		}
 	}
 	if err := sc.Err(); err != nil {
