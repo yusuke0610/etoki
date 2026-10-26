@@ -278,8 +278,12 @@ func TestJobs_RejectsBeforeCreatingJob(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			// 回数の枠を 1 にする。無制限のままだと、弾いた Start が枠を食っても
+			// 最後の Start が通ってしまう。
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
-			jobs, _ := newJobs(t, llm)
+			jobs := usecase.NewInterpretationJobs(usecase.NewInterpretationService(
+				&fakeBoards{board: newBoard(interpretScene), owner: "u1"}, &fakeMappings{}, llm,
+				usecase.NewLLMLimiter(usecase.LLMLimits{RateLimit: 1}), usecase.WithMaxAttempts(1)))
 			ctx := asUser(t.Context(), "u1")
 
 			if _, err := jobs.Start(ctx, tt.boardID, tt.annotation, nil); !errors.Is(err, tt.want) {
