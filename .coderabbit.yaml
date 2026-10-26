@@ -16,3 +16,15 @@ reviews:
     # pr-review は push ごとの再レビューを見て次の一手を決めるので、途中で
     # 止まると「指摘が無い」と「レビューが来ていない」を区別できなくなる。
     auto_pause_after_reviewed_commits: 0
+  path_filters:
+    # flake.lock をレビューの対象に戻す。既定は `!**/*.lock` で外していて、
+    # flake.lock だけの PR（nixpkgs を上げて Go などの版を動かす）は
+    # 「No files to review」になる。マージの条件（CONTRIBUTING.md「マージ」）の
+    # full review が成り立たない。
+    #
+    # **既定と同じパターンを `!` なしで書く。** そうすると既定の除外だけが
+    # 外れる。`flake.lock` と書くと、逆にそれ以外をレビューしない絞り込みになる。
+    - "**/*.lock"
+    # bun.lock は外したままにする。生成物で差分が大きく、読む中身が無い。
+    # 版の動きは package.json の差分で見る。
+    - "!**/bun.lock"
