@@ -17,7 +17,6 @@ import type {
   DetachedAnnotation,
   DiagramKind,
   Granularity,
-  ProjectAccess,
 } from "../api/types";
 import { unavailableReason } from "../app/capability";
 import {
@@ -87,6 +86,7 @@ import {
 } from "./useCanvasScroll";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { useMenuTriggerName } from "./useMenuTriggerName";
+import { useProjectAccess } from "./useProjectAccess";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
 
@@ -377,11 +377,9 @@ export function BoardPage({
   // **ID ではなく回数で持つ。** 同じ注釈が戻ってまた消えたとき、ID だと値が
   // 変わらず effect が走らない。
   const [detailVanished, setDetailVanished] = useState(0);
-  // 作成先の Project に書けるかどうか。確かめるまでは unknown。
-  //
-  // ボードの取得とは別に訊く。GitHub が未設定・不通でもボードは開ける必要が
-  // あるため（ADR 0017）。
-  const [projectAccess, setProjectAccess] = useState<ProjectAccess>("unknown");
+  // 作成先の Project に書けるかどうか（`useProjectAccess`）。表示用で、判定には
+  // 使わない（ADR 0017）。
+  const projectAccess = useProjectAccess(board.id);
   // ボードそのものの管理（`useBoardManagement`）。改名・削除・作成先の名前の
   // 取り直しは互いに関わらないので、フックも分けてある。
   const {
@@ -409,24 +407,6 @@ export function BoardPage({
     load: loadRuns,
     discard: discardRuns,
   } = useRunHistories(board.id);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const access = await boardsApi.access(board.id);
-        if (!cancelled) setProjectAccess(access.projectAccess);
-      } catch {
-        // 確かめられなかったことをエラーにしない。GitHub が落ちているだけで
-        // ボードが開けなくなる理由が無い。unknown のままにする。
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [board.id]);
 
   const initialScene = useMemo(() => {
     try {
