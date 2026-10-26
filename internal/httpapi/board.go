@@ -252,20 +252,11 @@ const maxSaveBody = (usecase.MaxSceneBytes+usecase.MaxBoardFileBytes)*6 + 4<<10
 func (h *handlers) bindSceneBody(c *gin.Context, req any, limit int64) bool {
 	widenBody(c, limit)
 
-	err := c.ShouldBindJSON(req)
-	if err == nil {
-		return true
-	}
-
-	var tooLarge *http.MaxBytesError
-	if errors.As(err, &tooLarge) {
-		h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
-			usecase.ErrSceneTooLarge, limit))
+	if err := c.ShouldBindJSON(req); err != nil {
+		h.failBind(c, err, usecase.ErrSceneTooLarge)
 		return false
 	}
-
-	h.badRequest(c, err)
-	return false
+	return true
 }
 
 func (h *handlers) createBoard(c *gin.Context) {
@@ -755,19 +746,30 @@ func (h *handlers) badRequest(c *gin.Context, err error) {
 //
 // シーン・解釈・図のドラフトは自分の上限と自分の sentinel を持つので、この
 // ヘルパーは通らない（bindSceneBody / bindInterpretImages / bindDiagramRequest）。
+// 読めなかったときの写し方は同じで、どれも failBind を通す。
 func (h *handlers) bindJSON(c *gin.Context, req any) bool {
-	err := c.ShouldBindJSON(req)
-	if err == nil {
-		return true
-	}
-
-	var tooLarge *http.MaxBytesError
-	if errors.As(err, &tooLarge) {
-		h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
-			errRequestTooLarge, tooLarge.Limit))
+	if err := c.ShouldBindJSON(req); err != nil {
+		h.failBind(c, err, errRequestTooLarge)
 		return false
+	}
+	return true
+}
+
+// failBind は本文を読めなかったことを返す。
+//
+// **歯止め（`http.MaxBytesReader`）に当たった失敗は tooLarge に包んで 413 に写し**、
+// それ以外は 400 にする。写さないと、同じ「大きすぎる」がボディの大きさしだいで
+// 400 と 413 に割れる（`.claude/rules/api-contract.md`）。**本文を読む口はすべて
+// ここを通す。** 口ごとに写し方を書くと、足した口だけが写し忘れる。
+//
+// tooLarge は口ごとに違う。どれに写すかで画面の案内が変わる（シーンは減らす、
+// 会話はやり直す、ADR 0038）ので、ここでは選ばない。写し替えの表は errors.go。
+func (h *handlers) failBind(c *gin.Context, err, tooLarge error) {
+	var overLimit *http.MaxBytesError
+	if errors.As(err, &overLimit) {
+		h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes", tooLarge, overLimit.Limit))
+		return
 	}
 
 	h.badRequest(c, err)
-	return false
 }

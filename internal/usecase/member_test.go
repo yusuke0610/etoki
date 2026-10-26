@@ -64,8 +64,6 @@ func memberSetup(t *testing.T, role port.BoardRole) (*usecase.BoardMemberService
 	return svc, boards
 }
 
-var baseTime = time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
-
 // 招待にリポジトリのアクセス権は要らない。ブレストに呼ぶ相手と GitHub に
 // 書ける相手は同じではない（ADR 0017）。GitHub を一切見ないことは、
 // GitHub クライアントを渡していないこと自体が示している。
