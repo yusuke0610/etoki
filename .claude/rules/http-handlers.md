@@ -20,7 +20,8 @@ paths:
 - **口のパスとメソッドも契約と router.go の両方にある。** ルーティングは生成しない
   （ADR 0011）ので、`routes_test.go` が `Routes()` と `api/openapi.yaml` の `paths` を
   両方向から突き合わせる。**契約に載せない口（`/mcp` や RFC の形で返す OAuth の口）
-  は `routesOutsideContract` に理由を書く。** 理由が書けない口は契約に載せる側。
+  は `routesOutsideContract` にメソッドと理由を書く。** パスだけで外すと、同じ
+  パスに足した別の口まで照合から外れる。理由が書けない口は契約に載せる側。
 - **エラー本文も `ErrorResponse` に揃える。** `gin.H{"error": ...}` を直に
   書かない。
 - **sentinel → (status, code) の写し替えは `internal/httpapi/errors.go` の表
