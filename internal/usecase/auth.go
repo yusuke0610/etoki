@@ -65,7 +65,6 @@ type AuthService struct {
 	provider port.IdentityProvider
 	sessions port.SessionRepository
 	now      func() time.Time
-	newToken func() (string, error)
 
 	// refreshing は利用者ごとの更新の直列化。
 	//
@@ -94,11 +93,6 @@ func WithAuthClock(f func() time.Time) AuthServiceOption {
 	return func(s *AuthService) { s.now = f }
 }
 
-// WithTokenGenerator はセッション token の採番方法を差し替える。
-func WithTokenGenerator(f func() (string, error)) AuthServiceOption {
-	return func(s *AuthService) { s.newToken = f }
-}
-
 // NewAuthService は AuthService を作る。
 func NewAuthService(
 	provider port.IdentityProvider, sessions port.SessionRepository, opts ...AuthServiceOption,
@@ -107,7 +101,6 @@ func NewAuthService(
 		provider: provider,
 		sessions: sessions,
 		now:      time.Now,
-		newToken: randomToken,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -132,7 +125,7 @@ func (s *AuthService) Start(ctx context.Context, redirectURI, returnTo string) (
 		return "", err
 	}
 
-	state, err := s.newToken()
+	state, err := randomToken()
 	if err != nil {
 		return "", err
 	}
@@ -280,7 +273,7 @@ func (s *AuthService) Complete(
 		return LoginResult{}, err
 	}
 
-	token, err := s.newToken()
+	token, err := randomToken()
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -414,20 +407,4 @@ func randomToken() (string, error) {
 		return "", fmt.Errorf("etoki: read random: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
-}
-
-// StaticTokenSource は常に同じトークンを返す port.GitHubTokenSource。
-//
-// 認証を設定していない構成（ETOKI_GITHUB_TOKEN だけ）で使う。これがあることで、
-// github.Client は「トークンをどこから得るか」を 1 通りだけ知っていればよくなる。
-type StaticTokenSource string
-
-var _ port.GitHubTokenSource = StaticTokenSource("")
-
-// Token は設定されたトークンをそのまま返す。
-func (t StaticTokenSource) Token(context.Context) (string, error) {
-	if t == "" {
-		return "", fmt.Errorf("%w: no token configured", port.ErrNotAuthenticated)
-	}
-	return string(t), nil
 }

@@ -59,9 +59,12 @@ func (h *handlers) startLogin(c *gin.Context) {
 	//
 	// **Content-Length では判定しない。** chunked で送られると -1 になり、
 	// 本文があるのに読み飛ばす。空かどうかを知っているのは読んだ側だけ。
+	//
+	// 読めなかったときは、ほかの口と同じく failBind で写す。`/api` の入口の
+	// 上限に当たったら 413 で、400 にはしない。
 	var req apitypes.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		h.badRequest(c, err)
+		h.failBind(c, err, errRequestTooLarge)
 		return
 	}
 
