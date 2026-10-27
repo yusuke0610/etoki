@@ -33,9 +33,9 @@ func TestGenerateDiagram_Succeeds(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validMermaid}}
 	svc, boards := newDiagramService(t, llm)
 
-	got, err := svc.Generate(t.Context(), "board-1", req("リリースまでの段取り"))
+	got, err := generate(t, svc, t.Context(), "board-1", req("リリースまでの段取り"))
 	if err != nil {
-		t.Fatalf("Generate() = %v", err)
+		t.Fatalf("generate() = %v", err)
 	}
 
 	if len(llm.requests) != 1 {
@@ -69,8 +69,8 @@ func TestGenerateDiagram_SendsNoImages(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validMermaid}}
 	svc, _ := newDiagramService(t, llm)
 
-	if _, err := svc.Generate(t.Context(), "board-1", req("段取り")); err != nil {
-		t.Fatalf("Generate() = %v", err)
+	if _, err := generate(t, svc, t.Context(), "board-1", req("段取り")); err != nil {
+		t.Fatalf("generate() = %v", err)
 	}
 	if n := len(llm.requests[0].Images); n != 0 {
 		t.Errorf("画像を %d 枚渡している。プロンプトだけのはず", n)
@@ -85,9 +85,9 @@ func TestGenerateDiagram_StripsCodeFence(t *testing.T) {
 	llm := &fakeLLM{responses: []string{"```mermaid\n" + validMermaid + "\n```"}}
 	svc, _ := newDiagramService(t, llm)
 
-	got, err := svc.Generate(t.Context(), "board-1", req("段取り"))
+	got, err := generate(t, svc, t.Context(), "board-1", req("段取り"))
 	if err != nil {
-		t.Fatalf("Generate() = %v", err)
+		t.Fatalf("generate() = %v", err)
 	}
 	if got.Mermaid != validMermaid {
 		t.Errorf("Mermaid = %q, want %q", got.Mermaid, validMermaid)
@@ -104,9 +104,9 @@ func TestGenerateDiagram_RetriesOnWrongNotation(t *testing.T) {
 	llm := &fakeLLM{responses: []string{"sequenceDiagram\n  A->>B: やあ", validMermaid}}
 	svc, _ := newDiagramService(t, llm)
 
-	got, err := svc.Generate(t.Context(), "board-1", req("段取り"))
+	got, err := generate(t, svc, t.Context(), "board-1", req("段取り"))
 	if err != nil {
-		t.Fatalf("Generate() = %v", err)
+		t.Fatalf("generate() = %v", err)
 	}
 	if len(llm.requests) != 2 {
 		t.Fatalf("LLM 呼び出し回数 = %d, want 2", len(llm.requests))
@@ -131,9 +131,9 @@ func TestGenerateDiagram_GivesUpAfterMaxAttempts(t *testing.T) {
 	llm := &fakeLLM{responses: []string{"図は描けません。もう少し詳しく教えてください。"}}
 	svc, _ := newDiagramService(t, llm)
 
-	_, err := svc.Generate(t.Context(), "board-1", req("段取り"))
+	_, err := generate(t, svc, t.Context(), "board-1", req("段取り"))
 	if !errors.Is(err, usecase.ErrDiagramFailed) {
-		t.Fatalf("Generate() = %v, want ErrDiagramFailed", err)
+		t.Fatalf("generate() = %v, want ErrDiagramFailed", err)
 	}
 	// 直らない出力を繰り返しても課金が増えるだけ。
 	if len(llm.requests) != 2 {
@@ -148,9 +148,9 @@ func TestGenerateDiagram_DoesNotRetryTransportErrors(t *testing.T) {
 	llm := &fakeLLM{err: errors.New("connection refused")}
 	svc, _ := newDiagramService(t, llm)
 
-	_, err := svc.Generate(t.Context(), "board-1", req("段取り"))
+	_, err := generate(t, svc, t.Context(), "board-1", req("段取り"))
 	if !errors.Is(err, usecase.ErrLLMUnavailable) {
-		t.Fatalf("Generate() = %v, want ErrLLMUnavailable", err)
+		t.Fatalf("generate() = %v, want ErrLLMUnavailable", err)
 	}
 	if errors.Is(err, usecase.ErrDiagramFailed) {
 		t.Error("接続の失敗を「図が返らなかった」に畳んでいる")
@@ -196,9 +196,9 @@ func TestGenerateDiagram_RejectsBadInputWithoutCallingLLM(t *testing.T) {
 			llm := &fakeLLM{responses: []string{validMermaid}}
 			svc, _ := newDiagramService(t, llm)
 
-			_, err := svc.Generate(t.Context(), "board-1", tt.req)
+			_, err := generate(t, svc, t.Context(), "board-1", tt.req)
 			if !errors.Is(err, usecase.ErrInvalidInput) {
-				t.Fatalf("Generate() = %v, want ErrInvalidInput", err)
+				t.Fatalf("generate() = %v, want ErrInvalidInput", err)
 			}
 			if len(llm.requests) != 0 {
 				t.Error("弾いた入力で LLM を呼んでいる")
@@ -225,9 +225,9 @@ func TestGenerateDiagram_RejectsTooLongChat(t *testing.T) {
 			{Prompt: "3", Mermaid: validMermaid},
 		}
 
-		_, err := svc.Generate(t.Context(), "board-1", r)
+		_, err := generate(t, svc, t.Context(), "board-1", r)
 		if !errors.Is(err, usecase.ErrDiagramChatTooLong) {
-			t.Fatalf("Generate() = %v, want ErrDiagramChatTooLong", err)
+			t.Fatalf("generate() = %v, want ErrDiagramChatTooLong", err)
 		}
 		// 入力の誤りではない。畳むと、画面が「会話をやり直す」と案内できない。
 		if errors.Is(err, usecase.ErrInvalidInput) {
@@ -245,10 +245,10 @@ func TestGenerateDiagram_RejectsTooLongChat(t *testing.T) {
 		llm := &fakeLLM{responses: []string{validMermaid}}
 		svc, _ := newDiagramService(t, llm)
 
-		_, err := svc.Generate(t.Context(), "board-1",
+		_, err := generate(t, svc, t.Context(), "board-1",
 			req(strings.Repeat("あ", usecase.MaxDiagramChatBytes)))
 		if !errors.Is(err, usecase.ErrDiagramChatTooLong) {
-			t.Fatalf("Generate() = %v, want ErrDiagramChatTooLong", err)
+			t.Fatalf("generate() = %v, want ErrDiagramChatTooLong", err)
 		}
 		if len(llm.requests) != 0 {
 			t.Error("上限を超えた会話で LLM を呼んでいる")
@@ -268,9 +268,9 @@ func TestGenerateDiagram_RejectsTooLongChat(t *testing.T) {
 			{Prompt: "2", Mermaid: validMermaid},
 		}
 
-		got, err := svc.Generate(t.Context(), "board-1", r)
+		got, err := generate(t, svc, t.Context(), "board-1", r)
 		if err != nil {
-			t.Fatalf("Generate() = %v", err)
+			t.Fatalf("generate() = %v", err)
 		}
 		if got.TurnsRemaining != 0 {
 			t.Errorf("TurnsRemaining = %d, want 0", got.TurnsRemaining)
@@ -290,8 +290,8 @@ func TestGenerateDiagram_RebuildsConversationIntoOneMessage(t *testing.T) {
 		{Prompt: "注文の流れ", Mermaid: "flowchart TD\n  受注 --> 出荷"},
 	}
 
-	if _, err := svc.Generate(t.Context(), "board-1", r); err != nil {
-		t.Fatalf("Generate() = %v", err)
+	if _, err := generate(t, svc, t.Context(), "board-1", r); err != nil {
+		t.Fatalf("generate() = %v", err)
 	}
 
 	sent := llm.requests[0].Text
@@ -315,8 +315,8 @@ func TestGenerateDiagram_DoesNotAskForIssues(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validMermaid}}
 	svc, _ := newDiagramService(t, llm)
 
-	if _, err := svc.Generate(t.Context(), "board-1", req("段取り")); err != nil {
-		t.Fatalf("Generate() = %v", err)
+	if _, err := generate(t, svc, t.Context(), "board-1", req("段取り")); err != nil {
+		t.Fatalf("generate() = %v", err)
 	}
 
 	system := llm.requests[0].System
@@ -352,7 +352,7 @@ func TestGenerateDiagram_NotationPerKind(t *testing.T) {
 			llm := &fakeLLM{responses: []string{head + "\n  A --> B"}}
 			svc, _ := newDiagramService(t, llm)
 
-			got, err := svc.Generate(t.Context(), "board-1",
+			got, err := generate(t, svc, t.Context(), "board-1",
 				usecase.DiagramRequest{Kind: kind, Prompt: "描いて"})
 			if err != nil {
 				t.Fatalf("%s の記法を弾いている: %v", head, err)
@@ -390,7 +390,7 @@ func TestGenerateDiagram_FlowchartAcceptsGraphAlias(t *testing.T) {
 			llm := &fakeLLM{responses: []string{"graph TD\n  A --> B"}}
 			svc, _ := newDiagramService(t, llm)
 
-			if _, err := svc.Generate(t.Context(), "board-1",
+			if _, err := generate(t, svc, t.Context(), "board-1",
 				usecase.DiagramRequest{Kind: kind, Prompt: "描いて"}); err != nil {
 				t.Fatalf("graph で書かれた出力を弾いている: %v", err)
 			}
@@ -420,9 +420,9 @@ func TestGenerateDiagram_AvoidsUnplaceableNotations(t *testing.T) {
 			llm := &fakeLLM{responses: []string{validMermaid}}
 			svc, _ := newDiagramService(t, llm)
 
-			if _, err := svc.Generate(t.Context(), "board-1",
+			if _, err := generate(t, svc, t.Context(), "board-1",
 				usecase.DiagramRequest{Kind: tt.kind, Prompt: "描いて"}); err != nil {
-				t.Fatalf("Generate() = %v", err)
+				t.Fatalf("generate() = %v", err)
 			}
 
 			sent := llm.requests[0].Text
@@ -445,10 +445,10 @@ func TestGenerateDiagram_AvoidsUnplaceableNotations(t *testing.T) {
 		llm := &fakeLLM{responses: []string{"mindmap\n  root((etoki))\n    a"}}
 		svc, _ := newDiagramService(t, llm)
 
-		_, err := svc.Generate(t.Context(), "board-1",
+		_, err := generate(t, svc, t.Context(), "board-1",
 			usecase.DiagramRequest{Kind: domain.DiagramKindMindmap, Prompt: "描いて"})
 		if !errors.Is(err, usecase.ErrDiagramFailed) {
-			t.Fatalf("Generate() = %v, want ErrDiagramFailed", err)
+			t.Fatalf("generate() = %v, want ErrDiagramFailed", err)
 		}
 	})
 }
@@ -468,8 +468,8 @@ func TestGenerateDiagram_LogsUsage(t *testing.T) {
 	}
 	svc, _ := newDiagramService(t, llm, usecase.WithDiagramLogger(logger))
 
-	if _, err := svc.Generate(t.Context(), "board-1", req("段取り")); err != nil {
-		t.Fatalf("Generate() = %v", err)
+	if _, err := generate(t, svc, t.Context(), "board-1", req("段取り")); err != nil {
+		t.Fatalf("generate() = %v", err)
 	}
 
 	out := buf.String()
@@ -496,8 +496,8 @@ func TestGenerateDiagram_LogsUsageOnFailure(t *testing.T) {
 	}
 	svc, _ := newDiagramService(t, llm, usecase.WithDiagramLogger(logger))
 
-	if _, err := svc.Generate(t.Context(), "board-1", req("段取り")); err == nil {
-		t.Fatal("Generate() が成功している")
+	if _, err := generate(t, svc, t.Context(), "board-1", req("段取り")); err == nil {
+		t.Fatal("generate() が成功している")
 	}
 
 	out := buf.String()
@@ -516,9 +516,9 @@ func TestGenerateDiagram_BoardNotFound(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validMermaid}}
 	svc, _ := newDiagramService(t, llm)
 
-	_, err := svc.Generate(t.Context(), "no-such-board", req("段取り"))
+	_, err := generate(t, svc, t.Context(), "no-such-board", req("段取り"))
 	if !errors.Is(err, usecase.ErrBoardNotFound) {
-		t.Fatalf("Generate() = %v, want ErrBoardNotFound", err)
+		t.Fatalf("generate() = %v, want ErrBoardNotFound", err)
 	}
 	if len(llm.requests) != 0 {
 		t.Error("ボードが無いのに LLM を呼んでいる")
@@ -533,9 +533,9 @@ func TestGenerateDiagram_IgnoresNonPositiveOptions(t *testing.T) {
 		usecase.WithDiagramMaxAttempts(0), usecase.WithDiagramMaxTurns(-1),
 		usecase.WithDiagramLogger(nil))
 
-	got, err := svc.Generate(t.Context(), "board-1", req("段取り"))
+	got, err := generate(t, svc, t.Context(), "board-1", req("段取り"))
 	if err != nil {
-		t.Fatalf("Generate() = %v", err)
+		t.Fatalf("generate() = %v", err)
 	}
 	// 既定に戻っていること。0 を通すと 1 度も呼ばずに「図が返らなかった」と
 	// 報告することになり、何が起きたのか追えない。
