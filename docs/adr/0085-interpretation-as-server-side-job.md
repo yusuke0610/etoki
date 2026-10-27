@@ -112,7 +112,9 @@ DB に持つと「保存しない」と決めた判断（ADR 0031）と食い違
 ## 帰結
 
 - `interpretAnnotation` の応答が 200（結果）から 202（ジョブ）に変わる。結果の形
-  （`Interpretation`）は変わらず、`InterpretationJob.result` に入る。
+  （`Interpretation`）は変わらず、`InterpretationJob.result` に入る。ADR 0093 で、
+  囲みの外から添えたもの（`context`）を足した `InterpretationResult` になった。
+  作成のリクエストは `Interpretation` のまま。
 - 図のドラフト生成は同じ枠を共有するが、この ADR では扱わない。ADR 0091 で
   同じ形に揃えた。
 
