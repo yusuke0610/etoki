@@ -24,6 +24,7 @@ type gatedLLM struct {
 
 	mu       sync.Mutex
 	calls    int
+	requests []port.VisionRequest
 	started  chan struct{}
 	ctxEnded chan struct{}
 }
@@ -37,9 +38,10 @@ func newGatedLLM(text string) *gatedLLM {
 	}
 }
 
-func (g *gatedLLM) Complete(ctx context.Context, _ port.VisionRequest) (port.VisionResponse, error) {
+func (g *gatedLLM) Complete(ctx context.Context, req port.VisionRequest) (port.VisionResponse, error) {
 	g.mu.Lock()
 	g.calls++
+	g.requests = append(g.requests, req)
 	g.mu.Unlock()
 	g.started <- struct{}{}
 
@@ -53,6 +55,17 @@ func (g *gatedLLM) Complete(ctx context.Context, _ port.VisionRequest) (port.Vis
 		return port.VisionResponse{}, g.err
 	}
 	return port.VisionResponse{Text: g.text}, nil
+}
+
+// requestTexts は受け取ったメッセージの本文を返す。
+func (g *gatedLLM) requestTexts() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	texts := make([]string, 0, len(g.requests))
+	for _, r := range g.requests {
+		texts = append(texts, r.Text)
+	}
+	return texts
 }
 
 func (g *gatedLLM) callCount() int {

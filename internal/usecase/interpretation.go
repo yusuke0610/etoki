@@ -1,10 +1,12 @@
 package usecase
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/yusuke0610/etoki/internal/domain"
@@ -67,6 +69,34 @@ type InterpretationService struct {
 type InterpretationResult struct {
 	Interpretation domain.Interpretation
 	ContentHash    string
+	// Context は囲みの外から添えたもの（ADR 0093）。**何を渡したかを結果と
+	// 一緒に返す。** 黙って材料を足して結果だけを返すと、出力がなぜそうなった
+	// かを読めない（中核思想 3）。
+	Context InterpretationContext
+}
+
+// InterpretationContext は解釈の入力に、囲みの外から添えたもの（ADR 0093）。
+//
+// **どれもハッシュに入らない。** ハッシュに入るのは囲みの中に人が書いたもの
+// と、囲みの読み方として選んだもの（粒度と種別）だけ（domain.ComputeContentHash）。
+type InterpretationContext struct {
+	// Premise はボードの背景。解釈を始めた時点のもの。空なら添えていない。
+	Premise string
+	// OtherItems は同じボードの別の絵から作ったもの。最近作った・更新した
+	// ものから MaxOtherItems 件まで。
+	OtherItems []OtherItem
+	// OmittedOtherItems は上限で打ち切って渡さなかった件数。
+	OmittedOtherItems int
+}
+
+// OtherItem は同じボードの別の絵から作ったもの 1 件。解釈に渡すのは種別と
+// タイトルだけ。
+//
+// **ref を振らない。** 更新先はその囲みの畳み込みに限る（ADR 0026）。ref を
+// 振ると、別の絵から作った draft issue が書き換えの候補に見える。
+type OtherItem struct {
+	Kind  domain.ItemKind
+	Title string
 }
 
 // InterpretationServiceOption は InterpretationService の設定を差し替える。
@@ -125,6 +155,9 @@ type preparedInterpretation struct {
 	annotation domain.Annotation
 	images     []port.Image
 	previous   []domain.PreviousItem
+	// context は始めた時点で揃える。走っているあいだに背景が書き換わっても、
+	// このジョブは始めたときの背景で読み、結果にもそちらを載せる。
+	context InterpretationContext
 }
 
 // prepare は認可と入力の検証を済ませ、LLM に渡す入力を揃える。
@@ -175,16 +208,26 @@ func (s *InterpretationService) prepare(
 	// 前回までに作ったものを見せて、「これは前回のどれの更新か」を答えさせる。
 	// 対応づけを座標や文字列一致でルールベースに推測せず、LLM に解釈させる
 	// （中核思想 2、ADR 0026）。決めるのは開発者で、これは候補にすぎない。
-	saved, err := s.mappings.ListItemsByAnnotation(ctx, boardID, annotationID)
+	//
+	// **ボード全体の畳み込みを 1 回で引く。** この囲みのぶんは前回ぶんに、
+	// 別の絵のぶんは用語と重なりの参考に使う（ADR 0093）。どちらも同じ畳み込み
+	// （確定したものだけ、ADR 0056）から採る。
+	byAnnotation, err := s.mappings.ListItemsByBoard(ctx, boardID)
 	if err != nil {
 		return preparedInterpretation{}, err
 	}
+	others, omitted := otherItems(byAnnotation, annotationID)
 
 	return preparedInterpretation{
 		scene:      scene,
 		annotation: annotation,
 		images:     images,
-		previous:   toPreviousItems(saved),
+		previous:   toPreviousItems(byAnnotation[annotationID]),
+		context: InterpretationContext{
+			Premise:           acc.Board.Premise,
+			OtherItems:        others,
+			OmittedOtherItems: omitted,
+		},
 	}, nil
 }
 
@@ -192,7 +235,8 @@ func (s *InterpretationService) prepare(
 func (s *InterpretationService) execute(
 	ctx context.Context, boardID, annotationID string, p preparedInterpretation,
 ) (InterpretationResult, error) {
-	in, usage, err := s.complete(ctx, p.annotation, p.scene.AnnotationTexts(annotationID), p.images, p.previous)
+	in, usage, err := s.complete(
+		ctx, p.annotation, p.scene.AnnotationTexts(annotationID), p.images, p.previous, p.context)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されているので、
 	// 成功したときだけ記録すると、実績が実際より小さく見える（ADR 0031）。
 	s.logUsage(ctx, boardID, annotationID, usage, err)
@@ -203,7 +247,41 @@ func (s *InterpretationService) execute(
 	return InterpretationResult{
 		Interpretation: in,
 		ContentHash:    string(p.scene.AnnotationHash(p.annotation)),
+		Context:        p.context,
 	}, nil
+}
+
+// otherItems は同じボードの別の絵から作ったものを、解釈に渡す形にする
+// （ADR 0093）。
+//
+// **シーンから消えた注釈のぶんも含める。** 畳み込みは注釈がシーンに残って
+// いるかを見ないので、ここでも分けない。GitHub には在るので、重複を避ける
+// 材料としては同じ（ADR 0046）。
+//
+// **最近作った・更新したものから残す。** いま描いているものと重なりやすいのは
+// 最近の作業だから。畳み込みが返す ID は最新の記録のもの（ADR 0026）なので、
+// その降順で並べる。上限を超えたぶんは渡さず、件数だけを返す。
+func otherItems(byAnnotation map[string][]port.SyncItem, annotationID string) ([]OtherItem, int) {
+	var all []port.SyncItem
+	for id, items := range byAnnotation {
+		if id == annotationID {
+			continue
+		}
+		all = append(all, items...)
+	}
+	slices.SortFunc(all, func(a, b port.SyncItem) int { return cmp.Compare(b.ID, a.ID) })
+
+	omitted := 0
+	if len(all) > MaxOtherItems {
+		omitted = len(all) - MaxOtherItems
+		all = all[:MaxOtherItems]
+	}
+
+	out := make([]OtherItem, 0, len(all))
+	for _, it := range all {
+		out = append(out, OtherItem{Kind: domain.ItemKind(it.Kind), Title: it.Title})
+	}
+	return out, omitted
 }
 
 // toPreviousItems は保存済みの記録を、解釈に見せる形へ詰め替える。
@@ -303,9 +381,9 @@ func (s *InterpretationService) logUsage(
 // 払ったぶんは成否によらず返す。呼び出し側がそれを記録する。
 func (s *InterpretationService) complete(
 	ctx context.Context, a domain.Annotation, texts []domain.TextElement, images []port.Image,
-	previous []domain.PreviousItem,
+	previous []domain.PreviousItem, ic InterpretationContext,
 ) (domain.Interpretation, llmUsage, error) {
-	base := buildUserMessage(a, texts, len(images) > 0, previous)
+	base := buildUserMessage(a, texts, len(images) > 0, previous, ic)
 	req := port.VisionRequest{
 		System: interpretationSystemPrompt(a.Granularity),
 		Text:   base,
@@ -401,8 +479,14 @@ func extractJSON(text string) string {
 //
 // hasImage は画像を添えたかどうか。画像の話は添えたときにだけ書く。常に書くと、
 // 画像なしの解釈でモデルが「見えるはずの図」を前提に埋め合わせを始める。
+//
+// 並びは、囲みのテキスト → 画像 → 囲みの外の材料（背景・別の絵、ADR 0093）→
+// この囲みから前回までに作ったもの → 種別と粒度。**囲みのテキストを先頭に
+// 置き、空行で区切る。** 偽の LLM（internal/fakeupstream）はここで切って
+// 読んでいる。
 func buildUserMessage(
 	a domain.Annotation, texts []domain.TextElement, hasImage bool, previous []domain.PreviousItem,
+	ic InterpretationContext,
 ) string {
 	var b strings.Builder
 
@@ -428,6 +512,8 @@ func buildUserMessage(
 		b.WriteString(imageInstruction)
 	}
 
+	b.WriteString(premiseSection(ic.Premise))
+	b.WriteString(otherItemsSection(ic.OtherItems, ic.OmittedOtherItems))
 	b.WriteString(previousInstruction(previous))
 
 	b.WriteString("\n")
@@ -469,6 +555,95 @@ func previousInstruction(previous []domain.PreviousItem) string {
 
 	return b.String()
 }
+
+// premiseQuote は背景の各行の頭に付ける印。
+//
+// **背景は人が書いた複数行の文で、何でも書ける。** 行頭に印を付けて、etoki が
+// 組み立てた見出しや一覧（「- p1 (epic) …」）と取り違えられない形にする。
+// 背景の中の空行も印だけの行になるので、メッセージの節の区切り（空行）が
+// 背景の中に現れない。
+const premiseQuote = "> "
+
+// premiseSection はボードの背景を、囲みの外の材料として並べる（ADR 0093）。
+//
+// 空なら節ごと省く。空の節を見せると、モデルが「あるはずのもの」を埋め合わせ
+// 始める（前回ぶんと同じ）。
+//
+// **改行は潰さない。** 付箋や前回ぶんと違い、背景は書いた人が行で区切って
+// いる。潰すと箇条書きがつながって読めなくなる。
+func premiseSection(premise string) string {
+	if premise == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\nこのボードの背景（開発者が書いたもの。囲みの外の材料です）:\n")
+	for line := range strings.SplitSeq(premise, "\n") {
+		b.WriteString(strings.TrimRight(premiseQuote+line, " "))
+		b.WriteString("\n")
+	}
+	b.WriteString(premiseInstruction)
+
+	return b.String()
+}
+
+// premiseInstruction は背景の使い方を伝える。
+//
+// **読み方の規則は書かない**（中核思想 2）。背景に何を書くかは人に任せて
+// いて、そこに読み方が書いてあれば決めているのは人。etoki が足すのは、背景を
+// 項目の出どころにしないことと、着手に要る部分を body に書くこと（出口の側、
+// ADR 0093）だけ。
+//
+// **背景を body に丸写しさせない。** 全部の項目に同じ文が載り、前回ぶんとして
+// 次の解釈にも戻ってくる（ADR 0026）。
+const premiseInstruction = `
+上の背景は、この囲みを読むための前提です。
+
+- 用語や呼び方は背景に合わせてください。
+- 背景に書かれていることから項目を作らないでください。項目にするのは囲みの中身だけです。
+- 各項目の body には、背景のうちその項目に着手するのに要ること（使う技術や守る制約など）を
+  書いてください。背景をまるごと写さず、その項目に関係する部分だけにしてください。
+`
+
+// otherItemsSection は同じボードの別の絵から作ったものを並べる（ADR 0093）。
+//
+// **ref を振らない。** 振ると対応づけの候補に見える。更新先はその囲みの
+// 畳み込みだけ（ADR 0026）。
+//
+// 1 件も無ければ節ごと省く。打ち切ったときは、渡していないものがあることを
+// 書く。書かないと、モデルは一覧が全部だと読む。
+func otherItemsSection(items []OtherItem, omitted int) string {
+	if len(items) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n同じボードの別の絵からすでに作ったもの（参考。対応づけの対象ではありません）:\n")
+	for _, it := range items {
+		fmt.Fprintf(&b, "- (%s) %s\n", it.Kind, oneLine(it.Title))
+	}
+	if omitted > 0 {
+		fmt.Fprintf(&b, "（ほかに %d 件ありますが、ここには載せていません）\n", omitted)
+	}
+	b.WriteString(otherItemsInstruction)
+
+	return b.String()
+}
+
+// otherItemsInstruction は別の絵のぶんの使い方を伝える。
+//
+// **重なっても項目を落とさせない。** 落とすかどうかを LLM に決めさせると、
+// 開発者が選ぶ前に候補が消える（中核思想 3）。外すのは作成前の選択（ADR 0024）。
+//
+// **body に関連として挙げさせない。** draft issue は番号を持たずリンクできない
+// ので、タイトルの羅列になる（ADR 0093）。
+const otherItemsInstruction = `
+上の一覧は、用語をそろえ、重なりに気づくための参考です。
+
+- 今回の項目と重なると思っても、項目を外さずに出力し、どれと重なりそうかを summary に
+  書いてください。外すかどうかは開発者が決めます。
+- 一覧の項目を、関連する項目として body に挙げないでください。
+`
 
 // oneLine は一覧に載せるために改行を潰す。
 //
