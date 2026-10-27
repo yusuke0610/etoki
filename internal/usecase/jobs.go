@@ -63,9 +63,8 @@ type Job[In, R any] struct {
 type JobsOption func(*jobConfig)
 
 type jobConfig struct {
-	// now と newID はテストが差し替える。
-	now   func() time.Time
-	newID func() string
+	// now はテストが差し替える。
+	now func() time.Time
 
 	timeout   time.Duration
 	retention time.Duration
@@ -76,15 +75,6 @@ func WithJobClock(now func() time.Time) JobsOption {
 	return func(c *jobConfig) {
 		if now != nil {
 			c.now = now
-		}
-	}
-}
-
-// WithJobIDGenerator は ID の採番を差し替える。nil は無視する。
-func WithJobIDGenerator(f func() string) JobsOption {
-	return func(c *jobConfig) {
-		if f != nil {
-			c.newID = f
 		}
 	}
 }
@@ -110,7 +100,6 @@ func WithJobRetention(d time.Duration) JobsOption {
 func newJobConfig(opts []JobsOption) jobConfig {
 	c := jobConfig{
 		now:       time.Now,
-		newID:     randomJobID,
 		timeout:   DefaultJobTimeout,
 		retention: DefaultJobRetention,
 	}
@@ -238,7 +227,7 @@ func (t *jobTable[In, R]) start(
 		key:     req.key,
 		attrs:   req.attrs,
 		job: Job[In, R]{
-			ID:        t.newID(),
+			ID:        randomJobID(),
 			Status:    JobRunning,
 			StartedAt: t.now(),
 			Input:     req.input,

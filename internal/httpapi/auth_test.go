@@ -382,6 +382,24 @@ func TestLogin_IsNotReachableByGet(t *testing.T) {
 	}
 }
 
+// 本文が `/api` の入口の上限に当たったら、ほかの口と同じく 413 で返す
+// （`.claude/rules/api-contract.md`）。400 にすると、同じ「大きすぎる」が口に
+// よって割れる。
+func TestLogin_RejectsOversizedBodyAs413(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newAuthRouter(t, &stubProvider{})
+
+	huge := strings.Repeat("a", 64<<10)
+	rec := do(t, r, http.MethodPost, "/api/auth/login", map[string]string{"returnTo": huge})
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (%s)", rec.Code, rec.Body)
+	}
+	if code := decode[apitypes.ErrorResponse](t, rec).Code; code != apitypes.ErrorCodeRequestTooLarge {
+		t.Errorf("code = %q, want %q", code, apitypes.ErrorCodeRequestTooLarge)
+	}
+}
+
 // redirect_uri はリクエストの Host から組む。make dev では Vite が Host を
 // 書き換えずに転送するので、これで :5173 になる。
 func TestLogin_BuildsRedirectURIFromHost(t *testing.T) {
