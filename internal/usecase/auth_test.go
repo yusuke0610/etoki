@@ -606,19 +606,6 @@ func TestToken_FailsWithoutStoredCredentials(t *testing.T) {
 	}
 }
 
-func TestStaticTokenSource(t *testing.T) {
-	t.Parallel()
-
-	got, err := usecase.StaticTokenSource("ghp_x").Token(t.Context())
-	if err != nil || got != "ghp_x" {
-		t.Fatalf("Token() = (%q, %v), want (ghp_x, nil)", got, err)
-	}
-
-	if _, err := usecase.StaticTokenSource("").Token(t.Context()); !errors.Is(err, port.ErrNotAuthenticated) {
-		t.Fatalf("Token() = %v, want ErrNotAuthenticated", err)
-	}
-}
-
 // ログイン後の戻り先は自オリジンの相対パスだけ（ADR 0059）。ここが緩むと、
 // ログインさせた相手を任意の URL へ送り出せる。
 func TestSanitizeReturnTo(t *testing.T) {

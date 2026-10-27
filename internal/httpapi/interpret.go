@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 
@@ -48,19 +47,7 @@ func (h *handlers) listInterpretationJobs(c *gin.Context) {
 		h.llmNotConfigured(c)
 		return
 	}
-
-	jobs, err := h.interpretationJobs.List(c.Request.Context(), c.Param("id"))
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-
-	// nil を返すと JSON が null になる。常に配列にする。
-	out := make([]apitypes.InterpretationJob, 0, len(jobs))
-	for _, job := range jobs {
-		out = append(out, toInterpretationJobResponse(job, false))
-	}
-	c.JSON(http.StatusOK, out)
+	listJobs(h, c, h.interpretationJobs, toInterpretationJobResponse)
 }
 
 // getInterpretationJob はジョブを 1 件返す。読んでも消えない。
@@ -69,14 +56,7 @@ func (h *handlers) getInterpretationJob(c *gin.Context) {
 		h.llmNotConfigured(c)
 		return
 	}
-
-	job, err := h.interpretationJobs.Get(c.Request.Context(), c.Param("id"), c.Param("jobId"))
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, toInterpretationJobResponse(job, true))
+	getJob(h, c, h.interpretationJobs, toInterpretationJobResponse)
 }
 
 // discardInterpretationJob はジョブを捨てる。走っていれば止める。
@@ -85,14 +65,7 @@ func (h *handlers) discardInterpretationJob(c *gin.Context) {
 		h.llmNotConfigured(c)
 		return
 	}
-
-	if err := h.interpretationJobs.Discard(
-		c.Request.Context(), c.Param("id"), c.Param("jobId")); err != nil {
-		h.fail(c, err)
-		return
-	}
-
-	c.Status(http.StatusNoContent)
+	discardJob(h, c, h.interpretationJobs)
 }
 
 // toInterpretationJobResponse はジョブを境界の DTO に詰め替える。
@@ -144,17 +117,7 @@ func (h *handlers) bindInterpretImages(c *gin.Context) ([]port.Image, bool) {
 	// 空のボディは「画像なし」であってエラーではない。JSON デコーダは
 	// その場合に io.EOF を返す。
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		// 歯止めに当たった失敗も契約の code に写す
-		// （`.claude/rules/api-contract.md`）。写さないと、同じ「大きすぎる」が
-		// ボディの大きさしだいで 400 と 413 に割れる。
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
-				errRequestTooLarge, maxInterpretBody))
-			return nil, false
-		}
-
-		h.badRequest(c, err)
+		h.failBind(c, err, errRequestTooLarge)
 		return nil, false
 	}
 
