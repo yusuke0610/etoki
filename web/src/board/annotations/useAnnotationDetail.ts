@@ -5,7 +5,7 @@ import { ANNOTATION_LIST_HEADING_ID } from "./AnnotationPanel";
 
 /**
  * 保存済みの一覧にその注釈が在るか。開いていた詳細を閉じる判定（このフック）と、
- * 保存のあとに読むかどうかの判定（`BoardPage` の `interpretAfterSave`）が使う。
+ * 保存のあとに読むかどうかの判定（`useEkidoki` の `interpretAfterSave`）が使う。
  * **同じ条件で決める。** ずれると、詳細が閉じたのに読む（結果を出す先が無い）か、
  * 開いたままなのに読まない。
  *
