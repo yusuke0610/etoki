@@ -379,16 +379,9 @@ func (h *handlers) setBoardPremise(c *gin.Context) {
 
 	var req apitypes.SetPremiseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// 歯止めに当たった失敗も、長すぎる背景と同じ code に写す
-		// （`.claude/rules/api-contract.md`）。写さないと、同じ「長すぎる」が
-		// 本文の大きさしだいで 2 通りの code に割れる。
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
-				usecase.ErrPremiseTooLarge, maxPremiseBody))
-			return
-		}
-		h.badRequest(c, err)
+		// 歯止めに当たった失敗も、長すぎる背景と同じ code に写す。写さないと、
+		// 同じ「長すぎる」が本文の大きさしだいで 2 通りの code に割れる。
+		h.failBind(c, err, usecase.ErrPremiseTooLarge)
 		return
 	}
 
