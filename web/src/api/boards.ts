@@ -19,6 +19,7 @@ import type {
   BoardListEntry,
   BoardTarget,
   BoardTargetDisplay,
+  CreateBoardRequest,
   CreatedRun,
   DiagramJob,
   ErrorResponse,
@@ -33,6 +34,7 @@ import type {
   RepositoryList,
   SaveSceneRequest,
   SaveSceneResponse,
+  SetMemberRoleRequest,
   SyncRun,
 } from "./types";
 
@@ -125,7 +127,7 @@ export const boardsApi = {
         name,
         ...target,
         ...(scene === undefined ? {} : { scene }),
-      }),
+      } satisfies CreateBoardRequest),
     }),
 
   /**
@@ -355,7 +357,7 @@ export const membersApi = {
   setRole: (boardId: string, userId: string, role: BoardRole) =>
     request<BoardMember>(`/api/boards/${boardId}/members/${encodeURIComponent(userId)}`, {
       method: "PUT",
-      body: JSON.stringify({ role }),
+      body: JSON.stringify({ role } satisfies SetMemberRoleRequest),
     }),
 
   remove: (boardId: string, userId: string) =>
@@ -388,7 +390,7 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({
         ...(returnTo === undefined ? {} : { returnTo }),
-      } as LoginRequest),
+      } satisfies LoginRequest),
     }),
 
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
