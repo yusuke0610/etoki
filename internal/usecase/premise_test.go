@@ -177,9 +177,9 @@ func TestInterpret_PassesPremiseAsQuotedLines(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc := newPremiseInterpretService(t, premise, &fakeMappings{}, llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 	text := llm.requests[0].Text
 
@@ -215,9 +215,9 @@ func TestInterpret_OmitsPremiseSectionWhenEmpty(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc := newPremiseInterpretService(t, "", &fakeMappings{}, llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 	text := llm.requests[0].Text
 
@@ -259,9 +259,9 @@ func TestInterpret_PassesOtherFramesItems(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc := newPremiseInterpretService(t, "", m, llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 	text := llm.requests[0].Text
 
@@ -315,9 +315,9 @@ func TestInterpret_CapsOtherItemsAndReportsOmitted(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc := newPremiseInterpretService(t, "", m, llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	got := result.Context
@@ -353,8 +353,8 @@ func TestInterpret_OmitsOtherItemsSectionWhenNone(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc := newPremiseInterpretService(t, "", m, llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 	if text := llm.requests[0].Text; strings.Contains(text, "同じボードの別の絵") {
 		t.Errorf("別の絵が無いのに節がある:\n%s", text)
@@ -412,10 +412,10 @@ func TestCreate_PassesAfterPremiseChanged(t *testing.T) {
 	m := &fakeMappings{}
 
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
-	interpreted, err := usecase.NewInterpretationService(boards, m, llm, newLimiter()).
-		Interpret(t.Context(), "board-1", "annot-1", nil)
+	interpreted, err := interpret(t, usecase.NewInterpretationService(boards, m, llm, newLimiter()),
+		t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	if err := usecase.NewBoardService(boards, m, usecase.NewBoardLocks()).
