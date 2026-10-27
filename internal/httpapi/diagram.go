@@ -1,8 +1,6 @@
 package httpapi
 
 import (
-	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -46,19 +44,7 @@ func (h *handlers) listDiagramJobs(c *gin.Context) {
 		h.llmNotConfigured(c)
 		return
 	}
-
-	jobs, err := h.diagramJobs.List(c.Request.Context(), c.Param("id"))
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-
-	// nil を返すと JSON が null になる。常に配列にする。
-	out := make([]apitypes.DiagramJob, 0, len(jobs))
-	for _, job := range jobs {
-		out = append(out, toDiagramJobResponse(job, false))
-	}
-	c.JSON(http.StatusOK, out)
+	listJobs(h, c, h.diagramJobs, toDiagramJobResponse)
 }
 
 // getDiagramJob はジョブを 1 件返す。読んでも消えない。
@@ -67,14 +53,7 @@ func (h *handlers) getDiagramJob(c *gin.Context) {
 		h.llmNotConfigured(c)
 		return
 	}
-
-	job, err := h.diagramJobs.Get(c.Request.Context(), c.Param("id"), c.Param("jobId"))
-	if err != nil {
-		h.fail(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, toDiagramJobResponse(job, true))
+	getJob(h, c, h.diagramJobs, toDiagramJobResponse)
 }
 
 // discardDiagramJob はジョブを捨てる。走っていれば止める。
@@ -83,14 +62,7 @@ func (h *handlers) discardDiagramJob(c *gin.Context) {
 		h.llmNotConfigured(c)
 		return
 	}
-
-	if err := h.diagramJobs.Discard(
-		c.Request.Context(), c.Param("id"), c.Param("jobId")); err != nil {
-		h.fail(c, err)
-		return
-	}
-
-	c.Status(http.StatusNoContent)
+	discardJob(h, c, h.diagramJobs)
 }
 
 // toDiagramJobResponse はジョブを境界の DTO に詰め替える。
@@ -153,21 +125,14 @@ const maxDiagramBody = usecase.MaxDiagramChatBytes*6 + 4<<10
 //
 // 歯止めに引っかかったボディだけは別で、400 ではなく 413 に写す。**同じ
 // 「積み上がりすぎた会話」が、ボディの大きさしだいで 400 と 413 に割れない
-// ようにする**（bindSceneBody と同じ形）。写し替えの表は errors.go にあるので、
+// ようにする**（failBind）。写し替えの表は errors.go にあるので、
 // ここは sentinel を選ぶだけ。
 func (h *handlers) bindDiagramRequest(c *gin.Context) (usecase.DiagramRequest, bool) {
 	widenBody(c, maxDiagramBody)
 
 	var body apitypes.GenerateDiagramRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			h.fail(c, fmt.Errorf("%w: request body exceeds %d bytes",
-				usecase.ErrDiagramChatTooLong, maxDiagramBody))
-			return usecase.DiagramRequest{}, false
-		}
-
-		h.badRequest(c, err)
+		h.failBind(c, err, usecase.ErrDiagramChatTooLong)
 		return usecase.DiagramRequest{}, false
 	}
 
