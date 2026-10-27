@@ -6,7 +6,7 @@ import { ApiError, boardsApi } from "../../api/boards";
 import type {
   AnnotationImage,
   AnnotationStatus,
-  Interpretation,
+  InterpretationResult,
   InterpretationJob,
   SyncItem,
 } from "../../api/types";
@@ -38,10 +38,11 @@ function deferred<T>() {
 const annotation = (id: string, granularity: AnnotationStatus["granularity"]) =>
   ({ id, name: id, granularity, state: "uncreated" }) satisfies AnnotationStatus;
 
-const result = (summary: string): Interpretation => ({
+const result = (summary: string): InterpretationResult => ({
   summary,
   contentHash: "h",
   items: [],
+  context: { premise: "", otherItems: [], omittedOtherItems: 0 },
 });
 
 const job = (

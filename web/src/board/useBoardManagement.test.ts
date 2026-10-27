@@ -35,6 +35,7 @@ const board: BoardDetail = {
   projectTitle: "古い名前",
   projectUrl: "https://github.com/orgs/acme/projects/1",
   scene: "{}",
+  premise: "",
   targetLocked: true,
   sceneOverLimit: false,
 };

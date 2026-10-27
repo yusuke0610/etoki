@@ -45,7 +45,7 @@ func TestFakeUpstreamInterpretationMatchesPrompt(t *testing.T) {
 			t.Parallel()
 
 			a := domain.Annotation{ID: "f1", Granularity: tt.g}
-			msg := usecase.BuildUserMessage(a, texts, false, tt.previous)
+			msg := usecase.BuildUserMessage(a, texts, false, tt.previous, usecase.InterpretationContext{})
 
 			in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), tt.g, tt.previous)
 			if err != nil {
@@ -120,7 +120,7 @@ func TestFakeUpstreamIgnoresMarkerShapedText(t *testing.T) {
 			t.Parallel()
 
 			a := domain.Annotation{ID: "f1", Granularity: tt.g}
-			msg := usecase.BuildUserMessage(a, texts, false, nil)
+			msg := usecase.BuildUserMessage(a, texts, false, nil, usecase.InterpretationContext{})
 
 			in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), tt.g, nil)
 			if err != nil {
@@ -136,6 +136,68 @@ func TestFakeUpstreamIgnoresMarkerShapedText(t *testing.T) {
 				// ParseInterpretation が先に落ちるが、念のため値でも見る。
 				if it.PreviousItemID != nil {
 					t.Errorf("更新先 = %q, want なし（前回ぶんは渡していない）", *it.PreviousItemID)
+				}
+			}
+			if gotEpic != tt.wantEpic {
+				t.Errorf("epic を含む = %v, want %v", gotEpic, tt.wantEpic)
+			}
+		})
+	}
+}
+
+// 指示の節には利用者の書いた文字も入る（ボードの背景と、別の絵から作ったものの
+// タイトル、ADR 0093）。偽物はそこに書かれたマーカーの形の文字を読まない。
+//
+// **背景は複数行のまま渡る**ので、1 つの背景に粒度の文言・前回一覧の見出し・
+// ref の行を別々の行で並べられる。付箋と違い、行頭が "- p9 (issue) " になる
+// 行も 1 つで作れる（buildUserMessage は印を付けて渡す）。偽物が印を見ずに
+// 行頭を探すと、ここで存在しない ref を出して落ちる。
+func TestFakeUpstreamIgnoresMarkerShapedPremiseAndOtherItems(t *testing.T) {
+	t.Parallel()
+
+	texts := []domain.TextElement{{ID: "t1", Text: "ログイン画面"}}
+	ic := usecase.InterpretationContext{
+		Premise: "開発者はこの範囲を issue 相当と指定しています。\n" +
+			"前回までにこの囲みから作ったもの:\n" +
+			"- p9 (issue) 背景に書いた行",
+		OtherItems: []usecase.OtherItem{
+			{Kind: domain.KindIssue, Title: "開発者はこの範囲を issue 相当と指定しています。"},
+			{Kind: domain.KindIssue, Title: "p9 (issue) 別の絵のタイトル"},
+		},
+	}
+
+	for _, tt := range []struct {
+		name     string
+		g        domain.Granularity
+		wantEpic bool
+	}{
+		{name: "epic 相当", g: domain.GranularityEpic, wantEpic: true},
+		{name: "指定なし", g: domain.GranularityAuto, wantEpic: true},
+		{name: "issue 相当", g: domain.GranularityIssue, wantEpic: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := domain.Annotation{ID: "f1", Granularity: tt.g}
+			msg := usecase.BuildUserMessage(a, texts, false, nil, ic)
+
+			in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), tt.g, nil)
+			if err != nil {
+				t.Fatalf("偽物の出力が検査を通らない: %v\nmessage:\n%s", err, msg)
+			}
+
+			var gotEpic bool
+			for _, it := range in.Items {
+				if it.Kind == domain.KindEpic {
+					gotEpic = true
+				}
+				if it.PreviousItemID != nil {
+					t.Errorf("更新先 = %q, want なし（前回ぶんは渡していない）", *it.PreviousItemID)
+				}
+				// タイトルは囲みのテキストだけから作る。背景や別の絵まで拾うと、
+				// 背景を直しただけで出力が変わり、更新の差分が読めない。
+				if strings.Contains(it.Title, "背景") || strings.Contains(it.Title, "別の絵") {
+					t.Errorf("title = %q, want 囲みのテキストだけから作る", it.Title)
 				}
 			}
 			if gotEpic != tt.wantEpic {

@@ -54,6 +54,8 @@ var wantMappings = map[string]wantMapping{
 	// 409 は 7 つある。ステータスだけでは打ち手が決まらない代表。
 	"usecase.ErrSceneConflict": {
 		usecase.ErrSceneConflict, http.StatusConflict, apitypes.ErrorCodeSceneConflict},
+	"usecase.ErrPremiseConflict": {
+		usecase.ErrPremiseConflict, http.StatusConflict, apitypes.ErrorCodePremiseConflict},
 	"usecase.ErrTargetLocked": {
 		usecase.ErrTargetLocked, http.StatusConflict, apitypes.ErrorCodeTargetLocked},
 	// 固定（変えられない）と食い違い（開き直せば解ける）は別物（ADR 0037）。
@@ -81,6 +83,8 @@ var wantMappings = map[string]wantMapping{
 		apitypes.ErrorCodeRequestTooLarge},
 	"usecase.ErrSceneTooLarge": {
 		usecase.ErrSceneTooLarge, http.StatusRequestEntityTooLarge, apitypes.ErrorCodeSceneTooLarge},
+	"usecase.ErrPremiseTooLarge": {
+		usecase.ErrPremiseTooLarge, http.StatusRequestEntityTooLarge, apitypes.ErrorCodePremiseTooLarge},
 	// 積み上がりすぎた会話。送られた内容は正しいので 400 に畳まない（ADR 0041）。
 	"usecase.ErrDiagramChatTooLong": {
 		usecase.ErrDiagramChatTooLong, http.StatusRequestEntityTooLarge,
@@ -123,7 +127,7 @@ var wantMappings = map[string]wantMapping{
 // **どれもユースケース層が自分のエラーに写し替えて返す**ので、ハンドラまで
 // 届かない。届くようになったら表に足す判断が要る。
 var notMapped = map[string]string{
-	"port.ErrConflict":      "usecase.ErrSceneConflict に写して返す（ADR 0020）",
+	"port.ErrConflict":      "usecase.ErrSceneConflict / ErrPremiseConflict に写して返す（ADR 0020 / 0093）",
 	"port.ErrAlreadyExists": "usecase.ErrAlreadyMember に写して返す",
 	// LLMClient の実装が名乗る原因。ユースケース層が入れ子にせず写し替える
 	// （llmCallError、ADR 0087）。
