@@ -68,6 +68,7 @@ func toDetail(a port.BoardAccess, targetLocked, overLimit bool) apitypes.BoardDe
 
 		// ここから下が BoardSummary に無いぶん。
 		Scene:          a.Board.Scene,
+		Premise:        a.Board.Premise,
 		TargetLocked:   targetLocked,
 		SceneOverLimit: overLimit,
 	}
@@ -99,6 +100,7 @@ func toBoardWithFiles(d apitypes.BoardDetail, files []port.BoardFile) apitypes.B
 		ProjectTitle:    d.ProjectTitle,
 		ProjectURL:      d.ProjectURL,
 		Scene:           d.Scene,
+		Premise:         d.Premise,
 		TargetLocked:    d.TargetLocked,
 		SceneOverLimit:  d.SceneOverLimit,
 
@@ -350,6 +352,47 @@ func (h *handlers) renameBoard(c *gin.Context) {
 
 	// 改名後の姿を返す。フロントが手元の値を組み立て直さずに済む
 	// （作成先の設定と同じ形）。
+	b, err := h.boards.Find(c.Request.Context(), id)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	h.respondBoard(c, *b)
+}
+
+// maxPremiseBody は背景の書き換えのリクエストボディを読む上限（ADR 0093）。
+//
+// 正本の上限は usecase.MaxPremiseRunes（文字数）。本文には背景が 2 つ（新しい
+// 背景と、照合のための編集前の背景）載り、JSON のエスケープの最悪では 1 文字が
+// 12 バイトになる（BMP の外の文字をサロゲートペアで `\uXXXX\uXXXX` と書いた
+// とき）。その最悪値で割り増して置く。小さく取ると、上限ちょうどの背景が
+// 歯止め側で落ち、減らす必要のないものを減らせと言うことになる。
+const maxPremiseBody = usecase.MaxPremiseRunes*12*2 + 4<<10
+
+// setBoardPremise はボードの背景を書き換える（ADR 0093）。
+//
+// 背景だけを受け取る。シーンや作成先を一緒に受けると、この経路でもそれらを
+// 書けることになる（改名と同じ理由）。
+func (h *handlers) setBoardPremise(c *gin.Context) {
+	widenBody(c, maxPremiseBody)
+
+	var req apitypes.SetPremiseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 歯止めに当たった失敗も、長すぎる背景と同じ code に写す。写さないと、
+		// 同じ「長すぎる」が本文の大きさしだいで 2 通りの code に割れる。
+		h.failBind(c, err, usecase.ErrPremiseTooLarge)
+		return
+	}
+
+	id := c.Param("id")
+	if err := h.boards.SetPremise(c.Request.Context(), id, req.BasePremise, req.Premise); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// 書き換えたあとの姿を返す（改名と同じ）。正規化した背景を、フロントが
+	// 次の照合の基準にできるようにする。
 	b, err := h.boards.Find(c.Request.Context(), id)
 	if err != nil {
 		h.fail(c, err)

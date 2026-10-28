@@ -1,5 +1,5 @@
 import { boardsApi } from "../../api/boards";
-import type { Interpretation } from "../../api/types";
+import type { InterpretationResult } from "../../api/types";
 import { JOB_POLL_INTERVAL_MS, pollJob, type JobOutcome } from "../jobPolling";
 
 /**
@@ -11,7 +11,7 @@ export function awaitJob(
   jobId: string,
   isCurrent: () => boolean,
   intervalMs: number = JOB_POLL_INTERVAL_MS,
-): Promise<JobOutcome<Interpretation> | undefined> {
+): Promise<JobOutcome<InterpretationResult> | undefined> {
   return pollJob(
     () => boardsApi.interpretationJob(boardId, jobId),
     isCurrent,
