@@ -182,7 +182,8 @@ func (s *DiagramService) execute(
 ) (DiagramDraft, error) {
 	mermaid, usage, err := s.complete(ctx, req)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されている（ADR 0031）。
-	s.logUsage(ctx, boardID, req.Kind, usage, err)
+	logLLMUsage(ctx, s.logger, "diagram draft llm usage", usage, err,
+		slog.String("boardId", boardID), slog.String("diagramKind", string(req.Kind)))
 	if err != nil {
 		return DiagramDraft{}, err
 	}
@@ -236,25 +237,10 @@ func chatBytes(req DiagramRequest) int {
 	return n
 }
 
-// logUsage は 1 回の生成で LLM に払ったぶんを残す。
-//
-// **保存はしない**（ADR 0031）。金額にもしない。残すのはトークン数と回数まで。
-func (s *DiagramService) logUsage(
-	ctx context.Context, boardID string, kind domain.DiagramKind, u llmUsage, err error,
-) {
-	s.logger.InfoContext(ctx, "diagram draft llm usage",
-		slog.String("boardId", boardID),
-		slog.String("diagramKind", string(kind)),
-		slog.Int("attempts", u.attempts),
-		slog.Int("inputTokens", u.inputTokens),
-		slog.Int("outputTokens", u.outputTokens),
-		slog.Bool("ok", err == nil),
-	)
-}
-
 // complete は mermaid が取り出せるまで、指摘を添えて呼び直す。
 //
-// 払ったぶんは成否によらず返す。呼び出し側がそれを記録する。
+// 払ったぶんは成否によらず返す。呼び出し側がそれを記録する。呼び直しの手順は
+// 解釈と同じで、llmRetry が持つ。
 func (s *DiagramService) complete(
 	ctx context.Context, req DiagramRequest,
 ) (string, llmUsage, error) {
@@ -267,33 +253,16 @@ func (s *DiagramService) complete(
 		Images: nil,
 	}
 
-	var last error
-	var usage llmUsage
-
-	for attempt := 1; attempt <= s.maxAttempts; attempt++ {
-		// 呼ぶ前に数える。失敗した回も「呼んだ」に含めないと、上限に対して
-		// 実際に何回叩いているのかが読めない。
-		usage.attempts = attempt
-
-		resp, err := s.llm.Complete(ctx, llmReq)
-		if err != nil {
-			// 接続やモデル側の失敗は指摘で直る問題ではないので再送しない。
-			return "", usage, llmCallError(attempt, err)
-		}
-		usage.addTokens(resp.Usage)
-
-		mermaid, err := extractMermaid(resp.Text, req.Kind)
-		if err == nil {
-			return mermaid, usage, nil
-		}
-
-		last = err
-		// VisionRequest は 1 往復ぶんしか運べないので、元の指示ごと組み立て
-		// 直して自己完結させる（buildRetryMessage と同じ形）。
-		llmReq.Text = buildDiagramRetryMessage(base, resp.Text, err)
-	}
-
-	return "", usage, fmt.Errorf("%w (%d attempts): %w", ErrDiagramFailed, s.maxAttempts, last)
+	return llmRetry[string]{
+		maxAttempts: s.maxAttempts,
+		parse: func(text string) (string, error) {
+			return extractMermaid(text, req.Kind)
+		},
+		retryText: func(previousOutput string, err error) string {
+			return buildDiagramRetryMessage(base, previousOutput, err)
+		},
+		exhausted: ErrDiagramFailed,
+	}.run(ctx, s.llm, llmReq)
 }
 
 // extractMermaid は LLM の出力から mermaid 本体を取り出し、頼んだ記法かを見る。
