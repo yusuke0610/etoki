@@ -149,54 +149,122 @@ func TestNewLLMLimiter_Defaults(t *testing.T) {
 	}
 }
 
-// 上限に当たったら **LLM を 1 回も呼ばない。** 呼んでから結果を捨てると、
-// 課金だけが発生する（ADR 0044、validateImages を手前に置いてあるのと同じ理由）。
-func TestInterpret_RateLimitedDoesNotCallLLM(t *testing.T) {
+// 上限に当たったら **LLM を 1 回も呼ばず、ジョブも作らない。** 呼んでから結果を
+// 捨てると、課金だけが発生する（ADR 0044、validateImages を手前に置いてあるのと
+// 同じ理由）。
+//
+// **本番が通る口（InterpretationJobs.Start）で見る。** 枠を取る順番を持っているのは
+// jobTable.start なので、そこを通らない口で確かめても守っていることにならない。
+func TestJobs_RateLimitedDoesNotCallLLM(t *testing.T) {
 	t.Parallel()
 
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
-	svc := usecase.NewInterpretationService(
+	jobs := usecase.NewInterpretationJobs(usecase.NewInterpretationService(
 		&fakeBoards{board: newBoard(interpretScene)}, &fakeMappings{}, llm,
 		usecase.NewLLMLimiter(usecase.LLMLimits{RateLimit: 1}),
-	)
+	))
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("1 回目の Interpret() = %v", err)
+	first, err := jobs.Start(t.Context(), "board-1", "annot-1", nil)
+	if err != nil {
+		t.Fatalf("1 回目の Start() = %v", err)
 	}
+	waitDone(t, func() (usecase.InterpretationJob, error) {
+		return jobs.Get(t.Context(), "board-1", first.ID)
+	})
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	_, err = jobs.Start(t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrRateLimited) {
-		t.Fatalf("2 回目の Interpret() = %v, want ErrRateLimited", err)
+		t.Fatalf("2 回目の Start() = %v, want ErrRateLimited", err)
 	}
 	if len(llm.requests) != 1 {
 		t.Errorf("LLM 呼び出し回数 = %d, want 1", len(llm.requests))
 	}
+	list, err := jobs.List(t.Context(), "board-1")
+	if err != nil || len(list) != 1 {
+		t.Errorf("List() = %v, %v, want 1 回目のジョブだけ", list, err)
+	}
 }
 
-// 走っている解釈があるあいだは同時実行で断る。枠は外から取っておく。
-// 実際に並行させなくても、サービスが同じ limiter を見ていることは確かめられる。
-func TestInterpret_ConcurrencyLimitedDoesNotCallLLM(t *testing.T) {
+// 走っている実行があるあいだは同時実行で断る。枠は外から取っておく。
+// 実際に並行させなくても、ジョブが同じ limiter を見ていることは確かめられる。
+func TestJobs_ConcurrencyLimitedDoesNotCallLLM(t *testing.T) {
 	t.Parallel()
 
 	limits := usecase.NewLLMLimiter(usecase.LLMLimits{MaxConcurrent: 1})
 	defer acquire(t, limits, "")()
 
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
-	svc := usecase.NewInterpretationService(
-		&fakeBoards{board: newBoard(interpretScene)}, &fakeMappings{}, llm, limits)
+	jobs := usecase.NewInterpretationJobs(usecase.NewInterpretationService(
+		&fakeBoards{board: newBoard(interpretScene)}, &fakeMappings{}, llm, limits))
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	_, err := jobs.Start(t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrConcurrencyLimited) {
-		t.Fatalf("Interpret() = %v, want ErrConcurrencyLimited", err)
+		t.Fatalf("Start() = %v, want ErrConcurrencyLimited", err)
 	}
 	if len(llm.requests) != 0 {
 		t.Errorf("LLM 呼び出し回数 = %d, want 0", len(llm.requests))
+	}
+	list, err := jobs.List(t.Context(), "board-1")
+	if err != nil || len(list) != 0 {
+		t.Errorf("List() = %v, %v, want 空", list, err)
+	}
+}
+
+// **枠を取るのは認可と入力の検証を通ってから**（ADR 0044）。手前で取ると、404 や
+// 400 で返るリクエストが回数の枠を食い、他人のボード ID を叩くだけで枠を潰せる。
+//
+// 回数の枠で見る。同時実行の枠は返せば戻るので、取る順番を崩しても返し忘れなければ
+// 気づけない。
+func TestJobs_RejectedStartDoesNotConsumeRate(t *testing.T) {
+	t.Parallel()
+
+	starts := map[string]func(limits *usecase.LLMLimiter) (rejected, accepted func() error){
+		"解釈": func(limits *usecase.LLMLimiter) (func() error, func() error) {
+			jobs := usecase.NewInterpretationJobs(usecase.NewInterpretationService(
+				&fakeBoards{board: newBoard(interpretScene)}, &fakeMappings{},
+				&fakeLLM{responses: []string{validLLMOutput}}, limits))
+			return func() error {
+					_, err := jobs.Start(t.Context(), "board-1", "no-such-annot", nil)
+					return err
+				}, func() error {
+					_, err := jobs.Start(t.Context(), "board-1", "annot-1", nil)
+					return err
+				}
+		},
+		"図の生成": func(limits *usecase.LLMLimiter) (func() error, func() error) {
+			jobs := usecase.NewDiagramJobs(usecase.NewDiagramService(
+				&fakeBoards{board: newBoard(interpretScene)},
+				&fakeLLM{responses: []string{validMermaid}}, limits))
+			return func() error {
+					_, err := jobs.Start(t.Context(), "no-such-board", req("段取り"))
+					return err
+				}, func() error {
+					_, err := jobs.Start(t.Context(), "board-1", req("段取り"))
+					return err
+				}
+		},
+	}
+	for name, start := range starts {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rejected, accepted := start(usecase.NewLLMLimiter(usecase.LLMLimits{RateLimit: 1}))
+			if err := rejected(); err == nil || errors.Is(err, usecase.ErrRateLimited) {
+				t.Fatalf("弾く入力の Start() = %v, want 認可か入力の誤り", err)
+			}
+			if err := accepted(); err != nil {
+				t.Errorf("弾いた後の Start() = %v, want 始められる", err)
+			}
+		})
 	}
 }
 
 // **解釈と図のドラフト生成は同じ枠**（ADR 0044）。片方だけ絞ると、絞っていない
 // ほうが抜け道として残る。ここが切れると、合計では上限の倍まで叩ける。
-func TestInterpretAndDiagram_ShareOneLimit(t *testing.T) {
+//
+// 同時実行の枠の共有は TestDiagramJobs_ShareLimiterWithInterpretation が見る。
+// ここは回数の枠。
+func TestJobs_InterpretAndDiagramShareOneRateLimit(t *testing.T) {
 	t.Parallel()
 
 	limits := usecase.NewLLMLimiter(usecase.LLMLimits{RateLimit: 1})
@@ -207,15 +275,15 @@ func TestInterpretAndDiagram_ShareOneLimit(t *testing.T) {
 		boards, &fakeMappings{}, interpretLLM, limits)
 
 	diagramLLM := &fakeLLM{responses: []string{validMermaid}}
-	diagrams := usecase.NewDiagramService(boards, diagramLLM, limits)
+	diagrams := usecase.NewDiagramJobs(usecase.NewDiagramService(boards, diagramLLM, limits))
 
-	if _, err := interpretations.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, interpretations, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 
-	_, err := diagrams.Generate(t.Context(), "board-1", req("段取り"))
+	_, err := diagrams.Start(t.Context(), "board-1", req("段取り"))
 	if !errors.Is(err, usecase.ErrRateLimited) {
-		t.Fatalf("Generate() = %v, want ErrRateLimited", err)
+		t.Fatalf("図の Start() = %v, want ErrRateLimited", err)
 	}
 	if len(diagramLLM.requests) != 0 {
 		t.Errorf("図の LLM 呼び出し回数 = %d, want 0", len(diagramLLM.requests))

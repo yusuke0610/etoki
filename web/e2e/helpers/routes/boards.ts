@@ -47,6 +47,8 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
       projectNumber: target.projectNumber ?? 0,
       projectTitle: target.projectTitle ?? "",
       projectUrl: target.projectUrl ?? "",
+      // 作った時点の背景は空（ADR 0093）。作成の口は背景を受け取らない。
+      premise: "",
       targetLocked: false,
       sceneOverLimit: false,
     };

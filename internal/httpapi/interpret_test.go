@@ -56,6 +56,24 @@ func newInterpretRouterWithLimits(
 	t.Helper()
 
 	boards, mappings := newRepos(t)
+	return newInterpretRouterOnRepos(t, llm, limits, boards, mappings)
+}
+
+// newInterpretRouterOn は渡したリポジトリの上にルーターを組む。記録を直接
+// 積んでから解釈を見るテストが使う。
+func newInterpretRouterOn(
+	t *testing.T, llm port.LLMClient, boards port.BoardRepository, mappings port.MappingRepository,
+) *gin.Engine {
+	t.Helper()
+
+	return newInterpretRouterOnRepos(t, llm, newLimiter(), boards, mappings)
+}
+
+func newInterpretRouterOnRepos(
+	t *testing.T, llm port.LLMClient, limits *usecase.LLMLimiter,
+	boards port.BoardRepository, mappings port.MappingRepository,
+) *gin.Engine {
+	t.Helper()
 
 	seq := 0
 	boardSvc := usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks(),

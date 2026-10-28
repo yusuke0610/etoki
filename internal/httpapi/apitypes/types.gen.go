@@ -118,6 +118,8 @@ const (
 	ErrorCodeLoginRequired               ErrorCode = "login_required"
 	ErrorCodeMcpConnectionsNotConfigured ErrorCode = "mcp_connections_not_configured"
 	ErrorCodeNotFound                    ErrorCode = "not_found"
+	ErrorCodePremiseConflict             ErrorCode = "premise_conflict"
+	ErrorCodePremiseTooLarge             ErrorCode = "premise_too_large"
 	ErrorCodePreviousItemUnknown         ErrorCode = "previous_item_unknown"
 	ErrorCodeProjectFieldMissing         ErrorCode = "project_field_missing"
 	ErrorCodeRateLimited                 ErrorCode = "rate_limited"
@@ -182,6 +184,10 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeMcpConnectionsNotConfigured:
 		return true
 	case ErrorCodeNotFound:
+		return true
+	case ErrorCodePremiseConflict:
+		return true
+	case ErrorCodePremiseTooLarge:
 		return true
 	case ErrorCodePreviousItemUnknown:
 		return true
@@ -547,6 +553,13 @@ type BoardDetail struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 
+	// Premise ボードの背景（画面では「ボードの背景」、ADR 0093）。解釈のたびに
+	// LLM へ添える、人が書く文。空文字は「書いていない」。
+	//
+	// **一覧（`BoardSummary`）には載せない。** 一覧の画面は背景を
+	// 出さないので、全ボードぶんを返しても捨てるだけになる。
+	Premise string `json:"premise"`
+
 	// ProjectID draft issue を作る Projects v2 の node ID。未選択なら空文字
 	ProjectID string `json:"projectId"`
 
@@ -786,6 +799,13 @@ type BoardWithFiles struct {
 	Files map[string]string `json:"files"`
 	ID    string            `json:"id"`
 	Name  string            `json:"name"`
+
+	// Premise ボードの背景（画面では「ボードの背景」、ADR 0093）。解釈のたびに
+	// LLM へ添える、人が書く文。空文字は「書いていない」。
+	//
+	// **一覧（`BoardSummary`）には載せない。** 一覧の画面は背景を
+	// 出さないので、全ボードぶんを返しても捨てるだけになる。
+	Premise string `json:"premise"`
 
 	// ProjectID draft issue を作る Projects v2 の node ID。未選択なら空文字
 	ProjectID string `json:"projectId"`
@@ -1158,6 +1178,21 @@ type Interpretation struct {
 	Summary     string            `json:"summary"`
 }
 
+// InterpretationContext 解釈の入力に、囲みの外から添えたもの（ADR 0093）。どれも注釈のハッシュに
+// 入らない。
+type InterpretationContext struct {
+	// OmittedOtherItems 上限で打ち切って渡さなかった件数。**上限の値そのものは返さない。**
+	OmittedOtherItems int `json:"omittedOtherItems"`
+
+	// OtherItems 同じボードの別の絵から作ったもの。最近作った・更新したものから並べ、
+	// 上限までを渡す。シーンから消えた絵のぶんも含む
+	OtherItems []OtherItem `json:"otherItems"`
+
+	// Premise 渡したボードの背景。解釈を始めた時点のもので、空なら添えていない。
+	// 走っているあいだに背景が書き換わっても、ここは始めたときの背景のまま
+	Premise string `json:"premise"`
+}
+
 // InterpretationJob 1 回の解釈の、いまの様子（ADR 0085）。
 //
 // - `running` … 走っている
@@ -1172,20 +1207,41 @@ type InterpretationJob struct {
 	Error *ErrorResponse `json:"error,omitempty"`
 	ID    string         `json:"id"`
 
-	// Result LLM が注釈をどう解釈したか。
+	// Result 解釈の結果。`Interpretation` に、囲みの外から添えたもの（`context`）を
+	// 加えたもの（ADR 0093）。
 	//
-	// `summary` は GitHub には作らない。作成前に「こう読んだ」を見せるためだけに
-	// 使う（ADR 0006）。
+	// **何を渡したかを結果と一緒に返す。** 黙って材料を足して結果だけを返すと、
+	// 出力がなぜそうなったかを読めない（中核思想 3）。
 	//
-	// 作成のリクエストボディとしてもこの形をそのまま使う。開発者が確認した
-	// 結果を送り返す、という流れなので別の型にしない。
-	Result    *Interpretation         `json:"result,omitempty"`
+	// 作成のリクエストボディは `Interpretation` のまま。`context` は確かめる
+	// ためのもので、送り返すものではない。
+	Result    *InterpretationResult   `json:"result,omitempty"`
 	StartedAt time.Time               `json:"startedAt"`
 	Status    InterpretationJobStatus `json:"status"`
 }
 
 // InterpretationJobStatus defines model for InterpretationJob.Status.
 type InterpretationJobStatus string
+
+// InterpretationResult 解釈の結果。`Interpretation` に、囲みの外から添えたもの（`context`）を
+// 加えたもの（ADR 0093）。
+//
+// **何を渡したかを結果と一緒に返す。** 黙って材料を足して結果だけを返すと、
+// 出力がなぜそうなったかを読めない（中核思想 3）。
+//
+// 作成のリクエストボディは `Interpretation` のまま。`context` は確かめる
+// ためのもので、送り返すものではない。
+type InterpretationResult struct {
+	// ContentHash 解釈の入力になった保存済みシーンのハッシュ。フロントでは組み立てず、
+	// 受け取ったものをそのまま送り返す
+	ContentHash string `json:"contentHash"`
+
+	// Context 解釈の入力に、囲みの外から添えたもの（ADR 0093）。どれも注釈のハッシュに
+	// 入らない。
+	Context InterpretationContext `json:"context"`
+	Items   []InterpretedItem     `json:"items"`
+	Summary string                `json:"summary"`
+}
 
 // InterpretedItem 解釈結果に含まれる draft issue 1 件。まだ作成はしていない
 type InterpretedItem struct {
@@ -1311,6 +1367,15 @@ type OAuthGrant struct {
 	// 進めないので、1 時間（アクセストークンの寿命）の粒度
 	LastUsedAt time.Time `json:"lastUsedAt"`
 	Scope      string    `json:"scope"`
+}
+
+// OtherItem 同じボードの別の絵から作ったもの 1 件（ADR 0093）。渡すのは種別と
+// タイトルだけで、対応づけ（更新先）の候補にはしない
+type OtherItem struct {
+	// Kind GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ
+	// （ADR 0006）。
+	Kind  ItemKind `json:"kind"`
+	Title string   `json:"title"`
 }
 
 // Project リポジトリに紐づく Projects v2
@@ -1483,6 +1548,20 @@ type SetMemberRoleRequest struct {
 	Role BoardRole `json:"role"`
 }
 
+// SetPremiseRequest ボードの背景の書き換えのリクエストボディ（ADR 0093）。
+//
+// 背景だけを持つ。シーンや作成先を一緒に送れる形にすると、この経路でも
+// それらを書けることになる（`RenameBoardRequest` と同じ理由）。
+type SetPremiseRequest struct {
+	// BasePremise 編集を始めた時点の背景（`BoardDetail.premise` で受け取ったもの）。
+	// いまの背景と食い違えば 409（`premise_conflict`）
+	BasePremise string `json:"basePremise"`
+
+	// Premise 新しい背景。改行を揃え、前後の空白を落として保存する。空白だけなら
+	// 空（書いていない）になる
+	Premise string `json:"premise"`
+}
+
 // SyncAction 1 つの run がその item に対して何をしたか（ADR 0026）。
 //
 // `created` は新しく作った、`updated` は既存の draft issue を書き換えた。
@@ -1611,6 +1690,9 @@ type NotConfigured = ErrorResponse
 // NotFound 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type NotFound = ErrorResponse
 
+// PremiseTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
+type PremiseTooLarge = ErrorResponse
+
 // RequestTooLarge 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type RequestTooLarge = ErrorResponse
 
@@ -1667,6 +1749,9 @@ type InviteBoardMemberJSONRequestBody = InviteMemberRequest
 
 // SetBoardMemberRoleJSONRequestBody defines body for SetBoardMemberRole for application/json ContentType.
 type SetBoardMemberRoleJSONRequestBody = SetMemberRoleRequest
+
+// SetBoardPremiseJSONRequestBody defines body for SetBoardPremise for application/json ContentType.
+type SetBoardPremiseJSONRequestBody = SetPremiseRequest
 
 // SaveSceneJSONRequestBody defines body for SaveScene for application/json ContentType.
 type SaveSceneJSONRequestBody = SaveSceneRequest
