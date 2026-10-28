@@ -28,6 +28,7 @@ function props(): ComponentProps<typeof AnnotationDetail> {
       onSelect: vi.fn(),
       onCancel: vi.fn(),
       unavailable: null,
+      premise: "",
     },
     creation: {
       states: {},
@@ -487,7 +488,7 @@ describe("AnnotationDetail", () => {
 
       // 置き場所は囲みの中に限る。囲みに出し入れすると所属が変わって動く。
       const note = screen.getByText(
-        /矢印や図形、貼った画像、囲みの中での置き場所、絵の名前だけを直しても/,
+        /矢印や図形、貼った画像、囲みの中での置き場所、絵の名前、ボードの背景だけを直しても/,
       );
       expect(note).toHaveTextContent(/「作成済み」のまま/);
       // 何を変えれば「変更あり」になるかも言う。言わないと、どこまでが検知の外かが読めない。
@@ -760,5 +761,128 @@ describe("AnnotationDetail", () => {
         "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
       );
     }
+  });
+
+  // ボードの背景（ADR 0093）。押す前に見せるのは背景だけで、結果には何を添えたかを
+  // 載せる。黙って材料を足すと、出力がなぜそうなったかを読めない（中核思想 3）。
+  describe("絵の外から添えるもの", () => {
+    const context = (over: Partial<InterpretationResult["context"]> = {}) => ({
+      premise: "",
+      otherItems: [],
+      omittedOtherItems: 0,
+      ...over,
+    });
+
+    function withResult(premise: string, added: InterpretationResult["context"]) {
+      const detailProps = props();
+      const result: InterpretationResult = {
+        summary: "s",
+        contentHash: "h",
+        items: [],
+        context: added,
+      };
+      return {
+        ...detailProps,
+        interpretation: {
+          ...detailProps.interpretation,
+          premise,
+          states: {
+            "frame-1": {
+              running: false,
+              runs: [
+                {
+                  id: 1,
+                  at: "2026-01-01T00:00:00Z",
+                  granularity: "issue" as const,
+                  result,
+                },
+              ],
+              selectedId: 1,
+            },
+          },
+        },
+      };
+    }
+
+    it("背景を書いてあれば、押す前に添えることと中身を見せる", () => {
+      const detailProps = props();
+      render(
+        <AnnotationDetail
+          {...detailProps}
+          interpretation={{ ...detailProps.interpretation, premise: "acme/web の話" }}
+        />,
+      );
+
+      expect(screen.getByText("ボードの背景も添えて読みます")).toBeInTheDocument();
+      expect(screen.getByText("acme/web の話")).toBeInTheDocument();
+    });
+
+    // 空でも催促しない（中核思想 1）。
+    it("背景が空なら、押す前に何も言わない", () => {
+      render(<AnnotationDetail {...props()} />);
+
+      expect(screen.queryByText(/ボードの背景/)).toBeNull();
+    });
+
+    it("結果には、添えた背景と別の絵から作ったものを件数ごと見せる", () => {
+      render(
+        <AnnotationDetail
+          {...withResult(
+            "acme/web の話",
+            context({
+              premise: "acme/web の話",
+              otherItems: [
+                { kind: "epic", title: "決済" },
+                { kind: "issue", title: "カードを登録する" },
+              ],
+              omittedOtherItems: 3,
+            }),
+          )}
+        />,
+      );
+
+      // 開かなくても「何を何件」が読める。打ち切った件数も黙らない。
+      expect(
+        screen.getByText(
+          "絵の外から添えたもの：ボードの背景・別の絵から作ったもの 2 件（上限を超えた 3 件は添えていません）",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText("acme/web の話")).toBeInTheDocument();
+      expect(screen.getByText("決済")).toBeInTheDocument();
+      expect(screen.getByText("カードを登録する")).toBeInTheDocument();
+      // いまの背景と同じなら、違うとは言わない。
+      expect(screen.queryByText(/違うボードの背景/)).toBeNull();
+    });
+
+    // 背景を書き換えても引いた解釈は捨てない（ADR 0093）。古い背景で読んだと
+    // 見分ける手掛かりはここだけ。
+    it("結果に添えた背景がいまの背景と違えば、畳まずに言う", () => {
+      render(
+        <AnnotationDetail
+          {...withResult("新しい背景", context({ premise: "古い背景" }))}
+        />,
+      );
+
+      const note = screen.getByText(/いまとは違うボードの背景で読んだものです/);
+      expect(note).toHaveTextContent(/読み直すかどうかは選べます/);
+      expect(screen.getByText("古い背景")).toBeInTheDocument();
+    });
+
+    it("背景を書く前に読んだ結果なら、そう言う", () => {
+      render(<AnnotationDetail {...withResult("新しい背景", context())} />);
+
+      expect(
+        screen.getByText(/ボードの背景を書く前に読んだものです/),
+      ).toBeInTheDocument();
+      // 何も添えていないので、添えたものの見出しは出さない。
+      expect(screen.queryByText(/絵の外から添えたもの/)).toBeNull();
+    });
+
+    it("何も添えず、背景も変わっていなければ何も出さない", () => {
+      render(<AnnotationDetail {...withResult("", context())} />);
+
+      expect(screen.queryByText(/絵の外から添えたもの/)).toBeNull();
+      expect(screen.queryByText(/ボードの背景/)).toBeNull();
+    });
   });
 });

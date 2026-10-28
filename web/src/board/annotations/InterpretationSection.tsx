@@ -1,12 +1,14 @@
 import type {
   Granularity,
   Interpretation,
+  InterpretationContext,
   ProjectAccess,
   SyncItem,
   SyncState,
 } from "../../api/types";
 import { ErrorNotice } from "../../app/ErrorNotice";
-import { GRANULARITY_LABEL } from "./annotationLabel";
+import { GRANULARITY_LABEL, ITEM_KIND_LABEL } from "./annotationLabel";
+import { contextSummary } from "./interpretationContext";
 import { DraftEditor } from "./DraftEditor";
 import {
   interpretationOrderLabel,
@@ -47,6 +49,8 @@ type InterpretationSectionProps = {
   stale: boolean;
   /** LLM が未設定なら理由。使えるなら null（ADR 0030）。 */
   interpretationUnavailable: string | null;
+  /** いまのボードの背景（ADR 0093）。次に絵解くときに添えるもの。 */
+  premise: string;
   /** ほかの囲みの解釈が走っているか。自分自身のぶんは含めない。 */
   interpretationBusyElsewhere: boolean;
   onInterpret: () => void;
@@ -77,8 +81,8 @@ const REINTERPRET_HINT =
  *
  * `content_hash` が見るのは囲みの中の文字・粒度・種別だけで、矢印・図形・貼った
  * 画像・座標は見ない（`internal/domain/hash.go`、仕様として固定してある）。囲みの名前も
- * 外してある（#321）。**文字は文面と要素の ID の組で見る**ので、同じ文面でも
- * 消して作り直すと動く。**どの文字が囲みの中かは座標ではなく所属（`frameId`）で
+ * 外してある（#321）。囲みの外にあるボードの背景も入らない（ADR 0093）。**文字は
+ * 文面と要素の ID の組で見る**ので、同じ文面でも消して作り直すと動く。**どの文字が囲みの中かは座標ではなく所属（`frameId`）で
  * 決まる**ので、囲みの中で動かすだけなら動かず、囲みに出し入れすると動く。
  * 「置き場所」を囲みの中に限って言うのはそのため。動く側に書いておかないと、
  * そうして付いた「変更あり」の理由が読めない。一方で解釈は囲みの画像も読む（ADR 0018）ので、矢印を
@@ -99,8 +103,8 @@ const REINTERPRET_HINT =
  * 動かない変更の両方を言っているので、片方だけ古くなる。
  */
 const SHAPE_ONLY_NOTE =
-  "矢印や図形、貼った画像、囲みの中での置き場所、絵の名前だけを直しても「作成済み」の" +
-  "ままです（「変更あり」になるのは、絵の中の文字・粒度・種別を変えたとき。文字を" +
+  "矢印や図形、貼った画像、囲みの中での置き場所、絵の名前、ボードの背景だけを直しても" +
+  "「作成済み」のままです（「変更あり」になるのは、絵の中の文字・粒度・種別を変えたとき。文字を" +
   "囲みに出し入れしたときや、同じ文面でも消して作り直したときも含みます）。";
 
 /**
@@ -156,6 +160,7 @@ export function InterpretationSection({
   targetLabel,
   stale,
   interpretationUnavailable,
+  premise,
   interpretationBusyElsewhere,
   onInterpret,
   onSelectInterpretation,
@@ -198,6 +203,18 @@ export function InterpretationSection({
       {!running && runs.length === 0 && !state?.failure && (
         <p className="hint">{beforeInterpretationHint(syncState)}</p>
       )}
+      {/*
+        **押す前に見せるのは背景だけ**（ADR 0093）。背景は開いた時点で手元にある。
+        別の絵から作ったものまで見せるには、どれを渡すかの規則を画面でも持つことに
+        なるので、そちらは結果に添えて見せる（下の `AddedContext`）。**空なら何も
+        出さない。** 書くかどうかは人が決め、催促しない（中核思想 1）。
+      */}
+      {!running && runs.length === 0 && premise !== "" && (
+        <details className="premise-preview">
+          <summary>ボードの背景も添えて読みます</summary>
+          <p className="premise-text">{premise}</p>
+        </details>
+      )}
       {!running && !state?.failure && syncState === "created" && (
         <p className="hint">{SHAPE_ONLY_NOTE}</p>
       )}
@@ -231,6 +248,8 @@ export function InterpretationSection({
           onSelect={onSelectInterpretation}
         />
       )}
+
+      {selected && <AddedContext context={selected.result.context} premise={premise} />}
 
       {selected ? (
         <DraftEditor
@@ -300,6 +319,71 @@ function InterpretationHistory({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/**
+ * 解釈に、囲みの外から添えたもの（ADR 0093）。選んでいる結果に添える。
+ *
+ * **黙って材料を足さない。** 結果だけを見せると、出力がなぜそうなったかを読めない
+ * （中核思想 3）。中身は長くなりうるので畳み、見出しで「何を何件」を言う
+ * （`contextSummary`）。
+ *
+ * **いまの背景と違えば、畳まずに言う。** 背景を書き換えても引いた解釈は捨てない
+ * （ADR 0093）ので、古い背景で読んだ結果が残る。見分ける手掛かりがここしか無い。
+ * 比べるのは本文そのもので、どちらもサーバーが整えた形なのでそのまま比べてよい。
+ */
+function AddedContext({
+  context,
+  premise,
+}: {
+  context: InterpretationContext;
+  /** いまのボードの背景。 */
+  premise: string;
+}) {
+  const summary = contextSummary(context);
+  const differs = context.premise !== premise;
+  if (summary === null && !differs) return null;
+
+  return (
+    <div className="interpretation-context">
+      {differs && (
+        <p className="hint">
+          {context.premise === ""
+            ? "この結果は、ボードの背景を書く前に読んだものです。"
+            : "この結果は、いまとは違うボードの背景で読んだものです。"}
+          いまの背景で読み直すかどうかは選べます。
+        </p>
+      )}
+      {summary !== null && (
+        <details>
+          <summary>{summary}</summary>
+          {context.premise !== "" && (
+            <>
+              <h3>ボードの背景</h3>
+              <p className="premise-text">{context.premise}</p>
+            </>
+          )}
+          {context.otherItems.length > 0 && (
+            <>
+              <h3>同じボードの別の絵から作ったもの</h3>
+              {/*
+                種別とタイトルだけ。**更新先の候補ではない**（ref を振っていない、
+                ADR 0093）ので、作るものの一覧とは形を変えて並べる。
+              */}
+              <ul className="plain-list">
+                {context.otherItems.map((item, i) => (
+                  <li key={i}>
+                    <span className="badge">{ITEM_KIND_LABEL[item.kind]}</span>{" "}
+                    <span>{item.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </details>
+      )}
     </div>
   );
 }

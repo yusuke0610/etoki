@@ -442,10 +442,11 @@ export function App() {
       // この経路ではキャンバスを作り直さないので、画像はキャンバスが持っている。
       //
       // **版（`updatedAt`）も持ち越す**（ADR 0092 / 0020）。改名も表示名の取り直しも
-      // 版を動かさないので、応答の版はサーバーのいまの版で、開いたあとに別の
-      // メンバーが保存していればその版になる。それを手元に置くと保存の基準が
-      // 進み（`useSceneSave`）、読み込んでいない相手の保存を次の保存が黙って
-      // 上書きする。版を動かすのはシーンの保存とキャンバスの読み直しだけ。
+      // 背景の書き換え（ADR 0093）も版を動かさないので、応答の版はサーバーのいまの
+      // 版で、開いたあとに別のメンバーが保存していればその版になる。それを手元に
+      // 置くと保存の基準が進み（`useSceneSave`）、読み込んでいない相手の保存を
+      // 次の保存が黙って上書きする。版を動かすのはシーンの保存とキャンバスの読み
+      // 直しだけ。
       setCurrent((open) =>
         open?.id === board.id
           ? { ...board, files: open.files, updatedAt: open.updatedAt }
@@ -752,10 +753,11 @@ export function App() {
               setPicking(true);
               showLocation({ boardId: current.id, picking: true }, "replace");
             }}
-            // 表示名の取り直しと改名は、どちらも「サーバーが返したボードで
-            // 手元を差し替える」だけ。同じ扱いにする（replaceBoard を参照）。
+            // 表示名の取り直しと改名と背景の書き換えは、どれも「サーバーが返した
+            // ボードで手元を差し替える」だけ。同じ扱いにする（replaceBoard を参照）。
             onTargetRefreshed={replaceBoard}
             onRenamed={replaceBoard}
+            onPremiseChanged={replaceBoard}
             onDeleted={handleDeleted}
             onDirtyChange={handleDirtyChange}
             theme={theme}
