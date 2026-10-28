@@ -17,12 +17,12 @@ import (
 var llmCallers = map[string]func(t *testing.T, llm *fakeLLM) error{
 	"解釈": func(t *testing.T, llm *fakeLLM) error {
 		svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
-		_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+		_, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 		return err
 	},
 	"図の生成": func(t *testing.T, llm *fakeLLM) error {
 		svc, _ := newDiagramService(t, llm)
-		_, err := svc.Generate(t.Context(), "board-1", req("段取り"))
+		_, err := generate(t, svc, t.Context(), "board-1", req("段取り"))
 		return err
 	},
 }

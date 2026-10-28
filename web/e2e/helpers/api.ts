@@ -14,6 +14,7 @@ import type {
   ErrorResponse,
   GenerateDiagramRequest,
   Interpretation,
+  InterpretationResult,
   InterpretRequest,
   LoginResponse,
   OAuthAuthorization,
@@ -79,7 +80,7 @@ export type ApiMock = {
    * 無い）、混ぜて持つとモックだけが混ざった形を返せてしまう。
    */
   detached: Record<string, DetachedAnnotation[]>;
-  interpret: Reply<Interpretation>;
+  interpret: Reply<InterpretationResult>;
   /**
    * 解釈で受け取ったリクエストボディ。届いた順に積む。
    *

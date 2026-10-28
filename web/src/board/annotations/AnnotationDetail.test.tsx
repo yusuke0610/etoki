@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { Interpretation } from "../../api/types";
+import type { InterpretationResult } from "../../api/types";
 import { AnnotationDetail } from "./AnnotationDetail";
 
 function props(): ComponentProps<typeof AnnotationDetail> {
@@ -501,10 +501,11 @@ describe("AnnotationDetail", () => {
     // この案内まで一緒に消すと、描き直す前に知っておくことが画面から無くなる。
     it("作成済みなら、絵解きの結果が出ていても、矢印や図形だけの変更の案内を出す", () => {
       const detailProps = withState("created");
-      const interpretation: Interpretation = {
+      const interpretation: InterpretationResult = {
         summary: "s",
         contentHash: "h",
         items: [],
+        context: { premise: "", otherItems: [], omittedOtherItems: 0 },
       };
       render(
         <AnnotationDetail

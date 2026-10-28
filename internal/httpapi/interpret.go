@@ -134,10 +134,14 @@ func (h *handlers) bindInterpretImages(c *gin.Context) ([]port.Image, bool) {
 }
 
 // toInterpretationResponse はドメインの解釈結果を境界の DTO に詰め替える。
-func toInterpretationResponse(result usecase.InterpretationResult) apitypes.Interpretation {
-	out := apitypes.Interpretation{
+//
+// **渡したもの（Context）も載せる**（ADR 0093）。作成のリクエストは
+// Interpretation のままで、こちらは送り返さない。
+func toInterpretationResponse(result usecase.InterpretationResult) apitypes.InterpretationResult {
+	out := apitypes.InterpretationResult{
 		Summary:     result.Interpretation.Summary,
 		ContentHash: result.ContentHash,
+		Context:     toInterpretationContext(result.Context),
 		// nil を返すと JSON が null になる。常に配列にする。
 		Items: make([]apitypes.InterpretedItem, 0, len(result.Interpretation.Items)),
 	}
@@ -161,4 +165,19 @@ func toInterpretationResponse(result usecase.InterpretationResult) apitypes.Inte
 	}
 
 	return out
+}
+
+// toInterpretationContext は囲みの外から添えたものを詰め替える。
+//
+// 一覧は空でも配列で返す。null にすると、契約の「渡したものの一覧」が読めない。
+func toInterpretationContext(ic usecase.InterpretationContext) apitypes.InterpretationContext {
+	items := make([]apitypes.OtherItem, 0, len(ic.OtherItems))
+	for _, it := range ic.OtherItems {
+		items = append(items, apitypes.OtherItem{Kind: apitypes.ItemKind(it.Kind), Title: it.Title})
+	}
+	return apitypes.InterpretationContext{
+		Premise:           ic.Premise,
+		OtherItems:        items,
+		OmittedOtherItems: ic.OmittedOtherItems,
+	}
 }
