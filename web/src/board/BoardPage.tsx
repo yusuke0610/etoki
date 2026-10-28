@@ -70,14 +70,13 @@ import { BoardContext } from "./BoardContext";
 import { BoardMenu } from "./BoardMenu";
 import { BoardStatus } from "./BoardStatus";
 import { DeleteConfirm } from "./DeleteConfirm";
-import { SidePanel, type SidePanelTab, type TabSpec } from "./SidePanel";
+import { SidePanel, type TabSpec } from "./SidePanel";
 import { useCreation } from "./annotations/useCreation";
 import { useRunHistories } from "./annotations/useRunHistories";
-import { railBadgesOf, readPanelCollapsed, writePanelCollapsed } from "./panelState";
+import { railBadgesOf } from "./panelState";
 import { projectLink } from "./target/projectLink";
 import { canEditBoard } from "./members/roles";
 import { useBoardDeletion, useRename, useTargetRefresh } from "./useBoardManagement";
-import { useBoardLayout } from "./useBoardLayout";
 import { useBoardTransfer } from "./useBoardTransfer";
 import {
   measureVisibleCanvas,
@@ -86,6 +85,7 @@ import {
 } from "./useCanvasScroll";
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { useMenuTriggerName } from "./useMenuTriggerName";
+import { usePanelLayout } from "./usePanelLayout";
 import { useProjectAccess } from "./useProjectAccess";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
@@ -324,39 +324,22 @@ export function BoardPage({
     // 未設定のうちは引かない。capabilities が届くまで（null）も待つ。
     enabled: capabilities?.interpretation === true,
   });
-  // 右のパネルでどのタブを開いているか（`SidePanel`）。既定は注釈。
-  const [panelTab, setPanelTab] = useState<SidePanelTab>("annotations");
-  // 右のパネルを畳んでいるか（#202）。端末ごとに覚えた値で始める。
-  const [panelCollapsed, setPanelCollapsed] = useState(() => readPanelCollapsed());
-  const changePanelCollapsed = useCallback((collapsed: boolean) => {
-    setPanelCollapsed(collapsed);
-    writePanelCollapsed(collapsed);
-  }, []);
-  // 置き方（`layout.ts`、#199）。並べる・重ねる・スマホ。
-  const [layout, measureLayout] = useBoardLayout();
-  const phone = layout === "phone";
-  // スマホでパネルを全面に開いているか。**覚えない。** いつも畳んだ状態で
-  // 始める（#202）。広い画面で覚えた開閉とは別に持つので、スマホで開いても
-  // 広い画面の開閉は変わらない。
-  const [phonePanelOpen, setPhonePanelOpen] = useState(false);
-  // 上の帯からパネルを開いた回数（`SidePanel` の `openRequest`）。
-  const [panelOpenRequest, setPanelOpenRequest] = useState(0);
-  // スマホの置き方に入ったら畳む。描いている最中に置く（前の値と違うとき
-  // だけ置く形なので React が許している）。effect にすると、入った直後の 1 回は
-  // 前の置き方で開いていたパネルが全面に出る。
-  const [layoutSeen, setLayoutSeen] = useState(layout);
-  if (layoutSeen !== layout) {
-    setLayoutSeen(layout);
-    if (layout === "phone") setPhonePanelOpen(false);
-  }
-  const openPhonePanel = useCallback((tab: SidePanelTab) => {
-    setPanelTab(tab);
-    setPhonePanelOpen(true);
-    setPanelOpenRequest((n) => n + 1);
-  }, []);
-  // スマホで、キャンバスを見せるために全面のパネルを閉じる。置き方を見ずに
-  // 閉じてよい。スマホでなければこの値は読まれず、スマホに入るときに畳み直す。
-  const closePhonePanel = useCallback(() => setPhonePanelOpen(false), []);
+  // 右のパネルの置き方と開閉（`usePanelLayout`）。**束のまま持たない。** 中の関数を
+  // 依存に置く `useCallback` が、置き方が変わるたびに作り直される。
+  const {
+    layout,
+    measureLayout,
+    phone,
+    panelTab,
+    setPanelTab,
+    panelCollapsed,
+    changePanelCollapsed,
+    phonePanelOpen,
+    setPhonePanelOpen,
+    panelOpenRequest,
+    openPhonePanel,
+    closePhonePanel,
+  } = usePanelLayout();
   // 共有のダイアログ（`ShareDialog`、#248）。開くのはキャンバスのメニュー。
   // **関数を安定させる。** メニューは `useMemo` で持つ（ADR 0065）。
   const [shareOpen, setShareOpen] = useState(false);
@@ -851,7 +834,14 @@ export function BoardPage({
     }
     setPanelTab("annotations");
     changePanelCollapsed(false);
-  }, [changePanelCollapsed, openDetail, openPhonePanel, phone, saveAndRefresh]);
+  }, [
+    changePanelCollapsed,
+    openDetail,
+    openPhonePanel,
+    phone,
+    saveAndRefresh,
+    setPanelTab,
+  ]);
 
   /**
    * 詳細の「絵解く」。**未保存なら保存してから読む**（#247）。
