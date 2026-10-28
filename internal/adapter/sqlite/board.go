@@ -32,15 +32,15 @@ const summaryColumns = `b.id, b.name,
 	b.project_number, b.project_title, b.project_url,
 	b.created_at, b.updated_at, m.role`
 
-// boardColumns は Find が SELECT する列。シーンを末尾に足す。
+// boardColumns は Find が SELECT する列。シーンと背景を末尾に足す。
 //
-// **一覧はこれを使わない。** BoardSummary はシーンを含まないので、List が
-// 読んでも捨てるだけになる。捨てるために全ボードぶんをメモリに載せることに
+// **一覧はこれを使わない。** BoardSummary はシーンも背景も含まないので、List
+// が読んでも捨てるだけになる。捨てるために全ボードぶんをメモリに載せることに
 // なる。
 //
 // 足す位置が末尾なのは、summaryColumns の並びを Find と List で崩さないため。
 // 途中に入れると、共有している側の受け皿とずれる。
-const boardColumns = summaryColumns + `, b.scene`
+const boardColumns = summaryColumns + `, b.scene, b.premise`
 
 // memberJoin は操作者がメンバーであるボードだけに絞る結合。
 //
@@ -303,6 +303,35 @@ func (r *BoardRepository) UpdateTargetDisplay(
 		 SET project_number = ?, project_title = ?, project_url = ?
 		 WHERE id = ? AND `+memberExists,
 		d.ProjectNumber, d.ProjectTitle, d.ProjectURL, id, actor)
+}
+
+// UpdatePremise はボードの背景だけを更新する（ADR 0093）。
+//
+// **照合は UPDATE と同じ 1 文に置く。** 先に読んで比べる形にすると、比べて
+// から書くまでの隙間に入った別の編集を上書きする（ADR 0020 と同じ理由）。
+// 比べるのは本文そのもので、版の列は持たない。
+//
+// **updated_at は SET に書かない**（UpdateName と同じ、ADR 0092）。
+func (r *BoardRepository) UpdatePremise(
+	ctx context.Context, actor, id, base, premise string,
+) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE boards SET premise = ?
+		 WHERE id = ? AND premise = ? AND `+memberExists,
+		premise, id, base, actor)
+	if err != nil {
+		return fmt.Errorf("update premise of board %s: %w", id, err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected for premise of board %s: %w", id, err)
+	}
+	if n == 0 {
+		// 触れないのか、背景が食い違ったのかを分ける（UpdateScene と同じ）。
+		return r.updateMissed(ctx, actor, id)
+	}
+	return nil
 }
 
 // memberExists は更新系で操作者がメンバーであることを確かめる述語。
@@ -608,17 +637,18 @@ func scanSummary(s rowScanner, extra ...any) (port.BoardAccess, error) {
 	return a, nil
 }
 
-// scanBoard は boardColumns の並びを読む。シーンを含む。
+// scanBoard は boardColumns の並びを読む。シーンと背景を含む。
 func scanBoard(s rowScanner) (port.BoardAccess, error) {
 	// port.BoardAccess は scanSummary が作って返すので、その中の Scene を
 	// 直接 Scan の受け皿にはできない。いったん受けてから詰める。
-	var scene string
+	var scene, premise string
 
-	a, err := scanSummary(s, &scene)
+	a, err := scanSummary(s, &scene, &premise)
 	if err != nil {
 		return port.BoardAccess{}, err
 	}
 	a.Board.Scene = scene
+	a.Board.Premise = premise
 
 	return a, nil
 }

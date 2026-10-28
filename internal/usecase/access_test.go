@@ -47,20 +47,26 @@ func TestRolePermissions(t *testing.T) {
 		{"改名", func(ctx context.Context, boards *fakeBoards) error {
 			return newBoardService(boards).Rename(ctx, "board-1", "新しい名前")
 		}},
+		{"背景の書き換え", func(ctx context.Context, boards *fakeBoards) error {
+			return newBoardService(boards).SetPremise(ctx, "board-1", "", "Go と React")
+		}},
 		{"シーン保存", func(ctx context.Context, boards *fakeBoards) error {
 			_, err := newBoardService(boards).SaveScene(ctx, "board-1", emptyScene, nil, baseTime)
 			return err
 		}},
 		{"解釈", func(ctx context.Context, boards *fakeBoards) error {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
-			_, err := usecase.NewInterpretationService(boards, &fakeMappings{}, llm, newLimiter()).
-				Interpret(ctx, "board-1", "annot-1", nil)
+			// 判定は始める時点で済む（jobTable.start の prepare）。走らせたあとの
+			// ジョブは LLM しか触らないので、待たずに返してよい。
+			_, err := usecase.NewInterpretationJobs(usecase.NewInterpretationService(
+				boards, &fakeMappings{}, llm, newLimiter())).
+				Start(ctx, "board-1", "annot-1", nil)
 			return err
 		}},
 		{"図のドラフト", func(ctx context.Context, boards *fakeBoards) error {
 			llm := &fakeLLM{responses: []string{validMermaid}}
-			_, err := usecase.NewDiagramService(boards, llm, newLimiter()).
-				Generate(ctx, "board-1", req("段取り"))
+			_, err := usecase.NewDiagramJobs(usecase.NewDiagramService(boards, llm, newLimiter())).
+				Start(ctx, "board-1", req("段取り"))
 			return err
 		}},
 		{"作成", func(ctx context.Context, boards *fakeBoards) error {
@@ -91,9 +97,12 @@ func TestRolePermissions(t *testing.T) {
 		// 名前はブレストの中身に属する表示物で、取り消せない作成の行き先を
 		// 決めるものではない。シーンを書き換えられる editor に、表示名だけ
 		// 直させない理由が無い（作成先の変更は owner だけ）。
-		"改名":    port.RoleEditor,
-		"シーン保存": port.RoleEditor,
-		"解釈":    port.RoleEditor,
+		"改名": port.RoleEditor,
+		// 背景も改名と同じ。解釈に効くが、取り消せない作成の行き先を決める
+		// ものではない（ADR 0093）。
+		"背景の書き換え": port.RoleEditor,
+		"シーン保存":   port.RoleEditor,
+		"解釈":      port.RoleEditor,
 		// 生成も LLM を叩く外部呼び出しで課金を伴う。閲覧者に外部呼び出しを
 		// 許すのは「閲覧」ではない（解釈と同じ理由）。
 		"図のドラフト": port.RoleEditor,

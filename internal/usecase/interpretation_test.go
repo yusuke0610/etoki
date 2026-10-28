@@ -31,9 +31,9 @@ func TestInterpret_Succeeds(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, boards := newInterpretService(t, newBoard(interpretScene), llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 	in := result.Interpretation
 
@@ -65,8 +65,8 @@ func TestInterpret_BuildsPrompt(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	req := llm.requests[0]
@@ -107,8 +107,8 @@ func TestInterpret_PassesImageToLLM(t *testing.T) {
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
 	img := pngImage(16)
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", []port.Image{img}); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", []port.Image{img}); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	req := llm.requests[0]
@@ -137,9 +137,9 @@ func TestInterpret_KeepsImageOnRetry(t *testing.T) {
 	llm := &fakeLLM{responses: []string{invalidLLMOutput, validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	if _, err := svc.Interpret(
+	if _, err := interpret(t, svc,
 		t.Context(), "board-1", "annot-1", []port.Image{pngImage(16)}); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	if len(llm.requests) != 2 {
@@ -175,9 +175,9 @@ func TestInterpret_RejectsInvalidImages(t *testing.T) {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
 			svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-			_, err := svc.Interpret(t.Context(), "board-1", "annot-1", images)
+			_, err := interpret(t, svc, t.Context(), "board-1", "annot-1", images)
 			if !errors.Is(err, usecase.ErrInvalidInput) {
-				t.Fatalf("Interpret() = %v, want ErrInvalidInput", err)
+				t.Fatalf("interpret() = %v, want ErrInvalidInput", err)
 			}
 			// 弾くと決めた入力で LLM を叩くと、弾いたのに課金だけ発生する。
 			if len(llm.requests) != 0 {
@@ -210,7 +210,7 @@ func TestInterpret_PassesGranularityInstruction(t *testing.T) {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
 			svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-			_, _ = svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+			_, _ = interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 
 			if len(llm.requests) == 0 {
 				t.Fatal("LLM が呼ばれていない")
@@ -254,7 +254,7 @@ func TestInterpret_SystemPromptExampleFollowsGranularity(t *testing.T) {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
 			svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-			_, _ = svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+			_, _ = interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 
 			if len(llm.requests) == 0 {
 				t.Fatal("LLM が呼ばれていない")
@@ -278,9 +278,9 @@ func TestInterpret_RetriesWithCorrections(t *testing.T) {
 	llm := &fakeLLM{responses: []string{invalidLLMOutput, validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 	in := result.Interpretation
 	if len(in.Items) != 2 {
@@ -315,9 +315,9 @@ func TestInterpret_GivesUpAfterMaxAttempts(t *testing.T) {
 	svc := usecase.NewInterpretationService(
 		boards, &fakeMappings{}, llm, newLimiter(), usecase.WithMaxAttempts(2))
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	_, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrInterpretationFailed) {
-		t.Fatalf("Interpret() = %v, want ErrInterpretationFailed", err)
+		t.Fatalf("interpret() = %v, want ErrInterpretationFailed", err)
 	}
 
 	if len(llm.requests) != 2 {
@@ -345,9 +345,9 @@ func TestInterpret_AcceptsFencedOutput(t *testing.T) {
 			llm := &fakeLLM{responses: []string{output}}
 			svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-			result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+			result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 			if err != nil {
-				t.Fatalf("Interpret() = %v", err)
+				t.Fatalf("interpret() = %v", err)
 			}
 			in := result.Interpretation
 			if len(in.Items) != 2 {
@@ -367,8 +367,8 @@ func TestInterpret_RetriesOnUnparsableOutput(t *testing.T) {
 	llm := &fakeLLM{responses: []string{"JSON は出せません。", validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 	if len(llm.requests) != 2 {
 		t.Fatalf("LLM 呼び出し回数 = %d, want 2", len(llm.requests))
@@ -386,13 +386,13 @@ func TestInterpret_DoesNotRetryTransportErrors(t *testing.T) {
 	llm := &fakeLLM{err: wantErr}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	_, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, wantErr) {
-		t.Fatalf("Interpret() = %v, want %v", err, wantErr)
+		t.Fatalf("interpret() = %v, want %v", err, wantErr)
 	}
 	// スキーマ違反とは原因も打ち手も違うので、呼び出し側が区別できる必要がある。
 	if !errors.Is(err, usecase.ErrLLMUnavailable) {
-		t.Errorf("Interpret() = %v, want ErrLLMUnavailable", err)
+		t.Errorf("interpret() = %v, want ErrLLMUnavailable", err)
 	}
 	if errors.Is(err, usecase.ErrInterpretationFailed) {
 		t.Errorf("接続の失敗がスキーマ違反として扱われている: %v", err)
@@ -411,9 +411,9 @@ func TestInterpret_NotFound(t *testing.T) {
 		llm := &fakeLLM{responses: []string{validLLMOutput}}
 		svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-		_, err := svc.Interpret(t.Context(), "no-such-board", "annot-1", nil)
+		_, err := interpret(t, svc, t.Context(), "no-such-board", "annot-1", nil)
 		if !errors.Is(err, usecase.ErrBoardNotFound) {
-			t.Fatalf("Interpret() = %v, want ErrBoardNotFound", err)
+			t.Fatalf("interpret() = %v, want ErrBoardNotFound", err)
 		}
 		if len(llm.requests) != 0 {
 			t.Error("ボードが無いのに LLM を呼んでいる")
@@ -426,9 +426,9 @@ func TestInterpret_NotFound(t *testing.T) {
 		llm := &fakeLLM{responses: []string{validLLMOutput}}
 		svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-		_, err := svc.Interpret(t.Context(), "board-1", "no-such-annot", nil)
+		_, err := interpret(t, svc, t.Context(), "board-1", "no-such-annot", nil)
 		if !errors.Is(err, usecase.ErrAnnotationNotFound) {
-			t.Fatalf("Interpret() = %v, want ErrAnnotationNotFound", err)
+			t.Fatalf("interpret() = %v, want ErrAnnotationNotFound", err)
 		}
 		if len(llm.requests) != 0 {
 			t.Error("注釈が無いのに LLM を呼んでいる")
@@ -443,9 +443,9 @@ func TestInterpret_NotFound(t *testing.T) {
 		llm := &fakeLLM{responses: []string{validLLMOutput}}
 		svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-		_, err := svc.Interpret(t.Context(), "board-1", "f1", nil)
+		_, err := interpret(t, svc, t.Context(), "board-1", "f1", nil)
 		if !errors.Is(err, usecase.ErrAnnotationNotFound) {
-			t.Fatalf("Interpret() = %v, want ErrAnnotationNotFound", err)
+			t.Fatalf("interpret() = %v, want ErrAnnotationNotFound", err)
 		}
 	})
 }
@@ -460,8 +460,8 @@ func TestInterpret_InterpretsAnnotationWithoutTexts(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 	if len(llm.requests) != 1 {
 		t.Fatalf("LLM 呼び出し回数 = %d, want 1", len(llm.requests))
@@ -481,8 +481,8 @@ func TestInterpret_IgnoresNonPositiveMaxAttempts(t *testing.T) {
 	svc := usecase.NewInterpretationService(
 		boards, &fakeMappings{}, llm, newLimiter(), usecase.WithMaxAttempts(0))
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 	if len(llm.requests) != 1 {
 		t.Errorf("LLM 呼び出し回数 = %d, want 1", len(llm.requests))
@@ -524,8 +524,8 @@ func TestInterpret_PassesKindInstruction(t *testing.T) {
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
 			svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-			if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-				t.Fatalf("Interpret() = %v", err)
+			if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+				t.Fatalf("interpret() = %v", err)
 			}
 			if len(llm.requests) == 0 {
 				t.Fatal("LLM が呼ばれていない")
@@ -547,8 +547,8 @@ func TestInterpret_SaysNothingAboutKindWhenUnspecified(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	if strings.Contains(llm.requests[0].Text, "として描かれています") {
@@ -565,9 +565,9 @@ func TestInterpret_RejectsUnknownKind(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	_, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrInvalidInput) {
-		t.Fatalf("Interpret() = %v, want ErrInvalidInput", err)
+		t.Fatalf("interpret() = %v, want ErrInvalidInput", err)
 	}
 	if len(llm.requests) != 0 {
 		t.Error("種別が不正なのに LLM を呼んでいる")
@@ -582,9 +582,9 @@ func TestInterpret_RejectsUnknownGranularity(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-	_, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	_, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if !errors.Is(err, usecase.ErrInvalidInput) {
-		t.Fatalf("Interpret() = %v, want ErrInvalidInput", err)
+		t.Fatalf("interpret() = %v, want ErrInvalidInput", err)
 	}
 	if len(llm.requests) != 0 {
 		t.Error("粒度が不正なのに LLM を呼んでいる")
@@ -603,9 +603,9 @@ func TestInterpret_EnforcesGranularityOnOutput(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput, onlyIssues}}
 	svc, _ := newInterpretService(t, newBoard(scene), llm)
 
-	result, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil)
+	result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
 	if err != nil {
-		t.Fatalf("Interpret() = %v", err)
+		t.Fatalf("interpret() = %v", err)
 	}
 	if len(llm.requests) != 2 {
 		t.Fatalf("LLM 呼び出し回数 = %d, want 2", len(llm.requests))
@@ -648,8 +648,8 @@ func TestInterpret_ShowsPreviousItemsAsRefs(t *testing.T) {
 		&fakeBoards{board: newBoard(interpretScene)}, mappings, llm, newLimiter(),
 		usecase.WithMaxAttempts(1))
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 	if len(llm.requests) != 1 {
 		t.Fatalf("LLM の呼び出し = %d 回, want 1", len(llm.requests))
@@ -680,8 +680,8 @@ func TestInterpret_OmitsPreviousSectionWhenEmpty(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	if sent := llm.requests[0].Text; strings.Contains(sent, "前回までにこの囲みから作ったもの") {
@@ -698,8 +698,8 @@ func TestInterpret_CarriesConstraintsInSystemPrompt(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}}
 	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	// 文言そのものは domain.Rules が持つ。ここに書き写すと 3 箇所目になる。
@@ -740,8 +740,8 @@ func TestInterpret_LogsUsage(t *testing.T) {
 	}
 	svc, buf := newLoggingInterpretService(t, llm, 3)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	out := buf.String()
@@ -771,8 +771,8 @@ func TestInterpret_LogsUsageAcrossRetries(t *testing.T) {
 	}
 	svc, buf := newLoggingInterpretService(t, llm, 3)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err != nil {
-		t.Fatalf("Interpret() = %v", err)
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
 	}
 
 	out := buf.String()
@@ -794,8 +794,8 @@ func TestInterpret_LogsUsageWhenSchemaNeverSatisfied(t *testing.T) {
 	}
 	svc, buf := newLoggingInterpretService(t, llm, 2)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err == nil {
-		t.Fatal("Interpret() = nil, want error")
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err == nil {
+		t.Fatal("interpret() = nil, want error")
 	}
 
 	out := buf.String()
@@ -814,8 +814,8 @@ func TestInterpret_LogsAttemptWhenCallFails(t *testing.T) {
 	llm := &fakeLLM{responses: []string{validLLMOutput}, err: errors.New("connection refused")}
 	svc, buf := newLoggingInterpretService(t, llm, 3)
 
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", nil); err == nil {
-		t.Fatal("Interpret() = nil, want error")
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err == nil {
+		t.Fatal("interpret() = nil, want error")
 	}
 
 	out := buf.String()
@@ -835,8 +835,8 @@ func TestInterpret_DoesNotLogUsageWhenRejectedBeforeCalling(t *testing.T) {
 	svc, buf := newLoggingInterpretService(t, llm, 3)
 
 	images := []port.Image{{MediaType: "image/gif", Data: []byte{1}}}
-	if _, err := svc.Interpret(t.Context(), "board-1", "annot-1", images); err == nil {
-		t.Fatal("Interpret() = nil, want error")
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", images); err == nil {
+		t.Fatal("interpret() = nil, want error")
 	}
 
 	if out := buf.String(); strings.Contains(out, "interpretation llm usage") {
