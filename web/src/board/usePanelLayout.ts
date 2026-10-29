@@ -26,6 +26,11 @@ export type PanelLayout = {
   openPhonePanel: (tab: SidePanelTab) => void;
   /** スマホで、キャンバスを見せるために全面のパネルを閉じる。 */
   closePhonePanel: () => void;
+  /**
+   * パネルのそのタブを見せる。広い画面では開いてそのタブにし、スマホでは全面に
+   * 開く（上の帯から開くのと同じ口、#199）。
+   */
+  showTab: (tab: SidePanelTab) => void;
 };
 
 /**
@@ -64,6 +69,17 @@ export function usePanelLayout(): PanelLayout {
   // 置き方を見ずに閉じてよい。スマホでなければこの値は読まれず、スマホに入る
   // ときに畳み直す。
   const closePhonePanel = useCallback(() => setPhonePanelOpen(false), []);
+  const showTab = useCallback(
+    (tab: SidePanelTab) => {
+      if (phone) {
+        openPhonePanel(tab);
+        return;
+      }
+      setPanelTab(tab);
+      changePanelCollapsed(false);
+    },
+    [changePanelCollapsed, openPhonePanel, phone],
+  );
 
   return useMemo(
     () => ({
@@ -79,6 +95,7 @@ export function usePanelLayout(): PanelLayout {
       panelOpenRequest,
       openPhonePanel,
       closePhonePanel,
+      showTab,
     }),
     [
       layout,
@@ -91,6 +108,7 @@ export function usePanelLayout(): PanelLayout {
       panelOpenRequest,
       openPhonePanel,
       closePhonePanel,
+      showTab,
     ],
   );
 }
