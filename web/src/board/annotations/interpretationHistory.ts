@@ -1,5 +1,5 @@
 import type { Failure } from "../../api/errorMessage";
-import type { Granularity, Interpretation, SyncItem } from "../../api/types";
+import type { Granularity, InterpretationResult, SyncItem } from "../../api/types";
 
 /**
  * 1 つの注釈に残す解釈の件数。
@@ -29,7 +29,11 @@ export type InterpretationRun = {
    * 読めないと見比べる意味が薄れる。
    */
   granularity: Granularity;
-  result: Interpretation;
+  /**
+   * 解釈の結果と、そのとき囲みの外から添えたもの（`context`、ADR 0093）。
+   * 添えたものは「この結果がなぜこうなったか」の材料なので、結果と一緒に持つ。
+   */
+  result: InterpretationResult;
   /**
    * この解釈から作ったもの。作成の 1 回ごとに 1 要素で、古い順。
    *

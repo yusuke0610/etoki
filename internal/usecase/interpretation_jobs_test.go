@@ -24,6 +24,7 @@ type gatedLLM struct {
 
 	mu       sync.Mutex
 	calls    int
+	requests []port.VisionRequest
 	started  chan struct{}
 	ctxEnded chan struct{}
 }
@@ -37,9 +38,10 @@ func newGatedLLM(text string) *gatedLLM {
 	}
 }
 
-func (g *gatedLLM) Complete(ctx context.Context, _ port.VisionRequest) (port.VisionResponse, error) {
+func (g *gatedLLM) Complete(ctx context.Context, req port.VisionRequest) (port.VisionResponse, error) {
 	g.mu.Lock()
 	g.calls++
+	g.requests = append(g.requests, req)
 	g.mu.Unlock()
 	g.started <- struct{}{}
 
@@ -53,6 +55,17 @@ func (g *gatedLLM) Complete(ctx context.Context, _ port.VisionRequest) (port.Vis
 		return port.VisionResponse{}, g.err
 	}
 	return port.VisionResponse{Text: g.text}, nil
+}
+
+// requestTexts は受け取ったメッセージの本文を返す。
+func (g *gatedLLM) requestTexts() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	texts := make([]string, 0, len(g.requests))
+	for _, r := range g.requests {
+		texts = append(texts, r.Text)
+	}
+	return texts
 }
 
 func (g *gatedLLM) callCount() int {
@@ -77,15 +90,18 @@ func asUser(ctx context.Context, id string) context.Context {
 	return port.ContextWithUserID(ctx, id)
 }
 
-// waitJob はジョブが走り終わるのを待って返す。
-func waitJob(
-	t *testing.T, jobs *usecase.InterpretationJobs, ctx context.Context, id string,
-) usecase.InterpretationJob {
+// waitDone はジョブが走り終わるのを待って返す。get は Get を 1 回呼ぶ。
+//
+// **Get を通して待つ。** 結果はジョブの goroutine が書くので、鍵を握って読む Get を
+// 挟まないと、フェイクに積まれた呼び出しやログを読むテストが競合する。
+func waitDone[In, R any](
+	t *testing.T, get func() (usecase.Job[In, R], error),
+) usecase.Job[In, R] {
 	t.Helper()
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		job, err := jobs.Get(ctx, "board-1", id)
+		job, err := get()
 		if err != nil {
 			t.Fatalf("Get() = %v", err)
 		}
@@ -95,7 +111,44 @@ func waitJob(
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatal("ジョブが終わらない")
-	return usecase.InterpretationJob{}
+	return usecase.Job[In, R]{}
+}
+
+// waitJob はジョブが走り終わるのを待って返す。
+func waitJob(
+	t *testing.T, jobs *usecase.InterpretationJobs, ctx context.Context, id string,
+) usecase.InterpretationJob {
+	t.Helper()
+
+	return waitDone(t, func() (usecase.InterpretationJob, error) {
+		return jobs.Get(ctx, "board-1", id)
+	})
+}
+
+// interpret は解釈を本番と同じ経路（InterpretationJobs）で走らせ、終わるまで待つ。
+//
+// 始める時点で弾かれたものはそのエラーを、走って失敗したものはジョブの Err を返す。
+// 解釈そのものの振る舞い（出力の検証、再送、プロンプト）を確かめるテストが使う。
+// **リクエストの中で待つ口は本番に無い**（ADR 0085）ので、テストにも持たない。
+func interpret(
+	t *testing.T, svc *usecase.InterpretationService, ctx context.Context,
+	boardID, annotationID string, images []port.Image,
+) (usecase.InterpretationResult, error) {
+	t.Helper()
+
+	jobs := usecase.NewInterpretationJobs(svc)
+	job, err := jobs.Start(ctx, boardID, annotationID, images)
+	if err != nil {
+		return usecase.InterpretationResult{}, err
+	}
+
+	job = waitDone(t, func() (usecase.InterpretationJob, error) {
+		return jobs.Get(ctx, boardID, job.ID)
+	})
+	if job.Status == usecase.JobFailed {
+		return usecase.InterpretationResult{}, job.Err
+	}
+	return *job.Result, nil
 }
 
 func TestJobs_StartReturnsWithoutWaitingForLLM(t *testing.T) {
@@ -238,8 +291,12 @@ func TestJobs_RejectsBeforeCreatingJob(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			// 回数の枠を 1 にする。無制限のままだと、弾いた Start が枠を食っても
+			// 最後の Start が通ってしまう。
 			llm := &fakeLLM{responses: []string{validLLMOutput}}
-			jobs, _ := newJobs(t, llm)
+			jobs := usecase.NewInterpretationJobs(usecase.NewInterpretationService(
+				&fakeBoards{board: newBoard(interpretScene), owner: "u1"}, &fakeMappings{}, llm,
+				usecase.NewLLMLimiter(usecase.LLMLimits{RateLimit: 1}), usecase.WithMaxAttempts(1)))
 			ctx := asUser(t.Context(), "u1")
 
 			if _, err := jobs.Start(ctx, tt.boardID, tt.annotation, nil); !errors.Is(err, tt.want) {
@@ -251,6 +308,10 @@ func TestJobs_RejectsBeforeCreatingJob(t *testing.T) {
 			list, err := jobs.List(ctx, "board-1")
 			if err != nil || len(list) != 0 {
 				t.Errorf("List() = %v, %v, want 空", list, err)
+			}
+			// 弾いた入力は枠を食わない（TestDiagramJobs_RejectsBeforeCreatingJob と同じ）。
+			if _, err := jobs.Start(ctx, "board-1", "annot-1", nil); err != nil {
+				t.Errorf("弾いた後の Start() = %v, want 始められる", err)
 			}
 		})
 	}

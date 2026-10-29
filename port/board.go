@@ -85,6 +85,13 @@ type Board struct {
 	Scene string
 	// Target は draft issue の作成先。未選択ならゼロ値。
 	Target BoardTarget
+	// Premise はボードの背景（ADR 0093）。解釈のたびに LLM へ添える、人が書く文。
+	// 空文字は「書いていない」。
+	//
+	// **List では埋めない。** 一覧はシーンと同じく背景を読まない（一覧の画面は
+	// 背景を出さないので、読んでも捨てるだけになる）。空文字が「書いていない」
+	// なのは Find と FindWithFiles で引いたときだけ。
+	Premise string
 	// CreatedAt は作成時刻。
 	CreatedAt time.Time
 	// UpdatedAt は最終更新時刻。
@@ -209,6 +216,9 @@ type BoardRepository interface {
 	//
 	// ボードとメンバーは 1 トランザクションで入れる。片方だけ残ると、誰も
 	// 開けないボードか、指す先の無いメンバーができる。
+	//
+	// **Premise は書かない。** 作った時点の背景は空で、書くのは UpdatePremise
+	// だけ（ADR 0093）。作成の入口は背景を受け取らない。
 	Create(ctx context.Context, b Board, owner string) error
 	// UpdateScene はシーンと画像と更新時刻を更新し、書いたあとにボードが
 	// 持っている画像の ID を返す。CreatedAt は変えない。
@@ -249,6 +259,19 @@ type BoardRepository interface {
 	// 送られた ID が保存されている作成先と同じかどうかはここでは見ない。
 	// 引き当ててから比べる必要があるので、ユースケース層が担う。
 	UpdateTargetDisplay(ctx context.Context, actor, id string, d BoardTargetDisplay) error
+	// UpdatePremise はボードの背景だけを更新する（ADR 0093）。
+	//
+	// いまの背景が base と一致するときだけ書く。一致しなければ何も書かず
+	// ErrConflict を返す。**版の列は持たない。** 本文そのものを比べれば足りる。
+	// 同じ本文なら、上書きしても失うものが無い。照合は書き込みと同じ 1 文に
+	// 置く（ADR 0020 と同じ理由）。
+	//
+	// **更新時刻は進めない**（UpdateName と同じ、ADR 0092）。背景はシーンでは
+	// ないので、版を進めると別のメンバーの次の保存が理由なく断られる。
+	//
+	// 存在しない、または操作者がメンバーでなければ ErrNotFound。ロールは
+	// 見ない（ユースケース層が判断する、ADR 0017）。
+	UpdatePremise(ctx context.Context, actor, id, base, premise string) error
 	// Delete はボードを消す。存在しない、または操作者がメンバーでなければ
 	// ErrNotFound。
 	//

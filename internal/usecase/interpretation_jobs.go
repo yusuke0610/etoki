@@ -61,8 +61,15 @@ func (j *InterpretationJobs) Start(
 			// **鍵は解釈が読むテキスト（AnnotationTexts）から作る。AnnotationHash
 			// ではない。** あちらは frame の名前を入れない（ADR 0079）ので、名前だけ
 			// 変えて保存し直すと、古い名前で走っているジョブが返る（ADR 0085）。
+			//
+			// **ボードの背景も鍵に入れる**（ADR 0093）。背景はハッシュには入らない
+			// が、保存すれば LLM に渡すものが変わる。入れないと、背景を直して押し
+			// 直したときに古い背景で走っているジョブが返る。別の絵から作ったものは
+			// 入れない。変わるのは保存ではなく作成で、前回ぶんを入れないのと同じ。
+			// 背景は何でも書けるので末尾に置く（区切りの後ろに続くものが無い）。
 			key: annotationID + "\x00" + string(domain.ComputeContentHash(
-				p.scene.AnnotationTexts(annotationID), p.annotation.Granularity, p.annotation.Kind)),
+				p.scene.AnnotationTexts(annotationID), p.annotation.Granularity, p.annotation.Kind)) +
+				"\x00" + p.context.Premise,
 			attrs: []any{
 				slog.String("board", boardID), slog.String("annotation", annotationID),
 			},

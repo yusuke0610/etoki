@@ -200,6 +200,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		// （ADR 0014）。
 		api.PUT("/boards/:id/target", h.setBoardTarget)
 		api.PUT("/boards/:id/target/display", h.refreshBoardTargetDisplay)
+		api.PUT("/boards/:id/premise", h.setBoardPremise)
 		// 図のドラフト。**注釈でも解釈でもないのでボードの直下に置く。**
 		// 囲みとは無関係で、キャンバスに何も無くても呼べる（ADR 0041）。
 		api.POST("/boards/:id/diagram-draft", h.generateDiagramDraft)
