@@ -2,10 +2,12 @@ import { useMemo, useRef, useState } from "react";
 
 import type { Failure } from "../api/errorMessage";
 import type { BoardListEntry, SessionStatus } from "../api/types";
+import type { Theme } from "../app/theme";
 import { Wordmark } from "../app/Wordmark";
 import { UserMenu } from "../auth/UserMenu";
 import { ConnectionsDialog } from "../connections/ConnectionsDialog";
 import type { TemplateChoice } from "../excalidraw/template";
+import { TutorialDialog } from "../tutorial/TutorialDialog";
 import { BoardCard } from "./BoardCard";
 import { boardSections } from "./grouping";
 import { NewBoardDialog } from "./NewBoardDialog";
@@ -40,6 +42,8 @@ type Props = {
    * いなければ null（ADR 0030）。
    */
   connectionsUnavailable: string | null;
+  /** いまのテーマ。使い方の動画を同じテーマで見せる（ADR 0081）。 */
+  theme: Theme;
   /** 新しいボードのダイアログ（`NewBoardDialog`）。開閉と入力は App が `useNewBoardFlow` で持つ。 */
   dialog: {
     open: boolean;
@@ -81,6 +85,7 @@ export function BoardListPage({
   onOpen,
   choosesTarget,
   connectionsUnavailable,
+  theme,
   dialog,
 }: Props) {
   const newBoard = useRef<HTMLButtonElement>(null);
@@ -90,6 +95,14 @@ export function BoardListPage({
   // 閉じたら焦点を戻す先。押した「MCP の接続」はしまったメニューの中にあって
   // 見えないので、メニューを開くボタンへ戻す。
   const userMenu = useRef<HTMLDivElement>(null);
+  // 使い方のダイアログ（ADR 0081）。口が 2 つ（上の帯と空状態）あるので、
+  // 閉じたら押したほうへ焦点を戻す。
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const tutorialOpener = useRef<HTMLElement | null>(null);
+  const openTutorial = (e: { currentTarget: HTMLElement }) => {
+    tutorialOpener.current = e.currentTarget;
+    setTutorialOpen(true);
+  };
   const sections = useMemo(
     () => (boards === null ? [] : boardSections(boards.entries)),
     [boards],
@@ -106,16 +119,25 @@ export function BoardListPage({
         <h1 className="brand">
           <Wordmark height={26} />
         </h1>
-        {user && (
-          <div ref={userMenu} className="list-header-user">
-            <UserMenu
-              user={user}
-              onLogout={onLogout}
-              onOpenConnections={() => setConnectionsOpen(true)}
-              connectionsUnavailable={connectionsUnavailable}
-            />
-          </div>
-        )}
+        <div className="list-header-actions">
+          {/*
+            **見返す口は帯に置く。** 認証なしの構成では利用者のメニューが無く、
+            一覧にはほかにしまう場所が無い（ADR 0081）。
+          */}
+          <button type="button" className="quiet" onClick={openTutorial}>
+            使い方
+          </button>
+          {user && (
+            <div ref={userMenu} className="list-header-user">
+              <UserMenu
+                user={user}
+                onLogout={onLogout}
+                onOpenConnections={() => setConnectionsOpen(true)}
+                connectionsUnavailable={connectionsUnavailable}
+              />
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="list-body">
@@ -144,9 +166,18 @@ export function BoardListPage({
           一瞬「まだボードがありません」が見える。
         */}
         {boards !== null && boards.entries.length === 0 && (
-          <p className="hint">
-            まだボードがありません。「新しいボード」から作成してください。
-          </p>
+          <div className="list-empty">
+            <p className="hint">
+              まだボードがありません。「新しいボード」から作成してください。
+            </p>
+            {/*
+              **自動では開かない**（中核思想 3、ADR 0081）。初めて使う人に口を
+              見せるだけで、見るかどうかは人が選ぶ。
+            */}
+            <button type="button" onClick={openTutorial}>
+              使い方を見る
+            </button>
+          </div>
         )}
         {sections.length > 0 && boards !== null && (
           // 一覧は作成先でまとめる（ADR 0019）。作成先はボードの属性なので、
@@ -194,6 +225,14 @@ export function BoardListPage({
         // 直したときは、開く前の焦点がどこにも無いので、ブラウザに任せると
         // 画面の先頭へ落ちる。
         onClosed={() => newBoard.current?.focus()}
+      />
+      <TutorialDialog
+        open={tutorialOpen}
+        theme={theme}
+        onClose={() => {
+          setTutorialOpen(false);
+          tutorialOpener.current?.focus();
+        }}
       />
       <ConnectionsDialog
         open={connectionsOpen}

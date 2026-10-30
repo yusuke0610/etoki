@@ -441,6 +441,27 @@ test.describe("スマホ", () => {
     expect(await horizontalScrollers(page)).toEqual([]);
   });
 
+  // 使い方のダイアログ（ADR 0081）。動画はデスクトップで録ったものを縮めて
+  // 見せるので、ダイアログが画面に収まり、ページ送りまで届くことを見る。
+  test("使い方のダイアログが画面に収まり、ページ送りまで届く", async ({ page }) => {
+    await installApi(page, baseMock());
+    await page.goto("/");
+    await page
+      .locator(".list-header")
+      .getByRole("button", { name: "使い方", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "etoki の使い方" });
+    await expect(dialog).toBeVisible();
+
+    expect(await horizontalScrollers(page)).toEqual([]);
+    const box = await dialog.boundingBox();
+    const viewport = page.viewportSize();
+    if (box === null || viewport === null) throw new Error("ダイアログが測れない");
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    await expect(dialog.getByRole("button", { name: "次へ" })).toBeInViewport();
+  });
+
   test("ログインに横スクロールが出ない", async ({ page }) => {
     await installApi(page, authRequiredMock());
     await page.goto("/");

@@ -113,3 +113,33 @@ test.describe("画面の書体", () => {
     });
   }
 });
+
+/**
+ * 使い方の動画も外から取ってこないこと（ADR 0081）。動画は Vite が束ねて自前の
+ * 配信元から配る。外の動画サービスに置くと、ネットワークの無い環境で開けない。
+ */
+test("使い方の動画は自前の配信元から取る", async ({ page }) => {
+  const external: string[] = [];
+  const videos: number[] = [];
+
+  await page.route(/^https?:\/\/(?!127\.0\.0\.1:5173\/)/, async (route) => {
+    external.push(route.request().url());
+    await route.abort();
+  });
+  page.on("response", (response) => {
+    if (/\.mp4(\?|$)/.test(new URL(response.url()).pathname))
+      videos.push(response.status());
+  });
+
+  await installApi(page, baseMock());
+  await page.goto("/");
+  await page
+    .locator(".list-header")
+    .getByRole("button", { name: "使い方", exact: true })
+    .click();
+
+  await expect.poll(() => videos.length + external.length).toBeGreaterThan(0);
+  expect(external).toEqual([]);
+  // 動画は範囲で取りに行くので、206 も配れている。
+  expect(videos.filter((status) => status !== 200 && status !== 206)).toEqual([]);
+});

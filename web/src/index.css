@@ -16,6 +16,7 @@
 @import "./boards/boards.css";
 @import "./auth/auth.css";
 @import "./connections/connections.css";
+@import "./tutorial/tutorial.css";
 @import "./board/board.css";
 @import "./board/sidePanel.css";
 @import "./board/annotations/annotations.css";

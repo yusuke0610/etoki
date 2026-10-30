@@ -34,6 +34,7 @@ import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
 import { useExclusion } from "./exclusion";
 import { useInterpretations } from "./annotations/useInterpretations";
 import { ShareDialog } from "./members/ShareDialog";
+import { TutorialDialog } from "../tutorial/TutorialDialog";
 import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
 import { MermaidPastePanel } from "./diagram/MermaidPastePanel";
 import { useDiagramDraft } from "./diagram/useDiagramDraft";
@@ -291,6 +292,9 @@ export function BoardPage({
   // **関数を安定させる。** メニューは `useMemo` で持つ（ADR 0065）。
   const [shareOpen, setShareOpen] = useState(false);
   const openShare = useCallback(() => setShareOpen(true), []);
+  // 使い方のダイアログ（ADR 0081）。開くのはキャンバスのメニュー。
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const openTutorial = useCallback(() => setTutorialOpen(true), []);
   const closeShare = useCallback(() => setShareOpen(false), []);
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
@@ -806,6 +810,7 @@ export function BoardPage({
         onAddTable={addTable}
         deletion={deletion}
         onAskDelete={() => void askDelete()}
+        onOpenTutorial={openTutorial}
       />
     ),
     [
@@ -830,6 +835,7 @@ export function BoardPage({
       addTable,
       askDelete,
       deletion,
+      openTutorial,
     ],
   );
 
@@ -1137,6 +1143,20 @@ export function BoardPage({
               boardId={board.id}
               role={board.role}
               unavailable={sharingUnavailable}
+            />
+            <TutorialDialog
+              open={tutorialOpen}
+              theme={theme}
+              onClose={() => {
+                setTutorialOpen(false);
+                // 押した項目はメニューごと消えているので、メニューを開く
+                // ボタンへ戻す（`ShareDialog` と同じ）。
+                document
+                  .querySelector<HTMLElement>(
+                    '.excalidraw [data-testid="main-menu-trigger"]',
+                  )
+                  ?.focus();
+              }}
             />
           </div>
         </div>
