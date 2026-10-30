@@ -43,6 +43,9 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `.claude/rules/`                   | レビュー由来の落とし穴と、狭い範囲でだけ要る約束（触ると読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
+| `.claude/skills/pr-watch/`         | full review の枠・依頼・待ち・0 件の判定（`/pr-watch`）                |
+| `.claude/skills/land/`             | マージの条件の判定、マージ順の表、マージと後続（`/land`）              |
+| `.claude/skills/sync-prs/`         | main が進んだあと、取り込みが要る PR だけを追従させる（`/sync-prs`）   |
 | `.claude/skills/security-audit/`   | 定期のセキュリティ点検（`/security-audit`）と #64 の更新               |
 | `.claude/agents/`                  | 用途別のサブエージェント（ADR 照合、レビュー、デバッグなど）           |
 
@@ -300,8 +303,17 @@ Origin 検証は `.claude/rules/http-handlers.md`。
 
 ### PR 作成後のレビュー対応
 
-PR を作ったら CodeRabbit のレビューが付く。**作りっぱなしにせず、指摘が
-なくなるまで対応する。** 手順は `/pr-review`（`.claude/skills/pr-review/SKILL.md`）。
+**CodeRabbit のレビューは自動では付かない。** `@coderabbitai full review` で依頼
+して初めて付き、枠は 1 時間に 1 本。**PR を作ったセッションは自分で見回らず、
+見回りのセッションに渡す**（`/pr-watch` の「受け取り口」）。枠を取り合うと依頼が
+走らずに終わる。
+
+| やること                                | スキル       |
+| --------------------------------------- | ------------ |
+| 枠・依頼・待ちを回し、0 件かを判定する  | `/pr-watch`  |
+| 付いた指摘を、なくなるまで決着させる    | `/pr-review` |
+| マージしてよいかを確かめ、マージする    | `/land`      |
+| main が進んだあと、開いている PR を追従 | `/sync-prs`  |
 
 ## スコープ外（このリポジトリに入れない）
 
