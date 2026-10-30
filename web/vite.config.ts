@@ -143,7 +143,9 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     // ポートが埋まっていたら黙って隣にずらさず落とす。ずらされると
-    // Playwright が 5173 を待ち続け、原因の分からないタイムアウトになる。
+    // Playwright が指定したポートを待ち続け、原因の分からないタイムアウトに
+    // なる。E2E は別のポート（`--port`、playwright.config.ts）で立てるので、
+    // `make dev` が動いていても、そこに繋がずに自分のサーバーを立てる。
     strictPort: true,
     // どのページからも iframe で埋め込ませない。`make start` で etoki が画面に
     // 付けているもの（`internal/httpapi/webui.go` の setWebUIHeaders）と同じ。
