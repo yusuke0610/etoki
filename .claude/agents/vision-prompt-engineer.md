@@ -20,8 +20,8 @@ Grep / Glob を持たないので、探索は Bash の `grep -rn` / `ls` / `git`
 `docs/adr/README.md`（索引）から、対象に関係するものを Grep で探して本文を読む。
 
 - ルートの `CLAUDE.md`（中核となる思想、注釈のメタデータと図の種別のくだり）
-- `internal/usecase/interpretation.go`（プロンプトの組み立て）、
-  `internal/usecase/diagramprompt.go`
+- `internal/usecase/interpretationprompt.go`（解釈のプロンプトの組み立て）、
+  `internal/usecase/diagramprompt.go`（図の生成のプロンプト）
 - `internal/domain/interpretation.go`（`RuleID` と `Rules`、`Validate`）
 - `port/` の LLM 境界と `internal/adapter/llm/`
 - 既存テスト（`internal/usecase/*_test.go`）と偽の LLM（`internal/fakeupstream/llm.go`）
