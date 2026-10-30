@@ -162,6 +162,9 @@ describe("useBoardTransfer の取り込み", () => {
     expect(updateElements).toHaveBeenCalledTimes(1);
     const [elements, appState] = updateElements.mock.calls[0]!;
     expect(elements.map((e) => e.id)).toEqual(["img-1", "r1"]);
+    // 画像は要素（`fileId`）と `files` に分かれて載る。片方だけ見ると、要素から
+    // `fileId` が落ちても通る（.claude/rules/test-effectiveness.md）。
+    expect(elements[0]).toMatchObject({ id: "img-1", fileId: "file-1" });
     expect(appState).toEqual({ viewBackgroundColor: "#ffc9c9" });
     // 入れ忘れると、画像の要素だけが空白で置かれる。
     expect(addFiles).toHaveBeenCalledWith([imported().files["file-1"]]);

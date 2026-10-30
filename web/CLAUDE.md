@@ -765,9 +765,11 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   `handleChange` がそれで毎回差し替わり、**Excalidraw の `onChange` が
   差し替わり続けて `Maximum update depth exceeded` で画面ごと落ちた。**
   `tsc` も eslint も通ったままなので、**気づけるのは E2E だけ。** 例外は
-  `handleChange` と `updateElements` で、描き直しても同じ関数を返すことを
-  `web/src/board/useCanvasAnnotations.test.ts` が見る（#380）。フックを切り出したら、
-  返す束と、Excalidraw に渡す関数の同一性を、そのフックの単体テストでも見る。
+  `useCanvasAnnotations` で、`web/src/board/useCanvasAnnotations.test.ts` が 2 つを
+  見る（#380）。`handleChange` と `updateElements` は、state が変わる描き直しでも
+  同じ関数を返す。束は、入力（props と state）が変わらない描き直しで同じものを
+  返す（state が変われば作り直してよい）。フックを切り出したら、そのフックの
+  単体テストでも同じ 2 つを見る。
 - **依存配列には束ではなく、束の中の安定した値を置く。** `sceneSize` を丸ごと
   依存にすると、バイト数が変わるたびに同じことが起きる。呼ぶ側で
   `const { schedule } = useSceneSize(api)` のように取り出す。
