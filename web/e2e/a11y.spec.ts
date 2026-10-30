@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { expectBlockedReason, expectNoAxeViolations } from "./helpers/a11y";
-import { holdCreate, holdSave, installApi } from "./helpers/api";
+import { holdCreate, holdPremise, holdSave, installApi } from "./helpers/api";
 import {
   annotationCard,
   annotationDetail,
@@ -299,6 +299,44 @@ test.describe("押せない理由が本文として読める", () => {
     release();
     await expect(importButton).toBeEnabled();
     await expect(menu.getByText("保存が終わるまで取り込めません")).toBeHidden();
+  });
+
+  // ボードの背景（ADR 0093）。保存しているあいだは閉じる・捨てるを止める。
+  test("ボードの背景：保存中のとき", async ({ page }) => {
+    const mock = baseMock();
+    // **断らせる。** 保存できるとダイアログごと閉じるので、理由が消えたことを
+    // 開いたまま見られない。
+    mock.premiseError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+    await openBoardWithMock(page, mock);
+    let release = () => {};
+    await holdPremise(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    const dialog = await openPremiseDialog(page);
+    await dialog
+      .getByRole("textbox", { name: "ボードの背景", exact: true })
+      .fill("新しい背景");
+    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+
+    const reason = "保存が終わるまで、閉じることも書きかけを捨てることもできません。";
+    const close = dialog.getByRole("button", { name: "閉じる", exact: true });
+    const discard = dialog.getByRole("button", { name: "書きかけを捨てる" });
+    await expectBlockedReason(close, reason);
+    await expectBlockedReason(discard, reason);
+
+    // 開いたまま待つ。閉じた後に見ると、理由が消えていなくても通る。
+    release();
+    await expect(dialog.getByRole("alert")).toBeVisible();
+    await expect(close).toBeEnabled();
+    await expect(discard).toBeEnabled();
+    await expect(dialog.getByText(reason)).toBeHidden();
   });
 
   // 「保存」と「絵解き」は同じ式で止まり、1 つの理由を両方から指す（ADR 0089）。

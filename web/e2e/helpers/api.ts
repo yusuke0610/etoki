@@ -473,6 +473,16 @@ export function holdSetTarget(page: Page, hold: Promise<void>): Promise<void> {
   );
 }
 
+/** ボードの背景の書き換えを「保存中」のまま止める。解決するまで応答を返さない。 */
+export function holdPremise(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/premise$/.test(url.pathname),
+    "PUT",
+    hold,
+  );
+}
+
 /** 作成を「作成中」のまま止める。解決するまで応答を返さない。 */
 export function holdCreate(page: Page, hold: Promise<void>): Promise<void> {
   return holdRoute(

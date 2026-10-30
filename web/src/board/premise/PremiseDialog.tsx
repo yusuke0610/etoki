@@ -4,6 +4,9 @@ import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorNotice } from "../../app/ErrorNotice";
 import type { PremiseEditor } from "./usePremise";
 
+/** 保存しているあいだ押せない理由の id。ダイアログは 1 つしか開かない。 */
+const SAVING_REASON_ID = "premise-saving-reason";
+
 type Props = {
   /** 書きかけと保存（`usePremise`）。開閉もここが持つ。 */
   editor: PremiseEditor;
@@ -142,6 +145,16 @@ function PremiseForm({
           </p>
         </section>
       )}
+      {/*
+        **一時的に押せないだけでも、理由を本文で出す**（`web/CLAUDE.md` の
+        「アクセシビリティ」）。保存しているあいだは、閉じると断られたときの理由が
+        見えず、捨てると送った背景と画面が食い違う。
+      */}
+      {editor.saving && (
+        <p className="hint" id={SAVING_REASON_ID}>
+          保存が終わるまで、閉じることも書きかけを捨てることもできません。
+        </p>
+      )}
       <div className="dialog-actions">
         {/* やめる・捨てるは控えめな操作（#203）。主となる操作は「保存」の 1 つ。 */}
         {editor.edited && (
@@ -149,6 +162,7 @@ function PremiseForm({
             type="button"
             className="quiet"
             disabled={editor.saving}
+            aria-describedby={editor.saving ? SAVING_REASON_ID : undefined}
             onClick={editor.discard}
           >
             書きかけを捨てる
@@ -158,10 +172,12 @@ function PremiseForm({
           type="button"
           className="quiet"
           disabled={editor.saving}
+          aria-describedby={editor.saving ? SAVING_REASON_ID : undefined}
           onClick={onClose}
         >
           閉じる
         </button>
+        {/* 押せないあいだはラベルが理由を言う（「保存中…」）。上の文は閉じる・捨てる用。 */}
         <button type="submit" className="primary" disabled={editor.saving}>
           {editor.saving ? "保存中…" : "保存"}
         </button>
