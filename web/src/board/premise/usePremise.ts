@@ -62,7 +62,8 @@ export function usePremise({
   /**
    * サーバーから受け取ったボードで、手元を差し替えてもらう。保存した直後と、
    * 先に書き換えられていたのでいまの背景を取り直したときに呼ぶ。版は動かない
-   * ので、保存の基準は据え置く（App の `replaceBoard`、ADR 0092）。
+   * ので、保存の基準は据え置く（`useBoardNavigation` の `replaceBoard`、
+   * ADR 0092）。
    */
   onChanged: (board: BoardDetail) => void;
 }): PremiseEditor {

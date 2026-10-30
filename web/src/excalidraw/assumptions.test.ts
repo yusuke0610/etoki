@@ -51,7 +51,7 @@ function roundTrip(elements: ExcalidrawElement[]): ExcalidrawElement[] {
     appState: Record<string, unknown>;
   };
   return restore({ elements: parsed.elements, appState: parsed.appState }, null, null)
-    .elements as unknown as ExcalidrawElement[];
+    .elements;
 }
 
 describe("@excalidraw/excalidraw の前提", () => {
