@@ -16,7 +16,8 @@ CLAUDE.md と `web/CLAUDE.md` が「非自明な設定」として挙げてい�
 - `oapi-codegen`（`flake.lock`）と `openapi-typescript`（`bun.lock`）は生成器で、
   **バージョンが動けば生成物の形も変わる**。更新のコミットには `make codegen` の
   結果が要る（ADR 0011）
-- React は 18 系に固定（`@excalidraw/excalidraw` との組み合わせ）
+- React は 18 系に固定（`@excalidraw/excalidraw` との組み合わせ）。#382 で
+  外した（下の追記）
 
 連動が多いほど、まとめて上げるのは高くつく。**間隔が空くほど「一度に動く量」が
 増えるので、放置は先送りではなく増額。**
@@ -61,10 +62,10 @@ drift が知らせ、直すのは人。そう決めた以上、Renovate に残�
 
 ### 固定しているものは対象から外す
 
-`@playwright/test` は全部、React 系は major を無視する。**理由は
-`web/CLAUDE.md` にあり、設定には書き写さない。** 同じ知識を 2 箇所に置くと
-片方だけ変わる（`.markdownlint-cli2.yaml` が除外を自前で列挙せず `.gitignore` を
-見ているのと同じ判断）。
+`@playwright/test` は全部を無視する（React 系の major も無視していたが、#382 で
+外した。下の追記）。**理由は `web/CLAUDE.md` にあり、設定には書き写さない。**
+同じ知識を 2 箇所に置くと片方だけ変わる（`.markdownlint-cli2.yaml` が除外を
+自前で列挙せず `.gitignore` を見ているのと同じ判断）。
 
 **外すのは version updates だけで、`update-types` に 3 種類とも並べる。**
 `ignore` に依存名だけを書くと、その依存は security updates も出なくなる
@@ -148,7 +149,9 @@ Dependabot alerts が無効になっていたので成り立っていなかっ�
 文脈に挙げた「React は 18 系に固定（`@excalidraw/excalidraw` との組み合わせ）」は、
 **理由がもう成り立っていなかった。** 入れている `@excalidraw/excalidraw` 0.18.1 の
 peerDependencies は `react: ^17.0.2 || ^18.2.0 || ^19.0.0` で、React 19 を受ける。
-19 に上げて `make lint` / `make test` / `make test-e2e` / 本番ビルドが通った。
+19 に上げて `make lint` / `make test` / 本番ビルドが通った。`make test-e2e` は
+`assets.spec.ts` の 3 件を除いて通った。落ちた 3 件は、5173 番が塞がっていて
+5174 番で回したために落ちるもので、React とは関係しない（#383）。
 
 上の「固定するのは、実際に壊れたものだけ」に照らすと、**壊れたことを見ていない
 固定だった。** 固定と `.github/dependabot.yml` の `ignore`（React 系の major）を
