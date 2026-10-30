@@ -761,7 +761,10 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   束の中のコールバックを依存に置いた `useCallback` まで作り直される。
   `handleChange` がそれで毎回差し替わり、**Excalidraw の `onChange` が
   差し替わり続けて `Maximum update depth exceeded` で画面ごと落ちた。**
-  vitest も `tsc` も eslint も通ったままなので、**気づけるのは E2E だけ。**
+  `tsc` も eslint も通ったままなので、**気づけるのは E2E だけ。** 例外は
+  `handleChange` と `updateElements` で、描き直しても同じ関数を返すことを
+  `web/src/board/useCanvasAnnotations.test.ts` が見る（#380）。フックを切り出したら、
+  返す束と、Excalidraw に渡す関数の同一性を、そのフックの単体テストでも見る。
 - **依存配列には束ではなく、束の中の安定した値を置く。** `sceneSize` を丸ごと
   依存にすると、バイト数が変わるたびに同じことが起きる。呼ぶ側で
   `const { schedule } = useSceneSize(api)` のように取り出す。
