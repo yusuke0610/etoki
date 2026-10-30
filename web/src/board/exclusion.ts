@@ -42,9 +42,9 @@ export type RunningOperation = "saving" | "importing" | "creating";
  * 押せない理由を引ける操作。
  *
  * **`changeTarget` は走らない。** 作成先を選び直すとキャンバスごと外れる
- * （導線を持っているのは `App`）ので、`BoardPage` の中で進行中になることが
- * 無い。止められる側にしか現れないが、**押せない理由を組む場所を 2 つに
- * 分けない**ためにここへ並べてある。
+ * （導線を持っているのは `useBoardNavigation`）ので、`BoardPage` の中で進行中に
+ * なることが無い。止められる側にしか現れないが、**押せない理由を組む場所を
+ * 2 つに分けない**ためにここへ並べてある。
  */
 export type Operation = RunningOperation | "changeTarget";
 
