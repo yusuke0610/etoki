@@ -328,7 +328,7 @@ describe("変換して置くまで", () => {
     if (!draft.ok) return;
 
     const placed = moveDraft(draft.elements, draftOrigin([]));
-    const scene = serializeAsJSON(placed as never[], {} as never, {}, "local");
+    const scene = serializeAsJSON(placed as never[], {}, {}, "local");
 
     const parsed = JSON.parse(scene) as { elements: unknown[]; files?: unknown };
     expect(parsed.elements).toHaveLength(placed.length);
