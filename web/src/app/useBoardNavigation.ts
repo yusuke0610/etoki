@@ -1,0 +1,680 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { authApi, boardsApi } from "../api/boards";
+import { describeFailure, type Failure } from "../api/errorMessage";
+import type {
+  BoardDetail,
+  BoardTarget,
+  BoardWithFiles,
+  SessionStatus,
+} from "../api/types";
+import { createGenerations } from "../board/generation";
+import type { BoardListing } from "../boards/useBoardList";
+import type { NewBoardFlow } from "../boards/useNewBoardFlow";
+import {
+  boardLocationUrl,
+  NO_BOARD,
+  parseBoardLocation,
+  type BoardLocation,
+} from "./location";
+
+/**
+ * ボードを開く要求の世代のキー。
+ *
+ * 守る対象が 1 つなのでキーも 1 つ。**それでも `createGenerations` を使う**のは、
+ * 「世代で守る」の実装をリポジトリに 2 つ持たないため。
+ */
+const OPENING = "board";
+
+/** 履歴の積み方。押した結果として戻れるべきものだけを積む。 */
+type HistoryMode = "push" | "replace";
+
+/** `open` の任意引数。 */
+type OpenOptions = {
+  /** 履歴の積み方。既定は積む。 */
+  mode?: HistoryMode;
+  /** 作成先の選択画面から始めるか。既定は始めない。 */
+  picking?: boolean;
+};
+
+/**
+ * 作成先の選び直しを始められるボードか。
+ *
+ * **条件は `BoardPage` が「作成先を変更」を出す条件と同じ**（owner だけ、
+ * 固定前だけ。ADR 0014 / 0017）。URL から入る口だけを緩めると、画面から
+ * 押せないはずの操作にそこからだけ入れてしまい、進んだ先で 403 / 409 を
+ * 受け取る（中核思想 3）。**ずれたことは `web/e2e/url.spec.ts` が落とす。**
+ */
+function canOpenTargetPicker(board: BoardDetail): boolean {
+  return board.role === "owner" && !board.targetLocked;
+}
+
+type Options = {
+  /**
+   * ログインが済んでいるか、要らない構成か（`useSession`）。済むまで URL の
+   * ボードを開かず、戻る / 進むも追わない。
+   */
+  signedIn: boolean;
+  /**
+   * MCP のクライアントへの同意の画面を出しているか（ADR 0076）。出しているあいだは
+   * URL のボードを開かず、URL も書き換えない。
+   */
+  consenting: boolean;
+  showFailure: (failure: Failure) => void;
+  /** ボードの一覧（`useBoardList`）。 */
+  boardList: Pick<BoardListing, "reload" | "remove" | "clear">;
+  /** 新しいボードを作るまでの流れ（`useNewBoardFlow`）。 */
+  newBoard: Pick<NewBoardFlow, "start" | "leave" | "create" | "createWithoutTarget">;
+  /** ログアウトの後に読み直した状態で置き換える（`useSession` の `replace`）。 */
+  replaceSession: (session: SessionStatus) => void;
+};
+
+export type BoardNavigation = {
+  /**
+   * 開いているボード。キャンバスはここから作るので、**貼った画像も持つ**
+   * （ADR 0074）。null なら開いていない。
+   *
+   * **保存のたびには差し替えない。** 保存の版は `useSceneSave` が持ち回るので、
+   * ここのシーン・版・画像は最後の保存より古いことがある。キャンバスを作り直す
+   * 導線（作成先の選択から戻る）は、開く口で取り直してから作り直す（#241）。
+   */
+  current: BoardWithFiles | null;
+  /**
+   * 作成先を選び直している最中かどうか。未選択のボードでは常に選ばせる（GitHub が
+   * 未設定の構成を除く、ADR 0090）が、それを決めるのは描く側（`App`）。
+   */
+  picking: boolean;
+  /** 未保存かどうかを受け取る。BoardPage から呼ばれる。 */
+  handleDirtyChange: (dirty: boolean) => void;
+  /** ボードを開く。一覧から呼ぶ。 */
+  open: (id: string, options?: OpenOptions) => Promise<void>;
+  /** ボードを閉じて一覧へ戻る。 */
+  closeBoard: () => void;
+  /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
+  startCreating: () => void;
+  /** 作成先が決まったのでボードを作り、開く。 */
+  createWithTarget: (target: BoardTarget) => Promise<void>;
+  /** 作成先を選ばずに作り、開く（ADR 0090）。 */
+  createWithoutTarget: () => Promise<void>;
+  /** サーバーが返したボードで手元を差し替える（改名と表示名の取り直し）。 */
+  replaceBoard: (board: BoardDetail) => void;
+  /** 削除されたので手元から外す。 */
+  handleDeleted: (id: string) => void;
+  /** 開いているボードの作成先の選び直しを始める。 */
+  startPicking: () => void;
+  /** 既存ボードの作成先を選び直す。 */
+  changeTarget: (target: BoardTarget) => Promise<void>;
+  /** 作成先の選び直しをやめて、選ぶ前のボードへ戻る。 */
+  cancelPicking: () => Promise<void>;
+  logout: () => Promise<void>;
+};
+
+/**
+ * どのボードを、どの導線で画面に出しているか（#347 で `App` から切り出し）。
+ *
+ * **キャンバスが外れる導線はすべてここに置く**（一覧へ戻る、新しいボードの
+ * 作成先の選択、ログアウト、ブラウザの戻る / 進む、ADR 0021 / 0059）。どの導線も
+ * 同じものを同じ順で触る。未保存の確認（`confirmDiscard`）、開く要求の世代
+ * （`openings`）、開いているボード（`current`）、URL と控え（`showLocation`）。
+ * **割らずに 1 つに置くのは、導線を並べて見比べられるようにするため。** 導線を
+ * 足したら、ここで 4 つを通す。
+ *
+ * 描くもの（どの画面を出すか）は `App` が決める。
+ */
+export function useBoardNavigation({
+  signedIn,
+  consenting,
+  showFailure,
+  boardList,
+  newBoard,
+  replaceSession,
+}: Options): BoardNavigation {
+  // 束ではなく中の関数を依存に置く（`web/CLAUDE.md`「関心をフックに切り出す
+  // とき」）。一覧の束は一覧が変わるたびに作り直される。
+  const { reload, remove: removeBoard, clear: clearBoards } = boardList;
+  const {
+    start: startNewBoard,
+    leave: leaveCreating,
+    create: createBoard,
+    createWithoutTarget: createBoardWithoutTarget,
+  } = newBoard;
+
+  const [current, setCurrent] = useState<BoardWithFiles | null>(null);
+  const [picking, setPicking] = useState(false);
+  // 開いているボードに未保存の変更があるか。BoardPage から上がってくる。
+  //
+  // キャンバスから離れる導線はこちら側にあるので、判断の材料をここに置く。
+  // **state ではなく ref で持つ。** 描くたびに再描画する必要が無いのに加えて、
+  // state だと通信の待ちを挟んだ判定が、待ち始めた時点の値を見てしまう。
+  const unsaved = useRef(false);
+  // URL に書いてあったボードを開きにいったかどうか（ADR 0059）。
+  //
+  // **1 度きり。** ログイン直後に 1 回だけ読み、以後は URL を書く側に回る。
+  // 毎回読み直すと、切り替えたあとの `boards` の取り直しで URL のボードへ
+  // 引き戻される。**state ではなく ref。** 描画には出ないうえ、StrictMode の
+  // effect の二重実行で 2 回開きにいくのを止めたい。
+  const openedFromUrl = useRef(false);
+  // いま画面に出ている場所。URL を書き戻すときの基準になる。
+  //
+  // **state ではなく ref。** 戻る / 進むを拒んだときの書き戻しは popstate の
+  // 中で行うので、購読を貼り直さずに最新の値を読めなければならない。state に
+  // すると、値が変わるたびに購読を貼り直すことになる。
+  const shown = useRef<BoardLocation>(NO_BOARD);
+  // ボードを開く要求の世代（`.claude/rules/async-ui.md`）。
+  //
+  // **開く導線が 2 つある**（一覧と戻る / 進む）ので、続けて操作されると
+  // 取得が並走する。古い応答を反映すると、押した順と違うボードが開き、URL も
+  // そちらを指したまま残る。**いま画面に出ているものとの ID 照合では足りない。**
+  // 照合したい相手は「最後に要求されたもの」で、それはまだ画面に出ていない。
+  //
+  // 初期化関数で 1 度だけ作る（`BoardPage` の世代と同じ形）。
+  const [openings] = useState(createGenerations);
+
+  /**
+   * 未保存かどうかを覚える。BoardPage から呼ばれる。
+   *
+   * 同じ関数を渡し続ける必要がある。作り直すと、BoardPage 側の登録し直しが
+   * 走って「外れたので下ろす」が誤って動く。
+   */
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    unsaved.current = dirty;
+  }, []);
+
+  /**
+   * 未保存の変更を捨ててよいかを確かめる。捨てないなら false。
+   *
+   * **確認とキャンバスを外すことのあいだに待ちを挟まない。** 挟むと、待って
+   * いるあいだに描き足したぶんを確認なしで捨てる。JS は 1 本なので、間に
+   * await が無ければ描き込む隙も無い。
+   *
+   * 保存はしない。自動で保存すると、捨てるつもりの試し描きまで残る
+   * （中核思想 3）。
+   */
+  const confirmDiscard = useCallback(() => {
+    if (!unsaved.current) return true;
+    return window.confirm(
+      "未保存の変更があります。このまま移動すると、描いた内容は失われます。",
+    );
+  }, []);
+
+  /**
+   * URL を画面に合わせて書き換える（ADR 0059）。
+   *
+   * **state から URL を導く effect は置かない。** effect では「積むのか置き換え
+   * るのか」を区別できないうえ、戻る / 進むで URL が先に動いたときに書き戻しと
+   * 競合する。導線ごとにここを呼ぶ形は、未保存の確認（`confirmDiscard`）を
+   * 導線ごとに通しているのと同じ（`web/CLAUDE.md`）。**導線を足したらここにも
+   * 足す。**
+   *
+   * `shown` も一緒に更新する。**URL と控えを 1 箇所で動かす**ことで、2 つが
+   * ずれた状態を作らない。
+   */
+  const showLocation = useCallback((location: BoardLocation, mode: HistoryMode) => {
+    shown.current = location;
+    const url = boardLocationUrl(location);
+    if (mode === "push") {
+      window.history.pushState(null, "", url);
+    } else {
+      window.history.replaceState(null, "", url);
+    }
+  }, []);
+
+  /**
+   * ボードを取ってくる。取れなければ null。
+   *
+   * **失敗したら URL をいま出ているものに合わせ直す。** 開けなかったボードを
+   * URL に残すと、読み込み直すたびに同じ失敗を繰り返す。一覧から開こうとして
+   * 失敗したときは、一覧の URL のまま残る。
+   *
+   * 非メンバーにも消えたボードにも同じ `not_found` が返る（ADR 0016 / 0017）。
+   * **URL から開いたときも見せ方を変えない。** 変えると、返ってきた画面の違いから
+   * ボードの存在を確かめられる。
+   */
+  const loadBoard = useCallback(
+    async (id: string): Promise<BoardWithFiles | null> => {
+      const generation = openings.start(OPENING);
+      try {
+        const board = await boardsApi.get(id);
+        // 追い越されていたら捨てる。あとから来た要求が正解。
+        return openings.isCurrent(OPENING, generation) ? board : null;
+      } catch (e) {
+        // **失敗の反映も世代で守る。** 守らないと、追い越された取得の失敗が
+        // 新しいボードの上にエラーを出し、URL まで巻き戻す。
+        if (!openings.isCurrent(OPENING, generation)) return null;
+
+        showFailure(describeFailure("ボードを開けませんでした", e));
+        showLocation(shown.current, "replace");
+        return null;
+      }
+    },
+    [openings, showFailure, showLocation],
+  );
+
+  const logout = useCallback(async () => {
+    // ログアウトもキャンバスを外す。押した理由が何であれ、消えるものは同じ。
+    if (!confirmDiscard()) return;
+
+    // 捨ててよいと言われたので、通信を待たずにここで外す。待ってから外すと、
+    // 待っているあいだの描き足しを確認なしで捨てることになる。
+    setCurrent(null);
+    // 一覧も捨てる。走っている読み込みも一緒に無効になる（`useBoardList` の
+    // `clear`）。
+    clearBoards();
+    // 走っている取得を無効にする。**対象が変わるイベントは関連する世代を
+    // 全部無効にする**（`.claude/rules/async-ui.md`）。React state を消しても
+    // 進行中のリクエストは止まらないので、遅れて着いた応答がログイン画面の
+    // 裏でボードを開き直す。
+    openings.invalidateAll();
+    // ログイン画面に残るのは URL だけ。**積まずに置き換える。** 積むと
+    // 「戻る」でログアウト前の URL に戻れてしまい、画面と食い違う。
+    showLocation(NO_BOARD, "replace");
+
+    try {
+      await authApi.logout();
+      // 状態は作り直さず読み直す。手元で組み立てるとサーバーの見方とずれうる。
+      replaceSession(await authApi.session());
+    } catch (e) {
+      showFailure(describeFailure("ログアウトできませんでした", e));
+      // 失敗したらログインしたまま。一覧を空のままにすると、何も操作できない
+      // 画面が残る。
+      await reload();
+    }
+  }, [
+    clearBoards,
+    confirmDiscard,
+    openings,
+    reload,
+    replaceSession,
+    showFailure,
+    showLocation,
+  ]);
+
+  const open = useCallback(
+    async (id: string, options: OpenOptions = {}) => {
+      const { mode = "push", picking: wanted = false } = options;
+
+      // **取ってから訊く。** 訊いてから取ると、取っているあいだに描き足せて
+      // しまい、そのぶんを確認なしで捨てる。取得が失敗したときに、捨てるか
+      // どうかを訊いてしまうことも無くなる。
+      const next = await loadBoard(id);
+      if (next === null) return;
+
+      // ここから先に待ちは無い。切り替えると Excalidraw ごと作り直すので、
+      // 未保存の編集はその場で消える。
+      if (!confirmDiscard()) return;
+
+      const picking = wanted && canOpenTargetPicker(next);
+      setPicking(picking);
+      leaveCreating();
+      setCurrent(next);
+      showLocation({ boardId: next.id, picking }, mode);
+    },
+    [confirmDiscard, leaveCreating, loadBoard, showLocation],
+  );
+
+  /**
+   * ボードを閉じて一覧へ戻る（ADR 0064）。
+   *
+   * **キャンバスが外れる導線なので、未保存の確認を通す**（ADR 0021）。確認と
+   * 外すことのあいだに待ちは無い。
+   *
+   * **履歴に積む。** 一覧は押して移った先なので、「戻る」で閉じたボードへ
+   * 引き返せるべき（ADR 0059）。
+   *
+   * **一覧を読み直す**（#200）。カードの件数と更新時刻は、開いていたあいだの
+   * 保存や作成で変わっている。読み直さないと、作ったのに「未作成 1」が残る。
+   * 読むのは etoki 自身の状態で、GitHub との同期ではない。届くまでは前の
+   * 一覧を出したままにする。
+   */
+  const closeBoard = useCallback(() => {
+    if (!confirmDiscard()) return;
+
+    // 走っている取得を無効にする（ログアウトと同じ理由）。
+    openings.invalidateAll();
+    setCurrent(null);
+    setPicking(false);
+    leaveCreating();
+    showLocation(NO_BOARD, "push");
+    void reload();
+  }, [confirmDiscard, leaveCreating, openings, reload, showLocation]);
+
+  /** 名前を確定して、作成先の選択に進む。ここではまだ作らない。 */
+  const startCreating = useCallback(() => {
+    // 作成先の選択画面に移ると、開いていたボードのキャンバスが外れる。
+    // 「作成先を変更」を dirty で止めてあるのと揃える。
+    if (!startNewBoard(confirmDiscard)) return;
+
+    setCurrent(null);
+    setPicking(false);
+    // **作成中は URL に載せない。** 載る材料（名前とひな形）が URL に無いので、
+    // 載せても読み込み直した先で復元できない。**積まずに置き換える**のは、
+    // 開いていたボードをここで外すのと形を揃えるため。引き返すのは履歴では
+    // なく選択画面の「やめる」で、一覧の上にダイアログを開き直す
+    // （`backToCreatingDialog`）。
+    showLocation(NO_BOARD, "replace");
+  }, [confirmDiscard, showLocation, startNewBoard]);
+
+  /**
+   * 作ったボードを開く。作成先を選んで作ったときも、選ばずに作ったときも
+   * 同じ形で開く。
+   *
+   * **一覧の読み直しを待たずに開く。** 待つあいだは一覧が触れる（作成先を
+   * 選ばずに作ったときは、ダイアログがもう閉じている）。そこで開いた別の
+   * ボードを、読み直しのあとで作ったボードが確認なしに上書きし、描き始めて
+   * いれば未保存の変更ごと捨てる。一覧は裏で読み直す（`closeBoard` と同じ）。
+   *
+   * **送ったあとに別の場所へ移っていたら開かない。** 作成の応答を待つあいだも
+   * 「戻る」で別のボードを開ける。そこで作ったボードに切り替えると、同じ理由で
+   * 開いたボードを確認なしに外す。`generation` は送る前に控えた世代で、戻る /
+   * 進むも閉じるも世代を進めるので、移ったことはそれで分かる。作ったボードは
+   * 一覧に出るので、そこから開ける。
+   */
+  const openCreated = useCallback(
+    (board: BoardDetail, generation: number) => {
+      if (!openings.isCurrent(OPENING, generation)) {
+        void reload();
+        return;
+      }
+      // 走っている取得を無効にする（ログアウトと同じ理由）。作ったボードを
+      // 開いた直後に、前のボードの応答が着いて上書きするのを止める。
+      openings.invalidateAll();
+      // 作ったばかりのボードに画像は無い。作成の口は画像を受け取らない
+      // （ADR 0074）ので、取り直さずに空で開いてよい。
+      setCurrent({ ...board, files: {} });
+      // 作ったボードを開いた状態。**積む。** 「戻る」で作成の手前に戻れる。
+      showLocation({ boardId: board.id, picking: false }, "push");
+      void reload();
+    },
+    [openings, reload, showLocation],
+  );
+
+  /** 作成先が決まったのでボードを作る。失敗は picker が表示する（`useNewBoardFlow`）。 */
+  const createWithTarget = useCallback(
+    async (target: BoardTarget) => {
+      // 送る前の世代を控える。待つあいだに移ったら開かない（`openCreated`）。
+      const generation = openings.start(OPENING);
+      const board = await createBoard(target);
+      if (board === null) return;
+      openCreated(board, generation);
+    },
+    [createBoard, openCreated, openings],
+  );
+
+  /**
+   * 作成先を選ばずに、ダイアログからそのまま作る（GitHub が未設定の構成、
+   * ADR 0090）。失敗はダイアログの中に出る（`useNewBoardFlow` の `failure`）。
+   */
+  const createWithoutTarget = useCallback(async () => {
+    const generation = openings.start(OPENING);
+    const board = await createBoardWithoutTarget(confirmDiscard);
+    if (board === null) return;
+    openCreated(board, generation);
+  }, [confirmDiscard, createBoardWithoutTarget, openCreated, openings]);
+
+  /**
+   * サーバーが返したボードで手元を差し替える。
+   *
+   * **開いているのが応答のボードのときだけ差し替える。** 取り直しも改名も
+   * 通信を挟むので、そのあいだにボードを切り替えられる。照合せずに入れると、
+   * 遅れて届いた応答が今のボードを外し、確認（confirmDiscard）を通さずに
+   * 未保存の編集を捨てることになる。
+   *
+   * **一覧も引き直す。** 一覧は作成先でまとめて見せる（ADR 0019）ので、
+   * 名前が古いままでは差し替えた意味が無い。
+   */
+  const replaceBoard = useCallback(
+    (board: BoardDetail) => {
+      // **画像は持ち越す。** 応答（`BoardDetail`）は画像を運ばない（ADR 0074）。
+      // この経路ではキャンバスを作り直さないので、画像はキャンバスが持っている。
+      //
+      // **版（`updatedAt`）も持ち越す**（ADR 0092 / 0020）。改名も表示名の取り直しも
+      // 版を動かさないので、応答の版はサーバーのいまの版で、開いたあとに別の
+      // メンバーが保存していればその版になる。それを手元に置くと保存の基準が
+      // 進み（`useSceneSave`）、読み込んでいない相手の保存を次の保存が黙って
+      // 上書きする。版を動かすのはシーンの保存とキャンバスの読み直しだけ。
+      setCurrent((open) =>
+        open?.id === board.id
+          ? { ...board, files: open.files, updatedAt: open.updatedAt }
+          : open,
+      );
+      void reload();
+    },
+    [reload],
+  );
+
+  /**
+   * 削除されたので手元から外す。
+   *
+   * **未保存の確認は通さない。** 消えたのはボードそのもので、捨てるか
+   * どうかを訊いても戻せる先が無い。確認は削除の手前で済んでいる（ADR 0042）。
+   * `unsaved` は BoardPage が外れるときに自分で下ろす。
+   *
+   * **一覧も引き直す。** 一覧は作成先でまとめて見せる（ADR 0019）ので、消えた
+   * ボードが残っていると開けない行が並ぶ。
+   *
+   * **引き直しを待たずに手元からも外す。** `reload()` が失敗しても一覧は
+   * 前の値のまま残るので、引き直しだけに任せると開くと 404 になる行が
+   * 並び続ける。消えたことはサーバーの応答で確かめてあるので、ここは
+   * 推測ではない。引き直しは他の変化を拾うために続けて行う。
+   */
+  const handleDeleted = useCallback(
+    (id: string) => {
+      removeBoard(id);
+      setCurrent(null);
+      // 走っている取得を無効にする（ログアウトと同じ理由）。
+      openings.invalidateAll();
+      // 消えたボードを URL に残さない。**積まずに置き換える。** 積むと、
+      // いま見えている URL が消えたボードを指したまま 1 つ増える。
+      showLocation(NO_BOARD, "replace");
+      void reload();
+    },
+    [openings, reload, removeBoard, showLocation],
+  );
+
+  /**
+   * 開いているボードの作成先の選び直しを始める。
+   *
+   * **選び直しは URL に載せるが、履歴には積まない**（ADR 0059）。同じボードの
+   * 中のモードなので、読み込み直しで戻せれば足りる。積むと、選び終えた後の
+   * 「戻る」が選択画面に引き返す。
+   */
+  const startPicking = useCallback(() => {
+    if (current === null) return;
+
+    setPicking(true);
+    showLocation({ boardId: current.id, picking: true }, "replace");
+  }, [current, showLocation]);
+
+  /** 既存ボードの作成先を選び直す。最初の作成より前だけ通る（ADR 0014）。 */
+  const changeTarget = useCallback(
+    async (target: BoardTarget) => {
+      if (current === null) return;
+
+      // **設定を待つ前に、走っている取得を無効にする**（#241）。
+      // 「やめる」の取り直しを待つあいだも選択画面は残っていて、作成先を決め
+      // られる。世代を進めるのが設定のあとの取り直しだけだと、設定を待つあいだに
+      // 着いた「やめる」の応答が通り、選択画面を閉じて変える前の作成先で
+      // キャンバスを作る。あとから着く取り直しは同じ `key` なのでキャンバスを
+      // 作り直さず、作成先と版だけが入れ替わる。
+      openings.invalidateAll();
+      await boardsApi.setTarget(current.id, target);
+
+      // **画像ごと開き直す。** 選択画面から戻るとキャンバスを作り直すが、設定の
+      // 応答（`BoardDetail`）は画像を運ばない（ADR 0074）。開いた時点の画像を
+      // 持ち越すと、開いてから貼って保存した画像が欠ける。取れなければ選択画面に
+      // 残る（失敗は `loadBoard` が出す）。作成先はもう変わっているので、選び
+      // 直せば同じ設定で通る。
+      const board = await loadBoard(current.id);
+      if (board === null) return;
+
+      setPicking(false);
+      setCurrent(board);
+      showLocation({ boardId: board.id, picking: false }, "replace");
+    },
+    [current, loadBoard, openings, showLocation],
+  );
+
+  /**
+   * 作成先の選び直しをやめて、選ぶ前のボードへ戻る（#241）。
+   *
+   * **開く口で取り直してから戻す。** 選択画面のあいだキャンバスは外れていて、
+   * 戻ると作り直される。手元の `current` は保存のたびには差し替えていないので、
+   * そこから作り直すと、開いてから保存したもの（貼った画像も）が画面から消え、
+   * 次の保存は自分の保存と食い違って 409 になる。画面は「他の人が保存しました」
+   * と案内するので、案内まで嘘になる（ADR 0020）。
+   *
+   * 取れなければ選択画面に残る（失敗は `loadBoard` が出す）。押し直せば戻れる。
+   * **開いた時点の値で戻す形に落とさない。** 落とすと上の食い違いがそのまま残る。
+   *
+   * 取り直しを待つあいだに作成先を決められる。設定より前に読んだボードが遅れて
+   * 届くと、変える前の作成先で上書きする。**守っているのは `loadBoard` の世代。**
+   * `changeTarget` が設定を始める時点で世代を進めるので、設定を待つあいだに
+   * 着いても、設定のあとに着いても、こちらの応答は捨てられる。設定の応答を
+   * そのまま入れる形に戻すなら、ここも見直す。
+   *
+   * 未保存の確認は要らない。「作成先を変更」は未保存のあいだ押せないので、
+   * 選択画面に来た時点で捨てるものが無い。
+   */
+  const cancelPicking = useCallback(async () => {
+    if (current === null) return;
+
+    const board = await loadBoard(current.id);
+    if (board === null) return;
+
+    setPicking(false);
+    setCurrent(board);
+    showLocation({ boardId: board.id, picking: false }, "replace");
+  }, [current, loadBoard, showLocation]);
+
+  /**
+   * URL に書いてあったボードを開く（ADR 0059）。ログインが済んでから 1 度だけ。
+   *
+   * **履歴は積まない。** 起動時に積むと、最初の「戻る」が etoki の中に留まり、
+   * 来た場所へ戻れない。
+   */
+  useEffect(() => {
+    // 同意の画面ではボードを開かず、URL も書き換えない。書き換えると要求が
+    // URL から消え、読み込み直したときに何の画面だったのかが失われる。
+    if (!signedIn || openedFromUrl.current || consenting) return;
+    openedFromUrl.current = true;
+
+    const initial = parseBoardLocation(window.location.search);
+    if (initial.boardId === null) {
+      // 開いていない状態も URL に映しておく。`picking` だけが載った URL を
+      // そのまま残すと、控えと URL が最初からずれる。
+      showLocation(NO_BOARD, "replace");
+      return;
+    }
+
+    // 読みにいくのは await の後で state を置く非同期関数なので描画の連鎖は
+    // 起きないが、規則が見ているのは effect から setState を含む関数を呼ぶこと
+    // 自体なので、ここは外す（`useSession` の起動時の読み込みと同じ）。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void open(initial.boardId, { mode: "replace", picking: initial.picking });
+  }, [consenting, open, showLocation, signedIn]);
+
+  /**
+   * 戻る / 進むに追随する（ADR 0059）。
+   *
+   * **未保存の確認をここでも通す。** キャンバスが外れる導線が 1 つ増えたので、
+   * `web/CLAUDE.md` の約束をそのまま掛ける。
+   */
+  useEffect(() => {
+    if (!signedIn) return;
+
+    const handlePopState = () => {
+      // **比べる前に、走っている取得を全部無効にする**（`.claude/rules/async-ui.md`
+      // の「対象が変わるイベントは、関連する世代を全部無効化する」）。戻る / 進むは、
+      // どちらへ動いても前に向かっていた先から外れる。下の「同じ場所なら何もしない」
+      // は画面に出ている場所（`shown`）と比べるので、読み込み中に一覧へ戻ると
+      // 一覧のままと判定して抜ける。ここで無効にしておかないと、走っていた取得が
+      // あとから着いてボードを開き、URL まで書き換える（#205）。
+      openings.invalidateAll();
+
+      const next = parseBoardLocation(window.location.search);
+      const here = shown.current;
+      if (next.boardId === here.boardId && next.picking === here.picking) return;
+
+      void (async () => {
+        // **取ってから訊く。** 訊いてから取ると、取っているあいだの描き足しを
+        // 確認なしで捨てる（`open` と同じ理由）。
+        const board = next.boardId === null ? null : await loadBoard(next.boardId);
+        if (next.boardId !== null && board === null) return;
+
+        if (!confirmDiscard()) {
+          // **戻る / 進むはアプリ側で止められない。** 捨てないと決めた以上、
+          // できるのは見えている場所を積み直して URL を画面に合わせることまで。
+          // **戻す（`history.back()`）のではなく積む。** 何手ぶん動かされたのかを
+          // 知る手立てが無いので、戻す量を決められない。
+          showLocation(here, "push");
+          return;
+        }
+
+        leaveCreating();
+        if (board === null) {
+          // 走っていた取得は頭で無効にしてある。一覧で始めた取得が遅れて着いても、
+          // 「離れたはずのボード」は開き直さない。
+          setCurrent(null);
+          setPicking(false);
+          showLocation(NO_BOARD, "replace");
+          // 一覧へ戻ったので読み直す（`closeBoard` と同じ理由、#200）。
+          void reload();
+          return;
+        }
+
+        const picking = next.picking && canOpenTargetPicker(board);
+        setCurrent(board);
+        setPicking(picking);
+        // URL はブラウザがもう動かしている。**それでも書き直す。** 控えを
+        // 揃えるのと、通らなかった `picking` を落とすため。
+        showLocation({ boardId: board.id, picking }, "replace");
+      })();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [
+    confirmDiscard,
+    leaveCreating,
+    loadBoard,
+    openings,
+    reload,
+    showLocation,
+    signedIn,
+  ]);
+
+  return useMemo(
+    () => ({
+      current,
+      picking,
+      handleDirtyChange,
+      open,
+      closeBoard,
+      startCreating,
+      createWithTarget,
+      createWithoutTarget,
+      replaceBoard,
+      handleDeleted,
+      startPicking,
+      changeTarget,
+      cancelPicking,
+      logout,
+    }),
+    [
+      current,
+      picking,
+      handleDirtyChange,
+      open,
+      closeBoard,
+      startCreating,
+      createWithTarget,
+      createWithoutTarget,
+      replaceBoard,
+      handleDeleted,
+      startPicking,
+      changeTarget,
+      cancelPicking,
+      logout,
+    ],
+  );
+}

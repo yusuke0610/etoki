@@ -59,8 +59,12 @@ describe("readPanelCollapsed / writePanelCollapsed", () => {
 });
 
 describe("railBadgesOf", () => {
-  const annotation = (state: AnnotationStatus["state"]): AnnotationStatus =>
-    ({ id: state, name: state, granularity: "", state }) as AnnotationStatus;
+  const annotation = (state: AnnotationStatus["state"]): AnnotationStatus => ({
+    id: state,
+    name: state,
+    granularity: "",
+    state,
+  });
 
   // 件数は状態ごとに変えて、取り違えたら別の欄がずれるようにする。
   it("未作成と変更ありを数え、作成済みは数えない", () => {
