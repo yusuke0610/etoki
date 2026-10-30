@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -268,6 +269,81 @@ func TestInterpret_SystemPromptExampleFollowsGranularity(t *testing.T) {
 				t.Errorf("出力例に epic がある = %v, want %v:\n%s", got, tt.wantEpic, system)
 			}
 		})
+	}
+}
+
+// 前回の一覧を渡していないときは、出力例のどの項目も previousRef を null にする。
+//
+// epic を含む例の issue に p1 を残すと、小型モデル（gemma3:4b）はそれを書き写し、
+// 3 回とも検証に落ちて解釈が失敗した。issue 指定で起きた #251 と同じ形が、
+// epic と指定なしに残っていた。前回の一覧があるときは、ref の書き方を例で見せる。
+func TestInterpret_SystemPromptExampleRefFollowsPrevious(t *testing.T) {
+	t.Parallel()
+
+	const exampleRef = `"previousRef": "p1"`
+
+	for _, granularity := range []string{"", "epic"} {
+		for _, hasPrevious := range []bool{false, true} {
+			t.Run(fmt.Sprintf("granularity=%q/previous=%v", granularity, hasPrevious), func(t *testing.T) {
+				t.Parallel()
+
+				mappings := &fakeMappings{}
+				if hasPrevious {
+					if _, err := mappings.SaveRun(t.Context(), port.SyncRun{
+						BoardID: "board-1", AnnotationID: "annot-1", ContentHash: "old", CreatedAt: baseTime,
+						Items: []port.SyncItem{{
+							ItemID: "PVTI_first", LocalID: "e1", Kind: port.KindEpic, Title: "決済基盤",
+							Action: port.ActionCreated, Confirmed: true, CreatedAt: baseTime,
+						}},
+					}); err != nil {
+						t.Fatalf("seed run: %v", err)
+					}
+				}
+
+				scene := strings.Replace(interpretScene, `"granularity":""`,
+					`"granularity":"`+granularity+`"`, 1)
+				llm := &fakeLLM{responses: []string{validLLMOutput}}
+				svc := usecase.NewInterpretationService(
+					&fakeBoards{board: newBoard(scene)}, mappings, llm, newLimiter(),
+					usecase.WithMaxAttempts(1))
+
+				if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+					t.Fatalf("interpret() = %v", err)
+				}
+				system := llm.requests[0].System
+				if got := strings.Contains(system, exampleRef); got != hasPrevious {
+					t.Errorf("出力例に %s がある = %v, want %v:\n%s", exampleRef, got, hasPrevious, system)
+				}
+			})
+		}
+	}
+}
+
+// 解釈には、図形の幅で折り返す前の文字を渡す。折り返したあとの文字の改行を空白に
+// 置き換えると、日本語の語の途中に空白が入り（「チームの開 発者」）、小型モデルは
+// それを title に写した。originalText を持たない古いシーンは、これまでどおり text。
+func TestInterpret_SendsUnwrappedText(t *testing.T) {
+	t.Parallel()
+
+	scene := `{"type":"excalidraw","elements":[
+	{"id":"annot-1","type":"frame","name":"通知","customData":{"etoki":{"granularity":""}}},
+	{"id":"t1","type":"text","text":"チームの開\n発者","originalText":"チームの開発者","frameId":"annot-1"},
+	{"id":"t2","type":"text","text":"古い\nシーン","frameId":"annot-1"}]}`
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(scene), llm)
+
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
+	}
+	sent := llm.requests[0].Text
+
+	for _, want := range []string{"- チームの開発者\n", "- 古い シーン\n"} {
+		if !strings.Contains(sent, want) {
+			t.Errorf("プロンプトに %q が無い:\n%s", want, sent)
+		}
+	}
+	if strings.Contains(sent, "開 発者") {
+		t.Errorf("折り返したあとの文字を渡している:\n%s", sent)
 	}
 }
 

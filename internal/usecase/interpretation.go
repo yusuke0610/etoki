@@ -342,7 +342,7 @@ func (s *InterpretationService) complete(
 ) (domain.Interpretation, llmUsage, error) {
 	base := buildUserMessage(a, texts, len(images) > 0, previous, ic)
 	req := port.VisionRequest{
-		System: interpretationSystemPrompt(a.Granularity),
+		System: interpretationSystemPrompt(a.Granularity, len(previous) > 0),
 		Text:   base,
 		Images: images,
 	}
