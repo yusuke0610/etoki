@@ -79,6 +79,18 @@ describe("useNameDraft", () => {
     expect(onChangeName).not.toHaveBeenCalled();
   });
 
+  it("打っても、欄の ref に渡す関数は作り直さない", () => {
+    const { hook } = setup();
+    act(() => hook.result.current.start());
+    const { attachInput } = hook.result.current;
+
+    act(() => hook.result.current.change("支"));
+
+    // 作り直すと React が ref を付け直し、そのたびに焦点を入れて全選択するので、
+    // 次の 1 文字が打った文字を消す。
+    expect(hook.result.current.attachInput).toBe(attachInput);
+  });
+
   it("変えていなければ書かない（前後の空白だけの違いも）", () => {
     const { hook, onChangeName } = setup({ name: "決済" });
     act(() => hook.result.current.start());
