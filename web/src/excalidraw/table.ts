@@ -93,5 +93,5 @@ export function createTable(center: { x: number; y: number }): SceneElement[] {
     }
   }
 
-  return convertToExcalidrawElements(cells as never) as unknown as SceneElement[];
+  return convertToExcalidrawElements(cells);
 }

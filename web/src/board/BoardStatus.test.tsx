@@ -81,7 +81,7 @@ describe("BoardStatus の「保存」", () => {
     render(<BoardStatus {...props({ canSave: false, saveBlocked: reason })} />);
 
     const save = saveButton() as HTMLButtonElement;
-    const ekidoki = screen.getByRole("button", { name: "絵解き" }) as HTMLButtonElement;
+    const ekidoki = screen.getByRole<HTMLButtonElement>("button", { name: "絵解き" });
     expect(save.disabled).toBe(true);
     expect(ekidoki.disabled).toBe(true);
     for (const button of [save, ekidoki]) {
@@ -95,7 +95,7 @@ describe("BoardStatus の「保存」", () => {
   it("保存中は「保存中…」と名乗る", () => {
     render(<BoardStatus {...props({ canSave: false, saving: true })} />);
 
-    const save = screen.getByRole("button", { name: "保存中…" }) as HTMLButtonElement;
+    const save = screen.getByRole<HTMLButtonElement>("button", { name: "保存中…" });
     expect(save.disabled).toBe(true);
     expect(save.getAttribute("aria-describedby")).toBeNull();
   });

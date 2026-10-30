@@ -685,7 +685,9 @@ export function BoardPage({
       void interpretAfterSave(id);
     },
     onSelect: showInterpretation,
-    onCancel: cancelInterpretation,
+    // 取り消せなかったことは `cancel` 自身が帯に出す（`useInterpretations` の
+    // `cancelFailed`）ので、待たずに手放してよい。
+    onCancel: (id) => void cancelInterpretation(id),
     unavailable: interpretationUnavailable,
   };
   // 作る先の見出し。押す直前の帯の文（`creationNotice`）に出す。作成先が未選択の
@@ -1049,7 +1051,7 @@ export function BoardPage({
                 <Excalidraw
                   excalidrawAPI={setApi}
                   initialData={initialData as never}
-                  onChange={handleChange as never}
+                  onChange={handleChange}
                   langCode="ja-JP"
                   theme={theme}
                   // 持ち出しと取り込みの口は etoki のメニューに寄せてある（ADR 0045）。

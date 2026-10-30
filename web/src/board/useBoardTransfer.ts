@@ -100,9 +100,9 @@ export function useBoardTransfer({
       await exclusive.run("importing", async () => {
         let imported: ImportedScene;
         try {
-          // **読んでから訊く**（`App.open` と同じ形、ADR 0021）。訊いてから
-          // 読むと、読んでいるあいだの描き足しを確認なしで捨てる。読めなかった
-          // ときに捨ててよいかを訊いてしまうことも無くなる。
+          // **読んでから訊く**（`useBoardNavigation` の `open` と同じ形、
+          // ADR 0021）。訊いてから読むと、読んでいるあいだの描き足しを確認なしで
+          // 捨てる。読めなかったときに捨ててよいかを訊いてしまうことも無くなる。
           imported = await readSceneFile(file, api);
         } catch (e) {
           // 読めなかった。**キャンバスには触らない。** 例外の中身は画面に
