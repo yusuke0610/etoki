@@ -132,7 +132,7 @@ export function savedSceneJSON(api: SceneSource): string {
   return serializeAsJSON(
     api.getSceneElements() as never,
     api.getAppState() as never,
-    {} as never,
+    {},
     "local",
   );
 }
