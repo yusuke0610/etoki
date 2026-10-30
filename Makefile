@@ -10,7 +10,8 @@ SHELL := bash
 # 印は flake.nix の devShell が渡す ETOKI_DEVSHELL を見る。IN_NIX_SHELL では
 # 判定しない。あれは「何かの nix shell の中」としか言わないので、別プロジェクト
 # の shell から呼ぶと包み直しを飛ばしてしまう。direnv を使っているなら
-# devShell がすでに有効なので、この分岐には来ない。
+# devShell がすでに有効なので、ふつうはこの分岐には来ない。flake.nix か
+# flake.lock を変えたあと、direnv が読み直す（cd し直す）までは来る（下の値の比較）。
 #
 # 印の有無ではなく値を比べる。値は flake.nix と flake.lock の中身のハッシュで
 # （作り方は flake.nix のコメント）、ここでは同じものをこの作業ツリーのファイル
