@@ -43,6 +43,9 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `.claude/rules/`                   | レビュー由来の落とし穴と、狭い範囲でだけ要る約束（触ると読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
+| `.claude/skills/triage/`           | 閉じられる issue と着手できる issue の振り分け（`/triage`）            |
+| `.claude/skills/spec/`             | 着手の前に仕様を訊いて固め、issue に書き戻す（`/spec`）                |
+| `.claude/skills/file-issues/`      | 調べた結果を親の issue と sub-issue に積む（`/file-issues`）           |
 | `.claude/skills/security-audit/`   | 定期のセキュリティ点検（`/security-audit`）と #64 の更新               |
 | `.claude/agents/`                  | 用途別のサブエージェント（ADR 照合、レビュー、デバッグなど）           |
 
