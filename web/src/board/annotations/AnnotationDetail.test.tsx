@@ -871,9 +871,9 @@ describe("AnnotationDetail", () => {
     it("背景を書く前に読んだ結果なら、そう言う", () => {
       render(<AnnotationDetail {...withResult("新しい背景", context())} />);
 
-      expect(
-        screen.getByText(/ボードの背景を書く前に読んだものです/),
-      ).toBeInTheDocument();
+      const note = screen.getByText(/ボードの背景を書く前に読んだものです/);
+      // 打ち手の句は「違う背景で読んだ」ときと共通なので、こちらでも見る（#315 / #318）。
+      expect(note).toHaveTextContent(/いまの背景で読み直すかどうかは選べます/);
       // 何も添えていないので、添えたものの見出しは出さない。
       expect(screen.queryByText(/絵の外から添えたもの/)).toBeNull();
     });
