@@ -109,9 +109,10 @@ export function useSceneSave({
   const heldFileIds = useRef<ReadonlySet<string>>(new Set(fileIds));
 
   // 渡された版が変わったら基準も差し替える。改名と作成先の表示名の取り直しは
-  // 版を動かさず、App が手元の版を持ち越すので（ADR 0092）、ここに来るのは
-  // ボードを読み直したときだけ。**応答の版をそのまま渡さないこと。** 読み込んで
-  // いない相手の保存まで基準に入り、次の保存がそれを黙って上書きする。
+  // 版を動かさず、`useBoardNavigation` が手元の版を持ち越すので（ADR 0092）、
+  // ここに来るのはボードを読み直したときだけ。**応答の版をそのまま渡さない
+  // こと。** 読み込んでいない相手の保存まで基準に入り、次の保存がそれを黙って
+  // 上書きする。
   useEffect(() => {
     baseUpdatedAt.current = updatedAt;
   }, [updatedAt]);
