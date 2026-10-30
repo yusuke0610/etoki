@@ -59,9 +59,10 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 実行する。** README にグローバルインストールの手順を書かないこと。
 
 `make` は devShell の外から呼ばれると `nix develop --command` で自分をやり直す
-ので、入り忘れても道具の無いまま走ることはない。**ただし `go test` や
-`bunx vitest` を直に叩く経路は包まれない。** そちらは従来どおり devShell の中で
-実行する。
+ので、入り忘れても道具の無いまま走ることはない。別の作業ツリー（worktree）の
+devShell の中から呼ばれ、`flake.nix` か `flake.lock` が違うときもやり直す。
+**ただし `go test` や `bunx vitest` を直に叩く経路は包まれない。** そちらは
+従来どおり、その作業ツリーの devShell の中で実行する。
 
 **一覧の正本は `make help`**（Makefile の `##` コメント）。下は使う頻度の高い
 ものだけで、全部ではない。
@@ -247,10 +248,10 @@ Origin 検証は `.claude/rules/http-handlers.md`。
   コメント。
 - **`.prettierignore`** と、**整形を必ずリポジトリのルートから呼ぶこと** —
   理由は `.prettierignore` と Makefile の `lint-fmt` のコメント。
-- **Makefile の `ifndef ETOKI_DEVSHELL` による包み直し** — 判定の印と、包み
+- **Makefile の `ETOKI_DEVSHELL` による包み直し** — 印の値を比べる理由と、包み
   直しの中で `$(MAKE)` と書かない理由は Makefile の冒頭と `nix-develop` の
-  コメント。印（`ETOKI_DEVSHELL`）を `shellHook` ではなく derivation の環境に
-  置く理由は `flake.nix` のコメント。
+  コメント。印（`ETOKI_DEVSHELL`）の値の作り方と、`shellHook` ではなく
+  derivation の環境に置く理由は `flake.nix` のコメント。
 - **devShell の `GOTOOLCHAIN=local`** — 理由は `flake.nix` のコメント。
 - **`nix flake check` は Nix コードのフォーマット検査のみ**（ADR 0002）。同じ
   検査を `make lint`（`lint-nix`）にも重ねている理由は Makefile のコメント。
