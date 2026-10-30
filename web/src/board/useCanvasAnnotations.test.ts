@@ -93,6 +93,17 @@ describe("useCanvasAnnotations", () => {
       expect(hook.result.current.handleChange).toBe(handleChange);
       expect(hook.result.current.updateElements).toBe(updateElements);
     });
+
+    it("同じ props で描き直しても、返す束は同じものを返す", () => {
+      // 束は BoardPage が依存に置く。作り直されると、それを依存にしたものまで
+      // 描くたびに作り直される（web/CLAUDE.md）。
+      const { hook } = setup({ theme: "light" });
+      const first = hook.result.current;
+
+      hook.rerender({ theme: "light" });
+
+      expect(hook.result.current).toBe(first);
+    });
   });
 
   describe("キャンバスの写し", () => {
