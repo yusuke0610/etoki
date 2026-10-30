@@ -69,9 +69,7 @@ type Skeleton = Record<string, unknown> & { type: string; id?: string };
  * 既存の絵を避ける必要が無い（`draftOrigin` が要るのはドラフトの側）。
  */
 export function templateElements(kind: DiagramKind): SceneElement[] {
-  return convertToExcalidrawElements(
-    SKELETONS[kind]() as never[],
-  ) as unknown as SceneElement[];
+  return convertToExcalidrawElements(SKELETONS[kind]() as never[]);
 }
 
 /**
