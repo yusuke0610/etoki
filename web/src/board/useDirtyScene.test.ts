@@ -129,4 +129,26 @@ describe("useConfirmLeave", () => {
     hook.unmount();
     expect(leave()).toBe(false);
   });
+
+  // preventDefault だけを見ないブラウザが残っているので、実装は両方を立てる。
+  // `returnValue = ""` も `defaultPrevented` を真にするので、上の断言だけだと
+  // どちらか片方を消しても通る。1 つずつ控えて見る。
+  it("訊かせるときは、preventDefault と returnValue の両方を立てる", () => {
+    renderHook(() => useConfirmLeave(true));
+    const event = new Event("beforeunload", { cancelable: true });
+    const preventDefault = vi.spyOn(event, "preventDefault");
+    let returnValue: unknown;
+    Object.defineProperty(event, "returnValue", {
+      configurable: true,
+      get: () => returnValue,
+      set: (value: unknown) => {
+        returnValue = value;
+      },
+    });
+
+    window.dispatchEvent(event);
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(returnValue).toBe("");
+  });
 });

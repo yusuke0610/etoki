@@ -51,13 +51,25 @@ const imported = (patch: Partial<ImportedScene> = {}): ImportedScene => ({
   ...patch,
 });
 
+/**
+ * 排他。`blocked` なら `f` を呼ばずに false を返す。
+ *
+ * **走っているあいだは次を通さない**（実物の `useExclusion` と同じ絞り方）。状態を
+ * 持たない偽物だと、読み終える前に排他を手放す実装でも、どのテストも落ちない。
+ */
 function exclusion(blocked = false): Exclusion {
+  let busy = false;
   return {
     running: null,
     reasonFor: () => null,
     run: async (_op, f) => {
-      if (blocked) return false;
-      await f();
+      if (blocked || busy) return false;
+      busy = true;
+      try {
+        await f();
+      } finally {
+        busy = false;
+      }
       return true;
     },
   };
@@ -180,7 +192,12 @@ describe("useBoardTransfer の取り込み", () => {
 
     await act(() => hook.result.current.importScene(file));
 
-    expect(updateElements.mock.calls[0]?.[1]).toBeUndefined();
+    // 置き換えたうえで、背景には触らない。置き換えたことも見ないと、取り込みを
+    // 丸ごと止める実装でも通る。
+    expect(updateElements).toHaveBeenCalledTimes(1);
+    const [elements, appState] = updateElements.mock.calls[0]!;
+    expect(elements.map((e) => e.id)).toEqual(["img-1", "r1"]);
+    expect(appState).toBeUndefined();
   });
 
   it("取り込んだ注釈は、新しい ID に移してから置く", async () => {
@@ -228,5 +245,26 @@ describe("useBoardTransfer の取り込み", () => {
 
     expect(readSceneFile).not.toHaveBeenCalled();
     expect(updateElements).not.toHaveBeenCalled();
+  });
+
+  it("読んでいるあいだの二度目の取り込みは、読みにいかない", async () => {
+    const { hook } = setup();
+    const reading = deferred<ImportedScene>();
+    vi.mocked(readSceneFile).mockReturnValueOnce(reading.promise);
+
+    let first!: Promise<void>;
+    act(() => {
+      first = hook.result.current.importScene(file);
+    });
+    await act(() => hook.result.current.importScene(file));
+
+    // 排他は読み終えるまで持つ。先に手放すと、同じキャンバスへ 2 つの取り込みが
+    // 並ぶ。
+    expect(readSceneFile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      reading.resolve(imported());
+      await first;
+    });
   });
 });

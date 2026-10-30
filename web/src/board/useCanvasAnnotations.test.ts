@@ -69,10 +69,14 @@ function setup(initial: { theme?: Theme } = {}) {
   return { hook, canvas, updateScene, onThemeChange, applySignature, scheduleMeasure };
 }
 
-/** `updateScene` に最後に渡した要素。 */
+/**
+ * `updateScene` に最後に渡した要素。**呼ばれていなければ投げる。** 空として返すと、
+ * 「書いていない」と「空で書いた」が区別できない。
+ */
 function lastSceneElements(updateScene: ReturnType<typeof vi.fn>): SceneElement[] {
   const call = updateScene.mock.lastCall as [{ elements: SceneElement[] }] | undefined;
-  return call?.[0].elements ?? [];
+  if (call === undefined) throw new Error("updateScene が呼ばれていない");
+  return call[0].elements;
 }
 
 describe("useCanvasAnnotations", () => {
@@ -145,7 +149,10 @@ describe("useCanvasAnnotations", () => {
         hook.result.current.handleChange(canvas.elements, appState({ theme: "dark" })),
       );
 
-      expect(applySignature.mock.calls[1]?.[0]).toBe(applySignature.mock.calls[0]?.[0]);
+      // 2 回とも渡したことを先に見る。呼ばれていないと、両方 undefined で一致する。
+      expect(applySignature).toHaveBeenCalledTimes(2);
+      const [[before], [after]] = applySignature.mock.calls as [[string], [string]];
+      expect(after).toBe(before);
     });
   });
 
