@@ -264,6 +264,25 @@ describe("useSceneSave", () => {
       expect(boardsApi.saveScene).toHaveBeenCalledTimes(2);
       await vi.waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     });
+
+    it("再試行は押した時点の保存を呼ぶ（ボードを読み直したあとでも）", async () => {
+      vi.spyOn(boardsApi, "saveScene")
+        .mockRejectedValueOnce(boom)
+        .mockRejectedValueOnce(conflict);
+      const { hook, onError } = setup();
+      await act(() => hook.result.current.save());
+
+      // 失敗の通知が出ているあいだにボードを読み直した。
+      hook.rerender({ updatedAt: "v2" });
+      await act(async () => {
+        onError.mock.calls[0]![1]!.action!.run();
+        await Promise.resolve();
+      });
+
+      // 失敗した時点の保存を閉じ込めていると、衝突を前の版（v1）に対するものと
+      // して持つので、いまの版では衝突の帯が出ない。
+      await vi.waitFor(() => expect(hook.result.current.conflicted).toBe(true));
+    });
   });
 
   describe("書けたとき", () => {
