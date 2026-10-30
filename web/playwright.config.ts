@@ -64,10 +64,18 @@ export default defineConfig({
   webServer: {
     // host は vite.config.ts が 127.0.0.1 に固定している。ポートだけ上書きする。
     command: `bun run dev --port ${port}`,
-    url: baseURL,
-    // 手元でも毎回立てる（上の `port` の理由）。立ち上げに数秒かかるが、
-    // 何を検査したのか分からない速さより、毎回自分のコードを見るほうを採る。
-    reuseExistingServer: false,
+    // **既に動いているサーバーは使わず、手元でも毎回立てる**（上の `port` の
+    // 理由）。立ち上げに数秒かかるが、何を検査したのか分からない速さより、
+    // 毎回自分のコードを見るほうを採る。
+    //
+    // そのために **URL の応答では待たない（`url` も `reuseExistingServer` も
+    // 書かない）。** 待つのは、ここで立てた Vite 自身が「Local: <baseURL>」を
+    // 出すこと。Playwright は `url` と `wait` の早いほうで待ちをやめるので、
+    // `url` を書くと、同じポートで同時に立てた別のチェックアウトのサーバーが
+    // 応答した時点で始まり、自分の Vite がポートを取れずに落ちる前にそちらを
+    // 検査する。ポートが埋まっていれば自分の Vite が `strictPort` で落ち、
+    // Playwright は起動の失敗として止まる。
+    wait: { stdout: new RegExp(`Local:\\s+${baseURL.replaceAll(".", "\\.")}/`) },
     timeout: 120_000,
     // 既定では dev サーバーの stdout を捨てる。起動しなかったとき
     // 「120 秒待った」以外の情報が残らず、CI で原因を追えない。
