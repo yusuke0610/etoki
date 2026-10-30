@@ -282,11 +282,13 @@ describe("useEkidoki", () => {
     });
   });
 
-  it("返す束は、描き直しても同じものを返す", () => {
-    const { hook } = setup();
+  it("返す束は、キャンバスの値が変わって描き直しても同じものを返す", () => {
+    const { hook } = setup({ metas: { a1: meta("issue") } });
     const first = hook.result.current;
 
-    hook.rerender({ metas: null });
+    // キャンバスの値は描き込むたびに変わる。同じ値で描き直すだけでは、
+    // `canvasMetas` を依存に足して束が作り直される形を見逃す。
+    hook.rerender({ metas: { a1: meta("epic") } });
 
     expect(hook.result.current).toBe(first);
   });
