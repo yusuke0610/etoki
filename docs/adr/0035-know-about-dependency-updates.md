@@ -142,3 +142,15 @@ Dependabot alerts が無効になっていたので成り立っていなかっ�
   `@excalidraw/excalidraw` が固定している `nanoid` のように、こちらでは上げられ
   ない推移的依存があり、CI に入れると赤いまま固まって本当の知らせが埋もれる。
   範囲の中で上がるものは `bun audit fix` でロックファイルを更新する。
+
+## 追記: React の固定を外した（#382）
+
+文脈に挙げた「React は 18 系に固定（`@excalidraw/excalidraw` との組み合わせ）」は、
+**理由がもう成り立っていなかった。** 入れている `@excalidraw/excalidraw` 0.18.1 の
+peerDependencies は `react: ^17.0.2 || ^18.2.0 || ^19.0.0` で、React 19 を受ける。
+19 に上げて `make lint` / `make test` / `make test-e2e` / 本番ビルドが通った。
+
+上の「固定するのは、実際に壊れたものだけ」に照らすと、**壊れたことを見ていない
+固定だった。** 固定と `.github/dependabot.yml` の `ignore`（React 系の major）を
+外し、React も major の更新 PR が出るようにした。Excalidraw を上げたときに組み合わせが
+崩れたら、それは更新 PR が落ちることで分かる。

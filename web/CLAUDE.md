@@ -974,7 +974,6 @@ cd web && bunx playwright test --ui
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の
   生成型から外れたことを `tsc` に見つけさせるため。外すと ADR 0012 の仕組みが
   黙って効かなくなる。
-- **React は 18 系に固定。** `@excalidraw/excalidraw` との組み合わせを揃えるため。
 - **`web/src/excalidraw/assumptions.test.ts`** — `customData` が serialize と
   restore を越えて残るという、注釈設計の前提そのものを固定するテスト。
   ライブラリ更新で落ちたら設計を見直す合図。
@@ -987,8 +986,8 @@ cd web && bunx playwright test --ui
   リビジョンのブラウザが見つからず E2E が起動しない。`nix flake update` で
   `playwright-driver` が動いたら `web/package.json` も同じ値に上げる。
 
-ここで固定しているもの（`@playwright/test`、React 18、
-`@excalidraw/mermaid-to-excalidraw`、`typescript`）は `.github/dependabot.yml` の
+ここで固定しているもの（`@playwright/test`、`@excalidraw/mermaid-to-excalidraw`、
+`typescript`）は `.github/dependabot.yml` の
 `ignore` にも入っている（[ADR 0035](../docs/adr/0035-know-about-dependency-updates.md)）。
 **固定をやめるならそちらも外す。** 残っていると、上げたつもりで上がらない。
 mermaid だけは入れていない。間接依存なので version updates の対象にならず、
