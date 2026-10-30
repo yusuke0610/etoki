@@ -140,6 +140,18 @@ describe("useBoardTransfer の取り込み", () => {
     expect(addFiles).not.toHaveBeenCalled();
   });
 
+  it("未保存でも、置き換えてよいと答えたら置き換える", async () => {
+    // 断られた側だけを見ていると、未保存なら答えを聞かずに止める実装も通る。
+    const { hook, updateElements, addFiles } = setup({ dirty: true });
+    vi.mocked(readSceneFile).mockResolvedValueOnce(imported());
+
+    await act(() => hook.result.current.importScene(file));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(updateElements).toHaveBeenCalledTimes(1);
+    expect(addFiles).toHaveBeenCalledTimes(1);
+  });
+
   it("未保存でなければ訊かずに置き換え、背景色と貼ってあった画像も入れる", async () => {
     const { hook, updateElements, addFiles, scrollToContent } = setup({ dirty: false });
     vi.mocked(readSceneFile).mockResolvedValueOnce(imported());

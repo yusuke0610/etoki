@@ -15,7 +15,7 @@ import { useCanvasAnnotations } from "./useCanvasAnnotations";
  *
  * - `handleChange` と `updateElements` の同一性（ADR 0065）。崩すと Excalidraw の
  *   `onChange` が差し替わり続けて `Maximum update depth exceeded` で画面ごと
- *   落ちる。vitest も `tsc` も eslint も通ったままなので、ここで見る。
+ *   落ちる。`tsc` も eslint も通ったままなので、ここで見る（`web/CLAUDE.md`）。
  * - etoki の書き換えは「元に戻す」に積む（#144）。
  * - 未保存の判定に渡す署名は、保存が書くものだけから作る（テーマは入れない）。
  */
