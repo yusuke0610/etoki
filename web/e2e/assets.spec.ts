@@ -19,6 +19,19 @@ import {
 const ASSET_PATH = "/excalidraw-assets/";
 
 /**
+ * 自分の配信元（`baseURL`）以外へ出ていく http(s) の通信を選ぶ。
+ *
+ * **配信元を決め打ちしない。** ポートは `playwright.config.ts` が決める
+ * （`E2E_PORT`、#383）。決め打つと、別のポートで立てたときに自分の配信元まで
+ * 外部として落とす。
+ */
+function leavesOrigin(baseURL: string | undefined) {
+  if (baseURL === undefined) throw new Error("baseURL が設定されていない");
+  const own = new URL(baseURL).origin;
+  return (url: URL) => /^https?:$/.test(url.protocol) && url.origin !== own;
+}
+
+/**
  * キャンバスのフォントを外から取ってこないこと（#114）。
  *
  * **ここでしか気づけない。** Excalidraw は指定した先が 404 になると必ず
@@ -26,13 +39,13 @@ const ASSET_PATH = "/excalidraw-assets/";
  * 環境なら見た目すら変わらない。
  */
 test.describe("キャンバスのフォント", () => {
-  test("自前の配信元から取り、外部のホストへ出ていかない", async ({ page }) => {
+  test("自前の配信元から取り、外部のホストへ出ていかない", async ({ page, baseURL }) => {
     const external: string[] = [];
     const fonts: number[] = [];
 
     // **素通しにしない。** 通すと、ネットワークのある環境では CDN から取れて
     // しまい、配り漏れが緑のまま通る。傍受してから落とす。
-    await page.route(/^https?:\/\/(?!127\.0\.0\.1:5173\/)/, async (route) => {
+    await page.route(leavesOrigin(baseURL), async (route) => {
       external.push(route.request().url());
       await route.abort();
     });
@@ -74,11 +87,14 @@ test.describe("画面の書体", () => {
     ["ボード一覧", baseMock],
     ["ログイン", authRequiredMock],
   ] as const) {
-    test(`${screen}の画面は、Assistant を自前の配信元から取る`, async ({ page }) => {
+    test(`${screen}の画面は、Assistant を自前の配信元から取る`, async ({
+      page,
+      baseURL,
+    }) => {
       const external: string[] = [];
       const assistant: number[] = [];
 
-      await page.route(/^https?:\/\/(?!127\.0\.0\.1:5173\/)/, async (route) => {
+      await page.route(leavesOrigin(baseURL), async (route) => {
         external.push(route.request().url());
         await route.abort();
       });
