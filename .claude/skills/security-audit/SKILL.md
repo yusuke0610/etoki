@@ -139,8 +139,8 @@ gh api --paginate repos/yusuke0610/etoki/security-advisories \
   `git status` が clean であることを見る。
 - **動かしていないものは「コードを読んだだけ」と書く。** 測ったものと区別が
   付かないと、読む側が確かめ直す範囲を決められない。
-- E2E は :5173 に他のチェックアウトの dev サーバーがいると、そちらに繋ぐ。
-  先に `lsof -nP -iTCP:5173 -sTCP:LISTEN` で空いていることを見る。
+- E2E は専用のポート（既定 5174、`E2E_PORT`）で毎回自分の dev サーバーを立てる
+  ので、`make dev` が動いていても止めなくてよい（`web/CLAUDE.md` の「E2E テスト」）。
 
 ## 6. 振り分ける
 
