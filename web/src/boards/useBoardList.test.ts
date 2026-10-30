@@ -126,7 +126,9 @@ describe("useBoardList", () => {
     expect(options.key).toBe("board-list-failed");
     expect(options.action.label).toBe("再読み込み");
 
-    act(() => options.action.run());
+    act(() => {
+      options.action.run();
+    });
     await waitFor(() => expect(hook.result.current.boards).not.toBeNull());
     expect(list).toHaveBeenCalledTimes(2);
     expect(hook.result.current.boards?.entries).toEqual([entry("b1")]);

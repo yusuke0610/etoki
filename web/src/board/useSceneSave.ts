@@ -5,7 +5,6 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { ApiError, boardsApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
 import { sceneSignature } from "../excalidraw/dirty";
-import type { SceneElement } from "../excalidraw/annotation";
 import { filesToSave } from "../excalidraw/files";
 import { savedSceneJSON } from "../excalidraw/transfer";
 import type { NotifyOptions } from "../notification/types";
@@ -138,10 +137,7 @@ export function useSceneSave({
         // 送った内容そのものを新しい基準にする。保存の待ち時間に編集されていたら
         // 未保存のまま残す必要があるので、`markSaved` が比べ直す。
         // **背景色も `scene` に載っている**ので、基準にも同じものを含める。
-        const sent = sceneSignature(
-          elements as unknown as SceneElement[],
-          currentBackground(),
-        );
+        const sent = sceneSignature(elements, currentBackground());
 
         const saved = await boardsApi.saveScene(
           boardId,
