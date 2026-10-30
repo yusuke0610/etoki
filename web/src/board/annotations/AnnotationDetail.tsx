@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import type {
   AnnotationStatus,
@@ -15,6 +15,7 @@ import {
   STATE_LABEL,
   numberedLabel,
 } from "./annotationLabel";
+import { AnnotationNameLabel } from "./AnnotationNameLabel";
 import { annotationCardButtonId } from "./AnnotationPanel";
 import { DIAGRAM_KIND_LABELS, diagramKinds } from "../diagram/diagramLabels";
 import { InterpretationSection } from "./InterpretationSection";
@@ -23,6 +24,7 @@ import { ItemBody, ItemLink, ProjectLinkLine, UnconfirmedItems } from "./panelPa
 import type { CreationState, RunsProps } from "./panelShared";
 import type { ProjectLink } from "../target/projectLink";
 import { RunHistory } from "./RunHistory";
+import { useNameDraft } from "./useNameDraft";
 
 /** 解釈の実行と、引いた結果の選び直し。 */
 export type InterpretationProps = {
@@ -323,9 +325,8 @@ function AnnotationFace({
   const granularity = onCanvasMeta ? onCanvasMeta.granularity : a.granularity;
   const kind = onCanvasMeta ? onCanvasMeta.kind : a.kind;
 
-  // 名前も同じく**キャンバスの値**を出す（#249）。ただし入力の途中は書きかけを
-  // 持ち、**確定（Enter か欄を離れる）したときだけキャンバスに書く。** 1 文字ごとに
-  // 書くと、打つたびに未保存になり、「元に戻す」に 1 文字ずつ積まれる。
+  // 名前も同じく**キャンバスの値**を出す（#249）。入力の途中の書きかけは
+  // `useNameDraft` が持つ。
   const canvasName = frames.names?.[id];
   const name = canvasName ?? a.name;
   // キャンバスには在るが、もう注釈ではない（保存前に外した）。名前を書く口は注釈に
@@ -335,45 +336,15 @@ function AnnotationFace({
   // 見出しに出す名前もキャンバスの値にする。保存済みの値のままだと、確定した
   // のに見出しが古い名前のまま次の保存まで残る。名前が無いときは番号の見出し。
   const heading = name.trim() === "" ? numberLabel : name;
-  // 名前を変える口は見出しの隣のラベル（#305）。押すと欄になり、`nameDraft` が
-  // 非 null のあいだが「書いている途中」。
+  // 名前を変える口は見出しの隣のラベル（#305）。押すと欄になる。書きかけと
+  // 確定は `useNameDraft`、描き分けは `AnnotationNameLabel`。
   const canRename = canEdit && onCanvas && !unmarked;
-  const [nameDraft, setNameDraft] = useState<string | null>(null);
-  // 書いている途中で押せる条件を失ったら（読むだけに変わった・注釈から外した・
-  // キャンバスから消えた）、書きかけを捨てて欄を閉じる。書く口が書けない対象に
-  // 確定させると入力が黙って消え、条件が戻ったとき古い書きかけが欄ごと復活する。
-  // effect ではなく描画中に捨てるのは、1 回ぶんの古い欄を描かないため。
-  if (!canRename && nameDraft !== null) setNameDraft(null);
-  // 欄を開いた時点の名前。「変えたか」はこれと比べる。確定時のキャンバスの名前と
-  // 比べると、キャンバスの名前が分かる前（保存済みの値から始めた）に開いた下書きを、
-  // 触っていないのに古い名前としてキャンバスへ書き戻す。
-  const draftStart = useRef("");
-  const labelRef = useRef<HTMLButtonElement>(null);
-  // 欄を閉じたあとに焦点をラベルへ戻すか。Enter と Escape だけ戻す。欄を離れて
-  // 確定したときは、離れた先の焦点を奪わない。
-  const refocusLabel = useRef(false);
-  useEffect(() => {
-    if (nameDraft === null && refocusLabel.current) {
-      refocusLabel.current = false;
-      labelRef.current?.focus();
-    }
-  }, [nameDraft]);
-  // 欄が出た一度だけ焦点を入れる。ref を毎回作り直すと、打つたびに奪い直す。
-  const focusNameInput = useCallback((el: HTMLInputElement | null) => {
-    el?.focus();
-    el?.select();
-  }, []);
-  const commitName = () => {
-    if (nameDraft === null) return;
-    setNameDraft(null);
-    // 開いた時点と同じ条件を確定でも見る。
-    if (!canRename) return;
-    // 変えていないのに書くと、開いて閉じただけで未保存になる。前後の空白は
-    // 書く側（`setAnnotationName`）が落とすので、比べるのも落としてから。
-    if (nameDraft.trim() !== draftStart.current.trim()) {
-      frames.onChangeName(id, nameDraft);
-    }
-  };
+  const nameDraft = useNameDraft({
+    id,
+    name,
+    canRename,
+    onChangeName: frames.onChangeName,
+  });
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape") return;
@@ -427,66 +398,12 @@ function AnnotationFace({
             2 つをつないで読ませる（`aria-labelledby`）。
           */}
           <h2 id={headingId}>絵解き</h2>
-          {canRename && nameDraft !== null ? (
-            <>
-              {/*
-                ダイアログの名前は `labelId` から引く。書いている最中は欄の値が
-                動くので、そのまま指すと名前が打つたびに変わる。隠した行に確定済みの
-                名前を残して、そちらを指させる（`hidden` の要素も名前には使える）。
-              */}
-              <span id={labelId} hidden>
-                {heading}
-              </span>
-              <input
-                ref={focusNameInput}
-                className="annotation-detail-label annotation-detail-rename-input"
-                aria-label="名前"
-                value={nameDraft}
-                placeholder="名前を付ける"
-                onChange={(e) => setNameDraft(e.target.value)}
-                onBlur={commitName}
-                onKeyDown={(e) => {
-                  // 日本語の変換を確定する Enter では書かない。書くと、変換の途中の
-                  // 名前がキャンバスに載る。
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    refocusLabel.current = true;
-                    commitName();
-                  } else if (e.key === "Escape") {
-                    // 書きかけを捨てるだけにする。面まで閉じると、書きかけを捨てた
-                    // つもりで面ごと閉じる。
-                    e.stopPropagation();
-                    refocusLabel.current = true;
-                    setNameDraft(null);
-                  }
-                }}
-              />
-            </>
-          ) : canRename ? (
-            // 名前そのものを押して変える（#305）。frame の `name` に書くので、
-            // キャンバスのラベルにも同じ名前が出る。
-            <button
-              type="button"
-              id={labelId}
-              ref={labelRef}
-              className="annotation-detail-label annotation-detail-rename"
-              onClick={() => {
-                draftStart.current = name;
-                setNameDraft(name);
-              }}
-            >
-              {heading}
-              <span aria-hidden="true" className="annotation-detail-rename-mark">
-                ✎
-              </span>
-            </button>
-          ) : (
-            // 変えられない理由は本文に出している（読むだけ・注釈から外した・
-            // キャンバスに無い）。
-            <span id={labelId} className="annotation-detail-label">
-              {heading}
-            </span>
-          )}
+          <AnnotationNameLabel
+            labelId={labelId}
+            heading={heading}
+            canRename={canRename}
+            name={nameDraft}
+          />
           <span className={`badge badge-${a.state}`}>{STATE_LABEL[a.state]}</span>
           {/*
             キャンバスでその frame を選ぶ口（ADR 0022）。カードを押すと詳細が
@@ -673,7 +590,7 @@ function AnnotationFace({
             // 名前の書きかけは、読む前に確定する。帯のボタンは押しても焦点を
             // 奪わない（`DetailBand`）ので、欄を離れたときの確定が走らない。
             onInterpret={() => {
-              commitName();
+              nameDraft.commit();
               interpretation.onInterpret(id);
             }}
             onSelectInterpretation={(runId) => interpretation.onSelect(id, runId)}
