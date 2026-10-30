@@ -35,8 +35,16 @@ func buildUserMessage(
 	for _, t := range texts {
 		// 囲みの名前は AnnotationTexts が先頭に含めているので、ここでは
 		// 別立てにしない。
+		//
+		// **折り返す前の文字を渡す。** Text は図形の幅で折り返したあとの文字で、
+		// 改行を空白に置き換えると日本語の語の途中に空白が入る（「チームの開 発者」）。
+		// 小型モデルはそれを title にそのまま写した。
+		text := t.Text
+		if t.Original != "" {
+			text = t.Original
+		}
 		b.WriteString("- ")
-		b.WriteString(strings.ReplaceAll(t.Text, "\n", " "))
+		b.WriteString(strings.ReplaceAll(text, "\n", " "))
 		b.WriteString("\n")
 	}
 
@@ -311,9 +319,9 @@ func correctionLines(err error) []string {
 // **出力例は粒度ごとに変える**（issue #251）。issue 指定なのに例が epic を
 // 含むと、小型モデルは例をなぞって epic を返し、再送でも直らない。例が言うのは
 // 形までで、何を作るかは granularityInstruction と domain.Rules が言う。
-func interpretationSystemPrompt(g domain.Granularity) string {
+func interpretationSystemPrompt(g domain.Granularity, hasPrevious bool) string {
 	return fmt.Sprintf(interpretationSystemPromptTemplate,
-		interpretationExampleItems(g), domain.InterpretationConstraints())
+		interpretationExampleItems(g, hasPrevious), domain.InterpretationConstraints())
 }
 
 // interpretationExampleItems は出力例の items の中身を、粒度で通る形にする。
@@ -321,12 +329,20 @@ func interpretationSystemPrompt(g domain.Granularity) string {
 // issue だけの例は previousRef を null にする。前回の一覧を渡していないときは
 // 必ず null という制約があるのに、唯一の例が p1 だと、存在しない ref を書き写して
 // 弾かれる。
-func interpretationExampleItems(g domain.Granularity) string {
+//
+// **前回の一覧が無いときは、epic を含む例も null にする。** issue に p1 を残すと、
+// 小型モデルはそれを書き写し、3 回とも検証に落ちて解釈が失敗した（#251 と同じ形が
+// epic と指定なしに残っていた）。一覧があるときは ref の書き方を例で見せる。
+func interpretationExampleItems(g domain.Granularity, hasPrevious bool) string {
 	if g == domain.GranularityIssue {
 		return `    {"localId": "i1", "kind": "issue", "title": "...", "body": "...", "parentLocalId": null, "previousRef": null}`
 	}
+	ref := `null`
+	if hasPrevious {
+		ref = `"p1"`
+	}
 	return `    {"localId": "e1", "kind": "epic",  "title": "...", "body": "...", "parentLocalId": null,  "previousRef": null},
-    {"localId": "i1", "kind": "issue", "title": "...", "body": "...", "parentLocalId": "e1", "previousRef": "p1"}`
+    {"localId": "i1", "kind": "issue", "title": "...", "body": "...", "parentLocalId": "e1", "previousRef": ` + ref + `}`
 }
 
 // interpretationSystemPromptTemplate の 1 つ目の %s に出力例の items、2 つ目に

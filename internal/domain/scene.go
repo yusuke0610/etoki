@@ -44,8 +44,11 @@ type Element struct {
 	// Name は frame 要素のラベル。
 	Name string `json:"name"`
 
-	// Text はテキスト要素の本文。
+	// Text はテキスト要素の本文。図形の幅で自動的に折り返したあとの文字。
 	Text string `json:"text"`
+
+	// OriginalText は折り返す前の本文。Excalidraw が持ち、無いシーンもある。
+	OriginalText string `json:"originalText"`
 
 	// FileID は画像の要素が指す、貼った画像の ID。画像でなければ空。
 	// Excalidraw は null を置くこともあるが、空文字と同じ「指していない」に読む。
@@ -284,7 +287,7 @@ func (s Scene) childTexts(annotationID string) []TextElement {
 		}
 
 		seen[e.ID] = struct{}{}
-		texts = append(texts, TextElement{ID: e.ID, Text: e.Text})
+		texts = append(texts, TextElement{ID: e.ID, Text: e.Text, Original: e.OriginalText})
 	}
 
 	return texts
