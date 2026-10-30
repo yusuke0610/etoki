@@ -631,6 +631,23 @@ describe("useDiagramDraft の置く", () => {
     expect(mermaidToElements).toHaveBeenLastCalledWith("flowchart TD\n  A --> B");
     expect(updateElements).toHaveBeenCalledTimes(2);
   });
+
+  // 同じかどうかは届いたドラフトで決め、mermaid の文字列では比べない（ADR 0040 の
+  // 追記）。上のように違う文字列で直すと、文字列で比べる実装でも通る。
+  it("直して同じ mermaid が返っても、届いたドラフトは別なので置ける", async () => {
+    fakeServer([{ mermaid: "flowchart TD\n  A" }, { mermaid: "flowchart TD\n  A" }]);
+    vi.mocked(mermaidToElements).mockResolvedValue({ ok: true, elements: converted });
+    vi.mocked(moveDraft).mockReturnValue(placed);
+    const { hook, updateElements } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    await act(() => hook.result.current.placeDraft());
+
+    await act(() => hook.result.current.generate("もう一度"));
+    expect(hook.result.current.draftPlaced).toBe(false);
+    await act(() => hook.result.current.placeDraft());
+
+    expect(updateElements).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("useDiagramDraft の貼り付け", () => {
