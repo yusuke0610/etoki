@@ -7,7 +7,12 @@ import {
   diagramNotPlaceableFailure,
   mermaidPasteFailure,
 } from "../../api/errorMessage";
-import type { DiagramJob, DiagramKind, GenerateDiagramRequest } from "../../api/types";
+import type {
+  DiagramDraft,
+  DiagramJob,
+  DiagramKind,
+  GenerateDiagramRequest,
+} from "../../api/types";
 import { log } from "../../app/logger";
 import type { SceneElement } from "../../excalidraw/annotation";
 import { draftOrigin, mermaidToElements, moveDraft } from "../../excalidraw/mermaid";
@@ -35,6 +40,26 @@ import type { PasteOutcome } from "./MermaidPastePanel";
  * 違って、区別する相手がいない。
  */
 const DIAGRAM_KEY = "diagram";
+
+/** 置いたドラフトと、そのときキャンバスに足した要素の ID。 */
+type Placement = { draft: DiagramDraft; ids: readonly string[] };
+
+/**
+ * いまのドラフトを置いた図が、まだキャンバスに残っているか。
+ *
+ * **1 つでも残っていれば残っている。** 一部だけ消した図の隣に、まるごともう 1 つ
+ * 置かせない。**`isDeleted` の要素は残っていないと数える。** 取り消した要素を
+ * 消した印つきで持っていることがある。
+ */
+function placedOnCanvas(
+  placement: Placement | null,
+  draft: DiagramDraft | null,
+  elements: readonly SceneElement[],
+): boolean {
+  if (placement === null || draft === null || placement.draft !== draft) return false;
+  const ids = new Set(placement.ids);
+  return elements.some((el) => !el.isDeleted && ids.has(el.id));
+}
 
 type Options = {
   api: ExcalidrawImperativeAPI | null;
@@ -72,6 +97,11 @@ export type DiagramDrafting = {
   changeKind: (kind: DiagramKind) => void;
   /** いまのドラフトをキャンバスに置く。 */
   placeDraft: () => Promise<void>;
+  /**
+   * いまのドラフトを置いた図が、まだキャンバスに残っているか。残っているあいだは
+   * `placeDraft` が置かない。
+   */
+  draftPlaced: boolean;
   /** mermaid の貼り付けパネルに貼られている文字列。 */
   pasteText: string;
   setPasteText: (text: string) => void;
@@ -118,6 +148,16 @@ export function useDiagramDraft({
   // 1 つにする。** どちらも同じ `draftOrigin` を読むので、分けると両方が同じ
   // 場所に置かれうる。
   const placing = useReentryGuard();
+  // いまのドラフトを置いたときに足した要素。**同じドラフトは、置いた図が
+  // キャンバスに残っているあいだ置き直させない**（ADR 0040 の追記）。置き場所は
+  // 毎回既存の絵の右外なので、押すたびに同じ図が増え、重ならないぶん増えたことにも
+  // 気づきにくい。**数え直すのは、残っているかどうかだけ。** 取り消しや削除で
+  // 消えたら、往復を使わずに置き直せる。
+  //
+  // state は描くため、ref は押した時点の値で弾くため（`.claude/rules/async-ui.md`）。
+  // state は置き終えてから描き直すまで古い。
+  const [placement, setPlacement] = useState<Placement | null>(null);
+  const latestPlacement = useRef<Placement | null>(null);
 
   // 見に行くのをやめる印。**ジョブは止めない。** 立てるのは effect で、StrictMode が
   // effect を 2 回走らせても、2 回目で立て直す。
@@ -312,10 +352,12 @@ export function useDiagramDraft({
    *
    * **既存の要素には一切触らない。追加するだけ**（#58 の原則）。置き場所は
    * 既存の絵の右外で、重ねない（ADR 0040）。**保存はしない。**
+   *
+   * 置いた要素を返す。置けなかったら null。
    */
   const placeElements = useCallback(
-    (elements: readonly SceneElement[]) => {
-      if (!api) return;
+    (elements: readonly SceneElement[]): readonly SceneElement[] | null => {
+      if (!api) return null;
       const existing = currentElements();
       const placed = moveDraft(elements, draftOrigin(existing));
       updateElements([...existing, ...placed]);
@@ -324,6 +366,7 @@ export function useDiagramDraft({
       // 起きていないように見える（ADR 0040）。
       api.scrollToContent(placed as never, { fitToContent: true, animate: true });
       onPlaced?.();
+      return placed;
     },
     [api, currentElements, updateElements, onPlaced],
   );
@@ -338,14 +381,21 @@ export function useDiagramDraft({
    * 変換に失敗したら、会話の次の 1 往復として投げ直す。mermaid として読める
    * かではなく Excalidraw の要素として置けるかを知っているのは変換器だけ
    * なので、投げ直せるのはここしかない（ADR 0041）。
+   *
+   * **置いた図がキャンバスに残っているあいだは、同じドラフトを置かない**
+   * （`draftPlaced`）。パネルもボタンを止めているが、止めているのが UI だけだと、
+   * そこを外したときに黙って増える（`.claude/rules/async-ui.md`）。
    */
   const placeDraft = useCallback(async () => {
+    const draft = chat.draft;
+    if (!api || draft === null) return;
+    if (placedOnCanvas(latestPlacement.current, draft, currentElements())) return;
     // 変換は非同期。**押した時点で弾かないと、2 回目が同じ `draftOrigin` を
     // 得て、同じ図が同じ場所に重なる。** 取り消しで戻すしかなくなる。
-    if (!api || chat.draft === null || !placing.enter()) return;
+    if (!placing.enter()) return;
 
     try {
-      const converted = await mermaidToElements(chat.draft.mermaid);
+      const converted = await mermaidToElements(draft.mermaid);
       if (!converted.ok) {
         if (converted.reason === "syntax") {
           // 直せる失敗。会話の次の 1 往復にして投げ直す。
@@ -360,11 +410,17 @@ export function useDiagramDraft({
         return;
       }
 
-      placeElements(converted.elements);
+      const placed = placeElements(converted.elements);
+      if (placed === null) return;
+      // 覚えるのは押したときのドラフト。変換を待つあいだに次のドラフトが届いても、
+      // そちらはまだ置いていない。
+      const next = { draft, ids: placed.map((el) => el.id) };
+      latestPlacement.current = next;
+      setPlacement(next);
     } finally {
       placing.leave();
     }
-  }, [api, chat.draft, generate, placeElements, placing]);
+  }, [api, chat.draft, currentElements, generate, placeElements, placing]);
 
   /**
    * 貼られた mermaid を変換して置く（ADR 0062）。
@@ -407,6 +463,10 @@ export function useDiagramDraft({
     [api, placeElements, placing],
   );
 
+  // 描くたびに読み直す。BoardPage は Excalidraw の `onChange` のたびに描き直すので、
+  // 取り消しや削除で消えたことにもここで追いつく（`annotationIdsOnCanvas` と同じ）。
+  const draftPlaced = placedOnCanvas(placement, chat.draft, currentElements());
+
   return useMemo(
     () => ({
       chat,
@@ -415,10 +475,20 @@ export function useDiagramDraft({
       generate,
       changeKind,
       placeDraft,
+      draftPlaced,
       pasteText,
       setPasteText,
       pasteMermaid,
     }),
-    [chat, prompt, generate, changeKind, placeDraft, pasteText, pasteMermaid],
+    [
+      chat,
+      prompt,
+      generate,
+      changeKind,
+      placeDraft,
+      draftPlaced,
+      pasteText,
+      pasteMermaid,
+    ],
   );
 }

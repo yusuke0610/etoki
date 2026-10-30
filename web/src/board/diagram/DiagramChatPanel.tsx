@@ -11,6 +11,9 @@ import { DIAGRAM_KIND_LABELS, diagramKinds } from "./diagramLabels";
  */
 const UNAVAILABLE_ID = "diagram-unavailable";
 
+/** 「キャンバスに置く」を押せない理由（置いた図が残っている）の id。 */
+const PLACED_ID = "diagram-placed";
+
 type Props = {
   chat: DiagramChat;
   /**
@@ -30,6 +33,11 @@ type Props = {
   onSend: (prompt: string) => Promise<boolean>;
   /** いまのドラフトをキャンバスに置く。 */
   onPlace: () => void;
+  /**
+   * いまのドラフトを置いた図が、まだキャンバスに残っているか。残っているあいだは
+   * 置かせない（`useDiagramDraft` の `draftPlaced`、ADR 0040 の追記）。
+   */
+  placed: boolean;
   /**
    * 生成が使えない理由。使えるなら null（ADR 0030）。
    *
@@ -56,6 +64,7 @@ export function DiagramChatPanel({
   onChangeKind,
   onSend,
   onPlace,
+  placed,
   unavailable,
 }: Props) {
   const generating = chat.pending !== null;
@@ -170,9 +179,23 @@ export function DiagramChatPanel({
             **ここが「置く」を挟む唯一の場所。** 生成した瞬間に流し込むと、
             開発者が見てから決める形（中核思想 3）が消える。
           */}
-          <button type="button" onClick={onPlace} disabled={generating}>
+          <button
+            type="button"
+            onClick={onPlace}
+            disabled={generating || placed}
+            aria-describedby={placed ? PLACED_ID : undefined}
+          >
             キャンバスに置く
           </button>
+          {/*
+            **押せない理由を本文で出す**（ADR 0039）。消せばまた置けることも言う。
+            言わないと、置き直すには「直す」で往復を使うしかないと読める。
+          */}
+          {placed && (
+            <p className="hint" id={PLACED_ID}>
+              この図はキャンバスに置いてあるので、置き直せません。置いた図を消すと、また置けます。
+            </p>
+          )}
           <p className="hint">
             置いても保存はしません。既存の絵の右外に、重ならないように置きます。
           </p>
