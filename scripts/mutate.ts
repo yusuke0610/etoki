@@ -7,7 +7,7 @@
 //
 // bun で書いてあるのは devShell に既にあるため（token-report.ts と同じ、ADR 0002）。
 
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -97,14 +97,22 @@ export function applyMutation(
   return next;
 }
 
-/** コマンドを 1 回走らせた結果。`signal` は止められたとき（Ctrl-C など）。 */
+/** コマンドを 1 回走らせた結果。`signal` は子がシグナルで終わったとき。 */
 export type RunResult = { status: number | null; signal: string | null };
 
 export type Io = {
   read: (file: string) => string;
   write: (file: string, content: string) => void;
   /** `label` は出力の置き場所を分けるため（壊す前の 1 回は "baseline"）。 */
-  run: (label: string) => RunResult;
+  run: (label: string) => Promise<RunResult>;
+  /**
+   * このプロセスが止められたか（Ctrl-C など）。
+   *
+   * **子の終わり方だけでは決めない。** 子は止められても終了コードで返すことが
+   * ある（vitest は 130、go test は 1 で、シグナルは空）。それだけを見ると、止めた
+   * 回を「落ちた」と数えて次の壊し方へ進み、表がすべて「落ちた」で埋まりうる。
+   */
+  stopped: () => boolean;
 };
 
 export type Outcome = { name: string; detected: boolean; status: number | null };
@@ -112,8 +120,8 @@ export type Outcome = { name: string; detected: boolean; status: number | null }
 /** 止められたとき。壊したファイルは戻してから投げる。 */
 export class Interrupted extends Error {}
 
-const interrupted = (r: RunResult): boolean =>
-  r.signal === "SIGINT" || r.signal === "SIGTERM";
+const interrupted = (r: RunResult, io: Io): boolean =>
+  io.stopped() || r.signal === "SIGINT" || r.signal === "SIGTERM";
 
 /**
  * 壊し方を 1 つずつ当てて、コマンドが落ちるかを見る。
@@ -124,7 +132,7 @@ const interrupted = (r: RunResult): boolean =>
  *   「落ちた」になる。
  * - **壊し方ごとに元に戻す。** 走らせた結果に関係なく、投げられても戻す。
  */
-export function runMutations(spec: Spec, io: Io): Outcome[] {
+export async function runMutations(spec: Spec, io: Io): Promise<Outcome[]> {
   const files = new Set(spec.mutations.flatMap((m) => m.edits.map((e) => e.file)));
   const originals = new Map([...files].map((f) => [f, io.read(f)]));
   const readOriginal = (f: string): string => {
@@ -138,8 +146,8 @@ export function runMutations(spec: Spec, io: Io): Outcome[] {
     next: applyMutation(m, readOriginal),
   }));
 
-  const baseline = io.run("baseline");
-  if (interrupted(baseline)) throw new Interrupted("壊す前の 1 回で止められた");
+  const baseline = await io.run("baseline");
+  if (interrupted(baseline, io)) throw new Interrupted("壊す前の 1 回で止められた");
   if (baseline.status !== 0) {
     throw new Error(
       `壊す前から落ちている（終了コード ${baseline.status}）。先に通る状態にする`,
@@ -151,11 +159,11 @@ export function runMutations(spec: Spec, io: Io): Outcome[] {
     let result: RunResult;
     try {
       for (const [file, content] of next) io.write(file, content);
-      result = io.run(String(i + 1));
+      result = await io.run(String(i + 1));
     } finally {
       for (const file of next.keys()) io.write(file, readOriginal(file));
     }
-    if (interrupted(result))
+    if (interrupted(result, io))
       throw new Interrupted(`「${mutation.name}」の途中で止められた`);
     outcomes.push({
       name: mutation.name,
@@ -184,7 +192,7 @@ export function formatOutcomes(outcomes: Outcome[]): string {
 }
 
 /** 宣言を読み、リポジトリのルートを基準に走らせる。出力は tmp/mutate/ に落とす。 */
-function main(): number {
+async function main(): Promise<number> {
   const specPath = process.argv[2];
   if (!specPath) {
     console.error("使い方: bun scripts/mutate.ts <宣言の JSON>（make mutate SPEC=…）");
@@ -196,29 +204,41 @@ function main(): number {
   mkdirSync(logDir, { recursive: true });
 
   // Ctrl-C は子と同じくこのプロセスにも届き、既定のままだと壊したファイルを戻す前に
-  // 終わる。ここでは受け流し、子が止められたこと（RunResult.signal）を見て、戻して
-  // から抜ける（runMutations の Interrupted）。
-  const ignore = (): void => {};
-  process.on("SIGINT", ignore);
-  process.on("SIGTERM", ignore);
+  // 終わる。ここでは止められたことだけを覚え、子が終わるのを待ってから、戻して
+  // 抜ける（runMutations の Interrupted）。
+  //
+  // **子は spawnSync で待たない。** 同期で待つあいだはこのハンドラが走らないので、
+  // 止められたことを子の終わり方からしか知れない（Io.stopped の doc）。
+  let stopped = false;
+  const stop = (): void => {
+    stopped = true;
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
 
   const io: Io = {
     read: (f) => readFileSync(join(root, f), "utf8"),
     write: (f, content) => writeFileSync(join(root, f), content),
-    run: (label) => {
-      // 出力は判断に使わないので画面に出さない。落ちた理由を確かめるときだけ開く。
-      const r = spawnSync(spec.cmd[0], spec.cmd.slice(1), {
-        cwd: join(root, spec.cwd),
-        encoding: "utf8",
-        maxBuffer: 64 * 1024 * 1024,
-      });
-      writeFileSync(join(logDir, `${label}.log`), `${r.stdout ?? ""}${r.stderr ?? ""}`);
-      if (r.error) throw r.error;
-      return { status: r.status, signal: r.signal };
-    },
+    run: (label) =>
+      new Promise((done, fail) => {
+        // 出力は判断に使わないので画面に出さない。落ちた理由を確かめるときだけ開く。
+        const child = spawn(spec.cmd[0], spec.cmd.slice(1), {
+          cwd: join(root, spec.cwd),
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        const output: Buffer[] = [];
+        child.stdout.on("data", (chunk: Buffer) => output.push(chunk));
+        child.stderr.on("data", (chunk: Buffer) => output.push(chunk));
+        child.on("error", fail);
+        child.on("close", (status, signal) => {
+          writeFileSync(join(logDir, `${label}.log`), Buffer.concat(output));
+          done({ status, signal });
+        });
+      }),
+    stopped: () => stopped,
   };
 
-  const outcomes = runMutations(spec, io);
+  const outcomes = await runMutations(spec, io);
   console.log(formatOutcomes(outcomes));
   console.log(`\n出力は ${join("tmp", "mutate")}/<番号>.log`);
   return outcomes.every((o) => o.detected) ? 0 : 1;
@@ -226,10 +246,11 @@ function main(): number {
 
 // 直に呼ばれたときだけ走らせる。import しただけで走ると、テストから純関数を読めない。
 if (import.meta.main) {
-  try {
-    process.exit(main());
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(error instanceof Interrupted ? 130 : 2);
-  }
+  main().then(
+    (code) => process.exit(code),
+    (error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(error instanceof Interrupted ? 130 : 2);
+    },
+  );
 }

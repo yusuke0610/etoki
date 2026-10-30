@@ -114,13 +114,20 @@ describe("applyMutation", () => {
   });
 });
 
-/** メモリの上のファイルと、決めた結果を返すコマンド。走ったときの中身を控える。 */
+/**
+ * メモリの上のファイルと、決めた結果を返すコマンド。走ったときの中身を控える。
+ * 関数で結果を決めるときは、`stop` でこのプロセスが止められたことにできる。
+ */
 function fakeIo(
   files: Record<string, string>,
-  results: RunResult[] | ((label: string) => RunResult),
+  results: RunResult[] | ((label: string, stop: () => void) => RunResult),
 ) {
   const seen: Record<string, Record<string, string>> = {};
   let n = 0;
+  let stopped = false;
+  const stop = (): void => {
+    stopped = true;
+  };
   const io: Io = {
     read: (f) => {
       if (!(f in files)) throw new Error(`無いファイル: ${f}`);
@@ -129,10 +136,11 @@ function fakeIo(
     write: (f, content) => {
       files[f] = content;
     },
-    run: (label) => {
+    run: async (label) => {
       seen[label] = { ...files };
-      return typeof results === "function" ? results(label) : results[n++];
+      return typeof results === "function" ? results(label, stop) : results[n++];
     },
+    stopped: () => stopped,
   };
   return { io, files, seen };
 }
@@ -156,21 +164,21 @@ const twoMutations: Spec = {
 };
 
 describe("runMutations", () => {
-  test("落ちたかどうかを壊し方ごとに返す", () => {
+  test("落ちたかどうかを壊し方ごとに返す", async () => {
     const { io } = fakeIo({ "a.ts": "guard1 guard2", "b.ts": "deps" }, [ok, fail, ok]);
-    expect(runMutations(twoMutations, io)).toEqual([
+    expect(await runMutations(twoMutations, io)).toEqual([
       { name: "守り 1", detected: true, status: 1 },
       { name: "守り 2", detected: false, status: 0 },
     ]);
   });
 
-  test("走るときは壊した中身で、走った後は元に戻っている", () => {
+  test("走るときは壊した中身で、走った後は元に戻っている", async () => {
     const { io, files, seen } = fakeIo({ "a.ts": "guard1 guard2", "b.ts": "deps" }, [
       ok,
       fail,
       fail,
     ]);
-    runMutations(twoMutations, io);
+    await runMutations(twoMutations, io);
     expect(seen.baseline).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
     expect(seen["1"]).toEqual({ "a.ts": " guard2", "b.ts": "deps" });
     // 2 つ目は 1 つ目を戻した上に当てる。2 つのファイルを同時に壊す。
@@ -178,39 +186,57 @@ describe("runMutations", () => {
     expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
   });
 
-  test("コマンドが投げても元に戻す", () => {
+  test("コマンドが投げても元に戻す", async () => {
     const { io, files } = fakeIo({ "a.ts": "guard1 guard2", "b.ts": "deps" }, (label) => {
       if (label === "2") throw new Error("spawn に失敗");
       return label === "baseline" ? ok : fail;
     });
-    expect(() => runMutations(twoMutations, io)).toThrow("spawn に失敗");
+    await expect(runMutations(twoMutations, io)).rejects.toThrow("spawn に失敗");
     expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
   });
 
-  test("止められたら、戻してから Interrupted を投げ、残りは走らせない", () => {
+  test("子がシグナルで止められたら、戻してから Interrupted を投げ、残りは走らせない", async () => {
     const { io, files, seen } = fakeIo({ "a.ts": "guard1 guard2", "b.ts": "deps" }, [
       ok,
       { status: null, signal: "SIGINT" },
       fail,
     ]);
-    expect(() => runMutations(twoMutations, io)).toThrow(Interrupted);
+    await expect(runMutations(twoMutations, io)).rejects.toThrow(Interrupted);
     expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
     expect(seen["2"]).toBeUndefined();
   });
 
-  test("壊す前から落ちていたら、何も壊さずに投げる", () => {
+  test("子が終了コードで返しても、止められていたら「落ちた」と数えずに Interrupted を投げる", async () => {
+    // vitest は 130、go test は 1 で返り、シグナルは空。終わり方だけを見ると、
+    // 止めた回を「落ちた」と数えて次の壊し方へ進む。
+    const { io, files, seen } = fakeIo(
+      { "a.ts": "guard1 guard2", "b.ts": "deps" },
+      (label, stop) => {
+        if (label === "1") {
+          stop();
+          return fail;
+        }
+        return label === "baseline" ? ok : fail;
+      },
+    );
+    await expect(runMutations(twoMutations, io)).rejects.toThrow(Interrupted);
+    expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
+    expect(seen["2"]).toBeUndefined();
+  });
+
+  test("壊す前から落ちていたら、何も壊さずに投げる", async () => {
     const { io, seen } = fakeIo({ "a.ts": "guard1 guard2", "b.ts": "deps" }, [
       fail,
       fail,
       fail,
     ]);
-    expect(() => runMutations(twoMutations, io)).toThrow("壊す前から落ちている");
+    await expect(runMutations(twoMutations, io)).rejects.toThrow("壊す前から落ちている");
     expect(Object.keys(seen)).toEqual(["baseline"]);
   });
 
-  test("当たらない書き換えが 1 つでもあれば、何も走らせずに投げる", () => {
+  test("当たらない書き換えが 1 つでもあれば、何も走らせずに投げる", async () => {
     const { io, seen } = fakeIo({ "a.ts": "guard1", "b.ts": "deps" }, [ok, fail, fail]);
-    expect(() => runMutations(twoMutations, io)).toThrow("「守り 2」");
+    await expect(runMutations(twoMutations, io)).rejects.toThrow("「守り 2」");
     expect(seen).toEqual({});
   });
 });
