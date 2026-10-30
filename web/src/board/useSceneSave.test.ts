@@ -121,11 +121,19 @@ function setup(
   return { hook, canvas, markSaved, onSaved, onError, dismiss };
 }
 
+/**
+ * `call` 回目（0 始まり）の保存に渡した引数。**呼ばれていなければ投げる。**
+ * 空として返すと、「何も送らない」の断言が、保存を丸ごと省く実装でも通る。
+ */
+function sentArgs(call: number) {
+  const args = vi.mocked(boardsApi.saveScene).mock.calls[call];
+  if (args === undefined) throw new Error(`保存は ${call + 1} 回目まで呼ばれていない`);
+  return args;
+}
 /** 送った基準の版。 */
-const sentBase = (call: number) => vi.mocked(boardsApi.saveScene).mock.calls[call]?.[3];
+const sentBase = (call: number) => sentArgs(call)[3];
 /** 送った画像。 */
-const sentFiles = (call: number) =>
-  Object.keys(vi.mocked(boardsApi.saveScene).mock.calls[call]?.[2] ?? {}).sort();
+const sentFiles = (call: number) => Object.keys(sentArgs(call)[2]).sort();
 
 afterEach(() => {
   vi.restoreAllMocks();
