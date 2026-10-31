@@ -21,6 +21,7 @@ import {
   ekidokiButton,
   openPremiseDialog,
   openShareDialog,
+  openUsageGuide,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -882,6 +883,16 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.getByLabel("招待する login").fill("carol");
       await page.getByRole("button", { name: "確認する" }).click();
       await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 使い方のダイアログ（ADR 0094）も開くまで DOM に出ない。見出し・リスト・
+    // 用語の並びがあり、文字の色のコントラストもここで見る。
+    test("使い方のダイアログを開いた状態", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+
+      await openUsageGuide(page);
 
       await expectNoAxeViolations(page);
     });
