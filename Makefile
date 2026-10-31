@@ -92,7 +92,7 @@ LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 .PHONY: help setup dev dev-api dev-web build build-api build-web start try-fake \
         test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
-        codegen codegen-go codegen-web migrate token-report clean reset-db vulncheck
+        codegen codegen-go codegen-web migrate token-report mutate clean reset-db vulncheck
 
 help: ## ターゲット一覧を表示する
 	@echo "使い方: make <target>"
@@ -270,6 +270,12 @@ token-report: ## 直近のセッションのトークン消費の内訳を出す
 	@# SESSION はクォートして 1 個の引数として渡す。transcript のパスは
 	@# ~/.claude/projects/<作業ディレクトリ> の下にあり、空白を含みうる。
 	bun scripts/token-report.ts $(if $(SESSION),"$(SESSION)")
+
+mutate: ## 守りを 1 つずつ壊し、テストが落ちるかを確かめる（SPEC=宣言の JSON。手順は /mutate）
+	@# 壊したファイルは走らせるたびに戻す。出力は tmp/mutate/ に落とし、画面には
+	@# 落ちたかどうかの表だけを出す。SPEC は token-report の SESSION と同じく、
+	@# クォートして 1 個の引数として渡す。
+	bun scripts/mutate.ts "$(SPEC)"
 
 clean: ## 生成物を削除する（etoki.db には触らない）
 	@# DB は生成物ではなく利用者のデータ。sync_runs / sync_items は作成の瞬間に
