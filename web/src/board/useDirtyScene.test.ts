@@ -102,6 +102,17 @@ describe("useDirtyScene", () => {
     expect(hook.result.current.applySignature).toBe(applySignature);
     expect(hook.result.current.markSaved).toBe(markSaved);
   });
+
+  it("入力が変わらずに描き直しても、返す束は同じものを返す", () => {
+    // 束は BoardPage が依存に置く。作り直されると、それを依存にしたものまで
+    // 描くたびに作り直される（web/CLAUDE.md）。
+    const { hook } = setup();
+    const first = hook.result.current;
+
+    hook.rerender();
+
+    expect(hook.result.current).toBe(first);
+  });
 });
 
 describe("useConfirmLeave", () => {

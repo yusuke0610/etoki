@@ -249,6 +249,17 @@ describe("useBoardTransfer の取り込み", () => {
     expect(updateElements).not.toHaveBeenCalled();
   });
 
+  it("入力が変わらずに描き直しても、返す束は同じものを返す", () => {
+    // 束は BoardPage が依存に置く。作り直されると、それを依存にしたものまで
+    // 描くたびに作り直される（web/CLAUDE.md）。
+    const { hook } = setup();
+    const first = hook.result.current;
+
+    hook.rerender();
+
+    expect(hook.result.current).toBe(first);
+  });
+
   it("読んでいるあいだの二度目の取り込みは、読みにいかない", async () => {
     const { hook } = setup();
     const reading = deferred<ImportedScene>();
