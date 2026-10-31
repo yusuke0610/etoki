@@ -415,3 +415,51 @@ a.badge-target:hover {
   background: var(--color-surface-cool);
   color: var(--color-text-subtle);
 }
+
+/*
+ * 使い方のダイアログ（ADR 0094）。器は `.modal-dialog`（`app/base.css`）。
+ * 本文が長いので、ダイアログの中でスクロールさせる。
+ */
+.usage-guide {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+}
+
+.usage-guide h2 {
+  margin: 0 0 var(--space-6);
+}
+
+.usage-guide h3 {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: var(--text-base);
+}
+
+.usage-guide-body section:first-child h3 {
+  margin-top: 0;
+}
+
+.usage-guide-body ul,
+.usage-guide-body ol {
+  margin: 0;
+  padding-left: var(--space-8);
+}
+
+.usage-guide-body li + li {
+  margin-top: var(--space-2);
+}
+
+.usage-guide-terms {
+  margin: 0;
+}
+
+.usage-guide-terms dt {
+  font-weight: 600;
+}
+
+.usage-guide-terms dd {
+  margin: 0 0 var(--space-2) var(--space-6);
+}
+
+.usage-guide .dialog-actions {
+  margin-top: var(--space-6);
+}

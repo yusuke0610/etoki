@@ -96,3 +96,4 @@
 | [0091](0091-diagram-draft-as-server-side-job.md)                 | 図のドラフト生成もサーバー側のジョブにし、会話はジョブの入力から戻す         | 採用                 |
 | [0092](0092-only-scene-saves-advance-the-version.md)             | 版を進めるのはシーンの保存だけにし、ほかの書き込みの応答の版は基準にしない   | 採用                 |
 | [0093](0093-board-premise-for-interpretation.md)                 | 解釈に添える背景をボードに持たせ、ハッシュには入れない                       | 採用                 |
+| [0094](0094-usage-guide-on-demand.md)                            | 使い方は押したときだけ開くダイアログに置き、心得を手順より先に書く           | 採用                 |

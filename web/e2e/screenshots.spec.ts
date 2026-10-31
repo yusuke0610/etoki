@@ -22,6 +22,7 @@ import {
   saveScene,
   startNewBoard,
   openShareDialog,
+  openUsageGuide,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -541,6 +542,13 @@ test.describe("スクリーンショット", () => {
     await alert.locator("summary").click();
     await alert.scrollIntoViewIfNeeded();
     await shot(page, "57-project-field-missing");
+  });
+
+  // 使い方（ADR 0094）。心得が手順より先に見えていることを撮る。
+  test("使い方を撮る", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await openUsageGuide(page);
+    await shot(page, "62-usage-guide");
   });
 
   // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある

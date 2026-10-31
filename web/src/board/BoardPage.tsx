@@ -34,6 +34,7 @@ import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
 import { useExclusion } from "./exclusion";
 import { useInterpretations } from "./annotations/useInterpretations";
 import { ShareDialog } from "./members/ShareDialog";
+import { UsageGuideDialog } from "./UsageGuideDialog";
 import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
 import { MermaidPastePanel } from "./diagram/MermaidPastePanel";
 import { useDiagramDraft } from "./diagram/useDiagramDraft";
@@ -292,6 +293,11 @@ export function BoardPage({
   const [shareOpen, setShareOpen] = useState(false);
   const openShare = useCallback(() => setShareOpen(true), []);
   const closeShare = useCallback(() => setShareOpen(false), []);
+  // 使い方のダイアログ（`UsageGuideDialog`、ADR 0094）。開くのはキャンバスの
+  // メニューと、右のパネルの「選択中のフレーム」の案内。勝手には開かない。
+  const [guideOpen, setGuideOpen] = useState(false);
+  const openGuide = useCallback(() => setGuideOpen(true), []);
+  const closeGuide = useCallback(() => setGuideOpen(false), []);
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // 注釈の詳細の開閉（`useAnnotationDetail`）。保存で消えた注釈の詳細は閉じる。
@@ -792,6 +798,7 @@ export function BoardPage({
         targetLocked={board.targetLocked}
         onRename={() => setNameDraft(board.name)}
         onShare={openShare}
+        onOpenGuide={openGuide}
         creationUnavailable={creationUnavailable}
         onRefreshTarget={() => void refreshTargetDisplay()}
         refreshingTarget={refreshingTarget}
@@ -815,6 +822,7 @@ export function BoardPage({
       board.role,
       setNameDraft,
       openShare,
+      openGuide,
       board.targetLocked,
       api,
       creationUnavailable,
@@ -900,6 +908,7 @@ export function BoardPage({
             canEdit={canEdit}
             projectLink={link}
             onOpenDetail={openDetail}
+            onOpenGuide={openGuide}
           />
         </ErrorBoundary>
       ),
@@ -1138,6 +1147,7 @@ export function BoardPage({
               role={board.role}
               unavailable={sharingUnavailable}
             />
+            <UsageGuideDialog open={guideOpen} onClose={closeGuide} />
           </div>
         </div>
       </div>

@@ -9,6 +9,8 @@ import {
   openBoardWithMock,
   ekidokiButton,
   openShareDialog,
+  openPanelTab,
+  openUsageGuide,
   saveButton,
 } from "./helpers/board";
 import {
@@ -150,6 +152,22 @@ test.describe("ボタンの格", () => {
     for (const button of await remove.all()) {
       await expect(button).toHaveClass(DANGER);
     }
+  });
+});
+
+// 使い方（ADR 0094）。読むだけのダイアログで、主となる操作は無い。開く口も
+// 閉じる口も控えめにする。
+test.describe("使い方のボタンの格", () => {
+  test("使い方を見る・閉じるは控えめ", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const panel = await openPanelTab(page, "絵解いた");
+    await expect(panel.getByRole("button", { name: "使い方を見る" })).toHaveClass(QUIET);
+
+    const dialog = await openUsageGuide(page);
+    await expect(dialog.getByRole("button", { name: "閉じる", exact: true })).toHaveClass(
+      QUIET,
+    );
   });
 });
 

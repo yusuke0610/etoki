@@ -74,6 +74,17 @@ export async function openShareDialog(page: Page): Promise<Locator> {
 }
 
 /**
+ * キャンバスのメニューの「etoki の使い方」からダイアログを開き、その枠を返す
+ * （ADR 0094）。右のパネルの「使い方を見る」からも開ける。
+ */
+export async function openUsageGuide(page: Page): Promise<Locator> {
+  await chooseFromMenu(page, "etoki の使い方");
+  const dialog = page.getByRole("dialog", { name: "etoki の使い方", exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/**
  * mermaid の貼り付けを開き、その枠を返す（ADR 0062）。図のドラフトのタブの中で、
  * LLM に作らせる口と切り替えて出す（`DiagramTab`）。
  */
