@@ -85,6 +85,16 @@ export const renameIcon = menuIcon(
   </>,
 );
 
+/** ボードの背景（`notes`、ADR 0093）。 */
+export const premiseIcon = menuIcon(
+  <>
+    <path d="M5 5a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-14" />
+    <path d="M9 7h6" />
+    <path d="M9 11h6" />
+    <path d="M9 15h4" />
+  </>,
+);
+
 /** 作成先を変更（`target-arrow`）。 */
 export const changeTargetIcon = menuIcon(
   <>

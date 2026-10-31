@@ -44,6 +44,8 @@ import { BoardContext } from "./BoardContext";
 import { BoardMenu } from "./BoardMenu";
 import { BoardStatus } from "./BoardStatus";
 import { DeleteConfirm } from "./DeleteConfirm";
+import { PremiseDialog } from "./premise/PremiseDialog";
+import { usePremise } from "./premise/usePremise";
 import { SidePanel, type TabSpec } from "./SidePanel";
 import { useCreation } from "./annotations/useCreation";
 import { useRunHistories } from "./annotations/useRunHistories";
@@ -138,6 +140,13 @@ type Props = {
    */
   onRenamed: (board: BoardDetail) => void;
   /**
+   * ボードの背景を書き換えた、または先に書き換えられていたので取り直した
+   * （ADR 0093）。手元のボードを差し替えてもらう。
+   *
+   * 版（`updatedAt`）は動かないので、保存の基準は据え置く（ADR 0092）。
+   */
+  onPremiseChanged: (board: BoardDetail) => void;
+  /**
    * ボードを削除したので、手元から外してもらう。
    *
    * **確認はこの中で済ませてある**（ADR 0042）。親は未保存の確認を重ねない。
@@ -173,6 +182,7 @@ export function BoardPage({
   onChangeTarget,
   onTargetRefreshed,
   onRenamed,
+  onPremiseChanged,
   onDeleted,
   onDirtyChange,
   theme,
@@ -298,6 +308,10 @@ export function BoardPage({
   const [guideOpen, setGuideOpen] = useState(false);
   const openGuide = useCallback(() => setGuideOpen(true), []);
   const closeGuide = useCallback(() => setGuideOpen(false), []);
+  // ボードの背景（`usePremise`、ADR 0093）。**書きかけはダイアログの外のここで
+  // 持つ。** 閉じても消えない。開くのはキャンバスのメニュー。
+  const premise = usePremise({ board, onChanged: onPremiseChanged });
+  const openPremise = premise.openEditor;
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // 注釈の詳細の開閉（`useAnnotationDetail`）。保存で消えた注釈の詳細は閉じる。
@@ -695,6 +709,7 @@ export function BoardPage({
     // `cancelFailed`）ので、待たずに手放してよい。
     onCancel: (id) => void cancelInterpretation(id),
     unavailable: interpretationUnavailable,
+    premise: board.premise,
   };
   // 作る先の見出し。押す直前の帯の文（`creationNotice`）に出す。作成先が未選択の
   // ボードでは作成まで進めないので null。
@@ -797,6 +812,7 @@ export function BoardPage({
         role={board.role}
         targetLocked={board.targetLocked}
         onRename={() => setNameDraft(board.name)}
+        onPremise={openPremise}
         onShare={openShare}
         onOpenGuide={openGuide}
         creationUnavailable={creationUnavailable}
@@ -821,6 +837,7 @@ export function BoardPage({
       board.name,
       board.role,
       setNameDraft,
+      openPremise,
       openShare,
       openGuide,
       board.targetLocked,
@@ -1148,6 +1165,7 @@ export function BoardPage({
               unavailable={sharingUnavailable}
             />
             <UsageGuideDialog open={guideOpen} onClose={closeGuide} />
+            <PremiseDialog editor={premise} canEdit={canEdit} premise={board.premise} />
           </div>
         </div>
       </div>
