@@ -47,6 +47,11 @@ export type InterpretationProps = {
    * 書けるか、こちらは etoki に LLM が設定されているか。**混ぜない。**
    */
   unavailable: string | null;
+  /**
+   * いまのボードの背景（ADR 0093）。次に絵解くときに添えるもの。押す前に
+   * 見せ、結果に添えた背景と食い違えばそう言う。
+   */
+  premise: string;
 };
 
 /** 作成の実行と、その可否。 */
@@ -584,6 +589,7 @@ function AnnotationFace({
             targetLabel={targetLabel}
             stale={stale}
             interpretationUnavailable={interpretation.unavailable}
+            premise={interpretation.premise}
             interpretationBusyElsewhere={Object.entries(interpretation.states).some(
               ([otherId, other]) => otherId !== id && other.running,
             )}
