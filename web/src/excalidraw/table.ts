@@ -1,6 +1,7 @@
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 
 import type { SceneElement } from "./annotation";
+import { withCleanStyle } from "./drawingStyle";
 
 /** 表の列数と行数。**固定にして、ダイアログを挟まない**（ADR 0069）。 */
 export const TABLE_COLUMNS = 3;
@@ -22,7 +23,6 @@ const CELL_STYLE = {
   strokeColor: "#1e1e1e",
   fillStyle: "solid",
   strokeWidth: 1,
-  roughness: 0,
 } as const;
 
 /** 置き場所を決めるのに要る、いまのキャンバスの見え方。 */
@@ -93,5 +93,5 @@ export function createTable(center: { x: number; y: number }): SceneElement[] {
     }
   }
 
-  return convertToExcalidrawElements(cells);
+  return convertToExcalidrawElements(withCleanStyle(cells));
 }
