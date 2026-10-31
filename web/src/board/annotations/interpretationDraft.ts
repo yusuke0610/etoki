@@ -168,7 +168,7 @@ export function canResend(d: DraftItem): boolean {
  *
  * サーバーの `Interpretation.Validate` は、指す先の無い parentLocalId も、
  * epic が親を持つことも、issue を親にすることも拒む
- * （`internal/domain/interpretation.go`）。ここを通した親だけを送れば、
+ * （`internal/domain/interpretation_validate.go`）。ここを通した親だけを送れば、
  * 画面から作れる組み合わせがその検証に引っかかることはない。
  */
 function effectiveParentOf(

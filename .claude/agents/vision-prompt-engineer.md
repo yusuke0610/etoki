@@ -22,7 +22,8 @@ Grep / Glob を持たないので、探索は Bash の `grep -rn` / `ls` / `git`
 - ルートの `CLAUDE.md`（中核となる思想、注釈のメタデータと図の種別のくだり）
 - `internal/usecase/interpretationprompt.go`（解釈のプロンプトの組み立て）、
   `internal/usecase/diagramprompt.go`（図の生成のプロンプト）
-- `internal/domain/interpretation.go`（`RuleID` と `Rules`、`Validate`）
+- `internal/domain/interpretation_rules.go`（`RuleID` と `Rules`）と
+  `internal/domain/interpretation_validate.go`（`Validate`）
 - `port/` の LLM 境界と `internal/adapter/llm/`
 - 既存テスト（`internal/usecase/*_test.go`）と偽の LLM（`internal/fakeupstream/llm.go`）
 - 索引から引いた、解釈・出力スキーマ・図の種別に関わる ADR
