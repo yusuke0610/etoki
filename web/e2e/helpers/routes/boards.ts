@@ -9,6 +9,7 @@ import type {
   ErrorResponse,
   SaveSceneRequest,
   SaveSceneResponse,
+  SetPremiseRequest,
 } from "../../../src/api/types";
 
 import type { ApiMock } from "../api";
@@ -16,7 +17,15 @@ import { annotationsOfScene, emptyScene, listEntry, summarize } from "../boardDa
 import { githubUnset } from "./github";
 import { boardIdOf, json, ownerOnly } from "./respond";
 
-/** ボードそのもの（一覧・作成・取得・改名・削除）と、シーンの保存・作成先。 */
+/**
+ * ボードの背景の長さの上限（`usecase.MaxPremiseRunes`、ADR 0093）。
+ *
+ * **画面は上限を持たない**（サーバーだけが持つ、ADR 0038）。ここに置くのは、
+ * モックがサーバーと同じ判定で 413 を返すため。
+ */
+const PREMISE_LIMIT = 4000;
+
+/** ボードそのもの（一覧・作成・取得・改名・背景・削除）と、シーンの保存・作成先。 */
 export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<void> {
   let issued = 0;
 
@@ -193,6 +202,78 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
       const next: BoardDetail = { ...detail, name };
       mock.details[id] = next;
       mock.boards = mock.boards.map((b) => (b.id === id ? summarize(next) : b));
+      await json(route, 200, next);
+    },
+  );
+
+  // ボードの背景（ADR 0093）。**判定はサーバーと同じ順にする。** 長さ（入力だけで
+  // 決まる）→ ロール → 照合。照合を素通しにすると、フロントが基準を送っていなくても、
+  // 古い基準を送り続けていても緑になる。
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/premise$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "PUT") {
+        await route.fallback();
+        return;
+      }
+
+      // 断るものも積む。基準に何を送ったかは、断られた保存と次の保存で比べる。
+      const req = route.request().postDataJSON() as Partial<SetPremiseRequest>;
+      mock.premiseRequests.push(req as SetPremiseRequest);
+
+      if (mock.premiseError) {
+        await json(route, mock.premiseError.status, mock.premiseError.body);
+        return;
+      }
+
+      const id = boardIdOf(route);
+      const detail = mock.details[id];
+      if (!detail) {
+        await json(route, 404, {
+          code: "not_found",
+          error: "not found",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      if (typeof req.premise !== "string" || typeof req.basePremise !== "string") {
+        await json(route, 400, {
+          code: "invalid_input",
+          error: "premise and basePremise are required",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      // 改行を揃え、前後の空白を落としてから長さを見る（`normalizePremise`）。
+      // 数えるのは文字（コードポイント）で、UTF-16 の単位ではない。
+      const premise = req.premise.replace(/\r\n?/g, "\n").trim();
+      if ([...premise].length > PREMISE_LIMIT) {
+        await json(route, 413, {
+          code: "premise_too_large",
+          error: `premise has ${[...premise].length} characters, limit is ${PREMISE_LIMIT}`,
+        } satisfies ErrorResponse);
+        return;
+      }
+      // 書けるのは editor 以上（改名と同じ、ADR 0093）。
+      if (detail.role === "viewer") {
+        await json(route, 403, {
+          code: "forbidden_role",
+          error: "editor or above",
+        } satisfies ErrorResponse);
+        return;
+      }
+      if (req.basePremise !== detail.premise) {
+        await json(route, 409, {
+          code: "premise_conflict",
+          error: "premise changed since editing began",
+        } satisfies ErrorResponse);
+        return;
+      }
+
+      // **版は動かさない**（ADR 0092）。改名と同じで、動かすモックにすると、
+      // 背景の書き換えのあとに保存が 409 になる実装でも E2E が緑のままになる。
+      const next: BoardDetail = { ...detail, premise };
+      mock.details[id] = next;
       await json(route, 200, next);
     },
   );

@@ -21,6 +21,7 @@ import {
   picker,
   saveScene,
   startNewBoard,
+  openPremiseDialog,
   openShareDialog,
 } from "./helpers/board";
 import {
@@ -894,6 +895,53 @@ test.describe("スクリーンショット", () => {
 
   // 名前を変えている最中。見出しが入力に変わるので、押し間違いで名前が
   // 変わるように見えていないかを画像で見る。
+  // ボードの背景（ADR 0093）。書く場所と、先に書き換えられていたときの見比べと、
+  // 絵解きの面で添えたものを見せる形を撮る。
+  test("ボードの背景を撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), premise: "acme/web のフロントエンド" };
+    mock.interpret = {
+      status: 200,
+      body: {
+        ...interpretation(),
+        context: {
+          premise: "acme/web のフロントエンド",
+          otherItems: [
+            { kind: "epic", title: "決済" },
+            { kind: "issue", title: "カードを登録する" },
+          ],
+          omittedOtherItems: 3,
+        },
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const dialog = await openPremiseDialog(page);
+    const input = dialog.getByRole("textbox", { name: "ボードの背景", exact: true });
+    await input.fill(
+      "acme/web のフロントエンド（React + TypeScript）。\n\n「絵」は注釈、「ボード」はキャンバス 1 枚のこと。",
+    );
+    await shot(page, "62-premise-dialog");
+
+    mock.details[BOARD_ID] = { ...board(), premise: "ほかの人が書いた背景" };
+    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await dialog.getByRole("region", { name: "いまの背景" }).waitFor();
+    await shot(page, "62-premise-conflict");
+    await dialog.getByRole("button", { name: "書きかけを捨てる" }).click();
+    await page.keyboard.press("Escape");
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await openAnnotationDetail(page, "ログイン");
+    await detail.getByText("ボードの背景も添えて読みます").click();
+    await shot(page, "62-premise-before-ekidoki");
+
+    await interpret(card);
+    await detail.getByText(/^絵の外から添えたもの/).click();
+    await detail.getByText("決済", { exact: true }).waitFor();
+    await shot(page, "62-premise-added-context");
+  });
+
   test("名前の変更中を撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 

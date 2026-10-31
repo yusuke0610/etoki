@@ -25,7 +25,9 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 実装に効く帰結:
 
 - 1 から。構造化の責務はツール側と開発者フェーズに寄せる。
-- 2 から。ルールベースで推測する実装を書かない。
+- 2 から。ルールベースで推測する実装を書かない。LLM に渡すのも読む材料（画像、
+  要素の生のテキスト、人の囲み）までで、etoki が先に下した結論（近いから同じ
+  グループ、など）は渡さない。
 - 3 から。すべて開発者の手動トリガーにする。
 
 ## 規約の置き場所
@@ -45,7 +47,6 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `.claude/skills/mutate/`           | 守りを壊してテストが落ちるかを確かめる（`/mutate`）                    |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
 | `.claude/skills/security-audit/`   | 定期のセキュリティ点検（`/security-audit`）と #64 の更新               |
-| `.claude/agents/`                  | 用途別のサブエージェント（ADR 照合、レビュー、デバッグなど）           |
 
 `CONTRIBUTING.md` だけは**ディレクトリに紐づかないので自動では読み込まれない**。
 **ブランチを切る前に読む。**
@@ -60,9 +61,10 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 実行する。** README にグローバルインストールの手順を書かないこと。
 
 `make` は devShell の外から呼ばれると `nix develop --command` で自分をやり直す
-ので、入り忘れても道具の無いまま走ることはない。**ただし `go test` や
-`bunx vitest` を直に叩く経路は包まれない。** そちらは従来どおり devShell の中で
-実行する。
+ので、入り忘れても道具の無いまま走ることはない。別の作業ツリー（worktree）の
+devShell の中から呼ばれ、`flake.nix` か `flake.lock` が違うときもやり直す。
+**ただし `go test` や `bunx vitest` を直に叩く経路は包まれない。** そちらは
+従来どおり、その作業ツリーの devShell の中で実行する。
 
 **一覧の正本は `make help`**（Makefile の `##` コメント）。下は使う頻度の高い
 ものだけで、全部ではない。
@@ -248,10 +250,10 @@ Origin 検証は `.claude/rules/http-handlers.md`。
   コメント。
 - **`.prettierignore`** と、**整形を必ずリポジトリのルートから呼ぶこと** —
   理由は `.prettierignore` と Makefile の `lint-fmt` のコメント。
-- **Makefile の `ifndef ETOKI_DEVSHELL` による包み直し** — 判定の印と、包み
+- **Makefile の `ETOKI_DEVSHELL` による包み直し** — 印の値を比べる理由と、包み
   直しの中で `$(MAKE)` と書かない理由は Makefile の冒頭と `nix-develop` の
-  コメント。印（`ETOKI_DEVSHELL`）を `shellHook` ではなく derivation の環境に
-  置く理由は `flake.nix` のコメント。
+  コメント。印（`ETOKI_DEVSHELL`）の値の作り方と、`shellHook` ではなく
+  derivation の環境に置く理由は `flake.nix` のコメント。
 - **devShell の `GOTOOLCHAIN=local`** — 理由は `flake.nix` のコメント。
 - **`nix flake check` は Nix コードのフォーマット検査のみ**（ADR 0002）。同じ
   検査を `make lint`（`lint-nix`）にも重ねている理由は Makefile のコメント。

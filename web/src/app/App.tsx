@@ -230,10 +230,11 @@ export function App() {
             capabilities={capabilities}
             onClose={closeBoard}
             onChangeTarget={startPicking}
-            // 表示名の取り直しと改名は、どちらも「サーバーが返したボードで
-            // 手元を差し替える」だけ。同じ扱いにする（replaceBoard を参照）。
+            // 表示名の取り直しと改名と背景の書き換えは、どれも「サーバーが返した
+            // ボードで手元を差し替える」だけ。同じ扱いにする（replaceBoard を参照）。
             onTargetRefreshed={replaceBoard}
             onRenamed={replaceBoard}
+            onPremiseChanged={replaceBoard}
             onDeleted={handleDeleted}
             onDirtyChange={handleDirtyChange}
             theme={theme}

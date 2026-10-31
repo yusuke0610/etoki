@@ -10,8 +10,35 @@ SHELL := bash
 # 印は flake.nix の devShell が渡す ETOKI_DEVSHELL を見る。IN_NIX_SHELL では
 # 判定しない。あれは「何かの nix shell の中」としか言わないので、別プロジェクト
 # の shell から呼ぶと包み直しを飛ばしてしまう。direnv を使っているなら
-# devShell がすでに有効なので、この分岐には来ない。
-ifndef ETOKI_DEVSHELL
+# devShell がすでに有効なので、ふつうはこの分岐には来ない。flake.nix か
+# flake.lock を変えたあと、direnv が読み直す（cd し直す）までは来る（下の値の比較）。
+#
+# 印の有無ではなく値を比べる。値は flake.nix と flake.lock の中身のハッシュで
+# （作り方は flake.nix のコメント）、ここでは同じものをこの作業ツリーのファイル
+# から作る。有無だけを見ると、本体の devShell を読んだ端末から worktree で
+# 呼んだとき、本体の flake.lock の道具のまま走る（#401）。
+#
+# sha256sum は devShell にある（coreutils）が、外から呼ばれた macOS には無いことが
+# あるので shasum に落とす。
+#
+# 読むのは make の作業ディレクトリ（$(CURDIR)、$(shell) はそこで走る）の 2 つ。
+# Makefile の場所から組まないのは、$(dir) や $(abspath) が空白で語に割り、空白を
+# 含むパスで cd に失敗するため。ほかのターゲットもリポジトリのルートで走る前提。
+ETOKI_DEVSHELL_ID := $(shell cat flake.nix flake.lock | \
+	{ if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; } | \
+	cut -d' ' -f1)
+
+# 値が空なら（ハッシュを作れなかった）、合っているとは見なさず包み直す。空どうしを
+# 一致とすると、devShell の外で印も空のとき、ホストの道具のまま走る。
+ETOKI_DEVSHELL_MATCH := $(if $(ETOKI_DEVSHELL_ID),$(filter $(ETOKI_DEVSHELL_ID),$(ETOKI_DEVSHELL)))
+
+ifeq ($(ETOKI_DEVSHELL_MATCH),)
+
+# 包み直した先でも合わないなら止める。同じ値を 2 か所で作っているので、作り方が
+# ずれると包み直しを繰り返し続ける。印は包み直すときに立てる（nix-develop）。
+ifdef ETOKI_DEVSHELL_REWRAPPED
+$(error devShell に入り直しても ETOKI_DEVSHELL が合いません（devShell: $(ETOKI_DEVSHELL)、作業ツリー: $(ETOKI_DEVSHELL_ID)）。flake.nix と Makefile の印の作り方を揃えてください)
+endif
 
 # 目標はまとめて 1 回だけ包む。ターゲットごとに包むと、dev のように $(MAKE) を
 # 呼ぶターゲットで nix develop が入れ子になる。
@@ -36,7 +63,8 @@ nix-develop:
 	@# $(MAKE) とは書かない。外側の make（macOS なら 3.81）を呼び直すことになり、
 	@# devShell が固定している gnumake が使われない。make migrate DB_PATH=… の
 	@# ような指定は MAKEFLAGS が環境変数として引き継がれるので書き足さずに届く。
-	+nix develop --option warn-dirty false \
+	@# ETOKI_DEVSHELL_REWRAPPED は、包み直した先でまた包み直さないための印（上）。
+	+ETOKI_DEVSHELL_REWRAPPED=1 nix develop --option warn-dirty false \
 		--command make --no-print-directory $(NIX_GOALS)
 
 else

@@ -8,6 +8,7 @@ import {
   openAnnotationDetail,
   openBoardWithMock,
   ekidokiButton,
+  openPremiseDialog,
   openShareDialog,
   saveButton,
 } from "./helpers/board";
@@ -101,6 +102,28 @@ test.describe("ボタンの格", () => {
     const detail = await openAnnotationDetail(page, "ログイン");
     await detail.getByRole("button", { name: "絵解く" }).click();
     await expect(detail.getByRole("button", { name: "絵解きを取り消す" })).toHaveClass(
+      QUIET,
+    );
+  });
+
+  // ボードの背景のダイアログ（ADR 0093）。面の主となる操作は「保存」の 1 つ。
+  // 書きかけを捨てるのは取り消せない操作ではない（いまの背景に戻るだけ）ので赤にしない。
+  test("背景の保存は主となる操作、閉じると書きかけを捨てるのは控えめ", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const dialog = await openPremiseDialog(page);
+    await dialog
+      .getByRole("textbox", { name: "ボードの背景", exact: true })
+      .fill("書きかけ");
+    await expect(dialog.getByRole("button", { name: "保存", exact: true })).toHaveClass(
+      PRIMARY,
+    );
+    await expect(dialog.getByRole("button", { name: "閉じる", exact: true })).toHaveClass(
+      QUIET,
+    );
+    await expect(dialog.getByRole("button", { name: "書きかけを捨てる" })).toHaveClass(
       QUIET,
     );
   });

@@ -583,6 +583,35 @@
 }
 
 /*
+ * 絵の外から添えるもの（ADR 0093）。押す前の背景（`.premise-preview`）と、結果に
+ * 添えたもの（`.interpretation-context`）。読むための材料なので、作るものの一覧より
+ * 控えめに出し、畳んだ見出しで「何を何件」を言う。本文の形（`.premise-text`）は
+ * 背景のダイアログと同じ（`board/premise/premise.css`）。
+ */
+.premise-preview,
+.interpretation-context {
+  margin: var(--space-3) 0 var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.premise-preview > summary,
+.interpretation-context summary {
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+
+.premise-preview .premise-text,
+.interpretation-context .premise-text {
+  margin-top: var(--space-2);
+}
+
+.interpretation-context h3 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+}
+
+/*
  * 実行の履歴（ADR 0007）。畳み込み（「GitHub にある N 件」）の下に並ぶので、
  * 見た目を揃えて「別のもの」に見せない。
  */
