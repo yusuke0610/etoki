@@ -19,13 +19,20 @@ SHELL := bash
 # 呼んだとき、本体の flake.lock の道具のまま走る（#401）。
 #
 # sha256sum は devShell にある（coreutils）が、外から呼ばれた macOS には無いことが
-# あるので shasum に落とす。どちらも無ければ値が空になり、包み直す側に倒れる。
-ETOKI_DEVSHELL_ID := $(shell cd "$(dir $(abspath $(firstword $(MAKEFILE_LIST))))" && \
-	cat flake.nix flake.lock | \
+# あるので shasum に落とす。
+#
+# 読むのは make の作業ディレクトリ（$(CURDIR)、$(shell) はそこで走る）の 2 つ。
+# Makefile の場所から組まないのは、$(dir) や $(abspath) が空白で語に割り、空白を
+# 含むパスで cd に失敗するため。ほかのターゲットもリポジトリのルートで走る前提。
+ETOKI_DEVSHELL_ID := $(shell cat flake.nix flake.lock | \
 	{ if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; } | \
 	cut -d' ' -f1)
 
-ifneq ($(ETOKI_DEVSHELL),$(ETOKI_DEVSHELL_ID))
+# 値が空なら（ハッシュを作れなかった）、合っているとは見なさず包み直す。空どうしを
+# 一致とすると、devShell の外で印も空のとき、ホストの道具のまま走る。
+ETOKI_DEVSHELL_MATCH := $(if $(ETOKI_DEVSHELL_ID),$(filter $(ETOKI_DEVSHELL_ID),$(ETOKI_DEVSHELL)))
+
+ifeq ($(ETOKI_DEVSHELL_MATCH),)
 
 # 包み直した先でも合わないなら止める。同じ値を 2 か所で作っているので、作り方が
 # ずれると包み直しを繰り返し続ける。印は包み直すときに立てる（nix-develop）。
