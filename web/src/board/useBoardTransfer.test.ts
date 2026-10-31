@@ -220,9 +220,11 @@ describe("useBoardTransfer の取り込み", () => {
     await act(() => hook.result.current.importScene(file));
 
     const [elements] = updateElements.mock.calls[0]!;
-    const frameId = elements[0]?.id;
-    expect(frameId).not.toBe("annotation-before");
-    expect((elements[1] as { frameId?: string }).frameId).toBe(frameId);
+    const [frame, child] = elements as [SceneElement, { frameId?: string }];
+    // 先に ID があることを見る。付け替えで両方失うと、下の一致は undefined 同士で通る。
+    expect(frame.id).toEqual(expect.stringMatching(/\S/));
+    expect(frame.id).not.toBe("annotation-before");
+    expect(child.frameId).toBe(frame.id);
   });
 
   it("読めなかったら、確認も出さずキャンバスにも触らない", async () => {
