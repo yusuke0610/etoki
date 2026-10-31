@@ -100,6 +100,23 @@ test.describe("押せない理由が本文として読める", () => {
     );
   });
 
+  // 置いた図がキャンバスに残っているあいだは、同じ図を置き直させない（ADR 0040 の
+  // 追記）。**消せばまた置けることまで読めないと、置き直すには「直す」で往復を
+  // 使うしかないと読める。**
+  test("キャンバスに置く：置いた図が残っているとき", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await openPanelTab(page, "etoki AI");
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+    const place = page.getByRole("button", { name: "キャンバスに置く" });
+    await place.click();
+
+    await expectBlockedReason(
+      place,
+      "この図はキャンバスに置いてあるので、置き直せません。置いた図を消すと、また置けます。",
+    );
+  });
+
   // 作成は取り消せない（ADR 0009）。何が足りなくて押せないのかが読めないと、
   // 開発者は選び直しようがない。
   test("GitHub に作成する：作るものが 1 件も無いとき", async ({ page }) => {
@@ -719,6 +736,20 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
       await page.getByRole("button", { name: "生成", exact: true }).click();
       await page.locator(".diagram-mermaid").waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 置き直せない理由は、置いたあとにしか DOM に出ない（ADR 0040 の追記）。
+    // 上の「生成した状態」では一度も掛かっていない。
+    test("図のドラフトを置いた状態", async ({ page }) => {
+      await openBoardWithMock(page, baseMock());
+
+      await openPanelTab(page, "etoki AI");
+      await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+      await page.getByRole("button", { name: "生成", exact: true }).click();
+      await page.getByRole("button", { name: "キャンバスに置く" }).click();
+      await page.locator("#diagram-placed").waitFor();
 
       await expectNoAxeViolations(page);
     });

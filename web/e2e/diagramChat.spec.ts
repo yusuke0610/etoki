@@ -67,6 +67,62 @@ test.describe("図のドラフト", () => {
     }
   });
 
+  // **同じ図は、置いた図がキャンバスに残っているあいだ置き直させない**（ADR 0040 の
+  // 追記）。置き場所は毎回既存の絵の右外なので、押すたびに同じ図が 1 つずつ増え、
+  // 重ならないぶん増えたことにも気づきにくい。**取り消しで消えたら、また置ける。**
+  // Excalidraw が取り消した要素をどう持つかはブラウザでしか分からない。
+  test("置いた図が残っているあいだは同じ図を置き直せず、元に戻すとまた置ける", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+    await openChat(page);
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+
+    const place = page.getByRole("button", { name: "キャンバスに置く" });
+    const reason = page.getByText(
+      "この図はキャンバスに置いてあるので、置き直せません。置いた図を消すと、また置けます。",
+    );
+    await place.click();
+    await expect(place).toBeDisabled();
+    await expect(reason).toBeVisible();
+
+    await page.getByRole("button", { name: "元に戻す" }).click();
+    await expect(place).toBeEnabled();
+    await expect(reason).toBeHidden();
+
+    // 置き直すと、また止まる。**キャンバスに載っているのは 1 つぶんだけ。**
+    // 図は矩形 2 つと矢印 1 本（`diagramDraft`）。
+    await place.click();
+    await expect(place).toBeDisabled();
+    await saveScene(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
+      elements: { type: string; isDeleted?: boolean }[];
+    };
+    const arrows = saved.elements.filter((el) => el.type === "arrow" && !el.isDeleted);
+    expect(arrows).toHaveLength(1);
+  });
+
+  // 直して届いたのは別の図なので、前の図が残っていても置ける。
+  test("直して新しい図が届いたら、置いた図が残っていても置ける", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+    await openChat(page);
+    await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
+    await page.getByRole("button", { name: "生成", exact: true }).click();
+    const place = page.getByRole("button", { name: "キャンバスに置く" });
+    await place.click();
+    await expect(place).toBeDisabled();
+
+    await page.getByLabel("図への指示").fill("返金の分岐も足して");
+    await page.getByRole("button", { name: "直す" }).click();
+    // **2 回目にしか出ない表示で待つ。** ボタンは生成中も止まっているので、
+    // 押せるようになったことだけでは 2 回目が届いたことにならない。
+    await expect(page.getByText("返金の分岐も足して")).toBeVisible();
+
+    await expect(place).toBeEnabled();
+  });
+
   // **未保存でも使える**（ADR 0041）。保存済みシーンを読まないので、解釈のように
   // 保存を挟む（#247）理由が無い。
   test("未保存のままでも生成できる", async ({ page }) => {
