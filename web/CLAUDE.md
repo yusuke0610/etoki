@@ -341,7 +341,9 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 
 - **境界はキャンバスの外側に置く。** `BoardPage` のパネル（注釈・
   図のドラフト・mermaid の貼り付け・注釈の詳細）と共有のダイアログの中身を
-  1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を包む。
+  1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を包む。タブの中身の
+  包みは `web/src/board/PanelTabContents.tsx`、注釈の枠の包みは
+  `web/src/board/BoardCanvas.tsx` にある。
   **外側の 1 枚にまとめないこと。** まとめると落ちた瞬間にキャンバスごと外れ、
   保存していないブレストがその場で消える。`web/e2e/errors.spec.ts` がここを
   固定している。**パネルを足したらここにも包みを足す。**
@@ -984,7 +986,7 @@ cd web && bunx playwright test --ui
   **固定を外したら、受け入れた CSS の注入が消えたかを確かめる。**
 - **Excalidraw 自身の mermaid の入口は閉じてある**（ADR 0067）。「その他」
   メニューの「Mermaid to Excalidraw」は `web/src/board/board.css` で隠し、キャンバスへの
-  貼り付けの自動変換は `BoardPage` の `onPaste` で止めている。**どちらも開いて
+  貼り付けの自動変換は `BoardCanvas` の `onPaste` で止めている。**どちらも開いて
   いると、上の脆弱性の受け入れの前提が崩れる。** props で消せない UI に外から
   手を入れているので、Excalidraw を上げると黙って戻りうる。
   `web/e2e/excalidrawMermaid.spec.ts` と `src/excalidraw/excalidrawMermaid.test.ts`

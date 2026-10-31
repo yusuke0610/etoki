@@ -1,48 +1,36 @@
-import { Excalidraw, Footer } from "@excalidraw/excalidraw";
+import { Footer } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  canvasMermaidPasteFailure,
-  sceneUnreadableFailure,
-  type Failure,
-} from "../api/errorMessage";
 import type { BoardDetail, BoardWithFiles, Capabilities } from "../api/types";
 import { unavailableReason } from "../app/capability";
 import { isAnnotation } from "../excalidraw/annotation";
-import { openedFiles } from "../excalidraw/files";
-import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
-import { formatSceneSize } from "../excalidraw/size";
-import { createTable, tableCenter } from "../excalidraw/table";
 import { ErrorBoundary } from "../app/ErrorBoundary";
-import { useNotify } from "../notification/NotificationProvider";
-import type { NotifyOptions } from "../notification/types";
 import type { Theme } from "../app/theme";
-import { AnnotationOverlay } from "./annotations/AnnotationOverlay";
 import {
   AnnotationDetail,
   type CreationProps,
   type InterpretationProps,
 } from "./annotations/AnnotationDetail";
-import { AnnotationPanel } from "./annotations/AnnotationPanel";
 import { useAnnotationDetail } from "./annotations/useAnnotationDetail";
 import {
   ANNOTATIONS_FAILED,
   useAnnotationStates,
 } from "./annotations/useAnnotationStates";
-import { DiagramChatPanel } from "./diagram/DiagramChatPanel";
 import { useExclusion } from "./exclusion";
 import { useInterpretations } from "./annotations/useInterpretations";
 import { ShareDialog } from "./members/ShareDialog";
-import { DiagramTab, type DiagramMode } from "./diagram/DiagramTab";
-import { MermaidPastePanel } from "./diagram/MermaidPastePanel";
+import { type DiagramMode } from "./diagram/DiagramTab";
 import { useDiagramDraft } from "./diagram/useDiagramDraft";
 import { projectLabel } from "../boards/grouping";
+import { SaveConflictAlert, SceneLimitWarning } from "./BoardAlerts";
 import { BoardBar } from "./BoardBar";
+import { BoardCanvas } from "./BoardCanvas";
 import { BoardContext } from "./BoardContext";
 import { BoardMenu } from "./BoardMenu";
 import { BoardStatus } from "./BoardStatus";
 import { DeleteConfirm } from "./DeleteConfirm";
+import { AnnotationsTabContent, DiagramTabContent } from "./PanelTabContents";
 import { PremiseDialog } from "./premise/PremiseDialog";
 import { usePremise } from "./premise/usePremise";
 import { SidePanel, type TabSpec } from "./SidePanel";
@@ -52,7 +40,9 @@ import { railBadgesOf } from "./panelState";
 import { projectLink } from "./target/projectLink";
 import { canEditBoard } from "./members/roles";
 import { useBoardDeletion, useRename, useTargetRefresh } from "./useBoardManagement";
+import { useBoardNotify } from "./useBoardNotify";
 import { useBoardTransfer } from "./useBoardTransfer";
+import { useCanvasCommands } from "./useCanvasCommands";
 import {
   measureVisibleCanvas,
   useArrowKeyScroll,
@@ -61,48 +51,13 @@ import {
 import { useConfirmLeave, useDirtyScene } from "./useDirtyScene";
 import { useCanvasAnnotations } from "./useCanvasAnnotations";
 import { useEkidoki } from "./useEkidoki";
+import { SCENE_UNREADABLE, useInitialScene } from "./useInitialScene";
 import { useMenuTriggerName } from "./useMenuTriggerName";
 import { usePanelLayout } from "./usePanelLayout";
 import { useProjectAccess } from "./useProjectAccess";
+import { useSaveShortcut } from "./useSaveShortcut";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
-
-/**
- * ライブラリのメニューから閉じるもの（ADR 0045）。
- *
- * **持ち出しと取り込みの口は etoki のメニュー 1 つに寄せる。** ライブラリ側を
- * 残すと、同じ画面に意味の違う「保存」が 2 つ並び、片方だけが etoki のボード名と
- * 未保存の確認を知っている形になる。
- *
- * **`.excalidraw` を書き出しているのは `saveAsImage` ではなく `export`。** 表示は
- * 「名前を付けて保存...」で、隣の「画像のエクスポート...」と紛らわしい。
- * `saveToActiveFile` はそこで開いたファイルへの上書きなので、一緒に閉じる。
- * **画像のエクスポートは閉じない。** 答えている問いが違う（持ち出しではなく、
- * 絵を他所に貼ること）。
- *
- * **テーマの切り替えは開ける**（ADR 0055）。`theme` を渡すとライブラリは既定で
- * この項目を隠すので、明示しないと手で切り替える口が消える。
- *
- * **モジュールの定数として持つ。** 描画のたびに作り直すと、Excalidraw には
- * 毎回違うオブジェクトが渡る。
- */
-const UI_OPTIONS = {
-  canvasActions: {
-    loadScene: false,
-    export: false,
-    saveToActiveFile: false,
-    toggleTheme: true,
-  },
-} as const;
-
-/**
- * 開いたときに effect から出る失敗の通知。
- *
- * **effect から出すものには key を付ける。** 開発時の StrictMode では effect が
- * 2 回走るので、畳まないと同じ失敗が 2 件並ぶ。注釈の状態のぶん
- * （`ANNOTATIONS_FAILED`）は `useAnnotationStates` にある。
- */
-const SCENE_UNREADABLE = "scene-unreadable";
 
 type Props = {
   /**
@@ -189,53 +144,9 @@ export function BoardPage({
 }: Props) {
   const canEdit = canEditBoard(board.role);
 
-  // 画面全体に出す失敗は通知へ（ADR 0058）。**保存の衝突・解釈や作成の失敗は
-  // ここを通さない。** 消えてよい失敗ではなく、残して読ませる状態だから。
-  const { notify, dismissKey } = useNotify();
-  // **画面から外れたあとに返った失敗は通知しない。** 通知はキャンバスより上に
-  // 生きているので、ボードを離れる前に投げた保存が離れたあとで失敗すると、
-  // 別のボードの画面に「保存できませんでした」が出る。その「再試行」が呼ぶのは
-  // 離れたボードの save で、捨てると決めたシーンを前のボードへ保存しにいく。
-  // 離れる時点で出ている通知は下げてある（SAVE_FAILED の effect）ので、ここで
-  // 塞ぐのは離れる時点でまだ応答待ちだったぶん。
-  //
-  // 印は effect で立てる。StrictMode は effect を 2 回走らせ、そのあいだに
-  // cleanup を挟むので、初期値で true にすると 2 回目以降が false のまま残る。
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  // **下げる側も同じ印を見る。** 通知はボードより上（`NotificationProvider`）に
-  // 生きていて key で消すので、**離れたあとに届いた成功で下げると、いま開いて
-  // いるボードに出ている同じ key の通知が消える。** 出す側（`onError`）だけを
-  // 塞いでも、消える側からボードを跨いでしまう。
-  //
-  // **離れる時点で下げるのは別の話**なので、そちらは `dismissKey` を直に呼ぶ
-  // （下の `board.id` の cleanup）。あれは「離れたから下げる」であって、
-  // 「離れたのに下げる」ではない。
-  const dismissHere = useCallback(
-    (key: string) => {
-      if (!mounted.current) return;
-      dismissKey(key);
-    },
-    [dismissKey],
-  );
-
-  const onError = useCallback(
-    (failure: Failure, options: Pick<NotifyOptions, "action" | "key"> = {}) => {
-      if (!mounted.current) return;
-      notify({
-        kind: "error",
-        message: failure.message,
-        detail: failure.detail,
-        ...options,
-      });
-    },
-    [notify],
-  );
+  // 画面全体に出す失敗は通知へ（`useBoardNotify`、ADR 0058）。**束のまま
+  // 持たない。** 中の関数を依存に置くフックが多い。
+  const { onError, dismissHere, dismissKey } = useBoardNotify();
 
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   // 保存済みの注釈の状態（`useAnnotationStates`）。開いたら 1 度引き、保存と作成の
@@ -342,39 +253,9 @@ export function BoardPage({
     discard: discardRuns,
   } = useRunHistories(board.id);
 
-  const initialScene = useMemo(() => {
-    try {
-      const scene = JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
-      // **開いたら中身が見えている位置から始める。** シーンの原点はキャンバスの
-      // 左上に来るので、原点あたりに描かれたものはツールバーの下に隠れる。
-      // ひな形から作ったボードは必ずそこから始まる（`excalidraw/template.ts`）
-      // ので、見出しが隠れた状態が最初の 1 画面になる。
-      //
-      // **要素は動かさない。** 動かすと座標の変更として未保存になり、開いた
-      // だけで保存を促すことになる。動かすのは見ている位置のほう。
-      //
-      // 貼った画像はシーンとは別に届く（ADR 0074）。渡さないと、画像の要素だけが
-      // 空白で置かれる。
-      return {
-        data: { ...scene, files: openedFiles(board.files), scrollToContent: true },
-        unreadable: false,
-      };
-    } catch {
-      // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
-      return { data: { elements: [], appState: {} }, unreadable: true };
-    }
-  }, [board.scene, board.files]);
-  const initialData = initialScene.data;
-
-  // 開いた時点でサーバーが持っていた画像。保存はこれに無い画像だけを送る。
-  const openedFileIds = useMemo(() => Object.keys(board.files), [board.files]);
-
-  // 読めなかったことの通知は描画の外で出す。useMemo の中で出すと、描画中に
-  // 別のコンポーネント（通知）の状態を書き換えることになる。
-  useEffect(() => {
-    if (initialScene.unreadable)
-      onError(sceneUnreadableFailure(), { key: SCENE_UNREADABLE });
-  }, [initialScene, onError]);
+  // キャンバスに渡す最初のシーンと、開いた時点でサーバーが持っていた画像
+  // （`useInitialScene`）。読めなかったら空で開いて通知する。
+  const { initialData, openedFileIds } = useInitialScene(board, onError);
 
   // キャンバスの写しと、要素を書き換える口（`useCanvasAnnotations`）。Excalidraw の
   // `onChange`（`handleChange`）もここにある。**束のまま持たない。** `handleChange` が
@@ -401,22 +282,6 @@ export function BoardPage({
     scheduleMeasure,
   });
 
-  /**
-   * mermaid らしい文字列の貼り付けを、Excalidraw が描く前に止める（ADR 0067）。
-   *
-   * Excalidraw はこれに当たる文字列を etoki の守り（ADR 0040 / 0061）を通さずに
-   * mermaid で描く。**当たらないものは素通しする。** `false` を返すと貼り付け
-   * そのものが止まるので、広げると普通の文字も貼れなくなる。
-   */
-  const handlePaste = useCallback(
-    (data: { text?: string }) => {
-      if (data.text === undefined || !isMaybeMermaidDefinition(data.text)) return true;
-      onError(canvasMermaidPasteFailure());
-      return false;
-    },
-    [onError],
-  );
-
   // 図のドラフト（LLM に作らせる・mermaid を貼る・置く）。`useDiagramDraft`。
   const {
     chat,
@@ -440,60 +305,13 @@ export function BoardPage({
     enabled: capabilities?.diagramDraft === true && canEdit,
   });
 
-  /**
-   * 表を 1 つ置く（ADR 0069）。
-   *
-   * **ダイアログを挟まない。** 描いている最中の操作なので、手数の少なさが
-   * そのまま値打ちになる。大きさは固定で、足りなければ複製やセルの追加で
-   * 広げる。置くだけで保存はしない。確定させるのは人間の保存操作だけ。
-   *
-   * 置いた表は group ごと選んでおく。そのまま動かしたり、消したりできる。
-   */
-  const addTable = useCallback(() => {
-    if (!api) return;
-
-    const { scrollX, scrollY, zoom, width, height } = api.getAppState();
-    const table = createTable(
-      tableCenter({ scrollX, scrollY, zoom: zoom.value, width, height }),
-    );
-    updateElements([...currentElements(), ...table]);
-
-    const groupId = table[0]?.groupIds?.[0];
-    if (groupId !== undefined) {
-      // 選択を渡す `updateScene` はツールを切り替えない。矩形ツールのまま置くと、
-      // 次のポインター操作で選択が外れて新しい矩形を描いてしまい、置いた直後に
-      // 表を動かせない。
-      api.setActiveTool({ type: "selection" });
-      api.updateScene({
-        appState: {
-          selectedElementIds: Object.fromEntries(table.map((el) => [el.id, true])),
-          selectedGroupIds: { [groupId]: true },
-        },
-      } as never);
-    }
-  }, [api, currentElements, updateElements]);
-
-  /**
-   * キャンバスをそのフレームへ寄せて選択する。
-   *
-   * パネルの項目とキャンバスのフレームを結ぶ唯一の手段（ADR 0022）。
-   * `sceneSignature` が appState から見るのは背景色だけで、選択とスクロールは
-   * 見ないので、これで未保存にはならない。
-   */
-  const focusFrame = useCallback(
-    (frameId: string) => {
-      if (!api) return;
-      const frame = currentElements().find((el) => el.id === frameId);
-      if (!frame) return;
-
-      // スマホでは全面のパネルがキャンバスを隠しているので閉じる（#199）。
-      // 詳細を閉じてから寄せる（`AnnotationDetail`）のと同じ理由。
-      closePhonePanel();
-      api.updateScene({ appState: { selectedElementIds: { [frameId]: true } } } as never);
-      api.scrollToContent(frame as never, { fitToContent: true, animate: true });
-    },
-    [api, currentElements, closePhonePanel],
-  );
+  // 表を置く・フレームへ寄せる（`useCanvasCommands`）。
+  const { addTable, focusFrame } = useCanvasCommands({
+    api,
+    currentElements,
+    updateElements,
+    closePhonePanel,
+  });
 
   const { fileInput, exportScene, importScene } = useBoardTransfer({
     api,
@@ -607,41 +425,8 @@ export function BoardPage({
    */
   const canSave = canEdit && api !== null && exclusive.running === null;
 
-  /**
-   * Ctrl / Cmd + S で保存する（issue #145）。
-   *
-   * 保存は明示操作だけ（ADR 0021）なので、押すまでの手数の少なさがそのまま
-   * 値打ちになる。**誰も拾わないと既定の動作（ブラウザの「ページを保存」）に
-   * 落ちる。** Excalidraw 側の Ctrl+S は `saveToActiveFile` だが、etoki は
-   * それを `UIOptions` から外してある（ADR 0045）ので、押しても何も起きず
-   * `preventDefault` もされない。
-   *
-   * **押せないときも既定の動作は止める。** 「保存できなかった」の代わりに
-   * ブラウザの保存ダイアログが出るのは、押せない理由を見せるどころではない。
-   *
-   * **Shift は拾わない。** Ctrl/Cmd+Shift+S は Excalidraw 側の書き出しで、
-   * 別の操作（`web/e2e/scene.spec.ts` が走らないことを見ている）。
-   *
-   * **入力欄にフォーカスがあっても同じ扱いにする。** この画面で Ctrl+S が
-   * 指しうる保存はシーンの保存 1 つだけで、ボード名の変更には専用のボタンが
-   * ある。フォーカス位置で意味が変わるほうが、習慣で押す人には読めない。
-   */
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      // **`e.key` だけで見ない。** 非ラテン配列では物理の S を押しても `e.key` が
-      // "s" にならず、保存されないままブラウザの既定（ページを保存）が開く。
-      // 物理キーの位置（`e.code`）も見る。Ctrl+S の習慣は位置で覚えているため。
-      if (e.key !== "s" && e.key !== "S" && e.code !== "KeyS") return;
-      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
-
-      e.preventDefault();
-      if (!canSave) return;
-      void save();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canSave, save]);
+  // Ctrl / Cmd + S で保存する（`useSaveShortcut`、issue #145）。
+  useSaveShortcut(canSave, save);
 
   /*
     キャンバスの移動を楽にする（#250）。何も選んでいないときの矢印キーと、
@@ -886,10 +671,7 @@ export function BoardPage({
    * 「絵解いた」（注釈）と「etoki AI」（図のドラフト）は右の 1 か所にタブで並べる
    * （ADR 0065）。共有はボードそのものの管理なので、ここではなくメニューから
    * ダイアログで開く（#248、ADR 0078）。スマホの上の帯（`BoardBar`）も、同じ
-   * タブから開くボタンを作る。
-   *
-   * **パネルは 1 枚ずつ境界で包む**（ADR 0027）。落ちたのが 1 枚でも外側で
-   * 受けると、キャンバスごと外れて未保存のブレストが消える。
+   * タブから開くボタンを作る。中身と境界の包み方は `PanelTabContents`。
    */
   const panelTabs: TabSpec[] = [
     {
@@ -900,25 +682,23 @@ export function BoardPage({
       // 数えるのは注釈の一覧と同じく保存済みシーンが基準。
       railBadges: railBadgesOf(annotations),
       content: (
-        <ErrorBoundary name="「絵解いた」パネル" recovery="remount">
-          <AnnotationPanel
-            annotations={annotations}
-            detached={detached}
-            frames={{
-              markable,
-              unmarkable,
-              canvasIds: canvasFrameIds,
-              selectedIds: selectedFrames.map((f) => f.id),
-              onMark: handleMark,
-              onUnmark: handleUnmark,
-            }}
-            runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
-            stale={dirty}
-            canEdit={canEdit}
-            projectLink={link}
-            onOpenDetail={openDetail}
-          />
-        </ErrorBoundary>
+        <AnnotationsTabContent
+          annotations={annotations}
+          detached={detached}
+          frames={{
+            markable,
+            unmarkable,
+            canvasIds: canvasFrameIds,
+            selectedIds: selectedFrames.map((f) => f.id),
+            onMark: handleMark,
+            onUnmark: handleUnmark,
+          }}
+          runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
+          stale={dirty}
+          canEdit={canEdit}
+          projectLink={link}
+          onOpenDetail={openDetail}
+        />
       ),
     },
     // 図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
@@ -931,34 +711,25 @@ export function BoardPage({
       ? [
           {
             id: "diagram" as const,
-            // LLM に図を作らせる口と、mermaid を貼る口（#248）。
             label: "etoki AI",
             content: (
-              <DiagramTab
+              <DiagramTabContent
                 mode={diagramMode}
                 onModeChange={setDiagramMode}
-                generate={
-                  <ErrorBoundary name="図のドラフト" recovery="remount">
-                    <DiagramChatPanel
-                      chat={chat}
-                      prompt={diagramPrompt}
-                      onPromptChange={setDiagramPrompt}
-                      onChangeKind={handleChangeKind}
-                      onSend={generateDiagram}
-                      onPlace={() => void placeDraft()}
-                      unavailable={diagramUnavailable}
-                    />
-                  </ErrorBoundary>
-                }
-                paste={
-                  <ErrorBoundary name="mermaid の貼り付け" recovery="remount">
-                    <MermaidPastePanel
-                      text={pasteText}
-                      onChangeText={setPasteText}
-                      onPlace={pasteMermaid}
-                    />
-                  </ErrorBoundary>
-                }
+                chat={{
+                  chat,
+                  prompt: diagramPrompt,
+                  onPromptChange: setDiagramPrompt,
+                  onChangeKind: handleChangeKind,
+                  onSend: generateDiagram,
+                  onPlace: () => void placeDraft(),
+                  unavailable: diagramUnavailable,
+                }}
+                paste={{
+                  text: pasteText,
+                  onChangeText: setPasteText,
+                  onPlace: pasteMermaid,
+                }}
               />
             ),
           },
@@ -998,41 +769,9 @@ export function BoardPage({
         />
       )}
 
-      {/*
-        上書きしなかったことと、いま何ができるのかを本文で出す。バッジに畳むと
-        「保存できていない」ことしか伝わらず、相手の変更を消したのかどうかが
-        読めない（ADR 0020）。
-
-        **控える手段の場所まで言う**（#244 の追記）。「控えて」だけでは、何で控える
-        のかが分からずここで止まる。手段はメニューの「書き出し」（ADR 0045）で、
-        保存済みではなくキャンバスから出すので、弾かれた描き足しも入る。帯に同じ
-        ボタンを並べず場所を言うのは、書き出しの口を 1 つに寄せているため。
-        「≡」はアイコンを見て探す人のためのもので、読み上げではメニューの名前が
-        そのまま入口の名前になる（#299）。
-      */}
-      {conflicted && (
-        <p className="conflict" role="alert">
-          {"他の人がこのボードを保存しました。上書きしないよう未保存のまま残しています。"}
-          {"いまの内容をメニュー"}
-          <span aria-hidden="true">（≡）</span>
-          {"の「書き出し」で控えてから、開き直してください。"}
-        </p>
-      )}
-
-      {/*
-        保存済みシーンが保存できる上限を超えていて、このままでは保存し直せない
-        状態（issue #103、ADR 0038）。**上限の数値は出さない。** サーバーの
-        判定結果を見せるだけで、フロントは上限を複製しない。開いた時点で
-        分かるよう、キャンバスを描く前から出す（中核思想 3）。
-      */}
-      {overLimit && (
-        <p className="scene-limit-warning" role="alert">
-          {
-            "このボードは保存できる上限を超えています。保存し直すには貼った画像を減らしてください。"
-          }
-          {sceneBytes !== null && `（いまの大きさ: ${formatSceneSize(sceneBytes)}）`}
-        </p>
-      )}
+      {/* 保存の衝突（ADR 0020）と、上限を超えたシーン（ADR 0038）の帯。 */}
+      {conflicted && <SaveConflictAlert />}
+      {overLimit && <SceneLimitWarning sceneBytes={sceneBytes} />}
 
       {/*
         注意の帯を除いた領域。**置き方はこの枠の大きさで決める**（`useBoardLayout`）。
@@ -1060,44 +799,23 @@ export function BoardPage({
           <div className="board-body">
             <div className="canvas">
               {/*
-                Excalidraw と注釈の枠。枠はこの矩形の左上からの座標で置く。
+                Excalidraw と注釈の枠（`BoardCanvas`）。
                 **詳細はこの外に置く。** スマホでは詳細が上の帯の 2 段目まで
                 覆うので、キャンバスの矩形を基準にできない。
               */}
-              <div className="canvas-frame" ref={canvasFrame}>
-                <Excalidraw
-                  excalidrawAPI={setApi}
-                  initialData={initialData as never}
-                  onChange={handleChange}
-                  langCode="ja-JP"
-                  theme={theme}
-                  // 持ち出しと取り込みの口は etoki のメニューに寄せてある（ADR 0045）。
-                  UIOptions={UI_OPTIONS}
-                  // Excalidraw の AI の口を閉じる（ADR 0067）。コマンドパレットの
-                  // 「Mermaid to Excalidraw」はこれで出し分けられている。0.18.1 は
-                  // パレットを置かないので今は効いていないが、置かれたときに守りを
-                  // 通らない口が黙って開かないようにする。「その他」メニューの同じ
-                  // 項目はこれでは消えないので、`board.css` で隠している。
-                  aiEnabled={false}
-                  onPaste={handlePaste}
-                  // viewer には描かせない。描けるのに保存できないと、描いた内容を
-                  // 黙って捨てることになる（ADR 0017）。
-                  viewModeEnabled={!canEdit}
-                  renderTopRightUI={renderTopRightUI}
-                >
-                  {canvasChildren}
-                </Excalidraw>
-                {/*
-                  注釈の frame を見分けられるようにする。Excalidraw の外に重ねる
-                  だけで、要素には触らない（AnnotationOverlay の doc）。
-
-                  **枠も境界で包む。** 包まずに落ちると外側の 1 枚が受けることになり、
-                  キャンバスごと外れて未保存のブレストが消える（ADR 0027）。
-                */}
-                <ErrorBoundary name="絵の枠" recovery="remount">
-                  <AnnotationOverlay boxes={overlayBoxes} />
-                </ErrorBoundary>
-              </div>
+              <BoardCanvas
+                frameRef={canvasFrame}
+                onApi={setApi}
+                initialData={initialData}
+                onChange={handleChange}
+                theme={theme}
+                canEdit={canEdit}
+                onError={onError}
+                renderTopRightUI={renderTopRightUI}
+                overlayBoxes={overlayBoxes}
+              >
+                {canvasChildren}
+              </BoardCanvas>
               {/*
                 解釈の結果と下書きの手直しは、キャンバスの上に広く開く。
                 **`.excalidraw` の外に置く。** 中に入れると色の変数がぶつかり、
