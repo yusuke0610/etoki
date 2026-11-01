@@ -7,7 +7,7 @@ import (
 	"github.com/yusuke0610/etoki/internal/domain"
 )
 
-// 矢印のつながりの読み方（ADR 0094）。読むのは Excalidraw が書いた結び先だけで、
+// 矢印のつながりの読み方（ADR 0096）。読むのは Excalidraw が書いた結び先だけで、
 // 座標は見ない。
 
 const (

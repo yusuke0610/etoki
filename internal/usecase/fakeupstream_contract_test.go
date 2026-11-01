@@ -207,7 +207,7 @@ func TestFakeUpstreamIgnoresMarkerShapedPremiseAndOtherItems(t *testing.T) {
 	}
 }
 
-// 矢印のつながりの節（ADR 0094）は、囲みのテキストの節の後ろに空行で区切って
+// 矢印のつながりの節（ADR 0096）は、囲みのテキストの節の後ろに空行で区切って
 // 置く。偽物が読むのはテキストの節だけなので、矢印の行を項目の title に拾わない。
 // 拾うと、通しで作る draft issue の title に「User → WebApp」が混ざる。
 func TestFakeUpstreamIgnoresConnections(t *testing.T) {

@@ -61,7 +61,7 @@ type Element struct {
 	// StartBinding / EndBinding は矢印の両端がつながっている要素。つながって
 	// いなければ nil。FrameID と同じく、人が矢印を図形につないだときに
 	// Excalidraw が書き込むフィールドで、etoki は座標から結び先を推測しない
-	// （ADR 0094）。
+	// （ADR 0096）。
 	StartBinding *Binding `json:"startBinding"`
 	EndBinding   *Binding `json:"endBinding"`
 
@@ -332,7 +332,7 @@ type Connection struct {
 }
 
 // AnnotationConnections は注釈の中の矢印が、何と何をつないでいるかを要素の
-// 並び順で返す。解釈の入力になる（ADR 0094）。
+// 並び順で返す。解釈の入力になる（ADR 0096）。
 //
 // **読むのは人がつないだ事実だけ。** 結び先は Excalidraw が書き込んだ
 // startBinding / endBinding で、座標や近さから「この矢印はあの図形に向いている」

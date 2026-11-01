@@ -682,7 +682,7 @@ func TestJobs_StartWhileRunningComparesSavedInput(t *testing.T) {
 			to:      `{"id":"a1","type":"arrow","frameId":"annot-1"},{"id":"t9"`,
 			sameJob: true,
 		},
-		// つないだ矢印は解釈の入力に載る（ADR 0094）。テキストが同じでも別の入力。
+		// つないだ矢印は解釈の入力に載る（ADR 0096）。テキストが同じでも別の入力。
 		{
 			name: "矢印をつないだ",
 			from: `{"id":"t9"`,
