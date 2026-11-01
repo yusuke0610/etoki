@@ -196,16 +196,19 @@ describe("runMutations", () => {
     expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
   });
 
-  test("子がシグナルで止められたら、戻してから Interrupted を投げ、残りは走らせない", async () => {
-    const { io, files, seen } = fakeIo({ "a.ts": "guard1 guard2", "b.ts": "deps" }, [
-      ok,
-      { status: null, signal: "SIGINT" },
-      fail,
-    ]);
-    await expect(runMutations(twoMutations, io)).rejects.toThrow(Interrupted);
-    expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
-    expect(seen["2"]).toBeUndefined();
-  });
+  test.each(["SIGINT", "SIGTERM"] as const)(
+    "子が %s で止められたら、戻してから Interrupted を投げ、残りは走らせない",
+    async (signal) => {
+      const { io, files, seen } = fakeIo({ "a.ts": "guard1 guard2", "b.ts": "deps" }, [
+        ok,
+        { status: null, signal },
+        fail,
+      ]);
+      await expect(runMutations(twoMutations, io)).rejects.toThrow(Interrupted);
+      expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
+      expect(seen["2"]).toBeUndefined();
+    },
+  );
 
   test("子が終了コードで返しても、止められていたら「落ちた」と数えずに Interrupted を投げる", async () => {
     // vitest は 130、go test は 1 で返り、シグナルは空。終わり方だけを見ると、
@@ -280,6 +283,24 @@ describe("checkPaths", () => {
     ["cwd が絶対パス", spec("/tmp", "a.ts"), "cwd"],
   ])("%s なら投げる", (_name, s, what) => {
     expect(() => checkPaths(s, root)).toThrow(`${what} が作業ツリーの外を指している`);
+  });
+
+  test("2 つ目以降の壊し方・書き換えが外を指していても投げる", () => {
+    const s: Spec = {
+      cwd: ".",
+      cmd: ["true"],
+      mutations: [
+        { name: "1", edits: [{ file: "a.ts", from: "a", to: "b" }] },
+        {
+          name: "2",
+          edits: [
+            { file: "a.ts", from: "a", to: "b" },
+            { file: "../x.ts", from: "a", to: "b" },
+          ],
+        },
+      ],
+    };
+    expect(() => checkPaths(s, root)).toThrow("file が作業ツリーの外を指している");
   });
 
   // 名前が .. で始まるだけのものは、親ではない。
