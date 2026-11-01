@@ -62,6 +62,9 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 [Nix](https://nixos.org/) 以外はインストール不要。**すべて `nix develop` の中で
 実行する。** README にグローバルインストールの手順を書かないこと。
 
+例外は GitHub を扱うスキル（`/pr-review`・`/triage` など）が使う `gh` で、
+devShell に入れない。ホストに入れて `gh auth login` しておく（ADR 0002 の追記）。
+
 `make` は devShell の外から呼ばれると `nix develop --command` で自分をやり直す
 ので、入り忘れても道具の無いまま走ることはない。別の作業ツリー（worktree）の
 devShell の中から呼ばれ、`flake.nix` か `flake.lock` が違うときもやり直す。
