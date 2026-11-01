@@ -67,8 +67,12 @@ func (j *InterpretationJobs) Start(
 			// 直したときに古い背景で走っているジョブが返る。別の絵から作ったものは
 			// 入れない。変わるのは保存ではなく作成で、前回ぶんを入れないのと同じ。
 			// 背景は何でも書けるので末尾に置く（区切りの後ろに続くものが無い）。
+			//
+			// **矢印のつながりも鍵に入れる**（ADR 0094）。テキストを変えずに矢印を
+			// つなぎ直した保存でも、LLM に渡すものは変わる。
 			key: annotationID + "\x00" + string(domain.ComputeContentHash(
 				p.scene.AnnotationTexts(annotationID), p.annotation.Granularity, p.annotation.Kind)) +
+				"\x00" + connectionsSection(p.scene.AnnotationConnections(annotationID)) +
 				"\x00" + p.context.Premise,
 			attrs: []any{
 				slog.String("board", boardID), slog.String("annotation", annotationID),

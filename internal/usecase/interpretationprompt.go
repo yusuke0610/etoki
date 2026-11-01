@@ -13,20 +13,20 @@ import (
 // hasImage は画像を添えたかどうか。画像の話は添えたときにだけ書く。常に書くと、
 // 画像なしの解釈でモデルが「見えるはずの図」を前提に埋め合わせを始める。
 //
-// 並びは、囲みのテキスト → 画像 → 囲みの外の材料（背景・別の絵、ADR 0093）→
+// 並びは、囲みのテキスト → 矢印のつながり（ADR 0094）→ 画像 → 囲みの外の材料（背景・別の絵、ADR 0093）→
 // この囲みから前回までに作ったもの → 種別と粒度。**囲みのテキストを先頭に
 // 置き、空行で区切る。** 偽の LLM（internal/fakeupstream）はここで切って
 // 読んでいる。
 func buildUserMessage(
-	a domain.Annotation, texts []domain.TextElement, hasImage bool, previous []domain.PreviousItem,
-	ic InterpretationContext,
+	a domain.Annotation, texts []domain.TextElement, connections []domain.Connection, hasImage bool,
+	previous []domain.PreviousItem, ic InterpretationContext,
 ) string {
 	var b strings.Builder
 
 	b.WriteString("囲みに含まれるテキスト:\n")
 	if len(texts) == 0 {
 		// テキストが無くても解釈は試みる。図形と矢印だけの囲みがありうるため
-		// で、その中身は画像でしか渡せない。
+		// で、その中身は画像（と矢印のつながり）でしか渡せない。
 		//
 		// 「無い」ことは明示する。黙って空にすると、モデルが入力の欠落を
 		// 疑って作り話を始める。
@@ -48,6 +48,8 @@ func buildUserMessage(
 		b.WriteString("\n")
 	}
 
+	b.WriteString(connectionsSection(connections))
+
 	if hasImage {
 		b.WriteString("\n")
 		b.WriteString(imageInstruction)
@@ -68,6 +70,63 @@ func buildUserMessage(
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+// connectionsSection は囲みの中の矢印が何と何をつないでいるかを並べる（ADR 0094）。
+//
+// **テキストの一覧からは、矢印の向きと結び先が抜け落ちる。** ラベルだけが並び、
+// 誰から誰へのやり取りなのかは画像にしか無い。小型モデルは画像からそれを
+// 読み取れず、ラベルを言い換えるだけになった。結び先は人がつないだ事実
+// （domain.Scene.AnnotationConnections）なので、文字でも渡す。**意味は書かない。**
+// 「呼び出し」「親子」と読むのは LLM。
+//
+// 1 本も無ければ節ごと省く（前回ぶんと同じ）。**並びに意味が無いことを書く。**
+// 書かないと、モデルは一覧の順を図の順番と読む。
+func connectionsSection(conns []domain.Connection) string {
+	if len(conns) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n囲みの中の矢印（描いた人がつないだ先。並びは図の上の順番とは限りません）:\n")
+	for _, c := range conns {
+		fmt.Fprintf(&b, "- %s %s %s", connectionEnd(c.From), arrowSymbol(c), connectionEnd(c.To))
+		if label := oneLine(c.Label); label != "" {
+			fmt.Fprintf(&b, "「%s」", label)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// connectionEnd は矢印の端の呼び名。**囲みの外の要素は名前を出さない。**
+// 解釈の入力は囲みの中身だけで、外の材料は背景として別に渡す（ADR 0093）。
+func connectionEnd(e domain.ConnectionEnd) string {
+	switch {
+	case !e.Bound:
+		return "（どこにもつながっていない）"
+	case !e.Inside:
+		return "（囲みの外）"
+	case oneLine(e.Name) == "":
+		return "（文字の無い図形）"
+	default:
+		return oneLine(e.Name)
+	}
+}
+
+// arrowSymbol は矢じりの付き方を記号にする。向きを決めるのは矢じりで、
+// つないだ順（始点・終点）ではない。
+func arrowSymbol(c domain.Connection) string {
+	switch {
+	case c.FromHead && c.ToHead:
+		return "↔"
+	case c.ToHead:
+		return "→"
+	case c.FromHead:
+		return "←"
+	default:
+		return "―"
+	}
 }
 
 // previousInstruction は前回までに作ったものを ref つきで並べる。

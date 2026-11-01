@@ -674,12 +674,20 @@ func TestJobs_StartWhileRunningComparesSavedInput(t *testing.T) {
 		// 名前はハッシュから外れたが（ADR 0079、#303）、解釈の入力には残っている。
 		{name: "囲みの名前を変えた", from: `"name":"決済まわり"`, to: `"name":"決済の整理"`},
 		{name: "粒度を変えた", from: `"granularity":""`, to: `"granularity":"epic"`},
-		// 線や図形はテキストに出ない。画像は鍵に入れないので、同じ入力として扱う。
+		// どこにもつないでいない線は、テキストにもつながりにも出ない。画像は鍵に
+		// 入れないので、同じ入力として扱う。
 		{
 			name:    "線だけ足した",
 			from:    `{"id":"t9"`,
 			to:      `{"id":"a1","type":"arrow","frameId":"annot-1"},{"id":"t9"`,
 			sameJob: true,
+		},
+		// つないだ矢印は解釈の入力に載る（ADR 0094）。テキストが同じでも別の入力。
+		{
+			name: "矢印をつないだ",
+			from: `{"id":"t9"`,
+			to: `{"id":"a1","type":"arrow","frameId":"annot-1",` +
+				`"startBinding":{"elementId":"t1"},"endBinding":{"elementId":"t2"}},{"id":"t9"`,
 		},
 	}
 	for _, tt := range tests {

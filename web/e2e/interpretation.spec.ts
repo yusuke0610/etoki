@@ -145,7 +145,8 @@ test.describe("解釈と作成", () => {
       detail.getByText("ログインの入口まわりを 1 つの epic として読みました。"),
     ).toBeVisible();
 
-    // 矢印やグルーピングはテキストに現れない。画像でしか渡せない（中核思想 2）。
+    // 配置やグルーピングはテキストに現れない。画像でしか渡せない（中核思想 2）。
+    // 人がつないだ矢印の結び先だけは、サーバーが文字でも渡す（ADR 0094）。
     expect(mock.interpretRequests).toHaveLength(1);
     expect(mock.interpretRequests[0]?.image?.mediaType).toBe("image/png");
     expect(mock.interpretRequests[0]?.image?.data ?? "").not.toHaveLength(0);

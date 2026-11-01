@@ -347,6 +347,95 @@ func TestInterpret_SendsUnwrappedText(t *testing.T) {
 	}
 }
 
+// 人がつないだ矢印は、結び先とラベルを文字でも渡す（ADR 0094）。テキストの一覧には
+// ラベルしか並ばず、誰から誰へのやり取りかは画像にしか無かった。小型モデルは画像から
+// それを読めず、ラベルを言い換えるだけの issue を作った。
+//
+// 節はテキストの節の後ろに空行で区切って置く。偽の LLM はテキストの節だけを読む。
+func TestInterpret_SendsArrowConnections(t *testing.T) {
+	t.Parallel()
+
+	scene := `{"type":"excalidraw","elements":[
+	{"id":"annot-1","type":"frame","customData":{"etoki":{"granularity":"","kind":"sequence"}}},
+	{"id":"u","type":"rectangle","frameId":"annot-1"},
+	{"id":"u-l","type":"text","text":"User","containerId":"u"},
+	{"id":"w","type":"rectangle","frameId":"annot-1"},
+	{"id":"w-l","type":"text","text":"WebApp","containerId":"w"},
+	{"id":"a1","type":"arrow","frameId":"annot-1","startBinding":{"elementId":"u"},"endBinding":{"elementId":"w"},"endArrowhead":"arrow"},
+	{"id":"a1-l","type":"text","text":"リクエスト送信","containerId":"a1"},
+	{"id":"a2","type":"arrow","frameId":"annot-1","startBinding":{"elementId":"w"},"endBinding":{"elementId":"u"}},
+	{"id":"a2-l","type":"text","text":"レスポンス","containerId":"a2"}]}`
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(scene), llm)
+
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
+	}
+	sent := llm.requests[0].Text
+
+	want := "\n\n囲みの中の矢印（描いた人がつないだ先。並びは図の上の順番とは限りません）:\n" +
+		"- User → WebApp「リクエスト送信」\n" +
+		"- WebApp ― User「レスポンス」\n"
+	if !strings.Contains(sent, want) {
+		t.Errorf("プロンプトに矢印の節が無い。want:\n%s\ngot:\n%s", want, sent)
+	}
+	// テキストの節（最初の空行まで）には矢印の行を混ぜない。
+	if textSection, _, _ := strings.Cut(sent, "\n\n"); strings.Contains(textSection, "→") {
+		t.Errorf("テキストの節に矢印の行がある:\n%s", textSection)
+	}
+}
+
+// つないだ矢印が 1 本も無ければ節ごと省く。空の一覧を見せると、モデルが
+// 「あるはずのもの」を埋め合わせ始める（前回ぶんと同じ）。
+func TestInterpret_OmitsConnectionsSectionWhenNone(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
+	}
+	if sent := llm.requests[0].Text; strings.Contains(sent, "囲みの中の矢印") {
+		t.Errorf("矢印が無いのに節が出ている:\n%s", sent)
+	}
+}
+
+// 端の呼び名と矢じりの記号。囲みの外の要素は名前を出さない（ADR 0093）。
+// 向きを決めるのは矢じりで、つないだ順ではない。
+func TestConnectionsSection_DescribesEndsAndHeads(t *testing.T) {
+	t.Parallel()
+
+	user := domain.ConnectionEnd{Bound: true, Inside: true, Name: "User"}
+	web := domain.ConnectionEnd{Bound: true, Inside: true, Name: "Web\nApp"}
+	tests := []struct {
+		name string
+		conn domain.Connection
+		want string
+	}{
+		{"終点に矢じり", domain.Connection{From: user, To: web, ToHead: true}, "- User → Web App\n"},
+		{"始点に矢じり", domain.Connection{From: user, To: web, FromHead: true}, "- User ← Web App\n"},
+		{"両方に矢じり", domain.Connection{From: user, To: web, FromHead: true, ToHead: true}, "- User ↔ Web App\n"},
+		{"矢じりなし", domain.Connection{From: user, To: web}, "- User ― Web App\n"},
+		{"囲みの外", domain.Connection{From: user, To: domain.ConnectionEnd{Bound: true}, ToHead: true},
+			"- User → （囲みの外）\n"},
+		{"つながっていない", domain.Connection{From: user, ToHead: true}, "- User → （どこにもつながっていない）\n"},
+		{"文字の無い図形", domain.Connection{From: user, To: domain.ConnectionEnd{Bound: true, Inside: true}, ToHead: true},
+			"- User → （文字の無い図形）\n"},
+		{"ラベル", domain.Connection{From: user, To: web, ToHead: true, Label: "1 対\n多"}, "- User → Web App「1 対 多」\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := usecase.ConnectionsSection([]domain.Connection{tt.conn})
+			if !strings.HasSuffix(got, tt.want) {
+				t.Errorf("ConnectionsSection() = %q, want 末尾が %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // 再送は「何が悪かったか」を伝えて初めて意味を持つ。
 func TestInterpret_RetriesWithCorrections(t *testing.T) {
 	t.Parallel()
