@@ -266,8 +266,10 @@ async function main(): Promise<number> {
   process.on("SIGTERM", () => stop("SIGTERM"));
 
   const io: Io = {
-    read: (f) => readFileSync(join(root, f), "utf8"),
-    write: (f, content) => writeFileSync(join(root, f), content),
+    // パスは checkPaths と同じく resolve で組む。join だと、ツリーの中の絶対パスが
+    // root の下に重なり、確かめたのと違うところを読み書きする。
+    read: (f) => readFileSync(resolve(root, f), "utf8"),
+    write: (f, content) => writeFileSync(resolve(root, f), content),
     run: (label) =>
       new Promise((done, fail) => {
         // 走らせる前に止められていたら、走らせない。runMutations が止められたと見て
@@ -278,7 +280,7 @@ async function main(): Promise<number> {
         }
         // 出力は判断に使わないので画面に出さない。落ちた理由を確かめるときだけ開く。
         const child = spawn(spec.cmd[0], spec.cmd.slice(1), {
-          cwd: join(root, spec.cwd),
+          cwd: resolve(root, spec.cwd),
           stdio: ["ignore", "pipe", "pipe"],
           // 子を新しいプロセスグループの頭にする（上の stop がグループごとに送る）。
           detached: true,
