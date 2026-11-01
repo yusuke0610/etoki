@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   applyMutation,
+  checkPaths,
   formatOutcomes,
   Interrupted,
   type Io,
@@ -234,10 +235,56 @@ describe("runMutations", () => {
     expect(Object.keys(seen)).toEqual(["baseline"]);
   });
 
+  test("壊す前の 1 回が止められたら、落ちていても Interrupted を投げ、何も壊さない", async () => {
+    // 止められたかを先に見る。落ちたかを先に見ると、止めたのに「壊す前から
+    // 落ちている」と出て、終了コードも止めたときのものにならない。
+    const { io, files, seen } = fakeIo(
+      { "a.ts": "guard1 guard2", "b.ts": "deps" },
+      (label, stop) => {
+        if (label === "baseline") stop();
+        return fail;
+      },
+    );
+    await expect(runMutations(twoMutations, io)).rejects.toThrow(Interrupted);
+    expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
+    expect(Object.keys(seen)).toEqual(["baseline"]);
+  });
+
   test("当たらない書き換えが 1 つでもあれば、何も走らせずに投げる", async () => {
     const { io, seen } = fakeIo({ "a.ts": "guard1", "b.ts": "deps" }, [ok, fail, fail]);
     await expect(runMutations(twoMutations, io)).rejects.toThrow("「守り 2」");
     expect(seen).toEqual({});
+  });
+});
+
+describe("checkPaths", () => {
+  const root = "/repo";
+  const spec = (cwd: string, file: string): Spec => ({
+    cwd,
+    cmd: ["true"],
+    mutations: [{ name: "x", edits: [{ file, from: "a", to: "b" }] }],
+  });
+
+  test("作業ツリーの中なら通す", () => {
+    expect(() => checkPaths(spec(".", "web/src/a.ts"), root)).not.toThrow();
+    expect(() => checkPaths(spec("web", "port/board.go"), root)).not.toThrow();
+  });
+
+  // 書き間違いひとつで、ツリーの外のファイルを壊して戻したり、外でコマンドを
+  // 走らせたりする。
+  test.each([
+    ["file が親へ出る", spec(".", "../x.ts"), "file"],
+    ["file が絶対パス", spec(".", "/etc/hosts"), "file"],
+    ["file がルートそのもの", spec(".", "."), "file"],
+    ["cwd が親へ出る", spec("../../tmp", "a.ts"), "cwd"],
+    ["cwd が絶対パス", spec("/tmp", "a.ts"), "cwd"],
+  ])("%s なら投げる", (_name, s, what) => {
+    expect(() => checkPaths(s, root)).toThrow(`${what} が作業ツリーの外を指している`);
+  });
+
+  // 名前が .. で始まるだけのものは、親ではない。
+  test("名前が .. で始まるだけのファイルは通す", () => {
+    expect(() => checkPaths(spec(".", "..notes.ts"), root)).not.toThrow();
   });
 });
 

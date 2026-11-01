@@ -9,7 +9,7 @@
 
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** 1 か所の書き換え。`from` は対象のファイルにちょうど 1 回現れなければならない。 */
 export type Edit = { file: string; from: string; to: string };
@@ -191,6 +191,31 @@ export function formatOutcomes(outcomes: Outcome[]): string {
   return lines.join("\n");
 }
 
+/**
+ * 宣言の `file` と `cwd` が作業ツリー（`root`）の中を指すかを確かめる。外を指して
+ * いたら投げる。**何も走らせる前に見る。** 書き間違いひとつで、ツリーの外の
+ * ファイルを壊して戻したり、外でコマンドを走らせたりする。
+ */
+export function checkPaths(spec: Spec, root: string): void {
+  const within = (p: string): string | null => {
+    const rel = relative(root, resolve(root, p));
+    if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return null;
+    return rel;
+  };
+  if (within(spec.cwd) === null) {
+    throw new Error(`cwd が作業ツリーの外を指している: ${spec.cwd}`);
+  }
+  for (const m of spec.mutations) {
+    for (const e of m.edits) {
+      // ルートそのものはファイルではないので、これも弾く。
+      const rel = within(e.file);
+      if (rel === null || rel === "") {
+        throw new Error(`「${m.name}」の file が作業ツリーの外を指している: ${e.file}`);
+      }
+    }
+  }
+}
+
 /** 宣言を読み、リポジトリのルートを基準に走らせる。出力は tmp/mutate/ に落とす。 */
 async function main(): Promise<number> {
   const specPath = process.argv[2];
@@ -200,6 +225,7 @@ async function main(): Promise<number> {
   }
   const root = process.cwd();
   const spec = parseSpec(JSON.parse(readFileSync(resolve(specPath), "utf8")));
+  checkPaths(spec, root);
   const logDir = join(root, "tmp", "mutate");
   mkdirSync(logDir, { recursive: true });
 
@@ -231,7 +257,15 @@ async function main(): Promise<number> {
         child.stderr.on("data", (chunk: Buffer) => output.push(chunk));
         child.on("error", fail);
         child.on("close", (status, signal) => {
-          writeFileSync(join(logDir, `${label}.log`), Buffer.concat(output));
+          // **ログが書けなくても、ここで投げない。** ハンドラの中で投げると Promise に
+          // 届かずプロセスごと落ち、runMutations の finally が走らないので、壊した
+          // ファイルが残る。fail へ流せば finally が戻す。
+          try {
+            writeFileSync(join(logDir, `${label}.log`), Buffer.concat(output));
+          } catch (error) {
+            fail(error);
+            return;
+          }
           done({ status, signal });
         });
       }),
