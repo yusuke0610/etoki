@@ -15,11 +15,19 @@ echo "== 開いている PR と、閉じる issue（積んだ PR は refs=）"
 # closingIssuesReferences は base が既定の枝（main）の PR でしか埋まらない。積んだ
 # PR は本文の Closes #N から拾い、refs= で出す（マージしても、main に届くまで
 # issue は閉じない）。拾わないと、その issue を「着手できる」と並べてしまう。
+# 別のリポジトリの issue も閉じられるので、そちらは owner/name#N で出す。番号だけに
+# すると、このリポジトリの同じ番号と取り違える。gh の --jq は --arg を取らないので、
+# このリポジトリの名前は式に埋め込む（owner/name に引用符は入らない）。
+# $nwo / $repo は jq の変数で、シェルに展開させてはいけない。
+# shellcheck disable=SC2016
 gh pr list --state open --limit 100 \
 	--json number,title,baseRefName,headRefName,isDraft,mergeable,closingIssuesReferences,body \
-	--jq '.[] | "#\(.number) base=\(.baseRefName) "
+	--jq '"'"$nwo"'" as $nwo | .[] | "#\(.number) base=\(.baseRefName) "
 	      + (if .baseRefName == "main"
-	         then "closes=\([.closingIssuesReferences[].number | "#\(.)"] | join(","))"
+	         then "closes=\([.closingIssuesReferences[]
+	                        | (.repository.owner.login + "/" + .repository.name) as $repo
+	                        | if $repo == $nwo then "#\(.number)" else "\($repo)#\(.number)" end]
+	                       | join(","))"
 	         else "refs=\([.body | scan("(?i)(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s+#([0-9]+)") | "#\(.[0])"] | unique | join(","))"
 	         end)
 	      + " draft=\(.isDraft) \(.mergeable) \(.headRefName)"'
@@ -52,7 +60,10 @@ echo "== PR の無い枝（新しい順、全部）"
 # 自動削除が有効なので、マージ済みの枝は残っていない。残っているのは、開いている
 # PR の枝か、PR を出していない枝（クラウドのセッションが push したままのものなど）。
 git fetch -q --prune origin
-open_heads="$(gh pr list --state open --limit 100 --json headRefName --jq '.[].headRefName')"
+# 照らすのは、このリポジトリから出した PR の枝だけ。fork の PR が同じ名前の枝を
+# 使っていても、origin のその枝は PR の無い枝のまま残す。
+open_heads="$(gh pr list --state open --limit 100 --json headRefName,isCrossRepository \
+	--jq '.[] | select(.isCrossRepository | not) | .headRefName')"
 git for-each-ref --sort=-committerdate \
 	--format='%(refname:lstrip=3)%09%(committerdate:short)%09%(authorname)' refs/remotes/origin |
 	while IFS=$'\t' read -r branch date author; do

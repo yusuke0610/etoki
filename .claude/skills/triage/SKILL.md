@@ -15,7 +15,7 @@ issue を未着手として並べると、「実施して」に応えた時点�
 .claude/skills/triage/issues.sh
 ```
 
-出るものは 3 つ。
+出るもの:
 
 - 開いている PR と、それが閉じる issue（積んだ PR は base と、本文が指す issue
   を `refs=` で出す。main に届くまで閉じないが、PR はもうある）
