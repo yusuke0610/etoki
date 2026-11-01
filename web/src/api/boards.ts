@@ -35,6 +35,7 @@ import type {
   SaveSceneRequest,
   SaveSceneResponse,
   SetMemberRoleRequest,
+  SetPremiseRequest,
   SyncRun,
 } from "./types";
 
@@ -148,6 +149,19 @@ export const boardsApi = {
     request<BoardDetail>(`/api/boards/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ name } satisfies RenameBoardRequest),
+    }),
+
+  /**
+   * ボードの背景を書き換える（ADR 0093）。
+   *
+   * `basePremise` は編集を始めた時点の背景。いまの背景と食い違えば何も書かずに
+   * 409（`premise_conflict`）が返る。先に保存した人の背景を黙って上書きしない
+   * ため。**版（`updatedAt`）は動かない**（改名と同じ、ADR 0092）。
+   */
+  setPremise: (id: string, premise: string, basePremise: string) =>
+    request<BoardDetail>(`/api/boards/${id}/premise`, {
+      method: "PUT",
+      body: JSON.stringify({ premise, basePremise } satisfies SetPremiseRequest),
     }),
 
   /**

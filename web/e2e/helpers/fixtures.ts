@@ -508,6 +508,7 @@ export function baseMock(): ApiMock {
     // 既定のボードに貼った画像は無い。画像を見る spec だけが足す。
     files: {},
     saveRequests: [],
+    premiseRequests: [],
     annotations: { [detail.id]: annotations() },
     // 既定では消えた注釈は無い。ふつうはこちらなので、出す spec だけが足す。
     detached: {},

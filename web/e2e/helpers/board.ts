@@ -74,6 +74,17 @@ export async function openShareDialog(page: Page): Promise<Locator> {
 }
 
 /**
+ * ボードの背景のダイアログを開いて返す（ADR 0093）。口はキャンバスのメニューの
+ * 「ボードの背景…」。**書きかけは閉じても残る**ので、開き直すと前の書きかけが出る。
+ */
+export async function openPremiseDialog(page: Page): Promise<Locator> {
+  await chooseFromMenu(page, "ボードの背景…");
+  const dialog = page.getByRole("dialog", { name: "ボードの背景", exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/**
  * mermaid の貼り付けを開き、その枠を返す（ADR 0062）。図のドラフトのタブの中で、
  * LLM に作らせる口と切り替えて出す（`DiagramTab`）。
  */
