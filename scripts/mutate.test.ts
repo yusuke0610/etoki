@@ -286,6 +286,41 @@ describe("checkPaths", () => {
   test("名前が .. で始まるだけのファイルは通す", () => {
     expect(() => checkPaths(spec(".", "..notes.ts"), root)).not.toThrow();
   });
+
+  // 字面ではツリーの中でも、シンボリックリンクを通ると外を指す。比べるのは実体。
+  describe("シンボリックリンクの先", () => {
+    const links: Record<string, string> = {
+      "/repo/link.ts": "/outside/real.ts",
+      "/repo/linkdir": "/outside/dir",
+      "/repo/inner.ts": "/repo/web/real.ts",
+    };
+    const real = (p: string): string => links[p] ?? p;
+
+    test("file がツリーの外を指すリンクなら投げる", () => {
+      expect(() => checkPaths(spec(".", "link.ts"), root, real)).toThrow(
+        "file が作業ツリーの外を指している",
+      );
+    });
+
+    test("cwd がツリーの外を指すリンクなら投げる", () => {
+      expect(() => checkPaths(spec("linkdir", "a.ts"), root, real)).toThrow(
+        "cwd が作業ツリーの外を指している",
+      );
+    });
+
+    test("ツリーの中を指すリンクは通す", () => {
+      expect(() => checkPaths(spec(".", "inner.ts"), root, real)).not.toThrow();
+    });
+
+    // ルート自体がリンクの先（macOS の /tmp → /private/tmp など）でも、中は中。
+    test("ルートもリンクなら、実体どうしで比べる", () => {
+      const viaLink = (p: string): string =>
+        p.replace(/^\/tmp\/repo/, "/private/tmp/repo");
+      expect(() =>
+        checkPaths(spec("web", "web/a.ts"), "/tmp/repo", viaLink),
+      ).not.toThrow();
+    });
+  });
 });
 
 describe("formatOutcomes", () => {

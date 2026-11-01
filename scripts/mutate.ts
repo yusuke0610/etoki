@@ -8,7 +8,7 @@
 // bun で書いてあるのは devShell に既にあるため（token-report.ts と同じ、ADR 0002）。
 
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** 1 か所の書き換え。`from` は対象のファイルにちょうど 1 回現れなければならない。 */
@@ -195,10 +195,19 @@ export function formatOutcomes(outcomes: Outcome[]): string {
  * 宣言の `file` と `cwd` が作業ツリー（`root`）の中を指すかを確かめる。外を指して
  * いたら投げる。**何も走らせる前に見る。** 書き間違いひとつで、ツリーの外の
  * ファイルを壊して戻したり、外でコマンドを走らせたりする。
+ *
+ * **比べるのは実体のパス**（`real`、実際に走るときは `realpathSync`）。字面だけで
+ * 比べると、ツリーの中のシンボリックリンクを通って外を指せる。外のファイルは
+ * `git status` にも出ないので、戻し損ねても気づけない。
  */
-export function checkPaths(spec: Spec, root: string): void {
+export function checkPaths(
+  spec: Spec,
+  root: string,
+  real: (path: string) => string = (path) => path,
+): void {
+  const realRoot = real(root);
   const within = (p: string): string | null => {
-    const rel = relative(root, resolve(root, p));
+    const rel = relative(realRoot, real(resolve(root, p)));
     if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return null;
     return rel;
   };
@@ -225,7 +234,7 @@ async function main(): Promise<number> {
   }
   const root = process.cwd();
   const spec = parseSpec(JSON.parse(readFileSync(resolve(specPath), "utf8")));
-  checkPaths(spec, root);
+  checkPaths(spec, root, realpathSync);
   const logDir = join(root, "tmp", "mutate");
   mkdirSync(logDir, { recursive: true });
 
