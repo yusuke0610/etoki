@@ -37,7 +37,19 @@ issue を未着手として並べると、「実施して」に応えた時点�
 
 - **閉じる PR が入ったのに開いたままの issue がある。** base が main でない PR
   （積んだ PR）は、マージしても `Closes` で issue を閉じない。積んだ PR の issue は、
-  PR が main に届いたかで見る。
+  PR が main に届いたかで見る。`issues.sh` は開いている PR しか出さないので、
+  マージ済みの PR は issue ごとに引く。
+
+  ```sh
+  gh pr list --state merged --search "<issue の番号>" --json number,baseRefName,mergeCommit
+  # main に届いたか（積んだ先の枝に入っただけではないか）
+  git fetch -q origin && git merge-base --is-ancestor <mergeCommit> origin/main && echo reached
+  ```
+
+  積んだ先の枝（base）へマージしたものは、その枝の PR が squash で main に入ると、
+  元のコミットは main の祖先にならない。そのときは base の枝の PR を同じように
+  引き、そちらが main に届いたかで見る。
+
 - **PR の無い枝は、誰のものかを確かめてから扱う。** ローカルの他のセッションに
   訊き、誰のものでもなければユーザーに確かめる。
 

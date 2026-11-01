@@ -28,7 +28,7 @@ gh pr list --state open --limit 100 \
 	                        | (.repository.owner.login + "/" + .repository.name) as $repo
 	                        | if $repo == $nwo then "#\(.number)" else "\($repo)#\(.number)" end]
 	                       | join(","))"
-	         else "refs=\([.body | scan("(?i)(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s+#([0-9]+)") | "#\(.[0])"] | unique | join(","))"
+	         else "refs=\([.body | scan("(?i)(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?::\\s*|\\s+)#([0-9]+)") | "#\(.[0])"] | unique | join(","))"
 	         end)
 	      + " draft=\(.isDraft) \(.mergeable) \(.headRefName)"'
 
@@ -41,18 +41,23 @@ query($owner:String!,$name:String!,$endCursor:String){
   repository(owner:$owner,name:$name){
     issues(states:OPEN, first:100, after:$endCursor, orderBy:{field:CREATED_AT, direction:ASC}){
       pageInfo{ hasNextPage endCursor }
-      nodes{ number title parent{ number } subIssuesSummary{ total completed } }
+      nodes{ number title parent{ number repository{ nameWithOwner } } subIssuesSummary{ total completed } }
     }
   }
 }'
 
 echo
 echo "== 開いている issue（sub=閉じた数/全体、parent=親）"
+# 親は別のリポジトリの issue でもよい。そちらは owner/name#N で出す（閉じる issue と
+# 同じ理由）。
+# shellcheck disable=SC2016
 gh api graphql --paginate -f query="$query" -F owner="${nwo%%/*}" -F name="${nwo##*/}" \
-	--jq '.data.repository.issues.nodes[]
+	--jq '"'"$nwo"'" as $nwo | .data.repository.issues.nodes[]
 	      | "#\(.number) "
 	        + (if .subIssuesSummary.total > 0 then "sub=\(.subIssuesSummary.completed)/\(.subIssuesSummary.total) " else "" end)
-	        + (if .parent then "parent=#\(.parent.number) " else "" end)
+	        + (if .parent == null then ""
+	           elif .parent.repository.nameWithOwner == $nwo then "parent=#\(.parent.number) "
+	           else "parent=\(.parent.repository.nameWithOwner)#\(.parent.number) " end)
 	        + .title'
 
 echo
