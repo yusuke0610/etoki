@@ -7,7 +7,7 @@
 //
 // bun で書いてあるのは devShell に既にあるため（token-report.ts と同じ、ADR 0002）。
 
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -238,34 +238,58 @@ async function main(): Promise<number> {
   const logDir = join(root, "tmp", "mutate");
   mkdirSync(logDir, { recursive: true });
 
-  // Ctrl-C は子と同じくこのプロセスにも届き、既定のままだと壊したファイルを戻す前に
-  // 終わる。ここでは止められたことだけを覚え、子が終わるのを待ってから、戻して
-  // 抜ける（runMutations の Interrupted）。
+  // 止められたら（Ctrl-C、kill）、既定のままだと壊したファイルを戻す前に終わる。
+  // ここでは止められたことを覚え、走っている子に伝え、子が終わるのを待ってから、
+  // 戻して抜ける（runMutations の Interrupted）。
   //
   // **子は spawnSync で待たない。** 同期で待つあいだはこのハンドラが走らないので、
   // 止められたことを子の終わり方からしか知れない（Io.stopped の doc）。
+  //
+  // **子は別のプロセスグループで走らせ、受けたシグナルをグループごとに送る。**
+  // 覚えるだけだと、親だけが止められたとき（kill <pid>）に子が自分で終わるまで
+  // 戻せず、そのあいだに外から SIGKILL されれば壊したまま残る。直接の子だけに
+  // 送ると、子が立てた孫（sh -c の先など）が残る。グループを分けたので、端末の
+  // Ctrl-C も子には直に届かず、ここから送る。
   let stopped = false;
-  const stop = (): void => {
+  let running: ChildProcess | null = null;
+  const stop = (signal: NodeJS.Signals): void => {
     stopped = true;
+    const pid = running?.pid;
+    if (pid === undefined) return;
+    try {
+      process.kill(-pid, signal);
+    } catch {
+      // もう終わっている。close で片付く。
+    }
   };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
+  process.on("SIGINT", () => stop("SIGINT"));
+  process.on("SIGTERM", () => stop("SIGTERM"));
 
   const io: Io = {
     read: (f) => readFileSync(join(root, f), "utf8"),
     write: (f, content) => writeFileSync(join(root, f), content),
     run: (label) =>
       new Promise((done, fail) => {
+        // 走らせる前に止められていたら、走らせない。runMutations が止められたと見て
+        // 戻す。
+        if (stopped) {
+          done({ status: null, signal: null });
+          return;
+        }
         // 出力は判断に使わないので画面に出さない。落ちた理由を確かめるときだけ開く。
         const child = spawn(spec.cmd[0], spec.cmd.slice(1), {
           cwd: join(root, spec.cwd),
           stdio: ["ignore", "pipe", "pipe"],
+          // 子を新しいプロセスグループの頭にする（上の stop がグループごとに送る）。
+          detached: true,
         });
+        running = child;
         const output: Buffer[] = [];
         child.stdout.on("data", (chunk: Buffer) => output.push(chunk));
         child.stderr.on("data", (chunk: Buffer) => output.push(chunk));
         child.on("error", fail);
         child.on("close", (status, signal) => {
+          running = null;
           // **ログが書けなくても、ここで投げない。** ハンドラの中で投げると Promise に
           // 届かずプロセスごと落ち、runMutations の finally が走らないので、壊した
           // ファイルが残る。fail へ流せば finally が戻す。
