@@ -106,7 +106,7 @@ test.describe("図のドラフト", () => {
 
   // 直して届いたのは別の図なので、前の図が残っていても置ける。
   test("直して新しい図が届いたら、置いた図が残っていても置ける", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
+    const mock = await openBoardWithMock(page, baseMock());
     await openChat(page);
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
@@ -121,6 +121,17 @@ test.describe("図のドラフト", () => {
     await expect(page.getByText("返金の分岐も足して")).toBeVisible();
 
     await expect(place).toBeEnabled();
+    // 押せるだけでなく、**実際に 2 つめが載る。** モックは同じ mermaid を返すが、
+    // 届いたドラフトは別物なので置ける。図は矢印 1 本ずつ（`diagramDraft`）。
+    await place.click();
+    await expect(place).toBeDisabled();
+    await saveScene(page);
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
+      elements: { type: string; isDeleted?: boolean }[];
+    };
+    const arrows = saved.elements.filter((el) => el.type === "arrow" && !el.isDeleted);
+    expect(arrows).toHaveLength(2);
   });
 
   // **未保存でも使える**（ADR 0041）。保存済みシーンを読まないので、解釈のように
