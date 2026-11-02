@@ -165,8 +165,8 @@ func TestSaveRun_KeepsOutcomeAndError(t *testing.T) {
 	if len(runs) != 1 {
 		t.Fatalf("runs の件数 = %d, want 1", len(runs))
 	}
-	if runs[0].Outcome != port.OutcomeIncomplete || runs[0].Error == "" {
-		t.Errorf("runs[0] = %+v, want incomplete と理由", runs[0])
+	if runs[0].Outcome != port.OutcomeIncomplete || runs[0].Error != "github graphql: rate limited" {
+		t.Errorf("runs[0] = %+v, want incomplete と %q", runs[0], "github graphql: rate limited")
 	}
 }
 

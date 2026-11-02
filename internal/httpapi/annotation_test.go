@@ -43,7 +43,11 @@ func TestListAnnotationRuns(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("件数 = %d, want 2 (%+v)", len(got), got)
 	}
-	if len(got[0].Items) != 1 || got[0].Items[0].Title != "2 回目" {
+	if len(got[0].Items) != 1 || len(got[1].Items) != 1 {
+		// 以降で添字を引くので、ここで止める。
+		t.Fatalf("items = %d, %d 件, want 1, 1", len(got[0].Items), len(got[1].Items))
+	}
+	if got[0].Items[0].Title != "2 回目" {
 		t.Errorf("先頭 = %+v, want 2 回目（新しい順）", got[0].Items)
 	}
 	if got[1].Items[0].Title != "1 回目" {
