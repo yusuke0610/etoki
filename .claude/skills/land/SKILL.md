@@ -73,10 +73,16 @@ usecase テストがコンパイルできなくなった（#373 → #374）。�
 
 **1 本ずつ squash でマージし、入ったことを確かめてから次へ進む。**
 
+**マージの直前に、その PR の head・`base`・`mergeable` を取り直す。** 1 本目も
+同じ。確認を取っているあいだに push や base の付け替えが入りうる。表と違って
+いたら、マージせずに表を作り直す。
+
 ```sh
-# sha を渡すと、確かめた head から動いていたときに GitHub が断る
+gh api "repos/{owner}/{repo}/pulls/<番号>" --jq '"\(.head.sha) \(.base.ref) \(.mergeable)"'
+# sha を渡すと、確かめた head から動いていたときに GitHub が断る。
+# status.sh が出すのは先頭 7 桁なので、上で取り直した 40 桁を渡す。
 gh api -X PUT "repos/{owner}/{repo}/pulls/<番号>/merge" \
-  -f merge_method=squash -f sha=<確かめた head の sha>
+  -f merge_method=squash -f sha=<取り直した head の 40 桁の sha>
 ```
 
 `gh pr merge` は GraphQL を使うので、クラウドのセッションでは通らない。

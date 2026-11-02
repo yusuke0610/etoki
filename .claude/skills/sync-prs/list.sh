@@ -17,10 +17,19 @@ git fetch -q origin
 worktrees="$(git worktree list --porcelain | awk '/^branch / { sub("refs/heads/", "", $2); print $2 }')"
 
 # 番号・head の枝・base を先に全部引く。積みの下の段を、base の枝名から引き当てる。
+# fork の PR の head は origin に無い（同じ名前の枝が origin にあれば、それは別の枝）。
+# 取り込んでも push する先が無いので、印を付けて対象から外す。
 pulls="$(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" \
-	--jq '.[] | "\(.number)\t\(.head.ref)\t\(.base.ref)\t\(.user.login)"' | sort -n)"
+	--jq '.[] | "\(.number)\t\(.head.ref)\t\(.base.ref)\t\(.user.login)\t\(.head.repo.full_name // "")"' | sort -n)"
 
-while IFS=$'\t' read -r pr head base author; do
+# 開いている PR が無ければ、空の 1 行を回さずに終える。
+[ -z "$pulls" ] && exit 0
+
+while IFS=$'\t' read -r pr head base author repo; do
+	if [ "$repo" != "$nwo" ]; then
+		printf '#%s fork(%s) 対象外 author=%s %s\n' "$pr" "${repo:-消えたリポジトリ}" "$author" "$head"
+		continue
+	fi
 	# mergeable は一覧には載らず、個別に引いたときに計算される。null は計算中。
 	read -r mergeable mstate < <(gh api "repos/$nwo/pulls/$pr" --jq '"\(.mergeable) \(.mergeable_state)"')
 

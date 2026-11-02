@@ -20,6 +20,8 @@ main に何かが入ったあと、開いている PR を追従させる。
 
 1 PR 1 行で、`mergeable`、base、main からの遅れ（main にあって head に無い
 コミットの数）、積み方、この手元の worktree で開いているかが出る。
+**fork の PR は `fork(…) 対象外` と出て、ここでは扱わない。** head が origin に
+無く、取り込んでも push する先が無い。
 
 ## 2. 取り込みが要る PR だけを選ぶ
 
@@ -76,16 +78,26 @@ worktree で取り込み、いまの作業ツリーを汚さない。
 git fetch origin main <枝>
 git worktree add ../etoki-sync-<番号> <枝>
 cd ../etoki-sync-<番号>
+git merge --ff-only origin/<枝>   # 同じ名前の古いローカル枝を掴んでいたら進める
 ```
+
+**`--ff-only` が通らなければ止めてユーザーに訊く。** 手元の枝に push していない
+コミットがある。そのまま取り込むと、検査するのは PR と違うコードになり、push も
+non-fast-forward で断られる。
 
 **積んだ上の段は、下の段の最後の head、main の順に取り込む。** 下の段が squash
 で入ったあとに main を直に取り込むと、下の段の変更が両側にあって衝突する。
 下の段の最後の head を先に取り込めば、その変更は共通の祖先になる。
 
 ```sh
-git merge <下の段の最後の head の sha>   # 下の段の枝が消えていても、sha は /land の記録や PR に残る
+# 下の段の枝が消えていても、head は PR の ref から取れる。sha は /land の記録や PR に残る
+git fetch origin refs/pull/<下の段の PR 番号>/head
+git merge <下の段の最後の head の sha>
 git merge origin/main
 ```
+
+**1 つのマージが衝突したら、解いて `git merge --continue` で終えてから次へ
+進む。** 終えないまま次の `git merge` を叩くと、未完了のマージに断られる。
 
 上の段の base が下の段の枝のままなら、GitHub の上で base を main に移す。
 
@@ -118,14 +130,22 @@ ADR の番号が重なったら、後から入る側（この PR）の番号を�
 `bun install` も回す。**
 
 ```sh
-make codegen && git status --short   # 生成物が動いたらマージのコミットに含める
+make codegen && git status --short   # 生成物が動いたら下のコミットに含める
 make lint
 make test
 ```
 
+**衝突の無いマージはその場でコミットされる。** 生成物と、検査で落ちて直した
+ものはマージのコミットに入らず作業ツリーに残るので、push の前に別のコミットに
+する。
+
+```sh
+git add -A && git commit -m "build: regenerate after merging main"   # 動いたものがあるときだけ
+```
+
 UI かハンドラに main 側の変更が入ったなら `make test-e2e` も（`CONTRIBUTING.md`
 「コミット前に通すもの」）。**意味の衝突は文字の衝突が無くてもここで初めて
-分かる。** 落ちたら、マージのコミットの前に直す。
+分かる。** 落ちたら直して、上のコミットに含める。
 
 ```sh
 git push origin <枝>
