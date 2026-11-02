@@ -46,6 +46,14 @@ issue を未着手として並べると、「実施して」に応えた時点�
   git fetch -q origin && git merge-base --is-ancestor <mergeCommit> origin/main && echo reached
   ```
 
+  **本文に番号を書かず、issue の Development 欄で手で結んだ PR もある。** 番号の
+  検索では見つからないので、issue の側からも引く（開いていない PR も含める）。
+
+  ```sh
+  gh api graphql -F n=<issue の番号> -f query='query($n:Int!){repository(owner:"yusuke0610",name:"etoki"){issue(number:$n){
+    closedByPullRequestsReferences(first:20, includeClosedPrs:true){nodes{number state baseRefName mergeCommit{oid}}}}}}'
+  ```
+
   積んだ先の枝（base）へマージしたものは、その枝の PR が squash で main に入ると、
   元のコミットは main の祖先にならない。そのときは base の枝の PR を同じように
   引き、そちらが main に届いたかで見る。

@@ -32,10 +32,12 @@ gh search issues "<語>" --repo yusuke0610/etoki --include-prs --limit 100
 **`--limit` を省かない。** 既定は 30 件で、それより後ろにある同じ件を見落とす。
 100 件ちょうど返ったら、語を足して絞り、もう一度探す。
 
-- **開いた issue に同じ件がある。** そこに足す。
-- **閉じた issue に同じ件がある。** 閉じた理由を読む。覆すなら、新しい issue に
-  理由を書く。
-- **同じ件を閉じる PR が、開いていないかも見る**（`.claude/skills/triage/issues.sh`）。
+- **開いた issue に同じ件がある。** そこに足し、その候補は 3. と 4. に進まない。
+- **同じ件を閉じる PR が開いている**（`.claude/skills/triage/issues.sh`）。新しい
+  issue を作らず、その候補は 3. と 4. に進まない。
+- **閉じた issue に同じ件がある。** 閉じた理由を読む。覆すときだけ、新しい issue
+  として 3. と 4. に進み、覆す理由を本文に書く。覆さないなら、その候補はここで
+  終える。
 
 ## 3. 本文を書く
 
@@ -86,6 +88,16 @@ gh search issues "<語>" --repo yusuke0610/etoki --include-prs --limit 100
    id=$(gh api repos/yusuke0610/etoki/issues/<子の番号> -q .id)
    gh api -X POST repos/yusuke0610/etoki/issues/<親の番号>/sub_issues -F sub_issue_id="$id"
    ```
+
+   **結んだら、親の sub-issue を取り直して、組み合わせを確かめる。** 番号や `id` を
+   取り違えると、別の issue を結んでも POST は成功する。
+
+   ```sh
+   gh api repos/yusuke0610/etoki/issues/<親の番号>/sub_issues -q '.[].number'
+   ```
+
+   期待する子の番号がそろっていて、ほかの番号が混じっていないことを見る。違って
+   いたら、そこで止めて報告する（5.）。
 
 4. **作ったら、本文を GitHub から取り直し、issue ごとに原稿と一致するかを
    確かめる。** 手元のファイルではなく、取り直した本文で見る。仮の番号

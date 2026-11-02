@@ -28,7 +28,7 @@ gh pr list --state open --limit 100 \
 	                        | (.repository.owner.login + "/" + .repository.name) as $repo
 	                        | if $repo == $nwo then "#\(.number)" else "\($repo)#\(.number)" end]
 	                       | join(","))"
-	         else "refs=\([.body | scan("(?i)(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?::\\s*|\\s+)#([0-9]+)") | "#\(.[0])"] | unique | join(","))"
+	         else "refs=\([.body | scan("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?::\\s*|\\s+)#([0-9]+)") | "#\(.[0])"] | unique | join(","))"
 	         end)
 	      + " draft=\(.isDraft) \(.mergeable) \(.headRefName)"'
 
