@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -277,6 +278,9 @@ func TestInterpret_SystemPromptExampleFollowsGranularity(t *testing.T) {
 // epic を含む例の issue に p1 を残すと、小型モデル（gemma3:4b）はそれを書き写し、
 // 3 回とも検証に落ちて解釈が失敗した。issue 指定で起きた #251 と同じ形が、
 // epic と指定なしに残っていた。前回の一覧があるときは、ref の書き方を例で見せる。
+// examplePreviousRef は出力例の previousRef の値を拾う。
+var examplePreviousRef = regexp.MustCompile(`"previousRef":\s*(null|"[^"]*")`)
+
 func TestInterpret_SystemPromptExampleRefFollowsPrevious(t *testing.T) {
 	t.Parallel()
 
@@ -313,6 +317,21 @@ func TestInterpret_SystemPromptExampleRefFollowsPrevious(t *testing.T) {
 				system := llm.requests[0].System
 				if got := strings.Contains(system, exampleRef); got != hasPrevious {
 					t.Errorf("出力例に %s がある = %v, want %v:\n%s", exampleRef, got, hasPrevious, system)
+				}
+				if hasPrevious {
+					return
+				}
+				// p1 が無いだけでは足りない。別の ref（p2 など）を見せても上の断言は
+				// 通るが、写されれば存在しない ref として弾かれる。出力例の
+				// previousRef は全部 null であることを見る。
+				refs := examplePreviousRef.FindAllStringSubmatch(system, -1)
+				if len(refs) == 0 {
+					t.Fatalf("出力例に previousRef が無い:\n%s", system)
+				}
+				for _, m := range refs {
+					if m[1] != "null" {
+						t.Errorf("前回が無いのに出力例の previousRef = %s, want null:\n%s", m[1], system)
+					}
 				}
 			})
 		}
