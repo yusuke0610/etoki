@@ -30,6 +30,21 @@ describe("UsageGuideBody", () => {
     }
   });
 
+  // 切れると: 「作成済み」を絵の中身全体が変わっていないと読ませ、矢印や名前を
+  // 変えたのに読み直さなくてよいと思わせる（#415 のレビュー）。状態が見るのは
+  // 文字・粒度・種別だけで（content_hash）、見ないものも言う。
+  it("状態が見るものと見ないものを言う", () => {
+    render(<UsageGuideBody />);
+
+    const section = screen.getByRole("heading", { name: "絵の状態" }).closest("section");
+    const text = section?.textContent ?? "";
+    expect(text).toContain("絵の中の文字・粒度・種別");
+    for (const ignored of ["矢印", "図形", "貼った画像", "絵の名前", "ボードの背景"]) {
+      expect(text).toContain(ignored);
+    }
+    expect(text).toContain("状態は変わりません");
+  });
+
   // 切れると: 手順だけが目に入り、ブレストの前に枠を決める使い方に寄る
   // （中核思想 1）。心得は最初の節に置く。
   it("最初の節で、描いているあいだは構造を考えなくてよいと言う", () => {
