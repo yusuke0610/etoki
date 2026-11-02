@@ -59,5 +59,10 @@ describe("UsageGuideBody", () => {
       true,
     );
     expect(steps.some((s) => s.includes("GitHub に作成する"))).toBe(true);
+    // 一覧に出るのは保存済みの絵だけ（#415 のレビュー）。保存を言わないと、
+    // 絵にした直後に一覧を探しても見つからない。
+    expect(steps.some((s) => s.includes("「保存」") && s.includes("一覧に出ます"))).toBe(
+      true,
+    );
   });
 });
