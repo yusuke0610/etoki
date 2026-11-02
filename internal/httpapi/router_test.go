@@ -233,6 +233,11 @@ func TestUnknownRouteReturns404(t *testing.T) {
 	}
 }
 
+// saveSceneBody は保存のボディを組み立てる。
+//
+// 基準の版は必須（ADR 0020）。省くと 400 になるので、保存を通すテストは
+// これを通す。base を any で受けるのは、取得したボードの updatedAt（文字列）を
+// クライアントと同じようにそのまま送り返すテストがあるため。
 func saveSceneBody(scene string, base any) map[string]any {
 	return map[string]any{"scene": scene, "baseUpdatedAt": base}
 }

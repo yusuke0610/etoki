@@ -63,7 +63,11 @@ func TestRefreshBoardTargetDisplay_RejectsOtherProject(t *testing.T) {
 		"repositoryOwner": "acme",
 		"repositoryName":  "web",
 		"projectId":       "PVT_1",
+		"projectTitle":    "ロードマップ",
 	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d (%s)", rec.Code, http.StatusCreated, rec.Body)
+	}
 	id := decode[map[string]any](t, rec)["id"].(string)
 
 	rec = do(t, r, http.MethodPut, "/api/boards/"+id+"/target/display", map[string]any{
@@ -76,5 +80,15 @@ func TestRefreshBoardTargetDisplay_RejectsOtherProject(t *testing.T) {
 	// 画面は code で打ち手を分ける（ADR 0034）。固定（target_locked）とは別物。
 	if code := decode[map[string]any](t, rec)["code"]; code != "target_mismatch" {
 		t.Errorf("code = %v, want target_mismatch", code)
+	}
+
+	// 弾いたのだから書かれていない。エラーだけを見ていると、書いてから弾く
+	// 実装でも緑になる。
+	rec = do(t, r, http.MethodGet, "/api/boards/"+id, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want %d (%s)", rec.Code, http.StatusOK, rec.Body)
+	}
+	if got := decode[map[string]any](t, rec)["projectTitle"]; got != "ロードマップ" {
+		t.Errorf("409 を返したのに projectTitle が書き換わっている: %v", got)
 	}
 }

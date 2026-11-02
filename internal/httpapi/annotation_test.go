@@ -359,6 +359,9 @@ func TestListAnnotations_SeparatesUnconfirmedItems(t *testing.T) {
 	}
 
 	got := listAnnotations(t, r, id).Annotations
+	if len(got) != 1 {
+		t.Fatalf("注釈の件数 = %d, want 1 (%+v)", len(got), got)
+	}
 
 	items, _ := got[0]["items"].([]any)
 	if len(items) != 1 {
@@ -402,6 +405,9 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 	// 現在のハッシュを API 経由では取れないので、いったん状態を引いてから
 	// 同じ内容で run を記録する。ハッシュ自体は domain 側のテストで担保済み。
 	states := listAnnotations(t, r, id).Annotations
+	if len(states) != 1 {
+		t.Fatalf("注釈の件数 = %d, want 1 (%+v)", len(states), states)
+	}
 	if states[0]["state"] != "uncreated" {
 		t.Fatalf("前提が崩れている: %v", states[0])
 	}
@@ -423,6 +429,9 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 	}
 
 	got := listAnnotations(t, r, id).Annotations
+	if len(got) != 1 {
+		t.Fatalf("注釈の件数 = %d, want 1 (%+v)", len(got), got)
+	}
 	if got[0]["state"] != "created" {
 		t.Fatalf("state = %v, want created", got[0]["state"])
 	}
@@ -454,6 +463,9 @@ func TestListAnnotations_CreatedThenChanged(t *testing.T) {
 	}
 
 	got = listAnnotations(t, r, id).Annotations
+	if len(got) != 1 {
+		t.Fatalf("注釈の件数 = %d, want 1 (%+v)", len(got), got)
+	}
 	if got[0]["state"] != "changed" {
 		t.Errorf("state = %v, want changed", got[0]["state"])
 	}

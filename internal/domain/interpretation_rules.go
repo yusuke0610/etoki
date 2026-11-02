@@ -145,10 +145,6 @@ func InterpretationConstraints() string {
 	return b.String()
 }
 
-// newValidationError は指摘 1 件を組み立てる。
-//
-// **構造体リテラルではなくこれを通す。** リテラルだと Rule を書き忘れても
-// コンパイルが通り、どの制約に対応するのか分からない指摘が混ざる。
 // contestedMessage は「1 つにつき 1 件」を破ったときの指摘文。
 //
 // **検査そのものは 2 箇所から消せない。** 解釈の出口（resolvePreviousRefs）と
@@ -160,6 +156,10 @@ func contestedMessage(fieldName, value, owner string) string {
 		fieldName, value, owner)
 }
 
+// newValidationError は指摘 1 件を組み立てる。
+//
+// **構造体リテラルではなくこれを通す。** リテラルだと Rule を書き忘れても
+// コンパイルが通り、どの制約に対応するのか分からない指摘が混ざる。
 func newValidationError(rule RuleID, field, message string) ValidationError {
 	return ValidationError{Rule: rule, Field: field, Message: message}
 }

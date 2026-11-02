@@ -848,6 +848,9 @@ func TestSaveRun_KeepsHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindLatestRun: %v", err)
 	}
+	if got == nil {
+		t.Fatal("FindLatestRun が run を返さない")
+	}
 	if got.ID != second {
 		t.Errorf("最新 run の ID = %d, want %d", got.ID, second)
 	}
