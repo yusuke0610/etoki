@@ -613,6 +613,28 @@ describe("useDiagramDraft の置く", () => {
     expect(updateElements).toHaveBeenLastCalledWith([...existing, ...placed]);
   });
 
+  // 消して置き直したあと、取り消しで前の図が戻ってくる。置き直しで前の ID を
+  // 忘れると、戻った図を数えずに同じ図をもう 1 つ置く（#412）。
+  it("置き直したあと取り消しで前の図が戻ったら、同じドラフトを置き直さない", async () => {
+    fakeServer([{ mermaid: "flowchart TD\n  A" }]);
+    vi.mocked(mermaidToElements).mockResolvedValue({ ok: true, elements: converted });
+    const again = [el("q1"), el("q2")];
+    vi.mocked(moveDraft).mockReturnValueOnce(placed).mockReturnValueOnce(again);
+    const { hook, updateElements, changeCanvas } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    await act(() => hook.result.current.placeDraft());
+
+    changeCanvas(existing);
+    await act(() => hook.result.current.placeDraft());
+    expect(updateElements).toHaveBeenCalledTimes(2);
+
+    // 2 回目の配置と、1 回目の削除を取り消した。
+    changeCanvas([...existing, ...placed]);
+    expect(hook.result.current.draftPlaced).toBe(true);
+    await act(() => hook.result.current.placeDraft());
+    expect(updateElements).toHaveBeenCalledTimes(2);
+  });
+
   it("直して新しいドラフトが届いたら、置いた図が残っていても置ける", async () => {
     fakeServer([
       { mermaid: "flowchart TD\n  A" },

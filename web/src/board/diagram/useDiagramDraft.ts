@@ -414,7 +414,11 @@ export function useDiagramDraft({
       if (placed === null) return;
       // 覚えるのは押したときのドラフト。変換を待つあいだに次のドラフトが届いても、
       // そちらはまだ置いていない。
-      const next = { draft, ids: placed.map((el) => el.id) };
+      // 同じドラフトの置き直しなら、前に置いた ID も残す。消して置き直したあと、
+      // 取り消しで前の図が戻ってきても、残っていると数えるため。
+      const earlier =
+        latestPlacement.current?.draft === draft ? latestPlacement.current.ids : [];
+      const next = { draft, ids: [...earlier, ...placed.map((el) => el.id)] };
       latestPlacement.current = next;
       setPlacement(next);
     } finally {
