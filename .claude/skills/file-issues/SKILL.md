@@ -16,6 +16,8 @@ description: 調べた結果を、重複を確かめてから親の issue と su
 - **迷ったら非公開に倒す。** 公開してから引っ込めることはできない。
 - **公開の場所に、非公開の件の中身も存在も件数も書かない。** 公開の場所とは、
   issue、PR、コミットのこと。
+- **非公開に振り分けた候補は、ここで終える。** 2. 以降に進めず、親の本文
+  （sub-issue の表にも「見たが issue にしないもの」にも）書かない。
 
 ## 2. 重複を探す
 
@@ -93,7 +95,8 @@ gh search issues "<語>" --repo yusuke0610/etoki --include-prs --limit 100
    取り違えると、別の issue を結んでも POST は成功する。
 
    ```sh
-   gh api repos/yusuke0610/etoki/issues/<親の番号>/sub_issues -q '.[].number'
+   # 既定は 1 ページ 30 件。全ページを回さないと 31 件目からを見落とす
+   gh api --paginate repos/yusuke0610/etoki/issues/<親の番号>/sub_issues -q '.[].number'
    ```
 
    期待する子の番号がそろっていて、ほかの番号が混じっていないことを見る。違って

@@ -51,8 +51,12 @@ issue を未着手として並べると、「実施して」に応えた時点�
 
   ```sh
   gh api graphql -F n=<issue の番号> -f query='query($n:Int!){repository(owner:"yusuke0610",name:"etoki"){issue(number:$n){
-    closedByPullRequestsReferences(first:20, includeClosedPrs:true){nodes{number state baseRefName mergeCommit{oid}}}}}}'
+    closedByPullRequestsReferences(first:20, includeClosedPrs:true){nodes{number state baseRefName mergeCommit{oid} repository{nameWithOwner}}}}}}'
   ```
+
+  別のリポジトリの PR も結べる。`repository` がこのリポジトリでない PR は、同じ
+  番号のこのリポジトリの PR と取り違えず、届いたかもそのリポジトリの既定の枝で見る
+  （`origin/main` では判定できない）。
 
   積んだ先の枝（base）へマージしたものは、その枝の PR が squash で main に入ると、
   元のコミットは main の祖先にならない。そのときは base の枝の PR を同じように
