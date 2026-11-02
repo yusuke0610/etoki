@@ -12,7 +12,9 @@ import { FONT_FAMILY } from "@excalidraw/excalidraw";
  * 解釈が読むのは文字と画像なので、ここを変えても状態の判定は動かない。
  */
 export const CLEAN_ROUGHNESS = 0;
-export const CLEAN_FONT_FAMILY = FONT_FAMILY.Nunito;
+/** Excalidraw が書体を登録している名前。読み込みを待つときはこの名前で頼む。 */
+const CLEAN_FONT_NAME = "Nunito";
+export const CLEAN_FONT_FAMILY = FONT_FAMILY[CLEAN_FONT_NAME];
 
 /**
  * 人が描くときの既定（ツールの初期値）。`initialData.appState` に重ねる。
@@ -51,4 +53,41 @@ export function withCleanStyle<T extends Skeleton>(skeletons: readonly T[]): T[]
     }
     return styled;
   });
+}
+
+/**
+ * 骨格の文字を清書調の書体で測れるよう、書体を読み込み終えるのを待つ。
+ * 要素に詰め替える直前に呼ぶ。
+ *
+ * **待たずに詰め替えると、字の箱が代わりの書体の寸法で決まる。** ブラウザは
+ * 書体を使われるまで読まないので、まだ Nunito で描いた文字が無いボードでは、
+ * 詰め替えの計測が代わりの書体で行われる。Excalidraw は読み込み終えたあとに
+ * 描き直すだけで、箱の寸法は測り直さない（書体を選び直す操作では、読み込みを
+ * 待ってから測り直している）。
+ *
+ * **読めなくても置く。** 読み込みの失敗で図を置けなくするほうが失うものが
+ * 大きい。箱がずれるだけで、文字は描ける。CSS Font Loading API の無い環境
+ * （jsdom）でも何もせずに返る。
+ */
+export async function loadCleanFont(
+  skeletons: readonly { type: string; text?: unknown; label?: unknown }[],
+): Promise<void> {
+  const fonts = typeof document === "undefined" ? undefined : document.fonts;
+  if (!fonts) return;
+  const chars = skeletons
+    .flatMap((el) => [el.text, labelText(el.label)])
+    .filter((t): t is string => typeof t === "string")
+    .join("");
+  if (chars === "") return;
+  try {
+    await fonts.load(`16px ${CLEAN_FONT_NAME}`, chars);
+  } catch {
+    // 上のとおり、読めなくても置く。
+  }
+}
+
+function labelText(label: unknown): unknown {
+  return typeof label === "object" && label !== null
+    ? (label as { text?: unknown }).text
+    : undefined;
 }

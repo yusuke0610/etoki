@@ -5,7 +5,7 @@ import {
 } from "@excalidraw/mermaid-to-excalidraw";
 
 import type { SceneElement } from "./annotation";
-import { withCleanStyle } from "./drawingStyle";
+import { loadCleanFont, withCleanStyle } from "./drawingStyle";
 
 /**
  * 変換器が返す骨格のうち、ここで見るところだけの形。
@@ -168,6 +168,9 @@ export async function mermaidToElements(
       detail: `conversion returned a ${refused.type} element`,
     };
   }
+
+  // 字の箱は詰め替えのときに測るので、書体を読み込み終えてから詰め替える。
+  await loadCleanFont(skeletons);
 
   try {
     return {

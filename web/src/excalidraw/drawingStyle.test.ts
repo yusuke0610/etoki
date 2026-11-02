@@ -1,10 +1,11 @@
 import { FONT_FAMILY } from "@excalidraw/excalidraw";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   CLEAN_FONT_FAMILY,
   CLEAN_ROUGHNESS,
   DRAWING_DEFAULTS,
+  loadCleanFont,
   withCleanStyle,
 } from "./drawingStyle";
 
@@ -66,5 +67,48 @@ describe("withCleanStyle", () => {
     withCleanStyle(input);
     expect(input[0]?.roughness).toBe(1);
     expect(label).toEqual({ text: "a" });
+  });
+});
+
+describe("loadCleanFont", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(document, "fonts");
+  });
+
+  function stubFonts(load: (font: string, text: string) => Promise<unknown>) {
+    const spy = vi.fn(load);
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: { load: spy },
+    });
+    return spy;
+  }
+
+  // 詰め替えの計測は書体の読み込みを待たない。頼む名前が登録名とずれると、
+  // 何も読まれないまま代わりの書体で測られる。
+  it("文字とラベルの字を、清書調の書体で読み込むよう頼む", async () => {
+    const load = stubFonts(() => Promise.resolve([]));
+    await loadCleanFont([
+      { type: "text", text: "Alice" },
+      { type: "rectangle", label: { text: "Bob" } },
+      { type: "line" },
+    ]);
+    expect(load).toHaveBeenCalledWith("16px Nunito", "AliceBob");
+  });
+
+  it("文字が無ければ頼まない", async () => {
+    const load = stubFonts(() => Promise.resolve([]));
+    await loadCleanFont([{ type: "rectangle" }, { type: "arrow", label: null }]);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  // 読めなかったことで図を置けなくしない。
+  it("読み込みに失敗しても投げない", async () => {
+    stubFonts(() => Promise.reject(new Error("network")));
+    await expect(loadCleanFont([{ type: "text", text: "a" }])).resolves.toBeUndefined();
+  });
+
+  it("CSS Font Loading API が無ければ何もしない", async () => {
+    await expect(loadCleanFont([{ type: "text", text: "a" }])).resolves.toBeUndefined();
   });
 });

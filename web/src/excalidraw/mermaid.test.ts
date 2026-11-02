@@ -1,6 +1,6 @@
 import { FONT_FAMILY, serializeAsJSON } from "@excalidraw/excalidraw";
 import mermaid from "mermaid";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { isAnnotation, type SceneElement } from "./annotation";
 import {
@@ -124,6 +124,37 @@ describe("mermaidToElements", () => {
     expect(new Set(texts.map((el) => el.fontFamily))).toEqual(
       new Set([FONT_FAMILY.Nunito]),
     );
+  });
+
+  // 書体を読み込み終える前に詰め替えると、字の箱が代わりの書体の寸法で
+  // 決まる（ADR 0095）。読み込みが済むまで要素を返さないことを見る。
+  it("書体を読み込み終えてから要素にする", async () => {
+    let finish = () => {};
+    const load = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    Object.defineProperty(document, "fonts", { configurable: true, value: { load } });
+    try {
+      let settled = false;
+      const pending = mermaidToElements("flowchart TD\n  A[はじめ] --> B[おわり]").then(
+        (got) => {
+          settled = true;
+          return got;
+        },
+      );
+      await vi.waitFor(() => expect(load).toHaveBeenCalled());
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      finish();
+      const got = await pending;
+      expect(got.ok).toBe(true);
+    } finally {
+      Reflect.deleteProperty(document, "fonts");
+    }
   });
 
   it("構文エラーは投げずに syntax で返す", async () => {
