@@ -107,12 +107,15 @@ test.describe("押せない理由が本文として読める", () => {
     await page.getByLabel("図への指示").fill("注文から出荷までの流れ");
     await page.getByRole("button", { name: "生成", exact: true }).click();
     const place = page.getByRole("button", { name: "キャンバスに置く" });
+    // 理由は押したあとに出るので、知らせる箱は押す前から描いておく（#412）。
+    // 箱ごと出し入れすると、読み上げは中身が出たことを拾わない。
+    await expect(page.locator(".diagram-chat [role='status']")).not.toHaveCount(0);
     await place.click();
 
-    await expectBlockedReason(
-      place,
-      "この図はキャンバスに置いてあるので、置き直せません。置いた図を消すと、また置けます。",
-    );
+    const reason =
+      "この図はキャンバスに置いてあるので、置き直せません。置いた図を消すと、また置けます。";
+    await expectBlockedReason(place, reason);
+    await expect(page.getByRole("status").filter({ hasText: reason })).toHaveCount(1);
   });
 
   // 作成は取り消せない（ADR 0009）。何が足りなくて押せないのかが読めないと、

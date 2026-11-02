@@ -410,6 +410,9 @@ export function useDiagramDraft({
         return;
       }
 
+      // 変換を待つあいだに、削除の取り消しで前の図が戻っていることがある。
+      // 押した時点の確かめだけでは、戻った図の隣にもう 1 つ置く。
+      if (placedOnCanvas(latestPlacement.current, draft, currentElements())) return;
       const placed = placeElements(converted.elements);
       if (placed === null) return;
       // 覚えるのは押したときのドラフト。変換を待つあいだに次のドラフトが届いても、

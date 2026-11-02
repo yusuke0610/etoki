@@ -635,6 +635,34 @@ describe("useDiagramDraft の置く", () => {
     expect(updateElements).toHaveBeenCalledTimes(2);
   });
 
+  // 変換は非同期。待つあいだに削除を取り消して前の図が戻ったら、押した時点では
+  // 置けても、置く直前にはもう置いてある（#412）。
+  it("変換を待つあいだに前の図が戻ったら、同じドラフトを置き直さない", async () => {
+    fakeServer([{ mermaid: "flowchart TD\n  A" }]);
+    vi.mocked(mermaidToElements).mockResolvedValueOnce({ ok: true, elements: converted });
+    vi.mocked(moveDraft).mockReturnValue(placed);
+    const { hook, updateElements, changeCanvas } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    await act(() => hook.result.current.placeDraft());
+    changeCanvas(existing);
+
+    const converting = deferred<{ ok: true; elements: SceneElement[] }>();
+    vi.mocked(mermaidToElements).mockReturnValueOnce(converting.promise);
+    let placing!: Promise<void>;
+    act(() => {
+      placing = hook.result.current.placeDraft();
+    });
+    // 削除を取り消した。
+    changeCanvas([...existing, ...placed]);
+    await act(async () => {
+      converting.resolve({ ok: true, elements: converted });
+      await placing;
+    });
+
+    expect(mermaidToElements).toHaveBeenCalledTimes(2);
+    expect(updateElements).toHaveBeenCalledTimes(1);
+  });
+
   it("直して新しいドラフトが届いたら、置いた図が残っていても置ける", async () => {
     fakeServer([
       { mermaid: "flowchart TD\n  A" },
