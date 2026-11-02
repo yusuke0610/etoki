@@ -33,12 +33,14 @@ while IFS=$'\t' read -r pr head base author repo; do
 	# mergeable は一覧には載らず、個別に引いたときに計算される。null は計算中。
 	read -r mergeable mstate < <(gh api "repos/$nwo/pulls/$pr" --jq '"\(.mergeable) \(.mergeable_state)"')
 
+	# 積みの上下も、このリポジトリの PR だけで引き当てる。fork の PR の head が
+	# origin の枝と同じ名前でも、それは別の枝。
 	stack="-"
 	if [ "$base" != "main" ]; then
-		lower="$(awk -F'\t' -v b="$base" '$2 == b { print "#" $1 }' <<<"$pulls")"
+		lower="$(awk -F'\t' -v b="$base" -v n="$nwo" '$2 == b && $5 == n { print "#" $1 }' <<<"$pulls")"
 		stack="上の段(下=${lower:-PR の無い枝 $base})"
 	fi
-	upper="$(awk -F'\t' -v h="$head" '$3 == h { printf "#%s ", $1 }' <<<"$pulls")"
+	upper="$(awk -F'\t' -v h="$head" -v n="$nwo" '$3 == h && $5 == n { printf "#%s ", $1 }' <<<"$pulls")"
 	[ -n "$upper" ] && stack="${stack/-/}下の段(上=${upper% })"
 
 	# main にあって head に無いコミットの数。0 なら取り込むものが無い。

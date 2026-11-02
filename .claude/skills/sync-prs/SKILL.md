@@ -79,11 +79,13 @@ git fetch origin main <枝>
 git worktree add ../etoki-sync-<番号> <枝>
 cd ../etoki-sync-<番号>
 git merge --ff-only origin/<枝>   # 同じ名前の古いローカル枝を掴んでいたら進める
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/<枝>)"   # 手元が先に進んでいないか
 ```
 
-**`--ff-only` が通らなければ止めてユーザーに訊く。** 手元の枝に push していない
-コミットがある。そのまま取り込むと、検査するのは PR と違うコードになり、push も
-non-fast-forward で断られる。
+**`--ff-only` が通らないか、そのあと `HEAD` が `origin/<枝>` と一致しなければ、
+止めてユーザーに訊く。** 手元の枝に push していないコミットがある（手元が先に
+進んでいると `--ff-only` は通ってしまう）。そのまま取り込むと、検査するのは PR と
+違うコードになり、push には PR に無かったコミットが混ざる。
 
 **積んだ上の段は、下の段の最後の head、main の順に取り込む。** 下の段が squash
 で入ったあとに main を直に取り込むと、下の段の変更が両側にあって衝突する。
@@ -126,10 +128,18 @@ ADR の番号が重なったら、後から入る側（この PR）の番号を�
 ### 検査を通してから push する
 
 **取り込んだら `make codegen` を回す。** main 側で生成器が上がっていると、
-生成物が古いまま残る（#168）。**lockfile（`web/bun.lock`）が動いたら
-`bun install` も回す。**
+生成物が古いまま残る（#168）。**作ったばかりの worktree には `web/node_modules` が
+無い**ので、lockfile が動いていなくても先に `bun install --frozen-lockfile` を回す
+（codegen が `openapi-typescript` を読む）。
+
+**道具は取り込んだあとの flake のものを使う。** `make` は devShell の印の値を
+その作業ツリーの `flake.nix` / `flake.lock` と比べ、違えば入り直す（Makefile の
+冒頭、#409）。main を取り込めばこの Makefile も入るので、`make` を通す限り古い
+devShell の道具では走らない。`go test` や `bunx` を直に叩くときは、その worktree で
+`nix develop` に入り直す。
 
 ```sh
+nix develop --command bash -c 'cd web && bun install --frozen-lockfile'
 make codegen && git status --short   # 生成物が動いたら下のコミットに含める
 make lint
 make test
