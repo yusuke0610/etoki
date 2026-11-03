@@ -7,7 +7,7 @@
 //
 // bun で書いてあるのは devShell に既にあるため（token-report.ts と同じ、ADR 0002）。
 
-import { type ChildProcess, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -225,6 +225,69 @@ export function checkPaths(
   }
 }
 
+/** 止められてから、走っている子が自分で終わるのを待つ長さ。過ぎたら SIGKILL に上げる。 */
+export const STOP_GRACE_MS = 5_000;
+
+export type Stopper = {
+  /** 止められた。走っている子のグループに送る。 */
+  stop: (signal: NodeJS.Signals) => void;
+  stopped: () => boolean;
+  /** 子を走らせた（pid はグループの頭）。 */
+  started: (pid: number) => void;
+  /** 子が終わった。 */
+  closed: () => void;
+};
+
+/**
+ * 止められたときに、走っている子のプロセスグループへシグナルを送る。
+ *
+ * **1 回目は受けたものを送り、猶予（STOP_GRACE_MS）のうちに終わらなければ SIGKILL に
+ * 上げる。2 回目に止められたら、すぐ SIGKILL。** SIGINT を無視する子だと、送り直す
+ * だけでは終わらない。子が終わるまで壊したファイルを戻せないので、待ちきれずに親を
+ * SIGKILL すると壊したまま残る。
+ */
+export function createStopper(deps: {
+  kill: (pid: number, signal: NodeJS.Signals) => void;
+  setTimer: (fn: () => void, ms: number) => unknown;
+  clearTimer: (timer: unknown) => void;
+}): Stopper {
+  let stopped = false;
+  let running: number | null = null;
+  let timer: unknown = null;
+  const send = (signal: NodeJS.Signals): void => {
+    if (running === null) return;
+    try {
+      deps.kill(-running, signal);
+    } catch {
+      // もう終わっている。closed で片付く。
+    }
+  };
+  return {
+    stop: (signal) => {
+      const again = stopped;
+      stopped = true;
+      send(again ? "SIGKILL" : signal);
+      if (running !== null && timer === null) {
+        timer = deps.setTimer(() => {
+          timer = null;
+          send("SIGKILL");
+        }, STOP_GRACE_MS);
+      }
+    },
+    stopped: () => stopped,
+    started: (pid) => {
+      running = pid;
+    },
+    closed: () => {
+      running = null;
+      if (timer !== null) {
+        deps.clearTimer(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
 /** 宣言を読み、リポジトリのルートを基準に走らせる。出力は tmp/mutate/ に落とす。 */
 async function main(): Promise<number> {
   const specPath = process.argv[2];
@@ -249,21 +312,15 @@ async function main(): Promise<number> {
   // 覚えるだけだと、親だけが止められたとき（kill <pid>）に子が自分で終わるまで
   // 戻せず、そのあいだに外から SIGKILL されれば壊したまま残る。直接の子だけに
   // 送ると、子が立てた孫（sh -c の先など）が残る。グループを分けたので、端末の
-  // Ctrl-C も子には直に届かず、ここから送る。
-  let stopped = false;
-  let running: ChildProcess | null = null;
-  const stop = (signal: NodeJS.Signals): void => {
-    stopped = true;
-    const pid = running?.pid;
-    if (pid === undefined) return;
-    try {
-      process.kill(-pid, signal);
-    } catch {
-      // もう終わっている。close で片付く。
-    }
-  };
-  process.on("SIGINT", () => stop("SIGINT"));
-  process.on("SIGTERM", () => stop("SIGTERM"));
+  // Ctrl-C も子には直に届かず、ここから送る。子が受けたシグナルを無視したときの
+  // 上げ方は createStopper。
+  const stopper = createStopper({
+    kill: (pid, signal) => process.kill(pid, signal),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  });
+  process.on("SIGINT", () => stopper.stop("SIGINT"));
+  process.on("SIGTERM", () => stopper.stop("SIGTERM"));
 
   const io: Io = {
     // パスは checkPaths と同じく resolve で組む。join だと、ツリーの中の絶対パスが
@@ -274,7 +331,7 @@ async function main(): Promise<number> {
       new Promise((done, fail) => {
         // 走らせる前に止められていたら、走らせない。runMutations が止められたと見て
         // 戻す。
-        if (stopped) {
+        if (stopper.stopped()) {
           done({ status: null, signal: null });
           return;
         }
@@ -282,16 +339,16 @@ async function main(): Promise<number> {
         const child = spawn(spec.cmd[0], spec.cmd.slice(1), {
           cwd: resolve(root, spec.cwd),
           stdio: ["ignore", "pipe", "pipe"],
-          // 子を新しいプロセスグループの頭にする（上の stop がグループごとに送る）。
+          // 子を新しいプロセスグループの頭にする（stopper がグループごとに送る）。
           detached: true,
         });
-        running = child;
+        if (child.pid !== undefined) stopper.started(child.pid);
         const output: Buffer[] = [];
         child.stdout.on("data", (chunk: Buffer) => output.push(chunk));
         child.stderr.on("data", (chunk: Buffer) => output.push(chunk));
         child.on("error", fail);
         child.on("close", (status, signal) => {
-          running = null;
+          stopper.closed();
           // **ログが書けなくても、ここで投げない。** ハンドラの中で投げると Promise に
           // 届かずプロセスごと落ち、runMutations の finally が走らないので、壊した
           // ファイルが残る。fail へ流せば finally が戻す。
@@ -304,7 +361,7 @@ async function main(): Promise<number> {
           done({ status, signal });
         });
       }),
-    stopped: () => stopped,
+    stopped: () => stopper.stopped(),
   };
 
   const outcomes = await runMutations(spec, io);

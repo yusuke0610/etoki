@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyMutation,
   checkPaths,
+  createStopper,
   formatOutcomes,
   Interrupted,
   type Io,
@@ -11,6 +12,7 @@ import {
   type RunResult,
   runMutations,
   type Spec,
+  STOP_GRACE_MS,
 } from "./mutate";
 
 describe("parseSpec", () => {
@@ -228,6 +230,24 @@ describe("runMutations", () => {
     expect(seen["2"]).toBeUndefined();
   });
 
+  test("猶予を過ぎて SIGKILL で終わらせても、止めたのだから戻して Interrupted を投げる", async () => {
+    // SIGINT を無視する子は、createStopper が SIGKILL に上げて終わらせる。シグナルの
+    // 名前だけを見ると、止めた回を「落ちた」と数えて次へ進む。
+    const { io, files, seen } = fakeIo(
+      { "a.ts": "guard1 guard2", "b.ts": "deps" },
+      (label, stop) => {
+        if (label === "1") {
+          stop();
+          return { status: null, signal: "SIGKILL" };
+        }
+        return label === "baseline" ? ok : fail;
+      },
+    );
+    await expect(runMutations(twoMutations, io)).rejects.toThrow(Interrupted);
+    expect(files).toEqual({ "a.ts": "guard1 guard2", "b.ts": "deps" });
+    expect(seen["2"]).toBeUndefined();
+  });
+
   test("壊す前から落ちていたら、何も壊さずに投げる", async () => {
     const { io, seen } = fakeIo({ "a.ts": "guard1 guard2", "b.ts": "deps" }, [
       fail,
@@ -341,6 +361,86 @@ describe("checkPaths", () => {
         checkPaths(spec("web", "web/a.ts"), "/tmp/repo", viaLink),
       ).not.toThrow();
     });
+  });
+});
+
+describe("createStopper", () => {
+  // 送ったシグナルと、仕掛けたタイマーを控える。タイマーは手で進める。
+  function fakeDeps() {
+    const sent: [number, string][] = [];
+    const timers: { fn: () => void; ms: number; cleared: boolean }[] = [];
+    return {
+      sent,
+      timers,
+      deps: {
+        kill: (pid: number, signal: NodeJS.Signals) => {
+          sent.push([pid, signal]);
+        },
+        setTimer: (fn: () => void, ms: number) => {
+          const t = { fn, ms, cleared: false };
+          timers.push(t);
+          return t;
+        },
+        clearTimer: (t: unknown) => {
+          (t as { cleared: boolean }).cleared = true;
+        },
+      },
+    };
+  }
+
+  test("1 回目は受けたシグナルを子のグループに送る", () => {
+    const { sent, timers, deps } = fakeDeps();
+    const s = createStopper(deps);
+    s.started(123);
+    s.stop("SIGINT");
+    expect(sent).toEqual([[-123, "SIGINT"]]);
+    expect(s.stopped()).toBe(true);
+    expect(timers.map((t) => t.ms)).toEqual([STOP_GRACE_MS]);
+  });
+
+  test("猶予のうちに終わらなければ SIGKILL に上げる", () => {
+    const { sent, timers, deps } = fakeDeps();
+    const s = createStopper(deps);
+    s.started(123);
+    s.stop("SIGINT");
+    timers[0].fn();
+    expect(sent).toEqual([
+      [-123, "SIGINT"],
+      [-123, "SIGKILL"],
+    ]);
+  });
+
+  test("猶予のうちに終われば、タイマーを止めて SIGKILL を送らない", () => {
+    const { sent, timers, deps } = fakeDeps();
+    const s = createStopper(deps);
+    s.started(123);
+    s.stop("SIGTERM");
+    s.closed();
+    expect(timers[0].cleared).toBe(true);
+    expect(sent).toEqual([[-123, "SIGTERM"]]);
+  });
+
+  test("2 回目に止められたら、猶予を待たずに SIGKILL", () => {
+    const { sent, timers, deps } = fakeDeps();
+    const s = createStopper(deps);
+    s.started(123);
+    s.stop("SIGINT");
+    s.stop("SIGINT");
+    expect(sent).toEqual([
+      [-123, "SIGINT"],
+      [-123, "SIGKILL"],
+    ]);
+    // タイマーは 1 つだけ。
+    expect(timers).toHaveLength(1);
+  });
+
+  test("子が走っていないときは、止められたことだけを覚える", () => {
+    const { sent, timers, deps } = fakeDeps();
+    const s = createStopper(deps);
+    s.stop("SIGINT");
+    expect(s.stopped()).toBe(true);
+    expect(sent).toEqual([]);
+    expect(timers).toEqual([]);
   });
 });
 

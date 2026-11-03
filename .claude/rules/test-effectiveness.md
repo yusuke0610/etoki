@@ -8,6 +8,10 @@ paths:
   # 対象にすると、「同時に足す」が要る場面（足し忘れ）で読み込まれない。
   - "internal/**"
   - "web/src/**"
+  # Go の実装は internal/ の外にもある（公開 API 面の port/ と etoki.go、配線の cmd/）。
+  - "port/**"
+  - "etoki.go"
+  - "cmd/**"
   # ハーネスの道具（scripts/）も同じ。テストの有無をここで問われないと、
   # 検査に使う側のスクリプトだけ無検査で増える。
   - "scripts/**"
