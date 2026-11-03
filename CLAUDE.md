@@ -44,6 +44,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
 | `.claude/rules/`                   | レビュー由来の落とし穴と、狭い範囲でだけ要る約束（触ると読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
+| `.claude/skills/mutate/`           | 守りを壊してテストが落ちるかを確かめる（`/mutate`）                    |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
 | `.claude/skills/triage/`           | 閉じられる issue と着手できる issue の振り分け（`/triage`）            |
 | `.claude/skills/spec/`             | 着手の前に仕様を訊いて固め、issue に書き戻す（`/spec`）                |

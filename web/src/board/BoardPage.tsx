@@ -10,6 +10,7 @@ import {
 import type { BoardDetail, BoardWithFiles, Capabilities } from "../api/types";
 import { unavailableReason } from "../app/capability";
 import { isAnnotation } from "../excalidraw/annotation";
+import { DRAWING_DEFAULTS } from "../excalidraw/drawingStyle";
 import { openedFiles } from "../excalidraw/files";
 import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
 import { formatSceneSize } from "../excalidraw/size";
@@ -344,7 +345,10 @@ export function BoardPage({
 
   const initialScene = useMemo(() => {
     try {
-      const scene = JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
+      const scene = JSON.parse(board.scene) as {
+        elements?: unknown;
+        appState?: Record<string, unknown>;
+      };
       // **開いたら中身が見えている位置から始める。** シーンの原点はキャンバスの
       // 左上に来るので、原点あたりに描かれたものはツールバーの下に隠れる。
       // ひな形から作ったボードは必ずそこから始まる（`excalidraw/template.ts`）
@@ -355,13 +359,20 @@ export function BoardPage({
       //
       // 貼った画像はシーンとは別に届く（ADR 0074）。渡さないと、画像の要素だけが
       // 空白で置かれる。
+      //
+      // 線と書体の既定は開くたびに重ねる（ADR 0095）。保存したシーンには載らない。
       return {
-        data: { ...scene, files: openedFiles(board.files), scrollToContent: true },
+        data: {
+          ...scene,
+          appState: { ...scene.appState, ...DRAWING_DEFAULTS },
+          files: openedFiles(board.files),
+          scrollToContent: true,
+        },
         unreadable: false,
       };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
-      return { data: { elements: [], appState: {} }, unreadable: true };
+      return { data: { elements: [], appState: DRAWING_DEFAULTS }, unreadable: true };
     }
   }, [board.scene, board.files]);
   const initialData = initialScene.data;

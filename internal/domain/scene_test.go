@@ -167,6 +167,29 @@ func TestAnnotationTexts_FollowsFrameAndContainer(t *testing.T) {
 	}
 }
 
+// 図形の幅で折り返す前の文字（originalText）も運ぶ。text は自動で入った改行を
+// 含み、日本語では語の途中で切れる（「チームの開\n発者」）。解釈にはこちらを渡す。
+//
+// text は変えない。ハッシュの入力で、変えると保存済みの注釈が一斉に「変更あり」に
+// なる。
+func TestAnnotationTexts_CarriesUnwrappedText(t *testing.T) {
+	t.Parallel()
+
+	wrapped := `{"id":"t1","type":"text","text":"チームの開\n発者","originalText":"チームの開発者","frameId":"annot-1"}`
+	s := scene(t, annotFrame, wrapped)
+
+	got, ok := textByID(s.AnnotationTexts("annot-1"), "t1")
+	if !ok {
+		t.Fatal("t1 が抽出されていない")
+	}
+	if got.Original != "チームの開発者" {
+		t.Errorf("Original = %q, want 折り返す前の文字", got.Original)
+	}
+	if got.Text != "チームの開\n発者" {
+		t.Errorf("Text = %q, want 折り返したあとの文字のまま", got.Text)
+	}
+}
+
 // 注釈の外のテキストは拾わない。
 func TestAnnotationTexts_ExcludesOutside(t *testing.T) {
 	t.Parallel()
