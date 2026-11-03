@@ -49,7 +49,7 @@ issue ごとの一覧は先頭 50 件まで取り、取りきれなかったら�
   マージ済みの PR は issue ごとに引く。
 
   ```sh
-  gh pr list --state merged --search "<issue の番号>" --limit 100 --json number,baseRefName,mergeCommit
+  gh pr list -R yusuke0610/etoki --state merged --search "<issue の番号>" --limit 100 --json number,baseRefName,mergeCommit
   # main に届いたか（積んだ先の枝に入っただけではないか）
   git fetch -q origin && git merge-base --is-ancestor <mergeCommit> origin/main && echo reached
   ```
@@ -85,7 +85,9 @@ issue ごとの一覧は先頭 50 件まで取り、取りきれなかったら�
 
 1. **閉じる前に確認を取る。** 閉じる issue と根拠を見せて、どれを閉じるかを訊く。
    閉じるのは外向きの操作で、根拠を読み違えていても、見せれば気づける。
-2. **閉じるときは、根拠をコメントに残す**（`gh issue close <番号> --comment "…"`）。
+2. **閉じるときは、根拠をコメントに残す**（`gh issue close <番号> -R yusuke0610/etoki --comment "…"`）。
+   `-R` を省かない。`gh` は `GH_REPO` があればそちらを見るので、同じ番号の別の
+   issue を閉じうる。
    根拠は PR 番号、sub-issue、ADR。
 
 **公開の issue のコメントに、非公開の件（Security Advisory）の中身も存在も
