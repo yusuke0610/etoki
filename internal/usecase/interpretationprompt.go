@@ -35,16 +35,8 @@ func buildUserMessage(
 	for _, t := range texts {
 		// 囲みの名前は AnnotationTexts が先頭に含めているので、ここでは
 		// 別立てにしない。
-		//
-		// **折り返す前の文字を渡す。** Text は図形の幅で折り返したあとの文字で、
-		// 改行を空白に置き換えると日本語の語の途中に空白が入る（「チームの開 発者」）。
-		// 小型モデルはそれを title にそのまま写した。
-		text := t.Text
-		if t.Original != "" {
-			text = t.Original
-		}
 		b.WriteString("- ")
-		b.WriteString(strings.ReplaceAll(text, "\n", " "))
+		b.WriteString(promptText(t))
 		b.WriteString("\n")
 	}
 
@@ -127,6 +119,32 @@ func arrowSymbol(c domain.Connection) string {
 	default:
 		return "―"
 	}
+}
+
+// promptText は解釈に渡す 1 要素ぶんの文字。
+//
+// **折り返す前の文字を渡す。** Text は図形の幅で折り返したあとの文字で、
+// 改行を空白に置き換えると日本語の語の途中に空白が入る（「チームの開 発者」）。
+// 小型モデルはそれを title にそのまま写した。
+func promptText(t domain.TextElement) string {
+	text := t.Text
+	if t.Original != "" {
+		text = t.Original
+	}
+	return strings.ReplaceAll(text, "\n", " ")
+}
+
+// promptTexts は要素ごとの文字を、解釈に渡す形（promptText）に置き換える。
+//
+// ジョブの鍵に使う。**鍵は解釈が読むものから作る**（ADR 0085）。折り返したあとの
+// 文字（Text）のままだと、折り返す前の文字だけが違う保存に、古い入力で走っている
+// ジョブが返る。
+func promptTexts(texts []domain.TextElement) []domain.TextElement {
+	out := make([]domain.TextElement, len(texts))
+	for i, t := range texts {
+		out[i] = domain.TextElement{ID: t.ID, Text: promptText(t)}
+	}
+	return out
 }
 
 // previousInstruction は前回までに作ったものを ref つきで並べる。

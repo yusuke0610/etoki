@@ -674,6 +674,13 @@ func TestJobs_StartWhileRunningComparesSavedInput(t *testing.T) {
 		// 名前はハッシュから外れたが（ADR 0079、#303）、解釈の入力には残っている。
 		{name: "囲みの名前を変えた", from: `"name":"決済まわり"`, to: `"name":"決済の整理"`},
 		{name: "粒度を変えた", from: `"granularity":""`, to: `"granularity":"epic"`},
+		// 解釈に渡すのは折り返す前の文字。折り返したあとの文字が同じでも、
+		// 渡すものが違えば別の入力。
+		{
+			name: "折り返す前の文字だけ変えた",
+			from: `"text":"返金導線が無い",`,
+			to:   `"text":"返金導線が無い","originalText":"返金導線がない",`,
+		},
 		// どこにもつないでいない線は、テキストにもつながりにも出ない。画像は鍵に
 		// 入れないので、同じ入力として扱う。
 		{
