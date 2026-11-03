@@ -11,6 +11,15 @@ set -euo pipefail
 
 nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 
+# gh pr list は --limit で打ち切り、打ち切ったことを言わない。打ち切られた PR が
+# 閉じる issue は「PR が無い」に、その枝は「PR の無い枝」に見えるので、上限に
+# 届いたら止める。下の 2 か所の一覧は同じ上限で取る。
+pr_limit=1000
+if [ "$(gh pr list --state open --limit "$pr_limit" --json number --jq length)" -ge "$pr_limit" ]; then
+	echo "開いている PR が ${pr_limit} 件に届いた。pr_limit を上げてやり直す" >&2
+	exit 1
+fi
+
 echo "== 開いている PR と、閉じる issue（積んだ PR は refs=）"
 # closingIssuesReferences は base が既定の枝（main）の PR でしか埋まらない。積んだ
 # PR は本文の Closes #N から拾い、refs= で出す（マージしても、main に届くまで
@@ -20,7 +29,7 @@ echo "== 開いている PR と、閉じる issue（積んだ PR は refs=）"
 # このリポジトリの名前は式に埋め込む（owner/name に引用符は入らない）。
 # $nwo / $repo は jq の変数で、シェルに展開させてはいけない。
 # shellcheck disable=SC2016
-gh pr list --state open --limit 100 \
+gh pr list --state open --limit "$pr_limit" \
 	--json number,title,baseRefName,headRefName,isDraft,mergeable,closingIssuesReferences,body \
 	--jq '"'"$nwo"'" as $nwo | .[] | "#\(.number) base=\(.baseRefName) "
 	      + (if .baseRefName == "main"
@@ -43,15 +52,19 @@ query($owner:String!,$name:String!,$endCursor:String){
     issues(states:OPEN, first:100, after:$endCursor, orderBy:{field:CREATED_AT, direction:ASC}){
       pageInfo{ hasNextPage endCursor }
       nodes{ number title parent{ number repository{ nameWithOwner } } subIssuesSummary{ total completed }
-             linkedBranches(first:10){ nodes{ ref{ name } } } }
+             closedByPullRequestsReferences(first:10, includeClosedPrs:false){ nodes{ number repository{ nameWithOwner } } }
+             linkedBranches(first:10){ nodes{ ref{ name repository{ nameWithOwner } } } } }
     }
   }
 }'
 
 echo
-echo "== 開いている issue（sub=閉じた数/全体、parent=親、branches=Development 欄で結んだ枝）"
+echo "== 開いている issue（sub=閉じた数/全体、parent=親、prs=閉じる開いた PR、branches=Development 欄で結んだ枝）"
 # 親は別のリポジトリの issue でもよい。そちらは owner/name#N で出す（閉じる issue と
 # 同じ理由）。
+# prs= は issue の側から引く。Development 欄で手で結んだ PR と、別のリポジトリの PR は
+# 上の PR の一覧に出ない。枝も別のリポジトリのものを結べるので、そちらは
+# owner/name:枝 で出す。名前だけにすると、origin の同じ名前の枝と取り違える。
 # shellcheck disable=SC2016
 gh api graphql --paginate -f query="$query" -F owner="${nwo%%/*}" -F name="${nwo##*/}" \
 	--jq '"'"$nwo"'" as $nwo | .data.repository.issues.nodes[]
@@ -60,8 +73,14 @@ gh api graphql --paginate -f query="$query" -F owner="${nwo%%/*}" -F name="${nwo
 	        + (if .parent == null then ""
 	           elif .parent.repository.nameWithOwner == $nwo then "parent=#\(.parent.number) "
 	           else "parent=\(.parent.repository.nameWithOwner)#\(.parent.number) " end)
+	        + (if (.closedByPullRequestsReferences.nodes | length) > 0
+	           then "prs=\([.closedByPullRequestsReferences.nodes[]
+	                       | if .repository.nameWithOwner == $nwo then "#\(.number)"
+	                         else "\(.repository.nameWithOwner)#\(.number)" end] | join(",")) " else "" end)
 	        + (if (.linkedBranches.nodes | length) > 0
-	           then "branches=\([.linkedBranches.nodes[].ref.name // empty] | join(",")) " else "" end)
+	           then "branches=\([.linkedBranches.nodes[].ref // empty
+	                            | if .repository.nameWithOwner == $nwo then .name
+	                              else "\(.repository.nameWithOwner):\(.name)" end] | join(",")) " else "" end)
 	        + .title'
 
 echo
@@ -71,7 +90,7 @@ echo "== PR の無い枝（新しい順、全部）"
 git fetch -q --prune origin
 # 照らすのは、このリポジトリから出した PR の枝だけ。fork の PR が同じ名前の枝を
 # 使っていても、origin のその枝は PR の無い枝のまま残す。
-open_heads="$(gh pr list --state open --limit 100 --json headRefName,isCrossRepository \
+open_heads="$(gh pr list --state open --limit "$pr_limit" --json headRefName,isCrossRepository \
 	--jq '.[] | select(.isCrossRepository | not) | .headRefName')"
 git for-each-ref --sort=-committerdate \
 	--format='%(refname:lstrip=3)%09%(committerdate:short)%09%(authorname)' refs/remotes/origin |
