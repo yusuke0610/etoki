@@ -9,38 +9,72 @@
 # 使い方: .claude/skills/triage/issues.sh
 set -euo pipefail
 
+# issue と PR を見るリポジトリ。gh の既定（upstream のリモートがあればそちら）。
+# 以下の gh pr list には -R で同じものを渡す。gh pr list は GH_REPO を見るが
+# gh repo view は見ないので、渡さないと問い合わせごとに別のリポジトリを見うる。
 nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+# 枝を見るリポジトリ。fork を origin にした checkout では nwo と違う。
+origin_nwo="$(gh repo view "$(git remote get-url origin)" --json nameWithOwner -q .nameWithOwner)"
 
 # gh pr list は --limit で打ち切り、打ち切ったことを言わない。打ち切られた PR が
 # 閉じる issue は「PR が無い」に、その枝は「PR の無い枝」に見えるので、上限に
 # 届いたら止める。下の 2 か所の一覧は同じ上限で取る。
 pr_limit=1000
-if [ "$(gh pr list --state open --limit "$pr_limit" --json number --jq length)" -ge "$pr_limit" ]; then
+if [ "$(gh pr list -R "$nwo" --state open --limit "$pr_limit" --json number --jq length)" -ge "$pr_limit" ]; then
 	echo "開いている PR が ${pr_limit} 件に届いた。pr_limit を上げてやり直す" >&2
 	exit 1
 fi
 
-echo "== 開いている PR と、閉じる issue（積んだ PR は refs=）"
+# 閉じるキーワード（Closes #N など）。別のリポジトリの issue も閉じられるので、
+# そちらは owner/name#N で出す。番号だけにすると、このリポジトリの同じ番号と
+# 取り違える。$nwo は下の --jq の式の中で定義する jq の変数。
+closing_re='(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?::\\s*|\\s+)(?:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#([0-9]+)'
+# shellcheck disable=SC2016
+closing_refs='scan("'"$closing_re"'") | if .[0] == null or (.[0] | ascii_downcase) == ($nwo | ascii_downcase) then "#\(.[1])" else "\(.[0])#\(.[1])" end'
+
+echo "== 開いている PR と、閉じる issue（closes=GitHub が結んだもの、refs=本文の閉じるキーワード）"
 # closingIssuesReferences は base が既定の枝（main）の PR でしか埋まらない。積んだ
 # PR は本文の Closes #N から拾い、refs= で出す（マージしても、main に届くまで
 # issue は閉じない）。拾わないと、その issue を「着手できる」と並べてしまう。
-# 別のリポジトリの issue も閉じられるので、そちらは owner/name#N で出す。番号だけに
-# すると、このリポジトリの同じ番号と取り違える。gh の --jq は --arg を取らないので、
-# このリポジトリの名前は式に埋め込む（owner/name に引用符は入らない）。
+# gh の --jq は --arg を取らないので、このリポジトリの名前は式に埋め込む（owner/name
+# に引用符は入らない）。
 # $nwo / $repo は jq の変数で、シェルに展開させてはいけない。
 # shellcheck disable=SC2016
-gh pr list --state open --limit "$pr_limit" \
+gh pr list -R "$nwo" --state open --limit "$pr_limit" \
 	--json number,title,baseRefName,headRefName,isDraft,mergeable,closingIssuesReferences,body \
-	--jq '"'"$nwo"'" as $nwo | .[] | "#\(.number) base=\(.baseRefName) "
+	--jq '"'"$nwo"'" as $nwo | .[]
+	      | ([.body | '"$closing_refs"'] | unique) as $refs
+	      | "#\(.number) base=\(.baseRefName) "
 	      + (if .baseRefName == "main"
 	         then "closes=\([.closingIssuesReferences[]
 	                        | (.repository.owner.login + "/" + .repository.name) as $repo
 	                        | if $repo == $nwo then "#\(.number)" else "\($repo)#\(.number)" end]
-	                       | join(","))"
-	         else "refs=\([.body | scan("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?::\\s*|\\s+)(?:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#([0-9]+)")
-		                       | if .[0] == null or (.[0] | ascii_downcase) == ($nwo | ascii_downcase) then "#\(.[1])" else "\(.[0])#\(.[1])" end] | unique | join(","))"
-	         end)
-	      + " draft=\(.isDraft) \(.mergeable) \(.headRefName)"'
+	                       | join(",")) "
+	         else "" end)
+	      + (if ($refs | length) > 0 then "refs=\($refs | join(",")) " else "" end)
+	      + "draft=\(.isDraft) \(.mergeable) \(.headRefName)"'
+
+echo
+echo "== 開いている PR のコミットに書いた閉じるキーワード"
+# コミットに書いた Fixes #N は、マージで issue を閉じるのに、GitHub は PR に結ばない。
+# closes= にも、issue の側の prs= にも出ないので、ここで拾う。gh pr list の
+# --json commits は作者まで深く取り、GitHub の問い合わせの上限を超えるので、
+# 本文だけを GraphQL で取る。1 PR で見るのは先頭 100 コミットまで。
+# $owner / $name / $endCursor は GraphQL の変数、$nwo は jq の変数。
+# shellcheck disable=SC2016
+gh api graphql --paginate -F owner="${nwo%%/*}" -F name="${nwo##*/}" -f query='
+query($owner:String!,$name:String!,$endCursor:String){
+  repository(owner:$owner,name:$name){
+    pullRequests(states:OPEN, first:50, after:$endCursor){
+      pageInfo{ hasNextPage endCursor }
+      nodes{ number commits(first:100){ totalCount nodes{ commit{ message } } } }
+    }
+  }
+}' --jq '"'"$nwo"'" as $nwo | .data.repository.pullRequests.nodes[]
+	| ([.commits.nodes[].commit.message | '"$closing_refs"'] | unique) as $refs
+	| select(($refs | length) > 0 or .commits.totalCount > 100)
+	| "#\(.number) refs=\($refs | join(","))"
+	  + (if .commits.totalCount > 100 then " （コミット \(.commits.totalCount) 件のうち先頭 100 件だけ見た）" else "" end)'
 
 # sub-issue の進み（subIssuesSummary）と親は REST の一覧に無いので GraphQL で取る。
 # 100 件を超える分は --paginate で回る（変数名は $endCursor でなければならない）。
@@ -53,18 +87,21 @@ query($owner:String!,$name:String!,$endCursor:String){
       pageInfo{ hasNextPage endCursor }
       nodes{ number title parent{ number repository{ nameWithOwner } } subIssuesSummary{ total completed }
              closedByPullRequestsReferences(first:10, includeClosedPrs:false){ nodes{ number repository{ nameWithOwner } } }
+             blockedBy(first:10){ nodes{ number state repository{ nameWithOwner } } }
              linkedBranches(first:10){ nodes{ ref{ name repository{ nameWithOwner } } } } }
     }
   }
 }'
 
 echo
-echo "== 開いている issue（sub=閉じた数/全体、parent=親、prs=閉じる開いた PR、branches=Development 欄で結んだ枝）"
+echo "== 開いている issue（sub=閉じた数/全体、parent=親、blocked=開いている blocked by、prs=閉じる開いた PR、branches=Development 欄で結んだ枝）"
 # 親は別のリポジトリの issue でもよい。そちらは owner/name#N で出す（閉じる issue と
 # 同じ理由）。
 # prs= は issue の側から引く。Development 欄で手で結んだ PR と、別のリポジトリの PR は
 # 上の PR の一覧に出ない。枝も別のリポジトリのものを結べるので、そちらは
 # owner/name:枝 で出す。名前だけにすると、origin の同じ名前の枝と取り違える。
+# blocked= は issue の依存（blocked by）のうち開いているもの。本文に依存を書かず、
+# そこにだけ結んだ issue もあり、出さないと「着手できる」と並べてしまう。
 # shellcheck disable=SC2016
 gh api graphql --paginate -f query="$query" -F owner="${nwo%%/*}" -F name="${nwo##*/}" \
 	--jq '"'"$nwo"'" as $nwo | .data.repository.issues.nodes[]
@@ -73,6 +110,10 @@ gh api graphql --paginate -f query="$query" -F owner="${nwo%%/*}" -F name="${nwo
 	        + (if .parent == null then ""
 	           elif .parent.repository.nameWithOwner == $nwo then "parent=#\(.parent.number) "
 	           else "parent=\(.parent.repository.nameWithOwner)#\(.parent.number) " end)
+	        + ([.blockedBy.nodes[] | select(.state == "OPEN")
+	            | if .repository.nameWithOwner == $nwo then "#\(.number)"
+	              else "\(.repository.nameWithOwner)#\(.number)" end] as $blocked
+	           | if ($blocked | length) > 0 then "blocked=\($blocked | join(",")) " else "" end)
 	        + (if (.closedByPullRequestsReferences.nodes | length) > 0
 	           then "prs=\([.closedByPullRequestsReferences.nodes[]
 	                       | if .repository.nameWithOwner == $nwo then "#\(.number)"
@@ -88,10 +129,12 @@ echo "== PR の無い枝（新しい順、全部）"
 # 自動削除が有効なので、マージ済みの枝は残っていない。残っているのは、開いている
 # PR の枝か、PR を出していない枝（クラウドのセッションが push したままのものなど）。
 git fetch -q --prune origin
-# 照らすのは、このリポジトリから出した PR の枝だけ。fork の PR が同じ名前の枝を
-# 使っていても、origin のその枝は PR の無い枝のまま残す。
-open_heads="$(gh pr list --state open --limit "$pr_limit" --json headRefName,isCrossRepository \
-	--jq '.[] | select(.isCrossRepository | not) | .headRefName')"
+# 照らすのは、head が origin にある PR の枝だけ。別の fork の PR が同じ名前の枝を
+# 使っていても、origin のその枝は PR の無い枝のまま残す。isCrossRepository（head が
+# base と別のリポジトリか）で見ると、fork を origin にした checkout で、本家へ出した
+# PR の枝を「PR の無い枝」と出してしまう。head の fork が消えた PR は head が null。
+open_heads="$(gh pr list -R "$nwo" --state open --limit "$pr_limit" --json headRefName,headRepository \
+	--jq '.[] | select(.headRepository.nameWithOwner == "'"$origin_nwo"'") | .headRefName')"
 git for-each-ref --sort=-committerdate \
 	--format='%(refname:lstrip=3)%09%(committerdate:short)%09%(authorname)' refs/remotes/origin |
 	while IFS=$'\t' read -r branch date author; do
