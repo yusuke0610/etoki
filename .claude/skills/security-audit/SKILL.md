@@ -46,9 +46,9 @@ git fetch origin &&
 名前に時刻まで入れるのは、同じ日にやり直したときに前の worktree とぶつけない
 ため。以下ではこれを `<worktree>` と書く。
 
-worktree の中で `make` を叩くときは `env -u ETOKI_DEVSHELL -u IN_NIX_SHELL` を
-付ける。付けないと、元のチェックアウトの devShell の道具で検査する（`flake.lock`
-が違うと結果が変わる）。`cd web` してから叩くもの（`bun audit` など）は
+worktree の中の `make` は、`flake.nix` か `flake.lock` が元のチェックアウトと
+違えば worktree の devShell に入り直す（Makefile の冒頭）。`make` を通らない
+もの（`cd web` してから叩く `bun audit` など）は入り直さないので、
 `nix develop .. --command` で包む。
 
 ## 2. 前回を読む
@@ -88,7 +88,7 @@ gh api --paginate repos/yusuke0610/etoki/security-advisories \
 
 | 測るもの                        | コマンド                                                                                                                                                                                                                 |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Go の依存と Go 本体             | `env -u ETOKI_DEVSHELL -u IN_NIX_SHELL make vulncheck`                                                                                                                                                                   |
+| Go の依存と Go 本体             | `make vulncheck`                                                                                                                                                                                                         |
 | web の依存                      | `cd web && nix develop .. --command sh -c 'bun install --frozen-lockfile && bun audit'`（集計に `--json`）                                                                                                               |
 | Go の静的解析                   | `nix develop --command golangci-lint run --default=none --enable=gosec --max-issues-per-linter=0 --max-same-issues=0 ./...`（worktree の `flake.lock` の版で回す）                                                       |
 | Dependabot alerts               | `gh api --paginate 'repos/yusuke0610/etoki/dependabot/alerts?state=open' -q '.[].number' > tmp/dependabot-alerts.txt && wc -l < tmp/dependabot-alerts.txt`（`wc` へ直に流すと、失敗したときのエラー本文も 1 件と数える） |

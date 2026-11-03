@@ -166,6 +166,17 @@
   `captureUpdate: IMMEDIATELY` を渡す。既定（`EVENTUALLY`）のままだと積まれず、
   戻すと直前に描いたものが消える。**取り込みも積む。** 確認を経た置き換えだが、
   戻せるほうが失うものが少ない。選択だけを変える `updateScene` は既定のままにする。
+- **etoki が置く図形は、要素に詰め替える前に、すべての要素とラベルを
+  `roughness: 0` にし、文字と図形・矢印のラベルの書体を Nunito にする**
+  （`withCleanStyle`、`web/src/excalidraw/drawingStyle.ts`、ADR 0095）。ひな形・表・
+  図のドラフトがこれを通している。通さないと、置いたものだけ揺れる線と手書き風の
+  書体に戻る。人が描くものの既定は、ボードを開くたびに同じ値を渡している
+  （`BoardPage` の `initialData`）。保存したシーンには載らない。
+  **詰め替えたあとに書体を差し替えない。** 字の箱は詰め替えのときに書体で測る。
+  **測る前に書体の読み込みを待つ**（`loadCleanFont`）。待たないと、まだ Nunito を
+  使っていないボードでは代わりの書体の寸法で箱が決まり、Excalidraw は読み込み後に
+  測り直さない。図のドラフトと mermaid の貼り付けが待っている。ひな形は一覧の
+  画面で組むのでキャンバスの書体の登録が無く、待てない（#416 で残した制約）。
 - **戻したあとも「未保存」が残ることがある。** 戻した要素は Excalidraw が
   version を上げて書き戻すので、中身が保存したときと同じでも署名が変わる。
   保存しなくてよいものを保存させる向きの食い違いで、描いたものを失う向きでは
@@ -789,7 +800,12 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   束の中のコールバックを依存に置いた `useCallback` まで作り直される。
   `handleChange` がそれで毎回差し替わり、**Excalidraw の `onChange` が
   差し替わり続けて `Maximum update depth exceeded` で画面ごと落ちた。**
-  vitest も `tsc` も eslint も通ったままなので、**気づけるのは E2E だけ。**
+  `tsc` も eslint も通ったままなので、**気づけるのは E2E だけ。** 例外は
+  `useCanvasAnnotations` で、`web/src/board/useCanvasAnnotations.test.ts` が 2 つを
+  見る（#380）。`handleChange` と `updateElements` は、state が変わる描き直しでも
+  同じ関数を返す。束は、入力（props と state）が変わらない描き直しで同じものを
+  返す（state が変われば作り直してよい）。フックを切り出したら、そのフックの
+  単体テストでも同じ 2 つを見る。
 - **依存配列には束ではなく、束の中の安定した値を置く。** `sceneSize` を丸ごと
   依存にすると、バイト数が変わるたびに同じことが起きる。呼ぶ側で
   `const { schedule } = useSceneSize(api)` のように取り出す。
