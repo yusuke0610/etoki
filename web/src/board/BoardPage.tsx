@@ -10,6 +10,7 @@ import {
 import type { BoardDetail, BoardWithFiles, Capabilities } from "../api/types";
 import { unavailableReason } from "../app/capability";
 import { isAnnotation } from "../excalidraw/annotation";
+import { DRAWING_DEFAULTS } from "../excalidraw/drawingStyle";
 import { openedFiles } from "../excalidraw/files";
 import { isMaybeMermaidDefinition } from "../excalidraw/excalidrawMermaid";
 import { formatSceneSize } from "../excalidraw/size";
@@ -43,6 +44,8 @@ import { BoardContext } from "./BoardContext";
 import { BoardMenu } from "./BoardMenu";
 import { BoardStatus } from "./BoardStatus";
 import { DeleteConfirm } from "./DeleteConfirm";
+import { PremiseDialog } from "./premise/PremiseDialog";
+import { usePremise } from "./premise/usePremise";
 import { SidePanel, type TabSpec } from "./SidePanel";
 import { useCreation } from "./annotations/useCreation";
 import { useRunHistories } from "./annotations/useRunHistories";
@@ -137,6 +140,13 @@ type Props = {
    */
   onRenamed: (board: BoardDetail) => void;
   /**
+   * ボードの背景を書き換えた、または先に書き換えられていたので取り直した
+   * （ADR 0093）。手元のボードを差し替えてもらう。
+   *
+   * 版（`updatedAt`）は動かないので、保存の基準は据え置く（ADR 0092）。
+   */
+  onPremiseChanged: (board: BoardDetail) => void;
+  /**
    * ボードを削除したので、手元から外してもらう。
    *
    * **確認はこの中で済ませてある**（ADR 0042）。親は未保存の確認を重ねない。
@@ -172,6 +182,7 @@ export function BoardPage({
   onChangeTarget,
   onTargetRefreshed,
   onRenamed,
+  onPremiseChanged,
   onDeleted,
   onDirtyChange,
   theme,
@@ -292,6 +303,10 @@ export function BoardPage({
   const [shareOpen, setShareOpen] = useState(false);
   const openShare = useCallback(() => setShareOpen(true), []);
   const closeShare = useCallback(() => setShareOpen(false), []);
+  // ボードの背景（`usePremise`、ADR 0093）。**書きかけはダイアログの外のここで
+  // 持つ。** 閉じても消えない。開くのはキャンバスのメニュー。
+  const premise = usePremise({ board, onChanged: onPremiseChanged });
+  const openPremise = premise.openEditor;
   // 図のドラフトのタブで、LLM に作らせるか mermaid を貼るか（`DiagramTab`）。
   const [diagramMode, setDiagramMode] = useState<DiagramMode>("generate");
   // 注釈の詳細の開閉（`useAnnotationDetail`）。保存で消えた注釈の詳細は閉じる。
@@ -330,7 +345,10 @@ export function BoardPage({
 
   const initialScene = useMemo(() => {
     try {
-      const scene = JSON.parse(board.scene) as { elements?: unknown; appState?: unknown };
+      const scene = JSON.parse(board.scene) as {
+        elements?: unknown;
+        appState?: Record<string, unknown>;
+      };
       // **開いたら中身が見えている位置から始める。** シーンの原点はキャンバスの
       // 左上に来るので、原点あたりに描かれたものはツールバーの下に隠れる。
       // ひな形から作ったボードは必ずそこから始まる（`excalidraw/template.ts`）
@@ -341,13 +359,20 @@ export function BoardPage({
       //
       // 貼った画像はシーンとは別に届く（ADR 0074）。渡さないと、画像の要素だけが
       // 空白で置かれる。
+      //
+      // 線と書体の既定は開くたびに重ねる（ADR 0095）。保存したシーンには載らない。
       return {
-        data: { ...scene, files: openedFiles(board.files), scrollToContent: true },
+        data: {
+          ...scene,
+          appState: { ...scene.appState, ...DRAWING_DEFAULTS },
+          files: openedFiles(board.files),
+          scrollToContent: true,
+        },
         unreadable: false,
       };
     } catch {
       // 保存時に検証しているのでここには来ないはずだが、来たら空で開く。
-      return { data: { elements: [], appState: {} }, unreadable: true };
+      return { data: { elements: [], appState: DRAWING_DEFAULTS }, unreadable: true };
     }
   }, [board.scene, board.files]);
   const initialData = initialScene.data;
@@ -690,6 +715,7 @@ export function BoardPage({
     // `cancelFailed`）ので、待たずに手放してよい。
     onCancel: (id) => void cancelInterpretation(id),
     unavailable: interpretationUnavailable,
+    premise: board.premise,
   };
   // 作る先の見出し。押す直前の帯の文（`creationNotice`）に出す。作成先が未選択の
   // ボードでは作成まで進めないので null。
@@ -792,6 +818,7 @@ export function BoardPage({
         role={board.role}
         targetLocked={board.targetLocked}
         onRename={() => setNameDraft(board.name)}
+        onPremise={openPremise}
         onShare={openShare}
         creationUnavailable={creationUnavailable}
         onRefreshTarget={() => void refreshTargetDisplay()}
@@ -815,6 +842,7 @@ export function BoardPage({
       board.name,
       board.role,
       setNameDraft,
+      openPremise,
       openShare,
       board.targetLocked,
       api,
@@ -1140,6 +1168,7 @@ export function BoardPage({
               role={board.role}
               unavailable={sharingUnavailable}
             />
+            <PremiseDialog editor={premise} canEdit={canEdit} premise={board.premise} />
           </div>
         </div>
       </div>

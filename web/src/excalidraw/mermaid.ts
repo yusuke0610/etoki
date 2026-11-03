@@ -5,6 +5,7 @@ import {
 } from "@excalidraw/mermaid-to-excalidraw";
 
 import type { SceneElement } from "./annotation";
+import { loadCleanFont, withCleanStyle } from "./drawingStyle";
 
 /**
  * 変換器が返す骨格のうち、ここで見るところだけの形。
@@ -168,13 +169,18 @@ export async function mermaidToElements(
     };
   }
 
+  // 字の箱は詰め替えのときに測るので、書体を読み込み終えてから詰め替える。
+  await loadCleanFont(skeletons);
+
   try {
     return {
       ok: true,
       // 骨格から要素への詰め替えはライブラリに任せる。ラベルの入れ子や矢印の
       // 結びつきを自前で組み立てると、壊れたシーンを作る側に回る。
+      // 見た目は詰め替える前に当てる（`withCleanStyle`）。文字の箱は
+      // 詰め替えのときに書体で測られる。
       elements: convertToExcalidrawElements(
-        skeletons as never[],
+        withCleanStyle(skeletons) as never[],
       ) as unknown as SceneElement[],
     };
   } catch (err) {

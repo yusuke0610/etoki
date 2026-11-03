@@ -97,10 +97,22 @@ describe("createTable", () => {
       Record<string, unknown>)[];
     const looks = new Set(
       table.map((el) =>
-        JSON.stringify([el.backgroundColor, el.strokeColor, el.strokeWidth]),
+        JSON.stringify([
+          el.backgroundColor,
+          el.strokeColor,
+          el.strokeWidth,
+          el.roughness,
+        ]),
       ),
     );
     expect(looks.size).toBe(1);
+  });
+
+  // 表だけ手書き風に戻らないように（ADR 0095）。
+  it("線を揺らさない", () => {
+    const table = createTable({ x: 0, y: 0 }) as (SceneElement &
+      Record<string, unknown>)[];
+    expect(new Set(table.map((el) => el.roughness))).toEqual(new Set([0]));
   });
 });
 

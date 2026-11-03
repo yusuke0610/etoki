@@ -8,6 +8,7 @@ import {
   openBoardMenu,
   openBoardWithMock,
   ekidokiButton,
+  openPremiseDialog,
   openShareDialog,
 } from "./helpers/board";
 import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
@@ -232,6 +233,33 @@ test.describe("共有", () => {
     await expect(menu.getByText("作成先を変えられるのはオーナーだけです")).toBeVisible();
     // 書き出しは viewer にも出す（ADR 0017）。消えているのが編集系だけだと分かる。
     await expect(menu.getByRole("button", { name: "書き出し" })).toBeVisible();
+  });
+
+  // ボードの背景（ADR 0093）は viewer にも読ませる。ボードの中身はすでに全部
+  // 見えている（ADR 0017）ので、隠す理由が無い。書き換えの口は出さず、なぜ無い
+  // のかを言う。
+  test("viewer はボードの背景を読めるが、書き換える口は無く理由が出る", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = {
+      ...board(),
+      role: "viewer",
+      premise: "acme/web のフロントエンド",
+    };
+    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
+
+    await openBoardWithMock(page, mock);
+
+    const dialog = await openPremiseDialog(page);
+    await expect(dialog.getByText("acme/web のフロントエンド")).toBeVisible();
+    await expect(dialog.getByRole("textbox")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "保存", exact: true })).toHaveCount(
+      0,
+    );
+    await expect(
+      dialog.getByText("ボードの背景を書き換えられるのは、編集できる人だけです。"),
+    ).toBeVisible();
   });
 
   // 編集できる人には出さない。出しっぱなしでも上の検査は通る。

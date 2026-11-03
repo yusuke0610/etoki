@@ -21,5 +21,6 @@
 @import "./board/annotations/annotations.css";
 @import "./board/diagram/diagram.css";
 @import "./board/members/members.css";
+@import "./board/premise/premise.css";
 @import "./board/target/target.css";
 @import "./notification/notification.css";

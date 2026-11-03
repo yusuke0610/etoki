@@ -10,6 +10,7 @@ import {
   openAnnotationDetail,
   openBoard,
   openBoardWithMock,
+  openPremiseDialog,
 } from "./helpers/board";
 import {
   annotatedScene,
@@ -775,5 +776,103 @@ test.describe("解釈と作成", () => {
     await expect(body).toBeVisible();
     // 作らずに止まる。種別も親子も無い draft issue を並べない（ADR 0006）。
     await expect(card.getByText("未作成")).toBeVisible();
+  });
+});
+
+// ボードの背景（ADR 0093）。押す前に見せるのは背景だけで、結果には何を添えたかを
+// 載せる。黙って材料を足すと、出力がなぜそうなったかを読めない（中核思想 3）。
+test.describe("絵の外から添えるもの", () => {
+  test("背景を書いてあれば、押す前に添えることを見せる", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), premise: "acme/web のフロントエンド" };
+    await openBoardWithMock(page, mock);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    const preview = detail.getByText("ボードの背景も添えて読みます");
+    await expect(preview).toBeVisible();
+    await preview.click();
+    await expect(detail.getByText("acme/web のフロントエンド")).toBeVisible();
+  });
+
+  // 空でも催促しない（中核思想 1）。
+  test("背景が空なら、押す前に何も言わない", async ({ page }) => {
+    await openBoardWithMock(page, baseMock());
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await expect(detail.getByRole("button", { name: "絵解く" })).toBeVisible();
+    await expect(detail.getByText(/ボードの背景/)).toHaveCount(0);
+  });
+
+  // 打ち切った件数も黙らない（ADR 0054 と同じ形）。開かなくても「何を何件」が読める。
+  test("結果には、添えた背景と別の絵から作ったものを件数ごと見せる", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), premise: "acme/web のフロントエンド" };
+    mock.interpret = {
+      status: 200,
+      body: {
+        ...interpretation(),
+        context: {
+          premise: "acme/web のフロントエンド",
+          otherItems: [
+            { kind: "epic", title: "決済" },
+            { kind: "issue", title: "カードを登録する" },
+          ],
+          omittedOtherItems: 3,
+        },
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+
+    const added = detail.getByText(
+      "絵の外から添えたもの：ボードの背景・別の絵から作ったもの 2 件（上限を超えた 3 件は添えていません）",
+    );
+    await expect(added).toBeVisible();
+    await added.click();
+    await expect(detail.getByText("決済", { exact: true })).toBeVisible();
+    await expect(detail.getByText("カードを登録する", { exact: true })).toBeVisible();
+    // 結果を選んでいるあいだは、押す前の見せ方を重ねない。
+    await expect(detail.getByText("ボードの背景も添えて読みます")).toHaveCount(0);
+  });
+
+  // 背景を書き換えても、引いた解釈は捨てない（ADR 0093）。捨てると背景を一言
+  // 直すたびに課金した結果が消える。代わりに、古い背景で読んだと見分けられる
+  // ようにする。
+  test("背景を書き換えても結果は残り、違う背景で読んだものだと言う", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = { ...board(), premise: "前の背景" };
+    mock.interpret = {
+      status: 200,
+      body: {
+        ...interpretation(),
+        context: { premise: "前の背景", otherItems: [], omittedOtherItems: 0 },
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toBeVisible();
+    await expect(detail.getByText(/違うボードの背景/)).toHaveCount(0);
+    await detail.getByRole("button", { name: "閉じる", exact: true }).click();
+
+    const dialog = await openPremiseDialog(page);
+    await dialog
+      .getByRole("textbox", { name: "ボードの背景", exact: true })
+      .fill("新しい背景");
+    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(dialog).toBeHidden();
+
+    const reopened = await openAnnotationDetail(page, "ログイン");
+    await expect(
+      reopened.getByRole("button", { name: "GitHub に作成する" }),
+    ).toBeVisible();
+    await expect(
+      reopened.getByText(/この結果は、いまとは違うボードの背景で読んだものです/),
+    ).toBeVisible();
   });
 });
