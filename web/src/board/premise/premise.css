@@ -1,0 +1,52 @@
+/*
+ * ボードの背景のダイアログ（ADR 0093）。器は `.modal-dialog`（`app/base.css`）。
+ * 背景は長い文になりうるので、伸びたらダイアログの中でスクロールさせる。
+ */
+.premise-dialog {
+  width: min(600px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+}
+
+.premise-dialog h2 {
+  margin: 0 0 var(--space-6);
+}
+
+.premise-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 下書きの本文（`.draft-body`）と同じ余白と行の高さにする。どちらも人が書く長い文。 */
+.premise-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.premise-dialog .dialog-actions {
+  margin-top: var(--space-6);
+}
+
+.premise-latest h3 {
+  margin: var(--space-4) 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/*
+ * 背景の本文。**書いた人の改行と空行をそのまま見せる。** 区切りとして置いたもので、
+ * LLM にもそのまま渡る（サーバーは前後の空白しか落とさない）。絵解きの面で、
+ * 結果に添えた背景を見せるときも同じ形にする。
+ */
+.premise-text {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

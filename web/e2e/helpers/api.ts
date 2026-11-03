@@ -26,6 +26,7 @@ import type {
   RepositoryList,
   SaveSceneRequest,
   SessionStatus,
+  SetPremiseRequest,
   SyncRun,
 } from "../../src/api/types";
 
@@ -71,6 +72,13 @@ export type ApiMock = {
    * いないかは、送ったボディを見ないと確かめられない（ADR 0074）。
    */
   saveRequests: SaveSceneRequest[];
+  /**
+   * ボードの背景の書き換えで受け取ったリクエストボディ（ADR 0093）。届いた順に積む。
+   *
+   * 照合の基準（`basePremise`）に何を送ったかは、ここにしか現れない。断られた
+   * ものも積む。
+   */
+  premiseRequests: SetPremiseRequest[];
   /** ボード ID をキーにした注釈の状態。 */
   annotations: Record<string, AnnotationStatus[]>;
   /**
@@ -218,6 +226,12 @@ export type ApiMock = {
   lookupInviteeError?: Reply<never>;
   /** 改名を失敗させたいときに指定する。 */
   renameError?: Reply<never>;
+  /**
+   * 背景の書き換えを失敗させたいときに指定する。照合と長さの判定より先に返す。
+   *
+   * 409 と 413 はモックが実物と同じ判定で返すので、ここで作らない。
+   */
+  premiseError?: Reply<never>;
   /**
    * 削除で失われるもの。ボード ID をキーにする（ADR 0042）。
    *
@@ -454,6 +468,16 @@ export function holdSetTarget(page: Page, hold: Promise<void>): Promise<void> {
   return holdRoute(
     page,
     (url) => /^\/api\/boards\/[^/]+\/target$/.test(url.pathname),
+    "PUT",
+    hold,
+  );
+}
+
+/** ボードの背景の書き換えを「保存中」のまま止める。解決するまで応答を返さない。 */
+export function holdPremise(page: Page, hold: Promise<void>): Promise<void> {
+  return holdRoute(
+    page,
+    (url) => /^\/api\/boards\/[^/]+\/premise$/.test(url.pathname),
     "PUT",
     hold,
   );
