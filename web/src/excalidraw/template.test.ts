@@ -1,3 +1,4 @@
+import { FONT_FAMILY } from "@excalidraw/excalidraw";
 import { describe, expect, it } from "vitest";
 
 import { diagramKinds } from "../board/diagram/diagramLabels";
@@ -109,6 +110,20 @@ describe("templateElements", () => {
         ]);
         expect(attributes.every((el) => top.has(el.id))).toBe(true);
       }
+    }
+  });
+
+  // ひな形だけ手書き風に戻らないように（ADR 0095）。全種別を見る。
+  it("線を揺らさず、文字は清書調の書体で置く", () => {
+    for (const kind of diagramKinds()) {
+      const elements = templateElements(kind) as (SceneElement &
+        Record<string, unknown>)[];
+      expect(new Set(elements.map((el) => el.roughness)), kind).toEqual(new Set([0]));
+      const texts = elements.filter((el) => el.type === "text");
+      expect(texts.length, kind).toBeGreaterThan(0);
+      expect(new Set(texts.map((el) => el.fontFamily)), kind).toEqual(
+        new Set([FONT_FAMILY.Nunito]),
+      );
     }
   });
 

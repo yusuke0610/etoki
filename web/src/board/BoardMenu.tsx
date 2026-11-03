@@ -10,6 +10,7 @@ import {
   deleteBoardIcon,
   exportIcon,
   importIcon,
+  premiseIcon,
   refreshTargetIcon,
   renameIcon,
   shareIcon,
@@ -25,6 +26,8 @@ type Props = {
   targetLocked: boolean;
   /** 名前の編集を始める。 */
   onRename: () => void;
+  /** ボードの背景のダイアログを開く（`PremiseDialog`、ADR 0093）。 */
+  onPremise: () => void;
   /** 共有のダイアログを開く（`ShareDialog`、#248）。 */
   onShare: () => void;
   /** GitHub が使えない理由。使えるなら null（ADR 0030）。 */
@@ -78,6 +81,7 @@ export function BoardMenu({
   role,
   targetLocked,
   onRename,
+  onPremise,
   onShare,
   creationUnavailable,
   onRefreshTarget,
@@ -118,6 +122,14 @@ export function BoardMenu({
       ) : (
         <MenuNote>{VIEWER_EDIT_NOTE}</MenuNote>
       )}
+      {/*
+        ボードの背景（ADR 0093）。ブレストの外に置くボードの設定なので、名前と
+        並べる。**誰にでも出す。** 読むのは viewer にも許し、書き換えの口は
+        開いた先で editor 以上にだけ出す（共有と同じ形）。
+      */}
+      <MainMenu.Item className="etoki-menu-item" icon={premiseIcon} onSelect={onPremise}>
+        ボードの背景…
+      </MainMenu.Item>
       {/*
         共有はボードそのものの管理なので、右のパネル（ボードの中身に対する作業）
         ではなくここから開く（#248、ADR 0078）。**誰にでも出す。** 一覧は読む

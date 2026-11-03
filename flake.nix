@@ -24,10 +24,19 @@
         default = pkgs.mkShell {
           name = "etoki";
 
-          # Makefile が「devShell の中か」を判定するための印。shellHook ではなく
-          # derivation の環境に置く。nix develop も nix-direnv も derivation の
-          # 環境変数は必ず渡すが、shellHook が走るかは経路によって変わるため。
-          ETOKI_DEVSHELL = "1";
+          # Makefile が「この作業ツリーの devShell の中か」を判定するための印。
+          # shellHook ではなく derivation の環境に置く。nix develop も nix-direnv も
+          # derivation の環境変数は必ず渡すが、shellHook が走るかは経路によって
+          # 変わるため。
+          #
+          # 値は flake.nix と flake.lock の中身のハッシュで、Makefile が同じ値を
+          # 計算して比べる。"1" のような固定値だと、本体の devShell を読んだ端末から
+          # worktree（.claude/worktrees/*）に入ったとき印が立ったままになり、
+          # 包み直しが起きずに本体の flake.lock の道具で検査する（#401）。道具を
+          # 決めるのはこの 2 つなので、中身が同じなら入り直さずに済む。
+          ETOKI_DEVSHELL = builtins.hashString "sha256" (
+            builtins.readFile ./flake.nix + builtins.readFile ./flake.lock
+          );
 
           # バージョンは二重に固定している:
           #   - どの Go / Bun が入るかは flake.lock の nixpkgs リビジョンが決める

@@ -2,6 +2,7 @@ import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 
 import type { DiagramKind } from "../api/types";
 import type { SceneElement } from "./annotation";
+import { withCleanStyle } from "./drawingStyle";
 
 /**
  * 新しいボードを何から始めるか。
@@ -69,7 +70,7 @@ type Skeleton = Record<string, unknown> & { type: string; id?: string };
  * 既存の絵を避ける必要が無い（`draftOrigin` が要るのはドラフトの側）。
  */
 export function templateElements(kind: DiagramKind): SceneElement[] {
-  return convertToExcalidrawElements(SKELETONS[kind]() as never[]);
+  return convertToExcalidrawElements(withCleanStyle(SKELETONS[kind]()) as never[]);
 }
 
 /**
@@ -151,7 +152,6 @@ const STICKY_STYLE = {
   strokeColor: "#e8b339",
   fillStyle: "solid",
   strokeWidth: 1,
-  roughness: 0,
 } as const;
 
 /**
