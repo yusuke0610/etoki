@@ -1,6 +1,6 @@
-import { serializeAsJSON } from "@excalidraw/excalidraw";
+import { FONT_FAMILY, serializeAsJSON } from "@excalidraw/excalidraw";
 import mermaid from "mermaid";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { isAnnotation, type SceneElement } from "./annotation";
 import {
@@ -105,6 +105,55 @@ describe("mermaidToElements", () => {
     for (const el of got.elements) {
       expect(el.customData ?? null).toBeNull();
       expect(isAnnotation(el)).toBe(false);
+    }
+  });
+
+  // 置いた図だけ手書き風に戻らないように（ADR 0095）。sequence を使うのは、
+  // 図形のラベル・単独の文字・線・矢印が全部そろうから。
+  it("線を揺らさず、文字は清書調の書体で置く", async () => {
+    const got = await mermaidToElements(
+      "sequenceDiagram\n  Alice->>Bob: おはよう\n  Bob-->>Alice: やあ",
+    );
+
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    const elements = got.elements as (SceneElement & Record<string, unknown>)[];
+    expect(new Set(elements.map((el) => el.roughness))).toEqual(new Set([0]));
+    const texts = elements.filter((el) => el.type === "text");
+    expect(texts.length).toBe(6);
+    expect(new Set(texts.map((el) => el.fontFamily))).toEqual(
+      new Set([FONT_FAMILY.Nunito]),
+    );
+  });
+
+  // 書体を読み込み終える前に詰め替えると、字の箱が代わりの書体の寸法で
+  // 決まる（ADR 0095）。読み込みが済むまで要素を返さないことを見る。
+  it("書体を読み込み終えてから要素にする", async () => {
+    let finish = () => {};
+    const load = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    Object.defineProperty(document, "fonts", { configurable: true, value: { load } });
+    try {
+      let settled = false;
+      const pending = mermaidToElements("flowchart TD\n  A[はじめ] --> B[おわり]").then(
+        (got) => {
+          settled = true;
+          return got;
+        },
+      );
+      await vi.waitFor(() => expect(load).toHaveBeenCalled());
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      finish();
+      const got = await pending;
+      expect(got.ok).toBe(true);
+    } finally {
+      Reflect.deleteProperty(document, "fonts");
     }
   });
 

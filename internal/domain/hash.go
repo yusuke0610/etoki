@@ -45,6 +45,12 @@ type TextElement struct {
 	ID string
 	// Text は要素のテキスト。
 	Text string
+	// Original は折り返す前のテキスト（Excalidraw の originalText）。無ければ空。
+	//
+	// Text は図形の幅で自動的に折り返したあとの文字で、日本語では語の途中に改行が
+	// 入る（「チームの開\n発者」）。解釈には Original を渡す。ハッシュは Text の
+	// まま（変えると、保存済みの注釈が一斉に「変更あり」になる）。
+	Original string
 }
 
 // ハッシュ入力の区切りに使う制御文字。
