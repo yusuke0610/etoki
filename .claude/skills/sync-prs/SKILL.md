@@ -76,16 +76,22 @@ close → reopen で済み、head が変わらないので full review もやり
 
 ### 取り込む
 
-worktree で取り込み、いまの作業ツリーを汚さない。
+worktree で取り込み、いまの作業ツリーを汚さない。**用意の行はすべて `&&` で
+つなぐ。** どれかが落ちたら、後ろは走らせない。`git worktree add` は、その枝が別の
+worktree で開いていると落ちる。そのまま次の行へ進むと、`cd` も落ちて、`merge`
+から先が元の作業ツリーで走る（元の枝が進み、検査とコミットと push もそこで行う）。
 
 ```sh
-git fetch origin main <枝>
-git worktree add ../etoki-sync-<番号> <枝>
-cd ../etoki-sync-<番号>
-git merge --ff-only origin/<枝>   # 同じ名前の古いローカル枝を掴んでいたら進める
-test "$(git rev-parse HEAD)" = "$(git rev-parse origin/<枝>)"   # 手元が先に進んでいないか
-test -z "$(git status --porcelain)"   # 手を付けていない作業ツリーか
+git fetch origin main <枝> &&
+  git worktree add ../etoki-sync-<番号> <枝> &&
+  cd ../etoki-sync-<番号> &&
+  test -z "$(git status --porcelain)" &&   # 手を付けていない作業ツリーか
+  git merge --ff-only origin/<枝> &&       # 同じ名前の古いローカル枝を掴んでいたら進める
+  test "$(git rev-parse HEAD)" = "$(git rev-parse origin/<枝>)"   # 手元が先に進んでいないか
 ```
+
+**どこかで止まったら、そこで止めてユーザーに訊く。** 次の段落はそれぞれの行が
+止まる理由。
 
 **`git status --porcelain` が空でなければ、止めてユーザーに訊く。** `worktree add`
 が既にある worktree を指していた、などで、ほかの作業の変更や未追跡のファイルが
@@ -102,8 +108,8 @@ test -z "$(git status --porcelain)"   # 手を付けていない作業ツリー�
 
 ```sh
 # 下の段の枝が消えていても、head は PR の ref から取れる。sha は /land の記録や PR に残る
-git fetch origin refs/pull/<下の段の PR 番号>/head
-git merge <下の段の最後の head の sha>
+git fetch origin refs/pull/<下の段の PR 番号>/head &&
+  git merge <下の段の最後の head の sha>   # 衝突したら、解いて --continue してから次へ
 git rev-parse 'origin/main^{tree}' '<下の段の最後の head>^{tree}'   # 2 行が一致するか
 git merge -s ours origin/main   # 一致したとき
 git merge origin/main           # 一致しないとき
