@@ -65,11 +65,12 @@ echo "== 開いている PR のコミットに書いた閉じるキーワード"
 # コミットに書いた Fixes #N は、マージで issue を閉じるのに、GitHub は PR に結ばない。
 # closes= にも、issue の側の prs= にも出ないので、ここで拾う。gh pr list の
 # --json commits は作者まで深く取り、GitHub の問い合わせの上限を超えるので、
-# 本文だけを GraphQL で取る。1 PR で見るのは先頭 100 コミットまで。
-# **100 を超える PR があったら、出したうえで止める。** 残りのコミットにだけ閉じる
-# キーワードがあると、その issue は prs= にも refs= にも出ず、/triage・/spec・
-# /file-issues が「PR が無い」と読む。止まれば読む側は一覧を使えない。
-# $owner / $name / $endCursor は GraphQL の変数、$nwo は jq の変数。
+# 本文だけを GraphQL で取る。
+# **100 を超える PR は、その PR だけコミットを最後まで引き直す。** 一覧の問い合わせは
+# PR ごとに先頭 100 件しか取れない（入れ子の接続は --paginate が辿らない）。残りの
+# コミットにだけ閉じるキーワードがあると、その issue は prs= にも refs= にも出ず、
+# /triage・/spec・/file-issues が「PR が無い」と読む。取れなければ set -e で止まる。
+# $owner / $name / $endCursor / $n は GraphQL の変数、$nwo は jq の変数。
 # shellcheck disable=SC2016
 commit_refs="$(gh api graphql --paginate -F owner="${nwo%%/*}" -F name="${nwo##*/}" -f query='
 query($owner:String!,$name:String!,$endCursor:String){
@@ -80,17 +81,30 @@ query($owner:String!,$name:String!,$endCursor:String){
     }
   }
 }' --jq '"'"$nwo"'" as $nwo | .data.repository.pullRequests.nodes[]
-	| ([.commits.nodes[].commit.message | '"$closing_refs"'] | unique) as $refs
-	| select(($refs | length) > 0 or .commits.totalCount > 100)
-	| "#\(.number) refs=\($refs | join(","))"
-	  + (if .commits.totalCount > 100 then " （コミット \(.commits.totalCount) 件のうち先頭 100 件だけ見た）" else "" end)')"
-if [ -n "$commit_refs" ]; then
-	printf '%s\n' "$commit_refs"
-fi
-if grep -qF '件のうち先頭 100 件だけ見た' <<<"$commit_refs"; then
-	echo "コミットが 100 件を超える PR があり、閉じるキーワードを見きれない。その PR のコミットを手で見てから回す" >&2
-	exit 1
-fi
+	| if .commits.totalCount > 100 then "more \(.number)"
+	  else ([.commits.nodes[].commit.message | '"$closing_refs"'] | unique) as $refs
+	       | select(($refs | length) > 0) | "#\(.number) refs=\($refs | join(","))" end')"
+while read -r line; do
+	case "$line" in
+	"") ;;
+	"more "*)
+		n="${line#more }"
+		# shellcheck disable=SC2016
+		refs="$(gh api graphql --paginate -F owner="${nwo%%/*}" -F name="${nwo##*/}" -F n="$n" -f query='
+query($owner:String!,$name:String!,$n:Int!,$endCursor:String){
+  repository(owner:$owner,name:$name){
+    pullRequest(number:$n){
+      commits(first:100, after:$endCursor){ pageInfo{ hasNextPage endCursor } nodes{ commit{ message } } }
+    }
+  }
+}' --jq '"'"$nwo"'" as $nwo | .data.repository.pullRequest.commits.nodes[].commit.message | '"$closing_refs"'' | sort -u | paste -sd, -)"
+		if [ -n "$refs" ]; then
+			echo "#${n} refs=${refs}"
+		fi
+		;;
+	*) echo "$line" ;;
+	esac
+done <<<"$commit_refs"
 
 # sub-issue の進み（subIssuesSummary）と親は REST の一覧に無いので GraphQL で取る。
 # 100 件を超える分は --paginate で回る（変数名は $endCursor でなければならない）。
