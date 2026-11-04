@@ -19,6 +19,11 @@ else
 	mapfile -t prs < <(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" --jq '.[].number' | sort -n)
 fi
 
+# **CodeRabbit かどうかはログイン名の完全一致で見る。** REST では
+# `coderabbitai[bot]`、GraphQL では Bot の `coderabbitai`。部分一致にすると、
+# 名前に coderabbit を含む別のアカウントが書いた「Full review finished」や要約で、
+# 0 件と出せてしまう（リポジトリは公開で、誰でもコメントを書ける）。
+#
 # 未解決のスレッドの数。findings.sh と同じく GraphQL で CodeRabbit のものだけを
 # 数える。クラウドのセッションでは GraphQL が塞がれていて、代わりにプロキシの
 # REST（ccr/review_threads）がある。そちらは書き手で絞れないので、人のスレッドも
@@ -31,7 +36,7 @@ query($owner:String!,$name:String!,$pr:Int!,$endCursor:String){
     pullRequest(number:$pr){
       reviewThreads(first:100, after:$endCursor){
         pageInfo{ hasNextPage endCursor }
-        nodes{ isResolved comments(first:1){ nodes{ author{login} } } }
+        nodes{ isResolved comments(first:1){ nodes{ author{ login __typename } } } }
       }
     }
   }
@@ -43,7 +48,7 @@ unresolved_threads() {
 		-F owner="${nwo%%/*}" -F name="${nwo##*/}" -F pr="$pr" \
 		--jq '[.data.repository.pullRequest.reviewThreads.nodes[]
 		       | select(.isResolved | not)
-		       | select((.comments.nodes[0].author.login // "") | test("coderabbit"))] | length' 2>/dev/null)"; then
+		       | select(.comments.nodes[0].author | (.__typename == "Bot" and .login == "coderabbitai"))] | length' 2>/dev/null)"; then
 		awk '{ s += $1 } END { print s + 0 }' <<<"$counts"
 	elif counts="$(gh api "repos/$nwo/pulls/$pr/ccr/review_threads" \
 		--jq '[.[] | select(.resolved | not)] | length' 2>/dev/null)"; then
@@ -69,7 +74,7 @@ classify='.[]
 	| (.body // "") as $b
 	| if ($who | test("\\[bot\\]$") | not) and ($b | test("@coderabbitai\\s+full review"))
 	    then "REQ\t\(.created_at)\t\(.updated_at)\t-"
-	  elif ($who | test("coderabbit")) | not then empty
+	  elif $who != "coderabbitai[bot]" then empty
 	  elif ($b | test("Full review finished")) then "FIN\t\(.created_at)\t\(.updated_at)\t-"
 	  elif ($b | test("rate limited"; "i"))
 	    then "LIM\t\(.created_at)\t\(.updated_at)\t\(($b | capture("available in (?<w>[0-9]+ [a-z]+)") | .w) // "?")"
@@ -89,10 +94,10 @@ findings_since() {
 	# 取れなかったら失敗で返す（呼ぶ側が 0 件と読まないように）。pipefail なので
 	# gh が落ちれば代入ごと失敗する。
 	inline="$(gh api --paginate "repos/$nwo/pulls/$pr/comments?per_page=100" \
-		--jq '.[] | select(.in_reply_to_id == null) | select(.user.login | test("coderabbit")) | .created_at' |
+		--jq '.[] | select(.in_reply_to_id == null) | select(.user.login == "coderabbitai[bot]") | .created_at' |
 		awk -v s="$since" '$1 >= s { n++ } END { print n + 0 }')" || return 1
 	actionable="$(gh api --paginate "repos/$nwo/pulls/$pr/reviews?per_page=100" \
-		--jq '.[] | select(.user.login | test("coderabbit"))
+		--jq '.[] | select(.user.login == "coderabbitai[bot]")
 		      | "\(.submitted_at) \(((.body // "") | capture("Actionable comments posted: (?<n>[0-9]+)") | .n) // "0")"' |
 		awk -v s="$since" '$1 >= s { n += $2 } END { print n + 0 }')" || return 1
 	echo $((inline > actionable ? inline : actionable))
