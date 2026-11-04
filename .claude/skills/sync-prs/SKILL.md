@@ -80,7 +80,12 @@ git worktree add ../etoki-sync-<番号> <枝>
 cd ../etoki-sync-<番号>
 git merge --ff-only origin/<枝>   # 同じ名前の古いローカル枝を掴んでいたら進める
 test "$(git rev-parse HEAD)" = "$(git rev-parse origin/<枝>)"   # 手元が先に進んでいないか
+test -z "$(git status --porcelain)"   # 手を付けていない作業ツリーか
 ```
+
+**`git status --porcelain` が空でなければ、止めてユーザーに訊く。** `worktree add`
+が既にある worktree を指していた、などで、ほかの作業の変更や未追跡のファイルが
+残っている。そのまま進むと、下の検査とコミットに混ざって push される。
 
 **`--ff-only` が通らないか、そのあと `HEAD` が `origin/<枝>` と一致しなければ、
 止めてユーザーに訊く。** 手元の枝に push していないコミットがある（手元が先に
@@ -95,8 +100,21 @@ test "$(git rev-parse HEAD)" = "$(git rev-parse origin/<枝>)"   # 手元が先�
 # 下の段の枝が消えていても、head は PR の ref から取れる。sha は /land の記録や PR に残る
 git fetch origin refs/pull/<下の段の PR 番号>/head
 git merge <下の段の最後の head の sha>
-git merge origin/main
+git rev-parse 'origin/main^{tree}' '<下の段の最後の head>^{tree}'   # 2 行が一致するか
+git merge -s ours origin/main   # 一致したとき
+git merge origin/main           # 一致しないとき
 ```
+
+**main の tree が下の段の最後の head の tree と一致したら、`-s ours` でつなぐ。**
+main は下の段を squash しただけで、この枝がすでに持っているもの以外を足して
+いない。ふつうのマージにすると、merge base が squash 前の main になり、上の段が
+下の段の変更を元に戻した箇所を、衝突なしで下の段の側に戻してしまう。`-s ours` は
+この枝の tree を変えずに main を祖先にする。
+
+**一致しないときは、ふつうのマージのあとに、上の段の変更が残っているかを見る。**
+main が下の段のあとにも進んでいるので、同じ戻しが起きうる。取り込む前の上の段と
+いまの HEAD の差が、main が下の段のあとに足した分（`git diff <下の段の最後の head>
+origin/main`）だけになっているかを読む。
 
 **1 つのマージが衝突したら、解いて `git merge --continue` で終えてから次へ
 進む。** 終えないまま次の `git merge` を叩くと、未完了のマージに断られる。
@@ -111,17 +129,8 @@ gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f base=main
 
 ### 衝突を解く
 
-**`--ours` で済む場面がある。** 下の段の最後の head を取り込んだあとで、
-main の tree がその head の tree と一致するとき。main は下の段を squash した
-だけで、この枝がすでに持っているもの以外を足していない。衝突は、上の段が
-下の段の行をさらに書き換えた箇所に出るだけなので、この枝の側を採ればよい。
-
-```sh
-git rev-parse 'origin/main^{tree}' '<下の段の最後の head>^{tree}'   # 2 行が一致するか
-git checkout --ours -- <衝突したファイル> && git add <衝突したファイル>
-```
-
-一致しないなら、ファイルごとに中身を読んで解く。CLAUDE.md の表や
+main の tree が下の段の最後の head と一致するときは、上の `-s ours` で衝突は
+出ない。それ以外は、ファイルごとに中身を読んで解く。CLAUDE.md の表や
 `docs/adr/README.md` の末尾のように、**両方が行を足しただけの衝突は両方残す。**
 ADR の番号が重なったら、後から入る側（この PR）の番号を進める。
 
@@ -150,8 +159,12 @@ make test
 する。
 
 ```sh
-git add -A && git commit -m "build: regenerate after merging main"   # 動いたものがあるときだけ
+git status --short   # 動いたのが生成物と直したファイルだけか
+git add -- <動いた生成物と直したファイル> && git commit -m "build: regenerate after merging main"
 ```
+
+**`git add -A` にしない。** ignore されていないものは何でも入る。名前を挙げて
+入れれば、見ていないファイルは入らない。
 
 UI かハンドラに main 側の変更が入ったなら `make test-e2e` も（`CONTRIBUTING.md`
 「コミット前に通すもの」）。**意味の衝突は文字の衝突が無くてもここで初めて

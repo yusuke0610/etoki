@@ -73,7 +73,10 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
    head と一致しなければ、そのレビューは古い。**
 4. **指摘 0 件の full review では、review が増えない。** `findings.sh` の
    1 行目（review の件数）は変わらないので、そこでは判定しない。判定は
-   「head を読んだ」と「未解決スレッド 0」の 2 つで行う。
+   「head を読んだ」「その依頼のあとに指摘が 1 件も付いていない」「未解決
+   スレッド 0」の 3 つで行う（`指摘あり`）。**返信して解決しただけでは 0 件に
+   ならない。** 直さないと返して解決したものも同じで、もう一度 full review を
+   通す。スレッドの数だけで見ると、push せずに解決した full review を 0 件と読む。
 
 **要約の `updated_at` だけでは判定しない。** 要約は full review のあとに push
 しただけでも書き換わる（「Trigger review」の欄が新しい head を指す）。

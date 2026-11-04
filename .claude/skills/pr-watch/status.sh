@@ -78,6 +78,24 @@ classify='.[]
 	    then "SUM\t\(.created_at)\t\(.updated_at)\t\(($b | capture("between [0-9a-f]{40} and (?<h>[0-9a-f]{40})") | .h) // "?")"
 	  else empty end'
 
+# 依頼のあとに CodeRabbit が付けた指摘の数。行ごとのコメント（返信を除く）と、
+# review 本文の「Actionable comments posted: N」の大きいほう（本文にしか出ない
+# diff の外への指摘もそちらに数えられる）。返信して解決するとスレッドは 0 に
+# なるが、その full review が指摘を出したことは変わらない。
+# $since は jq の変数で、シェルに展開させてはいけない。
+# shellcheck disable=SC2016
+findings_since() {
+	local pr="$1" since="$2" inline actionable
+	inline="$(gh api --paginate "repos/$nwo/pulls/$pr/comments?per_page=100" \
+		--jq '.[] | select(.in_reply_to_id == null) | select(.user.login | test("coderabbit")) | .created_at' |
+		awk -v s="$since" '$1 >= s { n++ } END { print n + 0 }')"
+	actionable="$(gh api --paginate "repos/$nwo/pulls/$pr/reviews?per_page=100" \
+		--jq '.[] | select(.user.login | test("coderabbit"))
+		      | "\(.submitted_at) \(((.body // "") | capture("Actionable comments posted: (?<n>[0-9]+)") | .n) // "0")"' |
+		awk -v s="$since" '$1 >= s { n += $2 } END { print n + 0 }')"
+	echo $((inline > actionable ? inline : actionable))
+}
+
 latest_finished=""
 
 for pr in "${prs[@]}"; do
@@ -118,6 +136,8 @@ for pr in "${prs[@]}"; do
 				fr="要再依頼(読んだのは ${sum_sha:0:7})"
 			elif [[ "$sum_at" < "$req_at" ]]; then
 				fr="要約が古い(依頼より前に更新)"
+			elif found="$(findings_since "$pr" "$req_at")" && [ "$found" != "0" ]; then
+				fr="指摘あり(この full review で ${found} 件。直して依頼し直す)"
 			else
 				fr="済(head を読んだ)"
 			fi
@@ -139,7 +159,8 @@ for pr in "${prs[@]}"; do
 		  elif ($run | length) > 0 then "走行中"
 		  else "緑" end')"
 
-	# 0 件と言えるのは、head を読んだ full review が終わり、未解決のスレッドが無いときだけ。
+	# 0 件と言えるのは、head を読んだ full review が終わり、その full review が指摘を
+	# 出さず（上の findings_since）、未解決のスレッドも無いときだけ。
 	verdict=""
 	if [ "$fr" = "済(head を読んだ)" ] && [ "$threads" = "0" ]; then
 		verdict="  => full review 0 件"
