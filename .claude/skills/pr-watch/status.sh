@@ -16,7 +16,13 @@ nwo="$(gh api 'repos/{owner}/{repo}' --jq .full_name)"
 if [ "$#" -gt 0 ]; then
 	prs=("$@")
 else
-	mapfile -t prs < <(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" --jq '.[].number' | sort -n)
+	# process substitution の失敗は mapfile に伝わらず、「開いている PR が無い」と
+	# 区別できない。先に変数へ取り、落ちたら止める。
+	if ! list="$(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" --jq '.[].number')"; then
+		echo "開いている PR の一覧を取れなかった" >&2
+		exit 1
+	fi
+	mapfile -t prs < <(sed '/^$/d' <<<"$list" | sort -n)
 fi
 
 # **CodeRabbit かどうかはログイン名の完全一致で見る。** REST では
@@ -161,6 +167,9 @@ for pr in "${prs[@]}"; do
 	# 起動していないことが多い（SKILL.md「CI が走らない」）。1 ページは 100 本まで
 	# なので全ページを回す。--jq はページごとに掛かるので、1 本 1 行に落としてから
 	# awk でまとめる。取れなければ「?」を出し、緑とは言わない。
+	# 緑と言えるのは、結論が success / neutral / skipped のものだけのとき。stale の
+	# ような結果の決まっていない結論や、知らない結論が 1 本でもあれば「未確定」に
+	# する（赤でも走行中でもないものを緑に数えない）。
 	if runs="$(gh api --paginate "repos/$nwo/commits/$head/check-runs?per_page=100" \
 		--jq '.check_runs[] | "\(.status)\t\(.conclusion // "")\t\(.name)"')"; then
 		ci="$(awk -F'\t' '
@@ -169,11 +178,16 @@ for pr in "${prs[@]}"; do
 			$1 != "completed" { run++ }
 			$2 == "failure" || $2 == "cancelled" || $2 == "timed_out" || $2 == "action_required" {
 				bad = bad (bad == "" ? "" : ",") $3
+				next
+			}
+			$1 == "completed" && $2 != "success" && $2 != "neutral" && $2 != "skipped" {
+				unknown = unknown (unknown == "" ? "" : ",") $3 ":" $2
 			}
 			END {
 				if (n == 0) print "未起動"
 				else if (bad != "") print "赤(" bad ")"
 				else if (run > 0) print "走行中"
+				else if (unknown != "") print "未確定(" unknown ")"
 				else print "緑"
 			}' <<<"$runs")"
 	else
