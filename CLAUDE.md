@@ -44,7 +44,11 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
 | `.claude/rules/`                   | レビュー由来の落とし穴と、狭い範囲でだけ要る約束（触ると読み込まれる） |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
+| `.claude/skills/mutate/`           | 守りを壊してテストが落ちるかを確かめる（`/mutate`）                    |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
+| `.claude/skills/triage/`           | 閉じられる issue と着手できる issue の振り分け（`/triage`）            |
+| `.claude/skills/spec/`             | 着手の前に仕様を固め、issue に書き戻す（`/spec`）                      |
+| `.claude/skills/file-issues/`      | 調べた結果を親の issue と sub-issue に積む（`/file-issues`）           |
 | `.claude/skills/security-audit/`   | 定期のセキュリティ点検（`/security-audit`）と #64 の更新               |
 
 `CONTRIBUTING.md` だけは**ディレクトリに紐づかないので自動では読み込まれない**。
@@ -58,6 +62,9 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 
 [Nix](https://nixos.org/) 以外はインストール不要。**すべて `nix develop` の中で
 実行する。** README にグローバルインストールの手順を書かないこと。
+
+例外は GitHub を扱うスキル（`/pr-review`・`/triage` など）が使う `gh` で、
+devShell に入れない。ホストに入れて `gh auth login` しておく（ADR 0002 の追記）。
 
 `make` は devShell の外から呼ばれると `nix develop --command` で自分をやり直す
 ので、入り忘れても道具の無いまま走ることはない。別の作業ツリー（worktree）の
