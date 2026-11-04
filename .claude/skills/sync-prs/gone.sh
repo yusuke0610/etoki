@@ -9,8 +9,10 @@
 #     （Go の func / type、TypeScript の export）が消え、origin/main のどこにも
 #     定義が残っていない名前
 #   - 使っているか: PR の差分で足された行に、その名前が単語として出てくるか
-# 定義の書き換えで引数が変わったもの、PR が以前からあった行で使っているものは
-# 拾わない。そちらは検査に任せる。
+# 定義の書き換えで引数が変わったもの、PR が以前からあった行で使っているもの、
+# 名前を並べた export（`export { A, B }`）から消えたものは拾わない。そちらは検査に
+# 任せる（消えた export を import していれば、make lint の型検査で落ちる）。
+# 名前を並べた export は、このリポジトリの TypeScript では使っていない。
 #
 # 使い方: .claude/skills/sync-prs/gone.sh <PR の枝>
 set -euo pipefail
