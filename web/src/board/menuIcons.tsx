@@ -142,6 +142,17 @@ export const shareIcon = menuIcon(
   </>,
 );
 
+/** etoki の使い方を開く（`book`、ADR 0094）。ヘルプの「?」と見分けるため本にする。 */
+export const guideIcon = menuIcon(
+  <>
+    <path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0" />
+    <path d="M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0" />
+    <path d="M3 6l0 13" />
+    <path d="M12 6l0 13" />
+    <path d="M21 6l0 13" />
+  </>,
+);
+
 /** 表を置く（`table`、#208）。 */
 export const tableIcon = menuIcon(
   <>
