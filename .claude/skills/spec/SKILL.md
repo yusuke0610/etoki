@@ -72,7 +72,9 @@ description: issue に着手する前に、決まっていないことを訊い�
      根拠が古いまま「決めたこと」になる。比べる前に `git fetch origin main` する
      （しないと `origin/main` は手元の古いまま）。取れなければ書き戻さずに止める。
      見るのは、1. で控えたコミットから `origin/main` までの `README.md`・
-     `docs/adr/`・`CLAUDE.md` 群・`.claude/rules/` の差分。
+     `docs/adr/`・`CLAUDE.md` 群・`.claude/rules/`・`CONTRIBUTING.md` の差分。
+     `CONTRIBUTING.md` は 3. と 5. で判断の記録先を引く正本で、変わっていると古い
+     記録先に書く。
    - **本文とコメントが違っていたら**、ほかのセッションか人が書き換えている。
      - 論点や選択肢が変わっていたら、「2. 決めることを並べる」に戻り、答えを
        訊き直す。
