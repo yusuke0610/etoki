@@ -9,6 +9,7 @@ import (
 const (
 	elementTypeFrame = "frame"
 	elementTypeText  = "text"
+	elementTypeArrow = "arrow"
 )
 
 // Scene は Excalidraw のシーン JSON のうち etoki が必要とする部分。
@@ -56,6 +57,22 @@ type Element struct {
 
 	// CustomData は etoki が注釈のメタデータを載せる場所。
 	CustomData *CustomData `json:"customData"`
+
+	// StartBinding / EndBinding は矢印の両端がつながっている要素。つながって
+	// いなければ nil。FrameID と同じく、人が矢印を図形につないだときに
+	// Excalidraw が書き込むフィールドで、etoki は座標から結び先を推測しない
+	// （ADR 0096）。
+	StartBinding *Binding `json:"startBinding"`
+	EndBinding   *Binding `json:"endBinding"`
+
+	// StartArrowhead / EndArrowhead は矢じりの形。付いていなければ nil か空。
+	StartArrowhead *string `json:"startArrowhead"`
+	EndArrowhead   *string `json:"endArrowhead"`
+}
+
+// Binding は矢印の端がつながっている先。
+type Binding struct {
+	ElementID string `json:"elementId"`
 }
 
 // CustomData は Excalidraw 要素の customData のうち etoki が使う部分。
@@ -291,6 +308,107 @@ func (s Scene) childTexts(annotationID string) []TextElement {
 	}
 
 	return texts
+}
+
+// ConnectionEnd は矢印の片方の端。
+type ConnectionEnd struct {
+	// Bound は何かにつながっているか。
+	Bound bool
+	// Inside はつながっている先が囲みの中にあるか。外の要素の名前は渡さない。
+	// 解釈の入力は囲みの中身だけで、外の材料は背景として別に渡す（ADR 0093）。
+	Inside bool
+	// Name はつながっている先の文字（図形のラベルか、テキスト要素そのもの）。
+	// 折り返す前の文字にする。囲みの外や、文字の無い図形なら空。
+	Name string
+}
+
+// Connection は囲みの中の矢印 1 本が、何と何をつないでいるか。
+type Connection struct {
+	From, To ConnectionEnd
+	// Label は矢印に書かれた文字（折り返す前）。無ければ空。
+	Label string
+	// FromHead / ToHead は始点側・終点側に矢じりがあるか。
+	FromHead, ToHead bool
+}
+
+// AnnotationConnections は注釈の中の矢印が、何と何をつないでいるかを要素の
+// 並び順で返す。解釈の入力になる（ADR 0096）。
+//
+// **読むのは人がつないだ事実だけ。** 結び先は Excalidraw が書き込んだ
+// startBinding / endBinding で、座標や近さから「この矢印はあの図形に向いている」
+// と決めない（中核思想 2）。矢印が何を意味するか（呼び出し、親子、多重度）も
+// 決めない。それを読むのは LLM。
+//
+// **どちらの端もつながっていない矢印は返さない。** 結び先の事実が無く、ラベルは
+// すでにテキストとして渡っている。**並べ替えない。** 上下の位置で並べると、
+// 座標から順序を決めることになる。
+//
+// 入れ子の frame は辿らない（childTexts と同じ）。
+func (s Scene) AnnotationConnections(annotationID string) []Connection {
+	children := make(map[string]struct{})
+	byID := make(map[string]Element)
+	labels := make(map[string]string)
+	for _, e := range s.Elements {
+		if e.IsDeleted {
+			continue
+		}
+		byID[e.ID] = e
+		if e.FrameID != nil && *e.FrameID == annotationID {
+			children[e.ID] = struct{}{}
+		}
+		if e.Type == elementTypeText && e.ContainerID != nil {
+			if _, dup := labels[*e.ContainerID]; !dup {
+				labels[*e.ContainerID] = e.unwrapped()
+			}
+		}
+	}
+
+	end := func(b *Binding) ConnectionEnd {
+		if b == nil {
+			return ConnectionEnd{}
+		}
+		target, ok := byID[b.ElementID]
+		if !ok {
+			return ConnectionEnd{}
+		}
+		if _, inside := children[target.ID]; !inside {
+			return ConnectionEnd{Bound: true}
+		}
+		name := labels[target.ID]
+		if target.Type == elementTypeText {
+			name = target.unwrapped()
+		}
+		return ConnectionEnd{Bound: true, Inside: true, Name: name}
+	}
+
+	var conns []Connection
+	for _, e := range s.Elements {
+		// 削除した矢印は children に入っていないので、ここで落ちる。
+		if _, ok := children[e.ID]; !ok || e.Type != elementTypeArrow {
+			continue
+		}
+		from, to := end(e.StartBinding), end(e.EndBinding)
+		if !from.Bound && !to.Bound {
+			continue
+		}
+		conns = append(conns, Connection{
+			From: from, To: to, Label: labels[e.ID],
+			FromHead: hasArrowhead(e.StartArrowhead), ToHead: hasArrowhead(e.EndArrowhead),
+		})
+	}
+	return conns
+}
+
+// unwrapped は折り返す前の本文。originalText を持たない古いシーンでは text。
+func (e Element) unwrapped() string {
+	if e.OriginalText != "" {
+		return e.OriginalText
+	}
+	return e.Text
+}
+
+func hasArrowhead(h *string) bool {
+	return h != nil && *h != ""
 }
 
 // AnnotationHash は注釈のハッシュを算出する。

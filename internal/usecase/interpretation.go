@@ -164,10 +164,11 @@ type preparedInterpretation struct {
 //
 // テキストを読むのは保存済みシーンである。フロントで編集中の内容は反映されない。
 //
-// images は注釈範囲を写した画像で、矢印やグルーピングのようにテキストに現れない
-// 構造を渡すためのもの。空でもよく、その場合はテキストだけで解釈する。画像は
-// フロントが画面から書き出すため、保存済みシーンと一致している保証はここには
-// 無い。揃えるのは UI の責務にしてある（ADR 0018）。
+// images は注釈範囲を写した画像で、配置やグルーピングのようにテキストに現れない
+// 構造を渡すためのもの（人がつないだ矢印の結び先は文字でも渡す、ADR 0096）。
+// 空でもよく、その場合はテキストだけで解釈する。画像はフロントが画面から書き出す
+// ため、保存済みシーンと一致している保証はここには無い。揃えるのは UI の責務に
+// してある（ADR 0018）。
 //
 // **枠はここでは取らない。** 認可も入力の検証もすべて通ってから取るので
 // （ADR 0044）、404 や 400 で返るリクエストは枠を消費しない。取るのは
@@ -236,7 +237,8 @@ func (s *InterpretationService) execute(
 	ctx context.Context, boardID, annotationID string, p preparedInterpretation,
 ) (InterpretationResult, error) {
 	in, usage, err := s.complete(
-		ctx, p.annotation, p.scene.AnnotationTexts(annotationID), p.images, p.previous, p.context)
+		ctx, p.annotation, p.scene.AnnotationTexts(annotationID), p.scene.AnnotationConnections(annotationID),
+		p.images, p.previous, p.context)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されているので、
 	// 成功したときだけ記録すると、実績が実際より小さく見える（ADR 0031）。
 	logLLMUsage(ctx, s.logger, "interpretation llm usage", usage, err,
@@ -337,10 +339,10 @@ func validateImages(images []port.Image) error {
 // 払ったぶんは成否によらず返す。呼び出し側がそれを記録する。呼び直しの手順は
 // 図のドラフト生成と同じで、llmRetry が持つ。
 func (s *InterpretationService) complete(
-	ctx context.Context, a domain.Annotation, texts []domain.TextElement, images []port.Image,
-	previous []domain.PreviousItem, ic InterpretationContext,
+	ctx context.Context, a domain.Annotation, texts []domain.TextElement, connections []domain.Connection,
+	images []port.Image, previous []domain.PreviousItem, ic InterpretationContext,
 ) (domain.Interpretation, llmUsage, error) {
-	base := buildUserMessage(a, texts, len(images) > 0, previous, ic)
+	base := buildUserMessage(a, texts, connections, len(images) > 0, previous, ic)
 	req := port.VisionRequest{
 		System: interpretationSystemPrompt(a.Granularity, len(previous) > 0),
 		Text:   base,

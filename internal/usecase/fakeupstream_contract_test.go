@@ -45,7 +45,7 @@ func TestFakeUpstreamInterpretationMatchesPrompt(t *testing.T) {
 			t.Parallel()
 
 			a := domain.Annotation{ID: "f1", Granularity: tt.g}
-			msg := usecase.BuildUserMessage(a, texts, false, tt.previous, usecase.InterpretationContext{})
+			msg := usecase.BuildUserMessage(a, texts, nil, false, tt.previous, usecase.InterpretationContext{})
 
 			in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), tt.g, tt.previous)
 			if err != nil {
@@ -120,7 +120,7 @@ func TestFakeUpstreamIgnoresMarkerShapedText(t *testing.T) {
 			t.Parallel()
 
 			a := domain.Annotation{ID: "f1", Granularity: tt.g}
-			msg := usecase.BuildUserMessage(a, texts, false, nil, usecase.InterpretationContext{})
+			msg := usecase.BuildUserMessage(a, texts, nil, false, nil, usecase.InterpretationContext{})
 
 			in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), tt.g, nil)
 			if err != nil {
@@ -179,7 +179,7 @@ func TestFakeUpstreamIgnoresMarkerShapedPremiseAndOtherItems(t *testing.T) {
 			t.Parallel()
 
 			a := domain.Annotation{ID: "f1", Granularity: tt.g}
-			msg := usecase.BuildUserMessage(a, texts, false, nil, ic)
+			msg := usecase.BuildUserMessage(a, texts, nil, false, nil, ic)
 
 			in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), tt.g, nil)
 			if err != nil {
@@ -204,5 +204,32 @@ func TestFakeUpstreamIgnoresMarkerShapedPremiseAndOtherItems(t *testing.T) {
 				t.Errorf("epic を含む = %v, want %v", gotEpic, tt.wantEpic)
 			}
 		})
+	}
+}
+
+// 矢印のつながりの節（ADR 0096）は、囲みのテキストの節の後ろに空行で区切って
+// 置く。偽物が読むのはテキストの節だけなので、矢印の行を項目の title に拾わない。
+// 拾うと、通しで作る draft issue の title に「User → WebApp」が混ざる。
+func TestFakeUpstreamIgnoresConnections(t *testing.T) {
+	t.Parallel()
+
+	texts := []domain.TextElement{{ID: "t1", Text: "ログイン画面"}}
+	conns := []domain.Connection{{
+		From:   domain.ConnectionEnd{Bound: true, Inside: true, Name: "User"},
+		To:     domain.ConnectionEnd{Bound: true, Inside: true, Name: "WebApp"},
+		Label:  "リクエスト送信",
+		ToHead: true,
+	}}
+	a := domain.Annotation{ID: "f1", Granularity: domain.GranularityAuto}
+	msg := usecase.BuildUserMessage(a, texts, conns, false, nil, usecase.InterpretationContext{})
+
+	in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), a.Granularity, nil)
+	if err != nil {
+		t.Fatalf("偽物の出力が検査を通らない: %v\nmessage:\n%s", err, msg)
+	}
+	for _, it := range in.Items {
+		if strings.Contains(it.Title, "→") || strings.Contains(it.Title, "リクエスト送信") {
+			t.Errorf("title = %q, want 矢印の行を拾わない", it.Title)
+		}
 	}
 }
