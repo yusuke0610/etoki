@@ -171,12 +171,14 @@ git add -- <動いた生成物と直したファイル> && git commit -m "build:
 入れれば、見ていないファイルは入らない。
 
 ```sh
-git push origin <枝>   # 断られたら、ここで止める
-test "$(git ls-remote origin refs/heads/<枝> | cut -f1)" = "$(git rev-parse HEAD)"   # 載ったか
-cd - && git worktree remove ../etoki-sync-<番号>
+# どれかが落ちたら、そこで止まる（&& でつなぐ）
+git push origin <枝> &&
+  test "$(git ls-remote origin refs/heads/<枝> | cut -f1)" = "$(git rev-parse HEAD)" &&
+  cd - && git worktree remove ../etoki-sync-<番号>
 ```
 
-**push が断られたら、そこで止めて訊く。** worktree も base もそのまま残す。
+**push が断られたか、origin の head が手元と違えば、そこで止めて訊く。** worktree も
+base もそのまま残す。`ls-remote` が落ちたときも同じ。
 ほかのセッションが同じ枝へ先に push していると断られる。そのまま進むと、検査した
 head が GitHub に無いまま worktree を消し、base だけを変えてしまう。push のあと、
 origin の枝の head が手元の `HEAD` と同じかも見る。

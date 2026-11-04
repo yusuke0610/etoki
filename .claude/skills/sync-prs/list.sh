@@ -42,8 +42,11 @@ pulls="$(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" \
 merged_lower() {
 	local ref="$1" since res incomplete total nums found="" m first merge
 	# 最も古いコミットは末尾に来る。head で切ると git log が SIGPIPE で落ち、
-	# pipefail で取れなかった扱いになるので tail で取る。
-	since="$(git log --format=%cs "origin/main..$ref" | tail -n 1)" || { printf "?\n"; return; }
+	# pipefail で取れなかった扱いになるので tail で取る。日付は UTC で出す
+	# （検索の merged: は UTC で比べる。%cs はコミットのタイムゾーンの日付で、
+	# +09:00 の朝のコミットは UTC では前の日になる）。
+	since="$(TZ=UTC git log --date=format-local:%Y-%m-%d --format=%cd "origin/main..$ref" | tail -n 1)" ||
+		{ printf "?\n"; return; }
 	[ -z "$since" ] && { printf -- "-\n"; return; }
 	# 総件数と候補の番号は 1 回の検索で取る。2 回に分けると、2 回目だけが落ちた
 	# ときに候補が空になり、「無い」と読める。
@@ -56,8 +59,10 @@ merged_lower() {
 	for m in $nums; do
 		first="$(gh api "repos/$nwo/pulls/$m/commits?per_page=1" --jq '.[0].sha')" || { printf "?\n"; return; }
 		merge="$(gh api "repos/$nwo/pulls/$m" --jq '.merge_commit_sha')" || { printf "?\n"; return; }
-		if git merge-base --is-ancestor "$merge" origin/main 2>/dev/null &&
-			git merge-base --is-ancestor "$first" "$ref" 2>/dev/null &&
+		# base:main に入った PR の squash は main にあるはず。手元の origin/main に
+		# 無ければ、冒頭の fetch のあとにマージされた。判定できないので「?」。
+		git merge-base --is-ancestor "$merge" origin/main 2>/dev/null || { printf "?\n"; return; }
+		if git merge-base --is-ancestor "$first" "$ref" 2>/dev/null &&
 			! git merge-base --is-ancestor "$first" origin/main 2>/dev/null &&
 			! git merge-base --is-ancestor "$merge" "$ref" 2>/dev/null; then
 			found="${found:+$found,}#$m"
