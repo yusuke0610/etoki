@@ -9,16 +9,16 @@
 # 使い方: .claude/skills/triage/issues.sh
 set -euo pipefail
 
-# issue と PR を見るリポジトリ。gh の既定（upstream のリモートがあればそちら）。
-# 以下の gh pr list には -R で同じものを渡す。gh pr list は GH_REPO を見るが
-# gh repo view は見ないので、渡さないと問い合わせごとに別のリポジトリを見うる。
-nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-# **origin が issue と PR のリポジトリと同じ checkout だけを扱う。** fork を origin に
-# すると、枝は fork、PR と issue は本家から取ることになり、PR の無い枝も、PR が
-# main に届いたか（SKILL.md の origin/main）も本家と食い違う。違っていたら止める。
+# issue と PR を見るリポジトリ。**決め打ちにする。** gh の既定（GH_REPO や手元の
+# checkout）から引くと、fork の checkout では fork の PR と issue が出て、/triage が
+# その番号を etoki の issue として閉じる候補に並べる。以下の gh には -R で渡す。
+nwo="yusuke0610/etoki"
+# **origin が etoki の checkout だけを扱う。** fork を origin にすると、枝は fork、
+# PR と issue は etoki から取ることになり、PR の無い枝も、PR が main に届いたか
+# （SKILL.md の origin/main）も etoki と食い違う。違っていたら止める。
 origin_nwo="$(gh repo view "$(git remote get-url origin)" --json nameWithOwner -q .nameWithOwner)"
 if [ "$origin_nwo" != "$nwo" ]; then
-	echo "issue と PR のリポジトリ（${nwo}）と origin（${origin_nwo}）が違う。origin が ${nwo} の checkout で回す" >&2
+	echo "origin（${origin_nwo}）が ${nwo} ではない。origin が ${nwo} の checkout で回す" >&2
 	exit 1
 fi
 
@@ -66,9 +66,12 @@ echo "== 開いている PR のコミットに書いた閉じるキーワード"
 # closes= にも、issue の側の prs= にも出ないので、ここで拾う。gh pr list の
 # --json commits は作者まで深く取り、GitHub の問い合わせの上限を超えるので、
 # 本文だけを GraphQL で取る。1 PR で見るのは先頭 100 コミットまで。
+# **100 を超える PR があったら、出したうえで止める。** 残りのコミットにだけ閉じる
+# キーワードがあると、その issue は prs= にも refs= にも出ず、/triage・/spec・
+# /file-issues が「PR が無い」と読む。止まれば読む側は一覧を使えない。
 # $owner / $name / $endCursor は GraphQL の変数、$nwo は jq の変数。
 # shellcheck disable=SC2016
-gh api graphql --paginate -F owner="${nwo%%/*}" -F name="${nwo##*/}" -f query='
+commit_refs="$(gh api graphql --paginate -F owner="${nwo%%/*}" -F name="${nwo##*/}" -f query='
 query($owner:String!,$name:String!,$endCursor:String){
   repository(owner:$owner,name:$name){
     pullRequests(states:OPEN, first:50, after:$endCursor){
@@ -80,7 +83,14 @@ query($owner:String!,$name:String!,$endCursor:String){
 	| ([.commits.nodes[].commit.message | '"$closing_refs"'] | unique) as $refs
 	| select(($refs | length) > 0 or .commits.totalCount > 100)
 	| "#\(.number) refs=\($refs | join(","))"
-	  + (if .commits.totalCount > 100 then " （コミット \(.commits.totalCount) 件のうち先頭 100 件だけ見た）" else "" end)'
+	  + (if .commits.totalCount > 100 then " （コミット \(.commits.totalCount) 件のうち先頭 100 件だけ見た）" else "" end)')"
+if [ -n "$commit_refs" ]; then
+	printf '%s\n' "$commit_refs"
+fi
+if grep -qF '件のうち先頭 100 件だけ見た' <<<"$commit_refs"; then
+	echo "コミットが 100 件を超える PR があり、閉じるキーワードを見きれない。その PR のコミットを手で見てから回す" >&2
+	exit 1
+fi
 
 # sub-issue の進み（subIssuesSummary）と親は REST の一覧に無いので GraphQL で取る。
 # 100 件を超える分は --paginate で回る（変数名は $endCursor でなければならない）。
