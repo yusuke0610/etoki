@@ -86,13 +86,15 @@ classify='.[]
 # shellcheck disable=SC2016
 findings_since() {
 	local pr="$1" since="$2" inline actionable
+	# 取れなかったら失敗で返す（呼ぶ側が 0 件と読まないように）。pipefail なので
+	# gh が落ちれば代入ごと失敗する。
 	inline="$(gh api --paginate "repos/$nwo/pulls/$pr/comments?per_page=100" \
 		--jq '.[] | select(.in_reply_to_id == null) | select(.user.login | test("coderabbit")) | .created_at' |
-		awk -v s="$since" '$1 >= s { n++ } END { print n + 0 }')"
+		awk -v s="$since" '$1 >= s { n++ } END { print n + 0 }')" || return 1
 	actionable="$(gh api --paginate "repos/$nwo/pulls/$pr/reviews?per_page=100" \
 		--jq '.[] | select(.user.login | test("coderabbit"))
 		      | "\(.submitted_at) \(((.body // "") | capture("Actionable comments posted: (?<n>[0-9]+)") | .n) // "0")"' |
-		awk -v s="$since" '$1 >= s { n += $2 } END { print n + 0 }')"
+		awk -v s="$since" '$1 >= s { n += $2 } END { print n + 0 }')" || return 1
 	echo $((inline > actionable ? inline : actionable))
 }
 
@@ -136,7 +138,9 @@ for pr in "${prs[@]}"; do
 				fr="要再依頼(読んだのは ${sum_sha:0:7})"
 			elif [[ "$sum_at" < "$req_at" ]]; then
 				fr="要約が古い(依頼より前に更新)"
-			elif found="$(findings_since "$pr" "$req_at")" && [ "$found" != "0" ]; then
+			elif ! found="$(findings_since "$pr" "$req_at")"; then
+				fr="指摘の数を取れなかった(0 件とは読まない。取り直す)"
+			elif [ "$found" != "0" ]; then
 				fr="指摘あり(この full review で ${found} 件。直して依頼し直す)"
 			else
 				fr="済(head を読んだ)"
@@ -148,16 +152,27 @@ for pr in "${prs[@]}"; do
 	threads="$(unresolved_threads "$pr")"
 
 	# CI。check-run が 1 本も無いのは、衝突で pull_request のワークフローが
-	# 起動していないことが多い（SKILL.md「CI が走らない」）。
-	# $run / $bad / $c は jq の変数。
-	# shellcheck disable=SC2016
-	ci="$(gh api "repos/$nwo/commits/$head/check-runs?per_page=100" --jq '
-		[.check_runs[] | select(.status != "completed")] as $run
-		| [.check_runs[] | select(.conclusion as $c | ["failure","cancelled","timed_out","action_required"] | index($c))] as $bad
-		| if .total_count == 0 then "未起動"
-		  elif ($bad | length) > 0 then "赤(\($bad | map(.name) | join(",")))"
-		  elif ($run | length) > 0 then "走行中"
-		  else "緑" end')"
+	# 起動していないことが多い（SKILL.md「CI が走らない」）。1 ページは 100 本まで
+	# なので全ページを回す。--jq はページごとに掛かるので、1 本 1 行に落としてから
+	# awk でまとめる。取れなければ「?」を出し、緑とは言わない。
+	if runs="$(gh api --paginate "repos/$nwo/commits/$head/check-runs?per_page=100" \
+		--jq '.check_runs[] | "\(.status)\t\(.conclusion // "")\t\(.name)"')"; then
+		ci="$(awk -F'\t' '
+			NF == 0 { next }
+			{ n++ }
+			$1 != "completed" { run++ }
+			$2 == "failure" || $2 == "cancelled" || $2 == "timed_out" || $2 == "action_required" {
+				bad = bad (bad == "" ? "" : ",") $3
+			}
+			END {
+				if (n == 0) print "未起動"
+				else if (bad != "") print "赤(" bad ")"
+				else if (run > 0) print "走行中"
+				else print "緑"
+			}' <<<"$runs")"
+	else
+		ci="?"
+	fi
 
 	# 0 件と言えるのは、head を読んだ full review が終わり、その full review が指摘を
 	# 出さず（上の findings_since）、未解決のスレッドも無いときだけ。

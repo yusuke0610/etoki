@@ -25,6 +25,36 @@ pulls="$(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" \
 # 開いている PR が無ければ、空の 1 行を回さずに終える。
 [ -z "$pulls" ] && exit 0
 
+# 下の段が squash で入り、上の段の base が main に付け替わった積みを見つける。
+# 枝が消えると GitHub が base を main に移すので、base だけでは積みに見えない。
+# 衝突していなくても、下の段の最後の head → main の順に取り込まないと、上の段が
+# 下の段の変更を戻した箇所がマージで黙って戻る（SKILL.md「取り込む」）。
+#
+# 下の段の候補は、上の段にあって main に無いコミットのうち最も古いものより後に
+# マージされた PR。そのうち「最初のコミットが上の段にあり main に無い」（上の段が
+# その上に積まれていた）かつ「squash のコミットが上の段に無い」（まだ main を
+# 取り込んでいない）ものを出す。取り込みを済ませた積みは出ない。
+# 出せないとき（検索が 100 件を超えた、など）は「?」を出し、無いとは言わない。
+merged_lower() {
+	local ref="$1" since found="" m first merge total
+	since="$(git log --format=%cs --reverse "origin/main..$ref" | head -1)"
+	[ -z "$since" ] && { printf -- "-\n"; return; }
+	total="$(gh api -X GET search/issues -f q="repo:$nwo is:pr is:merged merged:>=$since" -f per_page=100 \
+		--jq .total_count)" || { printf "?\n"; return; }
+	[ "$total" -gt 100 ] && { printf "?\n"; return; }
+	for m in $(gh api -X GET search/issues -f q="repo:$nwo is:pr is:merged merged:>=$since" -f per_page=100 \
+		--jq '.items[].number'); do
+		first="$(gh api "repos/$nwo/pulls/$m/commits?per_page=1" --jq '.[0].sha')" || { printf "?\n"; return; }
+		merge="$(gh api "repos/$nwo/pulls/$m" --jq '.merge_commit_sha')" || { printf "?\n"; return; }
+		if git merge-base --is-ancestor "$first" "$ref" 2>/dev/null &&
+			! git merge-base --is-ancestor "$first" origin/main 2>/dev/null &&
+			! git merge-base --is-ancestor "$merge" "$ref" 2>/dev/null; then
+			found="${found:+$found,}#$m"
+		fi
+	done
+	printf "%s\n" "${found:--}"
+}
+
 while IFS=$'\t' read -r pr head base author repo; do
 	if [ "$repo" != "$nwo" ]; then
 		printf '#%s fork(%s) 対象外 author=%s %s\n' "$pr" "${repo:-消えたリポジトリ}" "$author" "$head"
@@ -39,6 +69,9 @@ while IFS=$'\t' read -r pr head base author repo; do
 	if [ "$base" != "main" ]; then
 		lower="$(awk -F'\t' -v b="$base" -v n="$nwo" '$2 == b && $5 == n { print "#" $1 }' <<<"$pulls")"
 		stack="上の段(下=${lower:-PR の無い枝 $base})"
+	else
+		gone="$(merged_lower "origin/$head")"
+		[ "$gone" != "-" ] && stack="上の段(下=$gone はマージ済み。下の段の最後の head → main の順に取り込む)"
 	fi
 	upper="$(awk -F'\t' -v h="$head" -v n="$nwo" '$3 == h && $5 == n { printf "#%s ", $1 }' <<<"$pulls")"
 	[ -n "$upper" ] && stack="${stack/-/}下の段(上=${upper% })"

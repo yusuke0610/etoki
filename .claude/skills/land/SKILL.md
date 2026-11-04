@@ -77,12 +77,16 @@ usecase テストがコンパイルできなくなった（#373 → #374）。�
 
 **1 本ずつ squash でマージし、入ったことを確かめてから次へ進む。**
 
-**マージの直前に、その PR の head・`base`・`mergeable` を取り直す。** 1 本目も
-同じ。確認を取っているあいだに push や base の付け替えが入りうる。**head が表の
+**マージの直前に、その PR の head・`base`・`mergeable` と、review・CI の判定を
+取り直す。** 1 本目も同じ。確認を取っているあいだに push や base の付け替えが
+入りうるし、head が同じでも新しい指摘や落ちた check-run が付きうる。**head が表の
 40 桁と違っていたら、マージせずに条件の判定とユーザーの確認からやり直す。**
-base や `mergeable` が違っていたら、表を作り直す。
+base や `mergeable` が違っていたら、表を作り直す。**`status.sh` に
+`=> full review 0 件` と `ci=緑` が出なくなっていたら、マージせずに止めて、表と
+確認を作り直す。**
 
 ```sh
+.claude/skills/pr-watch/status.sh <番号>   # => full review 0 件 と ci=緑 が出ているか
 gh api "repos/{owner}/{repo}/pulls/<番号>" --jq '"\(.head.sha) \(.base.ref) \(.mergeable)"'
 # sha を渡すと、確かめた head から動いていたときに GitHub が断る。
 # status.sh が出すのは先頭 7 桁なので、上で取り直した 40 桁を渡す。
