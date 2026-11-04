@@ -146,24 +146,25 @@ nix develop --command bash -c 'cd web && bun install --frozen-lockfile'
 make codegen && git status --short   # 生成物が動いたら下のコミットに含める
 make lint
 make test
+make test-e2e   # UI かハンドラに main 側の変更が入ったときだけ
 ```
 
+`make test-e2e` を回すかは `CONTRIBUTING.md`「コミット前に通すもの」。**文字の
+衝突が無い意味の衝突も、検査が見ている範囲ならここで見つかる。** テストの無い
+振る舞いの変化は、ここでは見つからない。落ちたら直して、もう一度回す。
+
 **衝突の無いマージはその場でコミットされる。** 生成物と、検査で落ちて直した
-ものはマージのコミットに入らず作業ツリーに残るので、push の前に別のコミットに
-する。
+もの（E2E を含む）はマージのコミットに入らず作業ツリーに残るので、push の前に
+別のコミットにする。**動いたものが無ければコミットしない。** 何もステージせずに
+`git commit` すると「nothing to commit」で止まる。
 
 ```sh
-git status --short   # 動いたのが生成物と直したファイルだけか
+git status --short   # 何も出なければ、下のコミットは飛ばす
 git add -- <動いた生成物と直したファイル> && git commit -m "build: regenerate after merging main"
 ```
 
 **`git add -A` にしない。** ignore されていないものは何でも入る。名前を挙げて
 入れれば、見ていないファイルは入らない。
-
-UI かハンドラに main 側の変更が入ったなら `make test-e2e` も（`CONTRIBUTING.md`
-「コミット前に通すもの」）。**文字の衝突が無い意味の衝突も、検査が見ている
-範囲ならここで見つかる。** 落ちたら直して、上のコミットに含める。テストの無い
-振る舞いの変化は、ここでは見つからない。
 
 ```sh
 git push origin <枝>

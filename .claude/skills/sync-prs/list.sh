@@ -36,14 +36,18 @@ pulls="$(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" \
 # 取り込んでいない）ものを出す。取り込みを済ませた積みは出ない。
 # 出せないとき（検索が 100 件を超えた、など）は「?」を出し、無いとは言わない。
 merged_lower() {
-	local ref="$1" since found="" m first merge total
-	since="$(git log --format=%cs --reverse "origin/main..$ref" | head -1)"
+	local ref="$1" since res total nums found="" m first merge
+	# 最も古いコミットは末尾に来る。head で切ると git log が SIGPIPE で落ち、
+	# pipefail で取れなかった扱いになるので tail で取る。
+	since="$(git log --format=%cs "origin/main..$ref" | tail -n 1)" || { printf "?\n"; return; }
 	[ -z "$since" ] && { printf -- "-\n"; return; }
-	total="$(gh api -X GET search/issues -f q="repo:$nwo is:pr is:merged merged:>=$since" -f per_page=100 \
-		--jq .total_count)" || { printf "?\n"; return; }
+	# 総件数と候補の番号は 1 回の検索で取る。2 回に分けると、2 回目だけが落ちた
+	# ときに候補が空になり、「無い」と読める。
+	res="$(gh api -X GET search/issues -f q="repo:$nwo is:pr is:merged merged:>=$since" -f per_page=100 \
+		--jq '"\(.total_count) \([.items[].number] | join(" "))"')" || { printf "?\n"; return; }
+	read -r total nums <<<"$res"
 	[ "$total" -gt 100 ] && { printf "?\n"; return; }
-	for m in $(gh api -X GET search/issues -f q="repo:$nwo is:pr is:merged merged:>=$since" -f per_page=100 \
-		--jq '.items[].number'); do
+	for m in $nums; do
 		first="$(gh api "repos/$nwo/pulls/$m/commits?per_page=1" --jq '.[0].sha')" || { printf "?\n"; return; }
 		merge="$(gh api "repos/$nwo/pulls/$m" --jq '.merge_commit_sha')" || { printf "?\n"; return; }
 		if git merge-base --is-ancestor "$first" "$ref" 2>/dev/null &&
