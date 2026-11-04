@@ -290,6 +290,7 @@ export function BoardPage({
     generate: generateDiagram,
     changeKind: handleChangeKind,
     placeDraft,
+    draftPlaced,
     pasteText,
     setPasteText,
     pasteMermaid,
@@ -723,6 +724,7 @@ export function BoardPage({
                   onChangeKind: handleChangeKind,
                   onSend: generateDiagram,
                   onPlace: () => void placeDraft(),
+                  placed: draftPlaced,
                   unavailable: diagramUnavailable,
                 }}
                 paste={{
