@@ -171,14 +171,22 @@ git add -- <動いた生成物と直したファイル> && git commit -m "build:
 入れれば、見ていないファイルは入らない。
 
 ```sh
-git push origin <枝>
+git push origin <枝>   # 断られたら、ここで止める
+test "$(git ls-remote origin refs/heads/<枝> | cut -f1)" = "$(git rev-parse HEAD)"   # 載ったか
 cd - && git worktree remove ../etoki-sync-<番号>
 ```
 
-**上の段の base が下の段の枝のままなら、push したあとに base を main に移す。**
-先に移すと、検査が落ちて push できなかったとき、取り込む前の head のまま base
-だけが main になった PR が残る。`/land` は base が main の PR をマージの候補に
-するので、検査していない状態を入れうる。
+**push が断られたら、そこで止めて訊く。** worktree も base もそのまま残す。
+ほかのセッションが同じ枝へ先に push していると断られる。そのまま進むと、検査した
+head が GitHub に無いまま worktree を消し、base だけを変えてしまう。push のあと、
+origin の枝の head が手元の `HEAD` と同じかも見る。
+
+**下の段がマージ済みで、上の段の base が下の段の枝のままなら、push したあとに
+base を main に移す。** 下の段がまだ開いているなら、base は下の段の枝のまま
+にする（main に移すと、下の段の変更が上の段の差分に混ざる）。先に移すと、検査が
+落ちて push できなかったとき、取り込む前の head のまま base だけが main になった
+PR が残る。`/land` は base が main の PR をマージの候補にするので、検査していない
+状態を入れうる。
 
 ```sh
 gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f base=main
