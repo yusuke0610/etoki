@@ -49,6 +49,9 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `.claude/skills/pr-watch/`         | full review の枠・依頼・待ち・0 件の判定（`/pr-watch`）                |
 | `.claude/skills/land/`             | マージの条件の判定、マージ順の表、マージと後続（`/land`）              |
 | `.claude/skills/sync-prs/`         | main が進んだあと、取り込みが要る PR だけを追従させる（`/sync-prs`）   |
+| `.claude/skills/triage/`           | 閉じられる issue と着手できる issue の振り分け（`/triage`）            |
+| `.claude/skills/spec/`             | 着手の前に仕様を固め、issue に書き戻す（`/spec`）                      |
+| `.claude/skills/file-issues/`      | 調べた結果を親の issue と sub-issue に積む（`/file-issues`）           |
 | `.claude/skills/security-audit/`   | 定期のセキュリティ点検（`/security-audit`）と #64 の更新               |
 
 `CONTRIBUTING.md` だけは**ディレクトリに紐づかないので自動では読み込まれない**。
@@ -62,6 +65,9 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 
 [Nix](https://nixos.org/) 以外はインストール不要。**すべて `nix develop` の中で
 実行する。** README にグローバルインストールの手順を書かないこと。
+
+例外は GitHub を扱うスキル（`/pr-review`・`/triage` など）が使う `gh` で、
+devShell に入れない。ホストに入れて `gh auth login` しておく（ADR 0002 の追記）。
 
 `make` は devShell の外から呼ばれると `nix develop --command` で自分をやり直す
 ので、入り忘れても道具の無いまま走ることはない。別の作業ツリー（worktree）の
