@@ -126,8 +126,12 @@ function fakeServer(outcomes: (Outcome | undefined)[] = []) {
 function setup({ enabled = true }: { enabled?: boolean } = {}) {
   const scrollToContent = vi.fn();
   const api = { scrollToContent } as unknown as ExcalidrawImperativeAPI;
-  const updateElements = vi.fn();
-  const currentElements = vi.fn(() => existing);
+  // キャンバスを真似る。置いたものは、次に読むときに載っている。
+  let canvas: SceneElement[] = existing;
+  const updateElements = vi.fn((next: SceneElement[]) => {
+    canvas = next;
+  });
+  const currentElements = vi.fn(() => canvas);
   const onPlaced = vi.fn();
   const hook = renderHook(() =>
     useDiagramDraft({
@@ -140,7 +144,15 @@ function setup({ enabled = true }: { enabled?: boolean } = {}) {
       pollIntervalMs: 0,
     }),
   );
-  return { hook, scrollToContent, updateElements, onPlaced };
+  /**
+   * キャンバスを人が書き換える（取り消す・消す）。BoardPage は Excalidraw の
+   * `onChange` のたびに描き直すので、それに合わせて描き直す。
+   */
+  const changeCanvas = (next: SceneElement[]) => {
+    canvas = next;
+    hook.rerender();
+  };
+  return { hook, scrollToContent, updateElements, onPlaced, changeCanvas };
 }
 
 afterEach(() => {
@@ -546,6 +558,145 @@ describe("useDiagramDraft の置く", () => {
     });
     expect(mermaidToElements).toHaveBeenCalledTimes(1);
     expect(updateElements).toHaveBeenCalledTimes(1);
+  });
+
+  // **同じドラフトは、置いた図がキャンバスに残っているあいだ置き直さない**
+  // （ADR 0040 の追記）。置き場所は毎回既存の絵の右外なので、押すたびに同じ図が
+  // 1 つずつ増え、重ならないぶん増えたことにも気づきにくい。
+  it("置いた図がキャンバスに残っているあいだは、同じドラフトを置き直さない", async () => {
+    fakeServer([{ mermaid: "flowchart TD\n  A" }]);
+    vi.mocked(mermaidToElements).mockResolvedValue({ ok: true, elements: converted });
+    vi.mocked(moveDraft).mockReturnValue(placed);
+    const { hook, updateElements, changeCanvas } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    expect(hook.result.current.draftPlaced).toBe(false);
+
+    // 置く前の描画で受け取った関数で押し直す。**止めるのは押した時点の値で、
+    // 描き直しを待たない。**
+    const place = hook.result.current.placeDraft;
+    await act(() => place());
+    expect(hook.result.current.draftPlaced).toBe(true);
+    await act(() => place());
+    await act(() => hook.result.current.placeDraft());
+
+    // 1 つでも残っていれば、残っていると数える。一部だけ消した図の隣に、
+    // まるごともう 1 つ置かない。
+    changeCanvas([...existing, el("p2")]);
+    expect(hook.result.current.draftPlaced).toBe(true);
+    await act(() => hook.result.current.placeDraft());
+
+    expect(mermaidToElements).toHaveBeenCalledTimes(1);
+    expect(updateElements).toHaveBeenCalledTimes(1);
+  });
+
+  // 取り消し（⌘Z）でも削除でも。止めたままにすると、置き直すには「直す」で
+  // 往復を 1 つ使うしかなくなる。
+  it("置いた図が消えたら、同じドラフトをまた置ける", async () => {
+    fakeServer([{ mermaid: "flowchart TD\n  A" }]);
+    vi.mocked(mermaidToElements).mockResolvedValue({ ok: true, elements: converted });
+    vi.mocked(moveDraft).mockReturnValue(placed);
+    const { hook, updateElements, changeCanvas } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    await act(() => hook.result.current.placeDraft());
+
+    // 消した要素を `isDeleted` にして持っていても、残っていないと数える。
+    const deleted = placed.map((p) => ({ ...p, isDeleted: true }));
+    changeCanvas([...existing, ...deleted]);
+    expect(hook.result.current.draftPlaced).toBe(false);
+    await act(() => hook.result.current.placeDraft());
+    expect(updateElements).toHaveBeenCalledTimes(2);
+
+    changeCanvas(existing);
+    expect(hook.result.current.draftPlaced).toBe(false);
+    await act(() => hook.result.current.placeDraft());
+    expect(updateElements).toHaveBeenCalledTimes(3);
+    expect(updateElements).toHaveBeenLastCalledWith([...existing, ...placed]);
+  });
+
+  // 消して置き直したあと、取り消しで前の図が戻ってくる。置き直しで前の ID を
+  // 忘れると、戻った図を数えずに同じ図をもう 1 つ置く（#412）。
+  it("置き直したあと取り消しで前の図が戻ったら、同じドラフトを置き直さない", async () => {
+    fakeServer([{ mermaid: "flowchart TD\n  A" }]);
+    vi.mocked(mermaidToElements).mockResolvedValue({ ok: true, elements: converted });
+    const again = [el("q1"), el("q2")];
+    vi.mocked(moveDraft).mockReturnValueOnce(placed).mockReturnValueOnce(again);
+    const { hook, updateElements, changeCanvas } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    await act(() => hook.result.current.placeDraft());
+
+    changeCanvas(existing);
+    await act(() => hook.result.current.placeDraft());
+    expect(updateElements).toHaveBeenCalledTimes(2);
+
+    // 2 回目の配置と、1 回目の削除を取り消した。
+    changeCanvas([...existing, ...placed]);
+    expect(hook.result.current.draftPlaced).toBe(true);
+    await act(() => hook.result.current.placeDraft());
+    expect(updateElements).toHaveBeenCalledTimes(2);
+  });
+
+  // 変換は非同期。待つあいだに削除を取り消して前の図が戻ったら、押した時点では
+  // 置けても、置く直前にはもう置いてある（#412）。
+  it("変換を待つあいだに前の図が戻ったら、同じドラフトを置き直さない", async () => {
+    fakeServer([{ mermaid: "flowchart TD\n  A" }]);
+    vi.mocked(mermaidToElements).mockResolvedValueOnce({ ok: true, elements: converted });
+    vi.mocked(moveDraft).mockReturnValue(placed);
+    const { hook, updateElements, changeCanvas } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    await act(() => hook.result.current.placeDraft());
+    changeCanvas(existing);
+
+    const converting = deferred<{ ok: true; elements: SceneElement[] }>();
+    vi.mocked(mermaidToElements).mockReturnValueOnce(converting.promise);
+    let placing!: Promise<void>;
+    act(() => {
+      placing = hook.result.current.placeDraft();
+    });
+    // 削除を取り消した。
+    changeCanvas([...existing, ...placed]);
+    await act(async () => {
+      converting.resolve({ ok: true, elements: converted });
+      await placing;
+    });
+
+    expect(mermaidToElements).toHaveBeenCalledTimes(2);
+    expect(updateElements).toHaveBeenCalledTimes(1);
+  });
+
+  it("直して新しいドラフトが届いたら、置いた図が残っていても置ける", async () => {
+    fakeServer([
+      { mermaid: "flowchart TD\n  A" },
+      { mermaid: "flowchart TD\n  A --> B" },
+    ]);
+    vi.mocked(mermaidToElements).mockResolvedValue({ ok: true, elements: converted });
+    vi.mocked(moveDraft).mockReturnValue(placed);
+    const { hook, updateElements } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    await act(() => hook.result.current.placeDraft());
+
+    await act(() => hook.result.current.generate("B も"));
+    expect(hook.result.current.draftPlaced).toBe(false);
+    await act(() => hook.result.current.placeDraft());
+
+    expect(mermaidToElements).toHaveBeenLastCalledWith("flowchart TD\n  A --> B");
+    expect(updateElements).toHaveBeenCalledTimes(2);
+  });
+
+  // 同じかどうかは届いたドラフトで決め、mermaid の文字列では比べない（ADR 0040 の
+  // 追記）。上のように違う文字列で直すと、文字列で比べる実装でも通る。
+  it("直して同じ mermaid が返っても、届いたドラフトは別なので置ける", async () => {
+    fakeServer([{ mermaid: "flowchart TD\n  A" }, { mermaid: "flowchart TD\n  A" }]);
+    vi.mocked(mermaidToElements).mockResolvedValue({ ok: true, elements: converted });
+    vi.mocked(moveDraft).mockReturnValue(placed);
+    const { hook, updateElements } = setup();
+    await act(() => hook.result.current.generate("TODO を"));
+    await act(() => hook.result.current.placeDraft());
+
+    await act(() => hook.result.current.generate("もう一度"));
+    expect(hook.result.current.draftPlaced).toBe(false);
+    await act(() => hook.result.current.placeDraft());
+
+    expect(updateElements).toHaveBeenCalledTimes(2);
   });
 });
 
