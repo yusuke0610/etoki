@@ -44,7 +44,9 @@ while read -r name; do
 	if [ -n "$uses" ]; then
 		found=1
 		echo "== $name（main で定義が消えた）"
-		echo "$uses" | head -5
+		# head は 5 行で読むのをやめ、echo が SIGPIPE で落ちて pipefail で止まりうる。
+		# sed は最後まで読む。
+		echo "$uses" | sed -n '1,5p'
 	fi
 done <<<"$removed"
 

@@ -62,7 +62,8 @@ unresolved_threads() {
 #   REQ  人が書いた `@coderabbitai full review`
 #   FIN  CodeRabbit の返信「Full review finished」（走り終えた）
 #   RUN  CodeRabbit の返信「triggered」（走っている）
-#   LIM  CodeRabbit の返信「rate limited」（枠切れ。何分後に空くかを添える）
+#   LIM  CodeRabbit の返信「rate limited」か「Action not completed」（枠切れ。
+#        何分後に空くかを添える）
 #   SUM  要約のコメント。最後に読んだ commit（「between A and B」の B）を添える
 # 返信は 1 つのコメントが triggered → finished と書き換わるので、時刻は
 # created_at（依頼との前後）と updated_at（終わった時刻）の両方を持つ。
@@ -76,7 +77,7 @@ classify='.[]
 	    then "REQ\t\(.created_at)\t\(.updated_at)\t-"
 	  elif $who != "coderabbitai[bot]" then empty
 	  elif ($b | test("Full review finished")) then "FIN\t\(.created_at)\t\(.updated_at)\t-"
-	  elif ($b | test("rate limited"; "i"))
+	  elif ($b | test("rate limited|Action not completed"; "i"))
 	    then "LIM\t\(.created_at)\t\(.updated_at)\t\(($b | capture("available in (?<w>[0-9]+ [a-z]+)") | .w) // "?")"
 	  elif ($b | test("Full review triggered|Actions? performed"; "i")) then "RUN\t\(.created_at)\t\(.updated_at)\t-"
 	  elif ($b | test("Reviewing files that changed"))
