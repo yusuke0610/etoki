@@ -39,36 +39,47 @@ pulls="$(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" \
 # 分かれたあとにその枝へ足された変更まで取り込む。
 # 出せないとき（検索が 100 件を超えた、検索が途中で打ち切られた、など）は「?」を
 # 出し、無いとは言わない。
+# 候補の PR ごとの「最初のコミット」と「squash のコミット」は、開いている PR を
+# またいで使い回す（同じ候補を PR ごとに取り直すと、候補の数 × PR の数だけ API を
+# 呼ぶ）。結果はサブシェルを通さずに lower_result へ入れる。$(…) で受けると
+# キャッシュがサブシェルの中で捨てられる。mapfile と同じく bash 4 以上が要る。
+declare -A cand_first=() cand_merge=()
 merged_lower() {
 	local ref="$1" since res incomplete total nums found="" m first merge
+	lower_result="?"
 	# 最も古いコミットは末尾に来る。head で切ると git log が SIGPIPE で落ち、
 	# pipefail で取れなかった扱いになるので tail で取る。日付は UTC で出す
 	# （検索の merged: は UTC で比べる。%cs はコミットのタイムゾーンの日付で、
 	# +09:00 の朝のコミットは UTC では前の日になる）。
-	since="$(TZ=UTC git log --date=format-local:%Y-%m-%d --format=%cd "origin/main..$ref" | tail -n 1)" ||
-		{ printf "?\n"; return; }
-	[ -z "$since" ] && { printf -- "-\n"; return; }
+	since="$(TZ=UTC git log --date=format-local:%Y-%m-%d --format=%cd "origin/main..$ref" | tail -n 1)" || return 0
+	[ -z "$since" ] && { lower_result="-"; return 0; }
 	# 総件数と候補の番号は 1 回の検索で取る。2 回に分けると、2 回目だけが落ちた
 	# ときに候補が空になり、「無い」と読める。
 	# 検索は時間切れでも成功で返り、incomplete_results で打ち切ったことを知らせる。
 	res="$(gh api -X GET search/issues -f q="repo:$nwo is:pr is:merged base:main merged:>=$since" -f per_page=100 \
-		--jq '"\(.incomplete_results) \(.total_count) \([.items[].number] | join(" "))"')" || { printf "?\n"; return; }
+		--jq '"\(.incomplete_results) \(.total_count) \([.items[].number] | join(" "))"')" || return 0
 	read -r incomplete total nums <<<"$res"
-	[ "$incomplete" != "false" ] && { printf "?\n"; return; }
-	[ "$total" -gt 100 ] && { printf "?\n"; return; }
+	[ "$incomplete" != "false" ] && return 0
+	[ "$total" -gt 100 ] && return 0
 	for m in $nums; do
-		first="$(gh api "repos/$nwo/pulls/$m/commits?per_page=1" --jq '.[0].sha')" || { printf "?\n"; return; }
-		merge="$(gh api "repos/$nwo/pulls/$m" --jq '.merge_commit_sha')" || { printf "?\n"; return; }
+		if [ -z "${cand_first[$m]:-}" ]; then
+			first="$(gh api "repos/$nwo/pulls/$m/commits?per_page=1" --jq '.[0].sha')" || return 0
+			merge="$(gh api "repos/$nwo/pulls/$m" --jq '.merge_commit_sha')" || return 0
+			cand_first[$m]="$first"
+			cand_merge[$m]="$merge"
+		fi
+		first="${cand_first[$m]}"
+		merge="${cand_merge[$m]}"
 		# base:main に入った PR の squash は main にあるはず。手元の origin/main に
 		# 無ければ、冒頭の fetch のあとにマージされた。判定できないので「?」。
-		git merge-base --is-ancestor "$merge" origin/main 2>/dev/null || { printf "?\n"; return; }
+		git merge-base --is-ancestor "$merge" origin/main 2>/dev/null || return 0
 		if git merge-base --is-ancestor "$first" "$ref" 2>/dev/null &&
 			! git merge-base --is-ancestor "$first" origin/main 2>/dev/null &&
 			! git merge-base --is-ancestor "$merge" "$ref" 2>/dev/null; then
 			found="${found:+$found,}#$m"
 		fi
 	done
-	printf "%s\n" "${found:--}"
+	lower_result="${found:--}"
 }
 
 while IFS=$'\t' read -r pr head base author repo; do
@@ -84,9 +95,21 @@ while IFS=$'\t' read -r pr head base author repo; do
 	stack="-"
 	if [ "$base" != "main" ]; then
 		lower="$(awk -F'\t' -v b="$base" -v n="$nwo" '$2 == b && $5 == n { print "#" $1 }' <<<"$pulls")"
-		stack="上の段(下=${lower:-PR の無い枝 $base})"
+		if [ -n "$lower" ]; then
+			stack="上の段(下=$lower)"
+		# 開いている下の段が無ければ、同じ枝から出てマージされた PR を探す。下の段を
+		# squash しても枝を消さなければ、base はその枝を指したまま残る。
+		elif ! merged="$(gh api "repos/$nwo/pulls?state=closed&head=${nwo%%/*}:$base&per_page=100" \
+			--jq '[.[] | select(.merged_at != null) | "#\(.number)"] | join(",")')"; then
+			stack="判定できない(?)。base の枝 $base の PR を確かめるまで取り込まない"
+		elif [ -n "$merged" ]; then
+			stack="上の段(下=$merged はマージ済みで、枝 $base が残っている。下の段の最後の head → main の順に取り込む)"
+		else
+			stack="上の段(下=PR の無い枝 $base)"
+		fi
 	else
-		gone="$(merged_lower "origin/$head")"
+		merged_lower "origin/$head"
+		gone="$lower_result"
 		case "$gone" in
 		-) ;;
 		"?") stack="判定できない(?)。マージ済みの下の段があるかを確かめるまで取り込まない" ;;
