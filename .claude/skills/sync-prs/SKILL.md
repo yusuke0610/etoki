@@ -110,9 +110,13 @@ git fetch origin main <枝> &&
 # 下の段の枝が消えていても、head は PR の ref から取れる。sha は /land の記録や PR に残る
 git fetch origin refs/pull/<下の段の PR 番号>/head &&
   git merge <下の段の最後の head の sha>   # 衝突したら、解いて --continue してから次へ
-git rev-parse 'origin/main^{tree}' '<下の段の最後の head>^{tree}'   # 2 行が一致するか
-git merge -s ours origin/main   # 一致したとき
-git merge origin/main           # 一致しないとき
+# tree が一致したときだけ -s ours。順に 2 つ叩くと、先の -s ours が main を祖先に
+# してしまい、あとのふつうのマージは何も取り込まない
+if [ "$(git rev-parse 'origin/main^{tree}')" = "$(git rev-parse '<下の段の最後の head>^{tree}')" ]; then
+  git merge -s ours origin/main
+else
+  git merge origin/main
+fi
 ```
 
 **main の tree が下の段の最後の head の tree と一致したら、`-s ours` でつなぐ。**
