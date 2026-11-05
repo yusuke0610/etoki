@@ -99,11 +99,26 @@ while IFS=$'\t' read -r pr head base author repo; do
 			stack="上の段(下=$lower)"
 		# 開いている下の段が無ければ、同じ枝から出てマージされた PR を探す。下の段を
 		# squash しても枝を消さなければ、base はその枝を指したまま残る。
+		# 「マージ済み」と言えるのは、main に入った（base が main で、squash の
+		# コミットが origin/main にある）ものだけ。別の枝に入ったものや、手元の
+		# origin/main でたどれないものは判定できない。
 		elif ! merged="$(gh api "repos/$nwo/pulls?state=closed&head=${nwo%%/*}:$base&per_page=100" \
-			--jq '[.[] | select(.merged_at != null) | "#\(.number)"] | join(",")')"; then
+			--jq '.[] | select(.merged_at != null) | "\(.number) \(.base.ref) \(.merge_commit_sha)"')"; then
 			stack="判定できない(?)。base の枝 $base の PR を確かめるまで取り込まない"
 		elif [ -n "$merged" ]; then
-			stack="上の段(下=$merged はマージ済みで、枝 $base が残っている。下の段の最後の head → main の順に取り込む)"
+			into_main="" undecided=""
+			while read -r m mbase msha; do
+				if [ "$mbase" = "main" ] && git merge-base --is-ancestor "$msha" origin/main 2>/dev/null; then
+					into_main="${into_main:+$into_main,}#$m"
+				else
+					undecided="${undecided:+$undecided,}#$m"
+				fi
+			done <<<"$merged"
+			if [ -n "$undecided" ]; then
+				stack="判定できない(?)。base の枝 $base から出た $undecided が main に入ったか確かめるまで取り込まない"
+			else
+				stack="上の段(下=$into_main はマージ済みで、枝 $base が残っている。下の段の最後の head → main の順に取り込む)"
+			fi
 		else
 			stack="上の段(下=PR の無い枝 $base)"
 		fi
