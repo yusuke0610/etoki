@@ -109,16 +109,19 @@ git fetch origin main <枝> &&
 下の段の最後の head を先に取り込めば、その変更は共通の祖先になる。
 
 ```sh
-# 下の段の枝が消えていても、head は PR の ref から取れる。sha は /land の記録や PR に残る
+# 下の段の枝が消えていても、head は PR の ref から取れる。sha は /land の記録や PR に残る。
+# 取得か下の段のマージが落ちたら、main のマージへは進まない（&& でつなぐ）。
+# 下の段のマージが衝突で止まったら、解いて git merge --continue してから、
+# if から下だけを叩き直す。
 git fetch origin refs/pull/<下の段の PR 番号>/head &&
-  git merge <下の段の最後の head の sha>   # 衝突したら、解いて --continue してから次へ
-# tree が一致したときだけ -s ours。順に 2 つ叩くと、先の -s ours が main を祖先に
-# してしまい、あとのふつうのマージは何も取り込まない
-if [ "$(git rev-parse 'origin/main^{tree}')" = "$(git rev-parse '<下の段の最後の head>^{tree}')" ]; then
-  git merge -s ours origin/main
-else
-  git merge origin/main
-fi
+  git merge <下の段の最後の head の sha> &&
+  # tree が一致したときだけ -s ours。順に 2 つ叩くと、先の -s ours が main を
+  # 祖先にしてしまい、あとのふつうのマージは何も取り込まない
+  if [ "$(git rev-parse 'origin/main^{tree}')" = "$(git rev-parse '<下の段の最後の head>^{tree}')" ]; then
+    git merge -s ours origin/main
+  else
+    git merge origin/main
+  fi
 ```
 
 **main の tree が下の段の最後の head の tree と一致したら、`-s ours` でつなぐ。**
