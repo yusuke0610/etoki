@@ -91,23 +91,46 @@ classify='.[]
 	  else empty end'
 
 # 依頼のあとに CodeRabbit が付けた指摘の数。行ごとのコメント（返信を除く）と、
-# review 本文の「Actionable comments posted: N」の大きいほう（本文にしか出ない
-# diff の外への指摘もそちらに数えられる）。返信して解決するとスレッドは 0 に
+# review 本文から読んだ数の大きいほう。返信して解決するとスレッドは 0 に
 # なるが、その full review が指摘を出したことは変わらない。
-# $since は jq の変数で、シェルに展開させてはいけない。
+#
+# 本文から読む数は次の順で決める。
+#   1. 「Actionable comments posted: N」があれば N（本文にしか出ない diff の外への
+#      指摘もそちらに数えられる）。
+#   2. 無ければ、本文の節の見出し（`Additional comments: N`、`Nitpick comments (N)`
+#      など、`comments` の後ろに数が来る <summary>）の合計。件数行を持たず、
+#      本文の節にだけ指摘を載せる review がある（#414 の 5732403886）。
+#   3. どちらも無く、自動のチェックボックスと HTML コメントを除いて文字が残れば
+#      「?」。読めない本文を 0 件と読まない。何も残らなければ 0（スレッドへの
+#      返信で増える空の review と、状態だけの review）。
+# 「?」の本文があり、ほかの本文にも行ごとのコメントにも指摘が無ければ「?」を返す
+# （指摘が 1 件でも数えられれば、0 件でないことは言える）。
+# $since / $b / $act / $sec は jq の変数で、シェルに展開させてはいけない。
 # shellcheck disable=SC2016
 findings_since() {
-	local pr="$1" since="$2" inline actionable
+	local pr="$1" since="$2" inline body
 	# 取れなかったら失敗で返す（呼ぶ側が 0 件と読まないように）。pipefail なので
 	# gh が落ちれば代入ごと失敗する。
 	inline="$(gh api --paginate "repos/$nwo/pulls/$pr/comments?per_page=100" \
 		--jq '.[] | select(.in_reply_to_id == null) | select(.user.login == "coderabbitai[bot]") | .created_at' |
 		awk -v s="$since" '$1 >= s { n++ } END { print n + 0 }')" || return 1
-	actionable="$(gh api --paginate "repos/$nwo/pulls/$pr/reviews?per_page=100" \
+	body="$(gh api --paginate "repos/$nwo/pulls/$pr/reviews?per_page=100" \
 		--jq '.[] | select(.user.login == "coderabbitai[bot]")
-		      | "\(.submitted_at) \(((.body // "") | capture("Actionable comments posted: (?<n>[0-9]+)") | .n) // "0")"' |
-		awk -v s="$since" '$1 >= s { n += $2 } END { print n + 0 }')" || return 1
-	echo $((inline > actionable ? inline : actionable))
+		      | (.body // "") as $b
+		      | (($b | capture("Actionable comments posted: (?<n>[0-9]+)") | .n) // null) as $act
+		      | ([$b | scan("comments(?::[ \\t]*|[ \\t]*\\()([0-9]+)\\)?[ \\t]*</summary>"; "i") | .[0] | tonumber] | add) as $sec
+		      | "\(.submitted_at) \(
+		          if $act != null then $act
+		          elif $sec != null then $sec
+		          elif ($b | gsub("<!-- autofix_checkbox_start -->[\\s\\S]*?<!-- autofix_checkbox_end -->"; "")
+		                   | gsub("<!--[\\s\\S]*?-->"; "") | test("\\S")) then "?"
+		          else 0 end)"' |
+		awk -v s="$since" '$1 >= s { if ($2 == "?") u = 1; else n += $2 } END { print (u && n == 0 ? "?" : n + 0) }')" || return 1
+	if [ "$body" = "?" ]; then
+		if [ "$inline" -gt 0 ]; then echo "$inline"; else echo "?"; fi
+		return 0
+	fi
+	echo $((inline > body ? inline : body))
 }
 
 latest_finished=""
@@ -152,6 +175,8 @@ for pr in "${prs[@]}"; do
 				fr="要約が古い(依頼より前に更新)"
 			elif ! found="$(findings_since "$pr" "$req_at")"; then
 				fr="指摘の数を取れなかった(0 件とは読まない。取り直す)"
+			elif [ "$found" = "?" ]; then
+				fr="指摘の数を読めない(件数の無い review 本文がある。0 件とは読まない。本文を読む)"
 			elif [ "$found" != "0" ]; then
 				fr="指摘あり(この full review で ${found} 件。直して依頼し直す)"
 			else

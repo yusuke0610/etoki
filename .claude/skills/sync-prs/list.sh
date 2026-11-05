@@ -103,8 +103,9 @@ while IFS=$'\t' read -r pr head base author repo; do
 		# コミットが origin/main にある）ものだけ。別の枝に入ったものや、手元の
 		# origin/main でたどれないものは判定できない。
 		# 枝の名前はクエリの値として渡す（-f）。URL に直に書くと、名前の & や # で
-		# クエリが切れる。
-		elif ! merged="$(gh api -X GET "repos/$nwo/pulls" -f state=closed -f head="${nwo%%/*}:$base" -f per_page=100 \
+		# クエリが切れる。閉じた PR が 100 件を超えると 2 ページ目のマージ済みを
+		# 見落とし「PR の無い枝」と出すので、全ページを回す。
+		elif ! merged="$(gh api -X GET --paginate "repos/$nwo/pulls" -f state=closed -f head="${nwo%%/*}:$base" -f per_page=100 \
 			--jq '.[] | select(.merged_at != null) | "\(.number) \(.base.ref) \(.merge_commit_sha)"')"; then
 			stack="判定できない(?)。base の枝 $base の PR を確かめるまで取り込まない"
 		elif [ -n "$merged" ]; then

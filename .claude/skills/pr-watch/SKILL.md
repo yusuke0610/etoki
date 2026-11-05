@@ -77,6 +77,9 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
    スレッド 0」の 3 つで行う（`指摘あり`）。**返信して解決しただけでは 0 件に
    ならない。** 直さないと返して解決したものも同じで、もう一度 full review を
    通す。スレッドの数だけで見ると、push せずに解決した full review を 0 件と読む。
+   **review 本文は件数行（`Actionable comments posted: N`）を持たないことがある。**
+   `status.sh` は本文の節の見出しの数を足し、それも無いのに文字が残る本文は
+   `指摘の数を読めない` と出す。0 件とは読まず、本文を開いて読む。
 
 **要約の `updated_at` だけでは判定しない。** 要約は full review のあとに push
 しただけでも書き換わる（「Trigger review」の欄が新しい head を指す）。
