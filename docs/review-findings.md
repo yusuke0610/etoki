@@ -5,7 +5,8 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 
 **書くのは、決着した指摘を rules に還すのと同じ場面。** `/pr-review` の最後か、
 `/pr-review` を通らずに full review が 0 件になった PR なら見回り（`/pr-watch`）が
-0 件を判定したとき。別の場面にすると、片方だけ忘れたことに気づけない。手順は
+0 件を判定したとき。別の場面にすると、片方だけ忘れたことに気づけない。件数を
+書くためだけの PR は数えない（数えると、その行のためにまた PR が要る）。手順は
 [`.claude/skills/pr-review/SKILL.md`](../.claude/skills/pr-review/SKILL.md) と
 [`.claude/skills/pr-watch/SKILL.md`](../.claude/skills/pr-watch/SKILL.md)。
 
