@@ -140,8 +140,12 @@ UI を触ったならスクリーンショットを添える。`make test-e2e` �
 
 ## レビュー対応
 
-PR を作ると CodeRabbit のレビューが付く。**作りっぱなしにせず、指摘がなくなるまで
-対応する。** 手順は `/pr-review`（[`.claude/skills/pr-review/SKILL.md`](.claude/skills/pr-review/SKILL.md)）。
+**PR を作っても CodeRabbit のレビューは自動では付かない。** 要約は「自動
+レビューの対象外」と言ったまま止まり、`@coderabbitai full review` で依頼して
+初めて付く。依頼・待ち・0 件かの判定は `/pr-watch`
+（[`.claude/skills/pr-watch/SKILL.md`](.claude/skills/pr-watch/SKILL.md)）。
+付いた指摘は**作りっぱなしにせず、なくなるまで対応する。** 手順は `/pr-review`
+（[`.claude/skills/pr-review/SKILL.md`](.claude/skills/pr-review/SKILL.md)）。
 
 「指摘がなくなるまで」は、全部そのとおりに直すという意味ではない。**リポジトリの
 規約や仕様と衝突する指摘は直さず、理由をコメントで返す。** レビュアーは事情を
@@ -166,6 +170,11 @@ PR を作ると CodeRabbit のレビューが付く。**作りっぱなしにせ
 
 指摘が付いたら直して push し、もう一度 full review を依頼する。**full review は
 1 時間に 1 回しか回らない**ので、直すものはまとめて 1 回に載せる。
+
+**0 件かの読み方は `/pr-watch` の「full review の読み方」、マージの手順（表・
+確認・main に入ったかの確かめ）は `/land`
+（[`.claude/skills/land/SKILL.md`](.claude/skills/land/SKILL.md)）が正本。** 走って
+いる最中の full review を 0 件と読んでマージした例がある（#256）。
 
 ## CI
 
