@@ -110,6 +110,12 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
 変わることがある。表で「先に入れるもの」にしていた PR が入ったなら、残りは
 `/sync-prs` で取り込んで検査を通すまでマージしない。
 
+**依存の無い PR も、main が進んだら CI を新しい main で回し直してから判定する。**
+先に入れた PR は残りの head を変えないので CI は走り直さず、古い main との
+マージ結果で付いた緑が残る。`status.sh` の `ci` は check-run の新旧を区別しない。
+5 の「CI を回し直す」で close → reopen し、reopen より後に始まった check-run が
+すべて緑で終わってから、この PR の判定に戻る。
+
 ## 5. 後続を片付ける
 
 - **積んだ上の段は `/sync-prs` に渡す。** 下の段が squash で入ると、上の段は
@@ -138,6 +144,15 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
    ```sh
    gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f state=closed
    gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f state=open
+   ```
+
+3. **CI のジョブ（`.github/workflows/` が起こす check-run）が、reopen より後に
+   始まったものに入れ替わり、すべて緑で終わるまで待つ。** head が同じなので、
+   新しい run が出るまでは古い緑がそのまま見える（`status.sh` の `ci` も同じ）。
+
+   ```sh
+   gh api "repos/{owner}/{repo}/commits/<head>/check-runs" \
+     --jq '.check_runs[] | "\(.started_at) \(.status) \(.conclusion) \(.name)"'
    ```
 
 **head は変わらないので、full review はやり直さなくてよい。** 取り込み

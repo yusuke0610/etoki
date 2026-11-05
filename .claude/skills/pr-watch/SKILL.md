@@ -70,7 +70,9 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
      その依頼では走らないので、`available in N minutes` の後に**依頼し直す。**
 3. **走り終えたら、要約が読んだ commit を見る**（`要再依頼(読んだのは …)`）。
    要約の「between A and B」の B が、full review が読んだ head。**B がいまの
-   head と一致しなければ、そのレビューは古い。**
+   head と一致しなければ、そのレビューは古い。** 要約がこの行を持たず、読んだ
+   commit が HTML コメントの `"coveredCommitId":"<sha>","kind":"reviewed"` に
+   だけあることもある。`status.sh` はどちらも読み、どちらも無ければ `?` を出す。
 4. **指摘 0 件の full review では、review が増えない。** `findings.sh` の
    1 行目（review の件数）は変わらないので、そこでは判定しない。判定は
    「head を読んだ」「その依頼のあとに指摘が 1 件も付いていない」「未解決

@@ -70,7 +70,12 @@ unresolved_threads() {
 #   RUN  CodeRabbit の返信「triggered」（走っている）
 #   LIM  CodeRabbit の返信「rate limited」か「Action not completed」（枠切れ。
 #        何分後に空くかを添える）
-#   SUM  要約のコメント。最後に読んだ commit（「between A and B」の B）を添える
+#   SUM  要約のコメント。最後に読んだ commit を添える。「between A and B」の B、
+#        それが無ければ `"coveredCommitId":"<sha>","kind":"reviewed"` の sha。
+#        どちらも無ければ「?」（読んだ head と言わない）
+# **要約は印（`summarize by coderabbit.ai`）で見分け、返信より先に判定する。**
+# 要約は本文に「rate limited」を含むことがあり、後に回すと LIM に取られて
+# 要約が無いことになる（「between A and B」を持たない要約もある）。
 # 返信は 1 つのコメントが triggered → finished と書き換わるので、時刻は
 # created_at（依頼との前後）と updated_at（終わった時刻）の両方を持つ。
 # --jq はページごとに掛かるので、ここでは行に落とすだけにし、判定は awk で行う。
@@ -82,12 +87,15 @@ classify='.[]
 	| if ($who | test("\\[bot\\]$") | not) and ($b | test("@coderabbitai\\s+full review"))
 	    then "REQ\t\(.created_at)\t\(.updated_at)\t-"
 	  elif $who != "coderabbitai[bot]" then empty
+	  elif ($b | test("summarize by coderabbit\\.ai|Reviewing files that changed"))
+	    then "SUM\t\(.created_at)\t\(.updated_at)\t\(
+	      ($b | capture("between [0-9a-f]{40} and (?<h>[0-9a-f]{40})") | .h)
+	      // ($b | capture("\"coveredCommitId\":\"(?<h>[0-9a-f]{40})\",\"kind\":\"reviewed\"") | .h)
+	      // "?")"
 	  elif ($b | test("Full review finished")) then "FIN\t\(.created_at)\t\(.updated_at)\t-"
 	  elif ($b | test("rate limited|Action not completed"; "i"))
 	    then "LIM\t\(.created_at)\t\(.updated_at)\t\(($b | capture("available in (?<w>[0-9]+ [a-z]+)") | .w) // "?")"
 	  elif ($b | test("Full review triggered|Actions? performed"; "i")) then "RUN\t\(.created_at)\t\(.updated_at)\t-"
-	  elif ($b | test("Reviewing files that changed"))
-	    then "SUM\t\(.created_at)\t\(.updated_at)\t\(($b | capture("between [0-9a-f]{40} and (?<h>[0-9a-f]{40})") | .h) // "?")"
 	  else empty end'
 
 # 依頼のあとに CodeRabbit が付けた指摘の数。行ごとのコメント（返信を除く）と、

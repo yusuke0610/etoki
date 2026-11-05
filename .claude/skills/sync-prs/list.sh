@@ -109,16 +109,25 @@ while IFS=$'\t' read -r pr head base author repo; do
 			--jq '.[] | select(.merged_at != null) | "\(.number) \(.base.ref) \(.merge_commit_sha)"')"; then
 			stack="判定できない(?)。base の枝 $base の PR を確かめるまで取り込まない"
 		elif [ -n "$merged" ]; then
-			into_main="" undecided=""
+			into_main="" undecided="" unlinked=""
 			while read -r m mbase msha; do
-				if [ "$mbase" = "main" ] && git merge-base --is-ancestor "$msha" origin/main 2>/dev/null; then
-					into_main="${into_main:+$into_main,}#$m"
-				else
+				if ! { [ "$mbase" = "main" ] && git merge-base --is-ancestor "$msha" origin/main 2>/dev/null; }; then
 					undecided="${undecided:+$undecided,}#$m"
+				# 枝の名前は使い回せるので、同じ名前から出た別の履歴の PR も候補に出る。
+				# その PR の最初のコミットが上の段にある（上の段がその上に積まれていた）
+				# ものだけを下の段とする（merged_lower と同じ判定）。取れなければ、
+				# 繋がらないと同じに扱う。gh が here-string を読まないよう stdin を閉じる。
+				elif ! first="$(gh api "repos/$nwo/pulls/$m/commits?per_page=1" --jq '.[0].sha' </dev/null)" ||
+					! git merge-base --is-ancestor "$first" "origin/$head" 2>/dev/null; then
+					unlinked="${unlinked:+$unlinked,}#$m"
+				else
+					into_main="${into_main:+$into_main,}#$m"
 				fi
 			done <<<"$merged"
 			if [ -n "$undecided" ]; then
 				stack="判定できない(?)。base の枝 $base から出た $undecided が main に入ったか確かめるまで取り込まない"
+			elif [ -n "$unlinked" ]; then
+				stack="判定できない(?)。base の枝 $base から出た $unlinked は上の段と履歴が繋がると確かめられない（同じ名前の別の枝かもしれない）。確かめるまで取り込まない"
 			else
 				stack="上の段(下=$into_main はマージ済みで、枝 $base が残っている。下の段の最後の head → main の順に取り込む)"
 			fi
