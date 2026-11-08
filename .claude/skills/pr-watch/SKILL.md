@@ -91,6 +91,10 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
 **要約の `updated_at` だけでは判定しない。** 要約は full review のあとに push
 しただけでも書き換わる（「Trigger review」の欄が新しい head を指す）。
 `updated_at` が依頼より後でも、読んだ commit が古いことがある（#394）。
+**逆に、full review が終わってから 5 分より後に書き換わった要約も信じない**
+（`要再依頼(要約が full review のあとに書き換わった…)`）。増分のレビューが別の
+head を読んで書き換えたのかもしれない。古い committer の日付のコミットを依頼の
+あとに push すると、head の時刻の比べ（1.）を抜けてこの形になる。
 
 ## 枠の使い方
 
