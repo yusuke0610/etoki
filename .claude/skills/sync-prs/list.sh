@@ -144,7 +144,12 @@ while IFS=$'\t' read -r pr head base author repo; do
 		esac
 	fi
 	upper="$(awk -F'\t' -v h="$head" -v n="$nwo" '$3 == h && $5 == n { printf "#%s ", $1 }' <<<"$pulls")"
-	[ -n "$upper" ] && stack="${stack/-/}下の段(上=${upper% })"
+	# 「-」（積みでない）だけを空にしてから足す。${stack/-/} と書くと、枝の名前の
+	# 最初の「-」まで消える。
+	if [ -n "$upper" ]; then
+		[ "$stack" = "-" ] && stack=""
+		stack="${stack}下の段(上=${upper% })"
+	fi
 
 	# main にあって head に無いコミットの数。0 なら取り込むものが無い。
 	behind="$(gh api "repos/$nwo/compare/$head...main" --jq .ahead_by 2>/dev/null || echo "?")"

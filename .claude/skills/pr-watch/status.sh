@@ -141,6 +141,46 @@ findings_since() {
 	echo $((inline > body ? inline : body))
 }
 
+# CI の状態。check-run が 1 本も無いのは、衝突で pull_request のワークフローが
+# 起動していないことが多い（SKILL.md「CI が走らない」）。
+# **数えるのは GitHub Actions の check-run だけ**（app が github-actions）。
+# CodeRabbit のようなほかの App も check-run を付け（CodeRabbit は skipped）、
+# 数えると CI のジョブが 1 本も無いのに緑と出る。
+# **ワークフローの run が 1 本でも終わっていなければ走行中**とする。needs で
+# 後に回るジョブの check-run は前のジョブが終わるまで出ないので、check-run
+# だけ見ると、出揃う前に緑と出る。
+# 緑と言えるのは、run がすべて終わり、check-run の結論が success / neutral /
+# skipped のものだけのとき。stale のような結果の決まっていない結論や、知らない
+# 結論が 1 本でもあれば「未確定」にする（赤でも走行中でもないものを緑に数えない）。
+# 1 ページは 100 本までなので全ページを回す。--jq はページごとに掛かるので、
+# 1 本 1 行に落としてから awk でまとめる。取れなければ「?」を出し、緑とは言わない。
+ci_state() {
+	local head="$1" runs pending
+	runs="$(gh api --paginate "repos/$nwo/commits/$head/check-runs?per_page=100" \
+		--jq '.check_runs[] | select(.app.slug == "github-actions")
+		      | "\(.status)\t\(.conclusion // "")\t\(.name)"')" || { echo "?"; return 0; }
+	pending="$(gh api --paginate "repos/$nwo/actions/runs?head_sha=$head&per_page=100" \
+		--jq '.workflow_runs[] | select(.status != "completed") | .id' | awk 'END { print NR }')" || { echo "?"; return 0; }
+	awk -F'\t' -v pending="$pending" '
+		NF == 0 { next }
+		{ n++ }
+		$1 != "completed" { run++ }
+		$2 == "failure" || $2 == "cancelled" || $2 == "timed_out" || $2 == "action_required" {
+			bad = bad (bad == "" ? "" : ",") $3
+			next
+		}
+		$1 == "completed" && $2 != "success" && $2 != "neutral" && $2 != "skipped" {
+			unknown = unknown (unknown == "" ? "" : ",") $3 ":" $2
+		}
+		END {
+			if (n == 0 && pending == 0) print "未起動"
+			else if (bad != "") print "赤(" bad ")"
+			else if (run > 0 || pending > 0) print "走行中"
+			else if (unknown != "") print "未確定(" unknown ")"
+			else print "緑"
+		}' <<<"$runs"
+}
+
 latest_finished=""
 
 for pr in "${prs[@]}"; do
@@ -196,36 +236,7 @@ for pr in "${prs[@]}"; do
 
 	threads="$(unresolved_threads "$pr")"
 
-	# CI。check-run が 1 本も無いのは、衝突で pull_request のワークフローが
-	# 起動していないことが多い（SKILL.md「CI が走らない」）。1 ページは 100 本まで
-	# なので全ページを回す。--jq はページごとに掛かるので、1 本 1 行に落としてから
-	# awk でまとめる。取れなければ「?」を出し、緑とは言わない。
-	# 緑と言えるのは、結論が success / neutral / skipped のものだけのとき。stale の
-	# ような結果の決まっていない結論や、知らない結論が 1 本でもあれば「未確定」に
-	# する（赤でも走行中でもないものを緑に数えない）。
-	if runs="$(gh api --paginate "repos/$nwo/commits/$head/check-runs?per_page=100" \
-		--jq '.check_runs[] | "\(.status)\t\(.conclusion // "")\t\(.name)"')"; then
-		ci="$(awk -F'\t' '
-			NF == 0 { next }
-			{ n++ }
-			$1 != "completed" { run++ }
-			$2 == "failure" || $2 == "cancelled" || $2 == "timed_out" || $2 == "action_required" {
-				bad = bad (bad == "" ? "" : ",") $3
-				next
-			}
-			$1 == "completed" && $2 != "success" && $2 != "neutral" && $2 != "skipped" {
-				unknown = unknown (unknown == "" ? "" : ",") $3 ":" $2
-			}
-			END {
-				if (n == 0) print "未起動"
-				else if (bad != "") print "赤(" bad ")"
-				else if (run > 0) print "走行中"
-				else if (unknown != "") print "未確定(" unknown ")"
-				else print "緑"
-			}' <<<"$runs")"
-	else
-		ci="?"
-	fi
+	ci="$(ci_state "$head")"
 
 	# 0 件と言えるのは、head を読んだ full review が終わり、その full review が指摘を
 	# 出さず（上の findings_since）、未解決のスレッドも無いときだけ。

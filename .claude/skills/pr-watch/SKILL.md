@@ -45,9 +45,14 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
 | `fr`        | 最後の full review の状態（下の「full review の読み方」）                    |
 | `threads`   | CodeRabbit の未解決スレッドの数。取れなければ `?`（0 件とは読まない）        |
 | `mergeable` | `mergeable` と `mergeable_state`（`clean` / `dirty` / `blocked` など）       |
-| `ci`        | head の check-run。`未起動` は衝突を疑う（下の「CI が走らない」）            |
+| `ci`        | Actions の check-run と run。`未起動` は衝突を疑う（下の「CI が走らない」）  |
 | `base`      | base のブランチ。`main` 以外は積んだ PR                                      |
 | `=>`        | **`full review 0 件` が出たものだけが、マージの条件の full review を満たす** |
+
+`ci` は GitHub Actions の check-run とワークフローの run だけを見る。CodeRabbit
+などほかの App の check-run は数えない（CodeRabbit は `skipped` を付けるので、
+数えると CI が起動していないのに `緑` と出る）。run が 1 本でも終わっていなければ
+`走行中`。
 
 最後の行に、直近に終わった full review の時刻が出る。枠の目安に使う。
 
