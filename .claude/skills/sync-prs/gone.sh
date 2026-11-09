@@ -58,7 +58,9 @@ while read -r name; do
 		continue
 	fi
 	uses="$(git diff "$base" "origin/$branch" -- '*.go' '*.ts' '*.tsx' |
-		grep -E '^\+[^+]' | grep -wF -- "$name" || true)"
+		grep -E '^\+[^+]' |
+		# コメントだけの行（// や # や * で始まる）は使っていると数えない。
+		grep -vE '^\+[[:space:]]*(//|#|/?\*)' | grep -wF -- "$name" || true)"
 	if [ -n "$uses" ]; then
 		found=1
 		echo "== $name（main で定義が消えた）"

@@ -83,6 +83,10 @@ worktree で取り込み、いまの作業ツリーを汚さない。**用意の
 worktree で開いていると落ちる。そのまま次の行へ進むと、`cd` も落ちて、`merge`
 から先が元の作業ツリーで走る（元の枝が進み、検査とコミットと push もそこで行う）。
 
+**始める前に、いまの作業ツリーの絶対パスを控える**（`git rev-parse --show-toplevel`）。
+片付けで戻る先と消す worktree は、この控えから名指しする。`cd -` は前の `cd` を
+覚えている同じシェルでしか効かず、コマンドを分けて叩くと別の場所へ戻る。
+
 ```sh
 git fetch origin main <枝> &&
   git worktree add ../etoki-sync-<番号> <枝> &&
@@ -189,7 +193,7 @@ git add -- <動いた生成物と直したファイル> && git commit -m "build:
 # どれかが落ちたら、そこで止まる（&& でつなぐ）
 git push origin <枝> &&
   test "$(git ls-remote origin refs/heads/<枝> | cut -f1)" = "$(git rev-parse HEAD)" &&
-  cd - && git worktree remove ../etoki-sync-<番号>
+  cd <控えた作業ツリーのパス> && git worktree remove <控えた作業ツリーのパス>/../etoki-sync-<番号>
 ```
 
 **push が断られたか、origin の head が手元と違えば、そこで止めて訊く。** worktree も

@@ -213,22 +213,34 @@ for pr in "${prs[@]}"; do
 	# 取れなければ、この PR は「取れなかった」と出して後ろの PR に進む（read が空で
 	# 落ちると set -e で残りの PR の状態が出ない）。
 	if ! info="$(gh api "repos/$nwo/pulls/$pr" \
-		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state) \(.head.ref)"')" || [ -z "$info" ]; then
+		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state) \(.head.ref) \(.head.repo.full_name // "-")"')" || [ -z "$info" ]; then
 		printf '#%s PR の情報を取れなかった(0 件とは読まない。取り直す)\n' "$pr"
 		continue
 	fi
-	read -r head base mergeable mstate head_ref <<<"$info"
+	read -r head base mergeable mstate head_ref head_repo <<<"$info"
 	# head がいつ来たか。committer の日付は書き手が決められる（古い日付のまま
 	# push できる）ので、GitHub がこの PR の枝でその commit の check-suite を最初に
 	# 作った時刻（その枝への push を受けた時刻）とのうち遅いほうを使う。
 	# check-suite は commit ごとに作られ、最初に push された枝を head_branch に持つ。
 	# 同じ commit を先に別の枝へ push してから PR の枝へ移すと、PR の枝の
-	# check-suite は無く、別の枝の古い時刻しか無い。そのときと、check-suite が
-	# 1 つも無いとき、取れなかったときは「?」にして、依頼との前後を言わない。
+	# check-suite は無く、別の枝の古い時刻しか無い。
+	# fork の PR の check-suite は head_branch を持たないことがあるので、この PR の
+	# head としてワークフローが起きた時刻（event が pull_request の run の作成時刻）
+	# も候補にする。run がこの PR のものかは pull_requests の番号で見る。fork の PR の
+	# run は番号を持たないので、head のリポジトリが fork そのものかで見る。
+	# 候補の最も早いものを使う。候補が無いとき、どちらかを取れなかったときは「?」に
+	# して、依頼との前後を言わない。
 	head_time="$(gh api "repos/$nwo/commits/$head" --jq '.commit.committer.date')" || head_time="?"
-	if seen_at="$(gh api --paginate "repos/$nwo/commits/$head/check-suites?per_page=100" \
+	if suites="$(gh api --paginate "repos/$nwo/commits/$head/check-suites?per_page=100" \
 		--jq '.check_suites[] | "\(.head_branch // "")\t\(.created_at)"' |
-		awk -F'\t' -v b="$head_ref" '$1 == b { print $2 }' | sort | awk 'NR == 1')" && [ -n "$seen_at" ]; then
+		awk -F'\t' -v b="$head_ref" '$1 == b { print $2 }')" &&
+		runs_at="$(gh api --paginate "repos/$nwo/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
+			--jq ".workflow_runs[]
+			      | select((((.pull_requests // []) | map(.number) | index($pr)) != null)
+			               or ((.head_repository.full_name // \"\") == \"$head_repo\" and \"$head_repo\" != \"$nwo\"))
+			      | .created_at")" &&
+		seen_at="$(printf '%s\n%s\n' "$suites" "$runs_at" | sed '/^$/d' | sort | awk 'NR == 1')" &&
+		[ -n "$seen_at" ]; then
 		if [[ "$seen_at" > "$head_time" ]]; then head_time="$seen_at"; fi
 	else
 		head_time="?"
