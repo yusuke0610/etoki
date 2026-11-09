@@ -227,7 +227,8 @@ for pr in "${prs[@]}"; do
 	# fork の PR の check-suite は head_branch を持たないことがあるので、この PR の
 	# head としてワークフローが起きた時刻（event が pull_request の run の作成時刻）
 	# も候補にする。run がこの PR のものかは pull_requests の番号で見る。fork の PR の
-	# run は番号を持たないので、head のリポジトリが fork そのものかで見る。
+	# run は番号を持たないので、head のリポジトリが fork そのもので、枝の名前も PR の
+	# head の枝と同じかで見る（同じ fork の別の枝から出た PR の run を混ぜない）。
 	# 候補の最も早いものを使う。候補が無いとき、どちらかを取れなかったときは「?」に
 	# して、依頼との前後を言わない。
 	head_time="$(gh api "repos/$nwo/commits/$head" --jq '.commit.committer.date')" || head_time="?"
@@ -237,7 +238,8 @@ for pr in "${prs[@]}"; do
 		runs_at="$(gh api --paginate "repos/$nwo/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
 			--jq ".workflow_runs[]
 			      | select((((.pull_requests // []) | map(.number) | index($pr)) != null)
-			               or ((.head_repository.full_name // \"\") == \"$head_repo\" and \"$head_repo\" != \"$nwo\"))
+			               or ((.head_repository.full_name // \"\") == \"$head_repo\" and \"$head_repo\" != \"$nwo\"
+			                   and (.head_branch // \"\") == \"$head_ref\"))
 			      | .created_at")" &&
 		seen_at="$(printf '%s\n%s\n' "$suites" "$runs_at" | sed '/^$/d' | sort | awk 'NR == 1')" &&
 		[ -n "$seen_at" ]; then
