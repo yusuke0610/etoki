@@ -37,9 +37,12 @@ PR ごとに次を全部満たすかを見る。
 - **人が立てた未解決のスレッドが無い。** `status.sh` の `threads` は、GraphQL の
   経路では CodeRabbit のスレッドしか数えない。PR の画面かレビューのスレッドの
   一覧で、人のスレッドも見る。
-- **CI が、いまの main とのマージ結果で走っている。** CI の check-run が始まった
-  時刻より後に main が進んでいたら（`git log -1 --format=%cI origin/main` と
-  比べる）、5 の「CI を回し直す」で回し直してから判定する。
+- **CI が、いまの main とのマージ結果で走っている。** CI のワークフローの run が
+  作られた時刻（`actions/runs?head_sha=<head>` の `created_at`）より後に main が
+  進んでいたら（`git log -1 --format=%cI origin/main` と比べる）、5 の「CI を
+  回し直す」で回し直してから判定する。check-run が始まった時刻では比べない。CI が
+  検査する merge commit は run が作られた時点で決まり、キューで待つあいだに main が
+  進んでも変わらない。時刻を取れなければ、マージせずに止める。
 - **マージ順の表に載っている**（次の 2）。
 
 **満たさない PR はマージしない。** 何が足りないかを添えてユーザーに渡す。
@@ -162,7 +165,8 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
    セッションが途中で切れたりすると PR は閉じたまま残り、開いている PR の一覧
    （`status.sh` / `list.sh`）にも出ない。reopen は取り直して `state` が `open`
    かを確かめ、開いていなければ開き直す。開き直せなければ、閉じたままの番号を
-   ユーザーに知らせる。
+   ユーザーに知らせる。**途中で切れたセッションを引き継いだら、最初に、報告に
+   残った番号の PR が閉じたままでないかを `state` で確かめ、閉じていれば開き直す。**
 
 3. **CI のジョブ（`.github/workflows/` が起こす check-run）が、reopen より後に
    始まったものに入れ替わり、すべて緑で終わるまで待つ。** head が同じなので、
