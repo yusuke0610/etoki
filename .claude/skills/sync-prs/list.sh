@@ -24,7 +24,7 @@ worktrees="$(git worktree list --porcelain | awk '/^branch / { sub("refs/heads/"
 # fork の PR の head は origin に無い（同じ名前の枝が origin にあれば、それは別の枝）。
 # 取り込んでも push する先が無いので、印を付けて対象から外す。
 pulls="$(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" \
-	--jq '.[] | "\(.number)\t\(.head.ref)\t\(.base.ref)\t\(.user.login)\t\(.head.repo.full_name // "")\t\(.head.sha)"' | sort -n)"
+	--jq '.[] | "\(.number)\t\(.head.ref)\t\(.base.ref)\t\(.user.login)\t\(.head.repo.full_name // "-")\t\(.head.sha)"' | sort -n)"
 
 # 開いている PR が無ければ、空の 1 行を回さずに終える。
 [ -z "$pulls" ] && exit 0
@@ -88,7 +88,10 @@ merged_lower() {
 
 while IFS=$'\t' read -r pr head base author repo head_sha; do
 	if [ "$repo" != "$nwo" ]; then
-		printf '#%s fork(%s) 対象外 author=%s %s\n' "$pr" "${repo:-消えたリポジトリ}" "$author" "$head"
+		# 消えた fork は「-」で受ける。空の欄はタブ区切りの read で詰められ、後ろの
+		# head の sha がリポジトリ名の位置に来る。
+		[ "$repo" = "-" ] && repo="消えたリポジトリ"
+		printf '#%s fork(%s) 対象外 author=%s %s\n' "$pr" "$repo" "$author" "$head"
 		continue
 	fi
 	# mergeable は一覧には載らず、個別に引いたときに計算される。null は計算中。
