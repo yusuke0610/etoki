@@ -207,8 +207,14 @@ ci_state() {
 latest_finished=""
 
 for pr in "${prs[@]}"; do
-	read -r head base mergeable mstate head_ref < <(gh api "repos/$nwo/pulls/$pr" \
-		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state) \(.head.ref)"')
+	# 取れなければ、この PR は「取れなかった」と出して後ろの PR に進む（read が空で
+	# 落ちると set -e で残りの PR の状態が出ない）。
+	if ! info="$(gh api "repos/$nwo/pulls/$pr" \
+		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state) \(.head.ref)"')" || [ -z "$info" ]; then
+		printf '#%s PR の情報を取れなかった(0 件とは読まない。取り直す)\n' "$pr"
+		continue
+	fi
+	read -r head base mergeable mstate head_ref <<<"$info"
 	# head がいつ来たか。committer の日付は書き手が決められる（古い日付のまま
 	# push できる）ので、GitHub がこの PR の枝でその commit の check-suite を最初に
 	# 作った時刻（その枝への push を受けた時刻）とのうち遅いほうを使う。
