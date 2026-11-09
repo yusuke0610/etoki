@@ -159,7 +159,9 @@ while IFS=$'\t' read -r pr head base author repo head_sha; do
 
 	# main にあって head に無いコミットの数。0 なら取り込むものが無い。
 	# 枝の名前ではなく head の sha で比べる。名前に # や ? があると URL がそこで切れる。
-	behind="$(gh api "repos/$nwo/compare/$head_sha...main" --jq .ahead_by 2>/dev/null || echo "?")"
+	# 取れなければ値ごと「?」にする（失敗したときの本文を一覧に混ぜない）。
+	behind="$(gh api "repos/$nwo/compare/$head_sha...main" --jq .ahead_by 2>/dev/null)" || behind="?"
+	[[ "$behind" =~ ^[0-9]+$ ]] || behind="?"
 
 	wt="-"
 	grep -qxF -- "$head" <<<"$worktrees" && wt="この手元の worktree で開いている"

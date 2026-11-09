@@ -67,6 +67,9 @@ unresolved_threads() {
 # full review の判定に使うコメントを、種類ごとに 1 行へ落とす。
 #   REQ  人が書いた `@coderabbitai full review`
 #   REV  人が書いた `@coderabbitai review`（増分のレビュー。要約を書き換える）
+#   どちらも本文の先頭にあるものだけを依頼とみなす（CodeRabbit が命令として読むのも
+#   先頭の形）。話の中でこの句に触れただけのコメントを依頼に数えると、依頼の時刻が
+#   後ろにずれ、前の依頼への返信と組み合わさる。
 #   FIN  CodeRabbit の返信「Full review finished」（走り終えた）
 #   RUN  CodeRabbit の返信「triggered」（走っている）
 #   LIM  CodeRabbit の返信「rate limited」か「Action not completed」（枠切れ。
@@ -88,9 +91,9 @@ classify='.[]
 	| (.user.login // "") as $who
 	| (.body // "") as $b
 	| (.updated_at | fromdateiso8601) as $ep
-	| if ($who | test("\\[bot\\]$") | not) and ($b | test("@coderabbitai\\s+full review"))
+	| if ($who | test("\\[bot\\]$") | not) and ($b | test("^\\s*@coderabbitai\\s+full review\\b"))
 	    then "REQ\t\(.created_at)\t\(.updated_at)\t-\t\($ep)"
-	  elif ($who | test("\\[bot\\]$") | not) and ($b | test("@coderabbitai\\s+review\\b"))
+	  elif ($who | test("\\[bot\\]$") | not) and ($b | test("^\\s*@coderabbitai\\s+review\\b"))
 	    then "REV\t\(.created_at)\t\(.updated_at)\t-\t\($ep)"
 	  elif $who != "coderabbitai[bot]" then empty
 	  elif ($b | test("summarize by coderabbit\\.ai|Reviewing files that changed"))

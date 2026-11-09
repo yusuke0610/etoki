@@ -117,7 +117,7 @@ git fetch origin refs/pull/<下の段の PR 番号>/head &&
   git merge <下の段の最後の head の sha> &&
   # tree が一致したときだけ -s ours。順に 2 つ叩くと、先の -s ours が main を
   # 祖先にしてしまい、あとのふつうのマージは何も取り込まない
-  if [ "$(git rev-parse 'origin/main^{tree}')" = "$(git rev-parse '<下の段の最後の head>^{tree}')" ]; then
+  if [ "$(git rev-parse 'origin/main^{tree}')" = "$(git rev-parse '<下の段の最後の head の sha>^{tree}')" ]; then
     git merge -s ours origin/main
   else
     git merge origin/main
