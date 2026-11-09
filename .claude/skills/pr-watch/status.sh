@@ -197,7 +197,17 @@ latest_finished=""
 for pr in "${prs[@]}"; do
 	read -r head base mergeable mstate < <(gh api "repos/$nwo/pulls/$pr" \
 		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state)"')
-	head_time="$(gh api "repos/$nwo/commits/$head" --jq '.commit.committer.date')"
+	# head がいつ来たか。committer の日付は書き手が決められる（古い日付のまま
+	# push できる）ので、GitHub が最初にその commit の check-suite を作った時刻
+	# （push を受けた時刻）とのうち遅いほうを使う。取れなければ「?」にして、
+	# 依頼との前後を言わない。
+	head_time="$(gh api "repos/$nwo/commits/$head" --jq '.commit.committer.date')" || head_time="?"
+	if seen_at="$(gh api --paginate "repos/$nwo/commits/$head/check-suites?per_page=100" \
+		--jq '.check_suites[].created_at' | sort | awk 'NR == 1')"; then
+		if [[ "$seen_at" > "$head_time" ]]; then head_time="$seen_at"; fi
+	else
+		head_time="?"
+	fi
 
 	events="$(gh api --paginate "repos/$nwo/issues/$pr/comments?per_page=100" --jq "$classify")"
 
@@ -219,6 +229,8 @@ for pr in "${prs[@]}"; do
 	# full review の判定。順番に意味がある（SKILL.md「full review の読み方」）。
 	if [ "$req_at" = "-" ]; then
 		fr="未依頼"
+	elif [ "$head_time" = "?" ]; then
+		fr="head の時刻を取れなかった(0 件とは読まない。取り直す)"
 	elif [[ "$req_at" < "$head_time" ]]; then
 		fr="要再依頼(依頼のあとに head が進んだ)"
 	else
@@ -234,16 +246,17 @@ for pr in "${prs[@]}"; do
 				fr="要約が古い(依頼より前に更新)"
 			# 要約は full review の終わりと数秒の差で書き換わる。それより 5 分以上
 			# あとに書き換わっていたら、別のレビュー（増分）が読んだ head を指して
-			# いるかもしれない。古い committer の日付のコミットを依頼のあとに push
-			# すると上の head の時刻の比べを抜け、この形になる。
+			# いるかもしれない（head の時刻は push を受けた時刻でも見ているが、
+			# 要約が別のレビューで書き換わったことはここでしか分からない）。
 			elif ((sum_ep > reply_ep + 300)); then
 				fr="要再依頼(要約が full review のあとに書き換わった。読んだ head と言えない)"
 			elif ! found="$(findings_since "$pr" "$req_at")"; then
 				fr="指摘の数を取れなかった(0 件とは読まない。取り直す)"
 			elif [ "$found" = "?" ]; then
 				fr="指摘の数を読めない(件数の無い review 本文がある。0 件とは読まない。本文を読む)"
+			elif [[ "$found" == *+ ]]; then
+				fr="指摘あり(この full review で ${found%+} 件以上。件数を読めない本文もあるので本文を読む。直して依頼し直す)"
 			elif [ "$found" != "0" ]; then
-				# 「N+」は、件数を読めない本文があって N 件より多いかもしれない
 				fr="指摘あり(この full review で ${found} 件。直して依頼し直す)"
 			else
 				fr="済(head を読んだ)"
