@@ -67,8 +67,10 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
 
 1. **依頼より後に head が進んでいたら、その依頼は数えない**（`要再依頼`）。
    docs だけのコミットでも同じ（`CONTRIBUTING.md`「マージ」）。head の時刻は
-   committer の日付と、GitHub がその commit を最初に受けた時刻（最も古い
-   check-suite）の遅いほう。committer の日付は古いまま push できる。
+   committer の日付と、GitHub がこの PR の枝でその commit を最初に受けた時刻
+   （その枝の最も古い check-suite）の遅いほう。committer の日付は古いまま push
+   できる。PR の枝の check-suite が無い（別の枝へ先に push した commit など）とき
+   は `head の時刻を取れなかった` と出し、0 件と読まない。
 2. **依頼への返信を見る。** 返信は 1 つのコメントで、中身が書き換わる。
    - `triggered` のうちは**走っている**（`走行中`）。**ここで 0 件と読まない。**
      #256 は走行中を 0 件と読んでマージし、指摘がマージの後に付いた。
