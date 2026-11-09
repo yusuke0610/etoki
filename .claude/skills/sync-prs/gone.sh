@@ -27,7 +27,7 @@ defs() {
 	sed -nE \
 		-e 's/^func (\([^)]*\) )?([A-Za-z_][A-Za-z0-9_]*).*/\2/p' \
 		-e 's/^type ([A-Za-z_][A-Za-z0-9_]*).*/\1/p' \
-		-e 's/^export (default )?(async )?(function|const|let|class|type|interface|enum) ([A-Za-z_$][A-Za-z0-9_$]*).*/\4/p'
+		-e 's/^export (default )?(async |abstract )?(function|const|let|class|type|interface|enum) ([A-Za-z_$][A-Za-z0-9_$]*).*/\4/p'
 }
 
 removed="$(git diff "$base" origin/main -- '*.go' '*.ts' '*.tsx' |
@@ -36,8 +36,12 @@ removed="$(git diff "$base" origin/main -- '*.go' '*.ts' '*.tsx' |
 found=0
 while read -r name; do
 	[ -z "$name" ] && continue
-	# 別の場所に定義が残っている（移動しただけ）なら消えていない。
-	if git grep -qE "^(func (\([^)]*\) )?|type |export (default )?(async )?(function|const|let|class|type|interface|enum) )${name}\b" \
+	# 別の場所に定義が残っている（移動しただけ）なら消えていない。名前は正規表現
+	# としてではなく文字どおりに比べる（TypeScript の名前は $ を含みうる）。名前の
+	# 終わりも \b ではなく「識別子に使える文字が続かない」で見る（$ の後ろでは
+	# \b が効かない）。
+	lit="$(printf '%s' "$name" | sed 's/[$]/\\$/g')"
+	if git grep -qE "^(func (\([^)]*\) )?|type |export (default )?(async |abstract )?(function|const|let|class|type|interface|enum) )${lit}([^A-Za-z0-9_$]|$)" \
 		origin/main -- '*.go' '*.ts' '*.tsx'; then
 		continue
 	fi

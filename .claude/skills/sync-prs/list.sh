@@ -20,7 +20,7 @@ worktrees="$(git worktree list --porcelain | awk '/^branch / { sub("refs/heads/"
 # fork の PR の head は origin に無い（同じ名前の枝が origin にあれば、それは別の枝）。
 # 取り込んでも push する先が無いので、印を付けて対象から外す。
 pulls="$(gh api --paginate "repos/$nwo/pulls?state=open&per_page=100" \
-	--jq '.[] | "\(.number)\t\(.head.ref)\t\(.base.ref)\t\(.user.login)\t\(.head.repo.full_name // "")"' | sort -n)"
+	--jq '.[] | "\(.number)\t\(.head.ref)\t\(.base.ref)\t\(.user.login)\t\(.head.repo.full_name // "")\t\(.head.sha)"' | sort -n)"
 
 # 開いている PR が無ければ、空の 1 行を回さずに終える。
 [ -z "$pulls" ] && exit 0
@@ -82,7 +82,7 @@ merged_lower() {
 	lower_result="${found:--}"
 }
 
-while IFS=$'\t' read -r pr head base author repo; do
+while IFS=$'\t' read -r pr head base author repo head_sha; do
 	if [ "$repo" != "$nwo" ]; then
 		printf '#%s fork(%s) 対象外 author=%s %s\n' "$pr" "${repo:-消えたリポジトリ}" "$author" "$head"
 		continue
@@ -158,7 +158,8 @@ while IFS=$'\t' read -r pr head base author repo; do
 	fi
 
 	# main にあって head に無いコミットの数。0 なら取り込むものが無い。
-	behind="$(gh api "repos/$nwo/compare/$head...main" --jq .ahead_by 2>/dev/null || echo "?")"
+	# 枝の名前ではなく head の sha で比べる。名前に # や ? があると URL がそこで切れる。
+	behind="$(gh api "repos/$nwo/compare/$head_sha...main" --jq .ahead_by 2>/dev/null || echo "?")"
 
 	wt="-"
 	grep -qxF -- "$head" <<<"$worktrees" && wt="この手元の worktree で開いている"

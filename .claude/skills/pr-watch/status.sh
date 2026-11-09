@@ -216,7 +216,13 @@ for pr in "${prs[@]}"; do
 		head_time="?"
 	fi
 
-	events="$(gh api --paginate "repos/$nwo/issues/$pr/comments?per_page=100" --jq "$classify")"
+	# 取れなければ、この PR は「取れなかった」と出して後ろの PR に進む（set -e で
+	# 止めると、残りの PR の状態が出ない）。
+	events_ok=1
+	events="$(gh api --paginate "repos/$nwo/issues/$pr/comments?per_page=100" --jq "$classify")" || {
+		events_ok=0
+		events=""
+	}
 
 	# 依頼のうち最後のもの、その後に来た最初の返信、要約を拾う。
 	# ISO 8601 の UTC 時刻なので、文字列の比較で前後が決まる。
@@ -235,7 +241,9 @@ for pr in "${prs[@]}"; do
 		}' <<<"$events")
 
 	# full review の判定。順番に意味がある（SKILL.md「full review の読み方」）。
-	if [ "$req_at" = "-" ]; then
+	if [ "$events_ok" = 0 ]; then
+		fr="コメントを取れなかった(0 件とは読まない。取り直す)"
+	elif [ "$req_at" = "-" ]; then
 		fr="未依頼"
 	elif [ "$head_time" = "?" ]; then
 		fr="head の時刻を取れなかった(0 件とは読まない。取り直す)"
