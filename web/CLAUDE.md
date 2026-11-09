@@ -822,7 +822,8 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 ## E2E テスト
 
 `web/e2e/` に置く。Playwright で実ブラウザを動かし、**バックエンドは起動しない。**
-API はすべて `page.route` で差し替える（ADR 0012）。
+API はすべて `page.route` で差し替える（ADR 0012）。実物の etoki に繋ぐ E2E は
+別にあり、約束は下の「通しの E2E」。
 
 - **E2E は自分で立てた dev サーバーだけを検査する**（#383）。ポートは
   `make dev` の 5173 と分け（既定 5174）、既に動いているサーバーは使わない。
@@ -906,6 +907,32 @@ API はすべて `page.route` で差し替える（ADR 0012）。
   そこでは `waitForBoard` で待つ（`openBoard` は無い一覧を押しにいって落ちる）。
 - `make test` には含めない。速さを保ちたいので、E2E はコミット前と CI で回す。
 
+### 通しの E2E（ADR 0097）
+
+`web/e2e-stack/` に置き、`make test-e2e-stack` で回す（設定は
+`web/playwright.stack.config.ts`）。**相手は実物の etoki と偽の GitHub / LLM**
+（`scripts/fake-stack.sh` が一時の DB で立てる）で、CI でも PR ごとに回る。
+
+- **見るのは画面とサーバーが本物どうしで往復できるかだけ。** 画面の約束は上の
+  モックの E2E で固める。**足すのは、モックでは状態が動かないか、本物どうしで
+  しか起きないものだけ**（たとえば、作成のあとに状態が「作成済み」へ動くこと）。
+  本数を増やすと、ADR 0012 が避けた遅くて壊れやすいテストが増える。
+- **モックを持ち込まない。** `page.route` とモックの口（`installApi` /
+  `openBoardWithMock` / `fixtures`）は eslint が落とす。画面の操作は
+  `web/e2e/helpers/board.ts` を使い回す。
+- **`test` は `web/e2e-stack/stack.ts` から取る。** どの spec でも、配信元の外へ
+  出た通信が無いことを見る土台が付いている（#114）。`@playwright/test` の `test`
+  を直に使うと、その spec だけ外れる。
+- **偽の GitHub の記録は 1 回の実行のあいだ spec どうしで共有される。** ボードは
+  `newBoard` で自分で作り、囲みの文字に `uniqueWord` を入れ、`fakeItems` はその語で
+  絞って読む。
+- **注釈の frame と貼った画像は取り込み（`importBoardFile`）で入れる。** 画面の
+  操作だけで両方を入れる口はここしか無い。**取り込む文字は書体を名指しする**
+  （`brainstormFile`）。省くとブラウザの代わりの書体で描かれ、フォントを 1 つも
+  取りに行かないので、配り方の検査が素通りする。
+- 偽物に口を足すなら、アダプタとの往復テストも同時に足す
+  （`.claude/rules/e2e-mocks.md`）。
+
 ### 報告にブラウザの実行結果を添える
 
 **UI に触れる修正をしたら、`make test-e2e` を実行し、ブラウザの実行結果の
@@ -931,6 +958,9 @@ cd web && bunx vitest run -t "customData"
 cd web && bunx playwright test e2e/interpretation.spec.ts
 cd web && bunx playwright test -g "解釈するまで"
 cd web && bunx playwright test --ui
+
+# 通しの E2E: 先に make build build-fakeupstream でビルドしておく
+cd web && bunx playwright test -c playwright.stack.config.ts e2e-stack/save.spec.ts
 ```
 
 これらは `make` を通らないので **devShell の中で実行する**。`make` のように
@@ -1021,7 +1051,8 @@ cd web && bunx playwright test --ui
   拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の
   生成型から外れたことを `tsc` に見つけさせるため。外すと ADR 0012 の仕組みが
-  黙って効かなくなる。
+  黙って効かなくなる。**通しの E2E の `e2e-stack` と、その設定も入れてある。**
+  実物の応答を読む型（`BoardWithFiles` など）も契約の生成型から取っている。
 - **`web/src/excalidraw/assumptions.test.ts`** — `customData` が serialize と
   restore を越えて残るという、注釈設計の前提そのものを固定するテスト。
   ライブラリ更新で落ちたら設計を見直す合図。
