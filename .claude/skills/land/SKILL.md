@@ -34,6 +34,12 @@ PR ごとに次を全部満たすかを見る。
 - **base が `main`。** 積んだ上の段は、下の段が入って `/sync-prs` で base を
   移すまで条件を満たさない。
 - **`mergeable` が `clean`、CI が緑。**
+- **人が立てた未解決のスレッドが無い。** `status.sh` の `threads` は、GraphQL の
+  経路では CodeRabbit のスレッドしか数えない。PR の画面かレビューのスレッドの
+  一覧で、人のスレッドも見る。
+- **CI が、いまの main とのマージ結果で走っている。** CI の check-run が始まった
+  時刻より後に main が進んでいたら（`git log -1 --format=%cI origin/main` と
+  比べる）、5 の「CI を回し直す」で回し直してから判定する。
 - **マージ順の表に載っている**（次の 2）。
 
 **満たさない PR はマージしない。** 何が足りないかを添えてユーザーに渡す。
@@ -152,9 +158,18 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
    gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f state=open
    ```
 
+   **close する前に、番号をユーザーへの報告に書いておく。** reopen が失敗したり
+   セッションが途中で切れたりすると PR は閉じたまま残り、開いている PR の一覧
+   （`status.sh` / `list.sh`）にも出ない。reopen は取り直して `state` が `open`
+   かを確かめ、開いていなければ開き直す。開き直せなければ、閉じたままの番号を
+   ユーザーに知らせる。
+
 3. **CI のジョブ（`.github/workflows/` が起こす check-run）が、reopen より後に
    始まったものに入れ替わり、すべて緑で終わるまで待つ。** head が同じなので、
    新しい run が出るまでは古い緑がそのまま見える（`status.sh` の `ci` も同じ）。
+   **どれかが赤になったら、その PR はマージせずに落ちたジョブをユーザーに知らせる。**
+   reopen から 15 分たっても新しい run が出なければ、未起動として止めて知らせる
+   （衝突で起動しないことが多い。`/pr-watch` の「CI が走らない」）。
 
    ```sh
    gh api "repos/{owner}/{repo}/commits/<head>/check-runs" \
@@ -168,6 +183,8 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
 
 ユーザーがマージしたときも、4 の「main に入ったか」と 5 の後続を見る。
 
+- その PR の `status.sh <番号>` を取り直し、マージの前後に付いた指摘や赤い CI が
+  あればユーザーに知らせる（4 のマージのあとと同じ）
 - 入ったのは main か（積んだ PR を base の枝にマージしていないか）
 - 積んだ上の段、`bun install`、CI を回し直す PR が残っていないか
 - 表の残りの順番が変わらないか

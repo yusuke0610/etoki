@@ -16,6 +16,9 @@ git fetch -q origin
 # （origin/main を都度読むと、実行中に別の worktree の fetch で進んで食い違う。
 # 遅れを GitHub のいまの main で数えても、あいだに入った PR の分だけ食い違う）。
 main_sha="$(git rev-parse origin/main)"
+# head も、積みの判定と遅れの件数で同じものを使う（PR の一覧が返す head の sha）。
+# 冒頭の fetch のあとに push された head は手元に無く、積みの判定は git が落ちて
+# 「?」になる（古い head で判定しない）。
 
 # 他所の worktree で開いている枝。そこで作業中の枝を、黙って取り込まない。
 worktrees="$(git worktree list --porcelain | awk '/^branch / { sub("refs/heads/", "", $2); print $2 }')"
@@ -131,7 +134,7 @@ while IFS=$'\t' read -r pr head base author repo head_sha; do
 				# ものだけを下の段とする（merged_lower と同じ判定）。取れなければ、
 				# 繋がらないと同じに扱う。gh が here-string を読まないよう stdin を閉じる。
 				elif ! first="$(gh api "repos/$nwo/pulls/$m/commits?per_page=1" --jq '.[0].sha' </dev/null)" ||
-					! git merge-base --is-ancestor "$first" "origin/$head" 2>/dev/null; then
+					! git merge-base --is-ancestor "$first" "$head_sha" 2>/dev/null; then
 					unlinked="${unlinked:+$unlinked,}#$m"
 				else
 					into_main="${into_main:+$into_main,}#$m"
@@ -148,7 +151,7 @@ while IFS=$'\t' read -r pr head base author repo head_sha; do
 			stack="上の段(下=PR の無い枝 $base)"
 		fi
 	else
-		merged_lower "origin/$head"
+		merged_lower "$head_sha"
 		gone="$lower_result"
 		case "$gone" in
 		-) ;;
