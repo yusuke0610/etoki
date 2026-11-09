@@ -115,9 +115,13 @@ classify='.[]
 #     （`Outside diff range comments (N)`、`Nitpick comments (N)`、
 #     `Additional comments: N` など。<summary> か ** で囲まれたもの）の合計。
 #     件数行を持たず、節にだけ指摘を載せる review もある（#414 の 5732403886）。
-#   - 件数行も節の見出しも無いのに、自動のチェックボックスと HTML コメントを除いて
-#     文字が残る本文は、件数を読めない。読めない本文を 0 件と読まない。何も残らない
-#     本文（スレッドへの返信で増える空の review、状態だけの review）は 0。
+#   - 件数行も節の見出しも無いのに、決まった部品を除いて文字が残る本文は、件数を
+#     読めない。読めない本文を 0 件と読まない。除く部品は、自動のチェックボックス、
+#     HTML コメント、<h6> の「Review info」、区切りの ---、それに指摘の一覧
+#     （`Inline comments:` などの行）を持たない「Prompt to fix all issues」の欄
+#     （指摘 0 件の full review でも pre-merge check の案内だけを載せて付く。#414 の
+#     5821456498）。何も残らない本文（スレッドへの返信で増える空の review、状態
+#     だけの review、指摘 0 件の review）は 0。
 # 読めない本文があれば、ほかで数えた数に「+」を付け（0 なら「?」）、確定した数とは
 # 言わない。
 # $since / $b / $act / $sec は jq の変数で、シェルに展開させてはいけない。
@@ -133,8 +137,13 @@ findings_since() {
 		      | (.body // "") as $b
 		      | (($b | capture("Actionable comments posted: (?<n>[0-9]+)") | .n) // "-") as $act
 		      | ([$b | scan("comments(?::[ \\t]*|[ \\t]*\\()([0-9]+)\\)?[ \\t]*(?:</summary>|\\*\\*)"; "i") | .[0] | tonumber] | add // "-") as $sec
+		      | ($b | test("(?m)^(Inline|Outside diff|Nitpick|Additional|Duplicate) comments:")) as $listed
 		      | ($b | gsub("<!-- autofix_checkbox_start -->[\\s\\S]*?<!-- autofix_checkbox_end -->"; "")
-		            | gsub("<!--[\\s\\S]*?-->"; "") | test("\\S")) as $rest
+		            | gsub("<!--[\\s\\S]*?-->"; "")
+		            | gsub("<h6>[\\s\\S]*?</h6>"; "")
+		            | if $listed then . else gsub("<details>\\s*<summary>[^\\n]*?Prompt to fix all issues</summary>[\\s\\S]*?</details>"; "") end
+		            | gsub("(?m)^-{3,}[ \\t]*$"; "")
+		            | test("\\S")) as $rest
 		      | "R \(.id) \(.submitted_at) \($act) \($sec) \(if $rest then 1 else 0 end)"')" || return 1
 	awk -v s="$since" '
 		$1 == "I" && $3 >= s { inl[$2]++ }
