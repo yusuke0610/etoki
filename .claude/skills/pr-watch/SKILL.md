@@ -70,7 +70,9 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
    committer の日付と、GitHub がこの PR の枝でその commit を最初に受けた時刻
    （その枝の最も古い check-suite）の遅いほう。committer の日付は古いまま push
    できる。PR の枝の check-suite が無い（別の枝へ先に push した commit など）とき
-   は `head の時刻を取れなかった` と出し、0 件と読まない。
+   は `head の時刻を取れなかった` と出し、0 件と読まない。依頼と同じ秒の push と、
+   依頼のあとの force push（前にこの枝にあった commit へ戻すと check-suite の
+   時刻は古いまま）も、head が進んだと読む。
 2. **依頼への返信を見る。** 返信は 1 つのコメントで、中身が書き換わる。
    - `triggered` のうちは**走っている**（`走行中`）。**ここで 0 件と読まない。**
      #256 は走行中を 0 件と読んでマージし、指摘がマージの後に付いた。
@@ -98,7 +100,11 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
 **逆に、full review が終わってから 5 分より後に書き換わった要約も信じない**
 （`要再依頼(要約が full review のあとに書き換わった…)`）。増分のレビューが別の
 head を読んで書き換えたのかもしれない。古い committer の日付のコミットを依頼の
-あとに push し、増分のレビューが要約を書き換えると、この形になる。
+あとに push し、増分のレビューが要約を書き換えると、この形になる。**依頼の
+あとに `@coderabbitai review`（増分）を頼んでいたら、5 分以内でも要再依頼**に
+する。要約の commit が、どちらのレビューが読んだものか言えない。自動のレビューは
+止めてあるので、増分が走るのはこの依頼か、要約の「Trigger review」の欄を押した
+ときだけ。欄を押したことはコメントに残らないので、5 分の比べでしか見えない。
 
 ## 枠の使い方
 

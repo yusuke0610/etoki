@@ -66,6 +66,7 @@ unresolved_threads() {
 
 # full review の判定に使うコメントを、種類ごとに 1 行へ落とす。
 #   REQ  人が書いた `@coderabbitai full review`
+#   REV  人が書いた `@coderabbitai review`（増分のレビュー。要約を書き換える）
 #   FIN  CodeRabbit の返信「Full review finished」（走り終えた）
 #   RUN  CodeRabbit の返信「triggered」（走っている）
 #   LIM  CodeRabbit の返信「rate limited」か「Action not completed」（枠切れ。
@@ -89,6 +90,8 @@ classify='.[]
 	| (.updated_at | fromdateiso8601) as $ep
 	| if ($who | test("\\[bot\\]$") | not) and ($b | test("@coderabbitai\\s+full review"))
 	    then "REQ\t\(.created_at)\t\(.updated_at)\t-\t\($ep)"
+	  elif ($who | test("\\[bot\\]$") | not) and ($b | test("@coderabbitai\\s+review\\b"))
+	    then "REV\t\(.created_at)\t\(.updated_at)\t-\t\($ep)"
 	  elif $who != "coderabbitai[bot]" then empty
 	  elif ($b | test("summarize by coderabbit\\.ai|Reviewing files that changed"))
 	    then "SUM\t\(.created_at)\t\(.updated_at)\t\(
@@ -217,8 +220,9 @@ for pr in "${prs[@]}"; do
 
 	# 依頼のうち最後のもの、その後に来た最初の返信、要約を拾う。
 	# ISO 8601 の UTC 時刻なので、文字列の比較で前後が決まる。
-	read -r req_at reply reply_at reply_extra sum_at sum_sha reply_ep sum_ep < <(awk -F'\t' '
+	read -r req_at reply reply_at reply_extra sum_at sum_sha reply_ep sum_ep rev_at < <(awk -F'\t' '
 		$1 == "REQ" { req = $2 }
+		$1 == "REV" { rev = $2 }
 		$1 == "SUM" { sum_at = $3; sum_sha = $4; sum_ep = $5 }
 		{ kind[NR] = $1; c[NR] = $2; u[NR] = $3; x[NR] = $4; e[NR] = $5 }
 		END {
@@ -227,7 +231,7 @@ for pr in "${prs[@]}"; do
 				if ((kind[i] == "FIN" || kind[i] == "RUN" || kind[i] == "LIM") && c[i] >= req) {
 					r = kind[i]; ra = u[i]; rx = x[i]; re = e[i]; gsub(/ /, "_", rx); break
 				}
-			print (req == "" ? "-" : req), r, ra, rx, (sum_at == "" ? "-" : sum_at), (sum_sha == "" ? "-" : sum_sha), re, sum_ep + 0
+			print (req == "" ? "-" : req), r, ra, rx, (sum_at == "" ? "-" : sum_at), (sum_sha == "" ? "-" : sum_sha), re, sum_ep + 0, (rev == "" ? "-" : rev)
 		}' <<<"$events")
 
 	# full review の判定。順番に意味がある（SKILL.md「full review の読み方」）。
@@ -235,8 +239,21 @@ for pr in "${prs[@]}"; do
 		fr="未依頼"
 	elif [ "$head_time" = "?" ]; then
 		fr="head の時刻を取れなかった(0 件とは読まない。取り直す)"
-	elif [[ "$req_at" < "$head_time" ]]; then
+	# 同じ秒に記録された push も「依頼のあと」に数える（前後を言えない）。
+	elif [[ ! "$req_at" > "$head_time" ]]; then
 		fr="要再依頼(依頼のあとに head が進んだ)"
+	# force push で、前にこの枝にあった commit へ戻すと、その commit の
+	# check-suite は依頼より前のまま。依頼のあとの force push は head が変わったと読む。
+	elif ! forced="$(gh api --paginate "repos/$nwo/issues/$pr/timeline?per_page=100" \
+		--jq '.[] | select(.event == "head_ref_force_pushed") | .created_at' |
+		awk -v r="$req_at" '$1 >= r { n++ } END { print n + 0 }')"; then
+		fr="force push の有無を取れなかった(0 件とは読まない。取り直す)"
+	elif [ "$forced" != "0" ]; then
+		fr="要再依頼(依頼のあとに force push された)"
+	# 増分のレビューは要約を、それが読んだ head で書き換える。依頼のあとに頼んで
+	# いたら、要約の commit が full review の読んだものと言えない。
+	elif [ "$rev_at" != "-" ] && [[ ! "$rev_at" < "$req_at" ]]; then
+		fr="要再依頼(依頼のあとに増分のレビューを頼んだ。要約が読んだ head と言えない)"
 	else
 		case "$reply" in
 		-) fr="返信待ち(依頼 $req_at)" ;;
