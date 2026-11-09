@@ -34,12 +34,18 @@ defs() {
 removed="$(git diff "$base" origin/main -- '*.go' '*.ts' '*.tsx' |
 	sed -nE 's/^-([^-].*)/\1/p' | defs | sort -u)"
 
+# Go のテスト関数として消えた名前。上の removed と同じ差分から、func の行だけを見る。
+gotests="$(git diff "$base" origin/main -- '*.go' |
+	sed -nE 's/^-func ((Test|Benchmark|Fuzz|Example)([A-Z_][A-Za-z0-9_]*)?)\(.*/\1/p' | sort -u)"
+
 found=0
 while read -r name; do
 	[ -z "$name" ] && continue
-	# Go のテスト関数（Test / Benchmark / Fuzz / Example で始まる）は名前で呼ばれない。
-	# 別のパッケージに同じ名前のテストを足しただけで「使っている」と出さない。
-	[[ "$name" =~ ^(Test|Benchmark|Fuzz|Example)([A-Z_]|$) ]] && continue
+	# Go のテスト関数（Test / Benchmark / Fuzz / Example で始まる func）は名前で
+	# 呼ばれない。別のパッケージに同じ名前のテストを足しただけで「使っている」と
+	# 出さない。飛ばすのは Go の func として消えた名前だけ（TypeScript の
+	# export function ExampleWidget のようなものは飛ばさない）。
+	grep -qxF -- "$name" <<<"$gotests" && continue
 	# 別の場所に定義が残っている（移動しただけ）なら消えていない。名前は正規表現
 	# としてではなく文字どおりに比べる（TypeScript の名前は $ を含みうる）。名前の
 	# 終わりも \b ではなく「識別子に使える文字が続かない」で見る（$ の後ろでは

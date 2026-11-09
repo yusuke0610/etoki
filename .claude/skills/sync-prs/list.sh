@@ -12,8 +12,9 @@ set -euo pipefail
 nwo="$(gh api 'repos/{owner}/{repo}' --jq .full_name)"
 
 git fetch -q origin
-# 積みの判定（origin/main を見る）と遅れの件数を、同じ時点の main で出す。
-# 遅れだけ GitHub のいまの main で数えると、あいだに入った PR の分だけ食い違う。
+# 積みの判定と遅れの件数を、同じ時点の main で出す。ここで取った sha だけを使う
+# （origin/main を都度読むと、実行中に別の worktree の fetch で進んで食い違う。
+# 遅れを GitHub のいまの main で数えても、あいだに入った PR の分だけ食い違う）。
 main_sha="$(git rev-parse origin/main)"
 
 # 他所の worktree で開いている枝。そこで作業中の枝を、黙って取り込まない。
@@ -54,7 +55,7 @@ merged_lower() {
 	# pipefail で取れなかった扱いになるので tail で取る。日付は UTC で出す
 	# （検索の merged: は UTC で比べる。%cs はコミットのタイムゾーンの日付で、
 	# +09:00 の朝のコミットは UTC では前の日になる）。
-	since="$(TZ=UTC git log --date=format-local:%Y-%m-%d --format=%cd "origin/main..$ref" | tail -n 1)" || return 0
+	since="$(TZ=UTC git log --date=format-local:%Y-%m-%d --format=%cd "$main_sha..$ref" | tail -n 1)" || return 0
 	[ -z "$since" ] && { lower_result="-"; return 0; }
 	# 総件数と候補の番号は 1 回の検索で取る。2 回に分けると、2 回目だけが落ちた
 	# ときに候補が空になり、「無い」と読める。
@@ -75,9 +76,9 @@ merged_lower() {
 		merge="${cand_merge[$m]}"
 		# base:main に入った PR の squash は main にあるはず。手元の origin/main に
 		# 無ければ、冒頭の fetch のあとにマージされた。判定できないので「?」。
-		git merge-base --is-ancestor "$merge" origin/main 2>/dev/null || return 0
+		git merge-base --is-ancestor "$merge" "$main_sha" 2>/dev/null || return 0
 		if git merge-base --is-ancestor "$first" "$ref" 2>/dev/null &&
-			! git merge-base --is-ancestor "$first" origin/main 2>/dev/null &&
+			! git merge-base --is-ancestor "$first" "$main_sha" 2>/dev/null &&
 			! git merge-base --is-ancestor "$merge" "$ref" 2>/dev/null; then
 			found="${found:+$found,}#$m"
 		fi
@@ -120,7 +121,7 @@ while IFS=$'\t' read -r pr head base author repo head_sha; do
 		elif [ -n "$merged" ]; then
 			into_main="" undecided="" unlinked=""
 			while read -r m mbase msha; do
-				if ! { [ "$mbase" = "main" ] && git merge-base --is-ancestor "$msha" origin/main 2>/dev/null; }; then
+				if ! { [ "$mbase" = "main" ] && git merge-base --is-ancestor "$msha" "$main_sha" 2>/dev/null; }; then
 					undecided="${undecided:+$undecided,}#$m"
 				# 枝の名前は使い回せるので、同じ名前から出た別の履歴の PR も候補に出る。
 				# その PR の最初のコミットが上の段にある（上の段がその上に積まれていた）
