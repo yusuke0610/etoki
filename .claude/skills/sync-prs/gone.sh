@@ -52,5 +52,11 @@ while read -r name; do
 	fi
 done <<<"$removed"
 
-[ "$found" = 0 ] && echo "main で消えた識別子を、$branch の足した行は使っていない"
+# 出なかったときも、見た範囲だけの話と分かるように出す。範囲の外（TypeScript の
+# クラスのメソッド、名前を並べた export、引数の変わった関数、PR が以前からあった
+# 行での使用）で消えたものは拾わない。
+if [ "$found" = 0 ]; then
+	echo "main で定義が消えた名前（Go の func / type、TypeScript の export）を、$branch の足した行は使っていない"
+	echo "ここに出ない範囲（クラスのメソッド、名前を並べた export、引数の変化、以前からあった行）は見ていない。取り込むかは make lint / make test と差分を読んで決める"
+fi
 exit 0

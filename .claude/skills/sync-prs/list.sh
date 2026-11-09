@@ -88,7 +88,13 @@ while IFS=$'\t' read -r pr head base author repo; do
 		continue
 	fi
 	# mergeable は一覧には載らず、個別に引いたときに計算される。null は計算中。
-	read -r mergeable mstate < <(gh api "repos/$nwo/pulls/$pr" --jq '"\(.mergeable) \(.mergeable_state)"')
+	# 取れなかった PR は「?」と出して、残りの PR も出す（read が空で落ちると
+	# set -e で一覧が途中で終わり、エラーの本文を mergeable として出すこともある）。
+	if ! state="$(gh api "repos/$nwo/pulls/$pr" --jq '"\(.mergeable) \(.mergeable_state)"')"; then
+		state="? ?"
+	fi
+	read -r mergeable mstate _ <<<"$state" || true
+	mergeable="${mergeable:-?}" mstate="${mstate:-?}"
 
 	# 積みの上下も、このリポジトリの PR だけで引き当てる。fork の PR の head が
 	# origin の枝と同じ名前でも、それは別の枝。
