@@ -12,6 +12,9 @@ set -euo pipefail
 nwo="$(gh api 'repos/{owner}/{repo}' --jq .full_name)"
 
 git fetch -q origin
+# 積みの判定（origin/main を見る）と遅れの件数を、同じ時点の main で出す。
+# 遅れだけ GitHub のいまの main で数えると、あいだに入った PR の分だけ食い違う。
+main_sha="$(git rev-parse origin/main)"
 
 # 他所の worktree で開いている枝。そこで作業中の枝を、黙って取り込まない。
 worktrees="$(git worktree list --porcelain | awk '/^branch / { sub("refs/heads/", "", $2); print $2 }')"
@@ -160,7 +163,7 @@ while IFS=$'\t' read -r pr head base author repo head_sha; do
 	# main にあって head に無いコミットの数。0 なら取り込むものが無い。
 	# 枝の名前ではなく head の sha で比べる。名前に # や ? があると URL がそこで切れる。
 	# 取れなければ値ごと「?」にする（失敗したときの本文を一覧に混ぜない）。
-	behind="$(gh api "repos/$nwo/compare/$head_sha...main" --jq .ahead_by 2>/dev/null)" || behind="?"
+	behind="$(gh api "repos/$nwo/compare/$head_sha...$main_sha" --jq .ahead_by 2>/dev/null)" || behind="?"
 	[[ "$behind" =~ ^[0-9]+$ ]] || behind="?"
 
 	wt="-"

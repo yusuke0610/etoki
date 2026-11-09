@@ -37,6 +37,9 @@ removed="$(git diff "$base" origin/main -- '*.go' '*.ts' '*.tsx' |
 found=0
 while read -r name; do
 	[ -z "$name" ] && continue
+	# Go のテスト関数（Test / Benchmark / Fuzz / Example で始まる）は名前で呼ばれない。
+	# 別のパッケージに同じ名前のテストを足しただけで「使っている」と出さない。
+	[[ "$name" =~ ^(Test|Benchmark|Fuzz|Example)([A-Z_]|$) ]] && continue
 	# 別の場所に定義が残っている（移動しただけ）なら消えていない。名前は正規表現
 	# としてではなく文字どおりに比べる（TypeScript の名前は $ を含みうる）。名前の
 	# 終わりも \b ではなく「識別子に使える文字が続かない」で見る（$ の後ろでは
