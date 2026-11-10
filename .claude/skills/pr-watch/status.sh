@@ -30,10 +30,11 @@ fi
 # 名前に coderabbit を含む別のアカウントが書いた「Full review finished」や要約で、
 # 0 件と出せてしまう（リポジトリは公開で、誰でもコメントを書ける）。
 #
-# 未解決のスレッドの数。findings.sh と同じく GraphQL で CodeRabbit のものだけを
-# 数える。クラウドのセッションでは GraphQL が塞がれていて、代わりにプロキシの
-# REST（ccr/review_threads）がある。そちらは書き手で絞れないので、人のスレッドも
-# 数える。どちらも取れなければ「?」を出し、0 件とは言わない。
+# 未解決のスレッドの数。GraphQL で CodeRabbit のものだけを数える（書き手が Bot で、
+# login が coderabbitai と完全に一致するもの。findings.sh は login の部分一致だが、
+# ここは上の理由で完全一致にしている）。クラウドのセッションでは GraphQL が
+# 塞がれていて、代わりにプロキシの REST（ccr/review_threads）がある。そちらは
+# 書き手で絞れないので、人のスレッドも数える。どちらも取れなければ「?」を出し、0 件とは言わない。
 # $owner / $name / $pr / $endCursor は GraphQL の変数で、シェルに展開させてはいけない。
 # shellcheck disable=SC2016
 threads_query='
