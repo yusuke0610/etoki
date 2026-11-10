@@ -213,11 +213,11 @@ for pr in "${prs[@]}"; do
 	# 取れなければ、この PR は「取れなかった」と出して後ろの PR に進む（read が空で
 	# 落ちると set -e で残りの PR の状態が出ない）。
 	if ! info="$(gh api "repos/$nwo/pulls/$pr" \
-		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state) \(.head.ref) \(.head.repo.full_name // "-")"')" || [ -z "$info" ]; then
+		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state) \(.head.ref) \(.head.repo.full_name // "-") \(.created_at)"')" || [ -z "$info" ]; then
 		printf '#%s PR の情報を取れなかった(0 件とは読まない。取り直す)\n' "$pr"
 		continue
 	fi
-	read -r head base mergeable mstate head_ref head_repo <<<"$info"
+	read -r head base mergeable mstate head_ref head_repo pr_created <<<"$info"
 	# head がいつ来たか。committer の日付は書き手が決められる（古い日付のまま
 	# push できる）ので、GitHub がこの PR の枝でその commit の check-suite を最初に
 	# 作った時刻（その枝への push を受けた時刻）とのうち遅いほうを使う。
@@ -229,6 +229,8 @@ for pr in "${prs[@]}"; do
 	# も候補にする。run がこの PR のものかは pull_requests の番号で見る。fork の PR の
 	# run は番号を持たないので、head のリポジトリが fork そのもので、枝の名前も PR の
 	# head の枝と同じかで見る（同じ fork の別の枝から出た PR の run を混ぜない）。
+	# PR が作られるより前の run は、この PR のものではないので外す（同じ枝を前の PR で
+	# 使っていたときの run を混ぜない）。
 	# 候補の最も早いものを使う。候補が無いとき、どちらかを取れなかったときは「?」に
 	# して、依頼との前後を言わない。
 	head_time="$(gh api "repos/$nwo/commits/$head" --jq '.commit.committer.date')" || head_time="?"
@@ -237,6 +239,7 @@ for pr in "${prs[@]}"; do
 		awk -F'\t' -v b="$head_ref" '$1 == b { print $2 }')" &&
 		runs_at="$(gh api --paginate "repos/$nwo/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
 			--jq ".workflow_runs[]
+			      | select(.created_at >= \"$pr_created\")
 			      | select((((.pull_requests // []) | map(.number) | index($pr)) != null)
 			               or ((.head_repository.full_name // \"\") == \"$head_repo\" and \"$head_repo\" != \"$nwo\"
 			                   and (.head_branch // \"\") == \"$head_ref\"))
