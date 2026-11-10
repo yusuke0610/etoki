@@ -9,6 +9,7 @@ import {
   changeTargetIcon,
   deleteBoardIcon,
   exportIcon,
+  guideIcon,
   importIcon,
   premiseIcon,
   refreshTargetIcon,
@@ -30,6 +31,8 @@ type Props = {
   onPremise: () => void;
   /** 共有のダイアログを開く（`ShareDialog`、#248）。 */
   onShare: () => void;
+  /** 使い方のダイアログを開く（`UsageGuideDialog`、ADR 0094）。 */
+  onOpenGuide: () => void;
   /** GitHub が使えない理由。使えるなら null（ADR 0030）。 */
   creationUnavailable: string | null;
   onRefreshTarget: () => void;
@@ -83,6 +86,7 @@ export function BoardMenu({
   onRename,
   onPremise,
   onShare,
+  onOpenGuide,
   creationUnavailable,
   onRefreshTarget,
   refreshingTarget,
@@ -237,6 +241,14 @@ export function BoardMenu({
       <MainMenu.Separator />
       <MainMenu.DefaultItems.SaveAsImage />
       <MainMenu.DefaultItems.SearchMenu />
+      {/*
+        etoki の使い方（ADR 0094）。**誰にでも出す。** Excalidraw の「ヘルプ」は
+        キャンバスの操作とショートカットの案内で、囲んで絵解く流れは書いて
+        いない。名前で分け、並べて置く。
+      */}
+      <MainMenu.Item className="etoki-menu-item" icon={guideIcon} onSelect={onOpenGuide}>
+        etoki の使い方
+      </MainMenu.Item>
       <MainMenu.DefaultItems.Help />
       {canEdit && <MainMenu.DefaultItems.ClearCanvas />}
       <MainMenu.Separator />

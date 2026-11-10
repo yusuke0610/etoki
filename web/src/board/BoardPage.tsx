@@ -20,6 +20,7 @@ import {
 import { useExclusion } from "./exclusion";
 import { useInterpretations } from "./annotations/useInterpretations";
 import { ShareDialog } from "./members/ShareDialog";
+import { UsageGuideDialog } from "./UsageGuideDialog";
 import { type DiagramMode } from "./diagram/DiagramTab";
 import { useDiagramDraft } from "./diagram/useDiagramDraft";
 import { projectLabel } from "../boards/grouping";
@@ -213,6 +214,11 @@ export function BoardPage({
   const [shareOpen, setShareOpen] = useState(false);
   const openShare = useCallback(() => setShareOpen(true), []);
   const closeShare = useCallback(() => setShareOpen(false), []);
+  // 使い方のダイアログ（`UsageGuideDialog`、ADR 0094）。開くのはキャンバスの
+  // メニューと、右のパネルの「選択中のフレーム」の案内。勝手には開かない。
+  const [guideOpen, setGuideOpen] = useState(false);
+  const openGuide = useCallback(() => setGuideOpen(true), []);
+  const closeGuide = useCallback(() => setGuideOpen(false), []);
   // ボードの背景（`usePremise`、ADR 0093）。**書きかけはダイアログの外のここで
   // 持つ。** 閉じても消えない。開くのはキャンバスのメニュー。
   const premise = usePremise({ board, onChanged: onPremiseChanged });
@@ -594,6 +600,7 @@ export function BoardPage({
         onRename={() => setNameDraft(board.name)}
         onPremise={openPremise}
         onShare={openShare}
+        onOpenGuide={openGuide}
         creationUnavailable={creationUnavailable}
         onRefreshTarget={() => void refreshTargetDisplay()}
         refreshingTarget={refreshingTarget}
@@ -618,6 +625,7 @@ export function BoardPage({
       setNameDraft,
       openPremise,
       openShare,
+      openGuide,
       board.targetLocked,
       api,
       creationUnavailable,
@@ -699,6 +707,7 @@ export function BoardPage({
           canEdit={canEdit}
           projectLink={link}
           onOpenDetail={openDetail}
+          onOpenGuide={openGuide}
         />
       ),
     },
@@ -875,6 +884,7 @@ export function BoardPage({
               role={board.role}
               unavailable={sharingUnavailable}
             />
+            <UsageGuideDialog open={guideOpen} onClose={closeGuide} />
             <PremiseDialog editor={premise} canEdit={canEdit} premise={board.premise} />
           </div>
         </div>
