@@ -86,8 +86,8 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
    だけあることもある。`status.sh` はどちらも読み、どちらも無ければ `?` を出す。
 4. **review が増えたかどうかでは判定しない。** 指摘 0 件の full review は、
    review を付けないことも、pre-merge check の案内だけを載せた review を付ける
-   こともある（#414 の 5821456498）。`findings.sh` の 1 行目（review の件数）
-   では判定しない。判定は
+   こともある（#414 の 5821456498）。`.claude/skills/pr-review/findings.sh` の
+   1 行目（review の件数）では判定しない。判定は
    「head を読んだ」「その依頼のあとに指摘が 1 件も付いていない」「未解決
    スレッド 0」の 3 つで行う（`指摘あり`）。**返信して解決しただけでは 0 件に
    ならない。** 直さないと返して解決したものも同じで、もう一度 full review を

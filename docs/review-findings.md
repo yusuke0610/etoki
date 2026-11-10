@@ -9,6 +9,8 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 書くためだけの PR は数えない（数えると、その行のためにまた PR が要る）。手順は
 [`.claude/skills/pr-review/SKILL.md`](../.claude/skills/pr-review/SKILL.md) と
 [`.claude/skills/pr-watch/SKILL.md`](../.claude/skills/pr-watch/SKILL.md)。
+**どの枝に書くかは `/pr-watch` の「0 件になったら」に従う**（0 件になった PR の枝に
+書くと head が進み、full review をやり直すことになる）。
 
 ## 数え方
 
