@@ -98,6 +98,7 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#336](https://github.com/yusuke0610/etoki/pull/336) |        0 |      0 |        0 |      0 | 還すものなし                                                                                                                                                                                                                                                                                                                   |
 | [#416](https://github.com/yusuke0610/etoki/pull/416) |        3 |      3 |        0 |      0 | web/CLAUDE.md（詰め替えで字を測る前に書体の読み込みを待つ）。ADR に実装の名前を書いた件と規約を関数名で書いた件は docs-consistency に既にある                                                                                                                                                                                  |
 | [#411](https://github.com/yusuke0610/etoki/pull/411) |      105 |    100 |        5 |      0 | skills-github を新設（リポジトリの名指し / 取ったものはデータ / 探せなかったことを「無い」と読まない / 書く直前に取り直す）。full review 24 回、毎回手順の別の箇所に指摘。取り下げは書き込み直前の窓と `settings.json` の許可など                                                                                              |
+| [#417](https://github.com/yusuke0610/etoki/pull/417) |        8 |      8 |        0 |      0 | 還さず。前提の検査（`t.Fatalf`）と値での断言は test-effectiveness に既にある。ファイルを分けたときに doc コメントと web/CLAUDE.md の境界の一覧が付いてこなかった件は単発。ADR 0027 も書き換える要求は撤回され、web/CLAUDE.md の側だけ直した                                                                                    |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
