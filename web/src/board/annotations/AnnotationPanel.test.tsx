@@ -23,6 +23,7 @@ function props(): ComponentProps<typeof AnnotationPanel> {
     canEdit: true,
     projectLink: null,
     onOpenDetail: vi.fn(),
+    onOpenGuide: vi.fn(),
   };
 }
 
@@ -57,5 +58,23 @@ describe("AnnotationPanel", () => {
         "このフレームはキャンバスにありません。保存すると一覧からも消えます。",
       ),
     ).toBeInTheDocument();
+  });
+  // フレームを選んでいないときの案内から、使い方へ渡す（ADR 0094）。
+  // 切れると: 何を選べばよいか分からない人が最初に見る文から、手順へ辿れない。
+  it("フレームを選んでいなければ、使い方を開くボタンを出す", () => {
+    const panelProps = props();
+    render(<AnnotationPanel {...panelProps} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "使い方を見る" }));
+
+    expect(panelProps.onOpenGuide).toHaveBeenCalledTimes(1);
+  });
+
+  // 読むだけの人にはフレームを絵にする操作が無いので、手順への案内も出さない。
+  // 使い方はメニューから開ける。
+  it("読むだけの人には、使い方のボタンを出さない", () => {
+    render(<AnnotationPanel {...props()} canEdit={false} />);
+
+    expect(screen.queryByRole("button", { name: "使い方を見る" })).toBeNull();
   });
 });
