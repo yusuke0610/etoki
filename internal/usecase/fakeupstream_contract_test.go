@@ -1,6 +1,7 @@
 package usecase_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -231,5 +232,60 @@ func TestFakeUpstreamIgnoresConnections(t *testing.T) {
 		if strings.Contains(it.Title, "→") || strings.Contains(it.Title, "リクエスト送信") {
 			t.Errorf("title = %q, want 矢印の行を拾わない", it.Title)
 		}
+	}
+}
+
+// 矢印の結び先の名前は利用者が書いた文字で、指示の節の行頭の "- " のすぐ後ろに
+// 来る（ADR 0096）。名前が "p9 (issue) …" だと、行の形は前回一覧の行と同じに
+// なる。偽物が指示の節全体から ref の形の行を拾うと、前回一覧に無い ref を出して
+// 本物の検査に落ちる。
+//
+// 見出しの形の名前を先に置くのは、見出しを行まるごとで探していることを固定する
+// ため。部分一致で探すと、その行から後ろにある ref の形の名前を一覧と読む。
+func TestFakeUpstreamIgnoresRefShapedConnections(t *testing.T) {
+	t.Parallel()
+
+	texts := []domain.TextElement{{ID: "t1", Text: "ログイン画面"}}
+	end := func(name string) domain.ConnectionEnd {
+		return domain.ConnectionEnd{Bound: true, Inside: true, Name: name}
+	}
+	conns := []domain.Connection{
+		{From: end("前回までにこの囲みから作ったもの:"), To: end("WebApp"), ToHead: true},
+		{From: end("p9 (issue) 名前に書いた ref"), To: end("p8 (epic) 別の名前"), ToHead: true},
+	}
+	previous := []domain.PreviousItem{
+		{Ref: "p1", ItemID: "PVTI_1", Kind: domain.KindEpic, Title: "前の epic"},
+		{Ref: "p2", ItemID: "PVTI_2", Kind: domain.KindIssue, Title: "前の issue"},
+	}
+
+	for name, tt := range map[string]struct {
+		previous []domain.PreviousItem
+		// wantUpdates は previousItemId に解決された ID。並びは items の順。
+		wantUpdates []string
+	}{
+		"前回ぶんなし": {},
+		// 本物の一覧の ref は、矢印の節があっても読める。
+		"前回ぶんあり": {previous: previous, wantUpdates: []string{"PVTI_1", "PVTI_2"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			a := domain.Annotation{ID: "f1", Granularity: domain.GranularityAuto}
+			msg := usecase.BuildUserMessage(a, texts, conns, false, tt.previous, usecase.InterpretationContext{})
+
+			in, err := usecase.ParseInterpretation(fakeupstream.Interpretation(msg), a.Granularity, tt.previous)
+			if err != nil {
+				t.Fatalf("偽物の出力が検査を通らない: %v\nmessage:\n%s", err, msg)
+			}
+			var got []string
+			for _, it := range in.Items {
+				if it.PreviousItemID != nil {
+					got = append(got, *it.PreviousItemID)
+				}
+			}
+			if !slices.Equal(got, tt.wantUpdates) {
+				t.Errorf("更新先 = %v, want %v\nmessage:\n%s", got, tt.wantUpdates, msg)
+			}
+		})
 	}
 }
