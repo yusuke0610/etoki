@@ -80,7 +80,7 @@ func connectionsSection(conns []domain.Connection) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("\n囲みの中の矢印（描いた人がつないだ先。並びは図の上の順番とは限りません）:\n")
+	b.WriteString(connectionsHeader)
 	for _, c := range conns {
 		fmt.Fprintf(&b, "- %s %s %s", connectionEnd(c.From), arrowSymbol(c), connectionEnd(c.To))
 		if label := oneLine(c.Label); label != "" {
@@ -91,6 +91,43 @@ func connectionsSection(conns []domain.Connection) string {
 	return b.String()
 }
 
+const connectionsHeader = "\n囲みの中の矢印（描いた人がつないだ先。並びは図の上の順番とは限りません）:\n"
+
+// connectionsSectionMaxLen は connectionsSection が書く長さ（バイト数）の上限を、
+// 節を組み立てずに見積もる。
+//
+// **名前を 1 本ごとに整えない。** 同じ図形の名前は、つながる矢印の本数ぶん
+// 書く。整える（oneLine）だけで「名前の長さ × 本数」の処理になり、測る側が
+// 守りたいものを使い切る。oneLine は空白を畳んで縮めるだけなので、元の長さを
+// 足せば上限になる。式は connectionsSection の書き方と対で、ずれは
+// TestConnectionsSectionMaxLen_BoundsSection が見る。
+func connectionsSectionMaxLen(conns []domain.Connection) int {
+	if len(conns) == 0 {
+		return 0
+	}
+	n := len(connectionsHeader)
+	for _, c := range conns {
+		n += len("- ") + connectionEndMaxLen(c.From) + len(" ") + len(arrowSymbol(c)) +
+			len(" ") + connectionEndMaxLen(c.To) + len("\n")
+		if c.Label != "" {
+			n += len("「」") + len(c.Label)
+		}
+	}
+	return n
+}
+
+// connectionEndMaxLen は connectionEnd の長さの上限。名前は整えずに長さだけ見る。
+// 短い名前は「（文字の無い図形）」の長さで見積もる。空白だけの名前かを見分けると、
+// 整えるのと同じだけ名前を読むことになる。
+func connectionEndMaxLen(e domain.ConnectionEnd) int {
+	if !e.Bound || !e.Inside {
+		return len(connectionEnd(e))
+	}
+	return max(len(e.Name), len(noTextEnd))
+}
+
+const noTextEnd = "（文字の無い図形）"
+
 // connectionEnd は矢印の端の呼び名。**囲みの外の要素は名前を出さない。**
 // 解釈の入力は囲みの中身だけで、外の材料は背景として別に渡す（ADR 0093）。
 func connectionEnd(e domain.ConnectionEnd) string {
@@ -100,7 +137,7 @@ func connectionEnd(e domain.ConnectionEnd) string {
 	case !e.Inside:
 		return "（囲みの外）"
 	case oneLine(e.Name) == "":
-		return "（文字の無い図形）"
+		return noTextEnd
 	default:
 		return oneLine(e.Name)
 	}

@@ -206,6 +206,13 @@ func (s *InterpretationService) prepare(
 		return preparedInterpretation{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
+	// 矢印の節はジョブの鍵にもプロンプトにも載る。組み立てる前に測って弾く
+	// （MaxConnectionsSectionBytes）。
+	if n := connectionsSectionMaxLen(scene.AnnotationConnections(annotationID)); n > MaxConnectionsSectionBytes {
+		return preparedInterpretation{}, fmt.Errorf("%w: arrow connections would take %d bytes, limit is %d",
+			ErrInvalidInput, n, MaxConnectionsSectionBytes)
+	}
+
 	// 前回までに作ったものを見せて、「これは前回のどれの更新か」を答えさせる。
 	// 対応づけを座標や文字列一致でルールベースに推測せず、LLM に解釈させる
 	// （中核思想 2、ADR 0026）。決めるのは開発者で、これは候補にすぎない。
