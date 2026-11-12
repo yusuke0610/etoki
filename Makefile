@@ -74,7 +74,11 @@ BINARY  := $(BIN_DIR)/etoki
 WEB_DIR := web
 DB_PATH ?= etoki.db
 
-# make try-fake で偽の GitHub / LLM を立てる先。
+# make try-fake で etoki と偽の GitHub / LLM を立てる先。etoki のほうは etoki 自身と
+# 同じ ETOKI_ADDR で変える（README）。make test-e2e-stack は、手元の try-fake や
+# make dev と並べて回せるよう別のポートを渡す（web/e2e-stack/addresses.ts）。
+# export しないので、ここで既定を置いても start や dev-api には効かない。
+ETOKI_ADDR ?= 127.0.0.1:8080
 FAKE_ADDR ?= 127.0.0.1:8090
 
 # ローカルで動かすときの鍵の置き場（gitignore 済み）。無くてもよい。
@@ -89,8 +93,9 @@ FAKE_ADDR ?= 127.0.0.1:8090
 ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
-.PHONY: help setup dev dev-api dev-web build build-api build-web start try-fake \
-        test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
+.PHONY: help setup dev dev-api dev-web build build-api build-web build-fakeupstream start \
+        try-fake fake-stack \
+        test test-go test-web test-scripts test-e2e test-e2e-stack lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
         codegen codegen-go codegen-web migrate token-report mutate clean reset-db vulncheck
 
@@ -137,44 +142,22 @@ start: build ## ビルド済みの成果物で起動する（dev サーバーを
 	@# GitHub App の Callback URL と ETOKI_PUBLIC_URL もそちらに合わせる。
 	$(LOAD_ENV) ETOKI_WEB_DIR=$(WEB_DIR)/dist $(BINARY)
 
-try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki を通しで動かす
-	@# 手元の確認用で、make test にも CI にも入れない（ADR 0050）。
-	@# DB は毎回作り直す。偽物の状態はメモリにしか無いので、DB を使い回すと
-	@# 記録が指す draft issue が偽物の側に無く、更新が必ず失敗する。
-	@# $(LOAD_ENV) は通さず、認証と鍵の変数は外す。.env や direnv の本物の鍵を
-	@# 偽物へ送らないためと、App を設定していると認証の構成に入り、偽物では
-	@# ログインできないため。
-	@# フィールド名の 2 つも外す。偽の GitHub は Kind / Parent 固定なので、
-	@# 手元で別名に設定している人は継いだ名前で引いて見つからず、作成が
-	@# ErrProjectFieldMissing で止まる。
-	@go build -o $(BIN_DIR)/etoki-fakeupstream ./cmd/etoki-fakeupstream
-	@# **どちらかが落ちたら両方止める。** 素の wait は全部の終了を待つので、
-	@# 偽物が FAKE_ADDR の使用中で起動に失敗しても etoki だけが残って待ち
-	@# 続け、EXIT の trap も走らない。wait -n で先に落ちたほうを拾い、その
-	@# 終了状態で抜ける。片付けを kill より先に書くのは、kill 0 がこの
-	@# シェル自身も落とすため。
-	@tmp=$$(mktemp -d); \
-	cleanup() { \
-		status=$$?; \
-		trap - EXIT INT TERM; \
-		kill $${fake_pid:-} $${etoki_pid:-} 2>/dev/null || :; \
-		wait $${fake_pid:-} $${etoki_pid:-} 2>/dev/null || :; \
-		rm -rf "$$tmp"; \
-		exit "$$status"; \
-	}; \
-	trap cleanup EXIT INT TERM; \
-	ETOKI_DB_PATH="$$tmp/etoki.db" $(BINARY) migrate || exit 1; \
-	FAKE_ADDR="$(FAKE_ADDR)" $(BIN_DIR)/etoki-fakeupstream & fake_pid=$$!; \
-	env -u ETOKI_GITHUB_APP_CLIENT_ID -u ETOKI_GITHUB_APP_CLIENT_SECRET \
-		-u ETOKI_TOKEN_ENCRYPTION_KEY -u ETOKI_PUBLIC_URL -u ETOKI_LLM_API_KEY \
-		-u ETOKI_GITHUB_KIND_FIELD -u ETOKI_GITHUB_PARENT_FIELD \
-		ETOKI_DB_PATH="$$tmp/etoki.db" \
-		ETOKI_WEB_DIR=$(WEB_DIR)/dist \
-		ETOKI_LLM_BASE_URL="http://$(FAKE_ADDR)" \
-		ETOKI_GITHUB_BASE_URL="http://$(FAKE_ADDR)" \
-		ETOKI_GITHUB_TOKEN=fake \
-		$(BINARY) & etoki_pid=$$!; \
-	wait -n
+try-fake: build build-fakeupstream ## 偽の GitHub / LLM に向けて、ビルド済みの etoki を通しで動かす
+	@# 手元の確認用で、make test にも CI にも入れない（ADR 0050）。CI で回す通しは
+	@# make test-e2e-stack（ADR 0097）で、起動は同じ fake-stack を通る。
+	@$(MAKE) --no-print-directory fake-stack
+
+fake-stack:
+	@# 起動の手順と、DB を作り直す・鍵を外す・片方が落ちたら両方止める理由は
+	@# scripts/fake-stack.sh。ここではビルドしない。make test-e2e-stack の
+	@# Playwright が webServer として直に呼ぶので、ビルドは呼ぶ側で済ませる。
+	@# バイナリと画面の置き場所はここから渡す（スクリプトに既定を持たせない）。
+	@BIN_DIR="$(BIN_DIR)" WEB_DIST="$(WEB_DIR)/dist" \
+		ETOKI_ADDR="$(ETOKI_ADDR)" FAKE_ADDR="$(FAKE_ADDR)" \
+		scripts/fake-stack.sh
+
+build-fakeupstream:
+	go build -o $(BIN_DIR)/etoki-fakeupstream ./cmd/etoki-fakeupstream
 
 build-api:
 	go build -o $(BINARY) ./cmd/etoki
@@ -199,6 +182,12 @@ test-e2e: ## Playwright で E2E テストを実行する（test には含めな�
 	@# 実行のたびに web/e2e-output/screenshots/ が作り直される。UI を変えたときは
 	@# ここの画像を報告に添える（web/CLAUDE.md の「報告にブラウザの実行結果を添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
+
+test-e2e-stack: build build-fakeupstream ## 実物の etoki と偽の GitHub / LLM に繋いだ E2E を実行する（test にも test-e2e にも含めない）
+	@# 起動は Playwright の webServer が fake-stack を呼ぶ（web/playwright.stack.config.ts）。
+	@# 画面の約束はモックの E2E（test-e2e）の担当で、ここは画面とサーバーが本物どうしで
+	@# 往復できることだけを見る（ADR 0097）。
+	cd $(WEB_DIR) && bun run test:e2e-stack
 
 lint: lint-go lint-web lint-docs lint-fmt lint-nix lint-actions lint-sh ## Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 
@@ -237,8 +226,9 @@ lint-sh:
 	@# actionlint が拾うのはワークフローの run: だけ。スキルが持つスクリプトは
 	@# make のどのターゲットからも呼ばれないので、ここで見ないと実行するまで
 	@# 壊れたことに気づけない。shellcheck は actionlint のために devShell へ
-	@# 既に入っている。
-	shellcheck .claude/skills/*/*.sh
+	@# 既に入っている。scripts/ のシェルは make から呼ばれるが、通しの起動
+	@# （fake-stack.sh）は CI の e2e-stack でしか走らないので、同じくここで見る。
+	shellcheck .claude/skills/*/*.sh scripts/*.sh
 
 fmt: ## Go / フロントエンド / Markdown / Nix を整形する
 	golangci-lint fmt

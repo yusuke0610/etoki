@@ -22,8 +22,9 @@ permissions:
 
 # E2E は lint / test の結果を使わないので、別の job にして並べて走らせる。
 # 1 つの job に直列で並べていたころは、E2E が setup・lint・test の後ろで
-# 3 分ほど待ってから動き出していた（#269）。どちらの job も手元と同じ
-# make ターゲットを通る（下の setup のコメント）。
+# 3 分ほど待ってから動き出していた（#269）。通しの E2E（e2e-stack、ADR 0097）も
+# 同じ理由で別の job にする。どの job も手元と同じ make ターゲットを通る
+# （下の setup のコメント）。
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -113,4 +114,35 @@ jobs:
         with:
           name: playwright-report
           path: web/e2e-output/
+          retention-days: 7
+
+  # 実物の etoki と偽の GitHub / LLM に繋いだ E2E（ADR 0097）。モックの E2E が
+  # 見ない「画面とサーバーが本物どうしで往復できるか」だけを見る。
+  e2e-stack:
+    runs-on: ubuntu-latest
+    steps:
+      # e2e と同じく git の認証を使わず、依存コードを動かすのでトークンを残さない。
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: setup
+        run: nix develop --command make setup
+
+      # ビルドも、etoki と偽物の起動も make test-e2e-stack の中で行う。CI 専用の
+      # 起動手順を持たない。
+      - name: e2e-stack
+        run: nix develop --command make test-e2e-stack
+
+      - name: upload e2e-stack report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-stack-report
+          path: web/e2e-output/stack/
           retention-days: 7

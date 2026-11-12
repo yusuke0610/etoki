@@ -89,6 +89,7 @@ make lint        # Go / フロントエンド / Markdown / Nix / Actions / シ�
 make fmt         # Go / フロントエンド / Markdown / Nix を整形する
 make test        # go test + vitest + bun test
 make test-e2e    # Playwright（test には含まれない）
+make test-e2e-stack # 実物の etoki と偽の上流に繋いだ E2E（test には含まれない）
 make codegen     # api/openapi.yaml から Go / TS の型を再生成する
 make migrate     # etoki migrate サブコマンドを呼ぶ
 ```
