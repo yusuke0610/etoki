@@ -37,7 +37,7 @@ export type BoardTransfer = {
  * ボードの持ち出しと取り込み（ADR 0045、#146 で `BoardPage` から切り出し）。
  *
  * **口は etoki のメニュー 1 つに寄せる。** ライブラリのメニュー側は閉じてある
- * （`BoardPage` の `UI_OPTIONS`）。
+ * （`BoardCanvas` の `UI_OPTIONS`）。
  */
 export function useBoardTransfer({
   api,
