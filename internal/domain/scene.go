@@ -292,14 +292,7 @@ func (s Scene) childTexts(annotationID string) []TextElement {
 		if _, dup := seen[e.ID]; dup {
 			continue
 		}
-
-		_, isChild := childIDs[e.ID]
-		isBoundToChild := false
-		if e.ContainerID != nil {
-			_, isBoundToChild = childIDs[*e.ContainerID]
-		}
-
-		if !isChild && !isBoundToChild {
+		if !insideAnnotation(e, childIDs) {
 			continue
 		}
 
@@ -308,6 +301,21 @@ func (s Scene) childTexts(annotationID string) []TextElement {
 	}
 
 	return texts
+}
+
+// insideAnnotation は要素が注釈の中にあるか。frame の直接の子（childIDs）か、
+// 直接の子に containerId で紐づくテキスト（図形のラベル）なら中。childTexts と
+// AnnotationConnections の結び先で同じ規則を使う。片方だけ変えると、ハッシュに
+// 入る文字と、結び先として名前を渡す文字がずれる。
+func insideAnnotation(e Element, childIDs map[string]struct{}) bool {
+	if _, ok := childIDs[e.ID]; ok {
+		return true
+	}
+	if e.Type != elementTypeText || e.ContainerID == nil {
+		return false
+	}
+	_, ok := childIDs[*e.ContainerID]
+	return ok
 }
 
 // ConnectionEnd は矢印の片方の端。
@@ -371,7 +379,7 @@ func (s Scene) AnnotationConnections(annotationID string) []Connection {
 		if !ok {
 			return ConnectionEnd{}
 		}
-		if _, inside := children[target.ID]; !inside {
+		if !insideAnnotation(target, children) {
 			return ConnectionEnd{Bound: true}
 		}
 		name := labels[target.ID]

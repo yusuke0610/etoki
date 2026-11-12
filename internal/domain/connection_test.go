@@ -72,6 +72,28 @@ func TestAnnotationConnections_TextTarget(t *testing.T) {
 	}
 }
 
+// 図形の中の文字（frameId を持たず、containerId で図形に紐づく）につないだ矢印は、
+// その図形が囲みの中なら中として名前を返す。childTexts と同じ所属の規則で、外の
+// 図形の文字なら外のまま。
+func TestAnnotationConnections_TextBoundToShape(t *testing.T) {
+	t.Parallel()
+
+	s := scene(t, annotFrame, userBox, userLabel, webBox, webLabel, outsideBox, outsideLbl,
+		arrow("a1", "u", "w-label", "", "arrow", ""),
+		arrow("a2", "u", "x-label", "", "arrow", ""))
+
+	got := s.AnnotationConnections("annot-1")
+	if len(got) != 2 {
+		t.Fatalf("AnnotationConnections() = %+v, want 2 本", got)
+	}
+	if want := (domain.ConnectionEnd{Bound: true, Inside: true, Name: "WebApp"}); got[0].To != want {
+		t.Errorf("中の図形の文字につないだ端 = %+v, want %+v", got[0].To, want)
+	}
+	if want := (domain.ConnectionEnd{Bound: true}); got[1].To != want {
+		t.Errorf("外の図形の文字につないだ端 = %+v, want %+v", got[1].To, want)
+	}
+}
+
 // どちらの端もつながっていない矢印は返さない。片方だけつながっていれば返し、
 // つながっていない端はそうと分かる形にする。
 func TestAnnotationConnections_SkipsUnboundArrows(t *testing.T) {
