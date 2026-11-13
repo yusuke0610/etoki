@@ -98,3 +98,4 @@
 | [0093](0093-board-premise-for-interpretation.md)                 | 解釈に添える背景をボードに持たせ、ハッシュには入れない                       | 採用                 |
 | [0094](0094-usage-guide-on-demand.md)                            | 使い方は押したときだけ開くダイアログに置き、心得を手順より先に書く           | 採用                 |
 | [0095](0095-clean-drawing-style.md)                              | 線を揺らさず、書体を Excalifont から外す                                     | 採用                 |
+| [0096](0096-pass-arrow-connections-to-interpretation.md)         | 人がつないだ矢印の結び先は、解釈に文字でも渡す                               | 採用                 |
