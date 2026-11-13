@@ -350,9 +350,11 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 
 ## 描画に失敗したとき（ADR 0027）
 
-- **境界はキャンバスの外側に置く。** `BoardPage` のパネル（注釈・
-  図のドラフト・mermaid の貼り付け・注釈の詳細）と共有のダイアログの中身を
-  1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を包む。
+- **境界はキャンバスの外側に置く。** 右のパネルのタブの中身（注釈・図の
+  ドラフト・mermaid の貼り付け、`web/src/board/PanelTabContents.tsx`）、注釈の枠
+  （`web/src/board/BoardCanvas.tsx`）、注釈の詳細（`BoardPage`）、共有とボードの
+  背景のダイアログの中身を 1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を
+  包む。
   **外側の 1 枚にまとめないこと。** まとめると落ちた瞬間にキャンバスごと外れ、
   保存していないブレストがその場で消える。`web/e2e/errors.spec.ts` がここを
   固定している。**パネルを足したらここにも包みを足す。**
@@ -489,6 +491,18 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   （ADR 0018）。
 - **大きさは固定で、ダイアログを挟まない。** 挟むと「描いている最中の 1 手」でなく
   なる。
+
+## 使い方のダイアログ（ADR 0094）
+
+**キャンバスのメニューと、右のパネルの「選択中のフレーム」の案内からだけ開く。
+勝手に開かない**（中核思想 3）。本文は `web/src/board/UsageGuideDialog.tsx`。
+
+- **状態・粒度・種別の語は表から引く**（`STATE_LABEL` / `GRANULARITY_LABEL` /
+  `DIAGRAM_KIND_LABELS`）。食い違いは `UsageGuideDialog.test.tsx` が落とす。
+- **ボタンの語は本文に書き写してある**（「〈名前〉を絵にする」「保存」
+  「絵解き」「絵解く」「GitHub に作成する」、タブの「絵解いた」）。部品に直書きされて
+  いて引けない。**これらの文言を変えたら、使い方も同じコミットで直す。**
+- **心得の節を手順より先に置く。** 並べ替えると単体テストが落ちる。
 
 ## 開いているボードと URL（ADR 0059）
 
@@ -764,7 +778,8 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   （先に書き換えられていたと出た状態と、読むだけの人）・作成が済んだ下書き・キャンバスの
   メニュー・新しいボードのダイアログ・利用者のメニュー・注釈の詳細で開く
   「GitHub にある」と「実行の履歴」・MCP の同意の画面・MCP の接続の
-  ダイアログ・作成先の Project を選んで確かめた結果（ADR 0088）。ボードを
+  ダイアログ・作成先の Project を選んで確かめた結果（ADR 0088）・使い方の
+  ダイアログ（ADR 0094）。ボードを
   開いただけの検査には一度も含まれていない。
 - **見えている文字は名前に含める**（WCAG 2.5.3、#311）。音声で操作する利用者は
   見えている文字を読み上げて押す。**中身の一部だけを `aria-label` /
@@ -1006,7 +1021,7 @@ cd web && bunx playwright test --ui
   **固定を外したら、受け入れた CSS の注入が消えたかを確かめる。**
 - **Excalidraw 自身の mermaid の入口は閉じてある**（ADR 0067）。「その他」
   メニューの「Mermaid to Excalidraw」は `web/src/board/board.css` で隠し、キャンバスへの
-  貼り付けの自動変換は `BoardPage` の `onPaste` で止めている。**どちらも開いて
+  貼り付けの自動変換は `BoardCanvas` の `onPaste` で止めている。**どちらも開いて
   いると、上の脆弱性の受け入れの前提が崩れる。** props で消せない UI に外から
   手を入れているので、Excalidraw を上げると黙って戻りうる。
   `web/e2e/excalidrawMermaid.spec.ts` と `src/excalidraw/excalidrawMermaid.test.ts`

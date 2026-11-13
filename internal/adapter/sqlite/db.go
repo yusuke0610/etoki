@@ -74,3 +74,8 @@ func parseTime(s string) (time.Time, error) {
 	}
 	return t, nil
 }
+
+// rowScanner は *sql.Row と *sql.Rows の共通部分。
+type rowScanner interface {
+	Scan(dest ...any) error
+}
