@@ -37,7 +37,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 
 | 場所                               | 中身                                                                   |
 | ---------------------------------- | ---------------------------------------------------------------------- |
-| `CONTRIBUTING.md`                  | ブランチ・コミット・PR 本文・レビュー対応・マージ・CI                  |
+| `CONTRIBUTING.md`                  | 仕様の正本・ブランチ・コミット・PR 本文・レビュー対応・マージ・CI      |
 | `.github/pull_request_template.md` | PR 本文の雛形                                                          |
 | `internal/CLAUDE.md`               | 3 状態判定のデータフロー、メンバーと権限                               |
 | `web/CLAUDE.md`                    | E2E テスト、報告にブラウザの実行結果を添える、vite / playwright の設定 |
@@ -283,6 +283,8 @@ Origin 検証は `.claude/rules/http-handlers.md`。
 `CONTRIBUTING.md`。**
 **作業を始める前に読む。** ここには最低限だけ置く。
 
+- **仕様の正本はマージまで issue、マージ後はコード。** 閉じた issue を仕様の
+  根拠にしない。文章の仕様書は作らない。
 - **必ず `main` を起点に `<prefix>/<短い説明>` でブランチを切る。`main` に直接
   コミットしない。** `main` への反映は Pull Request 経由。
 - コミットは Conventional Commits 形式（`feat(scope): 要約`）。要約は英語、本文は
