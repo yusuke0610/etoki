@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
 	"github.com/yusuke0610/etoki/migrations"
@@ -303,5 +304,220 @@ func TestMigrate_RebuildRestoresForeignKeys(t *testing.T) {
 	}
 	if n := countRows(t, db, `SELECT COUNT(*) FROM sync_items`); n != 0 {
 		t.Errorf("sync_items = %d 件, want 0（カスケードが効いていない）", n)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C-11: マイグレーション
+// ---------------------------------------------------------------------------
+
+func TestMigrate_IsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t) // 1 回目は newDB の中で適用済み
+
+	// 適用済みの件数はマイグレーションを足すたびに変わる。件数そのものを
+	// 期待値に書くと、SQL を 1 つ足しただけでこのテストが落ちる。確かめたいのは
+	// 「2 回目で増えないこと」なので、前後を突き合わせる。
+	before := countMigrations(t, db)
+
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("2 回目の Migrate: %v", err)
+	}
+
+	if after := countMigrations(t, db); after != before {
+		t.Errorf("schema_migrations の件数 = %d, want %d", after, before)
+	}
+}
+
+func countMigrations(t *testing.T, db *sql.DB) int {
+	t.Helper()
+
+	var n int
+	if err := db.QueryRowContext(t.Context(),
+		`SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil {
+		t.Fatalf("count schema_migrations: %v", err)
+	}
+	return n
+}
+
+// 0002 以降は既存の boards に列を足す。移行後、それまでのボードは
+// 「作成先が未選択」（ADR 0014）かつ「所有者が無い」（ADR 0016）として
+// 読めなければならない。どちらも空文字がその状態を表す。
+//
+// 0001 だけ適用した状態を作ってから Migrate を呼ぶ。newDB は全部適用して
+// しまうので、ここでは使えない。
+func TestMigrate_ExistingBoardsAreUnselectedAndUnowned(t *testing.T) {
+	t.Parallel()
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "etoki.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	initial, err := migrations.FS.ReadFile("0001_initial.sql")
+	if err != nil {
+		t.Fatalf("read 0001: %v", err)
+	}
+	for _, stmt := range []string{
+		string(initial),
+		`CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`,
+		`INSERT INTO schema_migrations VALUES ('0001_initial.sql', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO boards (id, name, scene, created_at, updated_at)
+		 VALUES ('legacy', '移行前のボード', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := db.ExecContext(t.Context(), stmt); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	b, err := sqlite.NewBoardRepository(db).Find(t.Context(), "", "legacy")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if b == nil {
+		t.Fatal("移行でボードが消えている")
+	}
+	if b.Board.Target != (port.BoardTarget{}) {
+		t.Errorf("Target = %+v, want ゼロ値（未選択）", b.Board.Target)
+	}
+	if b.Board.Target.Selected() {
+		t.Error("未選択のはずが Selected() が true")
+	}
+	// 0005 は所有者をメンバー行に移す。空文字の所有者は「認証なしの所有者」
+	// 1 人としてそのまま owner になる（ADR 0016 / 0017）。
+	if b.Role != port.RoleOwner {
+		t.Errorf("Role = %q, want %q", b.Role, port.RoleOwner)
+	}
+
+	// 所有者が無いので、認証を有効にすると引き受けの対象として数えられる。
+	n, err := sqlite.NewBoardRepository(db).CountUnowned(t.Context())
+	if err != nil {
+		t.Fatalf("CountUnowned: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("CountUnowned = %d, want 1", n)
+	}
+}
+
+// DB 側も食い違いを受け付けない。**`IS` と `=` の違いがここに出る。**
+// `outcome = 'incomplete'` と書くと、outcome が NULL の行では比較が NULL に
+// 評価されて CHECK をすり抜け、「記録していないのに理由だけある run」が
+// 入ってしまう（ADR 0043）。
+//
+// **不正な象限は 2 つある。** 0010 の CHECK は片側（理由つきの完走）しか
+// 禁じておらず、裏返しの「途中で失敗したのに理由が無い」を通していた。0011 が
+// 両方を 1 本の式で禁じる（#130）。`SaveRun` も同じ食い違いを弾くが、復元や
+// 保守 SQL はそこを通らないので、行として意味が決まらない組み合わせは DB でも
+// 作らせない。
+func TestMigration_RejectsOutcomeAndErrorDisagreement(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	at := baseTime.UTC().Format(time.RFC3339Nano)
+
+	for name, query := range map[string]string{
+		"未知の outcome": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'weird')`,
+		"完走したのに理由つき": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome, error)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'complete', 'boom')`,
+		"記録が無いのに理由つき": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, error)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'boom')`,
+		"途中で失敗したのに理由なし": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'incomplete')`,
+		"理由を空文字ではなく NULL で入れた失敗": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome, error)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'incomplete', NULL)`,
+	} {
+		if _, err := db.ExecContext(t.Context(), query, at); err == nil {
+			t.Errorf("%s: CHECK が効いていない", name)
+		}
+	}
+}
+
+// CHECK は UPDATE にも効く。**保守 SQL の脅威モデルは INSERT だけではない。**
+// 正しく入った行を後から不整合に落とせるなら、入口を塞いだ意味がない。
+//
+// **1 件ずつ別の DB で見る。** 同じ行に順に当てると、最初に通ってしまった
+// UPDATE が行を不整合にして、後続が「もう不整合なので通った」のか
+// 「CHECK が効いていない」のかを見分けられなくなる。
+func TestMigration_RejectsUpdateIntoDisagreement(t *testing.T) {
+	t.Parallel()
+
+	for name, query := range map[string]string{
+		"理由だけ消す":     `UPDATE sync_runs SET error = NULL`,
+		"結末だけ完走に変える": `UPDATE sync_runs SET outcome = 'complete'`,
+		"結末だけ消す":     `UPDATE sync_runs SET outcome = NULL`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			db := newDB(t)
+			seedBoard(t, db, "board-1")
+
+			if _, err := sqlite.NewMappingRepository(db).SaveRun(t.Context(), port.SyncRun{
+				BoardID:      "board-1",
+				AnnotationID: "annot-1",
+				ContentHash:  "hash-1",
+				CreatedAt:    baseTime,
+				Outcome:      port.OutcomeIncomplete,
+				Error:        "boom",
+			}); err != nil {
+				t.Fatalf("SaveRun: %v", err)
+			}
+
+			if _, err := db.ExecContext(t.Context(), query); err == nil {
+				t.Error("CHECK が効いていない")
+			}
+
+			// 弾いた UPDATE が書いていないこと。エラーの検査だけだと、
+			// 一部を書いてから弾く実装でも緑になる。
+			var outcome, failure string
+			if err := db.QueryRowContext(t.Context(),
+				`SELECT outcome, error FROM sync_runs`).Scan(&outcome, &failure); err != nil {
+				t.Fatalf("select sync_runs: %v", err)
+			}
+			if outcome != "incomplete" || failure != "boom" {
+				t.Errorf("(outcome, error) = (%q, %q), want (\"incomplete\", \"boom\")",
+					outcome, failure)
+			}
+		})
+	}
+}
+
+// 一致している 3 つの象限は通る。**禁じる側だけを見ると、全部禁じる CHECK でも
+// 緑になる。** とくに「結末も理由も無い」は移行前の run の形で、ここを弾くと
+// 記録していなかった頃の履歴が読めなくなる（ADR 0043）。
+func TestMigration_AllowsAgreeingOutcomeAndError(t *testing.T) {
+	t.Parallel()
+
+	db := newDB(t)
+	seedBoard(t, db, "board-1")
+	at := baseTime.UTC().Format(time.RFC3339Nano)
+
+	for name, query := range map[string]string{
+		"完走して理由なし": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'complete')`,
+		"途中で失敗して理由あり": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at, outcome, error)
+			 VALUES ('board-1', 'annot-1', 'h', ?, 'incomplete', 'boom')`,
+		"記録していなかった頃の run": `INSERT INTO sync_runs
+			 (board_id, annotation_element_id, content_hash, created_at)
+			 VALUES ('board-1', 'annot-1', 'h', ?)`,
+	} {
+		if _, err := db.ExecContext(t.Context(), query, at); err != nil {
+			t.Errorf("%s: CHECK が通すべき行を弾いた: %v", name, err)
+		}
 	}
 }

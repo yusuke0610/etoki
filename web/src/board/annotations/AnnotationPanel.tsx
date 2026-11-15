@@ -71,6 +71,8 @@ type Props = {
   projectLink: ProjectLink | null;
   /** 注釈 1 件の詳細（`AnnotationDetail`）を開く。 */
   onOpenDetail: (annotationId: string) => void;
+  /** 使い方のダイアログを開く（`UsageGuideDialog`、ADR 0094）。 */
+  onOpenGuide: () => void;
 };
 
 /**
@@ -90,6 +92,7 @@ export function AnnotationPanel({
   canEdit,
   projectLink,
   onOpenDetail,
+  onOpenGuide,
 }: Props) {
   // 見出しは 2 つの欄で共有する。同じ注釈が片方は名前、もう片方は番号で
   // 出ると、同じものが 2 つあるように見える。
@@ -220,9 +223,18 @@ export function AnnotationPanel({
             フレームを絵にしたり外したりできるのは、編集できる人だけです。
           </p>
         ) : frames.markable.length === 0 && frames.unmarkable.length === 0 ? (
-          <p className="hint">
-            フレームツール（F）で囲んでから、そのフレームを選択してください。
-          </p>
+          <>
+            <p className="hint">
+              フレームツール（F）で囲んでから、そのフレームを選択してください。
+            </p>
+            {/*
+              手順の全体はここでは言い切れないので、使い方へ渡す（ADR 0094）。
+              何を選べばよいか分からない人がいちばん最初に目にする文がここ。
+            */}
+            <button type="button" className="quiet" onClick={onOpenGuide}>
+              使い方を見る
+            </button>
+          </>
         ) : (
           <ul className="plain-list">
             {/*
