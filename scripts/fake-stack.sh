@@ -48,8 +48,9 @@ tmp=$(mktemp -d)
 
 # **どちらかが落ちたら両方止める。** 素の wait は全部の終了を待つので、偽物が
 # 起動に失敗しても etoki だけが残って待ち続け、EXIT の trap も走らない。wait -n で
-# 先に落ちたほうを拾い、その終了状態で抜ける。片付けを kill より先に書くのは、
-# kill 0 がこのシェル自身も落とすため（.claude/rules/make-targets.md）。
+# 先に落ちたほうを拾い、その終了状態で抜ける。片付けは PID を控えて kill / wait で
+# 回収する。kill 0 はこのシェル自身も落とし、一時 DB を消す前に止まるので使わない
+# （.claude/rules/make-targets.md）。
 pids=()
 # trap からだけ呼ぶので、shellcheck には呼び出しが見えない。
 # shellcheck disable=SC2329

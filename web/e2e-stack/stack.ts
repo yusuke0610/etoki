@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import {
@@ -65,9 +66,17 @@ const PROJECT = "#1 Fake Project";
  * **偽の GitHub の記録は 1 回の実行のあいだ全部の spec で共有される**ので、
  * 読むときはこの語で絞る（`fakeItems`）。やり直し（retry）や `--repeat-each` でも
  * 記録は残るので、回ごとに変える。
+ *
+ * **テストごとの部分は `titlePath`（ファイル・describe・題）と project から作る。**
+ * `testId` の先頭はファイルのハッシュで、同じファイルのテストどうしで同じ語に
+ * なる。`fullyParallel` で並ぶと、絞っても隣のテストの記録が混ざる。
  */
 export function uniqueWord(testInfo: TestInfo): string {
-  return `w${testInfo.testId.slice(0, 8)}e${testInfo.repeatEachIndex}r${testInfo.retry}`;
+  const own = createHash("sha1")
+    .update([testInfo.project.name, ...testInfo.titlePath].join("\0"))
+    .digest("hex")
+    .slice(0, 8);
+  return `w${own}e${testInfo.repeatEachIndex}r${testInfo.retry}`;
 }
 
 /** 一覧から新しいボードを作り、偽の GitHub の Project を作成先に選んで開く。 */
