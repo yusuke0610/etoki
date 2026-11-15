@@ -97,10 +97,10 @@ base や `mergeable` が違っていたら、表を作り直す。**`status.sh` 
 
 ```sh
 .claude/skills/pr-watch/status.sh <番号>   # => full review 0 件 と ci=緑 が出ているか
-gh api "repos/{owner}/{repo}/pulls/<番号>" --jq '"\(.head.sha) \(.base.ref) \(.mergeable)"'
+gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq '"\(.head.sha) \(.base.ref) \(.mergeable)"'
 # sha を渡すと、確かめた head から動いていたときに GitHub が断る。
 # status.sh が出すのは先頭 7 桁なので、上で取り直した 40 桁を渡す。
-gh api -X PUT "repos/{owner}/{repo}/pulls/<番号>/merge" \
+gh api -X PUT "repos/yusuke0610/etoki/pulls/<番号>/merge" \
   -f merge_method=squash -f sha=<取り直した head の 40 桁の sha>
 ```
 
@@ -118,7 +118,7 @@ REST か、GitHub の MCP ツール（`merge_pull_request`）を使う。
 届かず、#219 と #220 で出し直した。
 
 ```sh
-gh api "repos/{owner}/{repo}/pulls/<番号>" --jq '"\(.merged) \(.base.ref) \(.merge_commit_sha)"'
+gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq '"\(.merged) \(.base.ref) \(.merge_commit_sha)"'
 git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/main が出ること
 ```
 
@@ -150,16 +150,16 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
    を遅れて作り直す**ので、main が進んだ直後は古いままのことがある。
 
    ```sh
-   gh api "repos/{owner}/{repo}/pulls/<番号>" --jq .merge_commit_sha
-   gh api "repos/{owner}/{repo}/commits/<そのsha>" --jq '.parents[].sha'
-   gh api "repos/{owner}/{repo}/git/ref/heads/main" --jq .object.sha
+   gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq .merge_commit_sha
+   gh api "repos/yusuke0610/etoki/commits/<そのsha>" --jq '.parents[].sha'
+   gh api "repos/yusuke0610/etoki/git/ref/heads/main" --jq .object.sha
    ```
 
 2. 親がいまの main なら close → reopen する。
 
    ```sh
-   gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f state=closed
-   gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f state=open
+   gh api -X PATCH "repos/yusuke0610/etoki/pulls/<番号>" -f state=closed
+   gh api -X PATCH "repos/yusuke0610/etoki/pulls/<番号>" -f state=open
    ```
 
    **close する前に、番号をユーザーへの報告に書いておく。** reopen が失敗したり
@@ -177,7 +177,7 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
    （衝突で起動しないことが多い。`/pr-watch` の「CI が走らない」）。
 
    ```sh
-   gh api "repos/{owner}/{repo}/commits/<head>/check-runs" \
+   gh api "repos/yusuke0610/etoki/commits/<head>/check-runs" \
      --jq '.check_runs[] | "\(.started_at) \(.status) \(.conclusion) \(.name)"'
    ```
 
@@ -207,7 +207,7 @@ full review 0 件の代わりに見るのは 2 つ。ほかの条件（base・`m
   回し直す（下）。`@dependabot rebase` には応じないことがある（#424）。
 
   ```sh
-  gh api -X PUT "repos/{owner}/{repo}/pulls/<番号>/update-branch" \
+  gh api -X PUT "repos/yusuke0610/etoki/pulls/<番号>/update-branch" \
     -f expected_head_sha=<いまの head の 40 桁>
   ```
 

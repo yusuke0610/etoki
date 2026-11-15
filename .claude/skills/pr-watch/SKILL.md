@@ -140,7 +140,7 @@ PR は表で下の段が先に来るので、この順で回せば下の段か�
 ### 依頼と待ち
 
 ```sh
-gh api -X POST "repos/{owner}/{repo}/issues/<番号>/comments" -f body='@coderabbitai full review'
+gh api -X POST "repos/yusuke0610/etoki/issues/<番号>/comments" -f body='@coderabbitai full review'
 ```
 
 1. **依頼したら、返信が `Full review finished` か `rate limited` になるまで待つ。**
