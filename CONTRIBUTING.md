@@ -168,6 +168,11 @@ UI を触ったならスクリーンショットを添える。`make test-e2e` �
 - 指摘をスレッド内のやりとりで確かめて解決した
 - full review の後にコミットを積んだ（docs だけでも）
 
+**Dependabot の PR だけは例外。** CodeRabbit は bot の PR をレビューしない
+（依頼しても飛ばす）。full review の代わりに、いまの main とのマージ結果での CI と、
+変更履歴の破壊的変更が etoki の使い方に当たらないかで判断する（ADR 0035 の
+追記）。見るものは `/land` の「Dependabot の PR」。
+
 指摘が付いたら直して push し、もう一度 full review を依頼する。**full review は
 1 時間に 1 回しか回らない**ので、直すものはまとめて 1 回に載せる。
 

@@ -24,7 +24,9 @@ description: 開いている PR を見回り、full review の枠をどの PR �
 **このリポジトリでは、PR を作っても CodeRabbit のレビューは付かない。** スター数
 が少ないリポジトリは自動レビューの対象外で、要約のコメントは「This repository
 does not receive automatic reviews」と「Trigger review」の欄を出したまま
-止まる。Dependabot の PR は「Bot user detected」で止まる。
+止まる。Dependabot の PR は「Bot user detected」で止まり、full review を依頼しても
+「Review skipped」で終わる（bot に review の席が無い、#424）。**Dependabot の PR には
+依頼しない。** マージの判断は `/land` の「Dependabot の PR」。
 
 **レビューは `@coderabbitai full review` で依頼して初めて付く。** 増分の
 `@coderabbitai review` はマージの条件にならない（`CONTRIBUTING.md`「マージ」）
