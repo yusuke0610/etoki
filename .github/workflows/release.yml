@@ -1,0 +1,109 @@
+name: Release
+
+# タグ（vX.Y.Z）を打つと、配布物を作ってリリースの下書きに載せ、イメージを
+# GHCR に送る（ADR 0099）。**タグを打つのは持ち主。** 下書きを公開するのも
+# 持ち主で、ここは作るところまで。
+#
+# PR では、リリースの手順に関わるファイルを触ったときだけ、同じ手順で配布物と
+# イメージを作り、起動まで確かめる（送らない）。手元に docker のデーモンが
+# 無くても、イメージが壊れていないことを PR で知るため。
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - Makefile
+      - flake.nix
+      - flake.lock
+      - .github/workflows/release.yml
+
+# 送っている途中のリリースは止めない。PR の確かめは新しい push で止めてよい。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # PR の確かめ。書く権限は持たない。
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # 依存コードを動かす（make setup 以降）ので、checkout が .git に残す
+      # トークンを読ませない（ci.yml と同じ、#338）。
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: setup
+        run: nix develop --command make setup
+
+      # 配布物を作り、linux/amd64 のイメージに詰めて起動まで見る。
+      - name: image-check
+        run: nix develop --command make image-check
+
+  # タグのときだけ動く。書く権限（リリースと GHCR）はこの job にだけ渡す。
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      # git describe が版（タグ）を言うために、履歴とタグを取る。
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: setup
+        run: nix develop --command make setup
+
+      # 送る前に、送るものと同じ手順で作って確かめる。**鍵を使うのはこの後だけ。**
+      # リポジトリのコード（依存を含む）が動くあいだ、書けるトークンは環境にも
+      # ファイルにも置かない。
+      - name: image-check
+        run: nix develop --command make image-check
+
+      # RUN の無い Dockerfile なので、ほかの CPU の真似（QEMU）は要らない。
+      # 来歴と SBOM は付けない（ADR 0099、使う人が増えてから決める）。
+      - name: push the image
+        env:
+          TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          IMAGE: ghcr.io/${{ github.repository }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          printf '%s' "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker buildx create --use
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --provenance=false --sbom=false \
+            --label "org.opencontainers.image.source=$SOURCE" \
+            --label "org.opencontainers.image.version=$GITHUB_REF_NAME" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.licenses=MIT" \
+            --tag "$IMAGE:$GITHUB_REF_NAME" \
+            --push .
+
+      - name: draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/etoki_*.tar.gz dist/checksums.txt \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --draft --generate-notes --verify-tag

@@ -77,6 +77,19 @@ DB_PATH ?= etoki.db
 # make try-fake で偽の GitHub / LLM を立てる先。
 FAKE_ADDR ?= 127.0.0.1:8090
 
+# 版。ビルドのたびにバイナリへ埋める（internal/version、ADR 0099）。
+#
+# **git に訊く。** Go が VCS から埋める値は、作業ツリー（.claude/worktrees/）の
+# 中では外側のチェックアウトの版になる。git の外（展開したソースなど）では空に
+# なり、バイナリは Go の値か (devel) を言う。そのときは VERSION=… で渡す。
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
+GO_LDFLAGS = -X github.com/yusuke0610/etoki/internal/version.value=$(VERSION)
+
+# make dist が配布物を置く先と、作る OS / CPU（ADR 0099）。イメージは、この
+# うち linux の 2 つを詰める。
+DIST_DIR := dist
+DIST_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+
 # ローカルで動かすときの鍵の置き場（gitignore 済み）。無くてもよい。
 #
 # make の include ではなく shell の `.` で読む。include すると `$` を含む値が
@@ -89,7 +102,7 @@ FAKE_ADDR ?= 127.0.0.1:8090
 ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
-.PHONY: help setup dev dev-api dev-web build build-api build-web start try-fake \
+.PHONY: help setup dev dev-api dev-web build build-api build-web start try-fake dist image image-check \
         test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
         codegen codegen-go codegen-web migrate token-report mutate clean reset-db vulncheck
@@ -177,7 +190,87 @@ try-fake: build ## 偽の GitHub / LLM に向けて、ビルド済みの etoki �
 	wait -n
 
 build-api:
-	go build -o $(BINARY) ./cmd/etoki
+	go build -ldflags "$(GO_LDFLAGS)" -o $(BINARY) ./cmd/etoki
+
+dist: build-web ## 配布物（linux / darwin のアーカイブ）を dist/ に作る。版は VERSION（既定は git describe）
+	@# 道具は devShell のものだけを使う（ADR 0002）。Dockerfile はここで作った
+	@# linux の 2 つを詰めるだけで、自分ではビルドしない（ADR 0099）。
+	@# CGO を切るのは、SQLite（modernc）が純 Go で、ほかの OS / CPU 向けにも
+	@# そのまま組めるため。-trimpath は、手元のパスをバイナリに残さないため。
+	@# Go の依存のライセンスは対象ごとに写す。焼かれる依存は GOOS / GOARCH で
+	@# 変わりうる。etoki 自身は LICENSE を置くので外す。go-licenses の警告
+	@# （アセンブリを読めない、など）は落ちたときだけ見せる。
+	@# go-licenses は LICENSE しか写さないので、モジュールの根にある NOTICE 類
+	@# （取り込んだコードの表示）は別に写す。Go 本体（標準ライブラリ）は
+	@# go-licenses が数えず、Nix の Go は LICENSE を持たないので、Go の
+	@# リポジトリから写したもの（third_party/go/LICENSE）を置く。
+	@if [ -z "$(VERSION)" ]; then \
+		echo "VERSION が空です。git の外で作るなら VERSION=… を渡してください"; exit 1; \
+	fi
+	rm -rf "$(DIST_DIR)"
+	@set -e; for target in $(DIST_TARGETS); do \
+		os=$${target%/*}; arch=$${target#*/}; \
+		root="$(DIST_DIR)/$${os}_$${arch}"; dir="$$root/etoki"; \
+		echo "dist: $$os/$$arch"; \
+		mkdir -p "$$dir"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
+			go build -trimpath -ldflags "$(GO_LDFLAGS)" -o "$$dir/etoki" ./cmd/etoki; \
+		cp -R $(WEB_DIR)/dist "$$dir/web"; \
+		cp LICENSE "$$dir/LICENSE"; \
+		GOOS=$$os GOARCH=$$arch go-licenses save ./cmd/etoki --save_path "$$dir/licenses" \
+			--ignore github.com/yusuke0610/etoki 2>"$$root/go-licenses.log" \
+			|| { cat "$$root/go-licenses.log"; exit 1; }; \
+		GOOS=$$os GOARCH=$$arch go list -deps -f '{{with .Module}}{{.Path}} {{.Dir}}{{end}}' ./cmd/etoki \
+			| sort -u | while read -r mod moddir; do \
+				[ "$$mod" = github.com/yusuke0610/etoki ] && continue; \
+				for f in "$$moddir"/NOTICE* "$$moddir"/THIRD-PARTY-NOTICES*; do \
+					[ -f "$$f" ] || continue; \
+					mkdir -p "$$dir/licenses/$$mod"; \
+					cp "$$f" "$$dir/licenses/$$mod/"; \
+				done; \
+			done; \
+		mkdir -p "$$dir/licenses/go"; \
+		cp third_party/go/LICENSE "$$dir/licenses/go/LICENSE"; \
+		tar -C "$$root" -czf "$(DIST_DIR)/etoki_$(VERSION)_$${os}_$${arch}.tar.gz" etoki; \
+	done
+	@# DB の置き場所の雛形。Dockerfile が持ち主ごと写す（RUN を置かないため）。
+	mkdir -p "$(DIST_DIR)/data"
+	cd "$(DIST_DIR)" && sha256sum etoki_*.tar.gz > checksums.txt
+
+image: dist ## dist/ の linux の配布物を、コンテナイメージに詰める（ホストの docker を使う）
+	@# docker は devShell に入れない。デーモンはホストのもので、gh と同じ扱い
+	@# （ADR 0002 の追記）。イメージの CPU は docker の既定（ホストと同じ）。
+	docker build -t "etoki:$(VERSION)" .
+
+image-check: image ## イメージが起動し、版・/healthz・画面を返すかを確かめる（ホストの docker を使う）
+	@# 手元に docker のデーモンが無くても PR で確かめられるよう、リリースの
+	@# ワークフローもこれを通る（ADR 0099）。DB は使い捨てのボリュームに作り、
+	@# ホストの空いているポートにだけ出す。落ちても片付けてから抜ける。
+	@name="etoki-check-$$$$"; \
+	cleanup() { \
+		status=$$?; \
+		trap - EXIT INT TERM; \
+		docker rm -f "$$name" >/dev/null 2>&1 || :; \
+		docker volume rm "$$name" >/dev/null 2>&1 || :; \
+		exit "$$status"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	docker run --rm "etoki:$(VERSION)" version | grep -qxF "etoki $(VERSION)" \
+		|| { echo "image-check: etoki version が $(VERSION) を言わない"; exit 1; }; \
+	docker volume create "$$name" >/dev/null; \
+	docker run --rm -v "$$name:/var/lib/etoki" "etoki:$(VERSION)" migrate; \
+	docker run -d --name "$$name" -p 127.0.0.1::8080 -v "$$name:/var/lib/etoki" \
+		"etoki:$(VERSION)" >/dev/null; \
+	port=$$(docker port "$$name" 8080/tcp | head -n 1 | sed 's/.*://'); \
+	for _ in $$(seq 1 30); do \
+		curl -fsS -o /dev/null "http://127.0.0.1:$$port/healthz" 2>/dev/null && break; \
+		sleep 1; \
+	done; \
+	curl -fsS "http://127.0.0.1:$$port/healthz" | grep -qF '"version":"$(VERSION)"' \
+		|| { echo "image-check: /healthz が $(VERSION) を言わない"; docker logs "$$name"; exit 1; }; \
+	curl -fsS -o /dev/null "http://127.0.0.1:$$port/" \
+		|| { echo "image-check: 画面（ETOKI_WEB_DIR）が配られていない"; docker logs "$$name"; exit 1; }; \
+	echo "image-check: etoki:$(VERSION) は起動し、版と画面を返した"
 
 build-web:
 	cd $(WEB_DIR) && bun run build
@@ -281,7 +374,7 @@ clean: ## 生成物を削除する（etoki.db には触らない）
 	@# DB は生成物ではなく利用者のデータ。sync_runs / sync_items は作成の瞬間に
 	@# 控えたもので取り直せない（ADR 0023）。ビルドをやり直すつもりの 1 コマンドで
 	@# 消えないよう、消すのは reset-db に分けてある。
-	rm -rf $(BIN_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
+	rm -rf $(BIN_DIR) $(DIST_DIR) $(WEB_DIR)/dist $(WEB_DIR)/node_modules $(WEB_DIR)/e2e-output
 
 reset-db: ## ボードと作成の記録（etoki.db）を消す。etoki を止めて CONFIRM=1 を付ける
 	@# 名前と説明で「データを消す」と分かるだけでは足りない。補完や履歴から

@@ -1,6 +1,8 @@
 # build artifacts
 /bin/
 /web/dist/
+# make dist の配布物（ADR 0099）
+/dist/
 # 先頭に / を付けず、どの階層の node_modules も無視する。依存があるのは
 # web/ だけだが、リポジトリのルートで vitest を叩くと実行キャッシュを持つ
 # node_modules/ ができ、/web/ に絞った書き方では拾えずコミットに混ざる。
