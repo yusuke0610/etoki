@@ -731,15 +731,32 @@ func TestCreateBoard_StartsWithTarget(t *testing.T) {
 	}
 }
 
-// 作成先を省いたら作れない。「ボードの作成にはリポジトリへのアクセス権が
-// 要る」を、この 1 本で守っている（ADR 0017）。
-func TestCreateBoard_RequiresTarget(t *testing.T) {
+// 作成先は丸ごと省ける（ADR 0100）。GitHub のある構成でも、描く前に作成先を
+// 求めない。
+func TestCreateBoard_AcceptsNoTarget(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newCreateRouter(t, &stubGitHub{})
+
+	rec := do(t, r, http.MethodPost, "/api/boards", map[string]string{"name": "設計会"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (%s)", rec.Code, rec.Body)
+	}
+	got := decode[map[string]any](t, rec)
+	if got["repositoryOwner"] != "" || got["repositoryName"] != "" || got["projectId"] != "" {
+		t.Errorf("作成先 = %v/%v/%v, want 未選択（すべて空）",
+			got["repositoryOwner"], got["repositoryName"], got["projectId"])
+	}
+}
+
+// 一部だけ送った作成先は弾く。通すと、選んでいないのに選びかけの値を持つ
+// ボードができる。
+func TestCreateBoard_RejectsPartialTarget(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newCreateRouter(t, &stubGitHub{})
 
 	for name, body := range map[string]map[string]string{
-		"作成先が無い":      {"name": "設計会"},
 		"project が無い": {"name": "設計会", "repositoryOwner": "acme", "repositoryName": "web"},
 		"リポジトリが無い":    {"name": "設計会", "projectId": "PVT_1"},
 	} {

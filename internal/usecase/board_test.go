@@ -22,31 +22,13 @@ func newTarget() port.BoardTarget {
 	}
 }
 
-// 作成先は必須（ADR 0017）。「ボードの作成にはリポジトリへのアクセス権が要る」
-// はこの形で満たしている。既定のまま省けると、GitHub のある構成で要件 1 が外れる。
-func TestBoardCreate_RequiresTargetByDefault(t *testing.T) {
+// どの構成でも、作成先を選ばずに作れる（ADR 0100）。描く前に draft issue の
+// 行き先を決めさせない。作成先が要るのは draft issue を作るときだけ。
+func TestBoardCreate_AcceptsNoTarget(t *testing.T) {
 	t.Parallel()
 
 	boards := &fakeBoards{}
 	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
-
-	_, err := svc.Create(t.Context(), "設計会", "", port.BoardTarget{})
-	if !errors.Is(err, usecase.ErrInvalidInput) {
-		t.Fatalf("Create() = %v, want ErrInvalidInput", err)
-	}
-	if boards.writes != 0 {
-		t.Errorf("作成先が無いのに書き込んでいる: writes = %d", boards.writes)
-	}
-}
-
-// GitHub を組み立てていない構成では、作成先を選ばずに作れる（ADR 0090）。
-// 候補を引けないので、必須のままだとブレストを 1 枚も始められない。
-func TestBoardCreate_WithoutRequiredTargetAcceptsNoTarget(t *testing.T) {
-	t.Parallel()
-
-	boards := &fakeBoards{}
-	svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
-		usecase.WithoutRequiredTarget())
 
 	b, err := svc.Create(t.Context(), "設計会", "", port.BoardTarget{})
 	if err != nil {
@@ -62,7 +44,7 @@ func TestBoardCreate_WithoutRequiredTargetAcceptsNoTarget(t *testing.T) {
 
 // 省けるのは丸ごと空のときだけ。一部だけ送られた作成先は弾く。通すと、
 // 選んでいないのに選びかけの値を持つボードができる。
-func TestBoardCreate_WithoutRequiredTargetRejectsPartialTarget(t *testing.T) {
+func TestBoardCreate_RejectsPartialTarget(t *testing.T) {
 	t.Parallel()
 
 	for name, target := range map[string]port.BoardTarget{
@@ -74,8 +56,7 @@ func TestBoardCreate_WithoutRequiredTargetRejectsPartialTarget(t *testing.T) {
 			t.Parallel()
 
 			boards := &fakeBoards{}
-			svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks(),
-				usecase.WithoutRequiredTarget())
+			svc := usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks())
 
 			_, err := svc.Create(t.Context(), "設計会", "", target)
 			if !errors.Is(err, usecase.ErrInvalidInput) {
@@ -88,14 +69,13 @@ func TestBoardCreate_WithoutRequiredTargetRejectsPartialTarget(t *testing.T) {
 	}
 }
 
-// 省けるようにしても、選んだ作成先はそのまま持たせる。GitHub が無い構成で
-// 作成先を送ってくるのは画面の外の呼び出しだけだが、捨てると送った値が消えた
-// ことに呼び出し側が気づけない。
-func TestBoardCreate_WithoutRequiredTargetKeepsSelectedTarget(t *testing.T) {
+// 省けるようにしても、送られた作成先はそのまま持たせる。画面は作成先を
+// 送らないが、API を直接叩く呼び出しの値を捨てると、送った値が消えたことに
+// 呼び出し側が気づけない。
+func TestBoardCreate_KeepsSelectedTarget(t *testing.T) {
 	t.Parallel()
 
-	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{}, usecase.NewBoardLocks(),
-		usecase.WithoutRequiredTarget())
+	svc := usecase.NewBoardService(&fakeBoards{}, &fakeMappings{}, usecase.NewBoardLocks())
 
 	b, err := svc.Create(t.Context(), "設計会", "", newTarget())
 	if err != nil {
