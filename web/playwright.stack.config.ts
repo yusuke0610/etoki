@@ -49,9 +49,13 @@ export default defineConfig({
   webServer: {
     // 起動の手順は `make try-fake` と同じ fake-stack を通す（ADR 0097）。ビルドは
     // `make test-e2e-stack` が先に済ませている。
-    command: "make --no-print-directory fake-stack",
+    //
+    // **アドレスは環境変数ではなく make の引数で渡す。** `make test-e2e-stack
+    // ETOKI_ADDR=…` と呼ばれると、その指定は MAKEFLAGS で子の make にも届き、
+    // 環境変数より強い。スクリプトが立てる先と、ここが待つ・spec が繋ぐ先が
+    // ずれる。子の make の引数はそれより強いので、ここの値で揃う。
+    command: `make --no-print-directory fake-stack ETOKI_ADDR=${STACK_ADDR} FAKE_ADDR=${FAKE_ADDR}`,
     cwd: "..",
-    env: { ETOKI_ADDR: STACK_ADDR, FAKE_ADDR },
     // **待つのは自分で立てた 2 つが応答したという行。** URL の応答では待たない
     // （`url` も `reuseExistingServer` も書かない）。書くと、同じポートで別の
     // チェックアウトが動かしている etoki が応答した時点で始まり、そちらの
