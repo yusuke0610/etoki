@@ -53,6 +53,9 @@ func TestEval(t *testing.T) {
 		endpoint:  endpointOf(cmp.Or(cfg.BaseURL, llm.DefaultBaseURL)),
 		commit:    os.Getenv("ETOKI_EVAL_COMMIT"),
 	}
+	// 何に向けて回すかを最初に出す。.env が別の向け先を指していたら、そこで
+	// 止められる（1 ケース目の呼び出しは、出した直後に始まる）。
+	t.Logf("向け先 %s のモデル %s で、%d ケースを絵解きます", report.endpoint, report.model, len(cases))
 	// 1 ケースずつ順に回す。並べると、時間の欄が上流の混み具合を測ることになる。
 	for _, c := range cases {
 		t.Logf("%s を絵解いています", c.name)

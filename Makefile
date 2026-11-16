@@ -201,15 +201,19 @@ test-e2e: ## Playwright で E2E テストを実行する（test には含めな�
 	@# ここの画像を報告に添える（web/CLAUDE.md の「報告にブラウザの実行結果を添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
 
-eval: ## 絵解きの質を評価セットで測る（本物の LLM を呼び、課金される。CASE= で 1 ケース）
+eval: ## 絵解きの質を評価セットで測る（本物の LLM を呼び、課金される。CASE= で 1 ケース、MODEL= でモデル）
 	@# test にも CI にも入れない（ADR 0098）。鍵と課金が要り、結果はモデルの版で
 	@# 変わる。報告は tmp/eval/ に書き、採点は人が付ける。向け先はサーバーと同じ
 	@# ETOKI_LLM_* なので、$(ENV_FILE) も読む。
+	@# MODEL は $(ENV_FILE) を読んだあとに当てる。環境変数で渡すと、$(ENV_FILE) に
+	@# 書いた ETOKI_LLM_MODEL がそれを上書きし、別のモデルで回したことに課金の
+	@# あとで気づく。
 	@# -count=1 はテストの結果の使い回しを止める。使い回すと LLM を呼ばずに前の
 	@# 「通った」が出る。-timeout 0 は、1 回の呼び出しが数分かかりうるため
 	@# （go test の既定の 10 分を越える）。コミットの印に追跡外のファイルも
 	@# 数えるのは、まだコミットしていないケースで回すことがあるため。
-	$(LOAD_ENV) ETOKI_EVAL_OUT="$(CURDIR)/tmp/eval" ETOKI_EVAL_CASE="$(CASE)" \
+	$(LOAD_ENV) $(if $(MODEL),ETOKI_LLM_MODEL="$(MODEL)") \
+		ETOKI_EVAL_OUT="$(CURDIR)/tmp/eval" ETOKI_EVAL_CASE="$(CASE)" \
 		ETOKI_EVAL_COMMIT="$$(git rev-parse --short HEAD)$$(test -z "$$(git status --porcelain)" || echo '+手元の変更')" \
 		go test -tags eval -run '^TestEval$$' -count=1 -timeout 0 -v ./internal/usecase/
 

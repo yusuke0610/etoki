@@ -208,8 +208,9 @@ make try-fake   # 偽の上流（:8090）と、それに向けた etoki（:8080�
 **課金されます。** 向け先はサーバーと同じ `ETOKI_LLM_*` で、`.env` も読みます。
 
 ```sh
-make eval             # 報告は tmp/eval/ に書く
-make eval CASE=todo   # 1 ケースだけ回す
+make eval                          # 報告は tmp/eval/ に書く
+make eval CASE=todo                # 1 ケースだけ回す
+make eval MODEL=claude-haiku-5-5   # モデルを変える（.env の指定より優先する）
 ```
 
 採点の見方とケースの足し方は

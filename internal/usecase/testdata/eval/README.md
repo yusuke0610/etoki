@@ -13,6 +13,10 @@ CI にも入らない。
 - 向け先はサーバーと同じ `ETOKI_LLM_BASE_URL` / `ETOKI_LLM_API_KEY` /
   `ETOKI_LLM_MODEL`。`.env` も読む。
 - 1 ケースだけ回すなら `make eval CASE=todo`（ディレクトリ名）。
+- モデルを変えるなら `make eval MODEL=claude-haiku-5-5`。`.env` に書いた
+  `ETOKI_LLM_MODEL` より優先する。環境変数で渡すと `.env` のほうが勝つ。
+- 回し始めに、向け先とモデルを出す。違っていたら Ctrl-C で止める（1 ケース目の
+  呼び出しは、出した直後に始まる）。
 - プロンプトの組み立て・出力の検査・再送・ジョブの上限は、本番と同じものを
   通る。
 
