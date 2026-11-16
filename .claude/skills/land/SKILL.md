@@ -93,10 +93,13 @@ usecase テストがコンパイルできなくなった（#373 → #374）。�
 40 桁と違っていたら、マージせずに条件の判定とユーザーの確認からやり直す。**
 base や `mergeable` が違っていたら、表を作り直す。**`status.sh` に
 `=> full review 0 件` と `ci=緑` が出なくなっていたら、マージせずに止めて、表と
-確認を作り直す。**
+確認を作り直す。** Dependabot の PR には `=> full review 0 件` が出ない（依頼
+しない）ので、`ci=緑` と、CI が走った main がいまの main と同じこと（1 の
+「CI が、いまの main とのマージ結果で走っている」）を見る。中身の確かめは head が
+同じなら済んでいる（下の「Dependabot の PR」）。
 
 ```sh
-.claude/skills/pr-watch/status.sh <番号>   # => full review 0 件 と ci=緑 が出ているか
+.claude/skills/pr-watch/status.sh <番号>   # => full review 0 件 と ci=緑 が出ているか（Dependabot は ci=緑）
 gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq '"\(.head.sha) \(.base.ref) \(.mergeable)"'
 # sha を渡すと、確かめた head から動いていたときに GitHub が断る。
 # status.sh が出すのは先頭 7 桁なので、上で取り直した 40 桁を渡す。
