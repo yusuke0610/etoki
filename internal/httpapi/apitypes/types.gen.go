@@ -1151,6 +1151,14 @@ type Granularity string
 type HealthResponse struct {
 	// Status Example: ok
 	Status string `json:"status"`
+
+	// Version 動いている etoki の版（ADR 0099）。make がビルド時に
+	// `git describe --tags --always --dirty` で埋める。埋めずに作ったものは、
+	// Go がビルド時に埋めた値か `(devel)` を返す。
+	//
+	//
+	// Example: v0.1.0
+	Version string `json:"version"`
 }
 
 // InterpretRequest 解釈のリクエストボディ。テキストは保存済みシーンから取るので、ここには
