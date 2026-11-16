@@ -92,10 +92,11 @@
 | [0087](0087-split-llm-call-failures-by-remedy.md)                | LLM の呼び出しの失敗は、打ち手ごとに code を分ける                           | 採用                 |
 | [0088](0088-check-project-fields-when-choosing.md)               | 作成先を選んだときに、作成に要るフィールドが揃っているかを見せる             | 採用                 |
 | [0089](0089-save-button-while-unsaved.md)                        | 保存だけの口を、未保存のあいだ「未保存」の隣にボタンで出す                   | 採用                 |
-| [0090](0090-boards-without-target-when-github-is-unset.md)       | GitHub を設定していない構成では、作成先を選ばずにボードを作れる              | 採用                 |
+| [0090](0090-boards-without-target-when-github-is-unset.md)       | GitHub を設定していない構成では、作成先を選ばずにボードを作れる              | 置き換え済み（0100） |
 | [0091](0091-diagram-draft-as-server-side-job.md)                 | 図のドラフト生成もサーバー側のジョブにし、会話はジョブの入力から戻す         | 採用                 |
 | [0092](0092-only-scene-saves-advance-the-version.md)             | 版を進めるのはシーンの保存だけにし、ほかの書き込みの応答の版は基準にしない   | 採用                 |
 | [0093](0093-board-premise-for-interpretation.md)                 | 解釈に添える背景をボードに持たせ、ハッシュには入れない                       | 採用                 |
 | [0094](0094-usage-guide-on-demand.md)                            | 使い方は押したときだけ開くダイアログに置き、心得を手順より先に書く           | 採用                 |
 | [0095](0095-clean-drawing-style.md)                              | 線を揺らさず、書体を Excalifont から外す                                     | 採用                 |
 | [0096](0096-pass-arrow-connections-to-interpretation.md)         | 人がつないだ矢印の結び先は、解釈に文字でも渡す                               | 採用                 |
+| [0100](0100-choose-target-after-drawing.md)                      | ボードは作成先を選ばずに作り、作成先は描いたあとでボードの上から選ぶ         | 採用                 |
