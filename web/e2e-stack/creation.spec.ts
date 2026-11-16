@@ -52,7 +52,10 @@ test("作って、文字を直して保存すると変更ありになり、絵�
   // 偽の LLM は epic 1 件とその子の issue 2 件を返す（`internal/fakeupstream/llm.go`）。
   expect(created.map((item) => item.kind)).toEqual(["epic", "issue", "issue"]);
   const epic = created[0] as FakeItem;
-  expect(epic.title).toContain(`${word} 前`);
+  // 偽の LLM は epic にも issue にも囲みの文字をタイトルに入れる。
+  for (const item of created) {
+    expect(item.title).toContain(`${word} 前`);
+  }
   expect(epic.parent).toBe("");
   // 親は epic のタイトルで指す（ADR 0006）。
   expect(created.slice(1).map((item) => item.parent)).toEqual([epic.title, epic.title]);
@@ -78,8 +81,12 @@ test("作って、文字を直して保存すると変更ありになり、絵�
   expect(updated.map((item) => item.id)).toEqual(created.map((item) => item.id));
   expect(updated.map((item) => item.updates)).toEqual([1, 1, 1]);
   const newEpic = updated[0] as FakeItem;
-  expect(newEpic.title).toContain(`${word} 後`);
-  expect(newEpic.title).not.toContain(`${word} 前`);
+  // **issue のタイトルも見る。** `updates` は書き込みの回数なので、古いタイトルを
+  // 送り直しても増える。epic だけを見ると、子の書き換え漏れが通る。
+  for (const item of updated) {
+    expect(item.title).toContain(`${word} 後`);
+    expect(item.title).not.toContain(`${word} 前`);
+  }
   // 子の Parent も新しい epic のタイトルへ張り直される。
   expect(updated.slice(1).map((item) => item.parent)).toEqual([
     newEpic.title,
