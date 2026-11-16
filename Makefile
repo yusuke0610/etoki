@@ -90,7 +90,8 @@ ENV_FILE := .env
 LOAD_ENV := set -a; [ -f $(ENV_FILE) ] && . ./$(ENV_FILE); set +a;
 
 .PHONY: help setup dev dev-api dev-web build build-api build-web start try-fake \
-        test test-go test-web test-scripts test-e2e lint lint-go lint-web lint-docs lint-fmt \
+        test test-go test-web test-scripts test-e2e eval eval-images \
+        lint lint-go lint-web lint-docs lint-fmt \
         lint-nix lint-actions lint-sh fmt \
         codegen codegen-go codegen-web migrate token-report mutate clean reset-db vulncheck
 
@@ -121,9 +122,9 @@ dev: ## バックエンドとフロントエンドを同時に起動する
 	wait
 
 dev-api: ## バックエンドのみ起動する（ホットリロード有効）
-	@# 鍵が要るのはサーバーだけなので、$(ENV_FILE) を読むのもサーバーを起動する
-	@# ターゲット（dev-api と start）だけにする。migrate は ETOKI_DB_PATH しか
-	@# 要らず、それは DB_PATH で渡している。
+	@# 鍵が要るのはサーバーと評価だけなので、$(ENV_FILE) を読むのもその
+	@# ターゲット（dev-api と start と eval）だけにする。migrate は ETOKI_DB_PATH
+	@# しか要らず、それは DB_PATH で渡している。
 	$(LOAD_ENV) air
 
 dev-web: ## フロントエンドのみ起動する（ホットリロード有効）
@@ -199,6 +200,24 @@ test-e2e: ## Playwright で E2E テストを実行する（test には含めな�
 	@# 実行のたびに web/e2e-output/screenshots/ が作り直される。UI を変えたときは
 	@# ここの画像を報告に添える（web/CLAUDE.md の「報告にブラウザの実行結果を添える」）。
 	cd $(WEB_DIR) && bun run test:e2e
+
+eval: ## 絵解きの質を評価セットで測る（本物の LLM を呼び、課金される。CASE= で 1 ケース）
+	@# test にも CI にも入れない（ADR 0098）。鍵と課金が要り、結果はモデルの版で
+	@# 変わる。報告は tmp/eval/ に書き、採点は人が付ける。向け先はサーバーと同じ
+	@# ETOKI_LLM_* なので、$(ENV_FILE) も読む。
+	@# -count=1 はテストの結果の使い回しを止める。使い回すと LLM を呼ばずに前の
+	@# 「通った」が出る。-timeout 0 は、1 回の呼び出しが数分かかりうるため
+	@# （go test の既定の 10 分を越える）。コミットの印に追跡外のファイルも
+	@# 数えるのは、まだコミットしていないケースで回すことがあるため。
+	$(LOAD_ENV) ETOKI_EVAL_OUT="$(CURDIR)/tmp/eval" ETOKI_EVAL_CASE="$(CASE)" \
+		ETOKI_EVAL_COMMIT="$$(git rev-parse --short HEAD)$$(test -z "$$(git status --porcelain)" || echo '+手元の変更')" \
+		go test -tags eval -run '^TestEval$$' -count=1 -timeout 0 -v ./internal/usecase/
+
+eval-images: ## 評価セットの画像を、画面の書き出しと同じ経路で作り直す（CASE= で 1 ケース）
+	@# 画像は絵解くときに画面が囲みから書き出すもの（ADR 0018）。Go で描き直すと
+	@# 本番で渡す画像と別物になるので、E2E のモックの上で「絵解く」を押し、送られた
+	@# 画像をそのまま書く（ADR 0098）。make test-e2e では飛ばす。
+	cd $(WEB_DIR) && ETOKI_EVAL_IMAGES=1 ETOKI_EVAL_CASE="$(CASE)" bun run test:e2e e2e/evalImages.spec.ts
 
 lint: lint-go lint-web lint-docs lint-fmt lint-nix lint-actions lint-sh ## Go / フロントエンド / Markdown / Nix / Actions / シェルと整形を検査する
 

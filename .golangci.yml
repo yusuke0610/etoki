@@ -1,6 +1,13 @@
 # golangci-lint v2 形式。v1 とはキー構成が異なるので注意。
 version: "2"
 
+run:
+  # make eval だけが回す評価の入口（internal/usecase/evalset_real_test.go、
+  # ADR 0098）も検査する。タグを渡さないと型の誤りまで見逃し、課金して回した日に
+  # 初めてコンパイルで落ちる。
+  build-tags:
+    - eval
+
 linters:
   default: standard
   enable:

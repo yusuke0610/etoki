@@ -201,6 +201,21 @@ make try-fake   # 偽の上流（:8090）と、それに向けた etoki（:8080�
 - **本物の GitHub と一致していること。** 偽物が合わせているのは etoki の
   アダプタが送るリクエストだけです。
 
+### 絵解きの質を測る
+
+代表的なボードと、そこから作ってほしいものの組（評価セット）を本物の LLM で
+絵解き、採点用の報告を書けます（[ADR 0098](docs/adr/0098-human-scored-eval-set.md)）。
+**課金されます。** 向け先はサーバーと同じ `ETOKI_LLM_*` で、`.env` も読みます。
+
+```sh
+make eval             # 報告は tmp/eval/ に書く
+make eval CASE=todo   # 1 ケースだけ回す
+```
+
+採点の見方とケースの足し方は
+[`internal/usecase/testdata/eval/README.md`](internal/usecase/testdata/eval/README.md)
+にあります。
+
 ### 鍵を `.env` に置く
 
 毎回 `export` する代わりに、`.env` に置けます。雛形が `.env.example` にあります。
@@ -211,9 +226,10 @@ $EDITOR .env
 make dev
 ```
 
-読むのは `make dev` / `make dev-api` だけです。**etoki のバイナリは環境変数しか
-見ません。** 設定ファイルを読ませると、`cmd/etoki` を写して独自のアダプタを
-差し込む使い方に、その前提まで付いていくためです。
+読むのは `make dev` / `make dev-api` / `make start` / `make eval` だけです。
+**etoki のバイナリは環境変数しか見ません。** 設定ファイルを読ませると、
+`cmd/etoki` を写して独自のアダプタを差し込む使い方に、その前提まで付いて
+いくためです。
 
 そのため `etoki claim` のように make を通さず叩くコマンドには効きません。
 必要なら自分でシェルに読み込ませてください。
