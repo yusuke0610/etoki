@@ -7,6 +7,7 @@ import {
   chooseFromMenu,
   drawRectangle,
   openBoard,
+  picker,
   waitForBoard,
 } from "./helpers/board";
 import {
@@ -248,35 +249,42 @@ test.describe("ボードの URL", () => {
     expect(search(page)).toBe("");
   });
 
-  test.describe("作成先の選び直し", () => {
-    test("選択画面も URL に出て、リロードで戻る", async ({ page }) => {
+  // 作成先を選ぶダイアログ（ADR 0100）。ボードの中のモードなので URL に載せるが、
+  // 履歴には積まない。
+  test.describe("作成先を選ぶダイアログ", () => {
+    test("開いていることも URL に出て、リロードでボードごと開き直す", async ({
+      page,
+    }) => {
       await installApi(page, baseMock());
       await page.goto("/");
       await openBoard(page, BOARD_NAME);
 
       await chooseFromMenu(page, "作成先を変更");
-      await expect(page.locator(".picker")).toBeVisible();
+      await expect(picker(page)).toBeVisible();
       expect(search(page)).toBe(`?board=${BOARD_ID}&picking=1`);
 
       await page.reload();
-      await expect(page.locator(".picker")).toBeVisible();
+      // ダイアログはボードの上に開く。下のボードも出ている。
+      await waitForBoard(page, BOARD_NAME);
+      await expect(picker(page)).toBeVisible();
     });
 
-    test("引き返すと URL からも消える", async ({ page }) => {
+    test("閉じると URL からも消え、ボードはそのまま", async ({ page }) => {
       await installApi(page, baseMock());
       await page.goto(`/?board=${BOARD_ID}&picking=1`);
-      await expect(page.locator(".picker")).toBeVisible();
+      await expect(picker(page)).toBeVisible();
 
-      await page.getByRole("button", { name: "やめる" }).click();
-      // **見出しでは待たない。** 選択画面も同じ名前の h1 を出すので、戻る前に
-      // 通る。戻るのはボードを取り直してから（#241）。
+      await picker(page).getByRole("button", { name: "やめる" }).click();
+
+      await expect(picker(page)).toBeHidden();
       await waitForBoard(page, BOARD_NAME);
-      expect(search(page)).toBe(`?board=${BOARD_ID}`);
+      // URL を書き換えるのは `close` イベントで、閉じた直後の次のタスクに届く。
+      await expect.poll(() => search(page)).toBe(`?board=${BOARD_ID}`);
     });
 
     // 作成先を変えられるのは owner だけ（ADR 0017）。**URL から入る口だけを
     // 緩めない。** 緩めると、画面から押せないはずの操作にそこからだけ入れる。
-    test("viewer は URL から選択画面に入れない", async ({ page }) => {
+    test("viewer は URL から作成先を選ぶダイアログに入れない", async ({ page }) => {
       const mock = baseMock();
       mock.details[BOARD_ID] = { ...board(), role: "viewer" };
       mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
@@ -287,14 +295,16 @@ test.describe("ボードの URL", () => {
       await expect(
         page.getByRole("heading", { name: BOARD_NAME, level: 1 }),
       ).toBeVisible();
-      await expect(page.locator(".picker")).toHaveCount(0);
+      await expect(picker(page)).toHaveCount(0);
       // 通らなかった指定は URL からも落とす。残すと、読み込み直すたびに
       // 通らない指定を送り直すことになる。
       expect(search(page)).toBe(`?board=${BOARD_ID}`);
     });
 
     // 固定済みなら変更手段そのものが無い（ADR 0014）。上と同じ穴。
-    test("作成先が固定されていたら URL から選択画面に入れない", async ({ page }) => {
+    test("作成先が固定されていたら URL から作成先を選ぶダイアログに入れない", async ({
+      page,
+    }) => {
       const mock = baseMock();
       mock.details[BOARD_ID] = { ...board(), targetLocked: true };
 
@@ -304,7 +314,7 @@ test.describe("ボードの URL", () => {
       await expect(
         page.getByRole("heading", { name: BOARD_NAME, level: 1 }),
       ).toBeVisible();
-      await expect(page.locator(".picker")).toHaveCount(0);
+      await expect(picker(page)).toHaveCount(0);
       expect(search(page)).toBe(`?board=${BOARD_ID}`);
     });
   });

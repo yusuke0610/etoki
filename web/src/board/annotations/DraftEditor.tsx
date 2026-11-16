@@ -57,6 +57,7 @@ export function DraftEditor({
   creationBlocked,
   projectAccess,
   creationUnavailable,
+  onChooseTarget,
   previous,
   projectLink,
   targetLabel,
@@ -76,6 +77,8 @@ export function DraftEditor({
   projectAccess: ProjectAccess;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
   creationUnavailable: string | null;
+  /** 作成先が未選択のとき、選ぶダイアログを開く。選べない人には null（ADR 0100）。 */
+  onChooseTarget: (() => void) | null;
   /** この注釈が GitHub に在らしめているもの。取り残しの算出に使う。 */
   previous: SyncItem[];
   projectLink: ProjectLink | null;
@@ -222,6 +225,8 @@ export function DraftEditor({
           reasons,
           projectAccess,
           creationUnavailable,
+          targetSelected: targetLabel !== null,
+          onChooseTarget,
           notice,
           onCreate: () => onCreate(buildInterpretation(draft)),
         })}

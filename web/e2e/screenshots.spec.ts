@@ -6,8 +6,8 @@ import {
   annotationCard,
   annotationDetail,
   chooseFromMenu,
-  chooseTarget,
   confirmProject,
+  createNewBoard,
   drawRectangle,
   interpret,
   newBoardDialog,
@@ -17,13 +17,14 @@ import {
   openBoardWithMock,
   openMermaidPaste,
   openPanelTab,
+  openTargetPicker,
   pasteOnCanvas,
   picker,
   saveScene,
-  startNewBoard,
   openPremiseDialog,
   openShareDialog,
   openUsageGuide,
+  waitForBoard,
 } from "./helpers/board";
 import {
   ANNOTATION_IDS,
@@ -172,7 +173,8 @@ test.describe("スクリーンショット", () => {
     await shot(page, "05-interpret-unsaved");
   });
 
-  // ブレストに入る前の画面。作成先を選ばないとキャンバスが出ない（ADR 0014）。
+  // 作成先はボードを作ったあとで、ボードの上のダイアログで選ぶ（ADR 0100）。
+  // 未選択のボードもキャンバスをそのまま開き、下の帯に「作成先: 未選択」と出る。
   test("作成先の選択を撮る", async ({ page }) => {
     const mock = baseMock();
     const board = unselectedBoard();
@@ -183,26 +185,63 @@ test.describe("スクリーンショット", () => {
     await installApi(page, mock);
 
     await page.goto("/");
-    await page.locator(".board-list").getByRole("button", { name: board.name }).click();
-    await page.getByRole("heading", { name: "リポジトリ" }).waitFor();
+    await openBoard(page, board.name);
+    await shot(page, "05-target-unselected");
+
+    await openTargetPicker(page);
+    await picker(page).getByRole("heading", { name: "リポジトリ" }).waitFor();
     await shot(page, "05-target-repositories");
 
     await picker(page)
       .getByRole("button", { name: /acme\/web/ })
       .click();
-    await page.getByRole("button", { name: "#1 ロードマップ" }).waitFor();
+    await picker(page).getByRole("button", { name: "#1 ロードマップ" }).waitFor();
     await shot(page, "06-target-projects");
 
     await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
     await picker(page).getByText("作成に要るフィールドが揃っています").waitFor();
     await shot(page, "06-target-project-chosen");
     await confirmProject(page);
-    await page.locator(".badge-target").waitFor();
-    // バッジはキャンバスより先に出る。ここで待たないと Excalidraw の
-    // 「Loading scene...」を撮ってしまい、報告に使えない画像になる。
-    await page.locator(".excalidraw canvas").first().waitFor();
-    await page.getByRole("heading", { name: "絵解いた", level: 2 }).waitFor();
+    await expect(picker(page)).toBeHidden();
+    await expect(page.locator(".badge-target")).toHaveText("acme/web › #1 ロードマップ");
     await shot(page, "07-target-selected");
+  });
+
+  // 描いて絵解いてから作成先を選ぶ流れ（ADR 0100）。作成の帯は「GitHub に作成する」
+  // の代わりに「作成先を選ぶ」を出し、選ぶあいだも絵解きの結果はダイアログの
+  // 下に残っている。
+  test("絵解いたあとで作成先を選ぶ流れを撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = {
+      ...board(),
+      repositoryOwner: "",
+      repositoryName: "",
+      projectId: "",
+      projectNumber: 0,
+      projectTitle: "",
+      projectUrl: "",
+    };
+    await openBoardWithMock(page, mock);
+
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(annotationCard(page, "ログイン"));
+    const choose = detail.getByRole("button", { name: "作成先を選ぶ" });
+    await choose.waitFor();
+    await shot(page, "08-target-choose-from-band");
+
+    await choose.click();
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .waitFor();
+    await shot(page, "08-target-dialog-over-result");
+
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+    await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+    await confirmProject(page);
+    await detail.getByRole("button", { name: "GitHub に作成する" }).waitFor();
+    await shot(page, "08-target-chosen-ready-to-create");
   });
 
   // 候補を取り切っていない状態（ADR 0054）。打ち切りの知らせと絞り込みが
@@ -216,11 +255,11 @@ test.describe("スクリーンショット", () => {
     mock.repositories = { status: 200, body: { ...repositories(), truncated: true } };
 
     await installApi(page, mock);
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");
-    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
-    await page.getByText("一覧を打ち切っています").waitFor();
+    await openBoard(page, target.name);
+    await openTargetPicker(page);
+    await picker(page).getByText("一覧を打ち切っています").waitFor();
     await shot(page, "20-target-truncated");
   });
 
@@ -245,7 +284,8 @@ test.describe("スクリーンショット", () => {
     await installApi(page, mock);
 
     await page.goto("/");
-    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+    await openBoard(page, target.name);
+    await openTargetPicker(page);
 
     await picker(page)
       .getByRole("button", { name: /acme\/api/ })
@@ -256,7 +296,7 @@ test.describe("スクリーンショット", () => {
     await picker(page)
       .getByRole("button", { name: /acme\/web/ })
       .click();
-    await page.getByRole("alert").waitFor();
+    await picker(page).getByRole("alert").waitFor();
     await shot(page, "55-target-projects-forbidden");
   });
 
@@ -285,7 +325,8 @@ test.describe("スクリーンショット", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+    await openBoard(page, target.name);
+    await openTargetPicker(page);
     await picker(page)
       .getByRole("button", { name: /acme\/web/ })
       .click();
@@ -331,12 +372,13 @@ test.describe("スクリーンショット", () => {
   });
 
   // キャンバスのメニュー（ADR 0065）。たまに押す操作と、押せない理由の文
-  // （ADR 0066）がここに入る。未保存にして、理由が出ている状態を撮る。
+  // （ADR 0066）がここに入る。保存を止めて、取り込めない理由が出ている状態を撮る。
   test("キャンバスのメニューを撮る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
-    await drawRectangle(page);
+    await holdSave(page, new Promise<void>(() => {}));
+    await saveScene(page);
     const menu = await openBoardMenu(page);
-    await menu.getByText("保存してから作成先を変更できます").waitFor();
+    await menu.getByText("保存が終わるまで取り込めません").waitFor();
     await shot(page, "37-board-menu");
   });
 
@@ -350,15 +392,6 @@ test.describe("スクリーンショット", () => {
     const menu = await openBoardMenu(page);
     await menu.getByText("作成先は確定（draft issue を作成済み）").waitFor();
     await shot(page, "37-board-menu-locked");
-  });
-
-  // 押せない理由は title ではなく本文で出す。ホバーできない利用者と読み上げにも
-  // 届く必要がある。見た目の話でもあるので撮る。
-  test("作成先を変更できない状態を撮る", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
-    await drawRectangle(page);
-    await page.getByText("未保存", { exact: true }).waitFor();
-    await shot(page, "08-target-change-blocked");
   });
 
   // 他の人が先に保存した状態（ADR 0020）。上書きしなかったことと、この後どう
@@ -465,27 +498,17 @@ test.describe("スクリーンショット", () => {
     await shot(page, "21-not-configured");
   });
 
-  // GitHub が未設定の構成（ADR 0090、#297）。新しいボードは作成先を選ばずに
-  // 作るので、ダイアログの主となる操作が「作成」になり、そのことを言う文が出る。
-  test("GitHub が未設定のときの新しいボードのダイアログを撮る", async ({ page }) => {
-    const mock = baseMock();
-    mock.capabilities = {
-      status: 200,
-      body: {
-        interpretation: false,
-        diagramDraft: false,
-        creation: false,
-        sharing: false,
-        mcpConnections: false,
-      },
-    };
-    await installApi(page, mock);
+  // 新しいボードは作成先を訊かずに作る（ADR 0100）。そのことを押す前に言う文が
+  // ダイアログに出る。
+  test("新しいボードのダイアログを撮る", async ({ page }) => {
+    await installApi(page, baseMock());
     await page.goto("/");
     const dialog = await newBoardDialog(page);
     await dialog.getByLabel("ボード名").fill("ブレスト");
-    // 撮りたいのは未設定の側。capabilities が遅れて届くと、選ぶ側の表示を撮る。
-    await dialog.getByText("作成先は選ばずに作ります", { exact: false }).waitFor();
-    await shot(page, "61-new-board-without-github");
+    await dialog
+      .getByText("draft issue の作成先は、描いたあとでボードから選びます。")
+      .waitFor();
+    await shot(page, "61-new-board");
   });
 
   // 失敗の見せ方（#86）。**打ち手を前に、サーバーの文言は畳んだ側に。**
@@ -505,14 +528,15 @@ test.describe("スクリーンショット", () => {
     await installApi(page, mock);
 
     await page.goto("/");
-    await page.locator(".board-list").getByRole("button", { name: target.name }).click();
+    await openBoard(page, target.name);
+    await openTargetPicker(page);
     await picker(page)
       .getByRole("button", { name: /acme\/web/ })
       .click();
     await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
     await confirmProject(page);
 
-    const alert = page.getByRole("alert");
+    const alert = picker(page).getByRole("alert");
     await alert.waitFor();
     // 畳んだ側に何が入っているかも報告に写す。開いた状態で撮る。
     await alert.locator("summary").click();
@@ -1007,10 +1031,8 @@ test.describe("スクリーンショット", () => {
     await dialog.getByLabel("ひな形").selectOption("sequence");
     await shot(page, "31-template-choice");
 
-    await dialog.getByRole("button", { name: "次へ" }).click();
-    await chooseTarget(page, "acme/web", "#1 ロードマップ");
-    await page.getByRole("heading", { name: "注文フローのブレスト", level: 1 }).waitFor();
-    await page.locator(".excalidraw canvas").first().waitFor();
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
+    await waitForBoard(page, "注文フローのブレスト");
     await shot(page, "32-template-sequence");
   });
 
@@ -1030,11 +1052,7 @@ test.describe("スクリーンショット", () => {
       await installApi(page, baseMock());
       await page.goto("/");
 
-      await startNewBoard(page, `${label}のボード`, kind);
-      await chooseTarget(page, "acme/web", "#1 ロードマップ");
-
-      await page.getByRole("heading", { name: `${label}のボード`, level: 1 }).waitFor();
-      await page.locator(".excalidraw canvas").first().waitFor();
+      await createNewBoard(page, `${label}のボード`, kind);
       await shot(page, `33-template-${kind}`);
     }
   });

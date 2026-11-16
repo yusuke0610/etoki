@@ -36,6 +36,8 @@ type InterpretationSectionProps = {
   projectAccess: ProjectAccess;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
   creationUnavailable: string | null;
+  /** 作成先が未選択のとき、選ぶダイアログを開く。選べない人には null（ADR 0100）。 */
+  onChooseTarget: (() => void) | null;
   /** この注釈が GitHub に在らしめているもの（ADR 0026）。 */
   previous: SyncItem[];
   /** 作成したものを確かめにいく先。組めなければ null（ADR 0025）。 */
@@ -155,6 +157,7 @@ export function InterpretationSection({
   creationBlocked,
   projectAccess,
   creationUnavailable,
+  onChooseTarget,
   previous,
   projectLink,
   targetLabel,
@@ -265,6 +268,7 @@ export function InterpretationSection({
           creationBlocked={creationBlocked}
           projectAccess={projectAccess}
           creationUnavailable={creationUnavailable}
+          onChooseTarget={onChooseTarget}
           previous={previous}
           projectLink={projectLink}
           targetLabel={targetLabel}

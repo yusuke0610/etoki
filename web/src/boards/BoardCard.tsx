@@ -10,11 +10,6 @@ type Props = {
   board: BoardListEntry;
   /** 更新時刻を書く基準。一覧を読み込んだ時刻（`BoardList.fetchedAt`）。 */
   now: Date;
-  /**
-   * 作成先が未選択のボードを開くと、作成先の選択から始まるか。GitHub が未設定と
-   * 分かっている構成では false で、キャンバスがそのまま開く（ADR 0090）。
-   */
-  choosesTarget: boolean;
   onOpen: (id: string) => void;
 };
 
@@ -28,28 +23,19 @@ type Props = {
  * 読み上げて押す音声操作で当たらない（WCAG 2.5.3、#311）。全部を名前にすると、
  * 名前で引く読み上げと E2E の両方で長すぎる（注釈のカードと同じ形）。
  */
-export function BoardCard({ board, now, choosesTarget, onOpen }: Props) {
+export function BoardCard({ board, now, onOpen }: Props) {
   const ids = {
     role: `board-card-role-${board.id}`,
     updated: `board-card-updated-${board.id}`,
     states: `board-card-states-${board.id}`,
-    note: `board-card-note-${board.id}`,
   };
-  // 開くと作成先の選択から始まるカード。**未選択でも、選べない構成では立てない。**
-  // 立てると、開いた先がキャンバスなのに「開くと作成先を選べます」と言う。
-  // 未選択であること自体は節の見出し（「作成先が未選択」）が言っている。
-  const choosesOnOpen = board.projectId === "" && choosesTarget;
-  const described = [
-    ids.role,
-    ids.updated,
-    ids.states,
-    ...(choosesOnOpen ? [ids.note] : []),
-  ];
+  // **作成先が未選択でも、開いた先はキャンバス**（ADR 0100）。作成先は描いた
+  // あとでボードから選ぶので、カードで先に知らせることは無い。未選択であること
+  // 自体は節の見出し（「作成先が未選択」）が言っている。
+  const described = [ids.role, ids.updated, ids.states];
 
   return (
-    // 開くと作成先の選択から始まるカードは枠を破線にする。ほかのカードと
-    // 同じ見た目だと押した先で驚く。
-    <li className={`board-card${choosesOnOpen ? " unselected" : ""}`}>
+    <li className="board-card">
       <span className="board-card-head">
         <button
           type="button"
@@ -75,15 +61,6 @@ export function BoardCard({ board, now, choosesTarget, onOpen }: Props) {
       <span id={ids.states} className="board-card-states">
         <StateBadges counts={board.annotationCounts} />
       </span>
-      {choosesOnOpen && (
-        // 作成先を選べるのはオーナーだけ（ADR 0017）。押した先で何が起きるかを
-        // 開く前に言う。
-        <span id={ids.note} className="hint board-card-note">
-          {board.role === "owner"
-            ? "開くと作成先を選べます"
-            : "作成先はオーナーが選びます"}
-        </span>
-      )}
     </li>
   );
 }

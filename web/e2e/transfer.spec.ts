@@ -12,6 +12,7 @@ import {
   interpret,
   openBoard,
   openBoardWithMock,
+  picker,
   saveScene,
   waitForBoard,
 } from "./helpers/board";
@@ -551,10 +552,10 @@ test.describe("貼った画像の保存", () => {
     expect(scene.files?.[IMAGE_FILE_ID]?.dataURL).toBe(IMAGE_DATA_URL);
   });
 
-  // 作成先の選択画面から戻るとキャンバスを作り直す。設定の応答は画像を運ばない
-  // ので、開いてから貼って保存した画像は、画像ごと開き直さないと欠ける。開いた
-  // 時点の画像を持ち越す実装でもここで落ちる（開いた時点には無かった画像）。
-  test("作成先を選び直してキャンバスが作り直されても、画像が残る", async ({ page }) => {
+  // 作成先はボードの上のダイアログで選び、キャンバスは作り直さない（ADR 0100）。
+  // 設定の応答は画像を運ばないので、応答のボードからキャンバスを作り直すと、
+  // 開いてから貼って保存した画像が欠ける（開いた時点には無かった画像）。
+  test("作成先を選び直しても、開いてから貼った画像が残る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     await chooseFile(page, importedFile());
@@ -562,7 +563,8 @@ test.describe("貼った画像の保存", () => {
 
     await chooseFromMenu(page, "作成先を変更");
     await chooseTarget(page, "acme/web", "#4 技術的負債");
-    await waitForBoard(page, BOARD_NAME);
+    await expect(picker(page)).toBeHidden();
+    await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),

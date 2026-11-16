@@ -84,6 +84,14 @@ export type CreationProps = {
   projectAccess: ProjectAccess;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
   unavailable: string | null;
+  /**
+   * 作成先が未選択のとき、作成先を選ぶダイアログを開く（ADR 0100）。選べない
+   * 人（持ち主でない、固定済み）には null。作成先が選ばれていれば読まれない。
+   *
+   * **ボードの画面を外さずに開く。** 外すと絵解きの結果と手直しが消え、
+   * 選んだあとに絵解き直す（課金される）ことになる。
+   */
+  chooseTarget: (() => void) | null;
 };
 
 /**

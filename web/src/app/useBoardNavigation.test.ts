@@ -107,12 +107,9 @@ function setup(initial: { signedIn?: boolean; consenting?: boolean } = {}) {
   const reload = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
   const remove = vi.fn<(id: string) => void>();
   const clear = vi.fn<() => void>();
-  // `useNewBoardFlow` の `start` / `createWithoutTarget` は、名前を見てから
-  // 渡された確認を呼ぶ。ここでは名前の検査を省き、確認だけ呼ぶ。
-  const start = vi.fn<NewBoardFlow["start"]>((confirm) => confirm());
-  const leave = vi.fn<() => void>();
+  // `useNewBoardFlow` の `create` は、名前を見てから渡された確認を呼ぶ。
+  // テストごとに `mockImplementationOnce` で確認の呼び方を決める。
   const create = vi.fn<NewBoardFlow["create"]>();
-  const createWithoutTarget = vi.fn<NewBoardFlow["createWithoutTarget"]>();
   const replaceSession = vi.fn<(session: SessionStatus) => void>();
 
   const hook = renderHook(
@@ -122,7 +119,7 @@ function setup(initial: { signedIn?: boolean; consenting?: boolean } = {}) {
         consenting,
         showFailure,
         boardList: { reload, remove, clear },
-        newBoard: { start, leave, create, createWithoutTarget },
+        newBoard: { create },
         replaceSession,
       }),
     {
@@ -138,10 +135,7 @@ function setup(initial: { signedIn?: boolean; consenting?: boolean } = {}) {
     reload,
     remove,
     clear,
-    start,
-    leave,
     create,
-    createWithoutTarget,
     replaceSession,
   };
 }
@@ -171,7 +165,7 @@ afterEach(() => {
 describe("useBoardNavigation", () => {
   describe("一覧から開く", () => {
     it("ボードを出して URL を積み、未保存でなければ訊かない", async () => {
-      const { hook, leave } = setup();
+      const { hook } = setup();
       const before = window.history.length;
 
       await openFromList(hook, board("b1"));
@@ -179,8 +173,6 @@ describe("useBoardNavigation", () => {
       expect(url()).toBe("/?board=b1");
       expect(window.history.length - before).toBe(1);
       expect(hook.result.current.picking).toBe(false);
-      // 開いたら作成先の選択の流れからは抜ける。
-      expect(leave).toHaveBeenCalled();
       expect(confirm).not.toHaveBeenCalled();
     });
 
@@ -506,44 +498,58 @@ describe("useBoardNavigation", () => {
   });
 
   describe("新しいボード", () => {
-    it("作成先の選択へ進むときは未保存を訊き、断られたら何も変えない", async () => {
-      const { hook } = setup();
+    /** 作成先が未選択のボード（ADR 0100）。作るときは作成先を送らない。 */
+    const untargeted = detail("b-new", {
+      repositoryOwner: "",
+      repositoryName: "",
+      projectId: "",
+      projectNumber: 0,
+      projectTitle: "",
+      projectUrl: "",
+    });
+
+    it("作れたら、作ったボードを画像なしでそのまま開いて URL を積み、一覧を読み直す", async () => {
+      const { hook, create, reload } = setup();
+      create.mockResolvedValueOnce(untargeted);
+      const before = window.history.length;
+
+      await act(() => hook.result.current.createBoard());
+
+      expect(create).toHaveBeenCalledTimes(1);
+      // **作成先の選択を挟まない。** 未選択のままキャンバスを開く。
+      expect(hook.result.current.current).toEqual({ ...untargeted, files: {} });
+      expect(hook.result.current.picking).toBe(false);
+      expect(url()).toBe("/?board=b-new");
+      // 「戻る」で作成の手前に戻れる。
+      expect(window.history.length - before).toBe(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it("開いていたボードが未保存なら、作る前に訊いて断られたら開いていたボードのまま", async () => {
+      const { hook, create } = setup();
+      create.mockImplementationOnce(async (ask) => (ask() ? untargeted : null));
       await openFromList(hook, board("b1"));
       act(() => hook.result.current.handleDirtyChange(true));
       confirm.mockReturnValue(false);
 
-      act(() => hook.result.current.startCreating());
+      await act(() => hook.result.current.createBoard());
 
       expect(confirm).toHaveBeenCalledTimes(1);
       expect(hook.result.current.current?.id).toBe("b1");
       expect(url()).toBe("/?board=b1");
     });
 
-    it("作成先の選択へ進んだら、開いていたボードを外して URL を置き換える", async () => {
-      const { hook } = setup();
+    it("捨ててよいと言われたら、作ったボードを開く", async () => {
+      const { hook, create } = setup();
+      create.mockImplementationOnce(async (ask) => (ask() ? untargeted : null));
       await openFromList(hook, board("b1"));
-      const before = window.history.length;
+      act(() => hook.result.current.handleDirtyChange(true));
 
-      act(() => hook.result.current.startCreating());
+      await act(() => hook.result.current.createBoard());
 
-      expect(hook.result.current.current).toBeNull();
-      expect(url()).toBe("/");
-      expect(window.history.length - before).toBe(0);
-    });
-
-    it("作れたら、作ったボードを画像なしで開いて URL を積み、一覧を読み直す", async () => {
-      const { hook, create, reload } = setup();
-      create.mockResolvedValueOnce(detail("b-new"));
-      const before = window.history.length;
-
-      await act(() => hook.result.current.createWithTarget(target));
-
-      expect(create).toHaveBeenCalledWith(target);
-      expect(hook.result.current.current).toEqual({ ...detail("b-new"), files: {} });
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(hook.result.current.current?.id).toBe("b-new");
       expect(url()).toBe("/?board=b-new");
-      // 「戻る」で作成の手前に戻れる。
-      expect(window.history.length - before).toBe(1);
-      expect(reload).toHaveBeenCalledTimes(1);
     });
 
     it("作っているあいだに戻る / 進むで移っていたら、作ったボードは開かない", async () => {
@@ -554,13 +560,13 @@ describe("useBoardNavigation", () => {
 
       let created!: Promise<void>;
       act(() => {
-        created = hook.result.current.createWithTarget(target);
+        created = hook.result.current.createBoard();
       });
       act(() => browserMovesTo("/?board=b2"));
       await waitFor(() => expect(hook.result.current.current?.id).toBe("b2"));
       reload.mockClear();
       await act(async () => {
-        creating.resolve(detail("b-new"));
+        creating.resolve(untargeted);
         await created;
       });
 
@@ -574,25 +580,11 @@ describe("useBoardNavigation", () => {
       const { hook, create, reload } = setup();
       create.mockResolvedValueOnce(null);
 
-      await act(() => hook.result.current.createWithTarget(target));
+      await act(() => hook.result.current.createBoard());
 
       expect(hook.result.current.current).toBeNull();
       expect(url()).toBe("/");
       expect(reload).not.toHaveBeenCalled();
-    });
-
-    it("作成先を選ばずに作るときも、未保存の確認を渡し、作ったボードを開く", async () => {
-      const { hook, createWithoutTarget } = setup();
-      createWithoutTarget.mockImplementationOnce(async (ask) =>
-        ask() ? detail("b-new") : null,
-      );
-      act(() => hook.result.current.handleDirtyChange(true));
-
-      await act(() => hook.result.current.createWithoutTarget());
-
-      expect(confirm).toHaveBeenCalledTimes(1);
-      expect(hook.result.current.current?.id).toBe("b-new");
-      expect(url()).toBe("/?board=b-new");
     });
   });
 
@@ -672,8 +664,12 @@ describe("useBoardNavigation", () => {
     });
   });
 
-  describe("作成先の選び直し", () => {
-    it("始めたら URL に載せ、履歴は積まない", async () => {
+  /**
+   * 作成先はボードの上のダイアログで選ぶ（ADR 0100）。**ボードの画面は外さない**
+   * ので、開き直しも取り直しもしない。外すと絵解きの結果と手直しが消える。
+   */
+  describe("作成先を選ぶ", () => {
+    it("ダイアログを開いたら URL に載せ、履歴は積まない", async () => {
       const { hook } = setup();
       await openFromList(hook, board("b1"));
       const before = window.history.length;
@@ -685,73 +681,120 @@ describe("useBoardNavigation", () => {
       expect(window.history.length - before).toBe(0);
     });
 
-    it("作成先を決めたら、画像ごと取り直して選択画面を閉じる", async () => {
-      const { hook } = setup();
-      await openFromList(hook, board("b1"));
+    it("決めたら応答のボードでその場で差し替え、画像と版は持ち越してダイアログを閉じる", async () => {
+      const { hook, reload } = setup();
+      // 開いてから貼った画像はキャンバスが持っていて、設定の応答は運ばない（ADR 0074）。
+      await openFromList(
+        hook,
+        board("b1", { files: { pasted: "{}" }, updatedAt: "2026-10-07T00:00:00Z" }),
+      );
       act(() => hook.result.current.startPicking());
-      const setTarget = vi
-        .spyOn(boardsApi, "setTarget")
-        .mockResolvedValueOnce(detail("b1"));
-      // 開いてから貼って保存した画像も、取り直せば戻ってくる。
-      const fetched = board("b1", { files: { pasted: "{}" } });
-      vi.mocked(boardsApi.get).mockResolvedValueOnce(fetched);
+      vi.mocked(boardsApi.get).mockClear();
+      reload.mockClear();
+      const setTarget = vi.spyOn(boardsApi, "setTarget").mockResolvedValueOnce(
+        // 応答の版はサーバーのいまの版。基準にしない（ADR 0092）。
+        detail("b1", { projectTitle: "新しい作成先", updatedAt: "2026-10-08T00:00:00Z" }),
+      );
+      const before = window.history.length;
 
       await act(() => hook.result.current.changeTarget(target));
 
       expect(setTarget).toHaveBeenCalledWith("b1", target);
-      expect(hook.result.current.current).toEqual(fetched);
+      expect(hook.result.current.current).toEqual(
+        board("b1", {
+          projectTitle: "新しい作成先",
+          files: { pasted: "{}" },
+          updatedAt: "2026-10-07T00:00:00Z",
+        }),
+      );
+      // **開き直さない。** 開き直すとキャンバスが作り直され、絵解きの結果が消える。
+      expect(boardsApi.get).not.toHaveBeenCalled();
       expect(hook.result.current.picking).toBe(false);
       expect(url()).toBe("/?board=b1");
+      expect(window.history.length - before).toBe(0);
+      // 一覧は作成先でまとめて見せる（ADR 0019）。
+      expect(reload).toHaveBeenCalledTimes(1);
     });
 
-    it("やめたら取り直してから戻り、取れなければ選択画面に残る", async () => {
-      const { hook, showFailure } = setup();
-      await openFromList(hook, board("b1"));
-      act(() => hook.result.current.startPicking());
-
-      vi.mocked(boardsApi.get).mockRejectedValueOnce(boom);
-      await act(() => hook.result.current.cancelPicking());
-      expect(showFailure).toHaveBeenCalledTimes(1);
-      expect(hook.result.current.picking).toBe(true);
-
-      // 開いてから保存したものが画面から消えないよう、手元の値では戻さない。
-      const fetched = board("b1", { updatedAt: "2026-10-09T00:00:00Z" });
-      vi.mocked(boardsApi.get).mockResolvedValueOnce(fetched);
-      await act(() => hook.result.current.cancelPicking());
-      expect(hook.result.current.current).toEqual(fetched);
-      expect(hook.result.current.picking).toBe(false);
-      expect(url()).toBe("/?board=b1");
-    });
-
-    it("設定を待つあいだに「やめる」の取り直しが届いても、選択画面を閉じない（#242）", async () => {
+    // 失敗はダイアログの選択部品が出す（`RepositoryPicker`）。閉じると出す先が無い。
+    it("設定できなければ投げ、ダイアログは開いたまま", async () => {
       const { hook } = setup();
       await openFromList(hook, board("b1"));
       act(() => hook.result.current.startPicking());
-      const cancelling = deferred<BoardWithFiles>();
+      vi.spyOn(boardsApi, "setTarget").mockRejectedValueOnce(boom);
+
+      await act(async () => {
+        await expect(hook.result.current.changeTarget(target)).rejects.toThrow("boom");
+      });
+
+      expect(hook.result.current.current).toEqual(board("b1"));
+      expect(hook.result.current.picking).toBe(true);
+      expect(url()).toBe("/?board=b1&picking=1");
+    });
+
+    it("やめたらダイアログを閉じるだけで、取り直さない", async () => {
+      const { hook } = setup();
+      await openFromList(hook, board("b1"));
+      act(() => hook.result.current.startPicking());
+      vi.mocked(boardsApi.get).mockClear();
+      const before = window.history.length;
+
+      act(() => hook.result.current.cancelPicking());
+
+      expect(hook.result.current.picking).toBe(false);
+      expect(hook.result.current.current).toEqual(board("b1"));
+      expect(boardsApi.get).not.toHaveBeenCalled();
+      expect(url()).toBe("/?board=b1");
+      expect(window.history.length - before).toBe(0);
+    });
+
+    // 一覧へ戻ったあとに応答を入れると、一覧の画面のまま URL だけがボードを指す。
+    it("設定を待つあいだに一覧へ戻ったら、応答は画面にも URL にも入れない", async () => {
+      const { hook, reload } = setup();
+      await openFromList(hook, board("b1"));
+      act(() => hook.result.current.startPicking());
       const setting = deferred<BoardDetail>();
       vi.spyOn(boardsApi, "setTarget").mockReturnValueOnce(setting.promise);
-      vi.mocked(boardsApi.get)
-        .mockReturnValueOnce(cancelling.promise)
-        .mockResolvedValueOnce(board("b1", { projectTitle: "新しい作成先" }));
 
-      let cancelled!: Promise<void>;
       let changed!: Promise<void>;
       act(() => {
-        cancelled = hook.result.current.cancelPicking();
         changed = hook.result.current.changeTarget(target);
       });
+      act(() => hook.result.current.closeBoard());
+      reload.mockClear();
       await act(async () => {
-        cancelling.resolve(board("b1", { projectTitle: "変える前の作成先" }));
-        await cancelled;
-      });
-      expect(hook.result.current.picking).toBe(true);
-
-      await act(async () => {
-        setting.resolve(detail("b1"));
+        setting.resolve(detail("b1", { projectTitle: "新しい作成先" }));
         await changed;
       });
+
+      expect(hook.result.current.current).toBeNull();
       expect(hook.result.current.picking).toBe(false);
-      expect(hook.result.current.current?.projectTitle).toBe("新しい作成先");
+      expect(url()).toBe("/");
+      // 作成先そのものは変わったので、一覧は読み直す。
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it("設定を待つあいだに戻る / 進むで別のボードへ移ったら、応答は入れない", async () => {
+      const { hook } = setup();
+      await openFromList(hook, board("b1"));
+      act(() => hook.result.current.startPicking());
+      const setting = deferred<BoardDetail>();
+      vi.spyOn(boardsApi, "setTarget").mockReturnValueOnce(setting.promise);
+      vi.mocked(boardsApi.get).mockResolvedValueOnce(board("b2"));
+
+      let changed!: Promise<void>;
+      act(() => {
+        changed = hook.result.current.changeTarget(target);
+      });
+      act(() => browserMovesTo("/?board=b2"));
+      await waitFor(() => expect(hook.result.current.current?.id).toBe("b2"));
+      await act(async () => {
+        setting.resolve(detail("b1", { projectTitle: "新しい作成先" }));
+        await changed;
+      });
+
+      expect(hook.result.current.current).toEqual(board("b2"));
+      expect(url()).toBe("/?board=b2");
     });
   });
 

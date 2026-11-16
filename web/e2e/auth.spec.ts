@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { installApi } from "./helpers/api";
-import { boardListHeading, chooseTarget, startNewBoard } from "./helpers/board";
+import { boardListHeading, newBoardDialog } from "./helpers/board";
 import {
   AUTHORIZE_URL,
   BOARD_NAME,
@@ -212,9 +212,11 @@ test.describe("ログイン", () => {
     );
 
     // 一覧を読み直す操作をさせる。作成そのものは通り、続く再取得で失効に気づく。
-    // 作成先を選ばないとボードは作られないので、選択まで進める（ADR 0017）。
-    await startNewBoard(page, "失効の確認");
-    await chooseTarget(page, "acme/web", "#1 ロードマップ");
+    // **作ったボードが出るのは待たない。** 読み直しの 401 でログイン画面に移る
+    // ので、待つと移ったあとの画面にボードを探しにいく。
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("失効の確認");
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
     await sessionRefetch;
 
     await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();

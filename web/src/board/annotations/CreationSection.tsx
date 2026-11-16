@@ -19,6 +19,8 @@ export function createControlOf({
   reasons,
   projectAccess,
   creationUnavailable,
+  targetSelected,
+  onChooseTarget,
   notice,
   onCreate,
 }: {
@@ -36,18 +38,42 @@ export function createControlOf({
   projectAccess: ProjectAccess;
   /** GitHub が未設定なら理由。使えるなら null（ADR 0030）。 */
   creationUnavailable: string | null;
+  /** ボードの作成先が選ばれているか（ADR 0100）。 */
+  targetSelected: boolean;
+  /** 作成先を選ぶダイアログを開く。選べない人には null。 */
+  onChooseTarget: (() => void) | null;
   /** 押せるときに出す、取り消せないことと作る先の文。 */
   notice: string;
   onCreate: () => void;
 }): CreateControl {
   // **GitHub が未設定なら、権限より先にこちら。** 未設定の構成では
   // projectAccess は unknown にしかならないので、下の denied では拾えない。
-  // 解釈まではこのまま続けられることも書く（ADR 0008 / 0030）。
+  // 解釈まではこのまま続けられることも書く（ADR 0008 / 0030）。作成先の候補も
+  // 引けないので、作成先を選ぶ口もここでは出さない。
   if (creationUnavailable !== null) {
     return {
       kind: "unavailable",
       text: `${creationUnavailable}ブレストと絵解きはこのまま続けられます。`,
     };
+  }
+
+  // 作成先がまだ無い（ADR 0100）。**作る口の代わりに、選ぶ口を出す。** 押しても
+  // サーバーが target_not_selected で断るだけで、理由が読めるのは先に出したとき。
+  // 選ぶのはボードの上のダイアログで、ここで描いた結果と手直しはそのまま残る。
+  if (!targetSelected) {
+    // 選べない人には、選べないことと、誰に頼めばよいかを言う（ADR 0017）。
+    return onChooseTarget === null
+      ? {
+          kind: "unavailable",
+          text:
+            "作成先がまだ決まっていません。選べるのはボードのオーナーだけなので、" +
+            "オーナーに頼んでください。ブレストと絵解きはこのまま続けられます。",
+        }
+      : {
+          kind: "chooseTarget",
+          text: "作成先がまだ決まっていません。選ぶと、この結果のまま GitHub に作れます。",
+          onChooseTarget,
+        };
   }
 
   // 書けないと分かっているなら、押させずに理由を出す。押せば GitHub が 403 を

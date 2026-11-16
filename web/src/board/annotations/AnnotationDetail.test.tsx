@@ -37,6 +37,7 @@ function props(): ComponentProps<typeof AnnotationDetail> {
       onCreate: vi.fn(),
       projectAccess: "unknown",
       unavailable: null,
+      chooseTarget: null,
     },
     runs: { states: {}, onLoad: vi.fn() },
     stale: false,
@@ -761,6 +762,112 @@ describe("AnnotationDetail", () => {
         "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
       );
     }
+  });
+
+  // 作成先は描いたあとで選ぶ（ADR 0100）。未選択のあいだは、作る口の代わりに選ぶ口を
+  // 出す。押しても target_not_selected で断られるだけなので、先に言う。
+  describe("作成先が未選択のとき", () => {
+    function withDraft(over: {
+      chooseTarget: (() => void) | null;
+      targetLabel: string | null;
+    }): ComponentProps<typeof AnnotationDetail> {
+      const detailProps = props();
+      const result: InterpretationResult = {
+        summary: "s",
+        contentHash: "h",
+        items: [{ localId: "i1", kind: "issue", title: "ログインできる", body: "本文" }],
+        context: { premise: "", otherItems: [], omittedOtherItems: 0 },
+      };
+      return {
+        ...detailProps,
+        targetLabel: over.targetLabel,
+        interpretation: {
+          ...detailProps.interpretation,
+          states: {
+            "frame-1": {
+              running: false,
+              runs: [
+                {
+                  id: 1,
+                  at: "2026-01-01T00:00:00Z",
+                  granularity: "issue" as const,
+                  result,
+                },
+              ],
+              selectedId: 1,
+            },
+          },
+        },
+        creation: { ...detailProps.creation, chooseTarget: over.chooseTarget },
+      };
+    }
+
+    it("オーナーには「GitHub に作成する」の代わりに「作成先を選ぶ」を出し、押すと選ぶ口を開く", () => {
+      const chooseTarget = vi.fn();
+      render(<AnnotationDetail {...withDraft({ chooseTarget, targetLabel: null })} />);
+
+      expect(screen.queryByRole("button", { name: "GitHub に作成する" })).toBeNull();
+      const choose = screen.getByRole("button", { name: "作成先を選ぶ" });
+      expect(choose).toBeEnabled();
+      expect(choose).toHaveAccessibleDescription(
+        "作成先がまだ決まっていません。選ぶと、この結果のまま GitHub に作れます。",
+      );
+      fireEvent.click(choose);
+      expect(chooseTarget).toHaveBeenCalledTimes(1);
+    });
+
+    it("オーナーでなければ選ぶ口を出さず、オーナーに頼むことを言う", () => {
+      render(
+        <AnnotationDetail {...withDraft({ chooseTarget: null, targetLabel: null })} />,
+      );
+
+      expect(screen.queryByRole("button", { name: "作成先を選ぶ" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "GitHub に作成する" })).toBeNull();
+      const note = screen.getByText(/^作成先がまだ決まっていません。/);
+      expect(note).toHaveTextContent(
+        /選べるのはボードのオーナーだけなので、オーナーに頼んでください。/,
+      );
+      expect(note).toHaveTextContent(/ブレストと絵解きはこのまま続けられます。$/);
+    });
+
+    // 候補を引けないので、選ぶ口も出さない（ADR 0090 / 0030）。
+    it("GitHub が未設定なら、選ぶ口ではなくその理由を出す", () => {
+      const detailProps = withDraft({ chooseTarget: vi.fn(), targetLabel: null });
+      render(
+        <AnnotationDetail
+          {...detailProps}
+          creation={{ ...detailProps.creation, unavailable: "GitHub が未設定です。" }}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: "作成先を選ぶ" })).toBeNull();
+      expect(
+        screen.getByText("GitHub が未設定です。ブレストと絵解きはこのまま続けられます。"),
+      ).toBeInTheDocument();
+    });
+
+    // 選び終えるとダイアログは開いた元へ焦点を戻す（`TargetPickerDialog`）。選ぶ口と
+    // 作る口が同じボタンなら、戻った焦点がそのまま次に押すものに載る。
+    it("作成先が決まると、同じボタンが「GitHub に作成する」に替わり、焦点はそこに残る", () => {
+      const { rerender } = render(
+        <AnnotationDetail {...withDraft({ chooseTarget: vi.fn(), targetLabel: null })} />,
+      );
+      const choose = screen.getByRole("button", { name: "作成先を選ぶ" });
+      choose.focus();
+
+      rerender(
+        <AnnotationDetail
+          {...withDraft({
+            chooseTarget: vi.fn(),
+            targetLabel: "acme/web › #1 ロードマップ",
+          })}
+        />,
+      );
+
+      const create = screen.getByRole("button", { name: "GitHub に作成する" });
+      expect(create).toBe(choose);
+      expect(create).toHaveFocus();
+    });
   });
 
   // ボードの背景（ADR 0093）。押す前に見せるのは背景だけで、結果には何を添えたかを
