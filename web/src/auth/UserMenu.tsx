@@ -13,28 +13,41 @@ type Props = {
    * （ADR 0030）。
    */
   connectionsUnavailable: string | null;
+  /** 「アカウントを削除…」の確認を開く（ADR 0101）。 */
+  onDeleteAccount: () => void;
+  /** アカウントを削除できない理由。できるなら、またはまだ確かめていなければ null。 */
+  accountDeletionUnavailable: string | null;
+  /** 利用規約の URL。運用者が設定していなければ無い（ADR 0101）。 */
+  termsUrl?: string;
+  /** プライバシーポリシーの URL。同上。 */
+  privacyUrl?: string;
 };
 
 /**
- * 一覧の上の帯の右に置く、利用者のメニュー（#200）。中身は「MCP の接続」と
- * 「ログアウト」。
+ * 一覧の上の帯の右に置く、利用者のメニュー（#200）。中身は「MCP の接続」・
+ * 「アカウントを削除…」・文書へのリンク（設定されていれば）・「ログアウト」。
  *
  * **開くまでしまう。** ログアウトは毎回押すものではないので、帯に並べておく
  * 理由が無い。しまっても、誰としてログインしているかはボタンの名前で常に読める。
  *
  * **メニュー（`role="menu"`）ではなく開閉（disclosure）の形にする。** 項目が
- * 1 つしか無く、矢印キーで項目を渡る作りを持つほどではない。開いた中身は
- * ふつうのボタンで、Tab で届く。
+ * 数個しか無く、矢印キーで項目を渡る作りを持つほどではない。開いた中身は
+ * ふつうのボタンとリンクで、Tab で届く。
  */
 export function UserMenu({
   user,
   onLogout,
   onOpenConnections,
   connectionsUnavailable,
+  onDeleteAccount,
+  accountDeletionUnavailable,
+  termsUrl,
+  privacyUrl,
 }: Props) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const connectionsReasonId = useId();
+  const accountDeletionReasonId = useId();
   const root = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   // 名前が空の利用者もいる（GitHub の表示名は任意）。丸を空にしないよう login で埋める。
@@ -112,6 +125,39 @@ export function UserMenu({
           <p className="hint user-menu-reason" id={connectionsReasonId}>
             {connectionsUnavailable}
           </p>
+        )}
+        {/*
+          消すのは確認の先にある「削除する」で、ここは確認を開くだけ。格は
+          ふつうのまま（赤は消す操作だけに使う、#203）。
+        */}
+        <button
+          type="button"
+          disabled={accountDeletionUnavailable !== null}
+          aria-describedby={
+            accountDeletionUnavailable !== null ? accountDeletionReasonId : undefined
+          }
+          onClick={() => {
+            setOpen(false);
+            onDeleteAccount();
+          }}
+        >
+          アカウントを削除…
+        </button>
+        {accountDeletionUnavailable !== null && (
+          <p className="hint user-menu-reason" id={accountDeletionReasonId}>
+            {accountDeletionUnavailable}
+          </p>
+        )}
+        {/* 文書はホストする側が持つ。設定されていなければ出さない（ADR 0101）。 */}
+        {termsUrl !== undefined && (
+          <a className="user-menu-link" href={termsUrl}>
+            利用規約
+          </a>
+        )}
+        {privacyUrl !== undefined && (
+          <a className="user-menu-link" href={privacyUrl}>
+            プライバシーポリシー
+          </a>
         )}
         <button type="button" onClick={onLogout}>
           ログアウト

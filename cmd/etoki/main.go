@@ -40,6 +40,11 @@ var usage = `usage:
   etoki revoke [--yes] --login <login>
                         接続を取り消す。--login はその利用者の接続をすべて。
                         取り消す前に対象を見せて確かめる（--yes で省く）
+  etoki delete-user [--yes] <login>
+                        利用者を、その人だけがオーナーのボードごと消す。
+                        消えるものを見せて確かめる（--yes で省く）。
+                        サーバーとは排他を共有しないので、作成が走って
+                        いないときに使う
 
 environment:
   ETOKI_ADDR            リッスンアドレス（既定: ` + etoki.DefaultAddr + `）
@@ -68,6 +73,8 @@ environment:
   ETOKI_GITHUB_APP_CLIENT_SECRET  同 client secret
   ETOKI_TOKEN_ENCRYPTION_KEY      トークンを暗号化する鍵（base64 の 32 バイト）
   ETOKI_PUBLIC_URL                認可から戻ってくる先。空ならリクエストの Host から組む
+  ETOKI_TERMS_URL                 ログインの画面に出す利用規約の URL（http(s) の絶対 URL）
+  ETOKI_PRIVACY_URL               同プライバシーポリシーの URL
   ETOKI_GITHUB_KIND_FIELD    種別のカスタムフィールド名（既定: ` + etoki.DefaultKindFieldName + `）
   ETOKI_GITHUB_PARENT_FIELD  親のカスタムフィールド名（既定: ` + etoki.DefaultParentFieldName + `）
 
@@ -142,6 +149,13 @@ func run() error {
 			return err
 		}
 		return revoke(ctx, target)
+	case args[0] == "delete-user":
+		login, yes, err := parseDeleteUserArgs(args[1:])
+		if err != nil {
+			fmt.Fprint(os.Stderr, usage)
+			return err
+		}
+		return deleteUser(ctx, login, yes)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return fmt.Errorf("unknown command %q", args[0])
@@ -197,14 +211,18 @@ func serve(ctx context.Context) error {
 		// etoki.New が使わない。
 		OAuthGrants:                  sqlite.NewOAuthGrantRepository(db),
 		OAuthClientMetadataDocuments: true,
-		WebDir:                       webDir,
-		PublicURL:                    os.Getenv(envPublicURL),
-		KindFieldName:                os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
-		ParentFieldName:              os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
-		Logger:                       logger,
-		LLMLimits:                    limits,
-		AllowedOrigins:               splitList(os.Getenv(envAllowedOrigins)),
-		SetupHints:                   setupHints(),
+		// 利用者が自分を消す口（ADR 0101）。これも Auth が nil なら使わない。
+		Accounts:        sqlite.NewAccountRepository(db),
+		TermsURL:        os.Getenv(envTermsURL),
+		PrivacyURL:      os.Getenv(envPrivacyURL),
+		WebDir:          webDir,
+		PublicURL:       os.Getenv(envPublicURL),
+		KindFieldName:   os.Getenv("ETOKI_GITHUB_KIND_FIELD"),
+		ParentFieldName: os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
+		Logger:          logger,
+		LLMLimits:       limits,
+		AllowedOrigins:  splitList(os.Getenv(envAllowedOrigins)),
+		SetupHints:      setupHints(),
 	})
 	if err != nil {
 		return err

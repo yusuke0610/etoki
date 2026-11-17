@@ -93,48 +93,51 @@ func (e DiagramKind) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
-	ErrorCodeAlreadyMember               ErrorCode = "already_member"
-	ErrorCodeAuthNotConfigured           ErrorCode = "auth_not_configured"
-	ErrorCodeConcurrencyLimited          ErrorCode = "concurrency_limited"
-	ErrorCodeContentHashMismatch         ErrorCode = "content_hash_mismatch"
-	ErrorCodeCreationIncomplete          ErrorCode = "creation_incomplete"
-	ErrorCodeCrossSiteRejected           ErrorCode = "cross_site_rejected"
-	ErrorCodeDiagramChatTooLong          ErrorCode = "diagram_chat_too_long"
-	ErrorCodeDiagramFailed               ErrorCode = "diagram_failed"
-	ErrorCodeForbiddenProject            ErrorCode = "forbidden_project"
-	ErrorCodeForbiddenRole               ErrorCode = "forbidden_role"
-	ErrorCodeGithubNotConfigured         ErrorCode = "github_not_configured"
-	ErrorCodeGithubUnavailable           ErrorCode = "github_unavailable"
-	ErrorCodeInternal                    ErrorCode = "internal"
-	ErrorCodeInterpretationFailed        ErrorCode = "interpretation_failed"
-	ErrorCodeInvalidInput                ErrorCode = "invalid_input"
-	ErrorCodeInviteeChanged              ErrorCode = "invitee_changed"
-	ErrorCodeLastOwner                   ErrorCode = "last_owner"
-	ErrorCodeLlmNotConfigured            ErrorCode = "llm_not_configured"
-	ErrorCodeLlmOverloaded               ErrorCode = "llm_overloaded"
-	ErrorCodeLlmRefused                  ErrorCode = "llm_refused"
-	ErrorCodeLlmTruncated                ErrorCode = "llm_truncated"
-	ErrorCodeLlmUnavailable              ErrorCode = "llm_unavailable"
-	ErrorCodeLoginRequired               ErrorCode = "login_required"
-	ErrorCodeMcpConnectionsNotConfigured ErrorCode = "mcp_connections_not_configured"
-	ErrorCodeNotFound                    ErrorCode = "not_found"
-	ErrorCodePremiseConflict             ErrorCode = "premise_conflict"
-	ErrorCodePremiseTooLarge             ErrorCode = "premise_too_large"
-	ErrorCodePreviousItemUnknown         ErrorCode = "previous_item_unknown"
-	ErrorCodeProjectFieldMissing         ErrorCode = "project_field_missing"
-	ErrorCodeRateLimited                 ErrorCode = "rate_limited"
-	ErrorCodeRequestTooLarge             ErrorCode = "request_too_large"
-	ErrorCodeSceneConflict               ErrorCode = "scene_conflict"
-	ErrorCodeSceneTooLarge               ErrorCode = "scene_too_large"
-	ErrorCodeSharingNotConfigured        ErrorCode = "sharing_not_configured"
-	ErrorCodeTargetLocked                ErrorCode = "target_locked"
-	ErrorCodeTargetMismatch              ErrorCode = "target_mismatch"
-	ErrorCodeTargetNotSelected           ErrorCode = "target_not_selected"
+	ErrorCodeAccountDeletionNotConfigured ErrorCode = "account_deletion_not_configured"
+	ErrorCodeAlreadyMember                ErrorCode = "already_member"
+	ErrorCodeAuthNotConfigured            ErrorCode = "auth_not_configured"
+	ErrorCodeConcurrencyLimited           ErrorCode = "concurrency_limited"
+	ErrorCodeContentHashMismatch          ErrorCode = "content_hash_mismatch"
+	ErrorCodeCreationIncomplete           ErrorCode = "creation_incomplete"
+	ErrorCodeCrossSiteRejected            ErrorCode = "cross_site_rejected"
+	ErrorCodeDiagramChatTooLong           ErrorCode = "diagram_chat_too_long"
+	ErrorCodeDiagramFailed                ErrorCode = "diagram_failed"
+	ErrorCodeForbiddenProject             ErrorCode = "forbidden_project"
+	ErrorCodeForbiddenRole                ErrorCode = "forbidden_role"
+	ErrorCodeGithubNotConfigured          ErrorCode = "github_not_configured"
+	ErrorCodeGithubUnavailable            ErrorCode = "github_unavailable"
+	ErrorCodeInternal                     ErrorCode = "internal"
+	ErrorCodeInterpretationFailed         ErrorCode = "interpretation_failed"
+	ErrorCodeInvalidInput                 ErrorCode = "invalid_input"
+	ErrorCodeInviteeChanged               ErrorCode = "invitee_changed"
+	ErrorCodeLastOwner                    ErrorCode = "last_owner"
+	ErrorCodeLlmNotConfigured             ErrorCode = "llm_not_configured"
+	ErrorCodeLlmOverloaded                ErrorCode = "llm_overloaded"
+	ErrorCodeLlmRefused                   ErrorCode = "llm_refused"
+	ErrorCodeLlmTruncated                 ErrorCode = "llm_truncated"
+	ErrorCodeLlmUnavailable               ErrorCode = "llm_unavailable"
+	ErrorCodeLoginRequired                ErrorCode = "login_required"
+	ErrorCodeMcpConnectionsNotConfigured  ErrorCode = "mcp_connections_not_configured"
+	ErrorCodeNotFound                     ErrorCode = "not_found"
+	ErrorCodePremiseConflict              ErrorCode = "premise_conflict"
+	ErrorCodePremiseTooLarge              ErrorCode = "premise_too_large"
+	ErrorCodePreviousItemUnknown          ErrorCode = "previous_item_unknown"
+	ErrorCodeProjectFieldMissing          ErrorCode = "project_field_missing"
+	ErrorCodeRateLimited                  ErrorCode = "rate_limited"
+	ErrorCodeRequestTooLarge              ErrorCode = "request_too_large"
+	ErrorCodeSceneConflict                ErrorCode = "scene_conflict"
+	ErrorCodeSceneTooLarge                ErrorCode = "scene_too_large"
+	ErrorCodeSharingNotConfigured         ErrorCode = "sharing_not_configured"
+	ErrorCodeTargetLocked                 ErrorCode = "target_locked"
+	ErrorCodeTargetMismatch               ErrorCode = "target_mismatch"
+	ErrorCodeTargetNotSelected            ErrorCode = "target_not_selected"
 )
 
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
+	case ErrorCodeAccountDeletionNotConfigured:
+		return true
 	case ErrorCodeAlreadyMember:
 		return true
 	case ErrorCodeAuthNotConfigured:
@@ -392,6 +395,35 @@ func (e SyncState) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AccountDeletion 自分を消したときに etoki から失われるもの（ADR 0101）。
+type AccountDeletion struct {
+	// Boards 一緒に消えるボード。自分だけが owner のもので、**共有していても
+	// 消える。** 残したいなら、先に参加者をオーナーにする
+	Boards []AccountDeletionBoard `json:"boards"`
+
+	// LeftBoardCount メンバーから外れるだけのボードの数。ほかにも owner がいるか、自分が
+	// owner でないボードで、ボードはほかのメンバーのもとに残る
+	LeftBoardCount int `json:"leftBoardCount"`
+}
+
+// AccountDeletionBoard 自分を消すと一緒に消えるボード 1 枚
+type AccountDeletionBoard struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+
+	// OtherMemberCount 自分のほかのメンバーの数。1 以上なら共有していて、消すとその人たちも
+	// ボードを失う
+	OtherMemberCount int `json:"otherMemberCount"`
+
+	// RecordedItemCount そのボードから作成したと記録している draft issue の件数
+	// （`BoardDeletion.recordedItemCount` と同じ数え方）
+	RecordedItemCount int `json:"recordedItemCount"`
+
+	// UnconfirmedWriteCount GitHub に届いたか分からない書き込みの件数
+	// （`BoardDeletion.unconfirmedWriteCount` と同じ数え方）
+	UnconfirmedWriteCount int `json:"unconfirmedWriteCount"`
 }
 
 // AnnotationCounts 注釈の 3 状態ごとの件数。保存済みシーンが基準で、注釈の状態
@@ -870,6 +902,11 @@ type BoardWithFiles struct {
 // `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
 // 原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
 type Capabilities struct {
+	// AccountDeletion 自分を消せるか（ADR 0101）。false は認証か、利用者の行を消す口が
+	// 未設定。**認証なしの構成では false。** 空文字の利用者 1 人
+	// （ADR 0016）を消すと、全ボードが消える
+	AccountDeletion bool `json:"accountDeletion"`
+
 	// Creation draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
 	// 引けない**ので、ボードは作成先を選ばずに作る（ADR 0090）。ボード
 	// そのものは false でも作れる
@@ -1527,10 +1564,20 @@ type SaveSceneResponse struct {
 }
 
 // SessionStatus ログイン状態。認証を設定していない構成でも 200 で返る。
+//
+// **ログインの前に見せる文書へのリンクも載せる**（ADR 0101）。ログインの
+// 画面で読めるよう、未ログインでも返るここに置く。
 type SessionStatus struct {
 	// AuthRequired 認証を設定しているか。false なら画面はログインを求めない
 	AuthRequired  bool `json:"authRequired"`
 	Authenticated bool `json:"authenticated"`
+
+	// PrivacyURL 運用者が設定したプライバシーポリシーの URL。設定していなければ省く
+	PrivacyURL *string `json:"privacyUrl,omitempty"`
+
+	// TermsURL 運用者が設定した利用規約の URL。設定していなければ省く。文書は
+	// ホストする側が持ち、etoki はリンクを出すだけ
+	TermsURL *string `json:"termsUrl,omitempty"`
 
 	// User ログイン中の利用者
 	User *AuthUser `json:"user,omitempty"`

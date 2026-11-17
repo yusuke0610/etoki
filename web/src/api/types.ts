@@ -165,6 +165,17 @@ export type SessionStatus = Schemas["SessionStatus"];
 /** ログイン中の利用者。 */
 export type AuthUser = Schemas["AuthUser"];
 
+/**
+ * 利用者を消すと失われるもの（ADR 0101）。一緒に消えるボードと、メンバーから
+ * 外れるだけのボードの数。
+ *
+ * **GitHub 側で何が起きるかは含まれない。** draft issue もアプリの認可も残る。
+ */
+export type AccountDeletion = Schemas["AccountDeletion"];
+
+/** 利用者と一緒に消えるボード 1 枚（その人だけがオーナー）。 */
+export type AccountDeletionBoard = Schemas["AccountDeletionBoard"];
+
 /** ログイン開始のリクエストボディ。戻り先を渡すときだけ送る。 */
 export type LoginRequest = Schemas["LoginRequest"];
 

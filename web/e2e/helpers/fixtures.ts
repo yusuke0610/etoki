@@ -1,4 +1,5 @@
 import type {
+  AccountDeletion,
   AnnotationStatus,
   BoardDetail,
   CreatedRun,
@@ -283,6 +284,38 @@ export function signedOut(): SessionStatus {
   return { authRequired: true, authenticated: false };
 }
 
+/** 運用者が設定した利用規約とプライバシーポリシーの URL（ADR 0101）。 */
+export const DOCUMENT_URLS = {
+  termsUrl: "https://etoki.example/terms",
+  privacyUrl: "https://etoki.example/privacy",
+} as const;
+
+/**
+ * 利用者を消すと失われるもの（ADR 0101）。共有している 1 枚と、ひとりの 1 枚が
+ * 消え、ほかの人がオーナーのボード 1 枚からは外れる。
+ */
+export function accountDeletion(): AccountDeletion {
+  return {
+    boards: [
+      {
+        id: BOARD_ID,
+        name: BOARD_NAME,
+        otherMemberCount: 2,
+        recordedItemCount: 3,
+        unconfirmedWriteCount: 1,
+      },
+      {
+        id: "board-solo",
+        name: "ひとりのメモ",
+        otherMemberCount: 0,
+        recordedItemCount: 0,
+        unconfirmedWriteCount: 0,
+      },
+    ],
+    leftBoardCount: 1,
+  };
+}
+
 export function repositories(): RepositoryList {
   return {
     repositories: [
@@ -536,6 +569,7 @@ export function baseMock(): ApiMock {
         creation: true,
         sharing: true,
         mcpConnections: false,
+        accountDeletion: false,
       },
     },
     session: { status: 200, body: { authRequired: false, authenticated: false } },
@@ -767,6 +801,26 @@ export function withConnections(mock: ApiMock): ApiMock {
     decisions: [],
     grants: oauthGrants(),
     revoked: [],
+  };
+  return mock;
+}
+
+/**
+ * ログインした構成で、アカウントを削除できるようにする（ADR 0101）。
+ *
+ * **capabilities と口を一緒に立てる**（`withConnections` と同じ理由）。
+ */
+export function withAccountDeletion(mock: ApiMock): ApiMock {
+  mock.session = { status: 200, body: signedIn() };
+  if ("interpretation" in mock.capabilities.body) {
+    mock.capabilities = {
+      status: 200,
+      body: { ...mock.capabilities.body, accountDeletion: true },
+    };
+  }
+  mock.account = {
+    deletion: { status: 200, body: accountDeletion() },
+    deleted: 0,
   };
   return mock;
 }

@@ -1,6 +1,7 @@
 import type { Page, Route } from "@playwright/test";
 
 import type {
+  AccountDeletion,
   AnnotationStatus,
   BoardAccess,
   BoardDeletion,
@@ -267,6 +268,22 @@ export type ApiMock = {
     grants: OAuthGrant[];
     /** 取り消した接続の ID。届いた順に積む。 */
     revoked: string[];
+  };
+  /**
+   * 利用者を消す口（ADR 0101）。**無ければ扱えない構成**で、口は 503 を返す。
+   * 有効にするときは capabilities の `accountDeletion` も立てる
+   * （`withAccountDeletion`）。
+   */
+  account?: {
+    /** 消すと失われるもの。 */
+    deletion: Reply<AccountDeletion>;
+    /**
+     * 消す口を失敗させたいときに指定する。無ければ 204 で消し、セッションを
+     * 未ログインに戻す。
+     */
+    deleteError?: Reply<never>;
+    /** 消せた回数。消す口が叩かれたかは、ここにしか現れない。 */
+    deleted: number;
   };
 };
 

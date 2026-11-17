@@ -19,6 +19,7 @@ import {
   BOARD_ID,
   baseMock,
   CONSENT_PATH,
+  withAccountDeletion,
   withConnections,
 } from "./helpers/fixtures";
 
@@ -214,5 +215,24 @@ test.describe("MCP の接続のボタンの格", () => {
     await expect(
       page.getByRole("button", { name: "Claude Code の接続を取り消す" }),
     ).toHaveClass(DANGER);
+  });
+});
+
+// アカウントの削除（ADR 0101）。メニューの項目は確認を開くだけなのでふつうの格で、
+// 消すのは確認の「削除する」（赤）。やめるのは控えめ（ボードの削除と同じ）。
+test.describe("アカウントの削除のボタンの格", () => {
+  test("メニューの項目はふつう、削除するは消す操作、やめるのは控えめ", async ({
+    page,
+  }) => {
+    await installApi(page, withAccountDeletion(baseMock()));
+    await page.goto("/");
+    await page.getByRole("button", { name: "Octo Cat" }).click();
+    const open = page.getByRole("button", { name: "アカウントを削除…" });
+    await expect(open).not.toHaveClass(ANY_TIER);
+    await open.click();
+
+    const dialog = page.getByRole("dialog", { name: "アカウントを削除しますか" });
+    await expect(dialog.getByRole("button", { name: "削除する" })).toHaveClass(DANGER);
+    await expect(dialog.getByRole("button", { name: "やめる" })).toHaveClass(QUIET);
   });
 });

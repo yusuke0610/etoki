@@ -5,14 +5,25 @@ import { describeFailure, type Failure } from "../api/errorMessage";
 import { ErrorNotice } from "../app/ErrorNotice";
 import { Wordmark } from "../app/Wordmark";
 
+type Props = {
+  /** 利用規約の URL。運用者が設定していなければ無い（ADR 0101）。 */
+  termsUrl?: string;
+  /** プライバシーポリシーの URL。同上。 */
+  privacyUrl?: string;
+};
+
 /**
  * ログインを促す画面。
  *
  * 遷移そのものはここで行う。サーバーからリダイレクトさせないのは、fetch での
  * リダイレクト追跡が cross-origin で扱いにくいため。サーバーは URL を返すだけ
  * にしてある（ADR 0015）。
+ *
+ * **文書へのリンクはログインの前に読めるところに置く**（ADR 0101）。何を預かる
+ * のかを、預ける前に読めるようにする。「ログインすると同意したものとみなす」の
+ * ような文言は置かない。文書の側が決めることで、etoki が持つのはリンクの口だけ。
  */
-export function LoginPage() {
+export function LoginPage({ termsUrl, privacyUrl }: Props) {
   const [error, setError] = useState<Failure | null>(null);
   const [starting, setStarting] = useState(false);
 
@@ -96,6 +107,13 @@ export function LoginPage() {
             "ログインすると、あなたの権限でリポジトリと Projects v2 を読み書きします。見えるのは etoki をインストールしたリポジトリだけです。"
           }
         </p>
+
+        {(termsUrl !== undefined || privacyUrl !== undefined) && (
+          <p className="hint login-documents">
+            {termsUrl !== undefined && <a href={termsUrl}>利用規約</a>}
+            {privacyUrl !== undefined && <a href={privacyUrl}>プライバシーポリシー</a>}
+          </p>
+        )}
       </div>
     </div>
   );

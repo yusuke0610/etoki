@@ -89,6 +89,14 @@ func (s *BoardService) Delete(ctx context.Context, id string) error {
 	}
 	defer release()
 
+	return s.deleteLocked(ctx, id)
+}
+
+// deleteLocked は Delete の中身。**呼ぶ前にボードの排他を取っていること。**
+//
+// 利用者を消すとき（`AccountService`）は、owner を数え直すのと同じ排他の中で
+// 消す必要があるので、排他を取る側を分けてある。判定（`access`）はここに残す。
+func (s *BoardService) deleteLocked(ctx context.Context, id string) error {
 	if _, err := s.access(ctx, id, port.RoleOwner); err != nil {
 		return err
 	}

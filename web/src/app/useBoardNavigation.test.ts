@@ -835,6 +835,74 @@ describe("useBoardNavigation", () => {
     });
   });
 
+  // アカウントを消し終えたあと（ADR 0101）。消す口は一覧にしか無いが、片付けは
+  // ログアウトと同じものを触る。
+  describe("アカウントを消したあと", () => {
+    it("訊かずに一覧を外して URL を置き換え、読み直した状態に替える", async () => {
+      const { hook, clear, replaceSession } = setup();
+      const signedOut: SessionStatus = {
+        authRequired: true,
+        authenticated: false,
+        termsUrl: "https://etoki.example/terms",
+      };
+      vi.spyOn(authApi, "session").mockResolvedValueOnce(signedOut);
+      window.history.replaceState(null, "", "/?board=b1");
+      const before = window.history.length;
+
+      await act(() => hook.result.current.leaveDeletedAccount());
+
+      // 消えたあとに訊いても打ち手が無い。
+      expect(confirm).not.toHaveBeenCalled();
+      expect(clear).toHaveBeenCalledTimes(1);
+      expect(url()).toBe("/");
+      // 積むと「戻る」で消えた利用者の画面に戻れてしまう。
+      expect(window.history.length - before).toBe(0);
+      expect(replaceSession).toHaveBeenCalledWith(signedOut);
+    });
+
+    // 消えたことはサーバーが答えている。読み直せなくても、ログインしたままに
+    // 見せない。何を押しても 401 になる画面が残る。
+    it("読み直せなければ知らせて、ログインしていない側に倒す", async () => {
+      const { hook, showFailure, replaceSession } = setup();
+      vi.spyOn(authApi, "session").mockRejectedValueOnce(boom);
+
+      await act(() => hook.result.current.leaveDeletedAccount());
+
+      expect(showFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringMatching(/^ログイン状態を取得できませんでした/),
+        }),
+      );
+      expect(replaceSession).toHaveBeenCalledWith({
+        authRequired: true,
+        authenticated: false,
+      });
+    });
+
+    it("読み込み中だった取得が、あとから届いても開かない", async () => {
+      const { hook } = setup();
+      const fetching = deferred<BoardWithFiles>();
+      vi.mocked(boardsApi.get).mockReturnValueOnce(fetching.promise);
+      vi.spyOn(authApi, "session").mockResolvedValueOnce({
+        authRequired: true,
+        authenticated: false,
+      });
+
+      let opening!: Promise<void>;
+      act(() => {
+        opening = hook.result.current.open("b1");
+      });
+      await act(() => hook.result.current.leaveDeletedAccount());
+      await act(async () => {
+        fetching.resolve(board("b1"));
+        await opening;
+      });
+
+      expect(hook.result.current.current).toBeNull();
+      expect(url()).toBe("/");
+    });
+  });
+
   it("未保存の印を受け取る関数は、描き直しても同じものを渡す", async () => {
     const { hook } = setup();
     const first = hook.result.current.handleDirtyChange;

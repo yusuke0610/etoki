@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/yusuke0610/etoki/internal/adapter/cimd"
@@ -159,6 +160,22 @@ type Options struct {
 	// 絞ってあり、プロキシは使わない。false でも動的登録のクライアントは使える。
 	OAuthClientMetadataDocuments bool
 
+	// Accounts は利用者が自分を消す口（ADR 0101）。任意。
+	//
+	// Auth と両方あるときだけ組み立てる。nil なら `/api/account*` は 503 を返し、
+	// 画面は押す前に理由を出す（capabilities の accountDeletion）。認証なしの
+	// 構成では使わない。空文字の利用者 1 人（ADR 0016）を消すと、全ボードが消える。
+	Accounts port.AccountRepository
+
+	// TermsURL と PrivacyURL は、ログインの前に見せる利用規約とプライバシー
+	// ポリシーの URL（ADR 0101）。任意。
+	//
+	// 文書はホストする側が持ち、etoki はリンクを出すだけ。**http か https の
+	// 絶対 URL でなければ New が落ちる。** 打ち間違えたリンクに、押されたときに
+	// 初めて気づくことにしない。
+	TermsURL   string
+	PrivacyURL string
+
 	// WebDir はビルド済みフロントエンド（web/dist）の置き場所。任意。
 	//
 	// 空なら画面を配らない。make dev では Vite が同じものを持っているので、
@@ -277,6 +294,12 @@ func New(opts Options) (*Server, error) {
 	if err := validateLLMLimits(opts.LLMLimits); err != nil {
 		return nil, err
 	}
+	if err := validateDocumentURL("Options.TermsURL", opts.TermsURL); err != nil {
+		return nil, err
+	}
+	if err := validateDocumentURL("Options.PrivacyURL", opts.PrivacyURL); err != nil {
+		return nil, err
+	}
 
 	// 作成先の固定を守るには、固定を判定する側と、判定の前提を崩す側とが
 	// 同じ排他を見ている必要がある（usecase.BoardLocks）。
@@ -306,8 +329,16 @@ func New(opts Options) (*Server, error) {
 		Logger:         opts.Logger,
 		AllowedOrigins: opts.AllowedOrigins,
 		SetupHints:     opts.SetupHints,
+		TermsURL:       opts.TermsURL,
+		PrivacyURL:     opts.PrivacyURL,
 	}
 	deps.Auth = opts.Auth
+	// 利用者を消す口。**認証ありの構成でだけ組み立てる**（ADR 0101）。ボードを
+	// 消すのは deps.Boards に任せる。同じ排他（locks）を見ていないと、作成の
+	// 途中でボードを消せてしまう（ADR 0042）。
+	if opts.Auth != nil && opts.Accounts != nil {
+		deps.Accounts = usecase.NewAccountService(opts.Boards, deps.Boards, opts.Accounts)
+	}
 	// MCP のクライアントのための認可サーバー。**認証ありの構成でだけ組み立てる。**
 	// 発行した許可は「誰であるか」が決まって初めて意味を持つ（ADR 0076）。
 	if opts.Auth != nil && opts.OAuthGrants != nil {
@@ -428,6 +459,33 @@ func validateLLMLimits(l LLMLimits) error {
 	if l.RateWindow > 0 && l.RateLimit == 0 {
 		return errors.New("etoki: LLMLimits.RateWindow needs RateLimit; " +
 			"a window without a limit has no effect")
+	}
+	return nil
+}
+
+// validateDocumentURL はログインの前に見せる文書の URL を見る（ADR 0101）。空は
+// 「出さない」で通す。
+//
+// **見るのはスキームとホストまで。** 文書がどこにあるかを etoki は知らない
+// （`.claude/rules/validation-boundaries.md` の「知っていることだけを検証する」）。
+// `url.Parse` は相対参照も `https:host` も通すので、ホストの有無まで見る。
+// **誤りに URL を載せるときは資格情報を伏せる**（`Redacted`）。`*url.Error` は
+// 入力をそのまま文字列に載せるので、包まずに中の理由だけを運ぶ。
+func validateDocumentURL(name, raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
+		return fmt.Errorf("etoki: %s is not a URL: %w", name, err)
+	}
+	if (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return fmt.Errorf("etoki: %s must be an absolute http(s) URL, got %q",
+			name, u.Redacted())
 	}
 	return nil
 }

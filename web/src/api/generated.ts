@@ -224,6 +224,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/account/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分を消すと何が失われるかを返す
+         * @description 利用者を消す前に、何が失われるのかを見せるための口（ADR 0101。ボードの
+         *     削除と同じ形、ADR 0042）。**押されたときだけ引く。**
+         *
+         *     引いた時点の中身であって、削除の前提条件ではない。消すときに引き直す。
+         *
+         *     **認証を設定した構成でだけ開く。** 認証なしの構成は空文字の利用者 1 人で
+         *     （ADR 0016）、消すと全ボードが消えるので 503 を返す。
+         */
+        get: operations["getAccountDeletion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 自分を消す
+         * @description 自分と、自分だけが owner のボード（共有していても）を消し、ほかのボードの
+         *     メンバーから外れる。セッション・GitHub のトークン・MCP の許可も消える
+         *     （ADR 0101）。**取り消せない。** 消したらセッションの cookie も消す。
+         *
+         *     GitHub に作った draft issue と、GitHub 側のアプリの認可は消さない
+         *     （etoki からは取り消さない）。
+         *
+         *     途中で失敗したら、消えたものは戻さない。もう一度呼べば続きから消える。
+         */
+        delete: operations["deleteAccount"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/boards": {
         parameters: {
             query?: never;
@@ -1032,13 +1085,31 @@ export interface components {
              *     `/mcp` は許可なしで開いている（ADR 0071）ので、取り消すものが無い
              */
             mcpConnections: boolean;
+            /**
+             * @description 自分を消せるか（ADR 0101）。false は認証か、利用者の行を消す口が
+             *     未設定。**認証なしの構成では false。** 空文字の利用者 1 人
+             *     （ADR 0016）を消すと、全ボードが消える
+             */
+            accountDeletion: boolean;
         };
-        /** @description ログイン状態。認証を設定していない構成でも 200 で返る。 */
+        /**
+         * @description ログイン状態。認証を設定していない構成でも 200 で返る。
+         *
+         *     **ログインの前に見せる文書へのリンクも載せる**（ADR 0101）。ログインの
+         *     画面で読めるよう、未ログインでも返るここに置く。
+         */
         SessionStatus: {
             /** @description 認証を設定しているか。false なら画面はログインを求めない */
             authRequired: boolean;
             authenticated: boolean;
             user?: components["schemas"]["AuthUser"];
+            /**
+             * @description 運用者が設定した利用規約の URL。設定していなければ省く。文書は
+             *     ホストする側が持ち、etoki はリンクを出すだけ
+             */
+            termsUrl?: string;
+            /** @description 運用者が設定したプライバシーポリシーの URL。設定していなければ省く */
+            privacyUrl?: string;
         };
         /**
          * @description ログイン開始のリクエストボディ。**省略できる。**
@@ -1084,7 +1155,7 @@ export interface components {
          *     別の code で返る。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "premise_conflict" | "premise_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "llm_truncated" | "llm_refused" | "llm_overloaded" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
+        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "premise_conflict" | "premise_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "llm_truncated" | "llm_refused" | "llm_overloaded" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured" | "account_deletion_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -1367,6 +1438,39 @@ export interface components {
             files: {
                 [key: string]: string;
             };
+        };
+        /** @description 自分を消したときに etoki から失われるもの（ADR 0101）。 */
+        AccountDeletion: {
+            /**
+             * @description 一緒に消えるボード。自分だけが owner のもので、**共有していても
+             *     消える。** 残したいなら、先に参加者をオーナーにする
+             */
+            boards: components["schemas"]["AccountDeletionBoard"][];
+            /**
+             * @description メンバーから外れるだけのボードの数。ほかにも owner がいるか、自分が
+             *     owner でないボードで、ボードはほかのメンバーのもとに残る
+             */
+            leftBoardCount: number;
+        };
+        /** @description 自分を消すと一緒に消えるボード 1 枚 */
+        AccountDeletionBoard: {
+            id: string;
+            name: string;
+            /**
+             * @description 自分のほかのメンバーの数。1 以上なら共有していて、消すとその人たちも
+             *     ボードを失う
+             */
+            otherMemberCount: number;
+            /**
+             * @description そのボードから作成したと記録している draft issue の件数
+             *     （`BoardDeletion.recordedItemCount` と同じ数え方）
+             */
+            recordedItemCount: number;
+            /**
+             * @description GitHub に届いたか分からない書き込みの件数
+             *     （`BoardDeletion.unconfirmedWriteCount` と同じ数え方）
+             */
+            unconfirmedWriteCount: number;
         };
         /**
          * @description ボードを削除したときに etoki から失われるもの（ADR 0042）。
@@ -2564,6 +2668,52 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    getAccountDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自分を消すと失われるもの */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletion"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["NotConfigured"];
+        };
+    };
+    deleteAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 消した */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["NotConfigured"];
         };

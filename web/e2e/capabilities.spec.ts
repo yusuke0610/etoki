@@ -26,6 +26,7 @@ function withoutGitHub(mock: ApiMock): ApiMock {
       creation: false,
       sharing: true,
       mcpConnections: false,
+      accountDeletion: false,
     },
   };
   return mock;
@@ -52,6 +53,7 @@ test.describe("設定していない機能", () => {
         creation: true,
         sharing: true,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     // 画面が案内するだけでなく、叩けば 503 が返る構成そのものを再現する。
@@ -95,6 +97,7 @@ test.describe("設定していない機能", () => {
         creation: false,
         sharing: true,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     await openBoardWithMock(page, mock);
@@ -331,6 +334,7 @@ test.describe("設定していない機能", () => {
         creation: false,
         sharing: true,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     await openBoardWithMock(page, mock);
@@ -358,6 +362,7 @@ test.describe("設定していない機能", () => {
         creation: true,
         sharing: false,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     await openBoardWithMock(page, mock);

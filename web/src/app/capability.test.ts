@@ -10,6 +10,7 @@ const all: Capabilities = {
   creation: true,
   sharing: true,
   mcpConnections: true,
+  accountDeletion: true,
 };
 
 describe("unavailableReason", () => {
@@ -34,6 +35,9 @@ describe("unavailableReason", () => {
     expect(unavailableReason({ ...all, mcpConnections: false }, "mcpConnections")).toBe(
       ERROR_MESSAGES.mcp_connections_not_configured,
     );
+    expect(unavailableReason({ ...all, accountDeletion: false }, "accountDeletion")).toBe(
+      ERROR_MESSAGES.account_deletion_not_configured,
+    );
   });
 
   // **設定するものが違えば違う文言。** 畳むと「何を設定すればよいか」を
@@ -45,9 +49,16 @@ describe("unavailableReason", () => {
       creation: false,
       sharing: false,
       mcpConnections: false,
+      accountDeletion: false,
     };
     const messages = (
-      ["interpretation", "creation", "sharing", "mcpConnections"] as const
+      [
+        "interpretation",
+        "creation",
+        "sharing",
+        "mcpConnections",
+        "accountDeletion",
+      ] as const
     ).map((f) => unavailableReason(none, f));
 
     expect(new Set(messages).size).toBe(messages.length);

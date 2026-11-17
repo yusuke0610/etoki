@@ -66,6 +66,61 @@
   background: var(--color-hover);
 }
 
+/*
+ * 文書へのリンク（ADR 0101）。並びのボタンと同じ行の形にそろえる。**下線は
+ * 残す。** ボタンと見分ける手掛かりが色だけになると、色が読めない環境で消える。
+ */
+.user-menu-link {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  color: var(--color-link);
+}
+
+.user-menu-link:hover {
+  background: var(--color-hover);
+}
+
+/* アカウントの削除の確認（ADR 0101）。器は `.modal-dialog`（`app/base.css`）。 */
+.account-deletion-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.account-deletion-dialog h2 {
+  margin: 0 0 var(--space-4);
+}
+
+.account-deletion-dialog h3 {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+/* 消えるボードは 1 枚ずつ枠で囲む。注記がどのボードのものかを読み違えさせない。 */
+.account-deletion-boards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-5) 0 var(--space-6);
+  padding: 0;
+  list-style: none;
+}
+
+.account-deletion-boards li {
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.account-deletion-boards p {
+  margin: var(--space-2) 0 0;
+}
+
+.account-deletion-boards .account-deletion-board-name {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 /* 利用者のメニューで、押せない項目の理由をその下に出す（ADR 0030）。 */
 .user-menu-reason {
   margin: 0;
@@ -149,6 +204,14 @@
 }
 
 .login-note {
+  margin: 0;
+}
+
+/* 文書へのリンク（ADR 0101）。2 つ並んでも 1 行に収まる短さなので、横に置く。 */
+.login-documents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
   margin: 0;
 }
 

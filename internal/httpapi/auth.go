@@ -20,12 +20,26 @@ const sessionCookie = "etoki_session"
 // callbackPath はコールバックのパス。redirect_uri の組み立てにも使う。
 const callbackPath = "/api/auth/callback"
 
+// optionalString は空文字を「無い」（nil）にする。契約で省けるフィールドに
+// 空文字を載せると、画面は「設定されているが空」を読むことになる。
+func optionalString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // getSession はログイン状態を返す。
 //
 // 常に 200。未ログインを 401 で伝えると、認証を設定していない構成の起動時にも
 // 401 が出て、本当の失効と見分けがつかなくなる（ADR 0015）。
 func (h *handlers) getSession(c *gin.Context) {
-	out := apitypes.SessionStatus{AuthRequired: h.auth != nil}
+	out := apitypes.SessionStatus{
+		AuthRequired: h.auth != nil,
+		// ログインの前に見せる文書（ADR 0101）。未ログインでも返るここに載せる。
+		TermsURL:   optionalString(h.termsURL),
+		PrivacyURL: optionalString(h.privacyURL),
+	}
 	if h.auth == nil {
 		c.JSON(http.StatusOK, out)
 		return

@@ -13,11 +13,12 @@ import (
 
 	githubauth "github.com/yusuke0610/etoki/internal/adapter/auth/github"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
+	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
 
 // このファイルはサーバーを動かす人のための管理用コマンド（migrate / claim /
-// grants / revoke）を置く。**写して独自の main を書く利用者が要るのは main.go の
+// grants / revoke / delete-user）を置く。**写して独自の main を書く利用者が要るのは main.go の
 // 配線で、ここではない。** 分けてあるのは、どこまでが配線かを読み分けさせないため。
 
 // claim は所有者の無いボードを引き受ける。
@@ -71,26 +72,130 @@ func claim(ctx context.Context, login string, yes bool) error {
 }
 
 // parseClaimArgs は claim の引数を読む。
+func parseClaimArgs(args []string) (login string, yes bool, err error) {
+	return parseLoginArgs("claim", args)
+}
+
+// parseDeleteUserArgs は delete-user の引数を読む。形は claim と同じ。
+func parseDeleteUserArgs(args []string) (login string, yes bool, err error) {
+	return parseLoginArgs("delete-user", args)
+}
+
+// parseLoginArgs は「login 1 つと --yes」を取るサブコマンドの引数を読む。
 //
 // フラグは --yes の 1 つだけなので flag パッケージは使わない（サブコマンドと同じ
 // 判断）。位置は login の前後どちらでもよい。
-func parseClaimArgs(args []string) (login string, yes bool, err error) {
+func parseLoginArgs(command string, args []string) (login string, yes bool, err error) {
 	for _, a := range args {
 		switch {
 		case a == "--yes":
 			yes = true
 		case strings.HasPrefix(a, "-"):
-			return "", false, fmt.Errorf("claim: unknown flag %q", a)
+			return "", false, fmt.Errorf("%s: unknown flag %q", command, a)
 		case login != "":
-			return "", false, errors.New("claim takes exactly one login")
+			return "", false, fmt.Errorf("%s takes exactly one login", command)
 		default:
 			login = a
 		}
 	}
 	if login == "" {
-		return "", false, errors.New("claim requires a login")
+		return "", false, fmt.Errorf("%s requires a login", command)
 	}
 	return login, yes, nil
+}
+
+// deleteUser は利用者を、その人だけが owner のボードとメンバーの行ごと消す
+// （ADR 0101）。画面に入れなくなった利用者から、消してほしいと頼まれたときの道具。
+//
+// **消し方は画面の口と同じ（usecase.AccountService）。** ここで書き直すと、どれを
+// 消してどれを残すかの判断が 2 箇所になる。
+//
+// **消す前に、引き当てた相手と消えるものを見せて確かめる**（claim / revoke と
+// 同じ、ADR 0053）。
+//
+// **サーバーとは排他を共有しない。** ボードのロックはプロセスの中だけにある
+// （ADR 0014）。その利用者のボードで作成が走っているあいだに消すと、作った draft
+// issue の記録が残らない。サーバーを止めるか、作成が走っていないときに使う。
+func deleteUser(ctx context.Context, login string, yes bool) error {
+	// 確かめられない入力で黙って進めない。パイプから呼ぶなら --yes を明示させる。
+	if !yes && !isTerminal(os.Stdin) {
+		return errors.New(
+			"delete-user asks for confirmation; pass --yes when stdin is not a terminal")
+	}
+
+	db, sessions, err := openAuthDB(ctx, "delete-user")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
+	user, err := sessions.FindUserByLogin(ctx, githubauth.ProviderName, login)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return fmt.Errorf("unknown user %q", login)
+	}
+
+	boards := sqlite.NewBoardRepository(db)
+	accounts := usecase.NewAccountService(boards,
+		usecase.NewBoardService(boards, sqlite.NewMappingRepository(db), usecase.NewBoardLocks()),
+		sqlite.NewAccountRepository(db))
+	// 消す相手として振る舞う。どれを消すかは、その人から見たボードで決まる。
+	ctx = port.ContextWithUserID(ctx, user.ID)
+
+	losing, err := accounts.Deletion(ctx)
+	if err != nil {
+		return err
+	}
+	if !yes && !confirmDeleteUser(os.Stdin, os.Stderr, *user, losing) {
+		return errors.New("delete-user canceled")
+	}
+
+	// 消すものは Delete が引き直して決める。見せた一覧を照合しない（ADR 0042）
+	// ので、ここで消えた枚数を言わない。見せた数と違いうる。
+	if err := accounts.Delete(ctx); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "etoki: deleted %s (%s)\n", user.Login, user.ID)
+	return nil
+}
+
+// confirmDeleteUser は消す相手と消えるものを見せ、y / yes のときだけ true を返す。
+// **既定は止める**（confirm）。
+func confirmDeleteUser(
+	in io.Reader, out io.Writer, u port.User, losing usecase.AccountDeletion,
+) bool {
+	// 書けなくても確かめる手段が無いだけなので、読む側（既定は止める）に任せる。
+	_, _ = fmt.Fprintln(out, "次の利用者を消します。取り消せません。")
+	writeUser(out, u)
+	writeAccountDeletion(out, losing)
+	return confirm(in, out, "消しますか？")
+}
+
+// writeAccountDeletion は消えるものを書く。画面の確認と同じ材料を出す（ADR 0101）。
+func writeAccountDeletion(out io.Writer, d usecase.AccountDeletion) {
+	if len(d.Boards) == 0 {
+		_, _ = fmt.Fprintln(out, "一緒に消えるボードはありません。")
+	} else {
+		_, _ = fmt.Fprintf(out,
+			"一緒に消えるボード（%d 枚。共有していても、この利用者だけがオーナーなら消えます）:\n",
+			len(d.Boards))
+		tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "  NAME\tOTHER MEMBERS\tRECORDED DRAFT ISSUES\tUNCONFIRMED WRITES")
+		for _, b := range d.Boards {
+			_, _ = fmt.Fprintf(tw, "  %s\t%d\t%d\t%d\n", b.Name, b.OtherMemberCount,
+				b.Losing.RecordedItemCount, b.Losing.UnconfirmedWriteCount)
+		}
+		_ = tw.Flush()
+	}
+	if d.LeftBoardCount > 0 {
+		_, _ = fmt.Fprintf(out,
+			"ほかのボード %d 枚からはメンバーとして外れます（ボードは残ります）。\n", d.LeftBoardCount)
+	}
+	_, _ = fmt.Fprintln(out, "セッション・GitHub のトークン・MCP の接続も消えます。"+
+		"GitHub に作った draft issue と、GitHub 側のアプリの認可は消えません。")
 }
 
 // confirmClaim は引き当てた相手を見せ、y / yes のときだけ true を返す。

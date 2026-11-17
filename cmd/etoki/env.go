@@ -28,6 +28,13 @@ const envWebDir = "ETOKI_WEB_DIR"
 // envAllowedOrigins はループバック以外に追加で許すオリジン（カンマ区切り）。
 const envAllowedOrigins = "ETOKI_ALLOWED_ORIGINS"
 
+// envTermsURL と envPrivacyURL は、ログインの前に見せる利用規約とプライバシー
+// ポリシーの URL（ADR 0101）。文書はホストする側が持つ。
+const (
+	envTermsURL   = "ETOKI_TERMS_URL"
+	envPrivacyURL = "ETOKI_PRIVACY_URL"
+)
+
 // defaultDBPath は ETOKI_DB_PATH が未設定のときに使う SQLite ファイル。
 const defaultDBPath = "etoki.db"
 

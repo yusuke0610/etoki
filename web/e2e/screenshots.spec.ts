@@ -30,6 +30,7 @@ import {
   BOARD_ID,
   BOARD_NAME,
   CONSENT_PATH,
+  DOCUMENT_URLS,
   annotations,
   authRequiredMock,
   baseMock,
@@ -42,6 +43,7 @@ import {
   repositories,
   signedIn,
   unselectedBoard,
+  withAccountDeletion,
   withConnections,
 } from "./helpers/fixtures";
 
@@ -455,6 +457,7 @@ test.describe("スクリーンショット", () => {
         creation: false,
         sharing: false,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
 
@@ -477,6 +480,7 @@ test.describe("スクリーンショット", () => {
         creation: false,
         sharing: false,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     await installApi(page, mock);
@@ -706,6 +710,34 @@ test.describe("スクリーンショット", () => {
     await page.getByRole("button", { name: "MCP の接続" }).click();
     await page.getByRole("button", { name: "Claude Code の接続を取り消す" }).waitFor();
     await shot(page, "46-mcp-connections");
+  });
+
+  // アカウントの削除の確認と、文書へのリンク（ADR 0101）。どちらも認証を設定した
+  // 構成でしか出ない。
+  test("アカウントの削除の確認と文書へのリンクを撮る", async ({ page }) => {
+    const mock = withAccountDeletion(baseMock());
+    mock.session = { status: 200, body: { ...signedIn(), ...DOCUMENT_URLS } };
+    await installApi(page, mock);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Octo Cat" }).click();
+    await page.getByRole("link", { name: "プライバシーポリシー" }).waitFor();
+    await shot(page, "63-user-menu-account");
+
+    await page.getByRole("button", { name: "アカウントを削除…" }).click();
+    await page.getByRole("button", { name: "削除する" }).waitFor();
+    await shot(page, "64-account-deletion");
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.locator('html[data-theme="dark"]').waitFor({ state: "attached" });
+    await shot(page, "64-account-deletion-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.locator('html[data-theme="light"]').waitFor({ state: "attached" });
+
+    // 消したらログインの画面に戻る。リンクはログインの前にも読める。
+    await page.getByRole("button", { name: "削除する" }).click();
+    await page.getByRole("button", { name: "GitHub でログイン" }).waitFor();
+    await shot(page, "65-login-with-documents");
   });
 
   // 認証を設定した構成の入口。ここを通らないとボードに触れない（ADR 0015）。

@@ -102,6 +102,7 @@ export function App() {
     changeTarget,
     cancelPicking,
     logout,
+    leaveDeletedAccount,
   } = useBoardNavigation({
     signedIn,
     consenting: consentRequest !== null,
@@ -139,7 +140,7 @@ export function App() {
       // 他の画面と同じ地にすると、置いたものが浮いて見えない。
       <div className="app app-signed-out etoki-ui">
         <main className="main">
-          <LoginPage />
+          <LoginPage termsUrl={session.termsUrl} privacyUrl={session.privacyUrl} />
         </main>
       </div>
     );
@@ -194,6 +195,12 @@ export function App() {
             onOpen={(id) => void open(id)}
             choosesTarget={choosesTarget}
             connectionsUnavailable={unavailableReason(capabilities, "mcpConnections")}
+            accountDeletionUnavailable={unavailableReason(
+              capabilities,
+              "accountDeletion",
+            )}
+            onAccountDeleted={() => void leaveDeletedAccount()}
+            documents={session}
             dialog={{
               open: creatingDialog,
               name,

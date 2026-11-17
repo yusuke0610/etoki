@@ -15,6 +15,7 @@ const REASON_CODE: Record<keyof Capabilities, ErrorCode> = {
   creation: "github_not_configured",
   sharing: "sharing_not_configured",
   mcpConnections: "mcp_connections_not_configured",
+  accountDeletion: "account_deletion_not_configured",
 };
 
 /**

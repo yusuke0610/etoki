@@ -334,6 +334,7 @@ test.describe("図のドラフト", () => {
         creation: true,
         sharing: true,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     mock.diagramDraft = {
