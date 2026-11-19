@@ -998,6 +998,59 @@ func TestInterpret_OmitsPreviousSectionWhenEmpty(t *testing.T) {
 	}
 }
 
+// 作るものは無い、は LLM の読みとして正しい答え（ADR 0103）。呼び直すと、同じ
+// 答えに 3 回ぶん払って「もう一度試して」と言うことになる。粒度が epic でも同じ。
+func TestInterpret_AcceptsNothingToCreate(t *testing.T) {
+	t.Parallel()
+
+	nothing := `{"summary":"感想のメモで、作るものは見当たりません","items":[]}`
+
+	for _, g := range []string{"", "issue", "epic"} {
+		t.Run("粒度 "+g, func(t *testing.T) {
+			t.Parallel()
+
+			scene := strings.Replace(interpretScene, `"granularity":""`, `"granularity":"`+g+`"`, 1)
+			llm := &fakeLLM{responses: []string{nothing}}
+			svc, _ := newInterpretService(t, newBoard(scene), llm)
+
+			result, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
+			if err != nil {
+				t.Fatalf("interpret() = %v", err)
+			}
+			if len(llm.requests) != 1 {
+				t.Errorf("LLM 呼び出し回数 = %d, want 1", len(llm.requests))
+			}
+			in := result.Interpretation
+			if len(in.Items) != 0 {
+				t.Errorf("len(Items) = %d, want 0", len(in.Items))
+			}
+			if in.Summary != "感想のメモで、作るものは見当たりません" {
+				t.Errorf("Summary = %q", in.Summary)
+			}
+		})
+	}
+}
+
+// 空を答えにしてよいことは、出力の形として伝える（ADR 0103）。伝えないと、
+// 制約の一覧から「少なくとも 1 件」が消えただけで、モデルは作り出し続ける。
+func TestInterpret_SystemPromptAllowsNothingToCreate(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
+	}
+
+	sys := llm.requests[0].System
+	for _, want := range []string{"items は空の配列 []", "なぜ無いと読んだかを summary に"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("システム指示に %q が入っていない:\n%s", want, sys)
+		}
+	}
+}
+
 // 制約を運ぶのは system 指示だけ。user 側のメッセージは、その場の材料（前回ぶんの
 // 一覧や粒度）に添える判断しか持たない（ADR 0029）。この経路が切れると、LLM は
 // 制約を知らないまま出力して検査にだけ弾かれ、直しようのない再送を上限まで繰り返す。
