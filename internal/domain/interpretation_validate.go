@@ -11,16 +11,16 @@ import (
 //
 // 問題があれば ValidationErrors を返す。最初の 1 件で打ち切らず全件を集める。
 // 問題がなければ nil を返す。
+//
+// **items が空でも通す。** 作るものは無い、は LLM の読みとして正しい答えで、
+// 弾くと作るものを作り出させることになる（ADR 0103）。作成の依頼が空でないことは
+// 作成の入口（`usecase.CreationService`）が見る。
 func (in Interpretation) Validate(g Granularity) error {
 	var errs ValidationErrors
 
 	if strings.TrimSpace(in.Summary) == "" {
 		errs = append(errs, newValidationError(RuleSummary, "summary",
 			"この囲みをどう解釈したかの説明を入れてください"))
-	}
-	if len(in.Items) == 0 {
-		errs = append(errs, newValidationError(RuleItemsPresent, "items",
-			"少なくとも 1 件の項目が必要です"))
 	}
 	if len(in.Items) > MaxItems {
 		errs = append(errs, newValidationError(RuleItemsCount, "items",
@@ -251,7 +251,8 @@ func validateGranularity(items []InterpretedItem, g Granularity) ValidationError
 		hasEpic := slices.ContainsFunc(items, func(it InterpretedItem) bool {
 			return it.Kind == KindEpic
 		})
-		if !hasEpic {
+		// 作るものが無いなら epic も要らない（ADR 0103）。
+		if len(items) > 0 && !hasEpic {
 			errs = append(errs, newValidationError(RuleGranularityEpic, "items",
 				"粒度に epic が指定されているので、epic が少なくとも 1 件必要です"))
 		}

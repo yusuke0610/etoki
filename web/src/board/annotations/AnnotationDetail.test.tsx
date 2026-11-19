@@ -885,4 +885,56 @@ describe("AnnotationDetail", () => {
       expect(screen.queryByText(/ボードの背景/)).toBeNull();
     });
   });
+
+  // 作るものは無い、は LLM の答え（ADR 0103）。下書きの画面に回すと「1 件も
+  // 選ばれていません」と出て、選べば作れるように読める。
+  describe("作るものは無いという答え", () => {
+    function withNothing() {
+      const detailProps = props();
+      const result: InterpretationResult = {
+        summary: "感想のメモで、作るものは見当たりません",
+        contentHash: "h",
+        items: [],
+        context: { premise: "", otherItems: [], omittedOtherItems: 0 },
+      };
+      return {
+        ...detailProps,
+        interpretation: {
+          ...detailProps.interpretation,
+          states: {
+            "frame-1": {
+              running: false,
+              runs: [
+                {
+                  id: 1,
+                  at: "2026-01-01T00:00:00Z",
+                  granularity: "epic" as const,
+                  result,
+                },
+              ],
+              selectedId: 1,
+            },
+          },
+        },
+      };
+    }
+
+    it("summary と、そう読んだことと次の打ち手を出し、作成の口は出さない", () => {
+      render(<AnnotationDetail {...withNothing()} />);
+
+      expect(
+        screen.getByText("感想のメモで、作るものは見当たりません"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "この絵から作るものは無い、と読みました。描き足したり囲み直したりしてから、絵解き直せます。",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "GitHub に作成する" })).toBeNull();
+      expect(screen.queryByText(/選ばれていません/)).toBeNull();
+      expect(screen.queryByText(/作るもの（/)).toBeNull();
+      // 読み直す口は残す。
+      expect(screen.getByRole("button", { name: "絵解き直す" })).toBeEnabled();
+    });
+  });
 });

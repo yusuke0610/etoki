@@ -996,6 +996,27 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
+    // 作るものは無い、という答え（ADR 0103）。下書きの代わりに読みの文が出る。
+    test("作るものは無いという答えを出した状態", async ({ page }) => {
+      const mock = baseMock();
+      mock.interpret = {
+        status: 200,
+        body: {
+          ...interpretation(),
+          summary: "感想のメモで、作るものは見当たりません。",
+          items: [],
+        },
+      };
+      await openBoardWithMock(page, mock);
+
+      const card = annotationCard(page, "ログイン");
+      const detail = annotationDetail(page, "ログイン");
+      await interpret(card);
+      await detail.getByText(/作るものは無い、と読みました/).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
     /*
      * スマホの置き方（#199）。右上と下の帯の中身は Excalidraw の外の帯に移り、
      * パネルと詳細は全面に開く。**どれも広い画面の検査には一度も掛からない。**
