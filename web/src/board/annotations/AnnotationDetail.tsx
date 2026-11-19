@@ -75,6 +75,11 @@ export type CreationProps = {
     interpretation: Interpretation,
   ) => void;
   /**
+   * 下書きを手直ししたかを受け取る（#432）。下書きは `DraftEditor` が持ち、離れる
+   * 前と保存の前の確認は `BoardPage` が出す（`useEditedDrafts`）。
+   */
+  onDraftEdited: (annotationId: string, edited: boolean) => void;
+  /**
    * 作成先の Project に書けるかどうかの、いまの状態。
    *
    * `denied` でもボタンを黙って消さず、理由を出す。ブレストには参加できて
