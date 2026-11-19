@@ -157,3 +157,23 @@ peerDependencies は `react: ^17.0.2 || ^18.2.0 || ^19.0.0` で、React 19 を�
 固定だった。** 固定と `.github/dependabot.yml` の `ignore`（React 系の major）を
 外し、React も major の更新 PR が出るようにした。Excalidraw を上げたときに組み合わせが
 崩れたら、それは更新 PR が落ちることで分かる。
+
+## 追記: Dependabot の PR は full review を通らない（#424）
+
+更新 PR も、ほかの PR と同じく「最新の head への full review が 0 件」をマージの
+条件にしていた（`/land`）。**その前提が成り立たなかった。** CodeRabbit は bot が
+作った PR を、review の席が割り当てられていないとして飛ばす。`@coderabbitai full
+review` を依頼しても「Review skipped」で終わる。
+
+**full review の代わりに、CI と中身で判断する。**
+
+- **CI は、いまの main とのマージ結果で緑であること。** 生成器が上がって落ちた
+  PR は、上の「更新 PR は赤くなってよい」のとおり直してから見る。
+- **major の更新は、変更履歴の破壊的変更を読み、etoki が使っている API に
+  当たらないかを確かめる。** 使っていない経路の変化は、lint / test が緑でも
+  見えない。
+
+**bot に席を割り当てて full review を通すことは採らなかった。** 更新 PR の差分は
+ほとんどが lockfile と版の数字で、読むべき破壊的変更は差分ではなく変更履歴
+（PR 本文）にある。それを etoki の使い方と突き合わせるのは、席を足しても人か
+Claude の仕事のまま残る。席には費用もかかりうる。

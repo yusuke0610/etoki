@@ -160,15 +160,20 @@ UI を触ったならスクリーンショットを添える。`make test-e2e` �
 
 ## マージ
 
-**Claude がマージしてよいのは、最新の head に対する `@coderabbitai full review`
-で指摘が 0 件だった PR だけ。** それ以外はマージできる状態まで仕上げてユーザーに
-渡し、マージはユーザーが行う。
+**Dependabot の PR（下の例外）を除き、Claude がマージしてよいのは、最新の head に
+対する `@coderabbitai full review` で指摘が 0 件だった PR だけ。** それ以外は
+マージできる状態まで仕上げてユーザーに渡し、マージはユーザーが行う。
 
 次のものは条件を満たさない。
 
 - 増分レビュー（`@coderabbitai review` や push 時の自動レビュー）で指摘ゼロ
 - 指摘をスレッド内のやりとりで確かめて解決した
 - full review の後にコミットを積んだ（docs だけでも）
+
+**Dependabot の PR だけは例外。** CodeRabbit は bot の PR をレビューしない
+（依頼しても飛ばす）。full review の代わりに、いまの main とのマージ結果での CI と、
+変更履歴の破壊的変更が etoki の使い方に当たらないかで判断する（ADR 0035 の
+追記）。見るものは `/land` の「Dependabot の PR」。
 
 指摘が付いたら直して push し、もう一度 full review を依頼する。**full review は
 1 時間に 1 回しか回らない**ので、直すものはまとめて 1 回に載せる。

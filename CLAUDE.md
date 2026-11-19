@@ -290,8 +290,9 @@ Origin 検証は `.claude/rules/http-handlers.md`。
   日本語で「なぜそうしたか」。常に緑のコミットにする。
 - **PR 本文は `.github/pull_request_template.md` の見出しに沿って埋める。**
   該当しない節は消す。各節に何を書くかは `CONTRIBUTING.md`。
-- **マージしてよいのは、最新の head に対する full review で指摘が 0 件だった PR
-  だけ。** それ以外は仕上げてユーザーに渡す。条件は `CONTRIBUTING.md`。
+- **Dependabot の PR を除き、マージしてよいのは、最新の head に対する full review
+  で指摘が 0 件だった PR だけ。** それ以外は仕上げてユーザーに渡す。条件と、
+  full review が付かない Dependabot の PR の扱いは `CONTRIBUTING.md`。
 
 ## 実装の進め方
 

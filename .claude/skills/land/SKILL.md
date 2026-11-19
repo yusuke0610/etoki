@@ -30,7 +30,8 @@ PR ごとに次を全部満たすかを見る。
 
 - **`=> full review 0 件` が出ている。** 最新の head に対する full review で
   指摘が 0 件、という条件の判定は `/pr-watch` の「full review の読み方」に
-  従う。**`走行中` や `枠切れ` を 0 件と読まない**（#256）。
+  従う。**`走行中` や `枠切れ` を 0 件と読まない**（#256）。Dependabot の PR は
+  full review が付かないので、この条件を下の「Dependabot の PR」で読み替える。
 - **base が `main`。** 積んだ上の段は、下の段が入って `/sync-prs` で base を
   移すまで条件を満たさない。
 - **`mergeable` が `clean`、CI が緑。**
@@ -92,14 +93,19 @@ usecase テストがコンパイルできなくなった（#373 → #374）。�
 40 桁と違っていたら、マージせずに条件の判定とユーザーの確認からやり直す。**
 base や `mergeable` が違っていたら、表を作り直す。**`status.sh` に
 `=> full review 0 件` と `ci=緑` が出なくなっていたら、マージせずに止めて、表と
-確認を作り直す。**
+確認を作り直す。** Dependabot の PR には `=> full review 0 件` が出ない（依頼
+しない）ので、`ci=緑` と、CI が走った main がいまの main と同じこと（1 の
+「CI が、いまの main とのマージ結果で走っている」）を見る。中身の確かめは、head
+**と main** が確かめたときと同じなら済んでいる。main が進んでいたら、major の
+更新は破壊的変更と etoki の使い方を照らし直す。そのあいだに入ったコードが、
+消えた API を使い始めているかもしれない（下の「Dependabot の PR」）。
 
 ```sh
-.claude/skills/pr-watch/status.sh <番号>   # => full review 0 件 と ci=緑 が出ているか
-gh api "repos/{owner}/{repo}/pulls/<番号>" --jq '"\(.head.sha) \(.base.ref) \(.mergeable)"'
+.claude/skills/pr-watch/status.sh <番号>   # => full review 0 件 と ci=緑 が出ているか（Dependabot は ci=緑）
+gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq '"\(.head.sha) \(.base.ref) \(.mergeable)"'
 # sha を渡すと、確かめた head から動いていたときに GitHub が断る。
 # status.sh が出すのは先頭 7 桁なので、上で取り直した 40 桁を渡す。
-gh api -X PUT "repos/{owner}/{repo}/pulls/<番号>/merge" \
+gh api -X PUT "repos/yusuke0610/etoki/pulls/<番号>/merge" \
   -f merge_method=squash -f sha=<取り直した head の 40 桁の sha>
 ```
 
@@ -117,7 +123,7 @@ REST か、GitHub の MCP ツール（`merge_pull_request`）を使う。
 届かず、#219 と #220 で出し直した。
 
 ```sh
-gh api "repos/{owner}/{repo}/pulls/<番号>" --jq '"\(.merged) \(.base.ref) \(.merge_commit_sha)"'
+gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq '"\(.merged) \(.base.ref) \(.merge_commit_sha)"'
 git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/main が出ること
 ```
 
@@ -149,16 +155,16 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
    を遅れて作り直す**ので、main が進んだ直後は古いままのことがある。
 
    ```sh
-   gh api "repos/{owner}/{repo}/pulls/<番号>" --jq .merge_commit_sha
-   gh api "repos/{owner}/{repo}/commits/<そのsha>" --jq '.parents[].sha'
-   gh api "repos/{owner}/{repo}/git/ref/heads/main" --jq .object.sha
+   gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq .merge_commit_sha
+   gh api "repos/yusuke0610/etoki/commits/<そのsha>" --jq '.parents[].sha'
+   gh api "repos/yusuke0610/etoki/git/ref/heads/main" --jq .object.sha
    ```
 
 2. 親がいまの main なら close → reopen する。
 
    ```sh
-   gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f state=closed
-   gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f state=open
+   gh api -X PATCH "repos/yusuke0610/etoki/pulls/<番号>" -f state=closed
+   gh api -X PATCH "repos/yusuke0610/etoki/pulls/<番号>" -f state=open
    ```
 
    **close する前に、番号をユーザーへの報告に書いておく。** reopen が失敗したり
@@ -176,7 +182,7 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
    （衝突で起動しないことが多い。`/pr-watch` の「CI が走らない」）。
 
    ```sh
-   gh api "repos/{owner}/{repo}/commits/<head>/check-runs" \
+   gh api "repos/yusuke0610/etoki/commits/<head>/check-runs" \
      --jq '.check_runs[] | "\(.started_at) \(.status) \(.conclusion) \(.name)"'
    ```
 
@@ -195,24 +201,37 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
 
 ## Dependabot の PR
 
-**同じ条件で判断する。別の手順にはしない。** Dependabot の PR も、Claude が
-マージしてよいのは最新の head への full review が 0 件のものだけ。CodeRabbit は
-bot の PR を「Bot user detected」で飛ばすので、枠を使うなら `/pr-watch` で
-依頼する。
+**full review の代わりに、CI と中身で判断する**（ADR 0035 の追記）。CodeRabbit は
+bot の PR を、review の席が無いとして飛ばす。`@coderabbitai full review` を依頼しても
+「Review skipped」で終わる（#424）。**依頼しない。**
 
-そのうえで、中身ごとに見るものがある（ADR 0035）。**落ちているのは知らせで
+full review 0 件の代わりに見るのは 2 つ。ほかの条件（base・`mergeable`・CI が
+いまの main とのマージ結果で走っている）はそのまま。
+
+- **CI が緑。** main が進んでいたら、Update branch で main を取り込んでから
+  回し直す（下）。`@dependabot rebase` には応じないことがある（#424）。
+
+  ```sh
+  gh api -X PUT "repos/yusuke0610/etoki/pulls/<番号>/update-branch" \
+    -f expected_head_sha=<いまの head の 40 桁>
+  ```
+
+- **下の表の「見るもの」を確かめ終えた。**
+
+中身ごとに見るものは次のとおり（ADR 0035）。**落ちているのは知らせで
 あって、設定の不具合ではない**（`CONTRIBUTING.md`「依存の更新」）。
 
 | 中身                                     | 見るもの                                                                                         |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 生成器（`openapi-typescript`）が上がった | codegen drift で落ちる。その枝で `make codegen` を回して push する。head が変わるので依頼し直す  |
+| 生成器（`openapi-typescript`）が上がった | codegen drift で落ちる。その枝で `make codegen` を回して push する。head が変わるので CI を見る  |
 | Go の更新                                | devShell の Go（nixpkgs）より新しい版を要求していないか。要求するなら nixpkgs を上げるまで止める |
 | 固定しているもの（`@playwright/test`）   | 出てこないはず。出てきたら設定の漏れ。理由は `web/CLAUDE.md`                                     |
-| major の更新                             | 変更履歴の破壊的変更。lint / test が緑でも、使っている API が変わっていないか                    |
+| major の更新                             | 変更履歴の破壊的変更。lint / test が緑でも使う API に当たらないか。main が進めば見直す           |
 | `web/bun.lock` が動く                    | 入れたら `bun install` を知らせる（5）                                                           |
 
-どれにも当たらず、CI が緑で full review が 0 件なら、ほかの PR と同じく表に
-載せて確認を取る。
+確かめ終えて CI が緑なら、ほかの PR と同じく表に載せて確認を取る。表には、
+full review の代わりに何を確かめたか（major の破壊的変更と、使っているかどうか）を
+添える。
 
 ## やらないこと
 

@@ -210,7 +210,7 @@ PR が残る。`/land` は base が main の PR をマージの候補にする�
 状態を入れうる。
 
 ```sh
-gh api -X PATCH "repos/{owner}/{repo}/pulls/<番号>" -f base=main
+gh api -X PATCH "repos/yusuke0610/etoki/pulls/<番号>" -f base=main
 ```
 
 **push しても CI が走らないなら、まだ衝突している。** `mergeable` が `false`
