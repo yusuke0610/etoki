@@ -35,5 +35,8 @@ func (h *handlers) getCapabilities(c *gin.Context) {
 		// 材料は `/api/oauth/*` が 503 になるものそのもの（h.oauth）。認証なしの
 		// 構成では NewRouter が nil にしている。
 		McpConnections: h.oauth != nil,
+		// 材料は `/api/account*` が 503 になるものそのもの（h.accounts）。認証なしの
+		// 構成では NewRouter が nil にしている。
+		AccountDeletion: h.accounts != nil,
 	})
 }

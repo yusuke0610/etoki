@@ -607,6 +607,79 @@ func TestNewAcceptsUnsetLLMLimits(t *testing.T) {
 	}
 }
 
+// 文書へのリンクは http(s) の絶対 URL だけを受ける（ADR 0101）。打ち間違えた
+// リンクに、押されたときに初めて気づくことにしない。**資格情報を誤りに載せない。**
+func TestNewRejectsBrokenDocumentURLs(t *testing.T) {
+	t.Parallel()
+
+	for name, raw := range map[string]string{
+		"相対参照":        "/terms",
+		"スキームが違う":     "ftp://etoki.example/terms",
+		"ホストが無い":      "https:terms",
+		"URL として読めない": "https://etoki.example/%zz",
+		"資格情報つき":      "ftp://user:secret@etoki.example/terms",
+		// `*url.Error` は入力をそのまま文字列に載せる。包むと資格情報が漏れる。
+		"資格情報つきで URL として読めない": "https://user:secret@etoki.example/%zz",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, field := range []string{"TermsURL", "PrivacyURL"} {
+				opts := options(t, "")
+				if field == "TermsURL" {
+					opts.TermsURL = raw
+				} else {
+					opts.PrivacyURL = raw
+				}
+				_, err := etoki.New(opts)
+				if err == nil {
+					t.Fatalf("New(%s=%q) = nil, want error", field, raw)
+				}
+				if strings.Contains(err.Error(), "secret") {
+					t.Errorf("誤りに資格情報が載っている: %v", err)
+				}
+			}
+		})
+	}
+
+	// 空は「出さない」で通り、絶対 URL も通る。
+	opts := options(t, "")
+	opts.TermsURL = "https://etoki.example/terms"
+	opts.PrivacyURL = "http://localhost:8080/privacy"
+	if _, err := etoki.New(opts); err != nil {
+		t.Errorf("New(正しい URL) = %v", err)
+	}
+}
+
+// 認証なしの構成では、利用者を消す口を渡されても開かない（ADR 0101）。空文字の
+// 利用者 1 人（ADR 0016）を消すと、全ボードが消える。
+func TestNew_DoesNotOpenAccountDeletionWithoutAuth(t *testing.T) {
+	t.Parallel()
+
+	opts := options(t, "")
+	opts.Accounts = refusingAccounts{t: t}
+	srv, err := etoki.New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/account", nil)
+	req.Host = "127.0.0.1:8080"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 (%s)", rec.Code, rec.Body)
+	}
+}
+
+// refusingAccounts は呼ばれたら落とす AccountRepository。
+type refusingAccounts struct{ t *testing.T }
+
+func (a refusingAccounts) DeleteUser(context.Context, string) error {
+	a.t.Error("認証なしの構成で利用者を消した")
+	return nil
+}
+
 // 認証なしでループバック以外にバインドしたら、起動時に知らせる（issue #148）。
 //
 // 止めはしない。広げるのは利用者が明示的に選んだ設定（ADR 0016）で、拒むと

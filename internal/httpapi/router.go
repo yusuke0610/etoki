@@ -60,6 +60,16 @@ type Deps struct {
 	// OAuthMetadataDocuments は Client ID Metadata Document で名乗るクライアントを
 	// 受けるか（OAuth を組み立てたときに文書を取りに行く口を渡したか）。
 	OAuthMetadataDocuments bool
+	// Accounts は利用者が自分を消す口（ADR 0101）。nil でもよい。
+	//
+	// **Auth が nil なら使わない。** 認証なしの構成は空文字の利用者 1 人
+	// （ADR 0016）で、消すと全ボードが消える。nil なら `/api/account*` は 503。
+	Accounts *usecase.AccountService
+	// TermsURL と PrivacyURL は、ログインの前に見せる利用規約とプライバシー
+	// ポリシーの URL（ADR 0101）。空なら出さない。文書はホストする側が持ち、
+	// etoki はリンクを出すだけ。検証は組み立て口（etoki.New）が済ませている。
+	TermsURL   string
+	PrivacyURL string
 	// WebDir はビルド済みフロントエンド（web/dist）の置き場所。空なら配らない。
 	//
 	// 空のときに配らないのは、make dev では Vite が同じものを持っているため。
@@ -92,8 +102,9 @@ type SetupHints struct {
 	LLM string
 	// GitHub は作成と作成先の候補（github_not_configured）。
 	GitHub string
-	// Auth はログイン・共有・MCP の許可（auth / sharing /
-	// mcp_connections_not_configured）。どれも認証を設定すれば開く。
+	// Auth はログイン・共有・MCP の許可・利用者を消す口（auth / sharing /
+	// mcp_connections / account_deletion_not_configured）。どれも認証を設定
+	// すれば開く。
 	Auth string
 	// AllowedOrigins は cross-site として弾いたとき（cross_site_rejected）。
 	AllowedOrigins string
@@ -114,10 +125,13 @@ func NewRouter(deps Deps) *gin.Engine {
 
 	r.GET("/healthz", handleHealthz)
 
-	// 認可サーバーは認証ありの構成でだけ使う。理由は Deps.OAuth。
+	// 認可サーバーと利用者を消す口は、認証ありの構成でだけ使う。理由は
+	// Deps.OAuth と Deps.Accounts。
 	oauth := deps.OAuth
+	accounts := deps.Accounts
 	if deps.Auth == nil {
 		oauth = nil
+		accounts = nil
 	}
 
 	h := &handlers{
@@ -137,6 +151,9 @@ func NewRouter(deps Deps) *gin.Engine {
 		oauth:              oauth,
 		// 文書を取りに行けても、認可サーバーを組み立てていなければ載せる先が無い。
 		oauthMetadataDocuments: oauth != nil && deps.OAuthMetadataDocuments,
+		accounts:               accounts,
+		termsURL:               deps.TermsURL,
+		privacyURL:             deps.PrivacyURL,
 		publicURL:              deps.PublicURL,
 		logger:                 logger,
 		hints:                  deps.SetupHints,
@@ -239,6 +256,11 @@ func NewRouter(deps Deps) *gin.Engine {
 		api.POST("/oauth/authorization", h.decideOAuthAuthorization)
 		api.GET("/oauth/grants", h.listOAuthGrants)
 		api.DELETE("/oauth/grants/:grantId", h.revokeOAuthGrant)
+
+		// 自分を消す（ADR 0101）。ボードの削除と同じく、押す前に何が失われるかを
+		// /deletion で見せる。消す口は DELETE なので Origin の検証が効く。
+		api.GET("/account/deletion", h.getAccountDeletion)
+		api.DELETE("/account", h.deleteAccount)
 
 		// 作成先を選ぶための一覧。ここで選んだ Project をボードに設定する。
 		api.GET("/github/repositories", h.listRepositories)

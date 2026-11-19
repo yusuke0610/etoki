@@ -179,6 +179,11 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "共有には認証の設定が必要です。etoki を起動する側で設定してください。",
   mcp_connections_not_configured:
     "MCP のクライアントへの接続には認証の設定が必要です。etoki を起動する側で設定してください。",
+  // 認証なしの構成では開かない（ADR 0101）が、**「認証が必要」とは言い切らない。**
+  // 画面に出るのはログインした構成で、そこで閉じているのは口を組み立てていない
+  // 配線のとき（認証はある）。
+  account_deletion_not_configured:
+    "アカウントの削除が未設定です。etoki を起動する側で設定してください。",
 };
 
 /** 場面ごとに `ERROR_MESSAGES` の文を差し替える表。 */

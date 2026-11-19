@@ -107,6 +107,11 @@ export type BoardNavigation = {
   /** 作成先の選び直しをやめて、選ぶ前のボードへ戻る。 */
   cancelPicking: () => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * アカウントを消し終えたので、ログインしていない画面へ移る（ADR 0101）。
+   * 消すのは確認のダイアログで、ここは後片付けだけ。
+   */
+  leaveDeletedAccount: () => Promise<void>;
 };
 
 /**
@@ -117,7 +122,9 @@ export type BoardNavigation = {
  * 同じものを同じ順で触る。未保存の確認（`confirmDiscard`）、開く要求の世代
  * （`openings`）、開いているボード（`current`）、URL と控え（`showLocation`）。
  * **割らずに 1 つに置くのは、導線を並べて見比べられるようにするため。** 導線を
- * 足したら、ここで 4 つを通す。
+ * 足したら、ここで 4 つを通す。アカウントを消したあとの後片付け
+ * （`leaveDeletedAccount`、ADR 0101）もキャンバスは外さないが、ログアウトと同じ
+ * ものを触るのでここに置く。
  *
  * 描くもの（どの画面を出すか）は `App` が決める。
  */
@@ -288,6 +295,27 @@ export function useBoardNavigation({
     showFailure,
     showLocation,
   ]);
+
+  const leaveDeletedAccount = useCallback(async () => {
+    // **未保存の確認は通さない。** 消す口は一覧の画面にしか無く、キャンバスは
+    // 開いていない。消えたあとに訊いても、打ち手が無い。
+    //
+    // あとはログアウトと同じものを同じ順で触る。消えた利用者の一覧と、走って
+    // いる取得を残さない。
+    setCurrent(null);
+    clearBoards();
+    openings.invalidateAll();
+    showLocation(NO_BOARD, "replace");
+
+    try {
+      replaceSession(await authApi.session());
+    } catch (e) {
+      showFailure(describeFailure("ログイン状態を取得できませんでした", e));
+      // 消えたことはサーバーが答えている。読めなくても、ログインしていない側に
+      // 倒す。ログインしたままに見せると、何を押しても 401 になる画面が残る。
+      replaceSession({ authRequired: true, authenticated: false });
+    }
+  }, [clearBoards, openings, replaceSession, showFailure, showLocation]);
 
   const open = useCallback(
     async (id: string, options: OpenOptions = {}) => {
@@ -660,6 +688,7 @@ export function useBoardNavigation({
       changeTarget,
       cancelPicking,
       logout,
+      leaveDeletedAccount,
     }),
     [
       current,
@@ -676,6 +705,7 @@ export function useBoardNavigation({
       changeTarget,
       cancelPicking,
       logout,
+      leaveDeletedAccount,
     ],
   );
 }

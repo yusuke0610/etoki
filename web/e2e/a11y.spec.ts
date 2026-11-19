@@ -28,6 +28,7 @@ import {
   BOARD_ID,
   BOARD_NAME,
   CONSENT_PATH,
+  DOCUMENT_URLS,
   annotations,
   authRequiredMock,
   baseMock,
@@ -36,6 +37,8 @@ import {
   historyRuns,
   interpretation,
   signedIn,
+  signedOut,
+  withAccountDeletion,
   withConnections,
 } from "./helpers/fixtures";
 
@@ -66,6 +69,7 @@ test.describe("押せない理由が本文として読める", () => {
         creation: true,
         sharing: true,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     await openBoardWithMock(page, mock);
@@ -90,6 +94,7 @@ test.describe("押せない理由が本文として読める", () => {
         creation: true,
         sharing: true,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     await openBoardWithMock(page, mock);
@@ -153,6 +158,54 @@ test.describe("押せない理由が本文として読める", () => {
       page.getByRole("button", { name: "MCP の接続" }),
       "MCP のクライアントへの接続には認証の設定が必要です。",
     );
+  });
+
+  // アカウントの削除も、口を組み立てていない構成では扱えない（ADR 0101）。
+  // 既定の fixture は扱えない構成。
+  test("アカウントを削除：扱えない構成のとき", async ({ page }) => {
+    const mock = baseMock();
+    mock.session = { status: 200, body: signedIn() };
+    await installApi(page, mock);
+    await page.goto("/");
+    await page.getByRole("button", { name: "Octo Cat" }).click();
+
+    await expectBlockedReason(
+      page.getByRole("button", { name: "アカウントを削除…" }),
+      "アカウントの削除が未設定です。",
+    );
+  });
+
+  // 消しているあいだは、やめることも押し直すこともできない。待てば終わることは、
+  // 待てると知っている人にしか分からない（一時的な理由も本文で出す）。
+  test("アカウントの削除のやめる：削除しているあいだ", async ({ page }) => {
+    await installApi(page, withAccountDeletion(baseMock()));
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === "/api/account",
+      async (route) => {
+        await held;
+        await route.fallback();
+      },
+    );
+    await page.goto("/");
+    await page.getByRole("button", { name: "Octo Cat" }).click();
+    await page.getByRole("button", { name: "アカウントを削除…" }).click();
+    const dialog = page.getByRole("dialog", { name: "アカウントを削除しますか" });
+    await dialog.getByRole("button", { name: "削除する" }).click();
+
+    const reason = "削除しています。途中でやめることはできません。";
+    await expectBlockedReason(dialog.getByRole("button", { name: "やめる" }), reason);
+    await expectBlockedReason(
+      dialog.getByRole("button", { name: "削除しています…" }),
+      reason,
+    );
+
+    // 終われば理由ごと消える（ログインの画面に替わる）。
+    release();
+    await expect(page.getByText(reason)).toHaveCount(0);
   });
 
   // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる（ADR 0021）。
@@ -656,6 +709,7 @@ for (const colorScheme of ["light", "dark"] as const) {
           creation: false,
           sharing: true,
           mcpConnections: false,
+          accountDeletion: false,
         },
       };
       await installApi(page, mock);
@@ -719,6 +773,43 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Octo Cat" }).click();
       await page.getByRole("button", { name: "MCP の接続" }).click();
       await page.getByRole("button", { name: "Claude Code の接続を取り消す" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    /*
+     * アカウントの削除の確認（ADR 0101）。**開いて、消えるものを引き終えないと
+     * DOM に出ない。** 消えるボードの一覧と注記、「削除する」（赤）が出た状態で掛ける。
+     */
+    test("アカウントの削除の確認を開いた状態", async ({ page }) => {
+      await installApi(page, withAccountDeletion(baseMock()));
+      await page.goto("/");
+      await page.getByRole("button", { name: "Octo Cat" }).click();
+      await page.getByRole("button", { name: "アカウントを削除…" }).click();
+      await page.getByRole("button", { name: "削除する" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    // 文書へのリンク（ADR 0101）は設定した構成でしか出ない。リンクの色は
+    // ログインのカードと利用者のメニューの地の上で測る。
+    test("文書へのリンクを出したログイン画面", async ({ page }) => {
+      const mock = authRequiredMock();
+      mock.session = { status: 200, body: { ...signedOut(), ...DOCUMENT_URLS } };
+      await installApi(page, mock);
+      await page.goto("/");
+      await page.getByRole("link", { name: "利用規約" }).waitFor();
+
+      await expectNoAxeViolations(page);
+    });
+
+    test("文書へのリンクを出した利用者のメニュー", async ({ page }) => {
+      const mock = withAccountDeletion(baseMock());
+      mock.session = { status: 200, body: { ...signedIn(), ...DOCUMENT_URLS } };
+      await installApi(page, mock);
+      await page.goto("/");
+      await page.getByRole("button", { name: "Octo Cat" }).click();
+      await page.getByRole("link", { name: "プライバシーポリシー" }).waitFor();
 
       await expectNoAxeViolations(page);
     });

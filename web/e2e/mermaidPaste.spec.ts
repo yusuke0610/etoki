@@ -283,6 +283,7 @@ test.describe("mermaid を貼る", () => {
         creation: true,
         sharing: true,
         mcpConnections: false,
+        accountDeletion: false,
       },
     };
     await openBoardWithMock(page, mock);

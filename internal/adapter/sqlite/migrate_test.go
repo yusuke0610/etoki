@@ -108,11 +108,11 @@ func migrateUpTo(t *testing.T, db *sql.DB, name string) {
 }
 
 // countRows は 1 つの数を数えるだけの問い合わせを実行する。
-func countRows(t *testing.T, db *sql.DB, query string) int {
+func countRows(t *testing.T, db *sql.DB, query string, args ...any) int {
 	t.Helper()
 
 	var n int
-	if err := db.QueryRowContext(t.Context(), query).Scan(&n); err != nil {
+	if err := db.QueryRowContext(t.Context(), query, args...).Scan(&n); err != nil {
 		t.Fatalf("%s: %v", query, err)
 	}
 	return n

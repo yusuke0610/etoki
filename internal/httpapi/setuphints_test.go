@@ -76,6 +76,12 @@ func TestSetupHints(t *testing.T) {
 			hint:   hints.Auth,
 		},
 		{
+			name: "利用者を消す", method: http.MethodGet, path: "/api/account/deletion",
+			status: http.StatusServiceUnavailable,
+			code:   apitypes.ErrorCodeAccountDeletionNotConfigured,
+			hint:   hints.Auth,
+		},
+		{
 			// ループバック以外の Host。許すオリジンを足すのが案内になる。
 			name: "cross-site の拒否", method: http.MethodGet, path: "/api/boards",
 			host:   "etoki.example.com",

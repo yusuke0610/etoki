@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import type { Failure } from "../api/errorMessage";
 import type { BoardListEntry, SessionStatus } from "../api/types";
 import { Wordmark } from "../app/Wordmark";
+import { AccountDeletionDialog } from "../auth/AccountDeletionDialog";
 import { UserMenu } from "../auth/UserMenu";
 import { ConnectionsDialog } from "../connections/ConnectionsDialog";
 import type { TemplateChoice } from "../excalidraw/template";
@@ -40,6 +41,12 @@ type Props = {
    * いなければ null（ADR 0030）。
    */
   connectionsUnavailable: string | null;
+  /** アカウントを削除できない理由（ADR 0101）。できるなら、またはまだ確かめていなければ null。 */
+  accountDeletionUnavailable: string | null;
+  /** アカウントを消し終えた。ログイン状態を読み直すのは App。 */
+  onAccountDeleted: () => void;
+  /** 利用規約とプライバシーポリシーの URL。運用者が設定していなければ無い（ADR 0101）。 */
+  documents: Pick<SessionStatus, "termsUrl" | "privacyUrl">;
   /** 新しいボードのダイアログ（`NewBoardDialog`）。開閉と入力は App が `useNewBoardFlow` で持つ。 */
   dialog: {
     open: boolean;
@@ -81,12 +88,17 @@ export function BoardListPage({
   onOpen,
   choosesTarget,
   connectionsUnavailable,
+  accountDeletionUnavailable,
+  onAccountDeleted,
+  documents,
   dialog,
 }: Props) {
   const newBoard = useRef<HTMLButtonElement>(null);
   // 「MCP の接続」のダイアログ。**開閉はここで持つ。** 新しいボードと違って
   // 作成先の選択から戻って開き直す流れが無く、App が持つ理由が無い。
   const [connectionsOpen, setConnectionsOpen] = useState(false);
+  // 「アカウントを削除…」の確認。同じ理由でここで持つ。
+  const [accountDeletionOpen, setAccountDeletionOpen] = useState(false);
   // 閉じたら焦点を戻す先。押した「MCP の接続」はしまったメニューの中にあって
   // 見えないので、メニューを開くボタンへ戻す。
   const userMenu = useRef<HTMLDivElement>(null);
@@ -113,6 +125,10 @@ export function BoardListPage({
               onLogout={onLogout}
               onOpenConnections={() => setConnectionsOpen(true)}
               connectionsUnavailable={connectionsUnavailable}
+              onDeleteAccount={() => setAccountDeletionOpen(true)}
+              accountDeletionUnavailable={accountDeletionUnavailable}
+              termsUrl={documents.termsUrl}
+              privacyUrl={documents.privacyUrl}
             />
           </div>
         )}
@@ -201,6 +217,15 @@ export function BoardListPage({
           setConnectionsOpen(false);
           userMenu.current?.querySelector("button")?.focus();
         }}
+      />
+      <AccountDeletionDialog
+        open={accountDeletionOpen}
+        onClose={() => {
+          setAccountDeletionOpen(false);
+          // 押した項目はしまったメニューの中にあるので、メニューを開くボタンへ戻す。
+          userMenu.current?.querySelector("button")?.focus();
+        }}
+        onDeleted={onAccountDeleted}
       />
     </div>
   );

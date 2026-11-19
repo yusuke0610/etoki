@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -202,6 +204,87 @@ func TestParseGrantsArgs(t *testing.T) {
 		if (err != nil) != tc.err || login != tc.login {
 			t.Errorf("%s: parseGrantsArgs(%v) = (%q, %v), want (%q, err %v)",
 				name, tc.args, login, err, tc.login, tc.err)
+		}
+	}
+}
+
+// 利用者を消す前に、引き当てた相手と消えるものを見せて確かめる（ADR 0101）。
+// 既定は止める。画面の確認と同じ材料（共有しているか・記録の件数・届いたか
+// 分からない書き込み・外れるだけのボード・GitHub に残るもの）を出す。
+func TestConfirmDeleteUser(t *testing.T) {
+	t.Parallel()
+
+	user := port.User{
+		ID: "user-1", Login: "bob", DisplayName: "Bob Example",
+		UpdatedAt: time.Date(2026, 8, 1, 9, 30, 0, 0, time.UTC),
+	}
+	losing := usecase.AccountDeletion{
+		Boards: []usecase.DeletedBoard{{
+			ID: "b1", Name: "設計会", OtherMemberCount: 2,
+			Losing: usecase.BoardDeletion{RecordedItemCount: 5, UnconfirmedWriteCount: 1},
+		}},
+		LeftBoardCount: 3,
+	}
+
+	for input, want := range map[string]bool{
+		"y\n": true, "yes\n": true, "Y\n": true, "\n": false, "n\n": false, "": false,
+	} {
+		var out bytes.Buffer
+		if got := confirmDeleteUser(strings.NewReader(input), &out, user, losing); got != want {
+			t.Errorf("confirmDeleteUser(%q) = %v, want %v", input, got, want)
+		}
+		for _, s := range []string{
+			"Bob Example", "@bob", "user-1", "2026-08-01",
+			"1 枚", "設計会", "3 枚", "draft issue",
+		} {
+			if !strings.Contains(out.String(), s) {
+				t.Errorf("確認に %q が出ていない:\n%s", s, out.String())
+			}
+		}
+		// 数はボードの行に並んで出る。どの数がどの欄かは見出しの順で決まる。
+		if !regexp.MustCompile(`設計会\s+2\s+5\s+1\n`).MatchString(out.String()) {
+			t.Errorf("ボードの行に ほかのメンバー・記録・未確定 の数が出ていない:\n%s", out.String())
+		}
+	}
+
+	// 消えるボードが無いときも、無いと言う。黙ると、表が出なかった理由が分からない。
+	var out bytes.Buffer
+	confirmDeleteUser(strings.NewReader("\n"), &out, user, usecase.AccountDeletion{})
+	if !strings.Contains(out.String(), "一緒に消えるボードはありません") {
+		t.Errorf("消えるボードが無いと言っていない:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "外れます") {
+		t.Errorf("外れるボードが無いのに外れると言っている:\n%s", out.String())
+	}
+}
+
+func TestParseDeleteUserArgs(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		args  []string
+		login string
+		yes   bool
+		err   string
+	}{
+		"login だけ":    {args: []string{"bob"}, login: "bob"},
+		"--yes が後":    {args: []string{"bob", "--yes"}, login: "bob", yes: true},
+		"login が無い":   {args: []string{"--yes"}, err: "delete-user requires a login"},
+		"login が 2 つ": {args: []string{"bob", "alice"}, err: "delete-user takes exactly one login"},
+		"知らないフラグ":     {args: []string{"-f", "bob"}, err: `delete-user: unknown flag "-f"`},
+	} {
+		login, yes, err := parseDeleteUserArgs(tc.args)
+		// 誤りはどのサブコマンドのものかを名乗る。claim の名で返すと、打った
+		// コマンドと違う名前が出る。
+		if tc.err != "" {
+			if err == nil || err.Error() != tc.err {
+				t.Errorf("%s: err = %v, want %q", name, err, tc.err)
+			}
+			continue
+		}
+		if err != nil || login != tc.login || yes != tc.yes {
+			t.Errorf("%s: parseDeleteUserArgs(%v) = (%q, %v, %v), want (%q, %v)",
+				name, tc.args, login, yes, err, tc.login, tc.yes)
 		}
 	}
 }

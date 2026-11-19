@@ -55,6 +55,15 @@ type handlers struct {
 	// oauthMetadataDocuments は Client ID Metadata Document で名乗るクライアントを
 	// 受けるか。認可サーバーのメタデータに載せる。
 	oauthMetadataDocuments bool
+	// accounts は利用者が自分を消す口（ADR 0101）。nil でもよい。
+	//
+	// nil のときは `/api/account*` が 503 を返す。認証なしの構成では NewRouter が
+	// nil にする。空文字の利用者 1 人（ADR 0016）を消すと全ボードが消える。
+	accounts *usecase.AccountService
+	// termsURL と privacyURL はログインの前に見せる文書の URL（ADR 0101）。
+	// 空なら出さない。
+	termsURL   string
+	privacyURL string
 	// publicURL は認可から戻ってくる先の組み立てに使う。空ならリクエストの
 	// Host から組む。
 	publicURL string

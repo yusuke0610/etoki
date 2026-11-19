@@ -1,4 +1,5 @@
 import type {
+  AccountDeletion,
   AnnotationImage,
   BoardAnnotations,
   BoardDeletion,
@@ -408,6 +409,23 @@ export const authApi = {
     }),
 
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+};
+
+/**
+ * 利用者が自分を消す口（ADR 0101）。**認証を設定した構成でだけ開く。**
+ */
+export const accountApi = {
+  /**
+   * 消すと何が失われるかを引く。**押されたときだけ引く**（ボードの削除と同じ、
+   * ADR 0042）。
+   */
+  deletion: () => request<AccountDeletion>("/api/account/deletion"),
+
+  /**
+   * 自分を消す。その人だけがオーナーのボードも消える。セッションも消えるので、
+   * 済んだらログインしていない状態に戻る。
+   */
+  delete: () => request<void>("/api/account", { method: "DELETE" }),
 };
 
 /** 作成先を選ぶための一覧。ボードには紐づかない。 */

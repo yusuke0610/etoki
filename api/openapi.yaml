@@ -345,6 +345,61 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/account/deletion:
+    get:
+      tags: [auth]
+      operationId: getAccountDeletion
+      summary: 自分を消すと何が失われるかを返す
+      description: |
+        利用者を消す前に、何が失われるのかを見せるための口（ADR 0101。ボードの
+        削除と同じ形、ADR 0042）。**押されたときだけ引く。**
+
+        引いた時点の中身であって、削除の前提条件ではない。消すときに引き直す。
+
+        **認証を設定した構成でだけ開く。** 認証なしの構成は空文字の利用者 1 人で
+        （ADR 0016）、消すと全ボードが消えるので 503 を返す。
+      responses:
+        "200":
+          description: 自分を消すと失われるもの
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletion"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/account:
+    delete:
+      tags: [auth]
+      operationId: deleteAccount
+      summary: 自分を消す
+      description: |
+        自分と、自分だけが owner のボード（共有していても）を消し、ほかのボードの
+        メンバーから外れる。セッション・GitHub のトークン・MCP の許可も消える
+        （ADR 0101）。**取り消せない。** 消したらセッションの cookie も消す。
+
+        GitHub に作った draft issue と、GitHub 側のアプリの認可は消さない
+        （etoki からは取り消さない）。
+
+        途中で失敗したら、消えたものは戻さない。もう一度呼べば続きから消える。
+      responses:
+        "204":
+          description: 消した
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/NotConfigured"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/boards:
     get:
       tags: [boards]
@@ -1800,7 +1855,8 @@ components:
         false のものは押す前に理由を出すために使う。理由の文言は `ErrorCode` の
         `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
         原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
-      required: [interpretation, diagramDraft, creation, sharing, mcpConnections]
+      required:
+        [interpretation, diagramDraft, creation, sharing, mcpConnections, accountDeletion]
       properties:
         interpretation:
           type: boolean
@@ -1830,11 +1886,20 @@ components:
             MCP のクライアントに接続を許せるか（ADR 0076）。false は認証か、
             許可の保存先が未設定。**認証なしの構成では false。** そのときの
             `/mcp` は許可なしで開いている（ADR 0071）ので、取り消すものが無い
+        accountDeletion:
+          type: boolean
+          description: |
+            自分を消せるか（ADR 0101）。false は認証か、利用者の行を消す口が
+            未設定。**認証なしの構成では false。** 空文字の利用者 1 人
+            （ADR 0016）を消すと、全ボードが消える
 
     SessionStatus:
       type: object
       description: |
         ログイン状態。認証を設定していない構成でも 200 で返る。
+
+        **ログインの前に見せる文書へのリンクも載せる**（ADR 0101）。ログインの
+        画面で読めるよう、未ログインでも返るここに置く。
       required: [authRequired, authenticated]
       properties:
         authRequired:
@@ -1845,6 +1910,15 @@ components:
           type: boolean
         user:
           $ref: "#/components/schemas/AuthUser"
+        termsUrl:
+          type: string
+          description: |
+            運用者が設定した利用規約の URL。設定していなければ省く。文書は
+            ホストする側が持ち、etoki はリンクを出すだけ
+        privacyUrl:
+          type: string
+          description: |
+            運用者が設定したプライバシーポリシーの URL。設定していなければ省く
 
     LoginRequest:
       type: object
@@ -1937,6 +2011,7 @@ components:
         - auth_not_configured
         - sharing_not_configured
         - mcp_connections_not_configured
+        - account_deletion_not_configured
 
     ErrorResponse:
       type: object
@@ -2340,6 +2415,50 @@ components:
 
                 **中身を etoki は解釈しない。** 保存で送られてきたものをそのまま
                 返す（`scene` と同じ）
+
+    AccountDeletion:
+      type: object
+      description: |
+        自分を消したときに etoki から失われるもの（ADR 0101）。
+      required: [boards, leftBoardCount]
+      properties:
+        boards:
+          type: array
+          description: |
+            一緒に消えるボード。自分だけが owner のもので、**共有していても
+            消える。** 残したいなら、先に参加者をオーナーにする
+          items:
+            $ref: "#/components/schemas/AccountDeletionBoard"
+        leftBoardCount:
+          type: integer
+          description: |
+            メンバーから外れるだけのボードの数。ほかにも owner がいるか、自分が
+            owner でないボードで、ボードはほかのメンバーのもとに残る
+
+    AccountDeletionBoard:
+      type: object
+      description: 自分を消すと一緒に消えるボード 1 枚
+      required: [id, name, otherMemberCount, recordedItemCount, unconfirmedWriteCount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        otherMemberCount:
+          type: integer
+          description: |
+            自分のほかのメンバーの数。1 以上なら共有していて、消すとその人たちも
+            ボードを失う
+        recordedItemCount:
+          type: integer
+          description: |
+            そのボードから作成したと記録している draft issue の件数
+            （`BoardDeletion.recordedItemCount` と同じ数え方）
+        unconfirmedWriteCount:
+          type: integer
+          description: |
+            GitHub に届いたか分からない書き込みの件数
+            （`BoardDeletion.unconfirmedWriteCount` と同じ数え方）
 
     BoardDeletion:
       type: object
