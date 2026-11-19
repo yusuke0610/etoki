@@ -275,11 +275,12 @@ func (l *LLMLimiter) Acquire(ctx context.Context) (func(), error) {
 // **数えを読めなければ断る**（誤りのまま返す。httpapi では 500）。読めないまま
 // 通すと、予算を超えて払う。払ったものは戻らない。
 func (l *LLMLimiter) checkBudget(ctx context.Context) error {
-	b := l.limits.Budget
-	if l.usage == nil || !b.Enabled() {
+	if l.usage == nil {
 		return nil
 	}
 
+	// 上限を持たない日と月は読まない。既定の構成に、実行ごとの読み込みを足さない。
+	b := l.limits.Budget
 	now := l.now().UTC()
 	if b.monthly() {
 		month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
@@ -313,13 +314,13 @@ func (l *LLMLimiter) checkBudget(ctx context.Context) error {
 // spend は 1 回の実行で払ったぶんを、全員の合計に積む（ADR 0102）。
 //
 // **失敗した実行のぶんも積む。** 再送して直らなかったぶんも課金されている
-// （ADR 0031）。LLM を 1 度も呼ばなかった実行（attempts が 0）は積まない。
+// （ADR 0031）。
 //
 // **呼び出し側の ctx から切り離して書く。** 取り消された実行でも、払ったぶんは
 // 戻らない（run の記録と同じ、ADR 0051）。書けなかったときは誤りを返し、
 // 呼び出し側が記録に残す。結果を返すかどうかは、積めたかに左右させない。
 func (l *LLMLimiter) spend(ctx context.Context, u llmUsage) error {
-	if l.usage == nil || u.attempts == 0 {
+	if l.usage == nil {
 		return nil
 	}
 

@@ -167,7 +167,10 @@ func TestLLMBudget_TurnsOverAtUTCMidnight(t *testing.T) {
 
 			store := newUsageStore()
 			store.put(lastDay, port.LLMUsageTotal{OutputTokens: 100})
-			c := &clock{t: lastDay.Add(15 * time.Hour)} // 日本時間では 12 月 1 日 0 時
+			// 日本時間の 12 月 1 日 0 時。**時計は日本時間で返す。** 手元の時刻の
+			// まま日付を切ると、ここで 12 月に入ってしまう。
+			jst := time.FixedZone("JST", 9*60*60)
+			c := &clock{t: lastDay.Add(15 * time.Hour).In(jst)}
 			l := budgetLimiter(usecase.LLMLimits{Budget: budget}, store, c)
 
 			if _, err := l.Acquire(asUser(t.Context(), "u1")); err == nil {
@@ -178,6 +181,19 @@ func TestLLMBudget_TurnsOverAtUTCMidnight(t *testing.T) {
 			acquire(t, l, "u1")()
 		})
 	}
+}
+
+// 日の枠に数えるのは今日（UTC）のぶんだけ。昨日までのぶんは、月の枠にだけ数える。
+func TestLLMBudget_DailyCountsOnlyToday(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	store := newUsageStore()
+	store.put(now.AddDate(0, 0, -1), port.LLMUsageTotal{OutputTokens: 100})
+	l := budgetLimiter(usecase.LLMLimits{Budget: usecase.LLMBudget{DailyOutputTokens: 100}},
+		store, &clock{t: now})
+
+	acquire(t, l, "u1")()
 }
 
 // 両方尽きているなら、待つ長い方（月）を言う。日の枠が戻っても使えない。
