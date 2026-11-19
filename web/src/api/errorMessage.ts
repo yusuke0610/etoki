@@ -163,6 +163,13 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "実行できる回数の上限に達しました。しばらく時間をおいてから試してください。",
   concurrency_limited:
     "絵解きか図の生成がまだ実行中です。終わるのを待ってから試してください。",
+  // 全員の合計の費用の上限（ADR 0102）。**本人の使いすぎと読ませない。** 打ち手は
+  // 境目を待つことだけで、日と月で待つ長さが違う。境目は UTC で、画面の読み手の
+  // 多い日本時間を添える。
+  llm_daily_budget_exhausted:
+    "この etoki の今日ぶんの LLM の利用枠を、全員で使い切りました。UTC の 0 時（日本時間の 9 時）を過ぎると、また使えます。",
+  llm_monthly_budget_exhausted:
+    "この etoki の今月ぶんの LLM の利用枠を、全員で使い切りました。翌月（UTC の 1 日）になると、また使えます。",
   creation_incomplete:
     "draft issue を 1 件も作れませんでした。GitHub 側の状態を確かめてください。",
   github_unavailable:

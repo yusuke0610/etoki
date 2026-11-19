@@ -1082,9 +1082,13 @@ export interface components {
          *     LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
          *     混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
          *     別の code で返る。
+         *
+         *     全員の合計の費用の上限（ADR 0102）も、本人の上限（`rate_limited`）とは
+         *     分け、日と月でも分ける（`llm_daily_budget_exhausted` /
+         *     `llm_monthly_budget_exhausted`）。待つ長さが違う。
          * @enum {string}
          */
-        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "premise_conflict" | "premise_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "llm_truncated" | "llm_refused" | "llm_overloaded" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
+        ErrorCode: "invalid_input" | "request_too_large" | "login_required" | "forbidden_role" | "forbidden_project" | "cross_site_rejected" | "not_found" | "scene_conflict" | "scene_too_large" | "premise_conflict" | "premise_too_large" | "target_locked" | "target_mismatch" | "content_hash_mismatch" | "previous_item_unknown" | "already_member" | "invitee_changed" | "last_owner" | "target_not_selected" | "project_field_missing" | "llm_unavailable" | "llm_truncated" | "llm_refused" | "llm_overloaded" | "interpretation_failed" | "diagram_failed" | "diagram_chat_too_long" | "rate_limited" | "concurrency_limited" | "llm_daily_budget_exhausted" | "llm_monthly_budget_exhausted" | "creation_incomplete" | "github_unavailable" | "internal" | "llm_not_configured" | "github_not_configured" | "auth_not_configured" | "sharing_not_configured" | "mcp_connections_not_configured";
         /** @description 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。 */
         ErrorResponse: {
             code: components["schemas"]["ErrorCode"];
@@ -2199,15 +2203,19 @@ export interface components {
          *     解釈と図のドラフト生成が 1 つの枠を共有する。どちらも課金を伴う外部
          *     呼び出しなので、片方だけ絞ると抜け道が残る。
          *
-         *     **code を 2 つに分ける。** ステータスは同じでも打ち手が違う。
+         *     **code を分ける。** ステータスは同じでも打ち手が違う。
          *
          *     - `rate_limited`: 窓の中の回数を使い切った。時間をおく
          *     - `concurrency_limited`: いま走っている実行がある。終わるのを待つ
+         *     - `llm_daily_budget_exhausted`: 全員の合計で、今日（UTC）ぶんの費用の枠を
+         *       使い切った（ADR 0102）。本人の使いすぎではない。UTC の 0 時を待つ
+         *     - `llm_monthly_budget_exhausted`: 全員の合計で、今月（UTC）ぶんの費用の枠を
+         *       使い切った。翌月（UTC）を待つ
          *
          *     **上限に当たった実行は LLM を 1 回も呼んでいない。** 呼んでから結果を
          *     捨てると、課金だけが発生する。
          *
-         *     回数の上限は設定した構成にしか存在しない（既定は同時実行のみ）。
+         *     回数と費用の上限は設定した構成にしか存在しない（既定は同時実行のみ）。
          *     **残り枠は返さない。** 無い上限の残りを常時載せることになるため。
          */
         TooManyRequests: {

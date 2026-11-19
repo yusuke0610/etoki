@@ -97,6 +97,14 @@ var wantMappings = map[string]wantMapping{
 	"usecase.ErrConcurrencyLimited": {
 		usecase.ErrConcurrencyLimited, http.StatusTooManyRequests,
 		apitypes.ErrorCodeConcurrencyLimited},
+	// 全員の合計の費用の上限（ADR 0102）。本人の上限（rate_limited）に畳まず、
+	// 日と月でも分ける。待つ長さが違う。
+	"usecase.ErrLLMDailyBudgetExhausted": {
+		usecase.ErrLLMDailyBudgetExhausted, http.StatusTooManyRequests,
+		apitypes.ErrorCodeLlmDailyBudgetExhausted},
+	"usecase.ErrLLMMonthlyBudgetExhausted": {
+		usecase.ErrLLMMonthlyBudgetExhausted, http.StatusTooManyRequests,
+		apitypes.ErrorCodeLlmMonthlyBudgetExhausted},
 
 	"usecase.ErrTargetNotSelected": {
 		usecase.ErrTargetNotSelected, http.StatusUnprocessableEntity, apitypes.ErrorCodeTargetNotSelected},

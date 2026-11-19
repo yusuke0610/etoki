@@ -55,32 +55,52 @@ direnv allow
 やる、という使い方を潰さないためです。GitHub が無いあいだに作ったボードは作成先が
 未選択のまま残り、設定したあとで開くと作成先の選択から始まります。
 
-| 変数                             | 既定値                      | 用途                                                               |
-| -------------------------------- | --------------------------- | ------------------------------------------------------------------ |
-| `ETOKI_ADDR`                     | `127.0.0.1:8080`            | リッスンアドレス                                                   |
-| `ETOKI_ALLOWED_ORIGINS`          | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す         |
-| `ETOKI_DB_PATH`                  | `etoki.db`                  | SQLite ファイルのパス                                              |
-| `ETOKI_WEB_DIR`                  | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない       |
-| `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント。鍵を設定しているなら http はループバックだけ |
-| `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                          |
-| `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                          |
-| `ETOKI_LLM_MAX_CONCURRENT`       | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                         |
-| `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい   |
-| `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）           |
-| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                    |
-| `ETOKI_GITHUB_BASE_URL`          | `https://api.github.com`    | GitHub API のルート。http はループバックだけ。GHES は未確認        |
-| `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する              |
-| `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                   |
-| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                  |
-| `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                   |
-| `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                         |
-| `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                           |
+| 変数                              | 既定値                      | 用途                                                               |
+| --------------------------------- | --------------------------- | ------------------------------------------------------------------ |
+| `ETOKI_ADDR`                      | `127.0.0.1:8080`            | リッスンアドレス                                                   |
+| `ETOKI_ALLOWED_ORIGINS`           | （なし）                    | 追加で許すオリジン（カンマ区切り）。ループバックは常に許す         |
+| `ETOKI_DB_PATH`                   | `etoki.db`                  | SQLite ファイルのパス                                              |
+| `ETOKI_WEB_DIR`                   | （なし）                    | ビルド済みフロントエンドの置き場所。未設定なら画面を配らない       |
+| `ETOKI_LLM_BASE_URL`              | `https://api.anthropic.com` | LLM のエンドポイント。鍵を設定しているなら http はループバックだけ |
+| `ETOKI_LLM_API_KEY`               | （なし）                    | LLM の API キー。認証不要なら未設定でよい                          |
+| `ETOKI_LLM_MODEL`                 | `claude-opus-5`             | モデル ID                                                          |
+| `ETOKI_LLM_MAX_CONCURRENT`        | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                         |
+| `ETOKI_LLM_RATE_LIMIT`            | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい   |
+| `ETOKI_LLM_RATE_WINDOW`           | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）           |
+| `ETOKI_LLM_DAILY_INPUT_TOKENS`    | （なし）                    | 全員の合計で 1 日（UTC）に使える入力のトークン数                   |
+| `ETOKI_LLM_DAILY_OUTPUT_TOKENS`   | （なし）                    | 同 出力のトークン数                                                |
+| `ETOKI_LLM_MONTHLY_INPUT_TOKENS`  | （なし）                    | 全員の合計で 1 か月（UTC）に使える入力のトークン数                 |
+| `ETOKI_LLM_MONTHLY_OUTPUT_TOKENS` | （なし）                    | 同 出力のトークン数                                                |
+| `ETOKI_GITHUB_TOKEN`              | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                    |
+| `ETOKI_GITHUB_BASE_URL`           | `https://api.github.com`    | GitHub API のルート。http はループバックだけ。GHES は未確認        |
+| `ETOKI_GITHUB_APP_CLIENT_ID`      | （なし）                    | GitHub App の client ID。設定するとログインを要求する              |
+| `ETOKI_GITHUB_APP_CLIENT_SECRET`  | （なし）                    | 同 client secret                                                   |
+| `ETOKI_TOKEN_ENCRYPTION_KEY`      | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                  |
+| `ETOKI_PUBLIC_URL`                | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                   |
+| `ETOKI_GITHUB_KIND_FIELD`         | `Kind`                      | 種別のカスタムフィールド名                                         |
+| `ETOKI_GITHUB_PARENT_FIELD`       | `Parent`                    | 親のカスタムフィールド名                                           |
 
 解釈と図のドラフト生成は LLM を叩くので課金を伴います。**上限は利用者ごとに
 効き、2 つで 1 つの枠を共有します**（ADR 0044）。既定で効くのは同時実行だけで、
 回数の上限は `ETOKI_LLM_RATE_LIMIT` を設定したときだけ効きます。妥当な回数は
 料金プランと使い方で決まる値なので、etoki は既定を決めません。上限に当たると
 429 が返り、そのとき LLM は 1 回も呼ばれていません。
+
+**費用は全員の合計でも絞れます**（[ADR 0102](docs/adr/0102-llm-budget-across-everyone.md)）。
+`ETOKI_LLM_{DAILY,MONTHLY}_{INPUT,OUTPUT}_TOKENS` に、1 日・1 か月に使える
+トークン数を入力と出力で別々に書きます。単価が大きく違うので、予算から割って
+決めてください。日と月の境目は **UTC** です（日本時間では 9 時に切り替わります）。
+どれかに届くと、次の解釈と図の生成は 429 で断られ、境目を過ぎると戻ります。
+判定は始める前に 1 度だけなので、届く直前に始めた実行のぶん（同時に始まれば、
+その数のぶん）だけ超えることがあります。
+
+使った量は、上限を設定していなくても DB（`llm_usage_days`）に日ごとに積みます。
+上限を決める前に、どれだけ使っているかを確かめられます。積むのは全員の合計の
+トークン数と実行の回数だけで、誰が使ったかは残しません。
+
+```sh
+sqlite3 etoki.db "SELECT * FROM llm_usage_days ORDER BY day DESC LIMIT 7"
+```
 
 認証は既定では持ちません。GitHub App を設定するとログインを要求します（後述）。
 どちらの構成でも、許可していない Host / Origin を持つブラウザからのリクエストは

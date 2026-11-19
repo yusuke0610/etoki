@@ -100,3 +100,4 @@
 | [0095](0095-clean-drawing-style.md)                              | 線を揺らさず、書体を Excalifont から外す                                     | 採用                 |
 | [0096](0096-pass-arrow-connections-to-interpretation.md)         | 人がつないだ矢印の結び先は、解釈に文字でも渡す                               | 採用                 |
 | [0097](0097-stack-e2e-in-ci.md)                                  | 画面とサーバーの往復は、実物と偽の上流に繋いだ E2E で CI でも確かめる        | 採用                 |
+| [0102](0102-llm-budget-across-everyone.md)                       | LLM の費用の上限は全員の合計で持ち、日ごとの合計を DB に積む                 | 採用                 |

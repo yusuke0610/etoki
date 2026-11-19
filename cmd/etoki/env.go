@@ -65,10 +65,28 @@ func llmLimits() (etoki.LLMLimits, error) {
 		}
 	}
 
+	// 全員の合計の費用の上限（ADR 0102）。どれも単独で設定してよい。読む順は
+	// 固定する。map で回すと、2 つ誤っているときにどちらを言うかが毎回変わる。
+	var b etoki.LLMBudget
+	for _, v := range []struct {
+		name string
+		dst  *int
+	}{
+		{"ETOKI_LLM_DAILY_INPUT_TOKENS", &b.DailyInputTokens},
+		{"ETOKI_LLM_DAILY_OUTPUT_TOKENS", &b.DailyOutputTokens},
+		{"ETOKI_LLM_MONTHLY_INPUT_TOKENS", &b.MonthlyInputTokens},
+		{"ETOKI_LLM_MONTHLY_OUTPUT_TOKENS", &b.MonthlyOutputTokens},
+	} {
+		if *v.dst, err = positiveInt(v.name); err != nil {
+			return etoki.LLMLimits{}, err
+		}
+	}
+
 	return etoki.LLMLimits{
 		MaxConcurrent: maxConcurrent,
 		RateLimit:     rateLimit,
 		RateWindow:    window,
+		Budget:        b,
 	}, nil
 }
 

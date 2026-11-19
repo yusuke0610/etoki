@@ -207,6 +207,23 @@ describe("ERROR_MESSAGES", () => {
     expect(ERROR_MESSAGES.rate_limited).not.toBe(ERROR_MESSAGES.concurrency_limited);
   });
 
+  // 全員の合計の費用の上限（ADR 0102）。本人の上限と畳まず、日と月でも分ける。
+  // 打ち手は境目を待つことだけなので、いつ戻るかを言う。
+  it("費用の上限は全員の枠であることと、いつ戻るかを言う", () => {
+    const budgets = [
+      ERROR_MESSAGES.llm_daily_budget_exhausted,
+      ERROR_MESSAGES.llm_monthly_budget_exhausted,
+    ];
+    expect(new Set([...budgets, ERROR_MESSAGES.rate_limited]).size).toBe(3);
+    for (const message of budgets) {
+      expect(message).toContain("全員で");
+      expect(message).not.toContain("絵解き");
+      expect(message).not.toMatch(/ETOKI_/);
+    }
+    expect(ERROR_MESSAGES.llm_daily_budget_exhausted).toContain("UTC の 0 時");
+    expect(ERROR_MESSAGES.llm_monthly_budget_exhausted).toContain("翌月");
+  });
+
   // LLM の呼び出しの失敗は打ち手で分けた（ADR 0087）。畳むと、打ち切りでも
   // 混雑でも「鍵を確かめて」と言うことになる。
   const llmCallFailures = [

@@ -248,7 +248,7 @@ func (s *InterpretationService) execute(
 		p.images, p.previous, p.context)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されているので、
 	// 成功したときだけ記録すると、実績が実際より小さく見える（ADR 0031）。
-	logLLMUsage(ctx, s.logger, "interpretation llm usage", usage, err,
+	settleLLMUsage(ctx, s.logger, s.limits, "interpretation llm usage", usage, err,
 		slog.String("boardId", boardID), slog.String("annotationId", annotationID))
 	if err != nil {
 		return InterpretationResult{}, err

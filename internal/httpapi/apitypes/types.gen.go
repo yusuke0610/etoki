@@ -110,6 +110,8 @@ const (
 	ErrorCodeInvalidInput                ErrorCode = "invalid_input"
 	ErrorCodeInviteeChanged              ErrorCode = "invitee_changed"
 	ErrorCodeLastOwner                   ErrorCode = "last_owner"
+	ErrorCodeLlmDailyBudgetExhausted     ErrorCode = "llm_daily_budget_exhausted"
+	ErrorCodeLlmMonthlyBudgetExhausted   ErrorCode = "llm_monthly_budget_exhausted"
 	ErrorCodeLlmNotConfigured            ErrorCode = "llm_not_configured"
 	ErrorCodeLlmOverloaded               ErrorCode = "llm_overloaded"
 	ErrorCodeLlmRefused                  ErrorCode = "llm_refused"
@@ -168,6 +170,10 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeInviteeChanged:
 		return true
 	case ErrorCodeLastOwner:
+		return true
+	case ErrorCodeLlmDailyBudgetExhausted:
+		return true
+	case ErrorCodeLlmMonthlyBudgetExhausted:
 		return true
 	case ErrorCodeLlmNotConfigured:
 		return true
@@ -1086,6 +1092,10 @@ type DiagramTurn struct {
 // LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
 // 混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
 // 別の code で返る。
+//
+// 全員の合計の費用の上限（ADR 0102）も、本人の上限（`rate_limited`）とは
+// 分け、日と月でも分ける（`llm_daily_budget_exhausted` /
+// `llm_monthly_budget_exhausted`）。待つ長さが違う。
 type ErrorCode string
 
 // ErrorResponse 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
@@ -1107,6 +1117,10 @@ type ErrorResponse struct {
 	// LLM の実装が原因を名乗らなければ `llm_unavailable` になる。上流の
 	// 混雑は etoki 自身の上限（`rate_limited` / `concurrency_limited`）とは
 	// 別の code で返る。
+	//
+	// 全員の合計の費用の上限（ADR 0102）も、本人の上限（`rate_limited`）とは
+	// 分け、日と月でも分ける（`llm_daily_budget_exhausted` /
+	// `llm_monthly_budget_exhausted`）。待つ長さが違う。
 	Code ErrorCode `json:"code"`
 
 	// Error 原因の手掛かり。**利用者向けの文言ではない。** 画面は既定で畳む。
