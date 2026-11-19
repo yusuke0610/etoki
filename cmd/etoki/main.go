@@ -59,6 +59,11 @@ environment:
                                そのとき窓は既定になる
   ETOKI_LLM_RATE_WINDOW        回数を数える窓（既定: ` + etoki.DefaultLLMRateWindow.String() + `）
                                単独では設定できない（回数の上限が要る）
+  ETOKI_LLM_DAILY_INPUT_TOKENS     全員の合計で 1 日（UTC）に使える入力のトークン数
+  ETOKI_LLM_DAILY_OUTPUT_TOKENS    同 出力のトークン数
+  ETOKI_LLM_MONTHLY_INPUT_TOKENS   全員の合計で 1 か月（UTC）に使える入力のトークン数
+  ETOKI_LLM_MONTHLY_OUTPUT_TOKENS  同 出力のトークン数
+                                   どれも未設定なら上限なし。単独で設定してよい
   ETOKI_GITHUB_TOKEN    GitHub のトークン（repo の read と Projects の read/write）
                         認証を設定した場合は使わない
   ETOKI_GITHUB_BASE_URL GitHub API のルート（既定: ` + github.DefaultBaseURL + `）
@@ -203,8 +208,11 @@ func serve(ctx context.Context) error {
 		ParentFieldName:              os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
 		Logger:                       logger,
 		LLMLimits:                    limits,
-		AllowedOrigins:               splitList(os.Getenv(envAllowedOrigins)),
-		SetupHints:                   setupHints(),
+		// 費用の上限を設定していなくても積む。使った量を見てから上限を決められる
+		// ように（ADR 0102）。
+		LLMUsage:       sqlite.NewLLMUsageRepository(db),
+		AllowedOrigins: splitList(os.Getenv(envAllowedOrigins)),
+		SetupHints:     setupHints(),
 	})
 	if err != nil {
 		return err

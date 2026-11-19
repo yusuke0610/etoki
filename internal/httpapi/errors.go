@@ -102,6 +102,12 @@ var errorMappings = []errorMapping{
 	{usecase.ErrRateLimited, http.StatusTooManyRequests, apitypes.ErrorCodeRateLimited},
 	{usecase.ErrConcurrencyLimited, http.StatusTooManyRequests,
 		apitypes.ErrorCodeConcurrencyLimited},
+	// 全員の合計の費用の上限（ADR 0102）。**rate_limited に畳まない。** あちらは
+	// 本人の使いすぎで、こちらは全員に効く。日と月でも分ける。待つ長さが違う。
+	{usecase.ErrLLMDailyBudgetExhausted, http.StatusTooManyRequests,
+		apitypes.ErrorCodeLlmDailyBudgetExhausted},
+	{usecase.ErrLLMMonthlyBudgetExhausted, http.StatusTooManyRequests,
+		apitypes.ErrorCodeLlmMonthlyBudgetExhausted},
 
 	// 設定不足であって、リクエストの誤りではない。
 	{usecase.ErrTargetNotSelected, http.StatusUnprocessableEntity, apitypes.ErrorCodeTargetNotSelected},

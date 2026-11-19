@@ -182,7 +182,7 @@ func (s *DiagramService) execute(
 ) (DiagramDraft, error) {
 	mermaid, usage, err := s.complete(ctx, req)
 	// **失敗しても残す。** 再送して直らなかったぶんも課金されている（ADR 0031）。
-	logLLMUsage(ctx, s.logger, "diagram draft llm usage", usage, err,
+	settleLLMUsage(ctx, s.logger, s.limits, "diagram draft llm usage", usage, err,
 		slog.String("boardId", boardID), slog.String("diagramKind", string(req.Kind)))
 	if err != nil {
 		return DiagramDraft{}, err

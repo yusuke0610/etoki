@@ -687,6 +687,36 @@ test.describe("解釈と作成", () => {
     await expect(page.locator(".notifications .notification")).toHaveCount(0);
   });
 
+  // 全員の合計の費用の上限（ADR 0102）。**本人の使いすぎと読ませない。** 本人の
+  // 上限と同じ文言だと、待っても戻らない月の枠で「時間をおいて」と言うことになる。
+  // いつ戻るかを言う。
+  test("全員の枠を使い切ったら、全員の枠であることと、いつ戻るかを出す", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.interpret = {
+      status: 429,
+      body: {
+        code: "llm_monthly_budget_exhausted",
+        error:
+          "etoki: llm monthly budget exhausted: 2026-11 used 30000 input / 6000 output tokens, limit is 30000 / 6000",
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+
+    const notice = detail.getByText("全員で使い切りました", { exact: false });
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText("翌月");
+    await expect(detail.getByText("上限に達しました", { exact: false })).toHaveCount(0);
+    await expect(
+      detail.getByText("monthly budget exhausted", { exact: false }),
+    ).toBeHidden();
+  });
+
   // LLM の呼び出しの失敗は打ち手で分ける（#291、ADR 0087）。打ち切りは鍵の
   // 問題ではないので、「API キーを確かめて」と言わない。ローカル LLM の既定の
   // コンテキスト長で起きる（README「ローカル LLM を使う」）。

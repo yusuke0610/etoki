@@ -37,6 +37,10 @@ const (
 // main を書く利用者が internal/ を import できないため（ADR 0001）。
 type LLMLimits = usecase.LLMLimits
 
+// LLMBudget は全員の合計の費用の上限（ADR 0102）。LLMLimits.Budget に入れる。
+// 別名で公開している理由は LLMLimits と同じ。
+type LLMBudget = usecase.LLMBudget
+
 // 実行の上限の既定値。**回数の上限には既定値が無い。** 未設定なら無制限で、
 // 妥当な値は料金プランと使い方という外の世界の値で決まる（ADR 0044）。
 const (
@@ -183,7 +187,16 @@ type Options struct {
 	// MaxConcurrent の 0 は既定（DefaultLLMMaxConcurrent）、RateLimit の 0 は
 	// 無制限。**矛盾した設定はここで落とす。** 負の値と、上限を伴わない窓が
 	// 該当する。黙って受けると、設定したつもりの上限が外れる。
+	//
+	// Budget は全員の合計の費用の上限（ADR 0102）。持つなら LLMUsage も要る。
 	LLMLimits LLMLimits
+
+	// LLMUsage は LLM に払った量を日ごとに積む置き場所（ADR 0102）。任意。
+	//
+	// 渡せば、上限を持たない構成でも実行ごとに積む（使った量を見てから上限を
+	// 決められるように）。**LLMLimits.Budget を持つのに nil なら New が落ちる。**
+	// 数えられない上限を黙って受けると、設定したつもりの予算が外れる。
+	LLMUsage port.LLMUsageRepository
 
 	// AllowedOrigins はループバック以外に追加で許すオリジン。任意。
 	//
@@ -277,14 +290,20 @@ func New(opts Options) (*Server, error) {
 	if err := validateLLMLimits(opts.LLMLimits); err != nil {
 		return nil, err
 	}
+	if opts.LLMLimits.Budget.Enabled() && opts.LLMUsage == nil {
+		return nil, errors.New("etoki: LLMLimits.Budget needs LLMUsage; " +
+			"a budget without a place to count usage has no effect")
+	}
 
 	// 作成先の固定を守るには、固定を判定する側と、判定の前提を崩す側とが
 	// 同じ排他を見ている必要がある（usecase.BoardLocks）。
 	locks := usecase.NewBoardLocks()
 
 	// 解釈と図のドラフト生成は同じ枠で数える。どちらも同じ鍵で同じモデルを
-	// 叩くので、片方だけ絞ると抜け道が残る（ADR 0044）。
-	llmLimiter := usecase.NewLLMLimiter(opts.LLMLimits)
+	// 叩くので、片方だけ絞ると抜け道が残る（ADR 0044）。全員の合計の費用の
+	// 上限も同じ limiter が見る（ADR 0102）。
+	llmLimiter := usecase.NewLLMLimiter(opts.LLMLimits,
+		usecase.WithLLMUsageRepository(opts.LLMUsage))
 
 	// GitHub が無い構成では作成先の候補を引けないので、作成先を選ばずにボードを
 	// 作れるようにする（ADR 0090）。必須のままだとボードを 1 枚も作れず、LLM を
@@ -428,6 +447,22 @@ func validateLLMLimits(l LLMLimits) error {
 	if l.RateWindow > 0 && l.RateLimit == 0 {
 		return errors.New("etoki: LLMLimits.RateWindow needs RateLimit; " +
 			"a window without a limit has no effect")
+	}
+	// 費用の上限も 0 を「上限なし」と読む（ADR 0102）。負の値は設定の誤り。見る順は
+	// 固定する（2 つ誤っているときに、どちらを言うかを毎回変えない）。
+	for _, v := range []struct {
+		name  string
+		value int
+	}{
+		{"DailyInputTokens", l.Budget.DailyInputTokens},
+		{"DailyOutputTokens", l.Budget.DailyOutputTokens},
+		{"MonthlyInputTokens", l.Budget.MonthlyInputTokens},
+		{"MonthlyOutputTokens", l.Budget.MonthlyOutputTokens},
+	} {
+		if v.value < 0 {
+			return fmt.Errorf("etoki: LLMLimits.Budget.%s must be at least 1, got %d",
+				v.name, v.value)
+		}
 	}
 	return nil
 }

@@ -582,6 +582,11 @@ func TestNewRejectsBrokenLLMLimits(t *testing.T) {
 		"回数が負":         {RateLimit: -1},
 		"窓が負":          {RateLimit: 1, RateWindow: -time.Second},
 		"窓だけで回数の上限が無い": {RateWindow: time.Hour},
+		// 費用の上限（ADR 0102）。4 つとも見る。1 つだけ見る実装も通さない。
+		"日の入力の上限が負": {Budget: etoki.LLMBudget{DailyInputTokens: -1}},
+		"日の出力の上限が負": {Budget: etoki.LLMBudget{DailyOutputTokens: -1}},
+		"月の入力の上限が負": {Budget: etoki.LLMBudget{MonthlyInputTokens: -1}},
+		"月の出力の上限が負": {Budget: etoki.LLMBudget{MonthlyOutputTokens: -1}},
 	}
 
 	for name, limits := range cases {
@@ -590,12 +595,47 @@ func TestNewRejectsBrokenLLMLimits(t *testing.T) {
 
 			opts := options(t, "")
 			opts.LLMLimits = limits
+			// 数えの置き場所は渡す。「置き場所が無い」で落ちたのを、負の値で
+			// 落ちたと読み違えない。
+			opts.LLMUsage = usageRepo(t)
 
 			if _, err := etoki.New(opts); err == nil {
 				t.Fatalf("New(%+v) = nil, want error", limits)
 			}
 		})
 	}
+}
+
+// 費用の上限を持つのに数えの置き場所が無ければ落とす（ADR 0102）。黙って受けると、
+// 設定したつもりの予算が外れる。置き場所があれば通る。
+func TestNew_BudgetNeedsUsageRepository(t *testing.T) {
+	t.Parallel()
+
+	opts := options(t, "")
+	opts.LLMLimits = etoki.LLMLimits{Budget: etoki.LLMBudget{MonthlyOutputTokens: 6000}}
+	if _, err := etoki.New(opts); err == nil {
+		t.Fatal("New(置き場所なし) = nil, want error")
+	}
+
+	opts.LLMUsage = usageRepo(t)
+	if _, err := etoki.New(opts); err != nil {
+		t.Errorf("New(置き場所あり) = %v", err)
+	}
+}
+
+// usageRepo はマイグレーション済みの DB に置いた、LLM の使用量の置き場所を返す。
+func usageRepo(t *testing.T) *sqlite.LLMUsageRepository {
+	t.Helper()
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "usage.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := sqlite.Migrate(t.Context(), db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	return sqlite.NewLLMUsageRepository(db)
 }
 
 // 未設定はそのまま通る。既定の構成では回数の上限が無く、同時実行だけが効く。

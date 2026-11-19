@@ -33,15 +33,33 @@ func TestLLMLimits(t *testing.T) {
 		"負の回数":        {env: map[string]string{"ETOKI_LLM_RATE_LIMIT": "-1"}, err: true},
 		"読めない窓":       {env: map[string]string{"ETOKI_LLM_RATE_WINDOW": "1 hour"}, err: true},
 		"0 の窓":        {env: map[string]string{"ETOKI_LLM_RATE_WINDOW": "0s"}, err: true},
+		// 全員の合計の費用の上限（ADR 0102）。4 つとも別の欄に入る。取り違えると、
+		// 入力の予算で出力を絞ることになる。
+		"費用の上限をそれぞれの欄に渡す": {
+			env: map[string]string{
+				"ETOKI_LLM_DAILY_INPUT_TOKENS":    "1000",
+				"ETOKI_LLM_DAILY_OUTPUT_TOKENS":   "200",
+				"ETOKI_LLM_MONTHLY_INPUT_TOKENS":  "30000",
+				"ETOKI_LLM_MONTHLY_OUTPUT_TOKENS": "6000",
+			},
+			want: etoki.LLMLimits{Budget: etoki.LLMBudget{
+				DailyInputTokens: 1000, DailyOutputTokens: 200,
+				MonthlyInputTokens: 30000, MonthlyOutputTokens: 6000,
+			}},
+		},
+		"費用の上限の 0 は誤り": {env: map[string]string{"ETOKI_LLM_MONTHLY_OUTPUT_TOKENS": "0"}, err: true},
+		"数値でない費用の上限":   {env: map[string]string{"ETOKI_LLM_DAILY_INPUT_TOKENS": "1M"}, err: true},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			// t.Setenv は並行実行を禁じるので t.Parallel は呼ばない。
-			// **3 つとも明示的に置く。** 実行環境に残っている値を拾うと、
+			// **全部明示的に置く。** 実行環境に残っている値を拾うと、
 			// 「未設定」のケースが手元と CI で違う結果になる。
 			for _, k := range []string{
 				"ETOKI_LLM_MAX_CONCURRENT", "ETOKI_LLM_RATE_LIMIT", "ETOKI_LLM_RATE_WINDOW",
+				"ETOKI_LLM_DAILY_INPUT_TOKENS", "ETOKI_LLM_DAILY_OUTPUT_TOKENS",
+				"ETOKI_LLM_MONTHLY_INPUT_TOKENS", "ETOKI_LLM_MONTHLY_OUTPUT_TOKENS",
 			} {
 				t.Setenv(k, tc.env[k])
 			}

@@ -172,11 +172,39 @@ func (u *llmUsage) addTokens(usage port.Usage) {
 	u.outputTokens += usage.OutputTokens
 }
 
+// settleLLMUsage は 1 回の実行で LLM に払ったぶんを残す。ログに 1 行
+// （logLLMUsage、ADR 0031）と、全員の合計への積み増し（ADR 0102）。
+//
+// **解釈と図のドラフト生成はどちらもここを通す。** 片方だけ積むと、全員の合計の
+// 上限をもう片方が素通りする（ADR 0044 の「枠は 1 つ」と同じ理由）。
+//
+// **積めなくても結果は返す。** 払ったものは戻らないので、結果まで捨てると払った
+// ぶんが丸ごと無駄になる。積めなかったことは記録に残す。
+func settleLLMUsage(
+	ctx context.Context, logger *slog.Logger, limits *LLMLimiter,
+	msg string, u llmUsage, err error, attrs ...slog.Attr,
+) {
+	logLLMUsage(ctx, logger, msg, u, err, attrs...)
+	if serr := limits.spend(ctx, u); serr != nil {
+		args := make([]any, 0, len(attrs)+3)
+		for _, a := range attrs {
+			args = append(args, a)
+		}
+		args = append(args,
+			slog.Int("inputTokens", u.inputTokens),
+			slog.Int("outputTokens", u.outputTokens),
+			slog.Any("error", serr),
+		)
+		logger.ErrorContext(ctx, "llm usage not recorded", args...)
+	}
+}
+
 // logLLMUsage は 1 回の実行で LLM に払ったぶんを 1 行で残す。attrs はその実行を
 // 名指す属性（ボードと、注釈か図の種類）で、行の先頭に並ぶ。
 //
-// **保存はしない**（ADR 0031）。表を持つと「誰の実績か」を決める必要があり、
-// それは絞り方（ボード単位 / 利用者単位）と揃えて決めるべき問いになる。
+// **誰の実績かは保存しない**（ADR 0031）。保存するのは全員の合計の日ごとの数え
+// だけで（ADR 0102）、そちらは settleLLMUsage が積む。この 1 行は、1 回の実行に
+// いくら払ったかを読むためのもの。
 //
 // **金額にしない。** モデルごとの単価は外の世界の値で、抱えると差し替える
 // たびに古くなる。残すのはトークン数と回数まで。
