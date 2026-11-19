@@ -155,6 +155,41 @@ test.describe("アカウントの削除", () => {
     expect(mock.account?.deleted).toBe(1);
   });
 
+  // 消し終えてから画面が替わるまで（ログイン状態を読み直すあいだ）も押し直させない。
+  // 消えた利用者として、もう一度消しにいかせない。
+  test("消し終えてから画面が替わるまで、押し直せない", async ({ page }) => {
+    const mock = await installApi(page, withAccountDeletion(baseMock()));
+    let holding = false;
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // 後から登録したものが先に当たる。消したあとの読み直しだけを止める。
+    await page.route(
+      (url) => url.pathname === "/api/auth/session",
+      async (route) => {
+        if (holding) await held;
+        await route.fallback();
+      },
+    );
+    await page.goto("/");
+
+    const dialog = await openAccountDeletion(page);
+    await dialog.getByRole("button", { name: "削除する" }).waitFor();
+    holding = true;
+    await dialog.getByRole("button", { name: "削除する" }).click();
+
+    // 後片付け（一覧が外れる）が描かれるまで待つ。押せる形に戻すなら、同じ描画で
+    // 戻っている。
+    await expect(page.locator(".board-card")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "削除しています…" })).toBeDisabled();
+    expect(mock.account?.deleted).toBe(1);
+
+    release();
+    await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
+    expect(mock.account?.deleted).toBe(1);
+  });
+
   // 消しているあいだは押せず、Esc でも閉じない。閉じると、消えたかどうかを
   // 読む場所が無くなる。
   test("消しているあいだは押し直せず、閉じない", async ({ page }) => {
@@ -229,8 +264,27 @@ test.describe("文書へのリンク", () => {
     await expect(page.getByRole("link", { name: "プライバシーポリシー" })).toHaveCount(0);
   });
 
-  // 片方だけ設定したら、片方だけ出す。
-  test("片方だけ設定したら、片方だけ出す", async ({ page }) => {
+  // 片方だけ設定したら、片方だけ出す。ログインの画面とメニューで、出す条件を
+  // 別々に書いている。
+  for (const [set, shown, hidden] of [
+    ["termsUrl", "利用規約", "プライバシーポリシー"],
+    ["privacyUrl", "プライバシーポリシー", "利用規約"],
+  ] as const) {
+    test(`ログインの画面で、${shown}だけ設定したら${shown}だけ出す`, async ({ page }) => {
+      const mock = authRequiredMock();
+      mock.session = {
+        status: 200,
+        body: { ...signedOut(), [set]: DOCUMENT_URLS[set] },
+      };
+      await installApi(page, mock);
+      await page.goto("/");
+
+      await expect(page.getByRole("link", { name: shown })).toBeVisible();
+      await expect(page.getByRole("link", { name: hidden })).toHaveCount(0);
+    });
+  }
+
+  test("利用者のメニューで、片方だけ設定したら片方だけ出す", async ({ page }) => {
     const mock = baseMock();
     mock.session = {
       status: 200,

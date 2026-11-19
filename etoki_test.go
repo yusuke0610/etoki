@@ -618,6 +618,8 @@ func TestNewRejectsBrokenDocumentURLs(t *testing.T) {
 		"ホストが無い":      "https:terms",
 		"URL として読めない": "https://etoki.example/%zz",
 		"資格情報つき":      "ftp://user:secret@etoki.example/terms",
+		// `*url.Error` は入力をそのまま文字列に載せる。包むと資格情報が漏れる。
+		"資格情報つきで URL として読めない": "https://user:secret@etoki.example/%zz",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

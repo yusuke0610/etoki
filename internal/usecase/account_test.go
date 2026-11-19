@@ -34,6 +34,9 @@ type boardSet struct {
 	// listed は List が返したことを知らせる。排他を待たせているあいだにメンバーを
 	// 動かすテストが、List を読み終えてから書くために使う。
 	listed chan struct{}
+	// onListMembers は ListMembers のたびに呼ばれる。数えた時点で排他を握って
+	// いるかを見るテストが使う。
+	onListMembers func(boardID string)
 }
 
 func newBoardSet(ops *[]string) *boardSet {
@@ -93,6 +96,9 @@ func (s *boardSet) Find(_ context.Context, actor, id string) (*port.BoardAccess,
 }
 
 func (s *boardSet) ListMembers(_ context.Context, boardID string) ([]port.BoardMember, error) {
+	if s.onListMembers != nil {
+		s.onListMembers(boardID)
+	}
 	return slices.Clone(s.members[boardID]), nil
 }
 
@@ -361,5 +367,78 @@ func TestAccountDelete_RecountsOwnersInsideTheLock(t *testing.T) {
 	}
 	if !slices.Equal(*ops, []string{"delete board coOwned", "delete user u1"}) {
 		t.Errorf("書き込み = %v, want [delete board coOwned, delete user u1]", *ops)
+	}
+}
+
+// 一覧を引いてから抜けるまでのあいだに、ほかの経路でボードが消えていたり、外されて
+// いたりしても誤りにしない。消す手間が省けただけで、ここで止めると利用者を消せなく
+// なる。サーバーと排他を共有しない `etoki delete-user` や、ほかの owner の操作で起きる。
+func TestAccountDelete_SkipsBoardsThatAreAlreadyGone(t *testing.T) {
+	t.Parallel()
+
+	ops := &[]string{}
+	boards := newBoardSet(ops)
+	boards.add("solo", owner("u1"))
+	boards.add("joined", owner("u4"), editor("u1"))
+	accounts := &accountStore{ops: ops}
+	svc := usecase.NewAccountService(
+		boards, usecase.NewBoardService(boards, &fakeMappings{}, usecase.NewBoardLocks()), accounts)
+
+	boards.onListMembers = func(boardID string) {
+		switch boardID {
+		case "solo":
+			// 数えた直後に、排他を共有しないほかのプロセスが消した。メンバーは
+			// 数えた時点のまま返る。
+			delete(boards.boards, "solo")
+		case "joined":
+			// owner が先に外していた。
+			boards.members["joined"] = []port.BoardMember{
+				{BoardID: "joined", UserID: "u4", Role: port.RoleOwner},
+			}
+		}
+	}
+
+	if err := svc.Delete(asUser(t.Context(), "u1")); err != nil {
+		t.Fatalf("Delete() = %v", err)
+	}
+	if !slices.Equal(accounts.deleted, []string{"u1"}) {
+		t.Errorf("消した利用者 = %v, want [u1]", accounts.deleted)
+	}
+	if !slices.Equal(*ops, []string{"delete user u1"}) {
+		t.Errorf("書き込み = %v, want [delete user u1]（どちらも消す手間が省けた）", *ops)
+	}
+}
+
+// 消すときに owner を数えるのは、そのボードの排他を握ってから。
+// `TestAccountDelete_RecountsOwnersInsideTheLock` は「数え直した結果に従う」ことを
+// 見て、こちらは「数えた時点で排他の中にいる」ことを見る。外で数える実装は、
+// あちらでは届く順しだいで通りうる。
+func TestAccountDelete_CountsOwnersWhileHoldingTheLock(t *testing.T) {
+	t.Parallel()
+
+	ops := &[]string{}
+	boards := newBoardSet(ops)
+	boards.add("coOwned", owner("u1"), owner("u3"))
+	boards.add("solo", owner("u1"))
+	locks := usecase.NewBoardLocks()
+	accounts := &accountStore{ops: ops}
+	svc := usecase.NewAccountService(
+		boards, usecase.NewBoardService(boards, &fakeMappings{}, locks), accounts)
+
+	// 握っていれば、ここから取ろうとしても取れない。
+	boards.onListMembers = func(boardID string) {
+		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		defer cancel()
+		if release, err := locks.Acquire(ctx, boardID); err == nil {
+			release()
+			t.Errorf("%s の owner を排他の外で数えた", boardID)
+		}
+	}
+
+	if err := svc.Delete(asUser(t.Context(), "u1")); err != nil {
+		t.Fatalf("Delete() = %v", err)
+	}
+	if !slices.Equal(*ops, []string{"leave coOwned", "delete board solo", "delete user u1"}) {
+		t.Errorf("書き込み = %v", *ops)
 	}
 }
