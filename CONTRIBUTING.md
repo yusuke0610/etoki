@@ -45,7 +45,9 @@ git switch -c <prefix>/<短い説明>
 ## コミット前に通すもの
 
 `make lint` と `make test`。UI かハンドラを触ったなら `make test-e2e` も通す
-（`make test` には含まれない）。**各ターゲットが何をするかは `make help`。**
+（`make test` には含まれない）。保存・作成のように画面とサーバーをまたぐ流れか、
+ビルドと配り方を触ったなら `make test-e2e-stack` も通す（CI でも回る、
+[ADR 0097](docs/adr/0097-stack-e2e-in-ci.md)）。**各ターゲットが何をするかは `make help`。**
 一覧を書き写した場所を作ると、Makefile に足したものが漏れたまま残る。
 
 **`api/openapi.yaml` を変えたら `make codegen` の生成物を同じコミットに含める**
@@ -179,22 +181,23 @@ UI を触ったならスクリーンショットを添える。`make test-e2e` �
 ## CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が PR ごとに走る。job は
-`check` と `e2e` の 2 つで、並べて走る。E2E は lint / test の結果を使わないので、
-後ろで待たせない（#269）。
+`check` と `e2e` と `e2e-stack` の 3 つで、並べて走る。E2E は lint / test の結果を
+使わないので、後ろで待たせない（#269）。
 
-| job     | ステップ                                          | 中身                                                                   |
-| ------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
-| `check` | `nix flake check`                                 | Nix コードのフォーマット検査（[ADR 0002](docs/adr/0002-toolchain.md)） |
-| `check` | `setup` / `lint` / `test` / `build` / `vulncheck` | 手元と同じ `make` ターゲット                                           |
-| `check` | `codegen drift`                                   | 生成物が `api/openapi.yaml` と一致し、コミットされていること           |
-| `e2e`   | `setup` / `e2e`                                   | 手元と同じ `make` ターゲット                                           |
+| job         | ステップ                                          | 中身                                                                                                        |
+| ----------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `check`     | `nix flake check`                                 | Nix コードのフォーマット検査（[ADR 0002](docs/adr/0002-toolchain.md)）                                      |
+| `check`     | `setup` / `lint` / `test` / `build` / `vulncheck` | 手元と同じ `make` ターゲット                                                                                |
+| `check`     | `codegen drift`                                   | 生成物が `api/openapi.yaml` と一致し、コミットされていること                                                |
+| `e2e`       | `setup` / `e2e`                                   | 手元と同じ `make` ターゲット                                                                                |
+| `e2e-stack` | `setup` / `e2e-stack`                             | 手元と同じ `make` ターゲット。実物の etoki と偽の上流に繋ぐ（[ADR 0097](docs/adr/0097-stack-e2e-in-ci.md)） |
 
 **CI は手元と同じ入口（`nix develop --command make …`）を通る。** CI 専用の
 セットアップ手順を持たないことで、「手元では通るが CI で落ちる」の原因を devShell の
 外に閉じ込めている。落ちたら手元で同じ `make` を叩けば再現する。
 
-e2e が落ちたときは Playwright のレポートが artifact（`playwright-report`）に
-上がる。
+e2e が落ちたときは Playwright のレポートが artifact（`playwright-report`）に、
+e2e-stack が落ちたときは `playwright-stack-report` に上がる。
 
 ## 依存の更新
 

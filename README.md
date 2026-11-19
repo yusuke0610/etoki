@@ -166,6 +166,8 @@ sqlite3 "${ETOKI_DB_PATH:-etoki.db}" ".backup 'etoki-backup.db'"
 鍵もネットワークも無しで、画面から GitHub への書き込みまでを 1 本通せます。
 各層の単体テストと E2E（バックエンドを起動しない）では、この並び全体を
 通していないためです（[ADR 0050](docs/adr/0050-walk-through-against-fake-upstream.md)）。
+同じ起動の上で、保存や作成の往復だけは数本の E2E（`make test-e2e-stack`）が
+CI で PR ごとに通します（[ADR 0097](docs/adr/0097-stack-e2e-in-ci.md)）。
 
 ```sh
 make try-fake   # 偽の上流（:8090）と、それに向けた etoki（:8080）を起動する
