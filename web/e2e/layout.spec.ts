@@ -12,9 +12,10 @@ import {
   openBoardWithMock,
   openMermaidPaste,
   openPanelTab,
-  picker,
+  openTargetPicker,
   ekidokiButton,
   saveScene,
+  waitForBoard,
 } from "./helpers/board";
 import {
   BOARD_ID,
@@ -433,11 +434,14 @@ test.describe("スマホ", () => {
     expect(await horizontalScrollers(page)).toEqual([]);
     await page.keyboard.press("Escape");
 
+    // 作成先が未選択のボードもキャンバスをそのまま開く。選ぶのはボードの上の
+    // ダイアログ（ADR 0100）。
     await page
       .locator(".board-list")
       .getByRole("button", { name: new RegExp(unselected.name) })
       .click();
-    await picker(page).waitFor();
+    await waitForBoard(page, unselected.name);
+    await openTargetPicker(page);
     expect(await horizontalScrollers(page)).toEqual([]);
   });
 

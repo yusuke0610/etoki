@@ -331,6 +331,7 @@ export function AnnotationFace({
             creationBlocked={creation.blocked}
             projectAccess={creation.projectAccess}
             creationUnavailable={creation.unavailable}
+            onChooseTarget={creation.chooseTarget}
             previous={items}
             projectLink={projectLink}
             targetLabel={targetLabel}

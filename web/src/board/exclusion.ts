@@ -39,16 +39,6 @@ import { useCallback, useMemo, useRef, useState } from "react";
 export type RunningOperation = "saving" | "importing" | "creating";
 
 /**
- * 押せない理由を引ける操作。
- *
- * **`changeTarget` は走らない。** 作成先を選び直すとキャンバスごと外れる
- * （導線を持っているのは `useBoardNavigation`）ので、`BoardPage` の中で進行中に
- * なることが無い。止められる側にしか現れないが、**押せない理由を組む場所を
- * 2 つに分けない**ためにここへ並べてある。
- */
-export type Operation = RunningOperation | "changeTarget";
-
-/**
  * 何が走っているとき、何を始められないか。**この表がすべて。**
  *
  * 値はそのまま画面に出す本文。押せない理由は `title` に隠さず、ボタンから
@@ -57,15 +47,21 @@ export type Operation = RunningOperation | "changeTarget";
  *
  * **句点の有無が揃っていないのは意図ではなく現状。** 作成の理由だけが注釈
  * パネルの `<p>` に出るので「。」で終わり、右上とメニューの `<span>` に出る
- * 3 つには無い。**この PR では字面を動かさない**（`web/e2e/a11y.spec.ts` が文言で
+ * ほかの行には無い。**この PR では字面を動かさない**（`web/e2e/a11y.spec.ts` が文言で
  * 引いている）。揃えるなら E2E の期待文言と同じコミットで動かす。
  *
  * **対角（走っているものと同じ操作）は null。** ボタン自身が「保存中…」
  * 「準備中…」「取り込み中…」「作成中…」と名乗っているので、隣に「保存が
  * 終わるまで保存できません」と出しても読む人の打ち手は増えない。**弾くこと
  * 自体は `useExclusion` が行う**ので、null は「通す」という意味ではない。
+ *
+ * **作成先の選択は表に無い。どれの最中でも止めない**（ADR 0100）。以前は
+ * 保存中に止めていた。選ぶとキャンバスごと外れたからで、いまはボードの上の
+ * ダイアログで選び、キャンバスは外れない。作成先の設定はシーンの版を進めず
+ * （ADR 0092）、作成との前後はサーバーがボード単位で直列化する（`BoardLocks`）
+ * ので、並べても食い違うものが無い。
  */
-const BLOCKED: Record<Operation, Record<RunningOperation, string | null>> = {
+const BLOCKED: Record<RunningOperation, Record<RunningOperation, string | null>> = {
   // 右上の「保存」と「絵解き」（保存を内包する、#247）の押せない理由。どちらも
   // 保存を始めるので同じ式で止まり、1 つの理由を両方から指す（ADR 0089）。
   // **文はどちらのボタンにも当てはまる形にする。** 片方の名前だけを言うと、
@@ -89,14 +85,6 @@ const BLOCKED: Record<Operation, Record<RunningOperation, string | null>> = {
     // ある。**この PR では現状のまま**にし、出すかどうかは別に判断する（#146）。
     creating: null,
   },
-  changeTarget: {
-    saving: "保存が終わるまで作成先を変更できません",
-    // 取り込みと作成の最中は、いまも作成先の変更を止めていない。**キャンバスが
-    // 外れる導線なので止める理由はある**が、止めると押せないボタンが増え、
-    // 理由を出す先も要る。現状を写しておき、変えるかどうかは別に判断する。
-    importing: null,
-    creating: null,
-  },
 };
 
 /**
@@ -107,7 +95,7 @@ const BLOCKED: Record<Operation, Record<RunningOperation, string | null>> = {
  * （`blockingReasons`）と同じ罠に落ちる。
  */
 export function blockedReason(
-  op: Operation,
+  op: RunningOperation,
   running: RunningOperation | null,
 ): string | null {
   return running === null ? null : BLOCKED[op][running];
@@ -117,7 +105,7 @@ export type Exclusion = {
   /** いま走っている操作。何も走っていなければ null。**表示に使う。** */
   running: RunningOperation | null;
   /** `op` を始められない理由。押せる、または理由を出さないなら null。 */
-  reasonFor: (op: Operation) => string | null;
+  reasonFor: (op: RunningOperation) => string | null;
   /**
    * 排他を取って `f` を走らせる。**取れなければ `f` を呼ばずに false を返す。**
    *
@@ -153,7 +141,10 @@ export function useExclusion(): Exclusion {
     [],
   );
 
-  const reasonFor = useCallback((op: Operation) => blockedReason(op, running), [running]);
+  const reasonFor = useCallback(
+    (op: RunningOperation) => blockedReason(op, running),
+    [running],
+  );
 
   // **同一性を保つ。** 呼ぶ側は `exclusive.run` を useCallback の依存に置くので、
   // 毎レンダーで作り直すと、排他を取るだけのコールバックまで作り直される。

@@ -12,12 +12,14 @@ import {
   openShareDialog,
   openPanelTab,
   openUsageGuide,
+  picker,
   saveButton,
 } from "./helpers/board";
 import {
   authRequiredMock,
   BOARD_ID,
   baseMock,
+  board,
   CONSENT_PATH,
   withConnections,
 } from "./helpers/fixtures";
@@ -48,7 +50,7 @@ test.describe("ボタンの格", () => {
   // 「消す」操作だけに使う（#203）。
   // ボード一覧の画面と、新しいボードのダイアログ（#200）。どちらも面ごとに主となる
   // 操作は 1 つ。
-  test("新しいボードと次へは主となる操作、ダイアログのキャンセルは控えめ", async ({
+  test("新しいボードと作成は主となる操作、ダイアログのキャンセルは控えめ", async ({
     page,
   }) => {
     await installApi(page, baseMock());
@@ -58,7 +60,9 @@ test.describe("ボタンの格", () => {
       page.getByRole("button", { name: "新しいボード", exact: true }),
     ).toHaveClass(PRIMARY);
     const dialog = await newBoardDialog(page);
-    await expect(dialog.getByRole("button", { name: "次へ" })).toHaveClass(PRIMARY);
+    await expect(dialog.getByRole("button", { name: "作成", exact: true })).toHaveClass(
+      PRIMARY,
+    );
     await expect(dialog.getByRole("button", { name: "キャンセル" })).toHaveClass(QUIET);
   });
 
@@ -83,6 +87,39 @@ test.describe("ボタンの格", () => {
       PRIMARY,
     );
     await expect(detail.getByRole("button", { name: "閉じる" })).toHaveClass(QUIET);
+  });
+
+  // 作成先が未選択なら、帯の主となる操作は「GitHub に作成する」の代わりに
+  // 「作成先を選ぶ」（ADR 0100）。作成先を決めるのは作るための 1 歩目。開いた
+  // ダイアログの主となる操作は「この Project にする」の 1 つで、やめるのは控えめ。
+  test("作成先を選ぶ口とこの Project にするは主となる操作、やめるのは控えめ", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.details[BOARD_ID] = {
+      ...board(),
+      repositoryOwner: "",
+      repositoryName: "",
+      projectId: "",
+      projectNumber: 0,
+      projectTitle: "",
+      projectUrl: "",
+    };
+    await openBoardWithMock(page, mock);
+
+    const detail = await openAnnotationDetail(page, "ログイン");
+    await detail.getByRole("button", { name: "絵解く" }).click();
+    const choose = detail.getByRole("button", { name: "作成先を選ぶ" });
+    await expect(choose).toHaveClass(PRIMARY);
+
+    await choose.click();
+    const dialog = picker(page);
+    await dialog.getByRole("button", { name: /acme\/web/ }).click();
+    await dialog.getByRole("button", { name: "#1 ロードマップ" }).click();
+    await expect(dialog.getByRole("button", { name: "この Project にする" })).toHaveClass(
+      PRIMARY,
+    );
+    await expect(dialog.getByRole("button", { name: "やめる" })).toHaveClass(QUIET);
   });
 
   // 右上の主となる操作は「絵解き」の 1 つ。「保存」は未保存のあいだだけ隣に出る

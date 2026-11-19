@@ -12,22 +12,25 @@ import { log } from "../../app/logger";
 import { projectFieldsNotice, type FieldsCheckState } from "./projectFieldsNotice";
 
 type Props = {
-  /** 見出しに出す名前。作成前のボードにはまだ ID が無いので名前だけ受ける。 */
-  title: string;
+  /** ボードの名前。何の作成先を選んでいるのかを本文で言う。 */
+  boardName: string;
   /**
    * 作成先が決まったときに呼ぶ。
    *
-   * **保存はここではしない。** 新規作成ではボードごと作り、既存ボードでは
-   * 作成先だけを差し替える。どちらなのかを知っているのは呼び出し側だけ。
-   * 失敗は例外で返してよい。この画面がそのまま表示する。
+   * **保存はここではしない。** ボードに設定するのは呼び出し側
+   * （`useBoardNavigation` の `changeTarget`）。失敗は例外で返してよい。
+   * ここがそのまま表示する。
    */
   onSelected: (target: BoardTarget) => Promise<void>;
-  /** 選び直しをやめる。引き返す先が無い場面では渡さない。 */
-  onCancel?: () => void;
+  /** 選ぶのをやめる。設定しているあいだは押させない。 */
+  onCancel: () => void;
+  /** 見出しの id。包むダイアログが名前として指す（`TargetPickerDialog`）。 */
+  headingId: string;
 };
 
 /**
- * ブレストを始める前に、draft issue の作成先を選ばせる。
+ * draft issue の作成先を選ばせる。描いたあとで、ボードの上のダイアログから
+ * 開く（`TargetPickerDialog`、ADR 0100）。
  *
  * 利用者が選ぶのはリポジトリだが、保存するのはそこに紐づく Projects v2。
  * draft issue はリポジトリではなく Project に属するため、2 段になる（ADR 0014）。
@@ -40,7 +43,7 @@ type Props = {
  * 確定すると、確かめた結果を見せる前に画面が切り替わる。**結果で確定を止めない。**
  * 判定は作成のときに GitHub が返したもので決まる。
  */
-export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
+export function RepositoryPicker({ boardName, onSelected, onCancel, headingId }: Props) {
   const [repositories, setRepositories] = useState<Repository[] | null>(null);
   // 候補を取り切らずに辿るのをやめたか（ADR 0054）。
   const [truncated, setTruncated] = useState(false);
@@ -187,8 +190,15 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
 
   return (
     <div className="picker">
-      <h1>{title}</h1>
-      <p className="hint">{"このボードの draft issue を作る先を選びます。"}</p>
+      {/*
+        ダイアログの名前は、開く口（メニューと帯の「作成先を選ぶ」）と同じ語にする。
+        ボードの名前は本文で言う。
+      */}
+      {/* 開いたときに焦点を受ける。押せるものではないので Tab の順には入れない。 */}
+      <h2 id={headingId} tabIndex={-1}>
+        作成先を選ぶ
+      </h2>
+      <p className="hint">{`「${boardName}」の draft issue を作る先を選びます。`}</p>
       <p className="hint">
         {"最初の draft issue を作ると、以後は変更できなくなります。"}
       </p>
@@ -196,7 +206,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
       {error && <ErrorNotice failure={error} />}
 
       <section className="panel-section">
-        <h2>リポジトリ</h2>
+        <h3>リポジトリ</h3>
         {/*
           候補を取り切っていないことを出す（ADR 0054）。**絞り込みの手前に
           置く。** 打った語で出てこなかったときに、初めて読む場所ではなく
@@ -287,9 +297,9 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
 
       {repository && (
         <section className="panel-section">
-          <h2>
+          <h3>
             {repository.owner}/{repository.name} のプロジェクト
-          </h2>
+          </h3>
           {projectsFailed ? null : projects === null ? (
             <p className="hint">読み込み中…</p>
           ) : projects.length === 0 ? (
@@ -326,9 +336,9 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
 
       {chosen && (
         <section className="panel-section picker-confirm" aria-label="選んだ作成先">
-          <h2>
+          <h3>
             #{chosen.number} {chosen.title} を作成先にする
-          </h2>
+          </h3>
           {/*
             確かめた結果は状態として出す（失敗の帯にしない）。足りなくても
             選べるので、選ぶ前の注意書きとして読ませる（ADR 0088）。
@@ -342,20 +352,24 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           <button
             type="button"
             className="primary"
-            // 確かめた結果では止めない。止めるのは設定の最中だけ。
+            // 確かめた結果では止めない。止めるのは設定の最中だけ。設定中であることは
+            // ボタン自身が名乗る（「やめる」が押せない理由もこれで読める）。
             disabled={saving}
             onClick={() => void confirmProject()}
           >
-            この Project にする
+            {saving ? "設定中…" : "この Project にする"}
           </button>
         </section>
       )}
 
-      {onCancel && (
-        <button type="button" className="quiet" onClick={onCancel}>
-          やめる
-        </button>
-      )}
+      {/*
+        設定しているあいだはやめさせない。閉じると、設定できなかったときに理由を
+        出す先が無くなる（`TargetPickerDialog` が Esc を止めるのと同じ理由。
+        新しいボードのダイアログの「キャンセル」と同じ形）。
+      */}
+      <button type="button" className="quiet" disabled={saving} onClick={onCancel}>
+        やめる
+      </button>
     </div>
   );
 }

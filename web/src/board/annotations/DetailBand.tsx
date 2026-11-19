@@ -24,8 +24,22 @@ export type InterpretControl = {
 
 /** 帯の「GitHub に作成する」。解釈を 1 件選んでいるときだけ渡す。 */
 export type CreateControl =
-  /** GitHub が未設定、または Project に書けない。ボタンは出さず、理由だけを出す。 */
+  /**
+   * GitHub が未設定、Project に書けない、または作成先が未選択で選べない人。
+   * ボタンは出さず、理由だけを出す。
+   */
   | { kind: "unavailable"; text: string }
+  /**
+   * 作成先が未選択で、選べる人（ADR 0100）。作る口の代わりに「作成先を選ぶ」を
+   * 出す。選ぶのはボードの上のダイアログで、帯の結果と手直しはそのまま残る。
+   * **止めない。** 未保存でも保存中でも、選んで失うものが無い。
+   */
+  | {
+      kind: "chooseTarget";
+      /** なぜ選ぶのかの文。 */
+      text: string;
+      onChooseTarget: () => void;
+    }
   | {
       kind: "ready";
       running: boolean;
@@ -57,6 +71,27 @@ export function DetailBand({
   const createBlockedId = `create-blocked-${interpret.annotationId}`;
   const createNoticeId = `create-notice-${interpret.annotationId}`;
   const createReady = create?.kind === "ready" ? create : null;
+  const chooseTarget = create?.kind === "chooseTarget" ? create : null;
+  const chooseTargetTextId = `choose-target-${interpret.annotationId}`;
+  // 右端の主となる操作。**作成先を選ぶ口と作る口は、同じ位置の同じボタンにする。**
+  // 選び終えると「作成先を選ぶ」がその場で「GitHub に作成する」に替わり、ダイアログが
+  // 開いた元へ戻した焦点が、そのまま次に押すものに載る。別々に描くと、押した
+  // ボタンが消えて焦点の戻り先が無くなる（`TargetPickerDialog`）。
+  const primary = chooseTarget
+    ? {
+        label: "作成先を選ぶ",
+        onClick: chooseTarget.onChooseTarget,
+        disabled: false,
+        describedBy: chooseTargetTextId,
+      }
+    : createReady
+      ? {
+          label: createReady.running ? "作成中…" : "GitHub に作成する",
+          onClick: createReady.onCreate,
+          disabled: createReady.running || createReady.blocked !== null,
+          describedBy: createReady.blocked !== null ? createBlockedId : createNoticeId,
+        }
+      : null;
 
   // 取り消しを押すと、押したボタンが消える。焦点を「絵解く」へ戻す。押せるように
   // なるのは描き直したあとなので、押した処理の中ではなく、走るのをやめてから移す。
@@ -119,6 +154,11 @@ export function DetailBand({
           </p>
         )}
         {create?.kind === "unavailable" && <p className="hint">{create.text}</p>}
+        {chooseTarget && (
+          <p className="hint" id={chooseTargetTextId}>
+            {chooseTarget.text}
+          </p>
+        )}
         {createReady &&
           (createReady.blocked !== null ? (
             <p className="hint" id={createBlockedId}>
@@ -131,17 +171,17 @@ export function DetailBand({
           ))}
       </div>
 
-      {createReady && (
+      {primary && (
+        // 「作成先を選ぶ」も作る口と同じ格。作成先を決めるのは作るための 1 歩目で、
+        // ここで止まった人が次に押すのはこれだけ。
         <button
           type="button"
           className="primary"
-          onClick={createReady.onCreate}
-          disabled={createReady.running || createReady.blocked !== null}
-          aria-describedby={
-            createReady.blocked !== null ? createBlockedId : createNoticeId
-          }
+          onClick={primary.onClick}
+          disabled={primary.disabled}
+          aria-describedby={primary.describedBy}
         >
-          {createReady.running ? "作成中…" : "GitHub に作成する"}
+          {primary.label}
         </button>
       )}
     </div>

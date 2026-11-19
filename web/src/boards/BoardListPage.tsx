@@ -29,13 +29,6 @@ type Props = {
   boards: BoardList | null;
   onOpen: (id: string) => void;
   /**
-   * ボードを作るときと、作成先が未選択のボードを開くときに、作成先を選ぶか。
-   * GitHub が未設定と分かっている構成だけ false（ADR 0090）。**まだ確かめて
-   * いなければ true**（ADR 0030 の「引けていないうちは止めない」と同じ向きで、
-   * いつもの流れに倒す）。
-   */
-  choosesTarget: boolean;
-  /**
    * MCP の接続を扱えない理由（ADR 0076）。扱えるなら、またはまだ確かめて
    * いなければ null（ADR 0030）。
    */
@@ -48,15 +41,12 @@ type Props = {
     onOpen: () => void;
     onNameChange: (name: string) => void;
     onTemplateChange: (template: TemplateChoice) => void;
-    /**
-     * 名前を確定して作成先の選択に進む。ここではまだ作らない。作成先を選ばない
-     * 構成（`choosesTarget` が false）では、ここで作る。
-     */
-    onNext: () => void;
+    /** 名前とひな形でボードを作る。作成先は選ばない（ADR 0100）。 */
+    onCreate: () => void;
     onCancel: () => void;
-    /** 作成先を選ばずに作っているあいだ。 */
+    /** 作っているあいだ。 */
     submitting: boolean;
-    /** 作成先を選ばずに作れなかった理由。ダイアログの中に出す。 */
+    /** 作れなかった理由。ダイアログの中に出す。 */
     failure: Failure | null;
   };
 };
@@ -79,13 +69,12 @@ export function BoardListPage({
   onLogout,
   boards,
   onOpen,
-  choosesTarget,
   connectionsUnavailable,
   dialog,
 }: Props) {
   const newBoard = useRef<HTMLButtonElement>(null);
   // 「MCP の接続」のダイアログ。**開閉はここで持つ。** 新しいボードと違って
-  // 作成先の選択から戻って開き直す流れが無く、App が持つ理由が無い。
+  // 作れなかったときに入力を残す流れが無く、App が持つ理由が無い。
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   // 閉じたら焦点を戻す先。押した「MCP の接続」はしまったメニューの中にあって
   // 見えないので、メニューを開くボタンへ戻す。
@@ -123,10 +112,8 @@ export function BoardListPage({
           <h2>ボード</h2>
           <div className="list-title-action">
             {/*
-              **どの構成でも止めない**（ADR 0090）。GitHub が未設定なら作成先を
-              選ばずに作る。止めていたころは、LLM を設定しなくてもブレストだけ
-              先にできるという約束（ADR 0008）が、GitHub を設定するまで果たされ
-              なかった。
+              **どの構成でも止めない**（ADR 0090 / 0100）。作成先はどの構成でも
+              選ばずに作り、描いたあとでボードから選ぶ。
             */}
             <button
               ref={newBoard}
@@ -167,7 +154,6 @@ export function BoardListPage({
                         key={board.id}
                         board={board}
                         now={boards.fetchedAt}
-                        choosesTarget={choosesTarget}
                         onOpen={onOpen}
                       />
                     ))}
@@ -185,14 +171,12 @@ export function BoardListPage({
         onNameChange={dialog.onNameChange}
         template={dialog.template}
         onTemplateChange={dialog.onTemplateChange}
-        choosesTarget={choosesTarget}
         submitting={dialog.submitting}
         failure={dialog.failure}
-        onNext={dialog.onNext}
+        onCreate={dialog.onCreate}
         onCancel={dialog.onCancel}
-        // 閉じたら「新しいボード」へ焦点を戻す。作成先の選択から戻って開き
-        // 直したときは、開く前の焦点がどこにも無いので、ブラウザに任せると
-        // 画面の先頭へ落ちる。
+        // 閉じたら「新しいボード」へ焦点を戻す。ブラウザに任せると、画面の
+        // 先頭へ落ちることがある。
         onClosed={() => newBoard.current?.focus()}
       />
       <ConnectionsDialog

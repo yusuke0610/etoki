@@ -870,9 +870,8 @@ type BoardWithFiles struct {
 // `*_not_configured` と同じものを引く。そのエンドポイントを叩けば同じ
 // 原因で 503 が返るので、**先に見せる文言と後から返る理由を別に持たない。**
 type Capabilities struct {
-	// Creation draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
-	// 引けない**ので、ボードは作成先を選ばずに作る（ADR 0090）。ボード
-	// そのものは false でも作れる
+	// Creation draft issue を作れるか。false は GitHub が未設定で、**作成先の候補も
+	// 引けない。** ボードはどの構成でも作成先を選ばずに作れる（ADR 0100）
 	Creation bool `json:"creation"`
 
 	// DiagramDraft プロンプトから図のドラフトを生成できるか。false は LLM が未設定。
@@ -897,21 +896,14 @@ type Capabilities struct {
 
 // CreateBoardRequest ボード作成のリクエストボディ。
 //
-// **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
-// （ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
-// 「ボードの作成にはリポジトリへのアクセス権が要る」はこれで満ちる
-// （ADR 0017）。`repositoryOwner` / `repositoryName` / `projectId` を
-// 省くと 400。
-//
-// **例外は GitHub を設定していない構成**（`capabilities.creation` が
-// false、ADR 0090）。作成先の候補を引けないので、3 つとも省けば作成先が
-// 未選択のボードを作る。一部だけ送ったら 400。移行前のボードも未選択の
-// まま残るので、`projectId` が空文字の経路はどちらにしても消えない。
+// **作成先は省ける**（ADR 0100）。どの構成でも、描く前に draft issue の
+// 行き先を決めさせない。`repositoryOwner` / `repositoryName` / `projectId`
+// の 3 つとも省けば、作成先が未選択のボードを作る。一部だけ送ったら 400。
+// 作成先は draft issue を作る前に選ぶ（`PUT /api/boards/{id}/target`）。
 type CreateBoardRequest struct {
 	Name string `json:"name"`
 
-	// ProjectID draft issue を作る Projects v2 の node ID。省けるのは GitHub が
-	// 未設定の構成だけ
+	// ProjectID draft issue を作る Projects v2 の node ID。省くなら 3 つとも省く
 	ProjectID string `json:"projectId,omitempty"`
 
 	// ProjectNumber 作成先 Project の番号。表示用のスナップショット（ADR 0019）。
@@ -926,10 +918,10 @@ type CreateBoardRequest struct {
 	// 省略すると空文字（URL を知らない）で保存する
 	ProjectURL string `json:"projectUrl,omitempty"`
 
-	// RepositoryName 作成先リポジトリの名前。省けるのは GitHub が未設定の構成だけ
+	// RepositoryName 作成先リポジトリの名前。省くなら 3 つとも省く
 	RepositoryName string `json:"repositoryName,omitempty"`
 
-	// RepositoryOwner 作成先リポジトリの所有者。省けるのは GitHub が未設定の構成だけ
+	// RepositoryOwner 作成先リポジトリの所有者。省くなら 3 つとも省く
 	RepositoryOwner string `json:"repositoryOwner,omitempty"`
 
 	// Scene 省略すると空のシーンで作る。画像の実体（`files`）が入っていたら 400。

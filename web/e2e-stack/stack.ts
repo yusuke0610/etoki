@@ -12,7 +12,9 @@ import {
 import {
   chooseFromMenu,
   chooseTarget,
-  startNewBoard,
+  createNewBoard,
+  openTargetPicker,
+  picker,
   waitForBoard,
 } from "../e2e/helpers/board";
 import { FAKE_ADDR } from "./addresses";
@@ -79,11 +81,18 @@ export function uniqueWord(testInfo: TestInfo): string {
   return `w${own}e${testInfo.repeatEachIndex}r${testInfo.retry}`;
 }
 
-/** 一覧から新しいボードを作り、偽の GitHub の Project を作成先に選んで開く。 */
+/**
+ * 一覧から新しいボードを作り、偽の GitHub の Project を作成先に選ぶ。
+ *
+ * **作成先はボードを作ってから選ぶ**（ADR 0100）。作ったボードが開いてから、
+ * キャンバスのメニューの「作成先を選ぶ」で選び、ダイアログが閉じるまで待つ。
+ */
 export async function newBoard(page: Page, name: string): Promise<void> {
   await page.goto("/");
-  await startNewBoard(page, name);
+  await createNewBoard(page, name);
+  await openTargetPicker(page);
   await chooseTarget(page, REPOSITORY, PROJECT);
+  await expect(picker(page)).toBeHidden();
   await waitForBoard(page, name);
 }
 

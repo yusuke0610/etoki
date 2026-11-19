@@ -735,11 +735,10 @@ func TestNewPassesSetupHintsToRouter(t *testing.T) {
 // だけで、ここで確かめたいのはその分岐。
 type unusedGitHub struct{ port.GitHubClient }
 
-// 作成先を選ばずにボードを作れるのは、GitHub を組み立てていない構成だけ
-// （ADR 0090）。GitHub のある構成で省けると、「ボードの作成にはリポジトリへの
-// アクセス権が要る」（ADR 0017 の要件 1）が外れる。判定はユースケース層に
-// あり、どちらに倒すかを決めるのは New なので、分岐はここでしか確かめられない。
-func TestNew_CreatesBoardsWithoutTargetOnlyWithoutGitHub(t *testing.T) {
+// どの構成でも、作成先を選ばずにボードを作れる（ADR 0100）。以前は GitHub の
+// 無い構成だけが省けた（ADR 0090）。New が構成で分岐を戻すと、GitHub のある
+// 構成（ホスト版）で描く前に作成先を求めることになるので、両方の構成で見る。
+func TestNew_CreatesBoardsWithoutTargetInEveryConfiguration(t *testing.T) {
 	t.Parallel()
 
 	for name, tc := range map[string]struct {
@@ -747,7 +746,7 @@ func TestNew_CreatesBoardsWithoutTargetOnlyWithoutGitHub(t *testing.T) {
 		want   int
 	}{
 		"GitHub なし": {github: nil, want: http.StatusCreated},
-		"GitHub あり": {github: unusedGitHub{}, want: http.StatusBadRequest},
+		"GitHub あり": {github: unusedGitHub{}, want: http.StatusCreated},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

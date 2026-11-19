@@ -1016,9 +1016,8 @@ export interface components {
              */
             diagramDraft: boolean;
             /**
-             * @description draft issue を作れるか。false は GitHub が未設定。**作成先の候補も
-             *     引けない**ので、ボードは作成先を選ばずに作る（ADR 0090）。ボード
-             *     そのものは false でも作れる
+             * @description draft issue を作れるか。false は GitHub が未設定で、**作成先の候補も
+             *     引けない。** ボードはどの構成でも作成先を選ばずに作れる（ADR 0100）
              */
             creation: boolean;
             /**
@@ -1517,27 +1516,18 @@ export interface components {
         /**
          * @description ボード作成のリクエストボディ。
          *
-         *     **作成先は必須。** 候補は `minPermissionLevel: WRITE` で絞ってあるので
-         *     （ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
-         *     「ボードの作成にはリポジトリへのアクセス権が要る」はこれで満ちる
-         *     （ADR 0017）。`repositoryOwner` / `repositoryName` / `projectId` を
-         *     省くと 400。
-         *
-         *     **例外は GitHub を設定していない構成**（`capabilities.creation` が
-         *     false、ADR 0090）。作成先の候補を引けないので、3 つとも省けば作成先が
-         *     未選択のボードを作る。一部だけ送ったら 400。移行前のボードも未選択の
-         *     まま残るので、`projectId` が空文字の経路はどちらにしても消えない。
+         *     **作成先は省ける**（ADR 0100）。どの構成でも、描く前に draft issue の
+         *     行き先を決めさせない。`repositoryOwner` / `repositoryName` / `projectId`
+         *     の 3 つとも省けば、作成先が未選択のボードを作る。一部だけ送ったら 400。
+         *     作成先は draft issue を作る前に選ぶ（`PUT /api/boards/{id}/target`）。
          */
         CreateBoardRequest: {
             name: string;
-            /** @description 作成先リポジトリの所有者。省けるのは GitHub が未設定の構成だけ */
+            /** @description 作成先リポジトリの所有者。省くなら 3 つとも省く */
             repositoryOwner?: string;
-            /** @description 作成先リポジトリの名前。省けるのは GitHub が未設定の構成だけ */
+            /** @description 作成先リポジトリの名前。省くなら 3 つとも省く */
             repositoryName?: string;
-            /**
-             * @description draft issue を作る Projects v2 の node ID。省けるのは GitHub が
-             *     未設定の構成だけ
-             */
+            /** @description draft issue を作る Projects v2 の node ID。省くなら 3 つとも省く */
             projectId?: string;
             /**
              * @description 作成先 Project の番号。表示用のスナップショット（ADR 0019）。

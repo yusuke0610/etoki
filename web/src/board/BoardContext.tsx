@@ -6,7 +6,10 @@ type Props = {
   role: BoardRole;
   /** 作る先の見出し（「owner/repo › #1 Project」）。作成先が未選択なら null。 */
   targetLabel: string | null;
-  /** `targetLabel` が null のときに出すリポジトリ名。 */
+  /**
+   * `targetLabel` が null のときに出すリポジトリ名。リポジトリも未選択なら空で、
+   * そのときは「作成先: 未選択」と出す（ADR 0100）。
+   */
   repository: string;
   /** 作成先を GitHub で開く先。組めなければ null（`projectLink`）。 */
   linkHref: string | null;
@@ -35,6 +38,9 @@ export function BoardContext({
   targetLocked,
   sceneBytes,
 }: Props) {
+  // 作成先はボードを作ったあとで選ぶ（ADR 0100）。**選んでいないことも状態として
+  // 出す。** 空のバッジにすると、選んでいないのか読み込めていないのかが読めない。
+  const targetText = targetLabel ?? (repository === "" ? "作成先: 未選択" : repository);
   return (
     <div className="board-context etoki-ui">
       {/*
@@ -66,10 +72,10 @@ export function BoardContext({
               : "リポジトリの Projects を GitHub で開く"
           }
         >
-          {targetLabel ?? repository}
+          {targetText}
         </a>
       ) : (
-        <span className="badge badge-target">{targetLabel ?? repository}</span>
+        <span className="badge badge-target">{targetText}</span>
       )}
       {/*
         作成先の Project に書けるか（ADR 0017）。**書けないと分かったときだけ

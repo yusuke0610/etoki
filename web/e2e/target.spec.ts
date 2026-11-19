@@ -1,20 +1,24 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import type { BoardDetail, BoardWithFiles, ErrorResponse } from "../src/api/types";
-import { holdBoardDetail, holdSetTarget, installApi } from "./helpers/api";
+import type { BoardDetail } from "../src/api/types";
+import { holdSetTarget, installApi, type ApiMock } from "./helpers/api";
 import { summarize } from "./helpers/boardData";
 import {
+  annotationCard,
+  annotationDetail,
   backToList,
   chooseFromMenu,
   chooseTarget,
   confirmProject,
+  createNewBoard,
   drawRectangle,
+  interpret,
   openBoard,
   openBoardMenu,
   openBoardWithMock,
+  openTargetPicker,
   picker,
   saveScene,
-  startNewBoard,
 } from "./helpers/board";
 import {
   BOARD_ID,
@@ -26,6 +30,7 @@ import {
 } from "./helpers/fixtures";
 
 const UNSELECTED_NAME = "作成先未選択のブレスト";
+const UNSELECTED_ID = unselectedBoard().id;
 const OTHER_NAME = "決済まわりのブレスト";
 
 /** 作成先が未選択のボードを 1 枚足したモック。 */
@@ -40,51 +45,92 @@ function withUnselected() {
   return mock;
 }
 
-/** 開いているボードを取り直す要求か。「やめる」の取り直しを待つのに使う。 */
+/**
+ * いつものボード（注釈「ログイン」を持つ）から作成先を外したモック。描いて
+ * 絵解いてから作成先を選ぶ流れ（ADR 0100）を、解釈のモックごと使うため。
+ */
+function withoutTarget(): ApiMock {
+  const mock = baseMock();
+  const detail: BoardDetail = {
+    ...board(),
+    repositoryOwner: "",
+    repositoryName: "",
+    projectId: "",
+    projectNumber: 0,
+    projectTitle: "",
+    projectUrl: "",
+  };
+  mock.details[BOARD_ID] = detail;
+  mock.boards = mock.boards.map((b) => (b.id === BOARD_ID ? summarize(detail) : b));
+  return mock;
+}
+
+/** 開いているボードを取り直す要求か。開き直していないことを見るのに使う。 */
 function isBoardDetail(r: { method(): string; url(): string }): boolean {
   return r.method() === "GET" && new URL(r.url()).pathname === `/api/boards/${BOARD_ID}`;
 }
 
-/** 一覧からボードを開く。キャンバスが出ないので openBoard は使えない。 */
-async function openUnselected(page: Page): Promise<void> {
-  await page
-    .locator(".board-list")
-    .getByRole("button", { name: UNSELECTED_NAME })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: UNSELECTED_NAME, level: 1 }),
-  ).toBeVisible();
+/** 作成先が未選択のボードを一覧から開き、作成先を選ぶダイアログを開く。 */
+async function openUnselectedPicker(page: Page): Promise<void> {
+  await openBoard(page, UNSELECTED_NAME);
+  await openTargetPicker(page);
 }
 
+/**
+ * 作成先はボードの上のダイアログで選ぶ（ADR 0100）。**ボードの画面は外さない。**
+ * 外すと絵解きの結果と手直しが消え、選んだあとに絵解き直すことになる。
+ */
 test.describe("作成先の選択", () => {
-  // 「ボードに入る → 対象リポジトリ選択 → ブレスト開始」。選ぶまでキャンバスを
-  // 出さない。既存 DB からの移行もこの入口を通る（ADR 0014）。
-  test("作成先が未選択なら、キャンバスの前にリポジトリ選択が出る", async ({ page }) => {
+  // 切れると: 描く前に draft issue の行き先を決めさせる（中核思想 1）。
+  test("作成先が未選択でも、キャンバスをそのまま開き、未選択であることを下の帯に出す", async ({
+    page,
+  }) => {
     await installApi(page, withUnselected());
     await page.goto("/");
-    await openUnselected(page);
+    await openBoard(page, UNSELECTED_NAME);
 
-    await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
-    await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
+    await expect(picker(page)).toHaveCount(0);
+    // 作成先の名前を出している場所に、選んでいないことも状態として出す。
+    await expect(page.locator(".badge-target")).toHaveText("作成先: 未選択");
+    expect(new URL(page.url()).search).toBe(`?board=${UNSELECTED_ID}`);
+    // 未選択のボードの口は「作成先を選ぶ」と名乗る。
+    const menu = await openBoardMenu(page);
+    await expect(
+      menu.getByRole("button", { name: "作成先を選ぶ", exact: true }),
+    ).toBeVisible();
+    await expect(menu.getByRole("button", { name: "作成先を変更" })).toHaveCount(0);
   });
 
-  // 切れると: 未選択のボードを開いた人が、選ぶ以外に出る手段を失う。未選択の
-  // うちはキャンバスを出さないので戻る先が無く、以前はサイドバーから逃げられて
-  // いたが、一覧が別の画面になった（ADR 0064）いま、ここが唯一の出口になる。
-  test("作成先が未選択でも、選ばずに一覧へ戻れる", async ({ page }) => {
+  test("作成先を選ぶダイアログは、選ばずに閉じられ、ボードはそのまま", async ({
+    page,
+  }) => {
     const mock = await installApi(page, withUnselected());
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
+    // 開いていることは URL に載る（読み込み直しで戻せる、ADR 0059）。
+    expect(new URL(page.url()).search).toBe(`?board=${UNSELECTED_ID}&picking=1`);
+    // 切れると: 焦点が最初の押せるもの（候補が届く前は「やめる」）へ行き、Enter
+    // 1 回で閉じる。
+    await expect(
+      picker(page).getByRole("heading", { name: "作成先を選ぶ", level: 2 }),
+    ).toBeFocused();
 
     await picker(page).getByRole("button", { name: "やめる" }).click();
 
-    await expect(
-      page.getByRole("heading", { name: "ボード", exact: true, level: 2 }),
-    ).toBeVisible();
-    expect(new URL(page.url()).search).toBe("");
-    // 引き返しただけで作成先は決まっていない。戻る途中で何かを選んでいたら、
-    // 次に開いたときにブレストへ進んでしまう。
-    expect(mock.details[unselectedBoard().id]?.projectId).toBe("");
+    await expect(picker(page)).toBeHidden();
+    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
+    // 開いた項目はメニューごと消えているので、メニューの口へ戻す。
+    await expect(page.locator('[data-testid="main-menu-trigger"]')).toBeFocused();
+    // URL を書き換えるのは `close` イベントで、閉じた直後の次のタスクに届く。
+    await expect.poll(() => new URL(page.url()).search).toBe(`?board=${UNSELECTED_ID}`);
+    // 引き返しただけで作成先は決まっていない。
+    expect(mock.details[UNSELECTED_ID]?.projectId).toBe("");
+
+    // Esc でも閉じる（ブラウザの `<dialog>`）。
+    await openTargetPicker(page);
+    await page.keyboard.press("Escape");
+    await expect(picker(page)).toBeHidden();
+    await expect.poll(() => new URL(page.url()).search).toBe(`?board=${UNSELECTED_ID}`);
   });
 
   // 利用者が選ぶのはリポジトリだが、保存するのはそこに紐づく Project。
@@ -92,14 +138,14 @@ test.describe("作成先の選択", () => {
   test("リポジトリを選ぶと、そのリポジトリのプロジェクトが出る", async ({ page }) => {
     await installApi(page, withUnselected());
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
     await picker(page)
       .getByRole("button", { name: /acme\/web/ })
       .click();
 
     await expect(
-      page.getByRole("heading", { name: "acme/web のプロジェクト" }),
+      picker(page).getByRole("heading", { name: "acme/web のプロジェクト" }),
     ).toBeVisible();
     await expect(
       picker(page).getByRole("button", { name: "#1 ロードマップ" }),
@@ -109,17 +155,118 @@ test.describe("作成先の選択", () => {
     ).toBeVisible();
   });
 
-  test("プロジェクトを選ぶとブレストに進み、作成先が見えている", async ({ page }) => {
+  test("プロジェクトを決めるとダイアログが閉じ、作成先が見えている", async ({ page }) => {
     await installApi(page, withUnselected());
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
     await chooseTarget(page, /acme\/web/, "#1 ロードマップ");
 
-    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
+    await expect(picker(page)).toBeHidden();
     // どこに作られるのかは常に見えている必要がある。作った draft issue は
     // 取り消せない。
     // **Project まで書く**（#217）。リポジトリ名だけでは作る先が決まらない。
+    await expect(page.locator(".badge-target")).toHaveText("acme/web › #1 ロードマップ");
+    await expect.poll(() => new URL(page.url()).search).toBe(`?board=${UNSELECTED_ID}`);
+  });
+
+  // #450 で守りたいもの。切れると: 選んだあとに絵解き直す（課金される）ことになり、
+  // 手直しも消える。
+  test("描いて絵解いてから作成先を選んでも、結果と手直しが残り、そのまま作れる", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, withoutTarget());
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(annotationCard(page, "ログイン"));
+    await detail.getByLabel("1 件目のタイトル").fill("ログイン基盤（手直し済み）");
+
+    // 作る口の代わりに、選ぶ口を出す。押しても target_not_selected で断られる
+    // だけなので、先に言う。
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
+      0,
+    );
+    const choose = detail.getByRole("button", { name: "作成先を選ぶ" });
+    await expect(choose).toHaveAccessibleDescription(
+      "作成先がまだ決まっていません。選ぶと、この結果のまま GitHub に作れます。",
+    );
+
+    // **開き直さない。** 開き直すとキャンバスが作り直され、絵解きの結果が消える。
+    const reopened: string[] = [];
+    page.on("request", (r) => {
+      if (isBoardDetail(r)) reopened.push(r.url());
+    });
+
+    await choose.click();
+    await chooseTarget(page, /acme\/web/, "#1 ロードマップ");
+    await expect(picker(page)).toBeHidden();
+
+    const create = detail.getByRole("button", { name: "GitHub に作成する" });
+    await expect(create).toBeEnabled();
+    // 開いた元へ焦点が戻る。選ぶ口と作る口は同じボタンなので、次に押すものに載る。
+    await expect(create).toBeFocused();
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue(
+      "ログイン基盤（手直し済み）",
+    );
+    expect(reopened).toEqual([]);
+    expect(mock.interpretRequests).toHaveLength(1);
+
+    await create.click();
+    await expect(detail.getByText("3 件を作成しました。")).toBeVisible();
+    expect(mock.createRequests).toHaveLength(1);
+    expect(mock.createRequests[0]?.items[0]?.title).toBe("ログイン基盤（手直し済み）");
+  });
+
+  // 切れると: 未選択のあいだの答え（unknown）が残り、書けない Project に作らせる
+  // （逆に、書けるのに止める）。作成先はボードを開いたまま選ぶので、開いたときに
+  // 1 度訊くだけでは足りない。
+  test("作成先を選ぶと、その Project に書けるかを訊き直す", async ({ page }) => {
+    const mock = withoutTarget();
+    mock.access = {
+      [BOARD_ID]: { status: 200, body: { role: "owner", projectAccess: "denied" } },
+    };
+    await openBoardWithMock(page, mock);
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(annotationCard(page, "ログイン"));
+
+    await detail.getByRole("button", { name: "作成先を選ぶ" }).click();
+    await chooseTarget(page, /acme\/web/, "#1 ロードマップ");
+
+    await expect(
+      detail.getByText("この Project に書き込む権限がありません。", { exact: false }),
+    ).toBeVisible();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
+      0,
+    );
+    await expect(page.locator(".board-context")).toContainText("書けません");
+  });
+
+  // 切れると: 設定の途中で閉じられ、設定できなかったときに理由を出す先が無くなる
+  // （新しいボードのダイアログと同じ形）。
+  test("設定しているあいだは閉じられず、設定中であることを名乗る", async ({ page }) => {
+    await installApi(page, withUnselected());
+    await page.goto("/");
+    await openUnselectedPicker(page);
+    let release = (): void => {};
+    await holdSetTarget(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await picker(page)
+      .getByRole("button", { name: /acme\/web/ })
+      .click();
+    await picker(page).getByRole("button", { name: "#1 ロードマップ" }).click();
+    await confirmProject(page);
+
+    await expect(picker(page).getByRole("button", { name: "設定中…" })).toBeDisabled();
+    await expect(picker(page).getByRole("button", { name: "やめる" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(picker(page)).toBeVisible();
+
+    release();
+    await expect(picker(page)).toBeHidden();
     await expect(page.locator(".badge-target")).toHaveText("acme/web › #1 ロードマップ");
   });
 
@@ -133,7 +280,7 @@ test.describe("作成先の選択", () => {
       const mock = withUnselected();
       await installApi(page, mock);
       await page.goto("/");
-      await openUnselected(page);
+      await openUnselectedPicker(page);
       await picker(page)
         .getByRole("button", { name: /acme\/web/ })
         .click();
@@ -157,7 +304,8 @@ test.describe("作成先の選択", () => {
         picker(page).getByRole("button", { name: "#1 ロードマップ" }),
       ).toHaveAttribute("aria-pressed", "true");
       // 選んだだけでは確定しない。確定は別のボタン。
-      await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
+      await expect(picker(page)).toBeVisible();
+      expect(mock.details[UNSELECTED_ID]?.projectId).toBe("");
       expect(mock.projectFieldsRequests).toEqual(["PVT_1"]);
     });
 
@@ -175,7 +323,7 @@ test.describe("作成先の選択", () => {
       };
       await installApi(page, mock);
       await page.goto("/");
-      await openUnselected(page);
+      await openUnselectedPicker(page);
       await picker(page)
         .getByRole("button", { name: /acme\/web/ })
         .click();
@@ -210,7 +358,7 @@ test.describe("作成先の選択", () => {
       };
       await installApi(page, mock);
       await page.goto("/");
-      await openUnselected(page);
+      await openUnselectedPicker(page);
       await picker(page)
         .getByRole("button", { name: /acme\/web/ })
         .click();
@@ -238,7 +386,7 @@ test.describe("作成先の選択", () => {
         (route) => route.abort(),
       );
       await page.goto("/");
-      await openUnselected(page);
+      await openUnselectedPicker(page);
       await picker(page)
         .getByRole("button", { name: /acme\/web/ })
         .click();
@@ -276,7 +424,7 @@ test.describe("作成先の選択", () => {
         },
       );
       await page.goto("/");
-      await openUnselected(page);
+      await openUnselectedPicker(page);
       await picker(page)
         .getByRole("button", { name: /acme\/web/ })
         .click();
@@ -293,7 +441,7 @@ test.describe("作成先の選択", () => {
       await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
 
       await expect(picker(page).getByRole("status")).toContainText("揃っています");
-      await expect(picker(page).getByRole("heading", { level: 2 }).last()).toContainText(
+      await expect(picker(page).getByRole("heading", { level: 3 }).last()).toContainText(
         "#4 技術的負債",
       );
     });
@@ -317,15 +465,18 @@ test.describe("作成先の選択", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
     await picker(page)
       .getByRole("button", { name: /acme\/web/ })
       .click();
 
     await expect(
-      page.getByRole("button", { name: "#1 唯一のプロジェクト" }),
-    ).toBeVisible();
-    await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
+      picker(page).getByRole("button", { name: "#1 唯一のプロジェクト" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      picker(page).getByRole("button", { name: "この Project にする" }),
+    ).toHaveCount(0);
+    expect(mock.details[UNSELECTED_ID]?.projectId).toBe("");
   });
 
   // 権限不足と「本当に 1 つも無い」は API からは区別できない。両方書く。
@@ -335,9 +486,11 @@ test.describe("作成先の選択", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
-    await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeVisible();
+    await expect(
+      picker(page).getByText("リポジトリが 1 つも見つかりませんでした"),
+    ).toBeVisible();
   });
 
   // 切れると: 見ていない範囲が残っているのに「権限を確認してください」と案内し、
@@ -349,13 +502,15 @@ test.describe("作成先の選択", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
     await expect(
-      page.getByText("見た範囲にはリポジトリがありませんでした"),
+      picker(page).getByText("見た範囲にはリポジトリがありませんでした"),
     ).toBeVisible();
     // 権限の案内は出さない。
-    await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeHidden();
+    await expect(
+      picker(page).getByText("リポジトリが 1 つも見つかりませんでした"),
+    ).toBeHidden();
   });
 
   // 候補を取り切っていないことを画面に出す（ADR 0054）。黙って切ると、目当てが
@@ -367,43 +522,47 @@ test.describe("作成先の選択", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
-    await expect(page.getByText("一覧を打ち切っています")).toBeVisible();
+    await expect(picker(page).getByText("一覧を打ち切っています")).toBeVisible();
   });
 
   // 打ち切っていないときに出すと、常に出しているのと変わらない。
   test("取り切っていれば、打ち切りの知らせは出さない", async ({ page }) => {
     await installApi(page, withUnselected());
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
     await expect(picker(page).getByRole("button", { name: /acme\/web/ })).toBeVisible();
-    await expect(page.getByText("一覧を打ち切っています")).toBeHidden();
+    await expect(picker(page).getByText("一覧を打ち切っています")).toBeHidden();
   });
 
   // 500 件の平らなリストから目で探すのはつらい（#150）。**絞るのは手元だけ。**
   // 打ち切りの外は問い合わせ直しても出てこない。
   //
-  // picker の中だけを見る。一覧が同じ画面にあったころは木にも同じ `acme/web` が
-  // 出て（ADR 0019）、page 直下で引くと絞っても消えない木のほうに当たった。
+  // ダイアログの中だけを見る。ボードの上に開くので、下の帯の作成先のように同じ
+  // 語が画面の別の場所にもある。
   test("名前の一部でリポジトリを絞れる", async ({ page }) => {
     await installApi(page, withUnselected());
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
     await expect(picker(page).getByRole("button", { name: /acme\/web/ })).toBeVisible();
     await expect(picker(page).getByRole("button", { name: /acme\/api/ })).toBeVisible();
 
-    await page.getByLabel("名前で絞り込む").fill("api");
+    await picker(page).getByLabel("名前で絞り込む").fill("api");
 
     await expect(picker(page).getByRole("button", { name: /acme\/api/ })).toBeVisible();
     await expect(picker(page).getByRole("button", { name: /acme\/web/ })).toHaveCount(0);
 
     // 当てはまるものが無いときは、権限の案内と言い分ける。直す場所が違う。
-    await page.getByLabel("名前で絞り込む").fill("存在しない");
-    await expect(page.getByText("に当てはまるリポジトリはありません")).toBeVisible();
-    await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeHidden();
+    await picker(page).getByLabel("名前で絞り込む").fill("存在しない");
+    await expect(
+      picker(page).getByText("に当てはまるリポジトリはありません"),
+    ).toBeVisible();
+    await expect(
+      picker(page).getByText("リポジトリが 1 つも見つかりませんでした"),
+    ).toBeHidden();
   });
 
   // 切れると: 候補は書ける Project に絞っているのに「無い」とだけ言い、読める
@@ -415,7 +574,7 @@ test.describe("作成先の選択", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
     await picker(page)
       .getByRole("button", { name: /acme\/web/ })
       .click();
@@ -441,12 +600,12 @@ test.describe("作成先の選択", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
     await picker(page)
       .getByRole("button", { name: /acme\/web/ })
       .click();
 
-    const alert = page.getByRole("alert");
+    const alert = picker(page).getByRole("alert");
     await expect(alert).toContainText("プロジェクトを取得できませんでした");
     await expect(alert).toContainText("書く権限が無いか");
     await expect(alert).toContainText("個人アカウントの Project には触れません");
@@ -456,7 +615,7 @@ test.describe("作成先の選択", () => {
     await expect(picker(page).getByText("読み込み中…")).toHaveCount(0);
   });
 
-  test("リポジトリの取得に失敗したら、選択画面にその旨を出す", async ({ page }) => {
+  test("リポジトリの取得に失敗したら、ダイアログにその旨を出す", async ({ page }) => {
     const mock = withUnselected();
     mock.repositories = {
       status: 502,
@@ -465,43 +624,49 @@ test.describe("作成先の選択", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
-    await expect(page.getByRole("alert")).toContainText(
+    await expect(picker(page).getByRole("alert")).toContainText(
       "リポジトリを取得できませんでした",
     );
   });
 
-  // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。黙って捨てない。
-  test("未保存の変更があるうちは作成先を変更できない", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
-
-    // 口はメニューの中にある（ADR 0065）。描く・保存するあいだは閉じておく。
-    // 開いたまま外を押すと、その 1 回はメニューを閉じるのに使われる。
-    const change = page.getByRole("button", { name: "作成先を変更" });
-    await openBoardMenu(page);
-    await expect(change).toBeEnabled();
-    await page.keyboard.press("Escape");
+  // 切れると: 未保存のあいだ作成先を選べず、選ぶために保存を挟むか、描いたものを
+  // 捨てて選ぶことになる。以前は選ぶとキャンバスごと外れたので止めていた。
+  test("未保存でも作成先を選べ、描いたものはそのまま保存できる", async ({ page }) => {
+    const mock = await openBoardWithMock(page, baseMock());
 
     await drawRectangle(page);
-
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
-    const menu = await openBoardMenu(page);
-    await expect(change).toBeDisabled();
-    // 押せない理由は本文として出す。title に隠すと、ホバーできない利用者と
-    // 読み上げには届かない（disabled なボタンにはフォーカスも当たらない）。
-    await expect(menu.getByText("保存してから作成先を変更できます")).toBeVisible();
-    await page.keyboard.press("Escape");
 
+    // 止めない（ADR 0100）。押せない理由の文も出さない。
+    const menu = await openBoardMenu(page);
+    const change = menu.getByRole("button", { name: "作成先を変更" });
+    await expect(change).toBeEnabled();
+    await expect(menu.getByText("保存してから作成先を変更できます")).toHaveCount(0);
+    await change.click();
+    await chooseTarget(page, /acme\/web/, "#4 技術的負債");
+    await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
+
+    // 描いたものは未保存のまま残っていて、そのまま保存できる。作成先の設定は
+    // 版を進めない（ADR 0092）ので、409 にもならない。
+    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
     await saveScene(page);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
-    await openBoardMenu(page);
-    await expect(change).toBeEnabled();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    // **選ぶ前に描いた矩形が、保存したシーンに載っている。** 「保存できた」だけを
+    // 見ると、選んだときにキャンバスを作り直して描いたものを捨てる実装でも通る。
+    const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
+      elements: { type: string }[];
+    };
+    expect(saved.elements.filter((el) => el.type === "rectangle")).toHaveLength(1);
   });
 
   // 固定済みでも API を直接叩けば 409 が返る。画面はその理由を黙って
-  // 飲み込まず、選択画面に出す。
-  test("設定が拒否されたら、選択画面に理由を出す", async ({ page }) => {
+  // 飲み込まず、ダイアログに出す。
+  test("設定が拒否されたら、ダイアログに理由を出し、選んだことにしない", async ({
+    page,
+  }) => {
     const mock = withUnselected();
     mock.setTargetError = {
       status: 409,
@@ -513,223 +678,33 @@ test.describe("作成先の選択", () => {
 
     await installApi(page, mock);
     await page.goto("/");
-    await openUnselected(page);
+    await openUnselectedPicker(page);
 
     await chooseTarget(page, /acme\/web/, "#1 ロードマップ");
 
-    await expect(page.getByRole("alert")).toContainText("作成先を設定できませんでした");
-    // 失敗したのだからブレストには進ませない。
-    await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
+    await expect(picker(page).getByRole("alert")).toContainText(
+      "作成先を設定できませんでした",
+    );
+    await expect(picker(page)).toBeVisible();
+    await expect(page.locator(".badge-target")).toHaveText("作成先: 未選択");
   });
 
-  test("固定前は作成先を選び直せる", async ({ page }) => {
+  test("固定前は作成先を選び直せ、やめれば前の作成先のまま", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     await chooseFromMenu(page, "作成先を変更");
-    await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
+    await expect(picker(page).getByRole("heading", { name: "リポジトリ" })).toBeVisible();
 
     await picker(page)
       .getByRole("button", { name: /acme\/api/ })
       .click();
     await expect(
-      page.getByText("書き込める Projects v2 が紐づいていません"),
+      picker(page).getByText("書き込める Projects v2 が紐づいていません"),
     ).toBeVisible();
 
-    // やめればブレストに戻れる。未選択のときは戻る先が無いので出さない。
-    await page.getByRole("button", { name: "やめる" }).click();
-    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
-  });
-
-  // 切れると: 選択画面のあいだキャンバスは外れていて、戻ると作り直される。
-  // 開いた時点のシーンと版で作り直すと、開いてから保存したものが画面から消え、
-  // 次の保存は自分の保存と食い違って 409 になる（#241）。「他の人が保存しました」
-  // と出るので、案内まで嘘になる。
-  test("選び直しをやめて戻っても、開いてから保存したものが残り、続けて保存できる", async ({
-    page,
-  }) => {
-    const mock = await openBoardWithMock(page, baseMock());
-
-    await drawRectangle(page);
-    await saveScene(page);
-    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
-
-    await chooseFromMenu(page, "作成先を変更");
     await picker(page).getByRole("button", { name: "やめる" }).click();
-    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
-
-    await drawRectangle(page);
-    await expect(page.getByText("未保存", { exact: true })).toBeVisible();
-    await saveScene(page);
-
-    // 409 なら「他の人がこのボードを保存しました」が出て、未保存も残る。
-    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
-    await expect(page.getByRole("alert")).toHaveCount(0);
-
-    // **戻る前に保存した矩形が、戻った後の保存にも載っている。** 「保存できた」
-    // だけを見ると、開いた時点のシーンに版だけ合わせた実装でも通る。
-    const saved = JSON.parse(mock.details[BOARD_ID]?.scene ?? "{}") as {
-      elements: { type: string }[];
-    };
-    expect(saved.elements.filter((el) => el.type === "rectangle")).toHaveLength(2);
-  });
-
-  // 切れると: 取り直せなかったときに、開いた時点のシーンで作り直して戻る形に
-  // 落ちると #241 がそのまま残る。選択画面に留まり、押し直せば戻れる。
-  test("選び直しをやめて戻るときにボードを取れなければ、選択画面に残る", async ({
-    page,
-  }) => {
-    await openBoardWithMock(page, baseMock());
-    await chooseFromMenu(page, "作成先を変更");
-
-    // 開いた後に登録したこちらが先に当たる。
-    let failing = true;
-    await page.route(
-      (url) => url.pathname === `/api/boards/${BOARD_ID}`,
-      async (route) => {
-        if (failing && route.request().method() === "GET") {
-          await route.fulfill({
-            status: 500,
-            json: { code: "internal", error: "boom" } satisfies ErrorResponse,
-          });
-          return;
-        }
-        await route.fallback();
-      },
-    );
-
-    await picker(page).getByRole("button", { name: "やめる" }).click();
-
-    await expect(page.getByRole("alert")).toContainText("ボードを開けませんでした");
-    await expect(picker(page)).toBeVisible();
-    await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
-    expect(new URL(page.url()).search).toBe(`?board=${BOARD_ID}&picking=1`);
-
-    failing = false;
-    await picker(page).getByRole("button", { name: "やめる" }).click();
-    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
-    expect(new URL(page.url()).search).toBe(`?board=${BOARD_ID}`);
-  });
-
-  // 切れると: 「やめる」の取り直しは待ちを挟むので、そのあいだに作成先を決め
-  // られる。設定より前に読んだボードが遅れて届くと、決めたはずの作成先が前の
-  // ものに戻って見える。サーバーはもう変わっているので、画面だけが違う先を指す。
-  test("「やめる」の取り直しを待つあいだに作成先を決めたら、決めた作成先が残る", async ({
-    page,
-  }) => {
-    const mock = await openBoardWithMock(page, baseMock());
-    await chooseFromMenu(page, "作成先を変更");
-    await picker(page)
-      .getByRole("button", { name: /acme\/web/ })
-      .click();
-    const other = picker(page).getByRole("button", { name: "#4 技術的負債" });
-    await expect(other).toBeVisible();
-
-    // 「やめる」の取り直しだけを、読んだ時点の本文のまま止める。
-    // **`fallback` で通さない。** 通すと着いた時点（設定の後）のボードが返り、
-    // 古い応答が着く並びを作れない。**止めるのは 1 本目だけ。** 設定のあとの
-    // 取り直しまで止めると、決めた作成先がいつまでも出ない。
-    let release = (): void => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let holding = false;
-    await page.route(
-      (url) => url.pathname === `/api/boards/${BOARD_ID}`,
-      async (route) => {
-        if (route.request().method() !== "GET" || holding) {
-          await route.fallback();
-          return;
-        }
-        holding = true;
-        const detail = mock.details[BOARD_ID];
-        if (!detail) throw new Error("開いたボードがモックに無い");
-        const before = {
-          ...detail,
-          files: mock.files[BOARD_ID] ?? {},
-        } satisfies BoardWithFiles;
-        await held;
-        await route.fulfill({ json: before });
-      },
-    );
-
-    const requested = page.waitForRequest(isBoardDetail);
-    await picker(page).getByRole("button", { name: "やめる" }).click();
-    await requested;
-
-    await other.click();
-    await confirmProject(page);
-    await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
-
-    // 設定のあとの取り直しはもう着いているので、ここで待てるのは止めた 1 本だけ。
-    const arrived = page.waitForResponse((r) => isBoardDetail(r.request()));
-    release();
-    await arrived;
-    // 応答を受けた処理が画面を変えるまでの間を置いてから、変わっていないことを
-    // 見る（`url.spec.ts` の追い越しと同じ形）。
-    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
-
-    await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
-  });
-
-  // 切れると: 上と同じ取り直しが、設定の応答より先に着く並び。世代を進めるのが
-  // 設定のあとの取り直しだけだと、この応答が通って選択画面が閉じ、変える前の
-  // 作成先でキャンバスが作られる。あとから着く取り直しは同じ `key` なので
-  // キャンバスを作り直さず、作成先と版だけが入れ替わる。
-  test("「やめる」の取り直しが作成先の設定より先に着いても、選択画面に残り、決めた作成先で戻る", async ({
-    page,
-  }) => {
-    await openBoardWithMock(page, baseMock());
-    await chooseFromMenu(page, "作成先を変更");
-    await picker(page)
-      .getByRole("button", { name: /acme\/web/ })
-      .click();
-    const other = picker(page).getByRole("button", { name: "#4 技術的負債" });
-    await expect(other).toBeVisible();
-
-    // どちらも本文は `installApi` のものを、放した時点で返す。取り直しを先に
-    // 放すので、こちらは設定より前のボード（前の作成先）を返す。
-    let releaseDetail = (): void => {};
-    await holdBoardDetail(
-      page,
-      BOARD_ID,
-      new Promise<void>((resolve) => {
-        releaseDetail = resolve;
-      }),
-    );
-    let releaseTarget = (): void => {};
-    await holdSetTarget(
-      page,
-      new Promise<void>((resolve) => {
-        releaseTarget = resolve;
-      }),
-    );
-
-    const requested = page.waitForRequest(isBoardDetail);
-    await picker(page).getByRole("button", { name: "やめる" }).click();
-    await requested;
-
-    const setting = page.waitForRequest(
-      (r) =>
-        r.method() === "PUT" &&
-        new URL(r.url()).pathname === `/api/boards/${BOARD_ID}/target`,
-    );
-    await other.click();
-    await confirmProject(page);
-    await setting;
-
-    const arrived = page.waitForResponse((r) => isBoardDetail(r.request()));
-    releaseDetail();
-    await arrived;
-    // 応答を受けた処理が画面を変えるまでの間を置いてから、変わっていないことを
-    // 見る（上と同じ形）。
-    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
-    await expect(picker(page)).toBeVisible();
-    await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
-
-    releaseTarget();
-    await expect(page.locator(".badge-target")).toHaveText("acme/web › #4 技術的負債");
-    await expect(picker(page)).toHaveCount(0);
-    expect(new URL(page.url()).search).toBe(`?board=${BOARD_ID}`);
+    await expect(picker(page)).toBeHidden();
+    await expect(page.locator(".badge-target")).toHaveText("acme/web › #1 ロードマップ");
   });
 
   // draft issue を 1 件でも作ると固定される。押せるのに 409 で断るより、
@@ -902,13 +877,23 @@ test.describe("作成先の選択", () => {
     );
   });
 
-  test("新しいボードは作成先の選択から始まる", async ({ page }) => {
+  // 切れると: 描く前に draft issue の行き先を決めさせる（中核思想 1）。
+  // **送ったリクエストに作成先が無いことまで見る。** 画面が同じでも、選んだ体の
+  // 値を送っていれば、選びかけのボードができる。
+  test("新しいボードは作成先を選ばずに作り、そのままキャンバスを開く", async ({
+    page,
+  }) => {
     await installApi(page, baseMock());
     await page.goto("/");
 
-    await startNewBoard(page, "決済まわり");
+    const created = page.waitForRequest(
+      (r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/boards",
+    );
+    await createNewBoard(page, "決済まわり");
+    const body = (await created).postDataJSON() as Record<string, unknown>;
 
-    await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
-    await expect(page.locator(".excalidraw canvas")).toHaveCount(0);
+    expect(Object.keys(body)).toEqual(["name"]);
+    await expect(picker(page)).toHaveCount(0);
+    await expect(page.locator(".badge-target")).toHaveText("作成先: 未選択");
   });
 });

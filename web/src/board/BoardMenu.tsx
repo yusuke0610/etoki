@@ -38,8 +38,8 @@ type Props = {
   onRefreshTarget: () => void;
   refreshingTarget: boolean;
   onChangeTarget: () => void;
-  /** 作成先を変更できない理由。押せるなら null。 */
-  targetChangeBlocked: string | null;
+  /** 作成先が選ばれているか。未選択なら項目を「作成先を選ぶ」と名乗る（ADR 0100）。 */
+  targetSelected: boolean;
   /** キャンバスが組み上がったか（Excalidraw の API を受け取ったか）。 */
   canvasReady: boolean;
   onExport: () => void;
@@ -91,7 +91,7 @@ export function BoardMenu({
   onRefreshTarget,
   refreshingTarget,
   onChangeTarget,
-  targetChangeBlocked,
+  targetSelected,
   canvasReady,
   onExport,
   onImport,
@@ -176,24 +176,15 @@ export function BoardMenu({
           )}
         </>
       ) : (
-        <>
-          <MainMenu.Item
-            className="etoki-menu-item"
-            icon={changeTargetIcon}
-            onSelect={onChangeTarget}
-            // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる。
-            // 黙って捨てずに、保存してからにしてもらう。
-            disabled={targetChangeBlocked !== null}
-            aria-describedby={
-              targetChangeBlocked !== null ? "target-change-blocked" : undefined
-            }
-          >
-            作成先を変更
-          </MainMenu.Item>
-          {targetChangeBlocked !== null && (
-            <MenuNote id="target-change-blocked">{targetChangeBlocked}</MenuNote>
-          )}
-        </>
+        // **止めない**（ADR 0100）。選ぶのはボードの上のダイアログで、キャンバスは
+        // 外れない。未保存でも保存中でも、描いたものと絵解きの結果は残る。
+        <MainMenu.Item
+          className="etoki-menu-item"
+          icon={changeTargetIcon}
+          onSelect={onChangeTarget}
+        >
+          {targetSelected ? "作成先を変更" : "作成先を選ぶ"}
+        </MainMenu.Item>
       )}
       <MainMenu.Separator />
       {/*

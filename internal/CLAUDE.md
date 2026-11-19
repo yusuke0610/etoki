@@ -311,10 +311,9 @@ UI は未保存の変更があることを表示する。
   弾いて直させる。
 - **作成先の Projects v2 はボードごと。** プロセス全体の設定ではない
   （`ETOKI_GITHUB_PROJECT_ID` は廃止済み）。`boards` の
-  `repository_owner` / `repository_name` / `project_id` に持つ。**作成時に必須**
-  （ADR 0017）だが、3 つとも空文字の「未選択」は 2 つの経路で残る。移行前の
-  ボードと、GitHub を組み立てていない構成で作ったボード（ADR 0090）。その経路は
-  消さない。**そのボードで最初の
+  `repository_owner` / `repository_name` / `project_id` に持つ。**作成時には
+  要らない**（ADR 0100）。3 つとも空文字の「未選択」でボードを作り、作成先は
+  描いたあとで選ぶ。**そのボードで最初の
   run ができたら固定**し、以後の変更は 409 で拒む。作成先が変わると `sync_runs`
   が指す item を見失うため（ADR 0014）。変えられるのは owner だけ（ADR 0017）。
   判定は `BoardService.SetTarget` にある。**ハンドラに移さないこと。**
@@ -427,14 +426,11 @@ UI は未保存の変更があることを表示する。
   draft issue ができたのに run を書けず、取り消せない作成が記録の無いまま残る
   （ADR 0009）。消える範囲を Go に書き下さないこと。`board_members` /
   `sync_runs` / `sync_items` はスキーマの `ON DELETE CASCADE` が決める。
-- **ボードの作成には作成先が要る。** 候補は `minPermissionLevel: WRITE` で絞って
-  あるので（ADR 0014）、書ける Project を 1 つも持たない人はボードを作れない。
-  「作成にはリポジトリへのアクセス権が要る」はこの形で満たす。作成時に GitHub へ
-  問い合わせて確かめはしない。
-  **例外は GitHub を組み立てていない構成だけ**（ADR 0090）。候補を引けないので、
-  3 つとも省けば未選択のボードを作れる。判定は `BoardService.Create` に置き、
-  どちらに倒すかは `etoki.New` が `usecase.WithoutRequiredTarget` を渡すかで
-  決める。**ハンドラや画面で判定し直さない。** GitHub のある構成で API を直接
-  叩けば、要件 1 を外したボードが作れてしまう。
+- **ボードの作成に作成先は要らない。どの構成でも**（ADR 0100）。描くことには
+  リポジトリへのアクセス権が要らない。書けない人が止まるのは、作成先を選ぶとき
+  （候補は `minPermissionLevel: WRITE` で絞ってある、ADR 0014）と、draft issue を
+  作るとき（GitHub が 403 を返す、ADR 0017 の要件 3）。**作成先は 3 つとも省くか、
+  3 つとも送るか。** 一部だけなら 400。判定は `BoardService.Create` に置く。
+  **ハンドラや画面で判定し直さない。**
 - 移行前のボードは自動で誰のものにもしない。`etoki claim <login>` で引き受ける
   （中核思想 3）。

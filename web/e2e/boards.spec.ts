@@ -1,18 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-import { installApi } from "./helpers/api";
+import { holdBoardList, installApi } from "./helpers/api";
 import { listEntry, summarize } from "./helpers/boardData";
 import {
   backToList,
   chooseFromMenu,
-  chooseTarget,
   drawRectangle,
   newBoardDialog,
   openBoard,
   openBoardWithMock,
   picker,
   saveScene,
-  startNewBoard,
+  waitForBoard,
 } from "./helpers/board";
 import {
   BOARD_ID,
@@ -41,15 +40,14 @@ test.describe("ボード", () => {
     await expect(page.locator(".board-list")).toHaveCount(0);
   });
 
-  // 作成先を選ぶまでボードは作られない。書ける Project を 1 つも持たない人は
-  // ここで先に進めず、それが「作成にはリポジトリへのアクセス権が要る」ことの
-  // 表れになる（ADR 0017）。
-  test("ダイアログで名前を入れて作成先を選ぶと、そのボードが開く", async ({ page }) => {
+  // **作成先は訊かない**（ADR 0100）。描く前に draft issue の行き先を決めさせると、
+  // ブレストに構造の話を持ち込む（中核思想 1）。作成先は描いたあとでボードから選ぶ。
+  test("ダイアログで名前を入れて作成すると、作成先を選ばずにそのボードが開く", async ({
+    page,
+  }) => {
     await installApi(page, baseMock());
     await page.goto("/");
 
-    // 作成のリクエストを控える。選択画面には一覧が無いので、「一覧にまだ
-    // 並ばない」では作っていないことを確かめられない（一覧が無ければ常に通る）。
     const created: string[] = [];
     page.on("request", (req) => {
       if (req.method() === "POST" && new URL(req.url()).pathname === "/api/boards") {
@@ -59,32 +57,32 @@ test.describe("ボード", () => {
 
     const dialog = await newBoardDialog(page);
     const name = dialog.getByLabel("ボード名");
-    const submit = dialog.getByRole("button", { name: "次へ" });
+    const submit = dialog.getByRole("button", { name: "作成", exact: true });
 
     // 開いたら名前の欄から始める。
     await expect(name).toBeFocused();
-    // 必須であることは支援技術にも伝える。「次へ」が押せないだけでは、読み上げで
+    // 必須であることは支援技術にも伝える。「作成」が押せないだけでは、読み上げで
     // 欄を移っている人には届かない。
     await expect(name).toHaveJSProperty("required", true);
     // 空白だけでは進ませない。誤って空名のボードが増えるのを防いでいる。
     await expect(submit).toBeDisabled();
     await name.fill("   ");
     await expect(submit).toBeDisabled();
+    // 作成先を訊かずに作ることを、押す前に言う（中核思想 3）。
+    await expect(
+      dialog.getByText("draft issue の作成先は、描いたあとでボードから選びます。"),
+    ).toBeVisible();
 
     await name.fill("決済フローのブレスト");
     await expect(submit).toBeEnabled();
-    // Enter でも進める。
+    // Enter でも作れる。
     await name.press("Enter");
-
-    // まだ作られていない。先に作成先を選ばせる。
-    await expect(page.getByRole("heading", { name: "リポジトリ" })).toBeVisible();
-    expect(created).toEqual([]);
-
-    await chooseTarget(page, "acme/web", "#1 ロードマップ");
 
     await expect(
       page.getByRole("heading", { name: "決済フローのブレスト", level: 1 }),
     ).toBeVisible();
+    await expect(page.locator(".excalidraw canvas").first()).toBeVisible();
+    await expect(picker(page)).toHaveCount(0);
     expect(created).toHaveLength(1);
 
     // 作成したら一覧に並び、ダイアログの入力は空に戻る。
@@ -115,10 +113,7 @@ test.describe("ボード", () => {
       page.waitForRequest(
         (req) => req.url().endsWith("/api/boards") && req.method() === "POST",
       ),
-      (async () => {
-        await dialog.getByRole("button", { name: "次へ" }).click();
-        await chooseTarget(page, "acme/web", "#1 ロードマップ");
-      })(),
+      dialog.getByRole("button", { name: "作成", exact: true }).click(),
     ]);
 
     const body = request.postDataJSON() as { scene?: string };
@@ -142,21 +137,113 @@ test.describe("ボード", () => {
     await expect((await newBoardDialog(page)).getByLabel("ひな形")).toHaveValue("");
   });
 
-  // 選び直すために戻った人に、名前を打ち直させない（#200）。
-  test("作成先の選択から戻ると、入力を残したままダイアログが開き直す", async ({
-    page,
-  }) => {
+  // 作ったら、一覧の読み直しを待たずに開く。待つと、ダイアログが閉じたあとの
+  // 一覧で別のボードを開けてしまい、読み直しのあとで作ったボードが確認なしに
+  // 上書きする。**読み直しを止めたまま開くことを見る。**
+  test("作ったボードは、一覧の読み直しを待たずに開く", async ({ page }) => {
     await installApi(page, baseMock());
     await page.goto("/");
+    await expect(
+      page.locator(".board-list").getByRole("button", { name: board().name }),
+    ).toBeVisible();
 
-    await startNewBoard(page, "やり直すブレスト", "sequence");
-    await picker(page).getByRole("button", { name: "やめる" }).click();
+    let release: () => void = () => {};
+    await holdBoardList(
+      page,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    // 読み直しに行ったことも見る。開いたことだけだと、読み直しを消しても通る。
+    const listReload = page.waitForRequest(
+      (request) =>
+        request.method() === "GET" && new URL(request.url()).pathname === "/api/boards",
+    );
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
+    await listReload;
 
-    const dialog = page.getByRole("dialog", { name: "新しいボード" });
+    await waitForBoard(page, "ブレスト");
+    release();
+  });
+
+  // 作成の応答を待つあいだも「戻る」で別のボードを開ける。応答で作ったボードに
+  // 切り替えると、開いたボードを確認なしに外し、描き始めていれば未保存の変更
+  // ごと捨てる。**送ったあとに別のボードを開いたら、作ったボードは開かない。**
+  test("作成を待つあいだに戻って開いたボードを、作成の応答で外さない", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, baseMock());
+    await backToList(page);
+
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      (url) => url.pathname === "/api/boards",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        await held;
+        await route.fallback();
+      },
+    );
+
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("ブレスト");
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
+    await page.goBack();
+    await waitForBoard(page, board().name);
+
+    // 応答を扱い終えた印として、そのあとの一覧の読み直しを待つ。
+    const listReload = page.waitForResponse(
+      (r) =>
+        r.request().method() === "GET" && new URL(r.url()).pathname === "/api/boards",
+    );
+    release();
+    await listReload;
+
+    await expect(
+      page.getByRole("heading", { name: board().name, level: 1 }),
+    ).toBeVisible();
+    // **完全一致で引く。** 戻って開いたボードの名前も「ブレスト」を含む。
+    await expect(
+      page.getByRole("heading", { name: "ブレスト", exact: true, level: 1 }),
+    ).toHaveCount(0);
+  });
+
+  // 作れなかった人に、名前を打ち直させない（#200）。理由はダイアログの中に出す。
+  // モーダルで開いたダイアログは最上位の層に載るので、外の通知はその下に隠れて
+  // 読めない。
+  test("作れなかったら、ダイアログの中に理由を出して入力を残す", async ({ page }) => {
+    await installApi(page, baseMock());
+    // installApi の後に登録したこちらが先に当たる。作成だけを落とす。
+    await page.route(
+      (url) => url.pathname === "/api/boards",
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.fallback();
+          return;
+        }
+        await route.fulfill({
+          status: 500,
+          json: { code: "internal", error: "boom" },
+        });
+      },
+    );
+    await page.goto("/");
+
+    const dialog = await newBoardDialog(page);
+    await dialog.getByLabel("ボード名").fill("やり直すブレスト");
+    await dialog.getByLabel("ひな形").selectOption("sequence");
+    await dialog.getByRole("button", { name: "作成", exact: true }).click();
+
+    await expect(dialog.getByRole("alert")).toContainText("ボードを作成できませんでした");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByLabel("ボード名")).toHaveValue("やり直すブレスト");
     await expect(dialog.getByLabel("ひな形")).toHaveValue("sequence");
-    await expect(dialog.getByLabel("ボード名")).toBeFocused();
+    await expect(dialog.getByRole("button", { name: "作成", exact: true })).toBeEnabled();
   });
 
   // やめた入力が次に開いたときに残っていると、別のボードのつもりで同じ名前を
@@ -221,29 +308,6 @@ test.describe("ボード", () => {
     ]);
     const unselected = page.getByRole("region", { name: "作成先が未選択" });
     await expect(unselected.getByRole("button", { name: legacy.name })).toBeVisible();
-    // 開くと作成先の選択から始まることを、押す前に言う（オーナーなので選べる）。
-    await expect(
-      unselected.getByRole("button", { name: legacy.name }),
-    ).toHaveAccessibleDescription(/開くと作成先を選べます/);
-  });
-
-  // 作成先を選べるのはオーナーだけ（ADR 0017）。押した先で選べないのに
-  // 「選べます」と書くと、案内が嘘になる。
-  test("オーナーでなければ、未選択のカードは作成先をオーナーが選ぶと書く", async ({
-    page,
-  }) => {
-    const mock = baseMock();
-    const legacy = { ...unselectedBoard(), role: "editor" as const };
-    mock.boards = [...mock.boards, summarize(legacy)];
-    mock.details[legacy.id] = legacy;
-    mock.annotations[legacy.id] = [];
-
-    await installApi(page, mock);
-    await page.goto("/");
-
-    await expect(
-      page.locator(".board-list").getByRole("button", { name: legacy.name }),
-    ).toHaveAccessibleDescription(/作成先はオーナーが選びます/);
   });
 
   // 開く前に、どのボードに手を打つものがあるかが分かる（#200、中核思想 3）。

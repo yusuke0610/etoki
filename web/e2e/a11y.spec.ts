@@ -155,19 +155,6 @@ test.describe("押せない理由が本文として読める", () => {
     );
   });
 
-  // 選択画面に移るとキャンバスごと外れ、未保存の編集は失われる（ADR 0021）。
-  test("作成先を変更：未保存のとき", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
-    await drawRectangle(page);
-
-    // メニューの中の理由も本文で読める（ADR 0066）。開かないと DOM に無い。
-    const menu = await openBoardMenu(page);
-    await expectBlockedReason(
-      menu.getByRole("button", { name: "作成先を変更" }),
-      "保存してから作成先を変更できます",
-    );
-  });
-
   // 取り込みはキャンバスを置き換える（ADR 0044）。作成中に置き換えると、作られた
   // 内容と記録されるハッシュが食い違いうるので、保存と同じ理由で止める。
   test("取り込み：作成中のとき", async ({ page }) => {
@@ -269,35 +256,8 @@ test.describe("押せない理由が本文として読める", () => {
     await expect(page.getByText("保存が終わるまで作成できません")).toBeHidden();
   });
 
-  // 「作成先を変更」は未保存でも保存中でも押せない。**未保存のほうだけ
-  // 見ていると、変更なしで保存を押したあいだが空く。** ボタンは押せないのに
-  // 理由が消える、という状態が残る。
-  test("作成先を変更：保存中のとき", async ({ page }) => {
-    await installApi(page, baseMock());
-    let release = () => {};
-    await holdSave(
-      page,
-      new Promise<void>((resolve) => {
-        release = resolve;
-      }),
-    );
-
-    await page.goto("/");
-    await openBoard(page, BOARD_NAME);
-
-    // **描かない。** 描くと未保存の理由のほうが出て、保存中の経路を通らない。
-    await saveScene(page);
-
-    // **保存を押してから開く。** 開いてから外を押すと、メニューは閉じる。
-    const menu = await openBoardMenu(page);
-    const change = menu.getByRole("button", { name: "作成先を変更" });
-    await expectBlockedReason(change, "保存が終わるまで作成先を変更できません");
-
-    // 開いたまま待つ。閉じた後に見ると、理由が消えていなくても通る。
-    release();
-    await expect(change).toBeEnabled();
-  });
-
+  // メニューの中の理由も本文で読める（ADR 0066）。開かないと DOM に無い。
+  // **保存を押してから開く。** 開いてから外を押すと、メニューは閉じる。
   test("取り込み：保存中のとき", async ({ page }) => {
     await installApi(page, baseMock());
     let release = () => {};
@@ -520,18 +480,22 @@ test.describe("押せない理由が本文として読める", () => {
   });
 
   test("理由の要素が消えたら落ちる", async ({ page }) => {
-    await openBoardWithMock(page, baseMock());
-    await drawRectangle(page);
+    await installApi(page, baseMock());
+    // 保存を返さない。止めているあいだ「取り込み」は押せず、理由がメニューに出る。
+    await holdSave(page, new Promise<void>(() => {}));
+    await page.goto("/");
+    await openBoard(page, BOARD_NAME);
+    await saveScene(page);
 
     const menu = await openBoardMenu(page);
-    const button = menu.getByRole("button", { name: "作成先を変更" });
-    await expectBlockedReason(button, "保存してから作成先を変更できます");
+    const button = menu.getByRole("button", { name: "取り込み", exact: true });
+    await expectBlockedReason(button, "保存が終わるまで取り込めません");
 
     // 理由の本文だけを消す。ボタンは押せないまま、指す先が無くなる。
-    await page.locator("#target-change-blocked").evaluate((el) => el.remove());
+    await page.locator("#import-blocked").evaluate((el) => el.remove());
 
     await expect(
-      expectBlockedReason(button, "保存してから作成先を変更できます"),
+      expectBlockedReason(button, "保存が終わるまで取り込めません"),
     ).rejects.toThrow();
   });
 });
@@ -594,14 +558,17 @@ for (const colorScheme of ["light", "dark"] as const) {
     /*
      * キャンバスのメニュー（ADR 0065）。**開かないと DOM に出ない**ので、他の
      * 検査では一度も掛かっていない。etoki の項目と、押せない理由の文
-     * （ADR 0066）が両方出る状態にして掛ける。未保存にしておけば「作成先を変更」
+     * （ADR 0066）が両方出る状態にして掛ける。保存を止めておけば「取り込み」
      * が押せなくなり、理由の文がメニューの中に出る。
      */
     test("メニューを開いた状態", async ({ page }) => {
-      await openBoardWithMock(page, baseMock());
-      await drawRectangle(page);
+      await installApi(page, baseMock());
+      await holdSave(page, new Promise<void>(() => {}));
+      await page.goto("/");
+      await openBoard(page, BOARD_NAME);
+      await saveScene(page);
       const menu = await openBoardMenu(page);
-      await menu.getByText("保存してから作成先を変更できます").waitFor();
+      await menu.getByText("保存が終わるまで取り込めません").waitFor();
 
       await expectNoAxeViolations(page);
     });
@@ -644,32 +611,34 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    // GitHub が未設定の構成では、作成先を選ばずに作ることをダイアログで言う
-    // （ADR 0090）。**その構成でしか出ない文**なので、上の検査には掛かっていない。
-    test("新しいボードのダイアログを開いた状態（GitHub が未設定）", async ({ page }) => {
+    /*
+     * 作成先が未選択のボードで絵解いた状態（ADR 0100）。作成の帯に「GitHub に
+     * 作成する」の代わりに「作成先を選ぶ」と理由の文が出る。**未選択のボードで
+     * 絵解くまで DOM に出ない**ので、ほかの検査には掛かっていない。
+     */
+    test("作成先が未選択で、作成の帯に作成先を選ぶ口が出た状態", async ({ page }) => {
       const mock = baseMock();
-      mock.capabilities = {
-        status: 200,
-        body: {
-          interpretation: true,
-          diagramDraft: true,
-          creation: false,
-          sharing: true,
-          mcpConnections: false,
-        },
+      mock.details[BOARD_ID] = {
+        ...board(),
+        repositoryOwner: "",
+        repositoryName: "",
+        projectId: "",
+        projectNumber: 0,
+        projectTitle: "",
+        projectUrl: "",
       };
-      await installApi(page, mock);
-      await page.goto("/");
-      const dialog = await newBoardDialog(page);
-      await dialog.getByText("作成先は選ばずに作ります", { exact: false }).waitFor();
+      await openBoardWithMock(page, mock);
+      const detail = annotationDetail(page, "ログイン");
+      await interpret(annotationCard(page, "ログイン"));
+      await detail.getByRole("button", { name: "作成先を選ぶ" }).waitFor();
 
       await expectNoAxeViolations(page);
     });
 
     /*
-     * 作成先の Project を選んで、足りないフィールドが出た状態（ADR 0088）。
-     * **選ぶまで DOM に出ない**ので、ほかの検査には掛かっていない。注意の色の
-     * コントラストはここでしか測れない。
+     * 作成先を選ぶダイアログで Project を選んで、足りないフィールドが出た状態
+     * （ADR 0088 / 0100）。**選ぶまで DOM に出ない**ので、ほかの検査には掛かって
+     * いない。注意の色のコントラストはここでしか測れない。
      */
     test("作成先の Project を選び、足りないフィールドが出た状態", async ({ page }) => {
       const mock = baseMock();

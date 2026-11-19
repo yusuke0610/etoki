@@ -123,13 +123,14 @@ export async function backToList(page: Page): Promise<void> {
 }
 
 /**
- * 一覧の「新しいボード」からダイアログを開き、名前（とひな形）を入れて「次へ」を
- * 押す（#200）。押した先は作成先の選択画面で、**まだボードは作られていない**。
+ * 一覧の「新しいボード」からダイアログを開き、名前（とひな形）を入れて「作成」を
+ * 押す（#200）。**作成先は選ばない**（ADR 0100）。作ったボードのキャンバスが
+ * 出るまで待つ。
  *
- * ダイアログの中身を確かめる spec（押せない「次へ」、やめたときの入力）は、
+ * ダイアログの中身を確かめる spec（押せない「作成」、やめたときの入力）は、
  * これを使わずに `newBoardDialog` で開く。
  */
-export async function startNewBoard(
+export async function createNewBoard(
   page: Page,
   name: string,
   template?: string,
@@ -137,7 +138,8 @@ export async function startNewBoard(
   const dialog = await newBoardDialog(page);
   await dialog.getByLabel("ボード名").fill(name);
   if (template !== undefined) await dialog.getByLabel("ひな形").selectOption(template);
-  await dialog.getByRole("button", { name: "次へ" }).click();
+  await dialog.getByRole("button", { name: "作成", exact: true }).click();
+  await waitForBoard(page, name);
 }
 
 /** 一覧の「新しいボード」を押して、開いたダイアログを返す。 */
@@ -210,15 +212,26 @@ export async function openBoardWithMock(
 }
 
 /**
- * 作成先の選択画面。
+ * 作成先を選ぶダイアログ（ADR 0100）。ボードの上に開く。
  *
  * **リポジトリを押すときは必ずここで絞る。** 一覧が同じ画面にあったころは、
- * 木にも同じ `acme/web` という名前のボタンが並んだ（ADR 0019）。一覧が別の
- * 画面になって（ADR 0064）今は衝突しないが、戻す判断が出た日に黙って壊れない
- * ように絞り続ける。
+ * 木にも同じ `acme/web` という名前のボタンが並んだ（ADR 0019）。いまはボードの
+ * 上に開くので、下の帯の作成先（`acme/web › #1 ロードマップ`）のような同じ語も
+ * 同じ画面にある。
  */
 export function picker(page: Page): Locator {
-  return page.locator(".picker");
+  return page.getByRole("dialog", { name: "作成先を選ぶ" });
+}
+
+/**
+ * キャンバスのメニューから、作成先を選ぶダイアログを開く（ADR 0100）。項目の
+ * 名前は、未選択なら「作成先を選ぶ」、選んであれば「作成先を変更」。
+ */
+export async function openTargetPicker(page: Page): Promise<Locator> {
+  const menu = await openBoardMenu(page);
+  await menu.getByRole("button", { name: /^作成先を(選ぶ|変更)$/ }).click();
+  await expect(picker(page)).toBeVisible();
+  return picker(page);
 }
 
 /** リポジトリと Project を順に選んで作成先を決める。 */

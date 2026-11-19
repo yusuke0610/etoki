@@ -5,7 +5,6 @@ import {
   blockedReason,
   useExclusion,
   useReentryGuard,
-  type Operation,
   type RunningOperation,
 } from "./exclusion";
 
@@ -21,12 +20,11 @@ import {
  */
 
 const RUNNING: RunningOperation[] = ["saving", "importing", "creating"];
-const OPERATIONS: Operation[] = [...RUNNING, "changeTarget"];
 
 describe("blockedReason", () => {
   // 何も走っていなければ、どの操作にも理由は出ない。
   it("何も走っていなければ null", () => {
-    for (const op of OPERATIONS) {
+    for (const op of RUNNING) {
       expect(blockedReason(op, null), op).toBeNull();
     }
   });
@@ -39,8 +37,7 @@ describe("blockedReason", () => {
     ["importing", "creating", "作成が終わるまで取り込めません"],
     ["creating", "saving", "保存が終わるまで作成できません。"],
     ["creating", "importing", "取り込みが終わるまで作成できません。"],
-    ["changeTarget", "saving", "保存が終わるまで作成先を変更できません"],
-  ] as [Operation, RunningOperation, string][])(
+  ] as [RunningOperation, RunningOperation, string][])(
     "%s は %s の最中なら「%s」",
     (op, running, reason) => {
       expect(blockedReason(op, running)).toBe(reason);
@@ -52,18 +49,6 @@ describe("blockedReason", () => {
   it.each(RUNNING)("%s の最中に同じ操作の理由は出さない", (op) => {
     expect(blockedReason(op, op)).toBeNull();
   });
-
-  // いまは止めていない組。**現状を写したものなので、止めると決めた日に
-  // ここが落ちる。** 黙って変わらないための固定。
-  it.each([
-    ["changeTarget", "importing"],
-    ["changeTarget", "creating"],
-  ] as [Operation, RunningOperation][])(
-    "%s は %s の最中でも止めていない",
-    (op, running) => {
-      expect(blockedReason(op, running)).toBeNull();
-    },
-  );
 });
 
 describe("useExclusion", () => {

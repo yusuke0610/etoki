@@ -229,8 +229,8 @@ export function BoardPage({
   const { detailId, detailRequest, openDetail, closeDetail } =
     useAnnotationDetail(annotations);
   // 作成先の Project に書けるかどうか（`useProjectAccess`）。表示用で、判定には
-  // 使わない（ADR 0017）。
-  const projectAccess = useProjectAccess(board.id);
+  // 使わない（ADR 0017）。作成先はボードを開いたまま選ぶので、変わったら訊き直す。
+  const projectAccess = useProjectAccess(board.id, board.projectId);
   // ボードそのものの管理（`useBoardManagement`）。改名・削除・作成先の名前の
   // 取り直しは互いに関わらないので、フックも分けてある。
   const {
@@ -504,6 +504,11 @@ export function BoardPage({
       ? null
       : `${board.repositoryOwner}/${board.repositoryName} › ${projectLabel(board)}`;
 
+  // 作成先を選べる人。メニューで「作成先を変更」を出す条件と同じ（持ち主だけ、
+  // 固定前だけ。ADR 0014 / 0017）。**未保存でも保存中でも止めない**（ADR 0100）。
+  // 選ぶのはボードの上のダイアログで、キャンバスは外れない。
+  const canChooseTarget = board.role === "owner" && !board.targetLocked;
+
   // 作成の口。作るのは詳細の中だけ。
   const creation: CreationProps = {
     states: creations,
@@ -512,19 +517,9 @@ export function BoardPage({
     onCreate: (id, interpretationId, result) => void create(id, interpretationId, result),
     projectAccess,
     unavailable: creationUnavailable,
+    // 作成先が未選択のときに、帯から選ぶ口（ADR 0100）。
+    chooseTarget: canChooseTarget ? onChangeTarget : null,
   };
-
-  // 作成先を変更できない理由。押せるなら null（ADR 0039）。
-  //
-  // **未保存が先。** `dirty` を下ろすのは応答が返ってから（`save`）なので、
-  // 保存中もこちらが出続ける。保存中の文が出るのは、変更が無いまま保存を
-  // 押したとき。そこも押せないことに変わりはないので、理由を空けない。
-  // **未保存は排他ではない。** 表が答えるのは「何が走っているか」だけなので、
-  // 保存していないという前提はここで先に見る（`blockingReasons` に進行中の
-  // 状態を混ぜないのと同じ切り分け）。
-  const targetChangeBlocked = dirty
-    ? "保存してから作成先を変更できます"
-    : exclusive.reasonFor("changeTarget");
 
   // 右上に出す。ボード名・未保存・「保存」・「絵解き」（`BoardStatus`）。**描くたびに
   // 作り直さない**（ADR 0065）。依存にはプリミティブと、同一性の保たれた関数だけを置く。
@@ -567,7 +562,11 @@ export function BoardPage({
       <BoardContext
         role={board.role}
         targetLabel={targetLabel}
-        repository={`${board.repositoryOwner}/${board.repositoryName}`}
+        repository={
+          board.repositoryOwner === ""
+            ? ""
+            : `${board.repositoryOwner}/${board.repositoryName}`
+        }
         linkHref={linkHref}
         linkExact={linkExact}
         projectAccess={projectAccess}
@@ -605,7 +604,7 @@ export function BoardPage({
         onRefreshTarget={() => void refreshTargetDisplay()}
         refreshingTarget={refreshingTarget}
         onChangeTarget={onChangeTarget}
-        targetChangeBlocked={targetChangeBlocked}
+        targetSelected={board.projectId !== ""}
         canvasReady={api !== null}
         onExport={exportScene}
         onImport={() => fileInput.current?.click()}
@@ -632,7 +631,7 @@ export function BoardPage({
       refreshTargetDisplay,
       refreshingTarget,
       onChangeTarget,
-      targetChangeBlocked,
+      board.projectId,
       exportScene,
       fileInput,
       running,

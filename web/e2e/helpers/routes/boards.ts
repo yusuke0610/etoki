@@ -14,7 +14,6 @@ import type {
 
 import type { ApiMock } from "../api";
 import { annotationsOfScene, emptyScene, listEntry, summarize } from "../boardData";
-import { githubUnset } from "./github";
 import { boardIdOf, json, ownerOnly } from "./respond";
 
 /**
@@ -29,8 +28,8 @@ const PREMISE_LIMIT = 4000;
 export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<void> {
   let issued = 0;
 
-  // 新しいボードは作成先を持って生まれる。作成先を選ばないと作れない
-  // （ADR 0017）。GitHub が未設定の構成だけは、選ばずに作れる（ADR 0090）。
+  // 新しいボードは作成先を持たずに生まれる（ADR 0100）。作成先は描いたあとで
+  // ボードの上から選ぶ。
   /**
    * 作成のリクエストからボードを組み立てる。
    *
@@ -71,9 +70,9 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
           name: string;
           scene?: string;
         } & Partial<BoardTarget>;
-        // **作成先の判定はサーバーと同じにする**（ADR 0017 / 0090）。省けるのは
-        // GitHub が未設定の構成で、3 つとも省いたときだけ。モックだけが緩いと、
-        // GitHub のある構成で作成先を送り忘れても緑になる。
+        // **作成先の判定はサーバーと同じにする**（ADR 0100）。どの構成でも、
+        // 丸ごと省けば未選択のボードを作り、一部だけ送ったら 400。モックだけが
+        // 緩いと、選びかけの値を送っていても緑になる。
         const target = {
           repositoryOwner: req.repositoryOwner ?? "",
           repositoryName: req.repositoryName ?? "",
@@ -95,10 +94,10 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
           (target.projectNumber ?? 0) === 0 &&
           (target.projectTitle ?? "") === "" &&
           (target.projectUrl ?? "") === "";
-        if (!selected && !(githubUnset(mock) && omitted)) {
+        if (!selected && !omitted) {
           await json(route, 400, {
             code: "invalid_input",
-            error: "repository and project are required",
+            error: "invalid input: repository and project must be set together",
           } satisfies ErrorResponse);
           return;
         }

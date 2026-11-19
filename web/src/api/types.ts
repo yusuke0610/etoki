@@ -180,7 +180,7 @@ export type BoardMember = Schemas["BoardMember"];
 /** 招待する前に見せる、login が当たった利用者（ADR 0053）。 */
 export type Invitee = Schemas["Invitee"];
 
-/** ボード作成のリクエストボディ。作成先を省けるのは GitHub が未設定の構成だけ（ADR 0090）。 */
+/** ボード作成のリクエストボディ。作成先はどの構成でも省ける（ADR 0100）。 */
 export type CreateBoardRequest = Schemas["CreateBoardRequest"];
 
 /** 招待のリクエストボディ。 */

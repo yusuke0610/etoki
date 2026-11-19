@@ -20,16 +20,22 @@ export async function installMemberRoutes(page: Page, mock: ApiMock): Promise<vo
     (url) => /^\/api\/boards\/[^/]+\/access$/.test(url.pathname),
     async (route) => {
       const id = boardIdOf(route);
+      const role = mock.details[id]?.role ?? "owner";
+      // **作成先が未選択なら、決めておいた答えより先に unknown を返す**（サーバーと
+      // 同じ、ADR 0017）。作成先はボードを開いたまま選ぶ（ADR 0100）ので、決めて
+      // おいた答えを未選択のうちから返すと、選んだあとに訊き直さない画面でも緑になる。
+      if (mock.details[id]?.projectId === "") {
+        await json(route, 200, { role, projectAccess: "unknown" } satisfies BoardAccess);
+        return;
+      }
+
       const configured = mock.access?.[id];
       if (configured) {
         await json(route, configured.status, configured.body);
         return;
       }
 
-      await json(route, 200, {
-        role: mock.details[id]?.role ?? "owner",
-        projectAccess: "unknown",
-      } satisfies BoardAccess);
+      await json(route, 200, { role, projectAccess: "unknown" } satisfies BoardAccess);
     },
   );
 
