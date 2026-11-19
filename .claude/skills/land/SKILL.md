@@ -95,8 +95,10 @@ base や `mergeable` が違っていたら、表を作り直す。**`status.sh` 
 `=> full review 0 件` と `ci=緑` が出なくなっていたら、マージせずに止めて、表と
 確認を作り直す。** Dependabot の PR には `=> full review 0 件` が出ない（依頼
 しない）ので、`ci=緑` と、CI が走った main がいまの main と同じこと（1 の
-「CI が、いまの main とのマージ結果で走っている」）を見る。中身の確かめは head が
-同じなら済んでいる（下の「Dependabot の PR」）。
+「CI が、いまの main とのマージ結果で走っている」）を見る。中身の確かめは、head
+**と main** が確かめたときと同じなら済んでいる。main が進んでいたら、major の
+更新は破壊的変更と etoki の使い方を照らし直す。そのあいだに入ったコードが、
+消えた API を使い始めているかもしれない（下の「Dependabot の PR」）。
 
 ```sh
 .claude/skills/pr-watch/status.sh <番号>   # => full review 0 件 と ci=緑 が出ているか（Dependabot は ci=緑）
@@ -224,7 +226,7 @@ full review 0 件の代わりに見るのは 2 つ。ほかの条件（base・`m
 | 生成器（`openapi-typescript`）が上がった | codegen drift で落ちる。その枝で `make codegen` を回して push する。head が変わるので CI を見る  |
 | Go の更新                                | devShell の Go（nixpkgs）より新しい版を要求していないか。要求するなら nixpkgs を上げるまで止める |
 | 固定しているもの（`@playwright/test`）   | 出てこないはず。出てきたら設定の漏れ。理由は `web/CLAUDE.md`                                     |
-| major の更新                             | 変更履歴の破壊的変更。lint / test が緑でも、使っている API が変わっていないか                    |
+| major の更新                             | 変更履歴の破壊的変更。lint / test が緑でも使う API に当たらないか。main が進めば見直す           |
 | `web/bun.lock` が動く                    | 入れたら `bun install` を知らせる（5）                                                           |
 
 確かめ終えて CI が緑なら、ほかの PR と同じく表に載せて確認を取る。表には、
