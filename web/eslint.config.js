@@ -59,4 +59,48 @@ export default tseslint.config(
     files: ["**/*.tsx"],
     ...jsxA11y.flatConfigs.strict,
   },
+  /*
+    通しの E2E（e2e-stack/、ADR 0097）にモックを持ち込ませない。相手は実物の
+    etoki で、モックを 1 つ差すとその口だけ本物を通らずに緑になる。どこが本物で
+    どこがモックかは、spec を読んでも分からない。
+
+    画面の操作（e2e/helpers/board.ts）は使い回すが、モックを入れて開く口
+    （openBoardWithMock）と、モックそのもの（api / routes / fixtures / boardData）は
+    import させない。route はブラウザの文脈でも張れるので、呼び出しの側でも落とす。
+  */
+  {
+    files: ["e2e-stack/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "**/e2e/helpers/api",
+                "**/e2e/helpers/routes/*",
+                "**/e2e/helpers/fixtures",
+                "**/e2e/helpers/boardData",
+              ],
+              message: "通しの E2E はモックを使わない（ADR 0097）。",
+            },
+            {
+              group: ["**/e2e/helpers/board"],
+              importNames: ["openBoardWithMock"],
+              message:
+                "通しの E2E はモックを使わない。ボードは newBoard で作る（ADR 0097）。",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(route|routeFromHAR|routeWebSocket)$/]",
+          message: "通しの E2E はモックを使わない（ADR 0097）。",
+        },
+      ],
+    },
+  },
 );
