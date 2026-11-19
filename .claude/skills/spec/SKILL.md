@@ -47,6 +47,10 @@ description: issue に着手する前に、決まっていないことを訊い�
   **閉じるキーワードも Development 欄の結びも無い PR は `issues.sh` に出ない**ので、
   番号でも探す（`/triage` の「2. 振り分ける」と同じ）。見つかったら本文と変更を読み、
   同じ作業なら 2. に進まずにユーザーに見せる。
+- **閉じた issue は仕様の根拠にしない**（`CONTRIBUTING.md`「仕様の正本」）。
+  issue の本文やリンクが閉じた issue を指していても、それは過去の決定の記録で、
+  今の振る舞いは控えたコミットのコードとテストで確かめる。閉じた issue の本文を
+  根拠に推奨を立てると、マージ後に変わった振る舞いを古いまま「決めたこと」に書く。
 
   ```sh
   gh pr list -R yusuke0610/etoki --state open --search "<issue の番号>" --limit 100 --json number,title,headRefName
