@@ -99,4 +99,5 @@
 | [0094](0094-usage-guide-on-demand.md)                            | 使い方は押したときだけ開くダイアログに置き、心得を手順より先に書く           | 採用                 |
 | [0095](0095-clean-drawing-style.md)                              | 線を揺らさず、書体を Excalifont から外す                                     | 採用                 |
 | [0096](0096-pass-arrow-connections-to-interpretation.md)         | 人がつないだ矢印の結び先は、解釈に文字でも渡す                               | 採用                 |
+| [0097](0097-stack-e2e-in-ci.md)                                  | 画面とサーバーの往復は、実物と偽の上流に繋いだ E2E で CI でも確かめる        | 採用                 |
 | [0099](0099-release-archives-and-container-image.md)             | リリースは、Nix で作った配布物と、それを詰めたコンテナイメージにする         | 採用                 |
