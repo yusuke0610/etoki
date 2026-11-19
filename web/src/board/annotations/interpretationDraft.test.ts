@@ -7,6 +7,7 @@ import {
   canResend,
   createDraft,
   type Draft,
+  draftEdited,
   leftBehindItemIds,
   markCreated,
   orphanedLocalIds,
@@ -738,5 +739,84 @@ describe("markCreated（届いたか分からない項目）", () => {
 
     expect(e1?.unconfirmed).toBeFalsy();
     expect(canResend(e1!)).toBe(true);
+  });
+});
+
+// 手直ししたか（#432）。離れる前と保存の前に確認を出すかを、これで決める。
+describe("draftEdited", () => {
+  const original = createDraft(sample());
+
+  it("絵解いた答えのままなら、手直ししていない", () => {
+    expect(draftEdited(createDraft(sample()), original)).toBe(false);
+  });
+
+  // 開発者が変えられるものは、どれを変えても手直しになる。1 つだけ見る実装を通さない。
+  it.each([
+    ["タイトル", (d: Draft) => setTitle(d, "i1", "直したタイトル")],
+    ["本文", (d: Draft) => setBody(d, "i1", "直した本文")],
+    ["種別", (d: Draft) => setKind(d, "i3", "epic")],
+    ["作るかどうか", (d: Draft) => toggleItem(d, "i2")],
+  ])("%sを変えたら、手直ししている", (_, edit) => {
+    expect(draftEdited(edit(createDraft(sample())), original)).toBe(true);
+  });
+
+  it("「更新する / 新しく作る」を変えたら、手直ししている", () => {
+    const answer: Interpretation = {
+      ...sample(),
+      items: [{ ...issue("i1"), previousItemId: "PVTI_old" }],
+    };
+    expect(
+      draftEdited(
+        setUpdatesPrevious(createDraft(answer), "i1", false),
+        createDraft(answer),
+      ),
+    ).toBe(true);
+  });
+
+  // 下書きはいま項目を足させないが、足せるようになった日に、足した項目を
+  // 「元と比べようがない」で黙って捨てさせない。
+  it("絵解いた答えに無い項目があれば、手直ししている", () => {
+    const narrower = createDraft({ ...sample(), items: sample().items.slice(1) });
+    expect(draftEdited(createDraft(sample()), narrower)).toBe(true);
+  });
+
+  // 打ち直して元に戻したなら、失うものは無い。
+  it("変えたものを元に戻したら、手直ししていない", () => {
+    const back = setTitle(setTitle(createDraft(sample()), "i1", "一時"), "i1", "i1");
+    expect(draftEdited(back, original)).toBe(false);
+  });
+
+  // 作った項目の手直しは GitHub に届いている。離れても失わない。
+  it("送った項目の手直しは数えない", () => {
+    const sent = markCreated(setTitle(createDraft(sample()), "i1", "直したタイトル"), [
+      created("i1", "PVTI_i1"),
+    ]);
+    expect(draftEdited(sent, original)).toBe(false);
+  });
+
+  // 届いたか分からない項目も、送ったところまで記録にある。
+  it("届いたか分からない項目の手直しも数えない", () => {
+    const sent = markCreated(setBody(createDraft(sample()), "i1", "直した本文"), [
+      { ...created("i1", ""), confirmed: false },
+    ]);
+    expect(draftEdited(sent, original)).toBe(false);
+  });
+
+  // 作ったあとに残る選択は、作った残り。失っても困らない。
+  it("何か送ったあとは、選択の違いを数えない", () => {
+    const after = markCreated(toggleItem(createDraft(sample()), "i3"), [
+      created("e1", "PVTI_e1"),
+      created("i1", "PVTI_i1"),
+      created("i2", "PVTI_i2"),
+    ]);
+    expect(draftEdited(after, original)).toBe(false);
+  });
+
+  // 送ったあとでも、まだ送っていない項目の文の手直しは失えば戻らない。
+  it("何か送ったあとも、送っていない項目の文の手直しは数える", () => {
+    const after = markCreated(setTitle(createDraft(sample()), "i3", "直したタイトル"), [
+      created("e1", "PVTI_e1"),
+    ]);
+    expect(draftEdited(after, original)).toBe(true);
   });
 });

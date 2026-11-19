@@ -351,6 +351,7 @@ export function AnnotationFace({
             onCreate={(interpretationId, result) =>
               creation.onCreate(id, interpretationId, result)
             }
+            onDraftEdited={creation.onDraftEdited}
           />
         ) : (
           // 解釈は LLM を叩く外部呼び出しで、作成は取り消せない（ADR 0017）。

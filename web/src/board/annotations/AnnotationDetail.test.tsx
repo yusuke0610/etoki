@@ -35,6 +35,7 @@ function props(): ComponentProps<typeof AnnotationDetail> {
       saving: false,
       blocked: null,
       onCreate: vi.fn(),
+      onDraftEdited: vi.fn(),
       projectAccess: "unknown",
       unavailable: null,
     },
@@ -883,6 +884,57 @@ describe("AnnotationDetail", () => {
 
       expect(screen.queryByText(/絵の外から添えたもの/)).toBeNull();
       expect(screen.queryByText(/ボードの背景/)).toBeNull();
+    });
+  });
+
+  // 手直ししたかを上に知らせる（#432）。離れる前と保存の前の確認は BoardPage が
+  // 出すので、ここが知らせないと、手直しが確認なしに消える。
+  describe("手直しの知らせ", () => {
+    function withDraft() {
+      const detailProps = props();
+      const result: InterpretationResult = {
+        summary: "s",
+        contentHash: "h",
+        items: [{ localId: "i1", kind: "issue", title: "ログイン画面", body: "" }],
+        context: { premise: "", otherItems: [], omittedOtherItems: 0 },
+      };
+      return {
+        ...detailProps,
+        interpretation: {
+          ...detailProps.interpretation,
+          states: {
+            "frame-1": {
+              running: false,
+              runs: [
+                {
+                  id: 1,
+                  at: "2026-01-01T00:00:00Z",
+                  granularity: "issue" as const,
+                  result,
+                },
+              ],
+              selectedId: 1,
+            },
+          },
+        },
+      };
+    }
+
+    it("手直ししたら知らせ、元に戻したら下ろし、外れるときも下ろす", () => {
+      const detailProps = withDraft();
+      const { unmount } = render(<AnnotationDetail {...detailProps} />);
+      const reported = detailProps.creation.onDraftEdited;
+      const title = screen.getByLabelText("1 件目のタイトル");
+
+      fireEvent.change(title, { target: { value: "ログイン画面を作る" } });
+      expect(reported).toHaveBeenLastCalledWith("frame-1", true);
+
+      fireEvent.change(title, { target: { value: "ログイン画面" } });
+      expect(reported).toHaveBeenLastCalledWith("frame-1", false);
+
+      fireEvent.change(title, { target: { value: "直した" } });
+      unmount();
+      expect(reported).toHaveBeenLastCalledWith("frame-1", false);
     });
   });
 });
