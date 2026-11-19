@@ -9,7 +9,20 @@
 set -euo pipefail
 
 # gh pr list は GraphQL で、クラウドのセッションでは塞がれている。REST だけで引く。
-nwo="$(gh api 'repos/{owner}/{repo}' --jq .full_name)"
+#
+# **読む先は etoki に名指しする**（.claude/rules/skills-github.md）。checkout から
+# 決めると、fork の checkout では fork の PR を読み、その番号で etoki の base を
+# 書き換える（SKILL.md の PATCH）。積みと遅れの判定は手元の origin で行うので、
+# origin が etoki を指していなければ止める。
+nwo=yusuke0610/etoki
+origin_url="$(git remote get-url origin)"
+case "$origin_url" in
+*[:/]"$nwo" | *[:/]"$nwo".git) ;;
+*)
+	echo "origin が $nwo を指していない（$origin_url）。etoki の checkout で実行する" >&2
+	exit 1
+	;;
+esac
 
 git fetch -q origin
 # 積みの判定と遅れの件数を、同じ時点の main で出す。ここで取った sha だけを使う

@@ -10,8 +10,12 @@
 set -euo pipefail
 
 # 一覧も含めて REST だけで引く。gh repo view / gh pr list は GraphQL で、
-# クラウドのセッションでは塞がれている。{owner}/{repo} は gh が今のリポジトリで埋める。
-nwo="$(gh api 'repos/{owner}/{repo}' --jq .full_name)"
+# クラウドのセッションでは塞がれている。
+#
+# **読む先は etoki に名指しする**（.claude/rules/skills-github.md）。checkout から
+# 決めると、fork の checkout では fork の PR を読む。その番号で etoki に書く手順
+# （/pr-watch の依頼、/land のマージ）と、読んだ PR と書く PR が食い違う。
+nwo=yusuke0610/etoki
 
 if [ "$#" -gt 0 ]; then
 	prs=("$@")
