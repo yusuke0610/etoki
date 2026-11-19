@@ -1,0 +1,4 @@
+{
+  "annotationId": "frame-architecture",
+  "premise": "社内向けの会議室予約サービス。使うのは社員だけ。\nバックエンドは Go、画面は React で書く。\nログインは既存の社員 SSO（Okta）に任せ、自前のパスワードは持たない。\n予約は 15 分刻み。"
+}

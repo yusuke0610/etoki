@@ -100,3 +100,4 @@
 | [0095](0095-clean-drawing-style.md)                              | 線を揺らさず、書体を Excalifont から外す                                     | 採用                 |
 | [0096](0096-pass-arrow-connections-to-interpretation.md)         | 人がつないだ矢印の結び先は、解釈に文字でも渡す                               | 採用                 |
 | [0097](0097-stack-e2e-in-ci.md)                                  | 画面とサーバーの往復は、実物と偽の上流に繋いだ E2E で CI でも確かめる        | 採用                 |
+| [0098](0098-human-scored-eval-set.md)                            | 絵解きの質は、人が採点する評価セットで測る                                   | 採用                 |
