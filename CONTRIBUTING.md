@@ -178,6 +178,19 @@ UI を触ったならスクリーンショットを添える。`make test-e2e` �
 （[`.claude/skills/land/SKILL.md`](.claude/skills/land/SKILL.md)）が正本。** 走って
 いる最中の full review を 0 件と読んでマージした例がある（#256）。
 
+## リリース
+
+**タグ（`vX.Y.Z`）を打つのは持ち主。** main の打ちたいコミットにタグを付けて
+push すると、[`.github/workflows/release.yml`](.github/workflows/release.yml) が
+配布物（`make dist`）を作ってイメージを確かめ（`make image-check`）、イメージを
+GHCR に送り、リリースを**下書き**で作る。下書きのノートを読んで公開するのも
+持ち主。版の付け方と、`v0` のあいだ互換を約束しないことは
+[ADR 0099](docs/adr/0099-release-archives-and-container-image.md)。
+
+リリースの手順に関わるファイル（どれかは `release.yml` の `paths`）を触った PR
+では、同じワークフローがイメージを組んで起動まで確かめる（送らない）。手元に
+docker のデーモンが無くても、ここで壊れたことが分かる。
+
 ## CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) が PR ごとに走る。job は

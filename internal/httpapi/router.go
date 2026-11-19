@@ -10,6 +10,7 @@ import (
 
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
 	"github.com/yusuke0610/etoki/internal/usecase"
+	"github.com/yusuke0610/etoki/internal/version"
 )
 
 // Deps はルーティングが必要とするユースケース層。
@@ -312,11 +313,12 @@ func widenBody(c *gin.Context, limit int64) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 }
 
-// handleHealthz はプロセスが生きていることだけを返す。
+// handleHealthz はプロセスが生きていることと、動いている版を返す。
 // DB や外部サービスの疎通確認は含めない。etoki は自動で外部に触らないという
 // 方針のため、ヘルスチェックが副作用を持たないようにしている。
+// 版は、不具合の報告がどの版の話かを確かめるため（ADR 0099）。
 func handleHealthz(c *gin.Context) {
-	c.JSON(http.StatusOK, apitypes.HealthResponse{Status: "ok"})
+	c.JSON(http.StatusOK, apitypes.HealthResponse{Status: "ok", Version: version.String()})
 }
 
 // newInterpretationJobs は解釈のジョブの置き場を作る。解釈が無いときは nil。

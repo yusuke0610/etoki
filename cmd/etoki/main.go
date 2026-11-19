@@ -23,6 +23,7 @@ import (
 	"github.com/yusuke0610/etoki/internal/adapter/llm"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
 	"github.com/yusuke0610/etoki/internal/secret"
+	"github.com/yusuke0610/etoki/internal/version"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -31,6 +32,7 @@ import (
 var usage = `usage:
   etoki                 サーバーを起動する
   etoki migrate         マイグレーションを適用する
+  etoki version         動いている版を表示する
   etoki claim [--yes] <login>
                         所有者の無いボードを引き受ける。引き当てた相手を
                         見せて確かめる（--yes で省く）
@@ -121,6 +123,10 @@ func run() error {
 		return serve(ctx)
 	case args[0] == "migrate":
 		return migrate(ctx)
+	case args[0] == "version":
+		// DB も環境変数も見ない。起動できない構成でも版を確かめられるようにする。
+		fmt.Println("etoki " + version.String())
+		return nil
 	case args[0] == "claim":
 		login, yes, err := parseClaimArgs(args[1:])
 		if err != nil {
@@ -259,7 +265,11 @@ func openMigratedDB(ctx context.Context) (*sql.DB, string, error) {
 	if err := sqlite.EnsureMigrated(ctx, db); err != nil {
 		_ = db.Close()
 		if errors.Is(err, sqlite.ErrNotMigrated) {
-			return nil, path, fmt.Errorf("%w\n  先に `make migrate` を実行してください (%s)", err, path)
+			// 配ったバイナリとイメージには make が無い（ADR 0099）。clone した
+			// 手元の人には make migrate も通じるので、括弧で添える。
+			return nil, path, fmt.Errorf(
+				"%w\n  先に `etoki migrate` を実行してください（clone した手元では `make migrate`） (%s)",
+				err, path)
 		}
 		return nil, path, err
 	}

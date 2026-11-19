@@ -133,6 +133,42 @@ GitHub App を設定しているなら、Callback URL と `ETOKI_PUBLIC_URL` も
 `ETOKI_ALLOWED_ORIGINS` は[上に書いたとおり](#設定)で、足さないと API だけでなく
 画面も開けません。
 
+### 配布物から動かす
+
+リリース（タグ）ごとに、Nix を入れずに動かせる配布物を作ります
+（[ADR 0099](docs/adr/0099-release-archives-and-container-image.md)）。
+
+- **アーカイブ:** linux / darwin の amd64・arm64。リリースに添付します。中身は
+  `etoki`（バイナリ）・`web/`（画面）・`LICENSE` と、同梱した依存のライセンス
+  （`licenses/`）です。
+- **コンテナイメージ:** `ghcr.io/yusuke0610/etoki:<版>`（linux の amd64・arm64）。
+
+アーカイブは、展開した場所で動かします。
+
+```sh
+./etoki migrate
+ETOKI_WEB_DIR=web ./etoki
+```
+
+イメージは DB を `/var/lib/etoki` に置きます。**先に `migrate` を回してから
+起動してください。** 起動のたびに勝手には当てません。
+
+```sh
+docker run --rm -v etoki-data:/var/lib/etoki ghcr.io/yusuke0610/etoki:<版> migrate
+docker run -p 127.0.0.1:8080:8080 -v etoki-data:/var/lib/etoki \
+  -e ETOKI_GITHUB_TOKEN -e ETOKI_LLM_API_KEY ghcr.io/yusuke0610/etoki:<版>
+```
+
+イメージの中では `0.0.0.0:8080` で待ち受けます（`ETOKI_ADDR`）。コンテナの外から
+届くようにするためで、認証なしで起動するとループバックの外で待ち受けている警告が
+出ます。**手元で使うなら、上のように `-p 127.0.0.1:8080:8080` でホストの
+ループバックにだけ出してください。** 外へ出すなら、先に認証を設定し、
+`ETOKI_ALLOWED_ORIGINS` も渡します（[上に書いたとおり](#設定)）。
+
+動いている版は `etoki version` か `/healthz` の `version` で確かめられます。
+clone した手元で作るなら、`make dist`（アーカイブ）と `make image`（イメージ。
+ホストの docker を使う）です。
+
 ### データを残す
 
 ボード・メンバー・作成の記録は `ETOKI_DB_PATH`（既定は `etoki.db`）の SQLite

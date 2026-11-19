@@ -84,4 +84,13 @@ GPLv2 の本文を両方載せている。
   補わずに通すと MIT の著作権表示が欠けたまま残る。`build.license` には
   `.json` を書かせ、読んでから 1 つのファイルに組み直す。
 - **`bin/etoki` に焼いた Go の依存の表示も同じ PR で扱う。** 配る先が画面ではなく
-  バイナリで、置き場所から決め直すことになる。別に扱う。
+  バイナリで、置き場所から決め直すことになる。別に扱う（ADR 0099 で扱った。下の
+  追記）。
+
+## 追記（ADR 0099、issue #446）
+
+**バイナリに焼いた Go の依存の表示は、配布物の `licenses/` に置いた。**
+`make dist` が `go-licenses` で各モジュールの LICENSE を、モジュールの根から
+NOTICE 類を写し、Go 本体の LICENSE は `third_party/go/LICENSE` から写す。本文を
+推測で書かない線は、この ADR と同じ。画面の `third-party-notices.txt` は
+`web/` ごと配布物に入る。

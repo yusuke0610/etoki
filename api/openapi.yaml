@@ -54,10 +54,11 @@ paths:
     get:
       tags: [health]
       operationId: getHealth
-      summary: プロセスが生きていることを返す
+      summary: プロセスが生きていることと、動いている版を返す
       description: |
         DB や外部サービスの疎通確認は含めない。etoki は自動で外部に触らないという
-        方針のため、ヘルスチェックが副作用を持たないようにしている。
+        方針のため、ヘルスチェックが副作用を持たないようにしている。版は、不具合の
+        報告がどの版の話かを確かめるため（ADR 0099）。
       responses:
         "200":
           description: プロセスは生きている
@@ -1873,11 +1874,18 @@ components:
     HealthResponse:
       type: object
       description: /healthz のレスポンスボディ
-      required: [status]
+      required: [status, version]
       properties:
         status:
           type: string
           example: ok
+        version:
+          type: string
+          description: |
+            動いている etoki の版（ADR 0099）。make がビルド時に
+            `git describe --tags --always --dirty` で埋める。埋めずに作ったものは、
+            Go がビルド時に埋めた値か `(devel)` を返す。
+          example: v0.1.0
 
     ErrorCode:
       type: string

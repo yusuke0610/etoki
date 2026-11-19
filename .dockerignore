@@ -1,0 +1,6 @@
+# イメージに詰めるのは make dist の linux の配布物と、DB の置き場所の雛形だけ
+# （Dockerfile）。ほかを送らないのは、.env や etoki.db をビルドの文脈に載せない
+# ため。
+*
+!dist/linux_*/etoki/**
+!dist/data/

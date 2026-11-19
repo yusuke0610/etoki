@@ -14,9 +14,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * プロセスが生きていることを返す
+         * プロセスが生きていることと、動いている版を返す
          * @description DB や外部サービスの疎通確認は含めない。etoki は自動で外部に触らないという
-         *     方針のため、ヘルスチェックが副作用を持たないようにしている。
+         *     方針のため、ヘルスチェックが副作用を持たないようにしている。版は、不具合の
+         *     報告がどの版の話かを確かめるため（ADR 0099）。
          */
         get: operations["getHealth"];
         put?: never;
@@ -1063,6 +1064,13 @@ export interface components {
         HealthResponse: {
             /** @example ok */
             status: string;
+            /**
+             * @description 動いている etoki の版（ADR 0099）。make がビルド時に
+             *     `git describe --tags --always --dirty` で埋める。埋めずに作ったものは、
+             *     Go がビルド時に埋めた値か `(devel)` を返す。
+             * @example v0.1.0
+             */
+            version: string;
         };
         /**
          * @description 失敗の原因を表す機械可読な符号。**画面はこれで打ち手を分ける。**

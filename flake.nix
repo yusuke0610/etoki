@@ -73,6 +73,10 @@
             # Go 本体は flake.lock が決めていて Dependabot の security updates の
             # 対象にならないので、ここで調べないと気づく経路が無い（ADR 0035）。
             govulncheck
+            # 配布物に、焼いた Go の依存のライセンスを写す（make dist、ADR 0099）。
+            # 本文を推測で書かないため、各モジュールのファイルをそのまま写す道具に
+            # 任せる（ADR 0070 と同じ線）。
+            go-licenses
           ];
 
           shellHook = ''
