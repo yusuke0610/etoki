@@ -25,8 +25,10 @@ set -euo pipefail
 nwo=yusuke0610/etoki
 origin_url="$(git remote get-url origin)"
 origin_re="^(https://([A-Za-z0-9._~%!\$&'()*+,;=:-]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)${nwo}(\.git)?$"
+# 止めるときに origin の URL は出さない。HTTPS の userinfo にトークンが載って
+# いることがあり、出すと実行ログに残る。
 if ! [[ "$origin_url" =~ $origin_re ]]; then
-	echo "origin が github.com の $nwo を指していない（$origin_url）。etoki の checkout で実行する" >&2
+	echo "origin が github.com の $nwo を指していない。etoki の checkout で実行する" >&2
 	exit 1
 fi
 
