@@ -18,11 +18,13 @@ set -euo pipefail
 # ホストも見る。リポジトリ名の末尾だけで見ると、GitLab など別ホストの同名
 # リポジトリを通し、fetch と main の sha はそちら、API の読み書きは GitHub の
 # etoki になる。gh repo view で判定しない（issues.sh と違うのは、GraphQL で
-# クラウドのセッションでは塞がれているため）。HTTPS の userinfo は 1 段だけ
-# 許す（`/` と `@` を含めると、別ホストの path に github.com を書いた URL が通る）。
+# クラウドのセッションでは塞がれているため）。HTTPS の userinfo は、RFC 3986 で
+# userinfo に書ける文字だけを許す。除外する側で書くと漏れる（`/` `@` `?` `#` は
+# どれも host を区切るので、`https://evil.com?@github.com/...` のように別ホストの
+# 後ろに github.com を書いた URL が通る）。
 nwo=yusuke0610/etoki
 origin_url="$(git remote get-url origin)"
-origin_re="^(https://([^/@]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)${nwo}(\.git)?$"
+origin_re="^(https://([A-Za-z0-9._~%!\$&'()*+,;=:-]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)${nwo}(\.git)?$"
 if ! [[ "$origin_url" =~ $origin_re ]]; then
 	echo "origin が github.com の $nwo を指していない（$origin_url）。etoki の checkout で実行する" >&2
 	exit 1
