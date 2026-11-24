@@ -18,10 +18,13 @@ import (
 const DefaultLLMCallTimeout = 5 * time.Minute
 
 // errCallTimedOut は、1 回の呼び出しの上限に当たったことを ctx の原因として持つ印。
+// ジョブの上限や取り消しで切れたのかと分けて、文言を足すために使う。
 //
-// 外へは出さない。ジョブの上限や取り消しで切れたのかと分けて、文言を足すために
-// だけ使う。
-var errCallTimedOut = errors.New("etoki: llm call timed out")
+// **context.DeadlineExceeded を包み、文言も同じにしておく。** net/http は ctx が
+// 切れると ctx.Err() ではなく原因（context.Cause）を返す。別の文言の印にすると、
+// 実物のアダプタを通ったときだけ DeadlineExceeded を辿れなくなり、詳細にも印の
+// 名前が出る。
+var errCallTimedOut = fmt.Errorf("%w", context.DeadlineExceeded)
 
 // LLM の呼び出しが失敗した原因のうち、打ち手が違うもの（ADR 0087）。
 //

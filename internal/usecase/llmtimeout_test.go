@@ -3,6 +3,8 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -22,12 +24,20 @@ type slowLLM struct {
 
 	mu    sync.Mutex
 	calls int
+	// waits は呼ばれた時点で ctx の期限まで残っていた長さ。期限が無ければ 0。
+	waits []time.Duration
 }
 
 func (s *slowLLM) Complete(ctx context.Context, _ port.VisionRequest) (port.VisionResponse, error) {
+	var wait time.Duration
+	if deadline, ok := ctx.Deadline(); ok {
+		wait = time.Until(deadline)
+	}
+
 	s.mu.Lock()
 	i := min(s.calls, len(s.responses)-1)
 	s.calls++
+	s.waits = append(s.waits, wait)
 	s.mu.Unlock()
 
 	select {
@@ -42,6 +52,12 @@ func (s *slowLLM) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls
+}
+
+func (s *slowLLM) waitList() []time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.waits)
 }
 
 // timedCallers は LLM を叩く 2 つの経路を、呼ぶ回数と 1 回の上限を決めて走らせる。
@@ -79,38 +95,72 @@ var timedCallers = map[string]struct {
 	},
 }
 
+// causeLLM は ctx が終わるまで応えず、終わったら ctx の原因（context.Cause）を
+// 包んで返す LLMClient。net/http は ctx が切れるとこちらを返す（ctx.Err() では
+// ない）ので、既定のアダプタを通ったときの形になる。
+type causeLLM struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (c *causeLLM) Complete(ctx context.Context, _ port.VisionRequest) (port.VisionResponse, error) {
+	c.mu.Lock()
+	c.calls++
+	c.mu.Unlock()
+
+	<-ctx.Done()
+	return port.VisionResponse{}, fmt.Errorf("call messages api: %w", context.Cause(ctx))
+}
+
+func (c *causeLLM) callCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
 // 応えない LLM は 1 回の上限で切れ、再送しない（ADR 0104）。上限はユースケースが
 // 呼び出しごとに ctx で掛けるので、差し込んだ LLMClient でも効く。アダプタの
 // 上限に頼ると、自前の実装では効かない。
 //
 // **切れたことと上限の値は文言に残す。** 待ちきれなかったのか、向こうが断った
 // のかを、畳んだ詳細から見分けられるようにする。どれだけ延ばせばよいかの
-// 手掛かりにもなる。
+// 手掛かりにもなる。**切れ方は 2 通りとも見る。** ctx.Err() を返す実装と、
+// 原因を返す実装（net/http、つまり既定のアダプタ）のどちらでも
+// context.DeadlineExceeded を辿れる必要がある。
 func TestLLMCallTimeout_EndsUnresponsiveCallWithoutRetry(t *testing.T) {
 	t.Parallel()
 
+	type stuck interface {
+		port.LLMClient
+		callCount() int
+	}
 	for name, c := range timedCallers {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+		for kind, newLLM := range map[string]func() stuck{
+			"ctx.Err() を返す": func() stuck { return newGatedLLM(c.valid) }, // 放さないので、上限まで応えない
+			"原因を返す":         func() stuck { return &causeLLM{} },
+		} {
+			t.Run(name+"/"+kind, func(t *testing.T) {
+				t.Parallel()
 
-			llm := newGatedLLM(c.valid) // 放さないので、上限まで応えない
-			err := c.run(t, llm, 3, 30*time.Millisecond)
+				llm := newLLM()
+				err := c.run(t, llm, 3, 30*time.Millisecond)
 
-			if !errors.Is(err, usecase.ErrLLMUnavailable) {
-				t.Fatalf("err = %v, want ErrLLMUnavailable", err)
-			}
-			if !errors.Is(err, context.DeadlineExceeded) {
-				t.Errorf("err = %v, want to reach context.DeadlineExceeded", err)
-			}
-			for _, want := range []string{"no response within 30ms", "the limit for one call"} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("err = %q, want to contain %q", err, want)
+				if !errors.Is(err, usecase.ErrLLMUnavailable) {
+					t.Fatalf("err = %v, want ErrLLMUnavailable", err)
 				}
-			}
-			if got := llm.callCount(); got != 1 {
-				t.Errorf("LLM 呼び出し回数 = %d, want 1（呼び出しの失敗は再送しない）", got)
-			}
-		})
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Errorf("err = %v, want to reach context.DeadlineExceeded", err)
+				}
+				for _, want := range []string{"no response within 30ms", "the limit for one call", "context deadline exceeded"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("err = %q, want to contain %q", err, want)
+					}
+				}
+				if got := llm.callCount(); got != 1 {
+					t.Errorf("LLM 呼び出し回数 = %d, want 1（呼び出しの失敗は再送しない）", got)
+				}
+			})
+		}
 	}
 }
 
@@ -154,6 +204,13 @@ func TestLLMCallTimeout_AppliesToEachCall(t *testing.T) {
 			}
 			if got := llm.callCount(); got != 3 {
 				t.Errorf("LLM 呼び出し回数 = %d, want 3", got)
+			}
+			// どの呼び出しも、1 回の上限ぶんの期限が付いた ctx で呼ばれる。ジョブの
+			// ctx のまま渡すと、応えない相手をジョブの上限（3 倍）まで待つ。
+			for i, w := range llm.waitList() {
+				if w <= 0 || w > 500*time.Millisecond {
+					t.Errorf("%d 回目の呼び出しが待てる長さ = %s, want 500ms 以内", i+1, w)
+				}
 			}
 		})
 	}
