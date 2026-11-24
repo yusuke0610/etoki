@@ -21,7 +21,7 @@ paths:
   `*http.MaxBytesError` は `ShouldBindJSON` から来るので、`errors.As` で拾って
   対応する sentinel に写す。写さないと、**同じ「大きすぎる」がボディの大きさ
   しだいで 400 と 413 に割れ**、画面が同じ原因を 2 通りに案内する（#108）。
-  **写すのは `failBind`（`internal/httpapi/board.go`）の 1 箇所で、本文を読む口は
+  **写すのは `failBind`（`internal/httpapi/handlers.go`）の 1 箇所で、本文を読む口は
   すべてそこを通す。** 口ごとに選ぶのは写す先の sentinel だけ。口ごとに写し方を
   書くと、足した口だけが写し忘れる。歯止めの倍率の取り方は
   `validation-boundaries.md`。

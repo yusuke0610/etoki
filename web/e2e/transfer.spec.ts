@@ -9,6 +9,7 @@ import {
   chooseFromMenu,
   chooseTarget,
   drawRectangle,
+  importBoardFile,
   interpret,
   openBoard,
   openBoardWithMock,
@@ -146,15 +147,6 @@ function storedForm(content: string): { scene: string; files: Record<string, str
   };
 }
 
-/** ファイルを選ぶ。入力は隠してあるので、ボタンではなく入力に直接渡す。 */
-async function chooseFile(page: Page, content: string): Promise<void> {
-  await page.getByLabel("取り込む .excalidraw ファイル").setInputFiles({
-    name: "持ってきたボード.excalidraw",
-    mimeType: "application/json",
-    buffer: Buffer.from(content),
-  });
-}
-
 /** キャンバスに重なっている注釈の枠（ADR 0036）。取り込みで入れ替わる。 */
 function annotationFrames(page: Page) {
   return page.locator(".annotation-overlay-frame");
@@ -240,7 +232,7 @@ test.describe("取り込み", () => {
 
     // 表のボタンだけでなく処理の入口でも排他する。隠した input はテストや
     // ブラウザの API から直接変更できるので、ボタンの disabled だけでは足りない。
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
     await expect(annotationFrames(page)).toHaveCount(3);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
@@ -258,7 +250,7 @@ test.describe("取り込み", () => {
     const size = await page.locator(".badge-size").innerText();
     await expect(annotationFrames(page)).toHaveCount(3);
 
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
 
     // 取り込んだ注釈 1 つに入れ替わる。
     await expect(annotationFrames(page)).toHaveCount(1);
@@ -285,7 +277,7 @@ test.describe("取り込み", () => {
     await openBoard(page, BOARD_NAME);
     await expect(annotationFrames(page)).toHaveCount(3);
 
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
     await expect(annotationFrames(page)).toHaveCount(1);
 
     await page.getByRole("button", { name: "元に戻す" }).click();
@@ -318,7 +310,7 @@ test.describe("取り込み", () => {
     await openBoardWithMock(page, mock);
     await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
-    await chooseFile(page, rectangleFile(120));
+    await importBoardFile(page, rectangleFile(120));
 
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
@@ -329,7 +321,7 @@ test.describe("取り込み", () => {
   test("取り込んで書き出すと、要素も背景色も戻る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await chooseFile(page, importedFile("#ffeb3b"));
+    await importBoardFile(page, importedFile("#ffeb3b"));
     await expect(annotationFrames(page)).toHaveCount(1);
 
     const [download] = await Promise.all([
@@ -372,7 +364,7 @@ test.describe("取り込み", () => {
     mock.files[BOARD_ID] = stored.files;
     await openBoardWithMock(page, mock);
 
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
 
     const [download] = await Promise.all([
@@ -394,7 +386,7 @@ test.describe("取り込み", () => {
   }) => {
     const mock = await openBoardWithMock(page, baseMock());
 
-    await chooseFile(
+    await importBoardFile(
       page,
       importedFile("#ffffff", IMAGE_DATA_URL, ANNOTATION_IDS.created),
     );
@@ -427,7 +419,7 @@ test.describe("取り込み", () => {
     // **待ってから読む。** `setInputFiles` はファイルを差し込むだけで、取り込み
     // の完了は待たない。待たずに読むと、確認が出る前の値を見て通る。
     const dialog = page.waitForEvent("dialog");
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
 
     const asked = await dialog;
     expect(asked.message()).toContain("置き換わります");
@@ -442,7 +434,7 @@ test.describe("取り込み", () => {
     await drawRectangle(page);
 
     page.once("dialog", (dialog) => void dialog.accept());
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
 
     await expect(annotationFrames(page)).toHaveCount(1);
   });
@@ -458,7 +450,7 @@ test.describe("取り込み", () => {
       void dialog.dismiss();
     });
 
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
 
     await expect(annotationFrames(page)).toHaveCount(1);
     expect(asked).toBe(false);
@@ -468,7 +460,7 @@ test.describe("取り込み", () => {
   test("読めないファイルは断り、キャンバスを変えない", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await chooseFile(page, "これは Excalidraw のシーンではない");
+    await importBoardFile(page, "これは Excalidraw のシーンではない");
 
     await expect(page.getByRole("alert")).toContainText(
       "Excalidraw のシーンとして読めませんでした",
@@ -518,7 +510,7 @@ test.describe("貼った画像の保存", () => {
   test("最初の保存で 1 度だけ送り、開き直すとキャンバスに戻る", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());
 
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
     await save(page);
 
@@ -557,7 +549,7 @@ test.describe("貼った画像の保存", () => {
   test("作成先を選び直してキャンバスが作り直されても、画像が残る", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
     await save(page);
 
     await chooseFromMenu(page, "作成先を変更");
@@ -579,7 +571,7 @@ test.describe("貼った画像の保存", () => {
   test("保存に失敗したら、次の保存で画像を送り直す", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());
 
-    await chooseFile(page, importedFile());
+    await importBoardFile(page, importedFile());
     mock.saveSceneError = {
       status: 413,
       body: { code: "scene_too_large", error: "pasted images are too large" },

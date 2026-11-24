@@ -74,6 +74,17 @@ export async function openShareDialog(page: Page): Promise<Locator> {
 }
 
 /**
+ * キャンバスのメニューの「etoki の使い方」からダイアログを開き、その枠を返す
+ * （ADR 0094）。右のパネルの「使い方を見る」からも開ける。
+ */
+export async function openUsageGuide(page: Page): Promise<Locator> {
+  await chooseFromMenu(page, "etoki の使い方");
+  const dialog = page.getByRole("dialog", { name: "etoki の使い方", exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/**
  * ボードの背景のダイアログを開いて返す（ADR 0093）。口はキャンバスのメニューの
  * 「ボードの背景…」。**書きかけは閉じても残る**ので、開き直すと前の書きかけが出る。
  */
@@ -330,6 +341,22 @@ export async function drawRectangle(page: Page): Promise<void> {
   await page.mouse.up();
 
   await expect(page.getByRole("button", { name: "元に戻す" })).toBeEnabled();
+}
+
+/**
+ * `.excalidraw` ファイルを取り込む（ADR 0045）。入力は隠してあるので、メニューの
+ * ボタンではなく入力に直接渡す。未保存なら確認が出るので、それを見る spec は
+ * 先に `dialog` を拾っておく。
+ *
+ * **通しの E2E（`web/e2e-stack/`）も使う。** 注釈の frame と貼った画像を、
+ * 画面の操作だけでキャンバスに入れる口がここしか無い。
+ */
+export async function importBoardFile(page: Page, content: string): Promise<void> {
+  await page.getByLabel("取り込む .excalidraw ファイル").setInputFiles({
+    name: "持ってきたボード.excalidraw",
+    mimeType: "application/json",
+    buffer: Buffer.from(content),
+  });
 }
 
 /**

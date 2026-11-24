@@ -350,9 +350,11 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 
 ## 描画に失敗したとき（ADR 0027）
 
-- **境界はキャンバスの外側に置く。** `BoardPage` のパネル（注釈・
-  図のドラフト・mermaid の貼り付け・注釈の詳細）と共有のダイアログの中身を
-  1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を包む。
+- **境界はキャンバスの外側に置く。** 右のパネルのタブの中身（注釈・図の
+  ドラフト・mermaid の貼り付け、`web/src/board/PanelTabContents.tsx`）、注釈の枠
+  （`web/src/board/BoardCanvas.tsx`）、注釈の詳細（`BoardPage`）、共有とボードの
+  背景のダイアログの中身を 1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を
+  包む。
   **外側の 1 枚にまとめないこと。** まとめると落ちた瞬間にキャンバスごと外れ、
   保存していないブレストがその場で消える。`web/e2e/errors.spec.ts` がここを
   固定している。**パネルを足したらここにも包みを足す。**
@@ -489,6 +491,18 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   （ADR 0018）。
 - **大きさは固定で、ダイアログを挟まない。** 挟むと「描いている最中の 1 手」でなく
   なる。
+
+## 使い方のダイアログ（ADR 0094）
+
+**キャンバスのメニューと、右のパネルの「選択中のフレーム」の案内からだけ開く。
+勝手に開かない**（中核思想 3）。本文は `web/src/board/UsageGuideDialog.tsx`。
+
+- **状態・粒度・種別の語は表から引く**（`STATE_LABEL` / `GRANULARITY_LABEL` /
+  `DIAGRAM_KIND_LABELS`）。食い違いは `UsageGuideDialog.test.tsx` が落とす。
+- **ボタンの語は本文に書き写してある**（「〈名前〉を絵にする」「保存」
+  「絵解き」「絵解く」「GitHub に作成する」、タブの「絵解いた」）。部品に直書きされて
+  いて引けない。**これらの文言を変えたら、使い方も同じコミットで直す。**
+- **心得の節を手順より先に置く。** 並べ替えると単体テストが落ちる。
 
 ## 開いているボードと URL（ADR 0059）
 
@@ -764,7 +778,8 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   （先に書き換えられていたと出た状態と、読むだけの人）・作成が済んだ下書き・キャンバスの
   メニュー・新しいボードのダイアログ・利用者のメニュー・注釈の詳細で開く
   「GitHub にある」と「実行の履歴」・MCP の同意の画面・MCP の接続の
-  ダイアログ・作成先の Project を選んで確かめた結果（ADR 0088）。ボードを
+  ダイアログ・作成先の Project を選んで確かめた結果（ADR 0088）・使い方の
+  ダイアログ（ADR 0094）。ボードを
   開いただけの検査には一度も含まれていない。
 - **見えている文字は名前に含める**（WCAG 2.5.3、#311）。音声で操作する利用者は
   見えている文字を読み上げて押す。**中身の一部だけを `aria-label` /
@@ -822,7 +837,8 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 ## E2E テスト
 
 `web/e2e/` に置く。Playwright で実ブラウザを動かし、**バックエンドは起動しない。**
-API はすべて `page.route` で差し替える（ADR 0012）。
+API はすべて `page.route` で差し替える（ADR 0012）。実物の etoki に繋ぐ E2E は
+別にあり、約束は下の「通しの E2E」。
 
 - **E2E は自分で立てた dev サーバーだけを検査する**（#383）。ポートは
   `make dev` の 5173 と分け（既定 5174）、既に動いているサーバーは使わない。
@@ -906,6 +922,32 @@ API はすべて `page.route` で差し替える（ADR 0012）。
   そこでは `waitForBoard` で待つ（`openBoard` は無い一覧を押しにいって落ちる）。
 - `make test` には含めない。速さを保ちたいので、E2E はコミット前と CI で回す。
 
+### 通しの E2E（ADR 0097）
+
+`web/e2e-stack/` に置き、`make test-e2e-stack` で回す（設定は
+`web/playwright.stack.config.ts`）。**相手は実物の etoki と偽の GitHub / LLM**
+（`scripts/fake-stack.sh` が一時の DB で立てる）で、CI でも PR ごとに回る。
+
+- **見るのは画面とサーバーが本物どうしで往復できるかだけ。** 画面の約束は上の
+  モックの E2E で固める。**足すのは、モックでは状態が動かないか、本物どうしで
+  しか起きないものだけ**（たとえば、作成のあとに状態が「作成済み」へ動くこと）。
+  本数を増やすと、ADR 0012 が避けた遅くて壊れやすいテストが増える。
+- **モックを持ち込まない。** `page.route` とモックの口（`installApi` /
+  `openBoardWithMock` / `fixtures`）は eslint が落とす。画面の操作は
+  `web/e2e/helpers/board.ts` を使い回す。
+- **`test` は `web/e2e-stack/stack.ts` から取る。** どの spec でも、配信元の外へ
+  出た通信が無いことを見る土台が付いている（#114）。`@playwright/test` の `test`
+  を直に使うと、その spec だけ外れる。
+- **偽の GitHub の記録は 1 回の実行のあいだ spec どうしで共有される。** ボードは
+  `newBoard` で自分で作り、囲みの文字に `uniqueWord` を入れ、`fakeItems` はその語で
+  絞って読む。
+- **注釈の frame と貼った画像は取り込み（`importBoardFile`）で入れる。** 画面の
+  操作だけで両方を入れる口はここしか無い。**取り込む文字は書体を名指しする**
+  （`brainstormFile`）。省くとブラウザの代わりの書体で描かれ、フォントを 1 つも
+  取りに行かないので、配り方の検査が素通りする。
+- 偽物に口を足すなら、アダプタとの往復テストも同時に足す
+  （`.claude/rules/e2e-mocks.md`）。
+
 ### 報告にブラウザの実行結果を添える
 
 **UI に触れる修正をしたら、`make test-e2e` を実行し、ブラウザの実行結果の
@@ -931,6 +973,9 @@ cd web && bunx vitest run -t "customData"
 cd web && bunx playwright test e2e/interpretation.spec.ts
 cd web && bunx playwright test -g "解釈するまで"
 cd web && bunx playwright test --ui
+
+# 通しの E2E: 先に make build build-fakeupstream でビルドしておく
+cd web && bunx playwright test -c playwright.stack.config.ts e2e-stack/save.spec.ts
 ```
 
 これらは `make` を通らないので **devShell の中で実行する**。`make` のように
@@ -1006,7 +1051,7 @@ cd web && bunx playwright test --ui
   **固定を外したら、受け入れた CSS の注入が消えたかを確かめる。**
 - **Excalidraw 自身の mermaid の入口は閉じてある**（ADR 0067）。「その他」
   メニューの「Mermaid to Excalidraw」は `web/src/board/board.css` で隠し、キャンバスへの
-  貼り付けの自動変換は `BoardPage` の `onPaste` で止めている。**どちらも開いて
+  貼り付けの自動変換は `BoardCanvas` の `onPaste` で止めている。**どちらも開いて
   いると、上の脆弱性の受け入れの前提が崩れる。** props で消せない UI に外から
   手を入れているので、Excalidraw を上げると黙って戻りうる。
   `web/e2e/excalidrawMermaid.spec.ts` と `src/excalidraw/excalidrawMermaid.test.ts`
@@ -1021,7 +1066,8 @@ cd web && bunx playwright test --ui
   拾うため、明示しないと Playwright の spec を vitest が実行しようとする。
 - **`web/tsconfig.json` の `include` に `e2e` がある。** E2E のモックが契約の
   生成型から外れたことを `tsc` に見つけさせるため。外すと ADR 0012 の仕組みが
-  黙って効かなくなる。
+  黙って効かなくなる。**通しの E2E の `e2e-stack` と、その設定も入れてある。**
+  実物の応答を読む型（`BoardWithFiles` など）も契約の生成型から取っている。
 - **`web/src/excalidraw/assumptions.test.ts`** — `customData` が serialize と
   restore を越えて残るという、注釈設計の前提そのものを固定するテスト。
   ライブラリ更新で落ちたら設計を見直す合図。

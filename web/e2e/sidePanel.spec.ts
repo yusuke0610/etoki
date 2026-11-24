@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { openBoardWithMock, openPanelTab } from "./helpers/board";
-import { BOARD_ID, baseMock } from "./helpers/fixtures";
+import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
 
 /**
  * 右のパネル（`SidePanel`、ADR 0065）。「絵解いた」（注釈）と「etoki AI」（図の
@@ -48,12 +48,14 @@ test.describe("右のパネル", () => {
     await expect(annotations).toBeFocused();
   });
 
-  // 切れると: 注釈が 1 件も無いボードの「絵解いた」は案内の本文だけで、中に
-  // フォーカスできるものが無い。タブから Tab キーを押しても、キーボードだけの人は
-  // パネルの中身（案内）へ移れず、次の領域へ飛ぶ。
+  // 切れると: 注釈が 1 件も無いボードを読むだけの人が開くと、「絵解いた」は案内の
+  // 本文だけで、中にフォーカスできるものが無い。タブから Tab キーを押しても、
+  // キーボードだけの人はパネルの中身（案内）へ移れず、次の領域へ飛ぶ。
+  // **読むだけの人で開く。** 編集できる人には「使い方を見る」が出る（ADR 0094）。
   test("フォーカスできるものが無いパネルも、Tab キーで移れる", async ({ page }) => {
     const mock = baseMock();
     mock.annotations = { [BOARD_ID]: [] };
+    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
     await openBoardWithMock(page, mock);
 
     const panel = page.getByRole("tabpanel", { name: "絵解いた", exact: true });

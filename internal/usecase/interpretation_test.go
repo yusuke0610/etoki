@@ -366,6 +366,220 @@ func TestInterpret_SendsUnwrappedText(t *testing.T) {
 	}
 }
 
+// 人がつないだ矢印は、結び先とラベルを文字でも渡す（ADR 0096）。テキストの一覧には
+// ラベルしか並ばず、誰から誰へのやり取りかは画像にしか無かった。小型モデルは画像から
+// それを読めず、ラベルを言い換えるだけの issue を作った。
+//
+// 節はテキストの節の後ろに空行で区切って置く。偽の LLM はテキストの節だけを読む。
+func TestInterpret_SendsArrowConnections(t *testing.T) {
+	t.Parallel()
+
+	scene := `{"type":"excalidraw","elements":[
+	{"id":"annot-1","type":"frame","customData":{"etoki":{"granularity":"","kind":"sequence"}}},
+	{"id":"u","type":"rectangle","frameId":"annot-1"},
+	{"id":"u-l","type":"text","text":"User","containerId":"u"},
+	{"id":"w","type":"rectangle","frameId":"annot-1"},
+	{"id":"w-l","type":"text","text":"WebApp","containerId":"w"},
+	{"id":"a1","type":"arrow","frameId":"annot-1","startBinding":{"elementId":"u"},"endBinding":{"elementId":"w"},"endArrowhead":"arrow"},
+	{"id":"a1-l","type":"text","text":"リクエスト送信","containerId":"a1"},
+	{"id":"a2","type":"arrow","frameId":"annot-1","startBinding":{"elementId":"w"},"endBinding":{"elementId":"u"}},
+	{"id":"a2-l","type":"text","text":"レスポンス","containerId":"a2"}]}`
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(scene), llm)
+
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
+	}
+	sent := llm.requests[0].Text
+
+	want := "\n\n囲みの中の矢印（描いた人がつないだ先。並びは図の上の順番とは限りません）:\n" +
+		"- User → WebApp「リクエスト送信」\n" +
+		"- WebApp ― User「レスポンス」\n"
+	if !strings.Contains(sent, want) {
+		t.Errorf("プロンプトに矢印の節が無い。want:\n%s\ngot:\n%s", want, sent)
+	}
+	// テキストの節（最初の空行まで）には矢印の行を混ぜない。
+	if textSection, _, _ := strings.Cut(sent, "\n\n"); strings.Contains(textSection, "→") {
+		t.Errorf("テキストの節に矢印の行がある:\n%s", textSection)
+	}
+}
+
+// つないだ矢印が 1 本も無ければ節ごと省く。空の一覧を見せると、モデルが
+// 「あるはずのもの」を埋め合わせ始める（前回ぶんと同じ）。
+func TestInterpret_OmitsConnectionsSectionWhenNone(t *testing.T) {
+	t.Parallel()
+
+	llm := &fakeLLM{responses: []string{validLLMOutput}}
+	svc, _ := newInterpretService(t, newBoard(interpretScene), llm)
+
+	if _, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil); err != nil {
+		t.Fatalf("interpret() = %v", err)
+	}
+	if sent := llm.requests[0].Text; strings.Contains(sent, "囲みの中の矢印") {
+		t.Errorf("矢印が無いのに節が出ている:\n%s", sent)
+	}
+}
+
+// 端の呼び名と矢じりの記号。囲みの外の要素は名前を出さない（ADR 0093）。
+// 向きを決めるのは矢じりで、つないだ順ではない。
+func TestConnectionsSection_DescribesEndsAndHeads(t *testing.T) {
+	t.Parallel()
+
+	user := domain.ConnectionEnd{Bound: true, Inside: true, Name: "User"}
+	web := domain.ConnectionEnd{Bound: true, Inside: true, Name: "Web\nApp"}
+	tests := []struct {
+		name string
+		conn domain.Connection
+		want string
+	}{
+		{"終点に矢じり", domain.Connection{From: user, To: web, ToHead: true}, "- User → Web App\n"},
+		{"始点に矢じり", domain.Connection{From: user, To: web, FromHead: true}, "- User ← Web App\n"},
+		{"両方に矢じり", domain.Connection{From: user, To: web, FromHead: true, ToHead: true}, "- User ↔ Web App\n"},
+		{"矢じりなし", domain.Connection{From: user, To: web}, "- User ― Web App\n"},
+		{"囲みの外", domain.Connection{From: user, To: domain.ConnectionEnd{Bound: true}, ToHead: true},
+			"- User → （囲みの外）\n"},
+		{"つながっていない", domain.Connection{From: user, ToHead: true}, "- User → （どこにもつながっていない）\n"},
+		{"文字の無い図形", domain.Connection{From: user, To: domain.ConnectionEnd{Bound: true, Inside: true}, ToHead: true},
+			"- User → （文字の無い図形）\n"},
+		{"ラベル", domain.Connection{From: user, To: web, ToHead: true, Label: "1 対\n多"}, "- User → Web App「1 対 多」\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := usecase.ConnectionsSection([]domain.Connection{tt.conn})
+			if !strings.HasSuffix(got, tt.want) {
+				t.Errorf("ConnectionsSection() = %q, want 末尾が %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// 見積もりは、書いた節の長さを下回らない。下回ると上限の検査をすり抜ける。
+// 畳む空白が無く、名前が「（文字の無い図形）」より長ければ見積もりはちょうどに
+// なる（式が書き方からずれていない）。短い名前は、空白だけの名前と見分けずに
+// その呼び名の長さで見積もるので、ちょうどにはならない。
+func TestConnectionsSectionMaxLen_BoundsSection(t *testing.T) {
+	t.Parallel()
+
+	user := domain.ConnectionEnd{Bound: true, Inside: true, Name: "利用者（ブラウザから操作する人）"}
+	web := domain.ConnectionEnd{Bound: true, Inside: true, Name: "WebApp（注文を受け付けるサーバー）"}
+	short := domain.ConnectionEnd{Bound: true, Inside: true, Name: "DB"}
+	spaced := domain.ConnectionEnd{Bound: true, Inside: true, Name: "Web\n\n  App（注文を受け付けるサーバー）"}
+	blank := domain.ConnectionEnd{Bound: true, Inside: true, Name: "  "}
+	tests := []struct {
+		name  string
+		conns []domain.Connection
+		exact bool
+	}{
+		{"無い", nil, true},
+		{"名前とラベル", []domain.Connection{{From: user, To: web, ToHead: true, Label: "1対多"}}, true},
+		{"両方に矢じり", []domain.Connection{{From: user, To: web, FromHead: true, ToHead: true}}, true},
+		{"囲みの外", []domain.Connection{{From: user, To: domain.ConnectionEnd{Bound: true}}}, true},
+		{"つながっていない", []domain.Connection{{From: user, ToHead: true}}, true},
+		{"文字の無い図形", []domain.Connection{{From: user, To: domain.ConnectionEnd{Bound: true, Inside: true}}}, true},
+		{"空白だけの名前", []domain.Connection{{From: user, To: blank}}, true},
+		{"短い名前", []domain.Connection{{From: user, To: short}}, false},
+		{"畳まれる空白", []domain.Connection{{From: spaced, To: web, Label: "1 対\n\n多"}}, false},
+		{"空白だけのラベル", []domain.Connection{{From: user, To: web, Label: "  "}}, false},
+		{"複数", []domain.Connection{{From: user, To: web}, {From: web, To: user, ToHead: true, Label: "応答"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := usecase.ConnectionsSectionMaxLen(tt.conns)
+			written := len(usecase.ConnectionsSection(tt.conns))
+			if got < written {
+				t.Errorf("ConnectionsSectionMaxLen() = %d, 書いた節は %d バイト", got, written)
+			}
+			if tt.exact && got != written {
+				t.Errorf("ConnectionsSectionMaxLen() = %d, want ちょうど %d", got, written)
+			}
+		})
+	}
+}
+
+// 矢印の節は、同じ図形の名前を矢印の本数ぶん書く。保存の上限では縛れないので、
+// 組み立てる前に測る。ちょうど上限なら通し、1 バイト超えたら LLM を呼ばずに
+// 弾く。切り詰めると矢印が黙って欠ける。
+func TestInterpret_ConnectionsSectionLimit(t *testing.T) {
+	t.Parallel()
+
+	const nameLen = 64 << 10
+	name := strings.Repeat("x", nameLen)
+	// labelLen が 0 ならラベルを付けない。
+	build := func(arrows, labelLen int) string {
+		var b strings.Builder
+		b.WriteString(`{"type":"excalidraw","elements":[` +
+			`{"id":"annot-1","type":"frame","customData":{"etoki":{"granularity":""}}},` +
+			`{"id":"u","type":"rectangle","frameId":"annot-1"},` +
+			`{"id":"u-l","type":"text","text":"` + name + `","containerId":"u"}`)
+		for i := range arrows {
+			fmt.Fprintf(&b, `,{"id":"a%d","type":"arrow","frameId":"annot-1","startBinding":{"elementId":"u"},"endArrowhead":"arrow"}`, i)
+		}
+		if labelLen > 0 {
+			b.WriteString(`,{"id":"a0-l","type":"text","text":"` + strings.Repeat("y", labelLen) + `","containerId":"a0"}`)
+		}
+		b.WriteString(`]}`)
+		return b.String()
+	}
+	measure := func(scene string) int {
+		s, err := domain.ParseScene([]byte(scene))
+		if err != nil {
+			t.Fatalf("ParseScene() = %v", err)
+		}
+		return usecase.ConnectionsSectionMaxLen(s.AnnotationConnections("annot-1"))
+	}
+
+	// 上限にちょうど届く本数とラベルの長さを決める。ラベルは「」で 6 バイト
+	// 足すので、余りがそれより小さければ 1 本減らす。
+	line := measure(build(2, 0)) - measure(build(1, 0))
+	header := measure(build(1, 0)) - line
+	arrows := (usecase.MaxConnectionsSectionBytes - header) / line
+	rest := usecase.MaxConnectionsSectionBytes - header - arrows*line
+	if rest <= len("「」") {
+		arrows--
+		rest += line
+	}
+	labelLen := rest - len("「」")
+
+	tests := []struct {
+		name     string
+		labelLen int
+		wantErr  bool
+	}{
+		{"ちょうど上限", labelLen, false},
+		{"1 バイト超え", labelLen + 1, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			scene := build(arrows, tt.labelLen)
+			if got, want := measure(scene), usecase.MaxConnectionsSectionBytes+tt.labelLen-labelLen; got != want {
+				t.Fatalf("節の見積もり = %d, want %d（組み立てが狙いからずれた）", got, want)
+			}
+			llm := &fakeLLM{responses: []string{validLLMOutput}}
+			svc, _ := newInterpretService(t, newBoard(scene), llm)
+
+			_, err := interpret(t, svc, t.Context(), "board-1", "annot-1", nil)
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("interpret() = %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, usecase.ErrInvalidInput) {
+				t.Fatalf("interpret() = %v, want ErrInvalidInput", err)
+			}
+			if len(llm.requests) != 0 {
+				t.Error("矢印の節が上限を超えたのに LLM を呼んでいる")
+			}
+		})
+	}
+}
+
 // 再送は「何が悪かったか」を伝えて初めて意味を持つ。
 func TestInterpret_RetriesWithCorrections(t *testing.T) {
 	t.Parallel()

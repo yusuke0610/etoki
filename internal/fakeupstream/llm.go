@@ -26,12 +26,18 @@ var issueOnlyLine = regexp.MustCompile(`(?m)^開発者はこの範囲を issue �
 // 現れない。
 const sectionSeparator = "\n\n"
 
-// previousLine は「前回までにこの囲みから作ったもの」の 1 行を読む。
+// previousHeading は「前回までにこの囲みから作ったもの」の見出しの行。
 //
-// **行頭の "- p1 (epic) " の形は、前回ぶんの一覧にしか出ない。** 背景の行は
-// "> " で始まり、別の絵の一覧は ref を持たない（"- (issue) …"）。どちらも
-// buildUserMessage がそう組み立てる。だから見出しで節を切らずに、指示の節
-// 全体からこの形の行を拾う。
+// **ref は見出しの下の一覧からだけ拾う。** 行頭の "- p1 (epic) " の形だけでは
+// 前回ぶんの一覧と見分けられない。矢印の行（ADR 0096）は "- " のすぐ後ろに
+// 結び先の名前が来るので、名前が "p9 (issue) …" なら同じ形になる。
+//
+// 見出しは行まるごとで探す。指示の節に入る利用者の文字は、どれも行頭に
+// buildUserMessage が付けた印（"- " や "> "）を持つので、見出しの行と丸ごと
+// 一致することはない。
+var previousHeading = regexp.MustCompile(`(?m)^前回までにこの囲みから作ったもの:$`)
+
+// previousLine は前回ぶんの一覧の 1 行を読む。探すのは previousSection の中だけ。
 var previousLine = regexp.MustCompile(`(?m)^- (p\d+) \((epic|issue)\) `)
 
 // textLine は「囲みに含まれるテキスト」の 1 行を読む。
@@ -78,7 +84,7 @@ func Interpretation(userText string) string {
 	control := controlSection(userText)
 
 	refs := map[string][]string{}
-	for _, m := range previousLine.FindAllStringSubmatch(control, -1) {
+	for _, m := range previousLine.FindAllStringSubmatch(previousSection(control), -1) {
 		refs[m[2]] = append(refs[m[2]], m[1])
 	}
 	take := func(kind string) *string {
@@ -134,11 +140,23 @@ func textSection(userText string) string {
 // 「issue 相当」で epic が消え、付箋に書いた前回一覧の行で存在しない ref が
 // 出る。どちらも本物の検査に落ちて、通しが理由の見えない失敗になる。
 //
-// **この節にも利用者の書いた文字は入る**（ボードの背景、別の絵や前回ぶんの
-// タイトル）。それらは行頭に印が付くので、マーカーは行の形で見分ける
-// （issueOnlyLine / previousLine）。
+// **この節にも利用者の書いた文字は入る**（矢印の結び先とラベル、ボードの背景、
+// 別の絵や前回ぶんのタイトル）。それらは行頭に印が付くので、マーカーは行の形で
+// 見分ける（issueOnlyLine / previousHeading）。
 func controlSection(userText string) string {
 	_, section, _ := strings.Cut(userText, sectionSeparator)
+	return section
+}
+
+// previousSection は前回ぶんの一覧を、見出しの次の行から次の空行まで切り出す。
+// 一覧が無ければ空文字。タイトルと本文は 1 行に潰して渡るので、一覧の中に空行は
+// 現れない。
+func previousSection(control string) string {
+	loc := previousHeading.FindStringIndex(control)
+	if loc == nil {
+		return ""
+	}
+	section, _, _ := strings.Cut(control[loc[1]:], sectionSeparator)
 	return section
 }
 
