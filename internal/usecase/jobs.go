@@ -19,20 +19,28 @@ import (
 // 同じ理由、ADR 0016 / 0017）。
 var ErrJobNotFound = errors.New("etoki: job not found")
 
-// LLM を叩くジョブに関わる既定値（ADR 0085）。解釈と図のドラフト生成で共有する。
-const (
-	// DefaultJobTimeout は 1 つのジョブが走り続けてよい上限。
-	//
-	// リクエストの ctx から切り離すと、止める手が利用者の取り消しとこの上限しか
-	// 無くなる。LLM が応えないまま枠を握り続けると、次の実行が 429 で弾かれ続ける。
-	DefaultJobTimeout = 10 * time.Minute
+// DefaultJobRetention は終わったジョブの結果を持つ長さ（ADR 0085）。解釈と図の
+// ドラフト生成で共有する。
+//
+// 結果はメモリだけに持つ。誰も取りに来ない結果が溜まり続けないよう、終わった
+// 時刻から数えて捨てる。走っている間は数えない。
+const DefaultJobRetention = time.Hour
 
-	// DefaultJobRetention は終わったジョブの結果を持つ長さ。
-	//
-	// 結果はメモリだけに持つ。誰も取りに来ない結果が溜まり続けないよう、終わった
-	// 時刻から数えて捨てる。走っている間は数えない。
-	DefaultJobRetention = time.Hour
-)
+// jobTimeout は 1 つのジョブが走り続けてよい上限を、1 回の呼び出しを待つ上限と
+// 呼ぶ回数から導く（ADR 0104）。
+//
+// リクエストの ctx から切り離すと、止める手が利用者の取り消しとこの上限しか
+// 無くなる。LLM が応えないまま枠を握り続けると、次の実行が 429 で弾かれ続ける
+// （ADR 0085）。
+//
+// **固定の値にしない。** 1 回の上限を延ばしてもジョブの上限が据え置きなら、遅い
+// 応答が続いたときに最後の呼び出しが 1 回の上限より先に切れる（5 分の上限に
+// 10 分のジョブでは、解釈の 3 回目がそうなりえた）。応えない LLM は 1 回の上限で
+// 切れて再送しない（llmRetry）ので、応えない相手に枠を握らせる長さは 1 回の
+// 上限のまま。
+func jobTimeout(maxAttempts int, callTimeout time.Duration) time.Duration {
+	return time.Duration(maxAttempts) * callTimeout
+}
 
 // JobStatus はジョブの状態。
 type JobStatus string
@@ -66,6 +74,7 @@ type jobConfig struct {
 	// now はテストが差し替える。
 	now func() time.Time
 
+	// timeout は 1 つのジョブが走り続けてよい上限。jobTimeout が導く。
 	timeout   time.Duration
 	retention time.Duration
 }
@@ -80,6 +89,9 @@ func WithJobClock(now func() time.Time) JobsOption {
 }
 
 // WithJobTimeout は 1 つのジョブが走り続けてよい上限を差し替える。0 以下は無視する。
+//
+// テストがジョブの上限だけを縮めて確かめるために公開している。本番の配線は
+// 渡さず、1 回の上限と呼ぶ回数から導いた値（jobTimeout）を使う。
 func WithJobTimeout(d time.Duration) JobsOption {
 	return func(c *jobConfig) {
 		if d > 0 {
@@ -97,10 +109,10 @@ func WithJobRetention(d time.Duration) JobsOption {
 	}
 }
 
-func newJobConfig(opts []JobsOption) jobConfig {
+func newJobConfig(timeout time.Duration, opts []JobsOption) jobConfig {
 	c := jobConfig{
 		now:       time.Now,
-		timeout:   DefaultJobTimeout,
+		timeout:   timeout,
 		retention: DefaultJobRetention,
 	}
 	for _, opt := range opts {
@@ -168,11 +180,13 @@ type jobRequest[In, R any] struct {
 	run func(ctx context.Context) (R, error)
 }
 
+// newJobTable はジョブの置き場を作る。timeout は jobTimeout で導いた上限。
 func newJobTable[In, R any](
-	name string, limits *LLMLimiter, logger *slog.Logger, rejected error, opts []JobsOption,
+	name string, limits *LLMLimiter, logger *slog.Logger, rejected error,
+	timeout time.Duration, opts []JobsOption,
 ) *jobTable[In, R] {
 	return &jobTable[In, R]{
-		jobConfig: newJobConfig(opts),
+		jobConfig: newJobConfig(timeout, opts),
 		limits:    limits,
 		logger:    logger,
 		name:      name,
