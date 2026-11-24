@@ -225,9 +225,21 @@ full review 0 件の代わりに見るのは 2 つ。ほかの条件（base・`m
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | 生成器（`openapi-typescript`）が上がった | codegen drift で落ちる。その枝で `make codegen` を回して push する。head が変わるので CI を見る  |
 | Go の更新                                | devShell の Go（nixpkgs）より新しい版を要求していないか。要求するなら nixpkgs を上げるまで止める |
-| 固定しているもの（`@playwright/test`）   | 出てこないはず。出てきたら設定の漏れ。理由は `web/CLAUDE.md`                                     |
+| 固定しているもの（`@playwright/test`）   | version update は出てこないはず。出てきたら設定の漏れ。security update は出る（下）              |
 | major の更新                             | 変更履歴の破壊的変更。lint / test が緑でも使う API に当たらないか。main が進めば見直す           |
 | `web/bun.lock` が動く                    | 入れたら `bun install` を知らせる（5）                                                           |
+
+**固定しているものにも security update は出る。** `ignore` で外しているのは
+version update だけで、脆弱性の知らせは止めていない（ADR 0035）。同じ依存の
+Dependabot alert が開いていれば security update で、設定の漏れではない。
+コマンドが 0 以外で終わったら、0 件と読まずにどちらとも決めない。
+
+```sh
+gh api "repos/yusuke0610/etoki/dependabot/alerts?state=open&package=<依存名>" -q length
+```
+
+`@playwright/test` は devShell の `playwright-driver`（nixpkgs）と同じ版でないと
+E2E が起動しない（`web/CLAUDE.md`）。nixpkgs に同じ版が来るまで止める。
 
 確かめ終えて CI が緑なら、ほかの PR と同じく表に載せて確認を取る。表には、
 full review の代わりに何を確かめたか（major の破壊的変更と、使っているかどうか）を
