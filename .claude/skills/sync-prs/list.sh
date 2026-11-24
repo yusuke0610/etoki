@@ -14,15 +14,19 @@ set -euo pipefail
 # 決めると、fork の checkout では fork の PR を読み、その番号で etoki の base を
 # 書き換える（SKILL.md の PATCH）。積みと遅れの判定は手元の origin で行うので、
 # origin が etoki を指していなければ止める。
+#
+# ホストも見る。リポジトリ名の末尾だけで見ると、GitLab など別ホストの同名
+# リポジトリを通し、fetch と main の sha はそちら、API の読み書きは GitHub の
+# etoki になる。gh repo view で判定しない（issues.sh と違うのは、GraphQL で
+# クラウドのセッションでは塞がれているため）。HTTPS の userinfo は 1 段だけ
+# 許す（`/` と `@` を含めると、別ホストの path に github.com を書いた URL が通る）。
 nwo=yusuke0610/etoki
 origin_url="$(git remote get-url origin)"
-case "$origin_url" in
-*[:/]"$nwo" | *[:/]"$nwo".git) ;;
-*)
-	echo "origin が $nwo を指していない（$origin_url）。etoki の checkout で実行する" >&2
+origin_re="^(https://([^/@]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)${nwo}(\.git)?$"
+if ! [[ "$origin_url" =~ $origin_re ]]; then
+	echo "origin が github.com の $nwo を指していない（$origin_url）。etoki の checkout で実行する" >&2
 	exit 1
-	;;
-esac
+fi
 
 git fetch -q origin
 # 積みの判定と遅れの件数を、同じ時点の main で出す。ここで取った sha だけを使う
