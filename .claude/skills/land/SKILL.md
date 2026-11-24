@@ -230,13 +230,30 @@ full review 0 件の代わりに見るのは 2 つ。ほかの条件（base・`m
 | `web/bun.lock` が動く                    | 入れたら `bun install` を知らせる（5）                                                           |
 
 **固定しているものにも security update は出る。** `ignore` で外しているのは
-version update だけで、脆弱性の知らせは止めていない（ADR 0035）。同じ依存の
-Dependabot alert が開いていれば security update で、設定の漏れではない。
-コマンドが 0 以外で終わったら、0 件と読まずにどちらとも決めない。
+version update だけで、脆弱性の知らせは止めていない（ADR 0035）。どちらかは、
+alert の側からその PR が引けるかで決める。**同じ依存の alert が開いているだけでは
+決めない。** 設定の漏れで出た version update も、同じ依存の alert と並びうる。
 
 ```sh
-gh api "repos/yusuke0610/etoki/dependabot/alerts?state=open&package=<依存名>" -q length
+gh api graphql --paginate -f query='
+  query($endCursor: String) {
+    repository(owner: "yusuke0610", name: "etoki") {
+      vulnerabilityAlerts(first: 100, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          securityVulnerability { package { name } }
+          dependabotUpdate { pullRequest { number } }
+        }
+      }
+    }
+  }' -q '.data.repository.vulnerabilityAlerts.nodes[]
+  | select(.dependabotUpdate.pullRequest.number == <番号>)
+  | .securityVulnerability.package.name'
 ```
+
+依存名が出れば security update で、設定の漏れではない。0 で終わって何も出なければ
+version update で、設定の漏れ。0 以外で終わったら（クラウドのセッションでは
+GraphQL が塞がれている）どちらとも決めず、ユーザーに渡す。
 
 `@playwright/test` は devShell の `playwright-driver`（nixpkgs）と同じ版でないと
 E2E が起動しない（`web/CLAUDE.md`）。nixpkgs に同じ版が来るまで止める。
