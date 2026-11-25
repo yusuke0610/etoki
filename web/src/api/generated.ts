@@ -1961,6 +1961,12 @@ export interface components {
              *     受け取ったものをそのまま送り返す
              */
             contentHash: string;
+            /**
+             * @description 解釈の結果では空でありうる。空は「この囲みから作るものは無い」という
+             *     LLM の答えで、そう読んだ理由は `summary` にある（ADR 0103）。
+             *
+             *     作成のリクエストでは 1 件以上要る。空なら 400（`invalid_input`）
+             */
             items: components["schemas"]["InterpretedItem"][];
         };
         /**

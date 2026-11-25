@@ -142,6 +142,26 @@ test.describe("スクリーンショット", () => {
     await shot(page, "18-creation-blocked");
   });
 
+  // 作るものは無い、という答え（ADR 0103）。作成の口の代わりに読みを言う。
+  test("作るものは無いという答えを撮る", async ({ page }) => {
+    const mock = baseMock();
+    mock.interpret = {
+      status: 200,
+      body: {
+        ...interpretation(),
+        summary: "ログインまわりの感想のメモで、作るタスクは見当たりませんでした。",
+        items: [],
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+    await detail.getByText(/作るものは無い、と読みました/).waitFor();
+    await shot(page, "63-nothing-to-create");
+  });
+
   // 複数フレームのとき、パネルの項目とキャンバスのフレームが対応して見える
   // ことを撮る（ADR 0022）。
   test("カードとフレームの対応を撮る", async ({ page }) => {

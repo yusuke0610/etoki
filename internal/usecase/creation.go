@@ -198,6 +198,13 @@ func (s *CreationService) Create(
 	if err := in.Validate(annotation.Granularity); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
+	// 作るものが無い依頼は弾く。解釈では「作るものは無い」は答えになるが
+	// （`Validate` は空を通す、ADR 0103）、作る依頼としては中身が無い。**GitHub に
+	// 問い合わせる前に返す。** 入力だけで決まる 400 なので、GitHub の都合で
+	// 別の失敗に化けさせない。
+	if len(in.Items) == 0 {
+		return nil, fmt.Errorf("%w: nothing to create", ErrInvalidInput)
+	}
 
 	// 更新先がこの注釈のものであることを確かめる。畳み込みが「いま GitHub に
 	// 在らしめているもの」なので、そこに無い ID は更新してよい相手ではない
@@ -228,9 +235,9 @@ func (s *CreationService) Create(
 	run.Items = items
 
 	// 1 件も手を付けていないなら記録するものが無い。**「作れなかった」ではなく
-	// 「触っていない」。** 手を付けた 1 件は、結果が分からなくても items に入る
-	// （ADR 0056）ので、ここに来るのは解釈が空だったときと、最初の 1 件の手前で
-	// リクエストが切れていたとき（ADR 0051）だけ。
+	// 「触っていない」。** 手を付けた 1 件は、結果が分からなくても items に入り
+	// （ADR 0056）、空の依頼は手前で弾いている。ここに来るのは、最初の 1 件の
+	// 手前でリクエストが切れていたとき（ADR 0051）だけ。
 	if len(items) == 0 {
 		if createErr != nil {
 			return nil, createErr

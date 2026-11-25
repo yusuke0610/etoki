@@ -1165,9 +1165,14 @@ type InterpretRequest struct {
 type Interpretation struct {
 	// ContentHash 解釈の入力になった保存済みシーンのハッシュ。フロントでは組み立てず、
 	// 受け取ったものをそのまま送り返す
-	ContentHash string            `json:"contentHash"`
-	Items       []InterpretedItem `json:"items"`
-	Summary     string            `json:"summary"`
+	ContentHash string `json:"contentHash"`
+
+	// Items 解釈の結果では空でありうる。空は「この囲みから作るものは無い」という
+	// LLM の答えで、そう読んだ理由は `summary` にある（ADR 0103）。
+	//
+	// 作成のリクエストでは 1 件以上要る。空なら 400（`invalid_input`）
+	Items   []InterpretedItem `json:"items"`
+	Summary string            `json:"summary"`
 }
 
 // InterpretationContext 解釈の入力に、囲みの外から添えたもの（ADR 0093）。どれも注釈のハッシュに
@@ -1231,8 +1236,13 @@ type InterpretationResult struct {
 	// Context 解釈の入力に、囲みの外から添えたもの（ADR 0093）。どれも注釈のハッシュに
 	// 入らない。
 	Context InterpretationContext `json:"context"`
-	Items   []InterpretedItem     `json:"items"`
-	Summary string                `json:"summary"`
+
+	// Items 解釈の結果では空でありうる。空は「この囲みから作るものは無い」という
+	// LLM の答えで、そう読んだ理由は `summary` にある（ADR 0103）。
+	//
+	// 作成のリクエストでは 1 件以上要る。空なら 400（`invalid_input`）
+	Items   []InterpretedItem `json:"items"`
+	Summary string            `json:"summary"`
 }
 
 // InterpretedItem 解釈結果に含まれる draft issue 1 件。まだ作成はしていない

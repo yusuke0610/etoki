@@ -105,9 +105,12 @@ type interpretedItemWire struct {
 }
 
 // interpretationWire は LLM の出力そのままの形。
+//
+// Items をポインタで受けるのは、`[]` と「書いていない」を分けるため。空の配列は
+// 「作るものは無い」という答えで（ADR 0103）、キーが無い・null は書き忘れ。
 type interpretationWire struct {
-	Summary string                `json:"summary"`
-	Items   []interpretedItemWire `json:"items"`
+	Summary string                 `json:"summary"`
+	Items   *[]interpretedItemWire `json:"items"`
 }
 
 // ParseInterpretation は LLM の出力 JSON を読む。
@@ -128,8 +131,14 @@ func ParseInterpretation(raw []byte, previous []PreviousItem) (Interpretation, e
 	if dec.More() {
 		return Interpretation{}, errors.New("parse interpretation: JSON の後ろに余分な出力があります")
 	}
+	// 書き忘れを「作るものは無い」と取り違えない（ADR 0103）。直し方はそのまま
+	// 再送の指示になる。
+	if wire.Items == nil {
+		return Interpretation{}, errors.New("parse interpretation: items がありません。" +
+			"作るものが無いと読んだときも、items は空の配列 [] にしてください")
+	}
 
-	return resolvePreviousRefs(wire, previous)
+	return resolvePreviousRefs(wire.Summary, *wire.Items, previous)
 }
 
 // resolvePreviousRefs は LLM が出した previousRef を item ID に解決する。
@@ -137,15 +146,17 @@ func ParseInterpretation(raw []byte, previous []PreviousItem) (Interpretation, e
 // **問題は ValidationErrors で返す。** 綴り間違いや存在しない ref は、そのまま
 // 修正指示になって再送で直せる（ADR 0005）。パースの失敗として扱うと、1 往復
 // あたり 1 箇所しか直せない。
-func resolvePreviousRefs(wire interpretationWire, previous []PreviousItem) (Interpretation, error) {
+func resolvePreviousRefs(
+	summary string, items []interpretedItemWire, previous []PreviousItem,
+) (Interpretation, error) {
 	itemIDByRef := make(map[string]string, len(previous))
 	for _, p := range previous {
 		itemIDByRef[p.Ref] = p.ItemID
 	}
 
 	in := Interpretation{
-		Summary: wire.Summary,
-		Items:   make([]InterpretedItem, 0, len(wire.Items)),
+		Summary: summary,
+		Items:   make([]InterpretedItem, 0, len(items)),
 	}
 
 	var errs ValidationErrors
@@ -153,7 +164,7 @@ func resolvePreviousRefs(wire interpretationWire, previous []PreviousItem) (Inte
 	// 内容だけが残り、もう片方は「作ったつもり」で消える。
 	claimedBy := make(map[string]string, len(previous))
 
-	for i, w := range wire.Items {
+	for i, w := range items {
 		item := InterpretedItem{
 			LocalID:       w.LocalID,
 			Kind:          w.Kind,
