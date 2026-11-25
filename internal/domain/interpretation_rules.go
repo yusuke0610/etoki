@@ -16,7 +16,6 @@ type RuleID string
 // TestRules_MatchValidation が落ちる。
 const (
 	RuleSummary          RuleID = "summary"
-	RuleItemsPresent     RuleID = "itemsPresent"
 	RuleItemsCount       RuleID = "itemsCount"
 	RuleKind             RuleID = "kind"
 	RuleTitle            RuleID = "title"
@@ -110,8 +109,6 @@ var Rules = []Rule{
 		"付かなくなります。**空白の違いだけでは別のタイトルになりません。** " +
 		"前後の空白と Unicode の正規化形の違いは同じタイトルとして扱います。" +
 		"issue の title は重複していても構いません。"},
-	{RuleItemsPresent, "items は少なくとも 1 件必要です。囲んだ範囲から作るものが 1 つも" +
-		"無い、という出力はしないでください。"},
 	{RuleItemsCount, fmt.Sprintf("items は %d 件までです。これを超えるなら、囲む範囲を"+
 		"分けてもらう前提で、いまの範囲から読み取れるぶんだけを出してください。", MaxItems)},
 	{RuleSummary, "summary は GitHub には作りません。解釈が意図どおりかを開発者が確かめる" +
@@ -121,8 +118,10 @@ var Rules = []Rule{
 		"新しく作るものも null です。1 つの ID を 2 つの項目に使わないでください。"},
 	{RuleGranularityIssue, "粒度に issue が指定されているときは、epic を作らず issue だけを" +
 		"出力してください。"},
-	{RuleGranularityEpic, "粒度に epic が指定されているときは、epic を少なくとも 1 件" +
-		"含めてください。"},
+	// 作るものが無いなら空でよい（ADR 0103）。粒度は「作るならこの単位で」という
+	// 指定で、作るものがあることまでは言っていない。
+	{RuleGranularityEpic, "粒度に epic が指定されているときは、項目を出すなら epic を" +
+		"少なくとも 1 件含めてください。"},
 	// previousItemId は LLM が出す値ではない。LLM には previousRef を出させ、
 	// ParseInterpretation が解決する（ADR 0026）。画面や API を直接叩く経路で
 	// だけ検査に掛かるので、指示は無い。

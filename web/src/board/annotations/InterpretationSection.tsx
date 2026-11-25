@@ -254,7 +254,11 @@ export function InterpretationSection({
 
       {selected && <AddedContext context={selected.result.context} premise={premise} />}
 
-      {selected ? (
+      {selected === undefined ? (
+        <DetailBand interpret={interpret} />
+      ) : selected.result.items.length === 0 ? (
+        <NothingToCreate summary={selected.result.summary} interpret={interpret} />
+      ) : (
         <DraftEditor
           // 選び直したら手直しは引き継がない。別の解釈に対する編集が
           // 混ざると、何を作るのかが読めなくなる（解釈し直したときと同じ）。
@@ -275,10 +279,38 @@ export function InterpretationSection({
           onCreate={(interpretation) => onCreate(selected.id, interpretation)}
           onEditedChange={onDraftEdited}
         />
-      ) : (
-        <DetailBand interpret={interpret} />
       )}
     </div>
+  );
+}
+
+/** 「作るものは無い」という答えのときに、作成の口の代わりに出す文。 */
+const NOTHING_TO_CREATE =
+  "この絵から作るものは無い、と読みました。描き足したり囲み直したりしてから、絵解き直せます。";
+
+/**
+ * 「作るものは無い」という答え（items が空、ADR 0103）。
+ *
+ * **作成の口は出さない。** 下書きの画面に回すと「作るものが 1 件も選ばれて
+ * いません」と押せない理由が出て、選べば作れるように読める。代わりに、そう読んだ
+ * ことを言う（理由を出す約束は、出さないボタンにも掛かる）。なぜそう読んだかは
+ * summary にある。帯の「絵解き直す」は残す。
+ */
+function NothingToCreate({
+  summary,
+  interpret,
+}: {
+  summary: string;
+  interpret: InterpretControl;
+}) {
+  return (
+    <>
+      <div className="interpretation-result">
+        <p className="summary">{summary}</p>
+        <p className="hint">{NOTHING_TO_CREATE}</p>
+      </div>
+      <DetailBand interpret={interpret} />
+    </>
   );
 }
 
