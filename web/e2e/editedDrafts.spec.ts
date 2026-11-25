@@ -138,7 +138,7 @@ test.describe("手直しした下書き", () => {
     expect(accepted).toHaveLength(1);
   });
 
-  // 保存を呼ぶ口はほかにもある。どれも同じ確認を通す（`confirmedSave`）。
+  // 保存を呼ぶ口はほかにもある。どれも同じ確認を通す（保存の入口、`useSceneSave` の `save`）。
   // 未保存のあいだだけ出る「保存」と、未保存なら保存を挟む「絵解き」。
   test("未保存のあいだの「保存」も「絵解き」も、保存の前に訊き、断れば保存しない", async ({
     page,
@@ -161,5 +161,39 @@ test.describe("手直しした下書き", () => {
     expect(mock.saveRequests).toHaveLength(0);
     // 断ったので、絵解きの面も開かない（保存できなかったら進まない、ADR 0077）。
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  });
+
+  // 保存の失敗の通知にある「再試行」も保存の口。確認を通らずに送ると、失敗の
+  // あとに残っていた手直しが黙って消える（#485 の full review）。
+  test("保存に失敗したあとの「再試行」も、保存の前に訊き、断れば保存しない", async ({
+    page,
+  }) => {
+    const mock = await openBoardWithMock(page, baseMock());
+    const detail = await editDraft(page);
+    mock.saveSceneError = {
+      status: 500,
+      body: { code: "internal", error: "internal error" },
+    };
+    const accepted = answerDialogs(page, "accept");
+
+    await saveScene(page);
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("保存できませんでした");
+    expect(accepted).toHaveLength(1);
+    expect(mock.saveRequests).toHaveLength(1);
+
+    // 失敗を外しておく。確認を通らずに送る実装なら、ここで保存が通り、手直しが消える。
+    delete mock.saveSceneError;
+    page.removeAllListeners("dialog");
+    const declined = answerDialogs(page, "dismiss");
+    await alert.getByRole("button", { name: "再試行" }).click();
+
+    await expect
+      .poll(() => declined)
+      .toEqual([
+        "保存すると、絵解いた結果は捨てられ、手直しした下書きも消えます。保存しますか？",
+      ]);
+    expect(mock.saveRequests).toHaveLength(1);
+    await expect(detail.getByLabel("1 件目のタイトル")).toHaveValue("手直ししたタイトル");
   });
 });

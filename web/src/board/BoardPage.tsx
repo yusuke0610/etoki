@@ -385,6 +385,20 @@ export function BoardPage({
     await refreshAnnotations();
   }, [discardCreations, discardInterpretations, refreshAnnotations]);
 
+  /**
+   * 保存の前に訊くこと。保存の入口（`useSceneSave` の `save`）が、押した保存
+   * （「保存」・⌘/Ctrl+S・絵解く前の保存）でも通知の「再試行」でも呼ぶ。
+   *
+   * **保存は引いた解釈を捨てるので、手直しした下書きも消える**（`discardAfterSave`）。
+   * 手直しがあれば、失うものを言って訊いてから保存する（#432、ADR 0021 の追記）。
+   * 断られたら保存しない。絵解きの流れは「保存できなかったら進まない」（ADR 0077）
+   * ので、そこで止まる。
+   */
+  const confirmSave = useCallback(
+    () => !hasEditedDrafts() || window.confirm(DRAFTS_LOST_BY_SAVE),
+    [hasEditedDrafts],
+  );
+
   const { conflicted, overLimit, save } = useSceneSave({
     api,
     boardId: board.id,
@@ -393,31 +407,18 @@ export function BoardPage({
     sceneOverLimit: board.sceneOverLimit,
     exclusive,
     currentBackground,
+    confirm: confirmSave,
     markSaved,
     onSaved: discardAfterSave,
     onError,
     dismiss: dismissHere,
   });
 
-  /**
-   * 押された保存（「保存」・⌘/Ctrl+S・絵解く前の保存）。
-   *
-   * **保存は引いた解釈を捨てるので、手直しした下書きも消える**（`discardAfterSave`）。
-   * 手直しがあれば、失うものを言って訊いてから保存する（#432、ADR 0021 の追記）。
-   * 断られたら保存しない。絵解きの流れは「保存できなかったら進まない」（ADR 0077）
-   * ので、そこで止まる。**確認と保存のあいだに待ちを挟まない**（押した時点の
-   * 手直しについて訊く）。
-   */
-  const confirmedSave = useCallback(async (): Promise<boolean> => {
-    if (hasEditedDrafts() && !window.confirm(DRAFTS_LOST_BY_SAVE)) return false;
-    return save();
-  }, [hasEditedDrafts, save]);
-
   // 「絵解き」の流れ（`useEkidoki`）。保存を挟んでから開く・読む（ADR 0077）。
   const showAnnotationList = useCallback(() => showTab("annotations"), [showTab]);
   const { startEkidoki, interpretAfterSave } = useEkidoki({
     isDirty,
-    save: confirmedSave,
+    save,
     refreshAnnotations,
     canvasMetas,
     interpret,
@@ -470,7 +471,7 @@ export function BoardPage({
   const canSave = canEdit && api !== null && exclusive.running === null;
 
   // Ctrl / Cmd + S で保存する（`useSaveShortcut`、issue #145）。
-  useSaveShortcut(canSave, confirmedSave);
+  useSaveShortcut(canSave, save);
 
   /*
     キャンバスの移動を楽にする（#250）。何も選んでいないときの矢印キーと、
@@ -576,7 +577,7 @@ export function BoardPage({
         onRename={() => void rename()}
         dirty={dirty}
         canEdit={canEdit}
-        onSave={() => void confirmedSave()}
+        onSave={() => void save()}
         onEkidoki={() => void startEkidoki()}
         canSave={canSave}
         saveBlocked={saveBlocked}
@@ -591,7 +592,7 @@ export function BoardPage({
       rename,
       dirty,
       canEdit,
-      confirmedSave,
+      save,
       startEkidoki,
       canSave,
       saveBlocked,

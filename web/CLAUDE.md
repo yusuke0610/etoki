@@ -320,8 +320,10 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
   （`interpretationDraft.ts`）1 つで、下書きは `DraftEditor` が持ったまま手直し
   したかだけを上げる（`useEditedDrafts`）。`App` へは未保存と別の口
   （`onDraftsEditedChange`）で渡し、`confirmDiscard` は失うものを言い分ける
-  （`discardMessage`）。**保存の確認は `BoardPage` の `confirmedSave` を通す。**
-  保存を呼ぶ口（「保存」・⌘/Ctrl+S・絵解く前の保存）を足したら、そちらを渡す。
+  （`discardMessage`）。**保存の確認は保存の入口（`useSceneSave` の `save`）が
+  訊く。** 何を訊くかは `BoardPage` が `confirm` で渡す。保存を呼ぶ側で包まない。
+  包むと、包みを通らない口（失敗の通知の「再試行」）から確認なしに保存される
+  （#485 の full review）。
 - キャンバスが外れる導線は `web/src/app/useBoardNavigation.ts` にある
   （**一覧へ戻る**、新しいボードの作成先選択、ログアウト、**ブラウザの戻る /
   進む**）。**通す前に `confirmDiscard` を通す。** 導線を足したらここにも足す。
