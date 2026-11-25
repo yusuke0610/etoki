@@ -23,9 +23,23 @@ type Checked = {
  * **作成先が変わったら訊き直す**（ADR 0100）。作成先はボードを開いたまま選ぶ
  * ので、開いたときに 1 度訊くだけだと、選ぶ前の答え（未選択なら unknown）が
  * 残る。訊き直しが届くまでは、前の作成先の答えを出さずに unknown に戻す。
+ *
+ * **前と同じ作成先に戻しても、前の答えを出さない。** 答えを作成先の ID で照らす
+ * だけだと、`PVT_1` → `PVT_2` → `PVT_1` と戻したときに古い `PVT_1` の答えが
+ * 照合をまた通る。訊き直しが失敗すると、その古い答えが読み込み直すまで残る
+ * （#481 の full review）。
  */
 export function useProjectAccess(boardId: string, projectId: string): ProjectAccess {
   const [checked, setChecked] = useState<Checked | null>(null);
+
+  // 作成先が変わったら、前の答えを捨てる。**描画の中で捨てる**（props の変化に
+  // 合わせて state を直す React の形）。effect で捨てると、捨てるための描き直しが
+  // 1 回余計に走る。
+  const [askedFor, setAskedFor] = useState({ boardId, projectId });
+  if (askedFor.boardId !== boardId || askedFor.projectId !== projectId) {
+    setAskedFor({ boardId, projectId });
+    setChecked(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +60,8 @@ export function useProjectAccess(boardId: string, projectId: string): ProjectAcc
   }, [boardId, projectId]);
 
   // 答えは「どの作成先について確かめたか」と一緒に持ち、いまの作成先と照らして
-  // 出す。effect で unknown に戻すと、戻すための描き直しが 1 回余計に走る。
+  // 出す。上で捨てた描き直しより前（作成先が変わった描画そのもの）でも、前の
+  // 作成先の答えを出さない。
   return checked !== null &&
     checked.boardId === boardId &&
     checked.projectId === projectId
