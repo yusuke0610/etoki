@@ -355,9 +355,9 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 
 - **境界はキャンバスの外側に置く。** 右のパネルのタブの中身（注釈・図の
   ドラフト・mermaid の貼り付け、`web/src/board/PanelTabContents.tsx`）、注釈の枠
-  （`web/src/board/BoardCanvas.tsx`）、注釈の詳細（`BoardPage`）、共有とボードの
-  背景のダイアログの中身を 1 枚ずつ `ErrorBoundary` で包み、`main.tsx` で `App` を
-  包む。
+  （`web/src/board/BoardCanvas.tsx`）、注釈の詳細（`BoardPage`）、共有・ボードの
+  背景・作成先の選択（ADR 0100）のダイアログの中身を 1 枚ずつ `ErrorBoundary` で
+  包み、`main.tsx` で `App` を包む。
   **外側の 1 枚にまとめないこと。** まとめると落ちた瞬間にキャンバスごと外れ、
   保存していないブレストがその場で消える。`web/e2e/errors.spec.ts` がここを
   固定している。**パネルを足したらここにも包みを足す。**

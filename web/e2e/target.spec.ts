@@ -216,6 +216,28 @@ test.describe("作成先の選択", () => {
     expect(mock.createRequests[0]?.items[0]?.title).toBe("ログイン基盤（手直し済み）");
   });
 
+  // 切れると: 開いた元のボタンが「GitHub に作成する」に替わったまま押せない
+  // ので焦点を受けず、閉じた直後に焦点が body に落ちて、キーボードで操作する
+  // 人が今いる場所を失う（#481 の full review）。
+  test("作成先を選んでも作る口が押せなければ、焦点はメニューの口へ戻す", async ({
+    page,
+  }) => {
+    await openBoardWithMock(page, withoutTarget());
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(annotationCard(page, "ログイン"));
+    // epic を外すと、それを親に持つ issue も一緒に外れる。1 件も選ばれていない。
+    await detail.getByLabel("1 件目を作成する").uncheck();
+
+    await detail.getByRole("button", { name: "作成先を選ぶ" }).click();
+    await chooseTarget(page, /acme\/web/, "#1 ロードマップ");
+    await expect(picker(page)).toBeHidden();
+
+    await expect(
+      detail.getByRole("button", { name: "GitHub に作成する" }),
+    ).toBeDisabled();
+    await expect(page.locator('[data-testid="main-menu-trigger"]')).toBeFocused();
+  });
+
   // 切れると: 未選択のあいだの答え（unknown）が残り、書けない Project に作らせる
   // （逆に、書けるのに止める）。作成先はボードを開いたまま選ぶので、開いたときに
   // 1 度訊くだけでは足りない。

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import type { BoardTarget } from "../../api/types";
+import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { RepositoryPicker } from "./RepositoryPicker";
 
 type Props = {
@@ -84,11 +85,15 @@ export function TargetPickerDialog({ open, boardName, onSelected, onClose }: Pro
         // 「GitHub に作成する」に替わる（`DetailBand`）ので、次に押すものに戻る。
         // メニューの項目はメニューごと閉じて消えているので、そのときはメニューの
         // 口へ戻す（`UsageGuideDialog` と同じ）。
+        //
+        // **戻せたかを確かめる。** 替わった「GitHub に作成する」が押せない（1 件も
+        // 選ばれていない、など）と、無効なボタンは焦点を受けず、焦点が body に
+        // 落ちる（#481 の full review）。そのときもメニューの口へ戻す。
         const back = opener.current;
         opener.current = null;
         if (back !== null && back !== document.body && back.isConnected) {
           back.focus();
-          return;
+          if (document.activeElement === back) return;
         }
         document
           .querySelector<HTMLElement>('.excalidraw [data-testid="main-menu-trigger"]')
@@ -96,12 +101,17 @@ export function TargetPickerDialog({ open, boardName, onSelected, onClose }: Pro
       }}
     >
       {open && (
-        <RepositoryPicker
-          boardName={boardName}
-          headingId={HEADING_ID}
-          onSelected={select}
-          onCancel={() => dialog.current?.close()}
-        />
+        // キャンバスの上に開くので、ほかのダイアログと同じく中身を 1 枚で包む
+        // （ADR 0027）。包まないと、選択部品の例外が App の境界まで届き、保存して
+        // いないキャンバスごと外れる（#481 の full review）。
+        <ErrorBoundary name="作成先の選択" recovery="remount">
+          <RepositoryPicker
+            boardName={boardName}
+            headingId={HEADING_ID}
+            onSelected={select}
+            onCancel={() => dialog.current?.close()}
+          />
+        </ErrorBoundary>
       )}
     </dialog>
   );
