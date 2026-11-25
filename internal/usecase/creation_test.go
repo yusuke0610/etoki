@@ -647,14 +647,19 @@ func TestCreate_RevalidatesInterpretation(t *testing.T) {
 				{LocalID: "i1", Kind: domain.KindIssue, Title: "ログイン", ParentLocalID: ptrTo("e2")},
 			},
 		},
-		"項目が無い": {Summary: "s"},
+		// 解釈では「作るものは無い」という答えだが、作る依頼としては中身が無い
+		// （ADR 0103）。検査は作成の入口が持つ。
+		"項目が無い":   {Summary: "s"},
+		"項目が空の配列": {Summary: "s", Items: []domain.InterpretedItem{}},
 	}
 
 	for name, in := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			gh := &fakeGitHub{fields: projectFields()}
+			// 入力だけで決まる 400 は、GitHub に問い合わせる前に返す。引いてから
+			// 弾くと、GitHub が落ちているときに 400 が 502 に化ける。
+			gh := &fakeGitHub{fields: projectFields(), listErr: errors.New("検証の前に GitHub を引いた")}
 			mappings := &fakeMappings{}
 			svc := newCreationService(t, gh, mappings)
 

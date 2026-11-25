@@ -98,6 +98,42 @@ func TestParseInterpretation(t *testing.T) {
 		}
 	})
 
+	// 作るものが無い、は LLM の読みとして正しい答え（ADR 0103）。
+	t.Run("items を空の配列にした出力は、作るものは無いという答えとして読む", func(t *testing.T) {
+		t.Parallel()
+
+		raw := []byte(`{"summary": "感想のメモで、作るものは見当たりません", "items": []}`)
+
+		in, err := domain.ParseInterpretation(raw, nil)
+		if err != nil {
+			t.Fatalf("ParseInterpretation() = %v", err)
+		}
+		if in.Summary != "感想のメモで、作るものは見当たりません" {
+			t.Errorf("Summary = %q", in.Summary)
+		}
+		if in.Items == nil || len(in.Items) != 0 {
+			t.Errorf("Items = %#v, want 空の配列", in.Items)
+		}
+	})
+
+	// 書き忘れを「作るものは無い」と取り違えない。答えるなら [] と書かせる。
+	for name, raw := range map[string]string{
+		"items が無い":    `{"summary": "s"}`,
+		"items が null": `{"summary": "s", "items": null}`,
+	} {
+		t.Run(name+"出力を誤りとして扱い、[] の書き方を言う", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := domain.ParseInterpretation([]byte(raw), nil)
+			if err == nil {
+				t.Fatal("ParseInterpretation() = nil, want error")
+			}
+			if !strings.Contains(err.Error(), "items") || !strings.Contains(err.Error(), "[]") {
+				t.Errorf("err = %q, items と [] の書き方を言っていない", err)
+			}
+		})
+	}
+
 	t.Run("JSON の後ろに続く出力を誤りとして扱う", func(t *testing.T) {
 		t.Parallel()
 
@@ -153,11 +189,6 @@ func TestInterpretation_Validate_ItemRules(t *testing.T) {
 			name:       "summary が空",
 			mutate:     func(in *domain.Interpretation) { in.Summary = "  \n " },
 			wantFields: []string{"summary"},
-		},
-		{
-			name:       "項目が 1 件もない",
-			mutate:     func(in *domain.Interpretation) { in.Items = nil },
-			wantFields: []string{"items"},
 		},
 		{
 			name:       "kind が epic でも issue でもない",
@@ -409,6 +440,22 @@ func TestInterpretation_Validate_Granularity(t *testing.T) {
 			t.Errorf("Validate() = %v, want nil", err)
 		}
 	})
+}
+
+// 作るものは無い、はどの粒度でも答えになる（ADR 0103）。粒度は「作るならこの
+// 単位で」という指定で、作るものがあることまでは言っていない。epic 指定で空を
+// 弾くと、作るものが無い囲みから epic を作り出させることになる。
+func TestInterpretation_Validate_AcceptsNoItems(t *testing.T) {
+	t.Parallel()
+
+	for _, g := range []domain.Granularity{
+		domain.GranularityAuto, domain.GranularityIssue, domain.GranularityEpic,
+	} {
+		in := domain.Interpretation{Summary: "感想のメモで、作るものは見当たりません", Items: []domain.InterpretedItem{}}
+		if err := in.Validate(g); err != nil {
+			t.Errorf("Validate(%q) = %v, want nil", g, err)
+		}
+	}
 }
 
 // 最初の 1 件で打ち切ると、LLM は 1 往復で 1 箇所しか直せない（ADR 0005）。
@@ -828,8 +875,7 @@ func TestRules_MatchValidation(t *testing.T) {
 		domain.RuleSummary: {in: domain.Interpretation{
 			Items: []domain.InterpretedItem{{LocalID: "e1", Kind: domain.KindEpic, Title: "t"}},
 		}},
-		domain.RuleItemsPresent: {in: domain.Interpretation{Summary: "s"}},
-		domain.RuleItemsCount:   {in: domain.Interpretation{Summary: "s", Items: manyItems(domain.MaxItems + 1)}},
+		domain.RuleItemsCount: {in: domain.Interpretation{Summary: "s", Items: manyItems(domain.MaxItems + 1)}},
 		domain.RuleKind: {in: domain.Interpretation{Summary: "s",
 			Items: []domain.InterpretedItem{{LocalID: "x1", Kind: "project", Title: "t"}},
 		}},
