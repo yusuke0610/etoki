@@ -319,6 +319,42 @@ test.describe("解釈と作成", () => {
     expect(sent?.body).toBe("認可コードフローで受ける");
   });
 
+  // 作るものは無い、は LLM の読みとして正しい答え（ADR 0103）。失敗として扱わず、
+  // 作成の口の代わりにそう読んだことを言う。読み直す口は残す。
+  test("作るものは無いという答えなら、読みを出し、作成の口は出さない", async ({
+    page,
+  }) => {
+    const mock = baseMock();
+    mock.interpret = {
+      status: 200,
+      body: {
+        ...interpretation(),
+        summary: "感想のメモで、作るものは見当たりません。",
+        items: [],
+      },
+    };
+    await openBoardWithMock(page, mock);
+
+    const card = annotationCard(page, "ログイン");
+    const detail = annotationDetail(page, "ログイン");
+    await interpret(card);
+
+    await expect(
+      detail.getByText("感想のメモで、作るものは見当たりません。"),
+    ).toBeVisible();
+    await expect(
+      detail.getByText(
+        "この絵から作るものは無い、と読みました。描き足したり囲み直したりしてから、絵解き直せます。",
+      ),
+    ).toBeVisible();
+    await expect(detail.getByRole("button", { name: "GitHub に作成する" })).toHaveCount(
+      0,
+    );
+    await expect(detail.getByRole("button", { name: "絵解き直す" })).toBeEnabled();
+    // 失敗ではない。失敗の見せ方（ErrorNotice）は出さない。
+    await expect(detail.locator(".error")).toHaveCount(0);
+  });
+
   test("1 件も選ばれていなければ作成させず、理由を出す", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());
 

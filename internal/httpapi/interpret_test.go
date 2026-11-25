@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -189,6 +190,59 @@ func TestInterpretAnnotation(t *testing.T) {
 		t.Errorf("items[1].parentLocalId = %v, want e1", got.Items[1].ParentLocalID)
 	}
 
+	if llm.calls != 1 {
+		t.Errorf("LLM 呼び出し回数 = %d, want 1", llm.calls)
+	}
+}
+
+// 作るものは無い、は答えとして返す（ADR 0103）。**items は null ではなく空の
+// 配列で返す。** 画面は items を配列として読むので、null だと読んだ瞬間に落ちる。
+func TestInterpretAnnotation_ReturnsNothingToCreate(t *testing.T) {
+	t.Parallel()
+
+	llm := &stubLLM{text: `{"summary":"感想のメモで、作るものは見当たりません","items":[]}`}
+	r := newInterpretRouter(t, llm)
+
+	id := createBoard(t, r, "設計会")
+	saveAnnotatedScene(t, r, id)
+
+	started := startInterpretation(t, r, id, "annot-1", nil)
+	var raw json.RawMessage
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		rec := do(t, r, http.MethodGet, jobPath(id, started.ID), nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET job: status = %d, want 200 (%s)", rec.Code, rec.Body)
+		}
+		if decode[apitypes.InterpretationJob](t, rec).Status != apitypes.InterpretationJobStatusRunning {
+			raw = rec.Body.Bytes()
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if raw == nil {
+		t.Fatal("ジョブが終わらない")
+	}
+
+	var job struct {
+		Status string `json:"status"`
+		Result struct {
+			Summary string          `json:"summary"`
+			Items   json.RawMessage `json:"items"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &job); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if job.Status != string(apitypes.InterpretationJobStatusSucceeded) {
+		t.Fatalf("status = %q, want succeeded (%s)", job.Status, raw)
+	}
+	if job.Result.Summary != "感想のメモで、作るものは見当たりません" {
+		t.Errorf("summary = %q", job.Result.Summary)
+	}
+	if string(job.Result.Items) != "[]" {
+		t.Errorf("items = %s, want []", job.Result.Items)
+	}
 	if llm.calls != 1 {
 		t.Errorf("LLM 呼び出し回数 = %d, want 1", llm.calls)
 	}

@@ -585,6 +585,12 @@ func TestCreateItems_RejectsInvalidBody(t *testing.T) {
 			"summary": "s",
 			"items":   []map[string]any{{"localId": "p1", "kind": "project", "title": "t"}},
 		},
+		// 解釈では「作るものは無い」という答えだが、作る依頼としては中身が無い
+		// （ADR 0103）。
+		"項目が空": {
+			"summary": "s",
+			"items":   []map[string]any{},
+		},
 	}
 
 	for name, body := range tests {

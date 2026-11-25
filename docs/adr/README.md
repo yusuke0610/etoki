@@ -100,4 +100,5 @@
 | [0095](0095-clean-drawing-style.md)                              | 線を揺らさず、書体を Excalifont から外す                                     | 採用                 |
 | [0096](0096-pass-arrow-connections-to-interpretation.md)         | 人がつないだ矢印の結び先は、解釈に文字でも渡す                               | 採用                 |
 | [0097](0097-stack-e2e-in-ci.md)                                  | 画面とサーバーの往復は、実物と偽の上流に繋いだ E2E で CI でも確かめる        | 採用                 |
+| [0103](0103-accept-nothing-to-create.md)                         | 「作るものは無い」を解釈の答えとして受け取る                                 | 採用                 |
 | [0104](0104-llm-call-timeout-and-thinking.md)                    | LLM を待つ上限は設定にして呼び出しごとに掛け、思考は手元でだけ切らせる       | 採用                 |
