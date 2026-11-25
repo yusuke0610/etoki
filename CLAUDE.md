@@ -46,7 +46,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
 | `.claude/skills/mutate/`           | 守りを壊してテストが落ちるかを確かめる（`/mutate`）                    |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
-| `.claude/skills/pr-watch/`         | full review の枠・依頼・待ち・0 件の判定（`/pr-watch`）                |
+| `.claude/skills/pr-watch/`         | full review の枠・依頼・待ち・決着の判定（`/pr-watch`）                |
 | `.claude/skills/land/`             | マージの条件の判定、マージ順の表、マージと後続（`/land`）              |
 | `.claude/skills/sync-prs/`         | main が進んだあと、取り込みが要る PR だけを追従させる（`/sync-prs`）   |
 | `.claude/skills/triage/`           | 閉じられる issue と着手できる issue の振り分け（`/triage`）            |
@@ -292,8 +292,10 @@ Origin 検証は `.claude/rules/http-handlers.md`。
   日本語で「なぜそうしたか」。常に緑のコミットにする。
 - **PR 本文は `.github/pull_request_template.md` の見出しに沿って埋める。**
   該当しない節は消す。各節に何を書くかは `CONTRIBUTING.md`。
-- **マージしてよいのは、最新の head に対する full review で指摘が 0 件だった PR
-  だけ。** それ以外は仕上げてユーザーに渡す。条件は `CONTRIBUTING.md`。
+- **マージの条件は変更の重さで分ける。** 軽い（文書・規約・テストだけ・
+  Dependabot）は CI が緑、ふつうは full review の指摘が決着して CI が緑なら、
+  Claude がマージする。重い（GitHub への書き込み・マイグレーション・認証）は
+  仕上げてユーザーに渡す。条件は `CONTRIBUTING.md`。
 
 ## 実装の進め方
 
@@ -322,8 +324,8 @@ Origin 検証は `.claude/rules/http-handlers.md`。
 
 | やること                                | スキル       |
 | --------------------------------------- | ------------ |
-| 枠・依頼・待ちを回し、0 件かを判定する  | `/pr-watch`  |
-| 付いた指摘を、なくなるまで決着させる    | `/pr-review` |
+| 枠・依頼・待ちを回し、決着したかを判定  | `/pr-watch`  |
+| 付いた指摘を全部決着させ、まとめを書く  | `/pr-review` |
 | マージしてよいかを確かめ、マージする    | `/land`      |
 | main が進んだあと、開いている PR を追従 | `/sync-prs`  |
 

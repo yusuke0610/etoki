@@ -4,6 +4,8 @@
 #
 # 見回りのたびに組み立て直していた問い合わせを 1 つにした。いちばん間違えやすい
 # のは full review の読み方で、ここで判定まで出す（読み方は SKILL.md）。
+# 判定するのは full review の指摘が決着したかまで。変更の重さ（full review が
+# 要るか、誰がマージするか）は見ない（CONTRIBUTING.md「マージ」）。
 #
 # 使い方: .claude/skills/pr-watch/status.sh [PR 番号...]
 #         番号を渡さなければ、開いている PR をすべて出す。
@@ -78,6 +80,9 @@ unresolved_threads() {
 #   SUM  要約のコメント。最後に読んだ commit を添える。「between A and B」の B、
 #        それが無ければ `"coveredCommitId":"<sha>","kind":"reviewed"` の sha。
 #        どちらも無ければ「?」（読んだ head と言わない）
+#   SET  人が書いた、指摘を決着させたまとめ（印 `<!-- etoki:findings-settled -->`
+#        を持つもの）。書き手を添え、数えるのは PR の作者が書いたものだけにする
+#        （リポジトリは公開で、誰でも印を書ける）
 # **要約は印（`summarize by coderabbit.ai`）で見分け、返信より先に判定する。**
 # 要約は本文に「rate limited」を含むことがあり、後に回すと LIM に取られて
 # 要約が無いことになる（「between A and B」を持たない要約もある）。
@@ -96,6 +101,8 @@ classify='.[]
 	    then "REQ\t\(.created_at)\t\(.updated_at)\t-\t\($ep)"
 	  elif ($who | test("\\[bot\\]$") | not) and ($b | test("^\\s*@coderabbitai\\s+review\\b"))
 	    then "REV\t\(.created_at)\t\(.updated_at)\t-\t\($ep)"
+	  elif ($who | test("\\[bot\\]$") | not) and ($b | test("<!-- etoki:findings-settled -->"))
+	    then "SET\t\(.created_at)\t\(.updated_at)\t\($who)\t\($ep)"
 	  elif $who != "coderabbitai[bot]" then empty
 	  elif ($b | test("summarize by coderabbit\\.ai|Reviewing files that changed"))
 	    then "SUM\t\(.created_at)\t\(.updated_at)\t\(
@@ -214,11 +221,11 @@ for pr in "${prs[@]}"; do
 	# 取れなければ、この PR は「取れなかった」と出して後ろの PR に進む（read が空で
 	# 落ちると set -e で残りの PR の状態が出ない）。
 	if ! info="$(gh api "repos/$nwo/pulls/$pr" \
-		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state) \(.head.ref) \(.head.repo.full_name // "-") \(.created_at)"')" || [ -z "$info" ]; then
-		printf '#%s PR の情報を取れなかった(0 件とは読まない。取り直す)\n' "$pr"
+		--jq '"\(.head.sha) \(.base.ref) \(.mergeable) \(.mergeable_state) \(.head.ref) \(.head.repo.full_name // "-") \(.created_at) \(.user.login)"')" || [ -z "$info" ]; then
+		printf '#%s PR の情報を取れなかった(決着とは読まない。取り直す)\n' "$pr"
 		continue
 	fi
-	read -r head base mergeable mstate head_ref head_repo pr_created <<<"$info"
+	read -r head base mergeable mstate head_ref head_repo pr_created pr_author <<<"$info"
 	# head がいつ来たか。committer の日付は書き手が決められる（古い日付のまま
 	# push できる）ので、GitHub がこの PR の枝でその commit の check-suite を最初に
 	# 作った時刻（その枝への push を受けた時刻）とのうち遅いほうを使う。
@@ -260,12 +267,13 @@ for pr in "${prs[@]}"; do
 		events=""
 	}
 
-	# 依頼のうち最後のもの、その後に来た最初の返信、要約を拾う。
-	# ISO 8601 の UTC 時刻なので、文字列の比較で前後が決まる。
-	read -r req_at reply reply_at reply_extra sum_at sum_sha reply_ep sum_ep rev_at < <(awk -F'\t' '
+	# 依頼のうち最後のもの、その後に来た最初の返信、要約、PR の作者が書いた最後の
+	# まとめを拾う。ISO 8601 の UTC 時刻なので、文字列の比較で前後が決まる。
+	read -r req_at reply reply_at reply_extra sum_at sum_sha reply_ep sum_ep rev_at set_at < <(awk -F'\t' -v author="$pr_author" '
 		$1 == "REQ" { req = $2 }
 		$1 == "REV" { rev = $2 }
 		$1 == "SUM" { sum_at = $3; sum_sha = $4; sum_ep = $5 }
+		$1 == "SET" && $4 == author { set = $2 }
 		{ kind[NR] = $1; c[NR] = $2; u[NR] = $3; x[NR] = $4; e[NR] = $5 }
 		END {
 			r = "-"; ra = "-"; rx = "-"; re = 0
@@ -273,31 +281,16 @@ for pr in "${prs[@]}"; do
 				if ((kind[i] == "FIN" || kind[i] == "RUN" || kind[i] == "LIM") && c[i] >= req) {
 					r = kind[i]; ra = u[i]; rx = x[i]; re = e[i]; gsub(/ /, "_", rx); break
 				}
-			print (req == "" ? "-" : req), r, ra, rx, (sum_at == "" ? "-" : sum_at), (sum_sha == "" ? "-" : sum_sha), re, sum_ep + 0, (rev == "" ? "-" : rev)
+			print (req == "" ? "-" : req), r, ra, rx, (sum_at == "" ? "-" : sum_at), (sum_sha == "" ? "-" : sum_sha), re, sum_ep + 0, (rev == "" ? "-" : rev), (set == "" ? "-" : set)
 		}' <<<"$events")
 
 	# full review の判定。順番に意味がある（SKILL.md「full review の読み方」）。
+	# 決着は 2 通り。いまの head を読んだ full review が 0 件だったか、最後の
+	# full review が終わったあとに PR の作者がまとめを書いたか。
 	if [ "$events_ok" = 0 ]; then
-		fr="コメントを取れなかった(0 件とは読まない。取り直す)"
+		fr="コメントを取れなかった(決着とは読まない。取り直す)"
 	elif [ "$req_at" = "-" ]; then
 		fr="未依頼"
-	elif [ "$head_time" = "?" ]; then
-		fr="head の時刻を取れなかった(0 件とは読まない。取り直す)"
-	# 同じ秒に記録された push も「依頼のあと」に数える（前後を言えない）。
-	elif [[ ! "$req_at" > "$head_time" ]]; then
-		fr="要再依頼(依頼のあとに head が進んだ)"
-	# force push で、前にこの枝にあった commit へ戻すと、その commit の
-	# check-suite は依頼より前のまま。依頼のあとの force push は head が変わったと読む。
-	elif ! forced="$(gh api --paginate "repos/$nwo/issues/$pr/timeline?per_page=100" \
-		--jq '.[] | select(.event == "head_ref_force_pushed") | .created_at' |
-		awk -v r="$req_at" '$1 >= r { n++ } END { print n + 0 }')"; then
-		fr="force push の有無を取れなかった(0 件とは読まない。取り直す)"
-	elif [ "$forced" != "0" ]; then
-		fr="要再依頼(依頼のあとに force push された)"
-	# 増分のレビューは要約を、それが読んだ head で書き換える。依頼のあとに頼んで
-	# いたら、要約の commit が full review の読んだものと言えない。
-	elif [ "$rev_at" != "-" ] && [[ ! "$rev_at" < "$req_at" ]]; then
-		fr="要再依頼(依頼のあとに増分のレビューを頼んだ。要約が読んだ head と言えない)"
 	else
 		case "$reply" in
 		-) fr="返信待ち(依頼 $req_at)" ;;
@@ -305,26 +298,47 @@ for pr in "${prs[@]}"; do
 		LIM) fr="枠切れ(${reply_extra//_/ } 後に空く。依頼し直す)" ;;
 		FIN)
 			[[ "$reply_at" > "$latest_finished" ]] && latest_finished="$reply_at #$pr"
-			if [ "$sum_sha" != "$head" ]; then
-				fr="要再依頼(読んだのは ${sum_sha:0:7})"
+			# この full review が、いまの head を読んだか。読んでいなければ 0 件でも
+			# まとめが要る（読んでいない変更がある）。
+			stale=""
+			if [ "$head_time" = "?" ]; then
+				stale="head の時刻を取れなかった"
+			# 同じ秒に記録された push も「依頼のあと」に数える（前後を言えない）。
+			elif [[ ! "$req_at" > "$head_time" ]]; then
+				stale="依頼のあとに head が進んだ"
+			# force push で、前にこの枝にあった commit へ戻すと、その commit の
+			# check-suite は依頼より前のまま。依頼のあとの force push は head が変わったと読む。
+			elif ! forced="$(gh api --paginate "repos/$nwo/issues/$pr/timeline?per_page=100" \
+				--jq '.[] | select(.event == "head_ref_force_pushed") | .created_at' |
+				awk -v r="$req_at" '$1 >= r { n++ } END { print n + 0 }')"; then
+				stale="force push の有無を取れなかった"
+			elif [ "$forced" != "0" ]; then
+				stale="依頼のあとに force push された"
+			# 増分のレビューは要約を、それが読んだ head で書き換える。依頼のあとに
+			# 頼んでいたら、要約の commit が full review の読んだものと言えない。
+			elif [ "$rev_at" != "-" ] && [[ ! "$rev_at" < "$req_at" ]]; then
+				stale="依頼のあとに増分のレビューを頼んだ"
+			elif [ "$sum_sha" != "$head" ]; then
+				stale="読んだのは ${sum_sha:0:7}"
 			elif [[ "$sum_at" < "$req_at" ]]; then
-				fr="要約が古い(依頼より前に更新)"
+				stale="要約が依頼より前に更新された"
 			# 要約は full review の終わりと数秒の差で書き換わる。それより 5 分以上
 			# あとに書き換わっていたら、別のレビュー（増分）が読んだ head を指して
 			# いるかもしれない（head の時刻は push を受けた時刻でも見ているが、
 			# 要約が別のレビューで書き換わったことはここでしか分からない）。
 			elif ((sum_ep > reply_ep + 300)); then
-				fr="要再依頼(要約が full review のあとに書き換わった。読んだ head と言えない)"
-			elif ! found="$(findings_since "$pr" "$req_at")"; then
-				fr="指摘の数を取れなかった(0 件とは読まない。取り直す)"
-			elif [ "$found" = "?" ]; then
-				fr="指摘の数を読めない(件数の無い review 本文がある。0 件とは読まない。本文を読む)"
-			elif [[ "$found" == *+ ]]; then
-				fr="指摘あり(この full review で ${found%+} 件以上。件数を読めない本文もあるので本文を読む。直して依頼し直す)"
-			elif [ "$found" != "0" ]; then
-				fr="指摘あり(この full review で ${found} 件。直して依頼し直す)"
+				stale="要約が full review のあとに書き換わった"
+			fi
+			if ! found="$(findings_since "$pr" "$req_at")"; then
+				fr="指摘の数を取れなかった(決着とは読まない。取り直す)"
+			elif [ -z "$stale" ] && [ "$found" = "0" ]; then
+				fr="済(head を読んで 0 件)"
+			# まとめは full review が終わったあとのものだけを数える。前のものは、
+			# 前の full review の指摘を決着させたまとめでしかない。
+			elif [ "$set_at" != "-" ] && [[ ! "$set_at" < "$reply_at" ]]; then
+				fr="決着済み(指摘 ${found} 件。まとめ $set_at)"
 			else
-				fr="済(head を読んだ)"
+				fr="決着待ち(指摘 ${found} 件${stale:+ / $stale}。/pr-review で決着させてまとめを書く。直し以外を積んだなら依頼し直す)"
 			fi
 			;;
 		esac
@@ -334,11 +348,11 @@ for pr in "${prs[@]}"; do
 
 	ci="$(ci_state "$head")"
 
-	# 0 件と言えるのは、head を読んだ full review が終わり、その full review が指摘を
-	# 出さず（上の findings_since）、未解決のスレッドも無いときだけ。
+	# 決着と言えるのは、上の判定が済か決着済みで、未解決のスレッドも無いときだけ。
+	# まとめを書いても、スレッドを解決し忘れていたら決着とは言わない。
 	verdict=""
-	if [ "$fr" = "済(head を読んだ)" ] && [ "$threads" = "0" ]; then
-		verdict="  => full review 0 件"
+	if [[ "$fr" == "済("* || "$fr" == "決着済み("* ]] && [ "$threads" = "0" ]; then
+		verdict="  => full review 決着"
 	fi
 
 	printf '#%s head=%s fr=%s threads=%s mergeable=%s/%s ci=%s base=%s%s\n' \
