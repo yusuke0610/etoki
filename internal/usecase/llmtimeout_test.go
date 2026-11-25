@@ -216,10 +216,11 @@ func TestLLMCallTimeout_AppliesToEachCall(t *testing.T) {
 	}
 }
 
-// ジョブの上限は「1 回の上限 × 呼ぶ回数」から導く（ADR 0104）。固定にすると、
-// 1 回の上限を延ばしたときや、遅い応答が続いたときに、最後の呼び出しが 1 回の
-// 上限より先にジョブの上限で切れる（5 分の上限に 10 分のジョブでは、解釈の
-// 3 回目がそうなりえた）。
+// ジョブの上限は「1 回の上限 × 呼ぶ回数」に、呼び出しの外の処理のぶん（1 分）を
+// 足して導く（ADR 0104）。固定にすると、1 回の上限を延ばしたときや、遅い応答が
+// 続いたときに、最後の呼び出しが 1 回の上限より先にジョブの上限で切れる（5 分の
+// 上限に 10 分のジョブでは、解釈の 3 回目がそうなりえた）。ちょうど積にしても、
+// 応答の解析や再送の組み立てに使ったぶんだけ、最後の呼び出しが先に切れる（#488）。
 func TestJobs_TimeoutCoversEveryAttempt(t *testing.T) {
 	t.Parallel()
 
@@ -237,15 +238,15 @@ func TestJobs_TimeoutCoversEveryAttempt(t *testing.T) {
 		got, want time.Duration
 	}{
 		// 既定は 1 回 5 分。解釈は 3 回、図は 2 回まで呼ぶ。
-		"解釈の既定": {got: interpretation(), want: 15 * time.Minute},
-		"図の既定":  {got: diagram(), want: 10 * time.Minute},
+		"解釈の既定": {got: interpretation(), want: 16 * time.Minute},
+		"図の既定":  {got: diagram(), want: 11 * time.Minute},
 		"解釈": {
 			got:  interpretation(usecase.WithMaxAttempts(4), usecase.WithCallTimeout(2*time.Minute)),
-			want: 8 * time.Minute,
+			want: 9 * time.Minute,
 		},
 		"図": {
 			got:  diagram(usecase.WithDiagramMaxAttempts(3), usecase.WithDiagramCallTimeout(3*time.Minute)),
-			want: 9 * time.Minute,
+			want: 10 * time.Minute,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -26,6 +26,13 @@ var ErrJobNotFound = errors.New("etoki: job not found")
 // 時刻から数えて捨てる。走っている間は数えない。
 const DefaultJobRetention = time.Hour
 
+// jobTimeoutMargin は、ジョブのうち LLM の呼び出しの外で使ってよい時間の合計
+// （ADR 0104）。応答の解析、再送の本文の組み立て、結果の保存がここに入る。
+//
+// どれも手元の処理で、ふつうは数ミリ秒から数秒で終わる。1 分はそれに十分な
+// 幅として置いた値で、測って決めたものではない。
+const jobTimeoutMargin = time.Minute
+
 // jobTimeout は 1 つのジョブが走り続けてよい上限を、1 回の呼び出しを待つ上限と
 // 呼ぶ回数から導く（ADR 0104）。
 //
@@ -38,8 +45,12 @@ const DefaultJobRetention = time.Hour
 // 10 分のジョブでは、解釈の 3 回目がそうなりえた）。応えない LLM は 1 回の上限で
 // 切れて再送しない（llmRetry）ので、応えない相手に枠を握らせる長さは 1 回の
 // 上限のまま。
+//
+// **ちょうど積にしない。** ジョブの上限は呼び出しのあいだの時間も数えるので、
+// 積だけだと、応答の解析や再送の組み立てに使ったぶんだけ、最後の呼び出しが
+// 1 回の上限より先に切れる。払った応答を捨ててジョブが失敗する（#488）。
 func jobTimeout(maxAttempts int, callTimeout time.Duration) time.Duration {
-	return time.Duration(maxAttempts) * callTimeout
+	return time.Duration(maxAttempts)*callTimeout + jobTimeoutMargin
 }
 
 // JobStatus はジョブの状態。
