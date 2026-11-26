@@ -175,6 +175,17 @@ findings_since() {
 $body"
 }
 
+# その時刻と同じかより後に、この PR の枝が force push された回数。前にこの枝に
+# あった commit へ戻すと、その commit の check-suite は古いままで head の時刻には
+# 出ないので、timeline で見る。取れなかったら失敗で返す（0 回と読まないように。
+# pipefail なので gh の失敗がそのまま返る）。
+forced_since() {
+	local pr="$1" since="$2"
+	gh api --paginate "repos/$nwo/issues/$pr/timeline?per_page=100" \
+		--jq '.[] | select(.event == "head_ref_force_pushed") | .created_at' |
+		awk -v s="$since" '$1 >= s { n++ } END { print n + 0 }'
+}
+
 # CI の状態。check-run が 1 本も無いのは、衝突で pull_request のワークフローが
 # 起動していないことが多い（SKILL.md「CI が走らない」）。
 # **数えるのは GitHub Actions の check-run だけ**（app が github-actions）。
@@ -308,9 +319,7 @@ for pr in "${prs[@]}"; do
 				stale="依頼のあとに head が進んだ"
 			# force push で、前にこの枝にあった commit へ戻すと、その commit の
 			# check-suite は依頼より前のまま。依頼のあとの force push は head が変わったと読む。
-			elif ! forced="$(gh api --paginate "repos/$nwo/issues/$pr/timeline?per_page=100" \
-				--jq '.[] | select(.event == "head_ref_force_pushed") | .created_at' |
-				awk -v r="$req_at" '$1 >= r { n++ } END { print n + 0 }')"; then
+			elif ! forced="$(forced_since "$pr" "$req_at")"; then
 				stale="force push の有無を取れなかった"
 			elif [ "$forced" != "0" ]; then
 				stale="依頼のあとに force push された"
@@ -336,7 +345,22 @@ for pr in "${prs[@]}"; do
 			# まとめは full review が終わったあとのものだけを数える。前のものは、
 			# 前の full review の指摘を決着させたまとめでしかない。
 			elif [ "$set_at" != "-" ] && [[ ! "$set_at" < "$reply_at" ]]; then
-				fr="決着済み(指摘 ${found} 件。まとめ $set_at)"
+				# まとめが言えるのは、書いた時点の head までのこと（「full review のあとの
+				# コミットは直しだけ」）。まとめのあとに head が進んだら、その分は
+				# まとめに含まれない。直しか直し以外かは status.sh では見分けられない
+				# ので、決着とは言わず、まとめを書き直すか依頼し直すかを人に決めさせる。
+				# 同じ秒の push も「まとめのあと」に数える（前後を言えない）。
+				if [ "$head_time" = "?" ]; then
+					fr="決着待ち(指摘 ${found} 件 / head の時刻を取れず、まとめのあとに進んだかを言えない)"
+				elif [[ ! "$set_at" > "$head_time" ]]; then
+					fr="決着待ち(指摘 ${found} 件 / まとめのあとに head が進んだ。直しだけなら新しいまとめを書く。直し以外を積んだなら依頼し直す)"
+				elif ! forced_set="$(forced_since "$pr" "$set_at")"; then
+					fr="決着待ち(指摘 ${found} 件 / まとめのあとの force push の有無を取れなかった)"
+				elif [ "$forced_set" != "0" ]; then
+					fr="決着待ち(指摘 ${found} 件 / まとめのあとに force push された。直しだけなら新しいまとめを書く。直し以外を積んだなら依頼し直す)"
+				else
+					fr="決着済み(指摘 ${found} 件。まとめ $set_at)"
+				fi
 			else
 				fr="決着待ち(指摘 ${found} 件${stale:+ / $stale}。/pr-review で決着させてまとめを書く。直し以外を積んだなら依頼し直す)"
 			fi
