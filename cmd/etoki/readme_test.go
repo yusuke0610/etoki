@@ -164,7 +164,9 @@ func TestSetupHints_NameDocumentedVariables(t *testing.T) {
 	}{
 		{"LLM", hints.LLM, []string{llm.EnvAPIKey, llm.EnvBaseURL}},
 		{"GitHub", hints.GitHub, []string{github.EnvToken}},
-		{"Auth", hints.Auth, []string{githubauth.EnvClientID, githubauth.EnvClientSecret}},
+		{"Auth", hints.Auth, []string{
+			githubauth.EnvClientID, githubauth.EnvClientSecret, githubauth.EnvAllowedUserID,
+		}},
 		{"AllowedOrigins", hints.AllowedOrigins, []string{envAllowedOrigins}},
 	} {
 		names := name.FindAllString(tc.hint, -1)

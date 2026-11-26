@@ -82,11 +82,14 @@ pids+=("$fake_pid")
 
 # **継いだ環境変数のうち、向き先と食い違うものは外す。**
 # - 認証と鍵: .env や direnv の本物の鍵を偽物へ送らないためと、App を設定して
-#   いると認証の構成に入り、偽物ではログインできないため。
+#   いると認証の構成に入り、偽物ではログインできないため。通す利用者
+#   （ETOKI_ALLOWED_GITHUB_USER_ID）も外す。それだけ残ると書き損じとして起動で
+#   落ちる（#492）。
 # - フィールド名の 2 つ: 偽の GitHub は Kind / Parent 固定なので、手元で別名に
 #   設定している人は継いだ名前で引いて見つからず、作成が ErrProjectFieldMissing
 #   で止まる。
 env -u ETOKI_GITHUB_APP_CLIENT_ID -u ETOKI_GITHUB_APP_CLIENT_SECRET \
+	-u ETOKI_ALLOWED_GITHUB_USER_ID \
 	-u ETOKI_TOKEN_ENCRYPTION_KEY -u ETOKI_PUBLIC_URL -u ETOKI_LLM_API_KEY \
 	-u ETOKI_GITHUB_KIND_FIELD -u ETOKI_GITHUB_PARENT_FIELD \
 	ETOKI_DB_PATH="$tmp/etoki.db" \

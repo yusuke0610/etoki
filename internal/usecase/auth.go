@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,12 @@ const (
 	MaxLoginStarts = 60
 )
 
+// ErrLoginNotAllowed はログインを通さない相手だったことを表す（#492）。
+//
+// 通すのは 1 人だけ（etoki.NewAuthenticator の allowedSubject）。人に出すのを
+// やめ、自分だけが使う形にしたため。
+var ErrLoginNotAllowed = errors.New("etoki: this account is not allowed to sign in")
+
 // AuthService はログインとセッションを担う。
 //
 // port.GitHubTokenSource も兼ねる。「誰であるか」と「GitHub をどのトークンで
@@ -65,6 +72,13 @@ type AuthService struct {
 	provider port.IdentityProvider
 	sessions port.SessionRepository
 	now      func() time.Time
+
+	// allowedSubjects はログインを通す利用者の、認証基盤での ID（Identity.Subject）。
+	//
+	// **照らすのはログインのときだけではない。** すでにあるセッション（Resolve）と
+	// MCP のトークン（FindAllowedUser）も同じ相手で照らす。通す相手を変えた日に、
+	// 外した人の入口が残らない。
+	allowedSubjects []string
 
 	// refreshing は利用者ごとの更新の直列化。
 	//
@@ -94,13 +108,23 @@ func WithAuthClock(f func() time.Time) AuthServiceOption {
 }
 
 // NewAuthService は AuthService を作る。
+//
+// allowedSubjects はログインを通す利用者の、認証基盤での ID（Identity.Subject）。
+// **空なら誰も通らない。** 空を設定の誤りとして弾くのは組み立て口
+// （etoki.NewAuthenticator）で、ここでは閉じる側に倒すだけにする。
+//
+// **組み立て口が渡すのは 1 人だけ**（#492）。ここで複数を受けるのは、共有
+// （ADR 0017）が 2 人目を前提にしていて、そのテストが 2 人目のログインを要る
+// ため。共有を外すとき（#495）に 1 人へ戻す。
 func NewAuthService(
-	provider port.IdentityProvider, sessions port.SessionRepository, opts ...AuthServiceOption,
+	provider port.IdentityProvider, sessions port.SessionRepository, allowedSubjects []string,
+	opts ...AuthServiceOption,
 ) *AuthService {
 	s := &AuthService{
-		provider: provider,
-		sessions: sessions,
-		now:      time.Now,
+		provider:        provider,
+		sessions:        sessions,
+		now:             time.Now,
+		allowedSubjects: slices.Clone(allowedSubjects),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -110,6 +134,14 @@ func NewAuthService(
 
 // Provider は認証基盤の識別子を返す。
 func (s *AuthService) Provider() string { return s.provider.Name() }
+
+// allows はその利用者をログインさせてよいかを返す。
+//
+// **認証基盤の名前も見る。** Subject は基盤の中でだけ一意なので、別の基盤の
+// 同じ番号を通さない。
+func (s *AuthService) allows(provider, subject string) bool {
+	return subject != "" && provider == s.provider.Name() && slices.Contains(s.allowedSubjects, subject)
+}
 
 // Start は state を発行し、送り出す先の URL を返す。
 //
@@ -257,6 +289,14 @@ func (s *AuthService) Complete(
 		return LoginResult{}, err
 	}
 
+	// **照らすのは利用者を作る前。** 断った相手を users に残すと、招待の引き当て
+	// （FindUserByLogin）に現れる。資格情報も保存しない。他人の GitHub トークンを
+	// 預かる理由が無い。
+	if !s.allows(identity.Provider, identity.Subject) {
+		return LoginResult{}, fmt.Errorf("%w: %s user %q (id %s)",
+			ErrLoginNotAllowed, identity.Provider, identity.Login, identity.Subject)
+	}
+
 	user, err := s.sessions.UpsertUser(ctx, port.User{
 		Provider:    identity.Provider,
 		Subject:     identity.Subject,
@@ -305,8 +345,24 @@ func (s *AuthService) Resolve(ctx context.Context, token string) (*port.User, er
 		return nil, nil
 	}
 
+	return s.FindAllowedUser(ctx, session.UserID)
+}
+
+// FindAllowedUser は ID で利用者を引き、ログインを通す相手なら返す。
+//
+// 見つからない・通さない相手は (nil, nil)。呼び出し側が未ログインとして扱う。
+// セッション（Resolve）と MCP のトークンの持ち主を確かめるのに使う。どちらも
+// 発行した時点のログインで決まっているので、通す相手を変えたあとも残りうる。
+func (s *AuthService) FindAllowedUser(ctx context.Context, userID string) (*port.User, error) {
 	// セッションはあるのに利用者が消えている場合も未ログインとして扱う。
-	return s.sessions.FindUser(ctx, session.UserID)
+	user, err := s.sessions.FindUser(ctx, userID)
+	if err != nil || user == nil {
+		return nil, err
+	}
+	if !s.allows(user.Provider, user.Subject) {
+		return nil, nil
+	}
+	return user, nil
 }
 
 // FindUserByLogin は login で利用者を引く。存在しなければ (nil, nil)。

@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	testClientID     = "Iv1.testclientid"
-	testClientSecret = "secret_must_not_leak"
+	testClientID      = "Iv1.testclientid"
+	testClientSecret  = "secret_must_not_leak"
+	testAllowedUserID = "583231"
 )
 
 // capturedRequest は 1 回分のリクエスト。
@@ -80,10 +81,11 @@ func newProvider(t *testing.T, responses map[string]string) (*githubauth.Provide
 	t.Cleanup(srv.Close)
 
 	p, err := githubauth.New(githubauth.Config{
-		ClientID:     testClientID,
-		ClientSecret: testClientSecret,
-		AuthBaseURL:  srv.URL,
-		APIBaseURL:   srv.URL,
+		ClientID:      testClientID,
+		ClientSecret:  testClientSecret,
+		AllowedUserID: testAllowedUserID,
+		AuthBaseURL:   srv.URL,
+		APIBaseURL:    srv.URL,
 	})
 	if err != nil {
 		t.Fatalf("New() = %v", err)
@@ -97,8 +99,11 @@ func TestNew_RequiresClientCredentials(t *testing.T) {
 
 	for name, cfg := range map[string]githubauth.Config{
 		"どちらも無い":       {},
-		"secret が無い":   {ClientID: testClientID},
-		"clientID が無い": {ClientSecret: testClientSecret},
+		"secret が無い":   {ClientID: testClientID, AllowedUserID: testAllowedUserID},
+		"clientID が無い": {ClientSecret: testClientSecret, AllowedUserID: testAllowedUserID},
+		// 通す相手だけを書いた状態。認証の設定が抜けたことを、相手を決めた
+		// つもりのまま見落とさない（#492）。
+		"通す利用者だけ": {AllowedUserID: testAllowedUserID},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -110,7 +115,54 @@ func TestNew_RequiresClientCredentials(t *testing.T) {
 	}
 }
 
-// 片方だけ設定した状態を「使うつもり」とみなす。使わないつもりなら両方空になる。
+// 通す相手を決めずに認証だけを設定すると、誰でもログインできた頃に戻る
+// （#492）。起動で落とす。
+func TestNew_RequiresAllowedUserID(t *testing.T) {
+	t.Parallel()
+
+	_, err := githubauth.New(githubauth.Config{ClientID: testClientID, ClientSecret: testClientSecret})
+	if !errors.Is(err, githubauth.ErrAllowedUserID) {
+		t.Fatalf("New() = %v, want ErrAllowedUserID", err)
+	}
+	if !strings.Contains(err.Error(), githubauth.EnvAllowedUserID) {
+		t.Errorf("何を設定すればよいかが出ていない: %v", err)
+	}
+}
+
+// 照らすのは Identity.Subject（`%d`）との文字列の一致。形の違う値を受けると、
+// 誰もログインできないまま起動する。直さずに弾く。
+func TestNew_RejectsMalformedAllowedUserID(t *testing.T) {
+	t.Parallel()
+
+	for _, raw := range []string{
+		"0", "-1", "+1", "01", " 1", "1 ", "1.0", "abc", "octocat",
+		// int64 に収まらない。
+		"99999999999999999999",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := githubauth.New(githubauth.Config{
+				ClientID: testClientID, ClientSecret: testClientSecret, AllowedUserID: raw,
+			})
+			if !errors.Is(err, githubauth.ErrAllowedUserID) {
+				t.Fatalf("New(%q) = %v, want ErrAllowedUserID", raw, err)
+			}
+		})
+	}
+}
+
+// 形を確かめた値をそのまま渡す。照らすのはユースケース層。
+func TestNew_KeepsAllowedSubject(t *testing.T) {
+	t.Parallel()
+
+	p, _ := newProvider(t, nil)
+	if got := p.AllowedSubject(); got != testAllowedUserID {
+		t.Errorf("AllowedSubject() = %q, want %q", got, testAllowedUserID)
+	}
+}
+
+// どれか 1 つでも設定した状態を「使うつもり」とみなす。使わないつもりなら全部空になる。
 func TestConfig_Configured(t *testing.T) {
 	t.Parallel()
 
@@ -119,6 +171,23 @@ func TestConfig_Configured(t *testing.T) {
 	}
 	if !(githubauth.Config{ClientID: "x"}).Configured() {
 		t.Error("片方だけの Config が Configured でない")
+	}
+	if !(githubauth.Config{AllowedUserID: testAllowedUserID}).Configured() {
+		t.Error("通す利用者だけの Config が Configured でない")
+	}
+}
+
+// 環境変数の名前は README と usage にも載る。読む側の名前をここで固定する。
+func TestConfigFromEnv(t *testing.T) {
+	t.Setenv(githubauth.EnvClientID, testClientID)
+	t.Setenv(githubauth.EnvClientSecret, testClientSecret)
+	t.Setenv(githubauth.EnvAllowedUserID, testAllowedUserID)
+
+	want := githubauth.Config{
+		ClientID: testClientID, ClientSecret: testClientSecret, AllowedUserID: testAllowedUserID,
+	}
+	if got := githubauth.ConfigFromEnv(); got != want {
+		t.Errorf("ConfigFromEnv() = %+v, want %+v", got, want)
 	}
 }
 
@@ -340,10 +409,11 @@ func TestDoesNotLeakClientSecret(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	p, err := githubauth.New(githubauth.Config{
-		ClientID:     testClientID,
-		ClientSecret: testClientSecret,
-		AuthBaseURL:  srv.URL,
-		APIBaseURL:   srv.URL,
+		ClientID:      testClientID,
+		ClientSecret:  testClientSecret,
+		AllowedUserID: testAllowedUserID,
+		AuthBaseURL:   srv.URL,
+		APIBaseURL:    srv.URL,
 	})
 	if err != nil {
 		t.Fatalf("New() = %v", err)

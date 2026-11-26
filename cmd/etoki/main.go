@@ -43,7 +43,7 @@ var usage = `usage:
 
 environment:
   ETOKI_ADDR            リッスンアドレス（既定: ` + etoki.DefaultAddr + `）
-                        ループバックの外へ広げるなら先に認証を設定する
+                        ループバックの外へ広げるなら認証が要る（無ければ起動しない）
   ETOKI_ALLOWED_ORIGINS 追加で許すオリジン（カンマ区切り）。ループバックは常に許す
   ETOKI_DB_PATH         SQLite ファイルのパス（既定: ` + defaultDBPath + `）
   ETOKI_WEB_DIR         ビルド済みフロントエンドの置き場所（例: web/dist）
@@ -70,6 +70,8 @@ environment:
                         GHES では確かめていない
   ETOKI_GITHUB_APP_CLIENT_ID      GitHub App の client ID（設定するとログインを要求する）
   ETOKI_GITHUB_APP_CLIENT_SECRET  同 client secret
+  ETOKI_ALLOWED_GITHUB_USER_ID    ログインを通す 1 人の GitHub の数値 ID（認証を使うなら必須）
+                                  それ以外の人はログインできない
   ETOKI_TOKEN_ENCRYPTION_KEY      トークンを暗号化する鍵（base64 の 32 バイト）
   ETOKI_PUBLIC_URL                認可から戻ってくる先。空ならリクエストの Host から組む
   ETOKI_GITHUB_KIND_FIELD    種別のカスタムフィールド名（既定: ` + etoki.DefaultKindFieldName + `）
@@ -82,7 +84,8 @@ draft issue の作成先はボードごとに画面で選ぶ。環境変数で�
 
 GitHub App を設定するとログインを要求し、GitHub は利用者ごとのトークンで叩く。
 そのとき ETOKI_GITHUB_TOKEN は使わない。認証を設定しなければ従来どおり PAT で
-動く。
+動く。認証の設定が揃っていないとき（片方だけ、通す利用者が無い）と、認証なしで
+ループバックの外へ広げたときは、起動しない。
 `
 
 func main() {
@@ -307,19 +310,22 @@ func newAuthenticator(db *sql.DB) (*etoki.Authenticator, error) {
 		return nil, nil
 	}
 
+	// 設定の揃い方を鍵より先に見る。client_id と client_secret の片方だけ、
+	// 通す利用者が無い・形が違う、はここで落ちる。通す利用者だけを書いた
+	// 状態も Configured なので、ここで「App を設定していない」と言える（#492）。
+	provider, err := githubauth.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	// 認証を使うなら鍵は必須。無いまま起動して平文で保存する、を起こさない。
 	box, err := newSecretBox()
 	if err != nil {
 		return nil, err
 	}
 
-	// client_id と client_secret の片方だけ、はここで落ちる。
-	provider, err := githubauth.New(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box))
+	return etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box),
+		provider.AllowedSubject())
 }
 
 // newGitHubClient は環境変数から GitHub クライアントを組み立てる。

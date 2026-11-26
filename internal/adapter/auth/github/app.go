@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,8 @@ const (
 const (
 	EnvClientID     = "ETOKI_GITHUB_APP_CLIENT_ID"
 	EnvClientSecret = "ETOKI_GITHUB_APP_CLIENT_SECRET" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
+	// EnvAllowedUserID はログインを通す 1 人の、GitHub の数値の利用者 ID（#492）。
+	EnvAllowedUserID = "ETOKI_ALLOWED_GITHUB_USER_ID"
 )
 
 // defaultTimeout は 1 回の呼び出しを待つ上限。
@@ -50,11 +53,19 @@ const maxResponseBytes = 1 << 20 // 1 MiB
 // ErrClientCredentials は client_id / client_secret が揃っていないことを表す。
 var ErrClientCredentials = errors.New("etoki: github app client id and secret are required")
 
+// ErrAllowedUserID はログインを通す利用者が設定されていないか、形が違うことを表す。
+var ErrAllowedUserID = errors.New("etoki: the github user allowed to sign in is not set correctly")
+
 // Config は Provider の設定。
 type Config struct {
 	// ClientID と ClientSecret は GitHub App のもの。どちらも必須。
 	ClientID     string
 	ClientSecret string
+	// AllowedUserID はログインを通す 1 人の、GitHub の数値の利用者 ID。必須。
+	//
+	// **login ではなく数値の ID で持つ。** login は改名で変わり、空いた login は
+	// 別人が取れる（ADR 0053）。照らす相手は Identity.Subject と同じ形の文字列。
+	AllowedUserID string
 	// AuthBaseURL は認可とトークン交換のホスト。空なら DefaultAuthBaseURL。
 	AuthBaseURL string
 	// APIBaseURL は利用者情報を引くホスト。空なら DefaultAPIBaseURL。
@@ -63,29 +74,32 @@ type Config struct {
 	HTTPClient *http.Client
 }
 
-// ConfigFromEnv は ETOKI_GITHUB_APP_* から設定を読む。
+// ConfigFromEnv は ETOKI_GITHUB_APP_* と ETOKI_ALLOWED_GITHUB_USER_ID から設定を読む。
 func ConfigFromEnv() Config {
 	return Config{
-		ClientID:     os.Getenv(EnvClientID),
-		ClientSecret: os.Getenv(EnvClientSecret),
+		ClientID:      os.Getenv(EnvClientID),
+		ClientSecret:  os.Getenv(EnvClientSecret),
+		AllowedUserID: os.Getenv(EnvAllowedUserID),
 	}
 }
 
 // Configured は OAuth を使う設定になっているかを返す。
 //
-// 片方だけ設定されている状態は「使うつもりで書き損じた」とみなす。New が
-// エラーにするので、起動時に気づける。
+// どれか 1 つでも設定されている状態は「使うつもりで書き損じた」とみなす。New が
+// エラーにするので、起動時に気づける。**通す利用者だけを書いた状態も含める。**
+// 含めないと、認証の設定が抜けたことを、通す相手を決めたつもりのまま見落とす。
 func (c Config) Configured() bool {
-	return c.ClientID != "" || c.ClientSecret != ""
+	return c.ClientID != "" || c.ClientSecret != "" || c.AllowedUserID != ""
 }
 
 // Provider は GitHub App の Web Flow を実装する。
 type Provider struct {
-	clientID     string
-	clientSecret string
-	authBase     string
-	apiBase      string
-	http         *http.Client
+	clientID       string
+	clientSecret   string
+	allowedSubject string
+	authBase       string
+	apiBase        string
+	http           *http.Client
 }
 
 var _ port.IdentityProvider = (*Provider)(nil)
@@ -95,13 +109,17 @@ func New(cfg Config) (*Provider, error) {
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil, fmt.Errorf("%w: set %s and %s", ErrClientCredentials, EnvClientID, EnvClientSecret)
 	}
+	if err := checkUserID(cfg.AllowedUserID); err != nil {
+		return nil, err
+	}
 
 	p := &Provider{
-		clientID:     cfg.ClientID,
-		clientSecret: cfg.ClientSecret,
-		authBase:     strings.TrimRight(orDefault(cfg.AuthBaseURL, DefaultAuthBaseURL), "/"),
-		apiBase:      strings.TrimRight(orDefault(cfg.APIBaseURL, DefaultAPIBaseURL), "/"),
-		http:         cfg.HTTPClient,
+		clientID:       cfg.ClientID,
+		clientSecret:   cfg.ClientSecret,
+		allowedSubject: cfg.AllowedUserID,
+		authBase:       strings.TrimRight(orDefault(cfg.AuthBaseURL, DefaultAuthBaseURL), "/"),
+		apiBase:        strings.TrimRight(orDefault(cfg.APIBaseURL, DefaultAPIBaseURL), "/"),
+		http:           cfg.HTTPClient,
 	}
 	if p.http == nil {
 		p.http = &http.Client{Timeout: defaultTimeout}
@@ -117,8 +135,32 @@ func orDefault(v, fallback string) string {
 	return v
 }
 
+// checkUserID は通す利用者の ID が、Identity.Subject と同じ形かを見る。
+//
+// **形の違う値を直さずに弾く。** 照らすのは文字列の一致なので、先頭の 0 や空白を
+// 残したまま受けると、誰もログインできないまま起動する。黙って直すと、書いた値と
+// 照らしている値が食い違っていることに気づけない。形は viewer が作る `%d`。
+func checkUserID(raw string) error {
+	if raw == "" {
+		return fmt.Errorf("%w: set %s to your numeric github user id", ErrAllowedUserID, EnvAllowedUserID)
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 || strconv.FormatInt(n, 10) != raw {
+		return fmt.Errorf("%w: %s must be a numeric github user id, got %q",
+			ErrAllowedUserID, EnvAllowedUserID, raw)
+	}
+	return nil
+}
+
 // Name は Identity.Provider に入る値を返す。
 func (p *Provider) Name() string { return ProviderName }
+
+// AllowedSubject はログインを通す利用者の ID を返す。New が形を確かめたもの。
+//
+// **照らすのはユースケース層**（etoki.NewAuthenticator に渡す）。Exchange で断る
+// 形にしない。すでにあるセッションと MCP のトークンも同じ相手で照らすので、
+// 照らす場所を 1 つにしておく。
+func (p *Provider) AllowedSubject() string { return p.allowedSubject }
 
 // AuthorizeURL は利用者を送り出す先を返す。
 //

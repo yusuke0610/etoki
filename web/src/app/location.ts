@@ -75,3 +75,31 @@ export function parseConsentRequest(search: string): string | null {
   const value = new URLSearchParams(search).get(AUTHORIZE_PARAM);
   return value === null || value === "" ? null : value;
 }
+
+/**
+ * 通さない相手だったときに、サーバーが戻してくる印（#492）。
+ *
+ * **形はサーバーと揃える**（`internal/httpapi/auth.go` の `loginDeniedLocation`）。
+ * ログインのコールバックはブラウザの遷移で JSON を返せないので、理由をクエリに
+ * 載せて戻してくる。
+ */
+const LOGIN_PARAM = "login";
+const LOGIN_DENIED = "denied";
+
+/** 通さない相手だったとして戻ってきたか。 */
+export function parseLoginDenied(search: string): boolean {
+  return new URLSearchParams(search).get(LOGIN_PARAM) === LOGIN_DENIED;
+}
+
+/**
+ * 印を外したクエリを返す（`?` 付き。何も残らなければ空文字）。
+ *
+ * **読んだら URL から消す。** 残すと、読み込み直すたびに同じ断りが出て、
+ * ログインし直したときの戻り先にも載る。ほかの param は残す。
+ */
+export function withoutLoginDenied(search: string): string {
+  const params = new URLSearchParams(search);
+  params.delete(LOGIN_PARAM);
+  const rest = params.toString();
+  return rest === "" ? "" : `?${rest}`;
+}

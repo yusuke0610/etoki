@@ -746,6 +746,14 @@ test.describe("スクリーンショット", () => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.locator('html[data-theme="light"]').waitFor({ state: "attached" });
 
+    // 通さない相手として戻ってきたとき（#492）。断りがログインのボタンより先に
+    // 読めるかを見る。
+    await page.goto("/?login=denied");
+    await page
+      .getByText("このアカウントでは etoki を使えません", { exact: false })
+      .waitFor();
+    await shot(page, "09-login-denied");
+
     // ログイン後は一覧の画面に利用者が出る。
     mock.session = { status: 200, body: signedIn() };
     await page.reload();
