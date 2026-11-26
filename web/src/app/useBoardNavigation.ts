@@ -394,11 +394,21 @@ export function useBoardNavigation({
    * ダイアログの中に出る（`useNewBoardFlow` の `failure`）。
    */
   const createBoard = useCallback(async () => {
-    // 送る前の世代を控える。待つあいだに移ったら開かない（`openCreated`）。
-    const generation = openings.start(OPENING);
-    const board = await createNewBoard(confirmDiscard);
-    if (board === null) return;
-    openCreated(board, generation);
+    // 送る直前の世代を控える。待つあいだに移ったら開かない（`openCreated`）。
+    //
+    // **控えるのは確認を通ったときだけ。** 確認は、作る側（`useNewBoardFlow` の
+    // `create`）が名前と二重押しを弾いたあと、送る直前に呼ぶ。呼ばれる前に控えると、
+    // 作っている最中にもう一度押したとき、送る前に弾かれた 2 回目が世代を進め、
+    // 1 回目に作れたボードを移ったものと読んで開かない（#481 の full review）。
+    // 入れ物に持つのは、確認の中で書くため（`let` だと型の絞り込みが追えない）。
+    const sent: { generation: number | null } = { generation: null };
+    const board = await createNewBoard(() => {
+      if (!confirmDiscard()) return false;
+      sent.generation = openings.start(OPENING);
+      return true;
+    });
+    if (board === null || sent.generation === null) return;
+    openCreated(board, sent.generation);
   }, [confirmDiscard, createNewBoard, openCreated, openings]);
 
   /**

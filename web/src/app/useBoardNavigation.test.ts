@@ -510,7 +510,7 @@ describe("useBoardNavigation", () => {
 
     it("作れたら、作ったボードを画像なしでそのまま開いて URL を積み、一覧を読み直す", async () => {
       const { hook, create, reload } = setup();
-      create.mockResolvedValueOnce(untargeted);
+      create.mockImplementationOnce(async (ask) => (ask() ? untargeted : null));
       const before = window.history.length;
 
       await act(() => hook.result.current.createBoard());
@@ -555,7 +555,9 @@ describe("useBoardNavigation", () => {
     it("作っているあいだに戻る / 進むで移っていたら、作ったボードは開かない", async () => {
       const { hook, create, reload } = setup();
       const creating = deferred<BoardDetail | null>();
-      create.mockReturnValueOnce(creating.promise);
+      create.mockImplementationOnce((ask) =>
+        ask() ? creating.promise : Promise.resolve(null),
+      );
       vi.mocked(boardsApi.get).mockResolvedValueOnce(board("b2"));
 
       let created!: Promise<void>;
@@ -574,6 +576,32 @@ describe("useBoardNavigation", () => {
       expect(hook.result.current.current?.id).toBe("b2");
       expect(url()).toBe("/?board=b2");
       expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    // 切れると: 作っている最中にもう一度押すと、送る前に弾かれた 2 回目が世代を
+    // 進め、1 回目に作れたボードを移ったものと読んで開かない。ダイアログは閉じ、
+    // ボードは一覧にだけ増える（#481 の full review）。
+    it("作っている最中にもう一度押しても、作ったボードを開く", async () => {
+      const { hook, create } = setup();
+      const creating = deferred<BoardDetail | null>();
+      create.mockImplementationOnce((ask) =>
+        ask() ? creating.promise : Promise.resolve(null),
+      );
+      // 2 回目は送る前に弾かれる（`useNewBoardFlow` の二重押しの守り）ので、確かめない。
+      create.mockResolvedValueOnce(null);
+
+      let first!: Promise<void>;
+      act(() => {
+        first = hook.result.current.createBoard();
+      });
+      await act(() => hook.result.current.createBoard());
+      await act(async () => {
+        creating.resolve(untargeted);
+        await first;
+      });
+
+      expect(hook.result.current.current?.id).toBe("b-new");
+      expect(url()).toBe("/?board=b-new");
     });
 
     it("作れなかったら何も変えない", async () => {

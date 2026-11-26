@@ -207,14 +207,19 @@ describe("useNewBoardFlow", () => {
     const { result } = typed("新しいボード");
 
     let boards: (BoardDetail | null)[] = [];
+    // **弾いた 2 回目は確認も呼ばない。** 呼ぶ側（`useBoardNavigation`）は確認の
+    // 中で送る前の世代を控えるので、呼ぶと作っている最中の作成を古いものにする
+    // （#481 の full review）。
+    const secondConfirm = vi.fn(() => true);
     await act(async () => {
       const first = result.current.create(() => true);
-      const second = result.current.create(() => true);
+      const second = result.current.create(secondConfirm);
       resolve(created);
       boards = await Promise.all([first, second]);
     });
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(boards).toEqual([created, null]);
+    expect(secondConfirm).not.toHaveBeenCalled();
   });
 });
