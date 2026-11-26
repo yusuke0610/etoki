@@ -50,10 +50,19 @@ const DefaultLLMCallTimeout = usecase.DefaultLLMCallTimeout
 
 // DefaultAddr は Options.Addr が空のときに使うリッスンアドレス。
 //
-// 認証は任意で、設定しない構成が既定であり続ける。既定でループバックだけに
-// バインドするのはそのためで（ADR 0016）、公開インターフェースにバインドしたい
-// 場合は利用者が明示的に Addr を指定する必要がある。
+// 認証を設定しない構成が既定であり続ける。既定でループバックだけにバインドする
+// のはそのためで（ADR 0016）、公開インターフェースにバインドしたい場合は
+// 利用者が明示的に Addr を指定する必要がある。**そのときは認証が要る**
+// （ErrExposedWithoutAuth）。
 const DefaultAddr = "127.0.0.1:8080"
+
+// ErrExposedWithoutAuth は、認証を設定しないままループバック以外で待ち受けようと
+// したことを表す（#492）。New が返す。
+//
+// **警告ではなく起動を止める。** この組み合わせでは、届く範囲の誰もがログインなしで
+// 全ボードを読み書きでき、PAT と LLM の鍵もそのまま使える。Cloud Run に秘密の値を
+// 1 つ渡し忘れただけでそうなるので、知らせて動き続けるのでは遅い。
+var ErrExposedWithoutAuth = errors.New("etoki: refusing to listen beyond loopback without authentication")
 
 // cancelRequestsAfter は停止を始めてから、処理中のリクエストの ctx を切るまでの長さ。
 //
@@ -138,11 +147,12 @@ type Options struct {
 	KindFieldName   string
 	ParentFieldName string
 
-	// Auth はログインとセッション。任意。NewAuthenticator で作る。
+	// Auth はログインとセッション。ループバックで待ち受けるなら任意。NewAuthenticator で作る。
 	//
 	// nil なら認証しない。いまの単一ユーザー動作のままになる。指定すると
 	// 全 API がログインを要求し、GitHub は利用者ごとのトークンで叩く
-	// （ADR 0015）。
+	// （ADR 0015）。**Addr がループバック以外なら必須**で、nil なら New が
+	// ErrExposedWithoutAuth を返す。
 	//
 	// GitHub クライアントの TokenSource にも同じものを渡す。呼び出し側で
 	// 組み立ててもらうのはそのためで、ここで作ると 2 つできてしまう。
@@ -229,8 +239,13 @@ type Authenticator = usecase.AuthService
 // 返り値は port.GitHubTokenSource でもある。GitHub クライアントの
 // Config.TokenSource と Options.Auth の両方に、同じものを渡す。別々に作ると
 // トークン更新の直列化が効かなくなる（ADR 0015）。
+//
+// allowedSubject はログインを通す 1 人の、認証基盤での ID（port.Identity.Subject）。
+// GitHub App なら数値の利用者 ID。**それ以外の人はログインできない**（#492）。
+// 必須で、空なら落とす。空のまま組み立てると誰もログインできず、設定を書き
+// 忘れたことに起動してから気づく。
 func NewAuthenticator(
-	provider port.IdentityProvider, sessions port.SessionRepository,
+	provider port.IdentityProvider, sessions port.SessionRepository, allowedSubject string,
 ) (*Authenticator, error) {
 	if provider == nil {
 		return nil, errors.New("etoki: identity provider is required")
@@ -238,7 +253,10 @@ func NewAuthenticator(
 	if sessions == nil {
 		return nil, errors.New("etoki: session repository is required")
 	}
-	return usecase.NewAuthService(provider, sessions), nil
+	if allowedSubject == "" {
+		return nil, errors.New("etoki: the user allowed to sign in is required")
+	}
+	return usecase.NewAuthService(provider, sessions, []string{allowedSubject}), nil
 }
 
 // Server は etoki の HTTP サーバー。
@@ -279,6 +297,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if opts.Mappings == nil {
 		return nil, errors.New("etoki: Options.Mappings is required")
+	}
+	if err := checkExposure(addr, opts.Auth != nil, opts.SetupHints.Auth); err != nil {
+		return nil, err
 	}
 	if opts.WebDir != "" {
 		if err := httpapi.CheckWebDir(opts.WebDir); err != nil {
@@ -371,8 +392,6 @@ func New(opts Options) (*Server, error) {
 
 	handler := httpapi.NewRouter(deps)
 
-	warnIfExposedWithoutAuth(addr, opts.Auth != nil, opts.SetupHints.Auth, opts.Logger)
-
 	return &Server{
 		addr:                addr,
 		handler:             handler,
@@ -384,44 +403,36 @@ func New(opts Options) (*Server, error) {
 	}, nil
 }
 
-// warnIfExposedWithoutAuth は認証なしで公開インターフェースにバインドしたことを
-// 知らせる（issue #148）。
+// checkExposure は、認証なしでループバック以外にバインドしようとしたら
+// ErrExposedWithoutAuth を返す（#492）。
 //
-// **止めずに知らせる。** 既定のアドレス（DefaultAddr）はループバックのままで、
-// 広げるのは利用者が明示的に選んだ設定（ADR 0016）。拒むと、その選択を後から
-// 覆すことになる。代わりに、何が起きる構成なのかを起動時に見せる（中核思想 3）。
+// **知らせるのではなく止める。** 以前は警告だけで起動していた（issue #148）。
+// 広げるのは利用者が明示的に選んだ設定なので、拒むとその選択を覆す、という判断
+// だった（ADR 0016）。自分用に Cloud Run で動かす形になり、秘密の値を 1 つ渡し
+// 忘れただけでこの組み合わせになる。そのとき全ボードは「空文字の所有者」1 人の
+// もので（ADR 0016）、届く範囲の誰もがログインなしで読み書きでき、PAT と LLM の
+// 鍵もそのまま使える。動き続けてから気づくのでは遅い。
 //
-// この組み合わせでは全ボードが「空文字の所有者」1 人のものになり（ADR 0016）、
-// 届く範囲の誰もがログインなしで読み書きでき、PAT と LLM の鍵もそのまま使える。
+// **判定は httpapi.IsLoopbackHost に預ける。** Origin 検証と同じ問いに 2 つの
+// 答えを持たせない。
 //
-// **判定は httpapi.IsLoopbackHost に預ける。** Origin 検証が「守っている側」で、
-// ここは「知らせる側」。同じ問いに 2 つの答えを持たせない。
-//
-// **New に置くのは Run より前に見えるため。** Run は起動に成功した後でしか
-// 呼ばれず、バインドに失敗した構成では出ない。危ういのは設定の組み合わせの
-// ほうなので、組み立てた時点で言う。
+// **New に置くのは Run より前に止めるため。** 危ういのは設定の組み合わせなので、
+// 組み立てた時点で断る。
 //
 // 認証の設定の仕方は authHint（Options.SetupHints.Auth）で受け取る。空なら名前を
 // 出さずに言う（ADR 0083）。
-func warnIfExposedWithoutAuth(addr string, authConfigured bool, authHint string, logger *slog.Logger) {
+func checkExposure(addr string, authConfigured bool, authHint string) error {
 	if authConfigured || httpapi.IsLoopbackHost(addr) {
-		return
-	}
-	if logger == nil {
-		logger = slog.Default()
+		return nil
 	}
 
 	configure := "configure authentication"
 	if authHint != "" {
 		configure += " (" + authHint + ")"
 	}
-	logger.Warn("listening beyond loopback without authentication",
-		slog.String("addr", addr),
-		slog.String("detail",
-			"anyone who can reach this address can read and write every board, "+
-				"and can use the configured GitHub token and LLM key"),
-		slog.String("hint", configure+" to require sign-in, or bind to "+DefaultAddr),
-	)
+	return fmt.Errorf("%w on %s: anyone who could reach it could read and write every board, "+
+		"and use the configured GitHub token and LLM key; %s, or bind to %s",
+		ErrExposedWithoutAuth, addr, configure, DefaultAddr)
 }
 
 // validateLLMLimits は実行の上限の設定を見る。

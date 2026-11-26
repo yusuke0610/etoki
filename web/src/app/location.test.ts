@@ -5,6 +5,8 @@ import {
   NO_BOARD,
   parseBoardLocation,
   parseConsentRequest,
+  parseLoginDenied,
+  withoutLoginDenied,
 } from "./location";
 
 describe("parseBoardLocation", () => {
@@ -109,5 +111,34 @@ describe("parseConsentRequest", () => {
     expect(parseConsentRequest("?board=b1&authorize=client_id%3Dc1")).toBe(
       "client_id=c1",
     );
+  });
+});
+
+describe("parseLoginDenied", () => {
+  // サーバーが戻す形（`/?login=denied`）だけを印として読む。
+  it("サーバーが戻す印を読む", () => {
+    expect(parseLoginDenied("?login=denied")).toBe(true);
+    expect(parseLoginDenied("?board=b1&login=denied")).toBe(true);
+  });
+
+  it("印でなければ false", () => {
+    expect(parseLoginDenied("")).toBe(false);
+    expect(parseLoginDenied("?login=")).toBe(false);
+    expect(parseLoginDenied("?login=other")).toBe(false);
+    expect(parseLoginDenied("?board=b1")).toBe(false);
+  });
+});
+
+describe("withoutLoginDenied", () => {
+  it("印だけを外し、ほかの param は残す", () => {
+    expect(withoutLoginDenied("?login=denied")).toBe("");
+    expect(withoutLoginDenied("?board=b1&login=denied")).toBe("?board=b1");
+    expect(withoutLoginDenied("?board=b1")).toBe("?board=b1");
+    expect(withoutLoginDenied("")).toBe("");
+  });
+
+  // 外したあとは印として読めない。ログインし直したときの戻り先に載らない。
+  it("外したあとは印として読めない", () => {
+    expect(parseLoginDenied(withoutLoginDenied("?board=b1&login=denied"))).toBe(false);
   });
 });

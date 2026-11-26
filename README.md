@@ -73,6 +73,7 @@ direnv allow
 | `ETOKI_GITHUB_BASE_URL`          | `https://api.github.com`    | GitHub API のルート。http はループバックだけ。GHES は未確認        |
 | `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する              |
 | `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                   |
+| `ETOKI_ALLOWED_GITHUB_USER_ID`   | （なし）                    | ログインを通す 1 人の GitHub の数値 ID。認証を使うなら必須         |
 | `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                  |
 | `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                   |
 | `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                         |
@@ -92,15 +93,15 @@ direnv allow
 `ETOKI_ALLOWED_ORIGINS` にそのオリジンを足さないと自分のブラウザからも
 届かなくなります。
 
-**認証を設定しないまま `ETOKI_ADDR` を広げないでください。** 認証なしの構成では
+**認証を設定しないまま `ETOKI_ADDR` を広げると、起動しません。** 認証なしの構成では
 全ボードが 1 人のもの（[ADR 0016](docs/adr/0016-boards-have-owners.md)）なので、
 そのアドレスに届く人は誰でもログインなしに全ボードを読み書きでき、
 `ETOKI_GITHUB_TOKEN` で draft issue を作り、`ETOKI_LLM_API_KEY` で LLM を
-叩けます。タブレットや別の端末から開きたいなら、先に GitHub App を設定して
-ログインを要求してください（後述）。この組み合わせで起動すると、起動時のログに
-警告（`listening beyond loopback without authentication`）が出ます。**起動は
-止めません。** 広げるのは利用者が明示的に選んだ設定なので、拒むとその選択を
-後から覆すことになります。
+叩けてしまいます。秘密の値を 1 つ渡し忘れただけでこの構成になるので、警告では
+なく起動を止めます（[ADR 0105](docs/adr/0105-only-the-owner-signs-in.md)）。
+タブレットや別の端末、クラウドから開きたいなら、GitHub App を設定してログインを
+要求してください（後述）。ループバック（既定の `127.0.0.1`）で待ち受けるなら、
+これまでどおり認証なしで動きます。
 
 ### dev サーバーを使わずに動かす
 
@@ -362,6 +363,17 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
 要求できるのは GitHub App だけで、OAuth App では全リポジトリの読み書きを
 預かることになるためです。
 
+**ログインできるのは 1 人だけです。** `ETOKI_ALLOWED_GITHUB_USER_ID` に渡した
+GitHub の利用者だけが通り、それ以外の人は GitHub で認可を済ませても etoki に
+入れません（[ADR 0105](docs/adr/0105-only-the-owner-signs-in.md)）。自分用に動かす
+道具として、URL を知った人に LLM を叩かせないためです。login ではなく数値の ID で
+渡します。login は改名で変わり、空いた login は別の人が取れます。数値の ID は
+`https://api.github.com/users/<あなたの login>` の `id` で分かります。
+
+別のアカウントでログインすると、ログインの画面に「このアカウントでは etoki を
+使えません」と出ます。GitHub のアカウントを切り替えてからやり直してください。
+切り替えずに押し直すと、GitHub が同じアカウントで通すので同じところへ戻ります。
+
 **作成先の Projects v2 は Organization 所有である必要があります。** 個人
 アカウントの Project は GitHub App からは触れません（後述）。
 
@@ -382,9 +394,14 @@ OAuth App ではなく **GitHub App** を使います。PAT に求めている�
 ```sh
 export ETOKI_GITHUB_APP_CLIENT_ID=Iv23li...
 export ETOKI_GITHUB_APP_CLIENT_SECRET=...
+export ETOKI_ALLOWED_GITHUB_USER_ID=1234567     # あなたの GitHub の数値 ID
 export ETOKI_TOKEN_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
 export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき（上の表）
 ```
+
+**揃っていなければ起動しません。** client ID と secret の片方だけ、通す利用者が
+無い、その値が数値の ID の形でない、通す利用者だけを書いて App を設定していない、
+のどれでも起動時に落ちます。
 
 鍵は保存するトークンの暗号化に使います。**未設定だと起動時に落ちます。**
 黙って平文で保存しないためです。鍵を変えると保存済みのトークンは開けなくなり、
@@ -480,6 +497,10 @@ etoki claim <あなたの GitHub login>
 
 #### ボードを共有する
 
+**いまは招待できる相手がいません。** ログインできるのは 1 人だけなので（上）、
+招待の前提になる「一度ログインした相手」が自分のほかに居ません。共有の仕組みは
+外す予定です。
+
 ボードは作った人（オーナー）が招待した相手にだけ見えます。メンバーでないボードは
 ID を知っていても 404 になります（[ADR 0017](docs/adr/0017-board-sharing-and-permissions.md)）。
 
@@ -559,8 +580,8 @@ claude mcp add --transport http etoki http://127.0.0.1:5173/mcp
 **解釈と作成はできません。** 作るものを選んで手直しするのは、画面の前にいる
 開発者の役目のままです（[ADR 0071](docs/adr/0071-mcp-read-only-entrance.md)）。
 
-**認証なしの構成では、許可なしで開きます。** `ETOKI_ADDR` を広げると、`/mcp` も
-`/api` と同じく届く範囲の誰でも読めます。
+**認証なしの構成では、許可なしで開きます。** 認証なしで動くのはループバックで
+待ち受けるときだけなので（[上](#設定)）、届くのは同じ端末からだけです。
 
 #### GitHub App でログインを要求している構成
 

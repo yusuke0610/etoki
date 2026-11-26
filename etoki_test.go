@@ -1,12 +1,10 @@
 package etoki_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -708,14 +706,13 @@ func TestNewPassesLLMCallTimeoutToBothJobs(t *testing.T) {
 	}
 }
 
-// 認証なしでループバック以外にバインドしたら、起動時に知らせる（issue #148）。
+// 認証なしでループバック以外にバインドしたら、起動を止める（#492）。
 //
-// 止めはしない。広げるのは利用者が明示的に選んだ設定（ADR 0016）で、拒むと
-// その選択を後から覆すことになる。代わりに、どういう構成になっているかを
-// 見せる（中核思想 3）。
+// 以前は警告だけで動かしていた（issue #148）。Cloud Run に秘密の値を 1 つ渡し
+// 忘れただけでこの組み合わせになり、届く人は誰でも全ボードを読み書きできる。
 //
-// **警告が出ないほうも固定する。** 常に出す実装でも「出る」側だけなら通る。
-func TestNewWarnsWhenExposedWithoutAuth(t *testing.T) {
+// **止まらないほうも固定する。** 常に止める実装でも「止まる」側だけなら通る。
+func TestNewRefusesExposureWithoutAuth(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
@@ -730,47 +727,45 @@ func TestNewWarnsWhenExposedWithoutAuth(t *testing.T) {
 		"0.0.0.0":       {addr: "0.0.0.0:8080", want: true},
 		"ホストを省いた全インターフェース": {addr: ":8080", want: true},
 		"LAN のアドレス":        {addr: "192.168.1.10:8080", want: true},
-		"公開しても認証があれば言わない":  {addr: "0.0.0.0:8080", auth: true, want: false},
-		"ループバック + 認証も言わない": {addr: "", auth: true, want: false},
+		"公開しても認証があれば止めない":  {addr: "0.0.0.0:8080", auth: true, want: false},
+		"ループバック + 認証も止めない": {addr: "", auth: true, want: false},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var buf bytes.Buffer
 			opts := options(t, tc.addr)
-			opts.Logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-				Level: slog.LevelWarn,
-			}))
 			if tc.auth {
 				opts.Auth = fakeAuthenticator(t)
 			}
 
-			if _, err := etoki.New(opts); err != nil {
-				t.Fatalf("New: %v", err)
+			srv, err := etoki.New(opts)
+			if got := errors.Is(err, etoki.ErrExposedWithoutAuth); got != tc.want {
+				t.Fatalf("New() = %v, refused = %t, want %t", err, got, tc.want)
 			}
-
-			got := strings.Contains(buf.String(), "listening beyond loopback without authentication")
-			if got != tc.want {
-				t.Errorf("warned = %t, want %t (log: %q)", got, tc.want, buf.String())
+			if tc.want && srv != nil {
+				t.Error("止めたのに Server を返している")
+			}
+			if !tc.want && err != nil {
+				t.Fatalf("New() = %v, want nil", err)
 			}
 		})
 	}
 }
 
-// 起動時の警告にも、設定の案内は配線から受け取ったものだけを載せる（ADR 0083）。
-// 自前の実装を差し込む構成は ETOKI_* を読まないので、渡されていなければ名前を
-// 出さない。
-func TestNewWarnsWithSetupHint(t *testing.T) {
+// 止めるときの案内にも、設定の仕方は配線から受け取ったものだけを載せる
+// （ADR 0083）。自前の実装を差し込む構成は ETOKI_* を読まないので、渡されて
+// いなければ名前を出さない。
+func TestNewRefusesExposureWithSetupHint(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
 		hint string
-		// want は警告に載っているべき文字列。空なら確かめない。
+		// want は案内に載っているべき文字列。空なら確かめない。
 		want string
 	}{
-		"案内を渡した":    {hint: "hint-for-auth", want: "hint-for-auth"},
+		"案内を渡した":    {hint: "hint-for-auth", want: "configure authentication (hint-for-auth)"},
 		"案内を渡していない": {hint: ""},
 	}
 
@@ -778,26 +773,30 @@ func TestNewWarnsWithSetupHint(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var buf bytes.Buffer
 			opts := options(t, "0.0.0.0:8080")
-			opts.Logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-				Level: slog.LevelWarn,
-			}))
 			opts.SetupHints = etoki.SetupHints{Auth: tc.hint}
 
-			if _, err := etoki.New(opts); err != nil {
-				t.Fatalf("New: %v", err)
+			_, err := etoki.New(opts)
+			if !errors.Is(err, etoki.ErrExposedWithoutAuth) {
+				t.Fatalf("New() = %v, want ErrExposedWithoutAuth", err)
 			}
 
-			log := buf.String()
-			if !strings.Contains(log, "listening beyond loopback without authentication") {
-				t.Fatalf("not warned (log: %q)", log)
+			msg := err.Error()
+			// 何が起きる構成なのかと、打ち手を 2 つとも言う（認証を設定する、
+			// ループバックに戻す）。片方が欠けると、残った打ち手しか選べない。
+			for _, want := range []string{
+				"0.0.0.0:8080", "every board",
+				"configure authentication", "or bind to " + etoki.DefaultAddr,
+			} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("error = %q, want it to contain %q", msg, want)
+				}
 			}
-			if tc.want != "" && !strings.Contains(log, tc.want) {
-				t.Errorf("log = %q, want it to contain %q", log, tc.want)
+			if tc.want != "" && !strings.Contains(msg, tc.want) {
+				t.Errorf("error = %q, want it to contain %q", msg, tc.want)
 			}
-			if strings.Contains(log, "ETOKI_") {
-				t.Errorf("log = %q, names an environment variable", log)
+			if tc.want == "" && strings.Contains(msg, "ETOKI_") {
+				t.Errorf("error = %q, names an environment variable", msg)
 			}
 		})
 	}
@@ -880,7 +879,9 @@ func TestNew_CreatesBoardsWithoutTargetOnlyWithoutGitHub(t *testing.T) {
 func fakeAuthenticator(t *testing.T) *etoki.Authenticator {
 	t.Helper()
 
-	provider, err := githubauth.New(githubauth.Config{ClientID: "id", ClientSecret: "secret"})
+	provider, err := githubauth.New(githubauth.Config{
+		ClientID: "id", ClientSecret: "secret", AllowedUserID: "583231",
+	})
 	if err != nil {
 		t.Fatalf("githubauth.New: %v", err)
 	}
@@ -896,11 +897,38 @@ func fakeAuthenticator(t *testing.T) *etoki.Authenticator {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	auth, err := etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box))
+	auth, err := etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box),
+		provider.AllowedSubject())
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %v", err)
 	}
 	return auth
+}
+
+// 通す相手を決めずに組み立てると、誰もログインできないまま起動する（#492）。
+// 設定の書き忘れとして組み立ての時点で落とす。
+func TestNewAuthenticator_RequiresAllowedSubject(t *testing.T) {
+	t.Parallel()
+
+	provider, err := githubauth.New(githubauth.Config{
+		ClientID: "id", ClientSecret: "secret", AllowedUserID: "583231",
+	})
+	if err != nil {
+		t.Fatalf("githubauth.New: %v", err)
+	}
+	box, err := secret.New(make([]byte, secret.KeySize))
+	if err != nil {
+		t.Fatalf("secret.New: %v", err)
+	}
+	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "auth.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if auth, err := etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box), ""); err == nil {
+		t.Fatalf("NewAuthenticator(\"\") = %v, want error", auth)
+	}
 }
 
 // 認証ありの構成で `/mcp` を開くのは、許可の保存先を渡したときだけ（ADR 0076）。

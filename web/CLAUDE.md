@@ -542,6 +542,10 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 - **ログイン後の戻り先を持つのはサーバー**（state と一緒）。フロントが渡すのは
   ログインを始める 1 回だけで、認可の往復の URL には載らない。自オリジンの
   相対パス以外はサーバーが 400 で弾く。
+- **通さない相手だったときの印（`/?login=denied`）は `LoginPage` が読み、読んだら
+  URL から消す**（ADR 0105）。読むのは `location.ts` の `parseLoginDenied` だけで、
+  形はサーバーの `loginDeniedLocation`（`internal/httpapi/auth.go`）と揃える。
+  残すと読み込み直すたびに同じ断りが出て、ログインし直したときの戻り先にも載る。
 
 ## MCP のクライアントへの接続（ADR 0076）
 
