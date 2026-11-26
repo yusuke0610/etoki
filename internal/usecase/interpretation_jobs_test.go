@@ -596,6 +596,9 @@ func TestJobs_DiscardFinishedDropsResult(t *testing.T) {
 	}
 }
 
+// ジョブの上限は、1 回の上限とは別に掛かる。応えない LLM に枠を握らせ続けない
+// ための歯止め（ADR 0085）で、ふつうは 1 回の上限が先に切る（ADR 0104）ので、
+// ここではジョブの上限だけを縮めて確かめる。
 func TestJobs_TimeoutEndsStuckCall(t *testing.T) {
 	t.Parallel()
 
@@ -607,6 +610,9 @@ func TestJobs_TimeoutEndsStuckCall(t *testing.T) {
 	done := waitJob(t, jobs, ctx, job.ID)
 	if done.Status != usecase.JobFailed {
 		t.Errorf("Status = %q, want failed（応えない LLM に枠を握らせ続けない）", done.Status)
+	}
+	if !errors.Is(done.Err, context.DeadlineExceeded) {
+		t.Errorf("Err = %v, want to reach context.DeadlineExceeded", done.Err)
 	}
 }
 

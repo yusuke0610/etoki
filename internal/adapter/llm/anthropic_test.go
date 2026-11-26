@@ -276,7 +276,8 @@ func TestComplete_SendsAnthropicShape(t *testing.T) {
 		t.Errorf("system = %v", gotBody["system"])
 	}
 
-	// thinking は送らない。明示的に無効化すると本文にタグが混ざることがある。
+	// 既定では thinking を送らない。明示的に無効化すると本文にタグが混ざることが
+	// ある。送るのは設定したときだけ（TestComplete_SendsThinkingDisabledWhenConfigured）。
 	if _, ok := gotBody["thinking"]; ok {
 		t.Error("thinking を送っている")
 	}
@@ -297,6 +298,116 @@ func TestComplete_SendsAnthropicShape(t *testing.T) {
 	first, _ := content[0].(map[string]any)
 	if first["type"] != "text" || first["text"] != "囲みに含まれるテキスト" {
 		t.Errorf("content[0] = %v", first)
+	}
+}
+
+// 思考を切る設定（ADR 0104）。思考に対応した手元のモデルは頼まなくても思考し、
+// 短い答えにも思考のぶんの時間とトークンがかかる（#430）。設定したときだけ
+// {"type": "disabled"} を送る。
+func TestComplete_SendsThinkingDisabledWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(raw, &gotBody); err != nil {
+			t.Errorf("リクエストが JSON ではない: %v", err)
+		}
+		_, _ = io.WriteString(w, okResponse)
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := llm.New(llm.Config{BaseURL: srv.URL, Thinking: llm.ThinkingDisabled})
+	if err != nil {
+		t.Fatalf("New() = %v", err)
+	}
+	if _, err := c.Complete(t.Context(), port.VisionRequest{Text: "x"}); err != nil {
+		t.Fatalf("Complete() = %v", err)
+	}
+
+	thinking, ok := gotBody["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking = %#v, want an object", gotBody["thinking"])
+	}
+	if len(thinking) != 1 || thinking["type"] != "disabled" {
+		t.Errorf("thinking = %v, want {type: disabled}", thinking)
+	}
+}
+
+// 思考を切る設定は、手元の LLM と互換のプロキシに向けたときだけ受ける（ADR 0104）。
+//
+//   - Anthropic の接続先では断る。claude-opus-5 は明示的に切ると、本文にタグが
+//     混ざることがある（apiRequest のコメント）。
+//   - 知らない値も断る。読めない値を既定（送らない）に倒すと、切ったつもりの
+//     思考が黙って残る。
+//
+// **受ける側も固定する。** 常に断る実装でも、断る側だけなら通る。
+func TestNew_AcceptsThinkingOnlyAwayFromAnthropic(t *testing.T) {
+	t.Parallel()
+
+	const local = "http://localhost:11434"
+	tests := []struct {
+		name string
+		cfg  llm.Config
+		// want は断るときに文言に含む語。空なら受ける。
+		want []string
+	}{
+		{name: "手元の LLM", cfg: llm.Config{BaseURL: local, Thinking: "disabled"}},
+		{name: "互換のプロキシ", cfg: llm.Config{BaseURL: "https://llm.example.test", APIKey: testAPIKey, Thinking: "disabled"}},
+		{name: "未設定なら Anthropic でも受ける", cfg: llm.Config{APIKey: testAPIKey}},
+		{
+			name: "既定の接続先",
+			cfg:  llm.Config{APIKey: testAPIKey, Thinking: "disabled"},
+			want: []string{`"disabled"`, "api.anthropic.com"},
+		},
+		{
+			name: "Anthropic を明示",
+			cfg:  llm.Config{BaseURL: "https://api.anthropic.com", APIKey: testAPIKey, Thinking: "disabled"},
+			want: []string{`"disabled"`, "api.anthropic.com"},
+		},
+		{
+			// ホスト名は大文字小文字を区別しない。ポートや末尾の点が付いても同じ相手。
+			name: "大文字とポート",
+			cfg:  llm.Config{BaseURL: "https://API.Anthropic.com:443", APIKey: testAPIKey, Thinking: "disabled"},
+			want: []string{"api.anthropic.com"},
+		},
+		{
+			name: "末尾の点",
+			cfg:  llm.Config{BaseURL: "https://api.anthropic.com.", APIKey: testAPIKey, Thinking: "disabled"},
+			want: []string{"api.anthropic.com"},
+		},
+		{
+			name: "enabled は受けない",
+			cfg:  llm.Config{BaseURL: local, Thinking: "enabled"},
+			want: []string{`"enabled"`, `"disabled"`},
+		},
+		{
+			name: "大文字の Disabled も受けない",
+			cfg:  llm.Config{BaseURL: local, Thinking: "Disabled"},
+			want: []string{`"Disabled"`, `"disabled"`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := llm.New(tt.cfg)
+			if len(tt.want) == 0 {
+				if err != nil {
+					t.Fatalf("New() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("New() = nil, want error")
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("New() = %q, want to contain %q", err, w)
+				}
+			}
+		})
 	}
 }
 
@@ -632,6 +743,32 @@ func TestComplete_Timeout(t *testing.T) {
 	}
 }
 
+// 待つ上限はアダプタでは持たない（ADR 0104）。1 回の呼び出しを待つ上限は
+// ユースケース層が ctx で掛ける。ここに固定の上限を残すと、設定で延ばしても
+// こちらが先に切る（#430 では 16k に広げた Ollama が 5 分で切れていた）。
+// 差し込んだ HTTPClient の Timeout は TestComplete_Timeout のとおり効く。
+func TestNew_DefaultHTTPClientDoesNotLimitWaiting(t *testing.T) {
+	t.Parallel()
+
+	for name, cfg := range map[string]llm.Config{
+		"鍵なし": {BaseURL: "http://localhost:11434"},
+		// 鍵を持つと、リダイレクトの検査を足した写しを作る（keepKeyWithinOrigin）。
+		"鍵あり": {APIKey: testAPIKey},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			c, err := llm.New(cfg)
+			if err != nil {
+				t.Fatalf("New() = %v", err)
+			}
+			if got := llm.HTTPClientOf(c).Timeout; got != 0 {
+				t.Errorf("Timeout = %s, want 0（上限はユースケースが ctx で掛ける）", got)
+			}
+		})
+	}
+}
+
 func TestComplete_HonorsContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -873,9 +1010,12 @@ func TestConfigFromEnv(t *testing.T) {
 		t.Setenv("ETOKI_LLM_BASE_URL", "https://example.test")
 		t.Setenv("ETOKI_LLM_API_KEY", "key-1")
 		t.Setenv("ETOKI_LLM_MODEL", "claude-opus-4-8")
+		t.Setenv("ETOKI_LLM_THINKING", "disabled")
 
 		got := llm.ConfigFromEnv()
-		want := llm.Config{BaseURL: "https://example.test", APIKey: "key-1", Model: "claude-opus-4-8"}
+		want := llm.Config{
+			BaseURL: "https://example.test", APIKey: "key-1", Model: "claude-opus-4-8", Thinking: "disabled",
+		}
 		if got != want {
 			t.Errorf("ConfigFromEnv() = %+v, want %+v", got, want)
 		}
@@ -885,6 +1025,7 @@ func TestConfigFromEnv(t *testing.T) {
 		t.Setenv("ETOKI_LLM_BASE_URL", "")
 		t.Setenv("ETOKI_LLM_API_KEY", "key-1")
 		t.Setenv("ETOKI_LLM_MODEL", "")
+		t.Setenv("ETOKI_LLM_THINKING", "")
 
 		c, err := llm.New(llm.ConfigFromEnv())
 		if err != nil {

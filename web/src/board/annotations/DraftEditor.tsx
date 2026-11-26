@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type {
   Granularity,
@@ -19,6 +19,7 @@ import {
   canResend,
   buildInterpretation,
   createDraft,
+  draftEdited,
   leftBehindItemIds,
   markCreated,
   orphanedLocalIds,
@@ -46,6 +47,10 @@ import type { ProjectLink } from "../target/projectLink";
  * `InterpretationState` を done から外すので、この枝ごと unmount されて編集は
  * 捨てられる。上げると `save` と `interpret` の両方に破棄を書き足すことになり、
  * 片方を忘れると保存したあとに古い編集が残る。
+ *
+ * **上げるのは手直ししたかだけ**（`onEditedChange`、#432）。離れる前と保存の前に
+ * 確認を出すのは `BoardPage`（ADR 0021 の追記）。外れたら下ろすので、捨てられた
+ * 手直しが確認を出し続けることは無い。
  */
 export function DraftEditor({
   annotationId,
@@ -63,6 +68,7 @@ export function DraftEditor({
   targetLabel,
   interpret,
   onCreate,
+  onEditedChange,
 }: {
   annotationId: string;
   granularity: Granularity;
@@ -87,6 +93,8 @@ export function DraftEditor({
   /** 帯の「絵解き直す」。帯はここで描くので受け取って並べる。 */
   interpret: InterpretControl;
   onCreate: (interpretation: Interpretation) => void;
+  /** 手直ししたかを知らせる（#432）。外れるときは false で知らせる。 */
+  onEditedChange: (annotationId: string, edited: boolean) => void;
 }) {
   // 作ったものは作り直した下書きにも反映する。解釈を選び直して戻ってきた
   // ときに、作成済みの項目が全部選ばれた状態に戻ると押し直しで重複する
@@ -104,6 +112,19 @@ export function DraftEditor({
     setAppliedCreations(created.length);
     setDraft((d) => created.slice(appliedCreations).reduce(markCreated, d));
   }
+
+  // 手直ししたか（#432）。比べる相手は絵解いた答えそのもの。
+  const [original] = useState(() => createDraft(result));
+  const edited = draftEdited(draft, original);
+  useEffect(() => {
+    onEditedChange(annotationId, edited);
+  }, [annotationId, edited, onEditedChange]);
+  // 外れたら下ろす。保存・絵解き直し・解釈の選び直しで外れると、手直しも一緒に
+  // 消えている。残すと、失うものが無いのに確認が出続ける。
+  useEffect(
+    () => () => onEditedChange(annotationId, false),
+    [annotationId, onEditedChange],
+  );
 
   // 編集後の kind で組み直す。構造を変えたことがその場で見えるようにする。
   const groups = groupByEpic(draft.items.map((d) => d.item));

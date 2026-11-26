@@ -18,6 +18,7 @@ import {
   useAnnotationStates,
 } from "./annotations/useAnnotationStates";
 import { useExclusion } from "./exclusion";
+import { useEditedDrafts } from "./annotations/useEditedDrafts";
 import { useInterpretations } from "./annotations/useInterpretations";
 import { ShareDialog } from "./members/ShareDialog";
 import { UsageGuideDialog } from "./UsageGuideDialog";
@@ -59,6 +60,13 @@ import { useProjectAccess } from "./useProjectAccess";
 import { useSaveShortcut } from "./useSaveShortcut";
 import { SAVE_FAILED, useSceneSave } from "./useSceneSave";
 import { useSceneSize } from "./useSceneSize";
+
+/**
+ * 手直しした下書きがあるときに、保存の前に訊く文（#432）。保存は引いた解釈を
+ * 捨てる（`discardAfterSave`）ので、失うものを言う。
+ */
+const DRAFTS_LOST_BY_SAVE =
+  "保存すると、絵解いた結果は捨てられ、手直しした下書きも消えます。保存しますか？";
 
 type Props = {
   /**
@@ -119,6 +127,13 @@ type Props = {
    * いるので、止めるかどうかを判断する材料をそこへ渡す必要がある。
    */
   onDirtyChange: (dirty: boolean) => void;
+  /**
+   * 手直しした下書きがあるかを親に伝える（#432、ADR 0021 の追記）。
+   *
+   * 未保存のシーンとは分けて渡す。どちらも離れると失うが、失うものが違うので、
+   * 親が出す確認の文言を分ける。
+   */
+  onDraftsEditedChange: (edited: boolean) => void;
   /** 画面の配色。持ち主は App（ADR 0055）。 */
   theme: Theme;
   /**
@@ -140,6 +155,7 @@ export function BoardPage({
   onPremiseChanged,
   onDeleted,
   onDirtyChange,
+  onDraftsEditedChange,
   theme,
   onThemeChange,
 }: Props) {
@@ -159,6 +175,13 @@ export function BoardPage({
   });
   // 未保存かどうかを決めるのはここだけ（`useDirtyScene`）。
   const { dirty, isDirty, applySignature, markSaved } = useDirtyScene(onDirtyChange);
+  // 手直しした下書き（`useEditedDrafts`、#432）。下書きは `DraftEditor` が持ち、
+  // ここには手直ししたかだけが上がる。**束のまま持たない**（`useSceneSize` と同じ）。
+  const {
+    any: draftsEdited,
+    hasEdited: hasEditedDrafts,
+    report: reportDraftEdited,
+  } = useEditedDrafts(onDraftsEditedChange);
   /**
    * 保存・取り込み・作成の排他（#146）。**表も判定も `exclusion.ts` にある。**
    *
@@ -362,6 +385,20 @@ export function BoardPage({
     await refreshAnnotations();
   }, [discardCreations, discardInterpretations, refreshAnnotations]);
 
+  /**
+   * 保存の前に訊くこと。保存の入口（`useSceneSave` の `save`）が、押した保存
+   * （「保存」・⌘/Ctrl+S・絵解く前の保存）でも通知の「再試行」でも呼ぶ。
+   *
+   * **保存は引いた解釈を捨てるので、手直しした下書きも消える**（`discardAfterSave`）。
+   * 手直しがあれば、失うものを言って訊いてから保存する（#432、ADR 0021 の追記）。
+   * 断られたら保存しない。絵解きの流れは「保存できなかったら進まない」（ADR 0077）
+   * ので、そこで止まる。
+   */
+  const confirmSave = useCallback(
+    () => !hasEditedDrafts() || window.confirm(DRAFTS_LOST_BY_SAVE),
+    [hasEditedDrafts],
+  );
+
   const { conflicted, overLimit, save } = useSceneSave({
     api,
     boardId: board.id,
@@ -370,6 +407,7 @@ export function BoardPage({
     sceneOverLimit: board.sceneOverLimit,
     exclusive,
     currentBackground,
+    confirm: confirmSave,
     markSaved,
     onSaved: discardAfterSave,
     onError,
@@ -410,9 +448,9 @@ export function BoardPage({
 
   // 未保存のあいだと、作成の実行中は離脱を確認する（ADR 0021 / 0051）。
   // ブレストは etoki の最初のフェーズなので、ここで失うと後段（注釈・解釈・
-  // 作成）が全部やり直しになる。**2 つを渡すのはここ**で、理由は
-  // `useConfirmLeave` にある。
-  useConfirmLeave(dirty || creating);
+  // 作成）が全部やり直しになる。**渡すのはここ**で、理由は `useConfirmLeave` にある。
+  // 手直しした下書きも同じ（#432）。保存しない下書きは、離れると戻らない。
+  useConfirmLeave(dirty || creating || draftsEdited);
 
   // 押せない理由は表から引く（`exclusion.ts`）。**ここで条件を組み直さない。**
   // 組み直すと、止める条件と画面に出る文が別々に古くなる。
@@ -515,6 +553,7 @@ export function BoardPage({
     saving,
     blocked: exclusive.reasonFor("creating"),
     onCreate: (id, interpretationId, result) => void create(id, interpretationId, result),
+    onDraftEdited: reportDraftEdited,
     projectAccess,
     unavailable: creationUnavailable,
     // 作成先が未選択のときに、帯から選ぶ口（ADR 0100）。

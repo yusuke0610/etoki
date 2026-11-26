@@ -38,6 +38,15 @@ type Options = {
   exclusive: Exclusion;
   /** いまキャンバスに出ている背景色。署名に入れる（ADR 0045）。 */
   currentBackground: () => string | undefined;
+  /**
+   * 保存してよいかを訊く。false なら送らない（#432）。何を訊くかは `BoardPage` が
+   * 決める（保存が捨てるものの一覧と同じ場所、`onSaved`）。
+   *
+   * **保存の入口はここ 1 つ。** 押した保存も、通知の「再試行」も、絵解きの前の
+   * 保存も `save` を通る。呼ぶ側で包むと、包みを通らない経路（再試行）から
+   * 確認なしで保存される（#485 の full review）。
+   */
+  confirm: () => boolean;
   /** 送った署名を新しい基準にする（`useDirtyScene`）。 */
   markSaved: (signature: string) => void;
   /**
@@ -65,8 +74,8 @@ export type SceneSave = {
    */
   overLimit: boolean;
   /**
-   * 保存する。**書けたときだけ true を返す。** 押せない（排他に弾かれた）・衝突・
-   * 失敗はどれも false。保存の続きに何かを始める呼び出し側（「絵解き」、#247）が、
+   * 保存する。**書けたときだけ true を返す。** 押せない（排他に弾かれた）・確認で
+   * 断られた・衝突・失敗はどれも false。保存の続きに何かを始める呼び出し側（「絵解き」、#247）が、
    * 書けていないシーンを前提に走り出さないために返す。
    */
   save: () => Promise<boolean>;
@@ -81,6 +90,7 @@ export function useSceneSave({
   sceneOverLimit,
   exclusive,
   currentBackground,
+  confirm,
   markSaved,
   onSaved,
   onError,
@@ -129,6 +139,10 @@ export function useSceneSave({
     // disabled は表示の約束。取り込みや作成の最中に直接呼ばれても保存しないよう、
     // 永続化の入口でも同じ排他を確かめる（表は `exclusion.ts`）。
     const ran = await exclusive.run("saving", async () => {
+      // **排他を取ってから訊く。** 弾かれて保存しないなら失うものも無く、訊いて
+      // おいて何もしないと、承諾した人には保存したように読める。**訊いてから送る
+      // までに待ちを挟まない**（押した時点の状態について訊く）。
+      if (!confirm()) return;
       try {
         const elements = api.getSceneElements();
         // 画像は抜いて、サーバーがまだ持っていないものだけを添える（ADR 0074）。
@@ -184,6 +198,7 @@ export function useSceneSave({
   }, [
     api,
     boardId,
+    confirm,
     currentBackground,
     dismiss,
     exclusive,

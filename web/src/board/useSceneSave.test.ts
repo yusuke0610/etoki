@@ -78,6 +78,8 @@ function setup(
     sceneOverLimit?: boolean;
     exclusive?: Exclusion;
     withApi?: boolean;
+    /** 保存の前の確認（#432）。既定は承諾する。 */
+    confirm?: () => boolean;
   } = {},
 ) {
   // キャンバスの中身。保存のあいだに書き換えて、送った内容との違いを作る。
@@ -100,6 +102,7 @@ function setup(
   const exclusive = initial.exclusive ?? exclusion();
   const currentBackground = () => canvas.background;
   const fileIds = initial.fileIds ?? [];
+  const confirm = initial.confirm ?? (() => true);
 
   const hook = renderHook(
     ({ updatedAt }: Props) =>
@@ -111,6 +114,7 @@ function setup(
         sceneOverLimit: initial.sceneOverLimit ?? false,
         exclusive,
         currentBackground,
+        confirm,
         markSaved,
         onSaved,
         onError,
@@ -360,6 +364,56 @@ describe("useSceneSave", () => {
 
       expect(written).toBe(false);
       expect(saveScene).not.toHaveBeenCalled();
+    });
+
+    // 保存は引いた解釈を捨てるので、手直しした下書きも消える（#432）。断られたら
+    // 送らない。書けていないので、続きを始める呼び出し側（「絵解き」）も止まる。
+    it("確認で断られたら送らず、false を返す", async () => {
+      const saveScene = vi.spyOn(boardsApi, "saveScene");
+      const confirm = vi.fn(() => false);
+      const { hook, onSaved } = setup({ confirm });
+
+      let written!: boolean;
+      await act(async () => {
+        written = await hook.result.current.save();
+      });
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(written).toBe(false);
+      expect(saveScene).not.toHaveBeenCalled();
+      expect(onSaved).not.toHaveBeenCalled();
+    });
+
+    // 排他に弾かれて保存しないなら、失うものも無い。訊いてから何もしないと、
+    // 承諾した人には保存したように読める。
+    it("排他を取れなければ訊かない", async () => {
+      const confirm = vi.fn(() => true);
+      const { hook } = setup({ exclusive: exclusion(true), confirm });
+
+      await act(() => hook.result.current.save());
+
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    // 通知の「再試行」も同じ入口を通る。失敗のあとに手直ししてから押すと、確認
+    // なしで手直しが消えていた（#485 の full review）。
+    it("通知の再試行も確認を通り、断れば送らない", async () => {
+      const saveScene = vi.spyOn(boardsApi, "saveScene").mockRejectedValueOnce(boom);
+      const confirm = vi
+        .fn<() => boolean>()
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false);
+      const { hook, onError, onSaved } = setup({ confirm });
+      await act(() => hook.result.current.save());
+
+      await act(async () => {
+        onError.mock.calls[0]![1]!.action!.run();
+        await Promise.resolve();
+      });
+
+      expect(confirm).toHaveBeenCalledTimes(2);
+      expect(saveScene).toHaveBeenCalledTimes(1);
+      expect(onSaved).not.toHaveBeenCalled();
     });
   });
 });

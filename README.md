@@ -64,6 +64,8 @@ GitHub を設定したあとでボードから選べます。
 | `ETOKI_LLM_BASE_URL`             | `https://api.anthropic.com` | LLM のエンドポイント。鍵を設定しているなら http はループバックだけ |
 | `ETOKI_LLM_API_KEY`              | （なし）                    | LLM の API キー。認証不要なら未設定でよい                          |
 | `ETOKI_LLM_MODEL`                | `claude-opus-5`             | モデル ID                                                          |
+| `ETOKI_LLM_TIMEOUT`              | `5m`                        | LLM の 1 回の呼び出しを待つ上限                                    |
+| `ETOKI_LLM_THINKING`             | （なし）                    | `disabled` で思考を切らせる。Anthropic の接続先では使えない        |
 | `ETOKI_LLM_MAX_CONCURRENT`       | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                         |
 | `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい   |
 | `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）           |
@@ -261,9 +263,11 @@ Messages API 形状（`/v1/messages`）も公開していて、0.34.4 では
 **Ollama はコンテキスト長が小さいと、応答が途中で切れます。** 既定は VRAM に
 応じて 4k / 32k / 256k で、4k だと入力と出力の合計が 4096 トークンに達した時点で
 `stop_reason` が `max_tokens` になります（etoki が送る上限の 16000 には届いて
-いなくても）。解釈は再送のたびに入力が増えるので、4k では 2 回目で切れやすく
-なります。「LLM の応答が途中で打ち切られました」と出て、詳細に
-`stopped at N output tokens, before our limit` とあれば、Ollama 側で広げてください。
+いなくても）。思考するモデルは思考だけで出力を使い切り、4k では 1 回目から
+切れることがあります（下の「思考するモデルと待ち時間」）。解釈は再送のたびに
+入力が増えるので、思考しなくても 4k では 2 回目で切れやすくなります。「LLM の応答が
+途中で打ち切られました」と出て、詳細に `stopped at N output tokens, before our limit`
+とあれば、Ollama 側で広げてください。
 
 ```sh
 OLLAMA_CONTEXT_LENGTH=16384 ollama serve
@@ -277,6 +281,39 @@ OLLAMA_CONTEXT_LENGTH=16384 ollama serve
 systemd は `systemctl edit ollama.service` で開いた drop-in に、`[Service]` の
 見出しを付けて `Environment="OLLAMA_CONTEXT_LENGTH=16384"` を書き、
 `systemctl restart ollama`）。見出しが無いと環境変数は適用されません。
+
+#### 思考するモデルと待ち時間
+
+**思考に対応したモデルは、頼まなくても思考します。** 短い答えにも思考のぶんの
+時間とトークンがかかります。etoki は既定では `thinking` を送らず、思考するかは
+モデルに任せます（Anthropic のモデルは、明示的に切ると本文にタグが混ざることが
+あるため）。手元の LLM で思考を切らせるには次を設定します。
+
+```sh
+export ETOKI_LLM_THINKING=disabled
+```
+
+`thinking: {"type": "disabled"}` を送ります。Ollama の Anthropic 互換の口は、
+これを思考を切る指示として受けます。思考を切れないモデルは、そのモデルの
+いちばん低い段階で思考します（Ollama の文書）。**接続先が Anthropic
+（`api.anthropic.com`）のときは、起動時に断ります。**
+
+**1 回の呼び出しは既定で 5 分まで待ちます。** 手元の LLM ではこれを超えることが
+あります。超えると「LLM を呼び出せませんでした」と出て、詳細に
+`no response within 5m0s` とあります。延ばすには次を設定します。
+
+```sh
+export ETOKI_LLM_TIMEOUT=20m
+```
+
+解釈と図のドラフト生成は、出力の形が違うと直させるために呼び直すので、1 回の
+実行はその回数ぶんまで待ちます。待ちきれなかった呼び出しは呼び直しません。
+
+確かめたこと（2026-11-13）: Apple M1 / メモリ 16GB、Ollama 0.40.16、
+`qwen3-vl:8b`（画像と思考に対応）で、付箋 6 枚と画像 1 枚の囲みを 1 回ずつ
+解釈しました。コンテキスト長 4096 では、216 秒かけて思考だけで出力を使い切り、
+打ち切られました。16384 に広げると、5 分の上限に当たって切れました。どのモデルと
+コンテキスト長を勧めるかは、まだ測っていません。
 
 ### GitHub Projects v2 を使う
 

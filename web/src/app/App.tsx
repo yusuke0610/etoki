@@ -84,6 +84,7 @@ export function App() {
     current,
     picking,
     handleDirtyChange,
+    handleDraftsEditedChange,
     open,
     closeBoard,
     createBoard,
@@ -207,6 +208,7 @@ export function App() {
               onPremiseChanged={replaceBoard}
               onDeleted={handleDeleted}
               onDirtyChange={handleDirtyChange}
+              onDraftsEditedChange={handleDraftsEditedChange}
               theme={theme}
               onThemeChange={setTheme}
             />

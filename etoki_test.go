@@ -3,6 +3,7 @@ package etoki_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -604,6 +605,106 @@ func TestNewAcceptsUnsetLLMLimits(t *testing.T) {
 
 	if _, err := etoki.New(options(t, "")); err != nil {
 		t.Fatalf("New: %v", err)
+	}
+}
+
+// 1 回の呼び出しを待つ上限の負の値は落とす。0 は既定（ADR 0104）。黙って受けると、
+// 設定したつもりの上限が既定に戻る。
+func TestNewRejectsNegativeLLMCallTimeout(t *testing.T) {
+	t.Parallel()
+
+	opts := options(t, "")
+	opts.LLMCallTimeout = -time.Second
+	if _, err := etoki.New(opts); err == nil {
+		t.Fatal("New = nil, want error")
+	}
+}
+
+// stuckLLM は ctx が終わるまで応えない LLMClient。
+type stuckLLM struct{}
+
+func (stuckLLM) Complete(ctx context.Context, _ port.VisionRequest) (port.VisionResponse, error) {
+	<-ctx.Done()
+	return port.VisionResponse{}, ctx.Err()
+}
+
+// 1 回の呼び出しを待つ上限は、解釈と図のドラフト生成の両方に届く（ADR 0104）。
+// ユースケース層のテストは Options から先を見ないので、詰め替えで片方に渡し
+// 忘れるとここでしか気づけない。渡し忘れた側は既定の 5 分まで待ち続ける。
+func TestNewPassesLLMCallTimeoutToBothJobs(t *testing.T) {
+	t.Parallel()
+
+	opts := options(t, "")
+	opts.LLM = stuckLLM{}
+	opts.LLMCallTimeout = 50 * time.Millisecond
+	scene := `{"type":"excalidraw","elements":[
+		{"id":"annot-1","type":"frame","name":"決済まわり","customData":{"etoki":{"granularity":""}}},
+		{"id":"t1","type":"text","text":"返金導線が無い","frameId":"annot-1"}]}`
+	if err := opts.Boards.Create(t.Context(), port.Board{ID: "b1", Name: "設計会", Scene: scene}, ""); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	srv, err := etoki.New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	type job struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+		Error  *struct {
+			Code  string `json:"code"`
+			Error string `json:"error"`
+		} `json:"error"`
+	}
+	do := func(t *testing.T, method, path, body string) job {
+		t.Helper()
+
+		req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Host = "127.0.0.1:8080"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+
+		want := http.StatusOK
+		if method == http.MethodPost {
+			want = http.StatusAccepted
+		}
+		if rec.Code != want {
+			t.Fatalf("%s %s: status = %d, want %d (%s)", method, path, rec.Code, want, rec.Body)
+		}
+		var j job
+		if err := json.Unmarshal(rec.Body.Bytes(), &j); err != nil {
+			t.Fatalf("%s %s: decode: %v (%s)", method, path, err, rec.Body)
+		}
+		return j
+	}
+
+	// 枠は解釈と図で 1 つを共有する（ADR 0044）ので、1 つずつ終わらせてから次へ進む。
+	for _, tc := range []struct {
+		name, start, jobs, body string
+	}{
+		{"解釈", "/api/boards/b1/annotations/annot-1/interpret", "/api/boards/b1/interpretation-jobs/", "{}"},
+		{"図の生成", "/api/boards/b1/diagram-draft", "/api/boards/b1/diagram-jobs/", `{"kind":"todo","prompt":"段取り"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			started := do(t, http.MethodPost, tc.start, tc.body)
+
+			deadline := time.Now().Add(5 * time.Second)
+			got := started
+			for got.Status == "running" {
+				if time.Now().After(deadline) {
+					t.Fatal("ジョブが終わらない（1 回の上限が届いていない）")
+				}
+				time.Sleep(10 * time.Millisecond)
+				got = do(t, http.MethodGet, tc.jobs+started.ID, "")
+			}
+			if got.Status != "failed" || got.Error == nil || got.Error.Code != "llm_unavailable" {
+				t.Fatalf("job = %+v, want failed with llm_unavailable", got)
+			}
+			if !strings.Contains(got.Error.Error, "no response within 50ms") {
+				t.Errorf("error = %q, want the limit that was reached", got.Error.Error)
+			}
+		})
 	}
 }
 

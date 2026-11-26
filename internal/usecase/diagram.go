@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/port"
@@ -95,6 +96,9 @@ type DiagramService struct {
 	// **同じものを共有する。** 解釈だけを絞ると、こちらが抜け道として残る。
 	limits      *LLMLimiter
 	maxAttempts int
+	// callTimeout は LLM の 1 回の呼び出しを待つ上限（ADR 0104）。ジョブの上限も
+	// これと maxAttempts から導く（DiagramJobs）。
+	callTimeout time.Duration
 	maxTurns    int
 	logger      *slog.Logger
 }
@@ -109,6 +113,16 @@ func WithDiagramMaxAttempts(n int) DiagramServiceOption {
 	return func(s *DiagramService) {
 		if n > 0 {
 			s.maxAttempts = n
+		}
+	}
+}
+
+// WithDiagramCallTimeout は LLM の 1 回の呼び出しを待つ上限を差し替える。0 以下は
+// 無視する（既定は DefaultLLMCallTimeout）。
+func WithDiagramCallTimeout(d time.Duration) DiagramServiceOption {
+	return func(s *DiagramService) {
+		if d > 0 {
+			s.callTimeout = d
 		}
 	}
 }
@@ -146,6 +160,7 @@ func NewDiagramService(
 		llm:         llm,
 		limits:      limits,
 		maxAttempts: defaultDiagramMaxAttempts,
+		callTimeout: DefaultLLMCallTimeout,
 		maxTurns:    MaxDiagramTurns,
 		logger:      slog.Default(),
 	}
@@ -255,6 +270,7 @@ func (s *DiagramService) complete(
 
 	return llmRetry[string]{
 		maxAttempts: s.maxAttempts,
+		callTimeout: s.callTimeout,
 		parse: func(text string) (string, error) {
 			return extractMermaid(text, req.Kind)
 		},

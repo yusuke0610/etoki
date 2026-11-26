@@ -911,14 +911,76 @@ describe("useBoardNavigation", () => {
     });
   });
 
-  it("未保存の印を受け取る関数は、描き直しても同じものを渡す", async () => {
+  // 手直しした下書きも、離れると戻らない（#432、ADR 0021 の追記）。未保存の
+  // シーンとは失うものが違うので、何を失うかを言い分ける。
+  describe("手直しした下書き", () => {
+    it("手直しがあれば一覧へ戻る前に訊き、断られたら何も変えない", async () => {
+      const { hook } = setup();
+      await openFromList(hook, board("b1"));
+      act(() => hook.result.current.handleDraftsEditedChange(true));
+      confirm.mockReturnValue(false);
+
+      act(() => hook.result.current.closeBoard());
+
+      expect(confirm).toHaveBeenCalledWith(
+        "手直しした下書きがあります。このまま移動すると、手直しは失われます。",
+      );
+      expect(hook.result.current.current?.id).toBe("b1");
+    });
+
+    it("未保存の変更と手直しの両方があれば、両方を失うと言う", async () => {
+      const { hook } = setup();
+      await openFromList(hook, board("b1"));
+      act(() => {
+        hook.result.current.handleDirtyChange(true);
+        hook.result.current.handleDraftsEditedChange(true);
+      });
+      confirm.mockReturnValue(false);
+
+      act(() => hook.result.current.closeBoard());
+
+      expect(confirm).toHaveBeenCalledWith(
+        "未保存の変更と、手直しした下書きがあります。このまま移動すると、描いた内容も手直しも失われます。",
+      );
+    });
+
+    // 作成先を選ぶダイアログはキャンバスを外さない（ADR 0100）。手直しも残るので
+    // 失うものが無い。訊くと、選ぶたびに確認に慣れて、離れる前の確認を読まなくなる。
+    it("作成先の選び直しは、手直しがあっても訊かずに始める", async () => {
+      const { hook } = setup();
+      await openFromList(hook, board("b1"));
+      act(() => hook.result.current.handleDraftsEditedChange(true));
+      act(() => hook.result.current.handleDirtyChange(true));
+
+      act(() => hook.result.current.startPicking());
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(hook.result.current.picking).toBe(true);
+    });
+
+    it("手直しが下りたら、もう訊かない", async () => {
+      const { hook } = setup();
+      await openFromList(hook, board("b1"));
+      act(() => hook.result.current.handleDraftsEditedChange(true));
+      act(() => hook.result.current.handleDraftsEditedChange(false));
+
+      act(() => hook.result.current.closeBoard());
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(hook.result.current.current).toBeNull();
+    });
+  });
+
+  it("未保存と手直しの印を受け取る関数は、描き直しても同じものを渡す", async () => {
     const { hook } = setup();
     const first = hook.result.current.handleDirtyChange;
+    const firstDrafts = hook.result.current.handleDraftsEditedChange;
 
     await openFromList(hook, board("b1"));
 
     // 作り直すと、BoardPage 側の登録し直しが走って「外れたので下ろす」が
     // 誤って動く。
     expect(hook.result.current.handleDirtyChange).toBe(first);
+    expect(hook.result.current.handleDraftsEditedChange).toBe(firstDrafts);
   });
 });

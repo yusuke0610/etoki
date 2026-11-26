@@ -44,6 +44,10 @@ const (
 	DefaultLLMRateWindow    = usecase.DefaultLLMRateWindow
 )
 
+// DefaultLLMCallTimeout は LLM の 1 回の呼び出しを待つ上限の既定値（ADR 0104）。
+// usecase の定数を公開面に出している（DefaultKindFieldName と同じ理由）。
+const DefaultLLMCallTimeout = usecase.DefaultLLMCallTimeout
+
 // DefaultAddr は Options.Addr が空のときに使うリッスンアドレス。
 //
 // 認証は任意で、設定しない構成が既定であり続ける。既定でループバックだけに
@@ -185,6 +189,14 @@ type Options struct {
 	// 該当する。黙って受けると、設定したつもりの上限が外れる。
 	LLMLimits LLMLimits
 
+	// LLMCallTimeout は LLM の 1 回の呼び出しを待つ上限（ADR 0104）。任意。
+	//
+	// 0 なら DefaultLLMCallTimeout。**負の値は New が落とす。** 解釈と図の
+	// ドラフト生成の両方に効き、1 回の実行（ジョブ）の上限もこれと呼ぶ回数から
+	// 導く。上限は ctx で掛けるので、LLM の実装が自前の上限を持っていれば、
+	// 短いほうで切れる。
+	LLMCallTimeout time.Duration
+
 	// AllowedOrigins はループバック以外に追加で許すオリジン。任意。
 	//
 	// ブラウザ由来の cross-site リクエストは既定で弾く。ループバックは常に
@@ -277,6 +289,9 @@ func New(opts Options) (*Server, error) {
 	if err := validateLLMLimits(opts.LLMLimits); err != nil {
 		return nil, err
 	}
+	if opts.LLMCallTimeout < 0 {
+		return nil, fmt.Errorf("etoki: Options.LLMCallTimeout must be positive, got %s", opts.LLMCallTimeout)
+	}
 
 	// 作成先の固定を守るには、固定を判定する側と、判定の前提を崩す側とが
 	// 同じ排他を見ている必要がある（usecase.BoardLocks）。
@@ -321,12 +336,15 @@ func New(opts Options) (*Server, error) {
 		// 含まれる（ADR 0026）。
 		// ロガーも渡す。解釈は課金を伴う外部呼び出しなので、呼んだ実績は
 		// リクエストログと同じ行き先に残す（ADR 0031）。
+		// 1 回の呼び出しを待つ上限は両方に同じものを渡す（ADR 0104）。0 は既定。
 		deps.Interpretations = usecase.NewInterpretationService(
-			opts.Boards, opts.Mappings, opts.LLM, llmLimiter, usecase.WithLogger(opts.Logger))
+			opts.Boards, opts.Mappings, opts.LLM, llmLimiter,
+			usecase.WithLogger(opts.Logger), usecase.WithCallTimeout(opts.LLMCallTimeout))
 		// 図のドラフト生成。**Mappings は渡さない。** 入力はプロンプトだけで、
 		// 保存済みシーンも前回作ったものも読まない（ADR 0041）。
 		deps.Diagrams = usecase.NewDiagramService(
-			opts.Boards, opts.LLM, llmLimiter, usecase.WithDiagramLogger(opts.Logger))
+			opts.Boards, opts.LLM, llmLimiter,
+			usecase.WithDiagramLogger(opts.Logger), usecase.WithDiagramCallTimeout(opts.LLMCallTimeout))
 	}
 	// 作成先はボードごとに持つので、ここで要るのは GitHub クライアントだけ
 	// （ADR 0014）。未選択のボードは作成の手前で 422 として止まる。

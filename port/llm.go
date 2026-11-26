@@ -89,6 +89,10 @@ type Usage struct {
 // 失敗の原因は ErrLLMTruncated / ErrLLMRefused / ErrLLMOverloaded で名乗れる。
 // **名乗るかどうかは実装の任意**で、名乗らない失敗も同じように扱われる
 // （画面の案内が原因に合わせて変わらないだけ。ADR 0087）。
+//
+// **ctx の取り消しに従うこと。** 1 回の呼び出しを待つ上限も、ジョブの上限も
+// ctx で渡す（ADR 0104）。従わない実装はどちらの上限でも止まらず、返るまで
+// 実行の枠（ADR 0044）を握る。
 type LLMClient interface {
 	Complete(ctx context.Context, req VisionRequest) (VisionResponse, error)
 }

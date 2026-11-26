@@ -52,6 +52,10 @@ environment:
                         鍵を設定しているなら、http はループバックだけ
   ETOKI_LLM_API_KEY     LLM の API キー（認証不要なら未設定でよい）
   ETOKI_LLM_MODEL       モデル ID（既定: ` + llm.DefaultModel + `）
+  ETOKI_LLM_TIMEOUT     LLM の 1 回の呼び出しを待つ上限（既定: ` + etoki.DefaultLLMCallTimeout.String() + `）
+                        出力を直させる呼び直しがあれば、その回数ぶんまで待つ
+  ETOKI_LLM_THINKING    disabled で思考を切らせる（既定: モデルに任せる）
+                        手元の LLM 向け。Anthropic の接続先では起動時に断る
   ETOKI_LLM_MAX_CONCURRENT     1 人が同時に走らせられる解釈・図の生成の数
                                （既定: ` + strconv.Itoa(etoki.DefaultLLMMaxConcurrent) + `）
   ETOKI_LLM_RATE_LIMIT         ETOKI_LLM_RATE_WINDOW のあいだに始められる回数
@@ -185,6 +189,10 @@ func serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	callTimeout, err := llmCallTimeout()
+	if err != nil {
+		return err
+	}
 
 	srv, err := etoki.New(etoki.Options{
 		Addr:     os.Getenv("ETOKI_ADDR"),
@@ -203,6 +211,7 @@ func serve(ctx context.Context) error {
 		ParentFieldName:              os.Getenv("ETOKI_GITHUB_PARENT_FIELD"),
 		Logger:                       logger,
 		LLMLimits:                    limits,
+		LLMCallTimeout:               callTimeout,
 		AllowedOrigins:               splitList(os.Getenv(envAllowedOrigins)),
 		SetupHints:                   setupHints(),
 	})

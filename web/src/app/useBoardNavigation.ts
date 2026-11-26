@@ -49,6 +49,25 @@ function canOpenTargetPicker(board: BoardDetail): boolean {
   return board.role === "owner" && !board.targetLocked;
 }
 
+/**
+ * キャンバスを外す前に訊く文。失うものが無ければ null（訊かない）。
+ *
+ * **失うものを言い分ける**（#432）。未保存のシーンは描いた内容を、手直しした
+ * 下書きは手直しを失う。どちらも保存しない（ADR 0021）。
+ */
+function discardMessage(unsavedScene: boolean, editedDrafts: boolean): string | null {
+  if (unsavedScene && editedDrafts) {
+    return "未保存の変更と、手直しした下書きがあります。このまま移動すると、描いた内容も手直しも失われます。";
+  }
+  if (unsavedScene) {
+    return "未保存の変更があります。このまま移動すると、描いた内容は失われます。";
+  }
+  if (editedDrafts) {
+    return "手直しした下書きがあります。このまま移動すると、手直しは失われます。";
+  }
+  return null;
+}
+
 type Options = {
   /**
    * ログインが済んでいるか、要らない構成か（`useSession`）。済むまで URL の
@@ -87,6 +106,8 @@ export type BoardNavigation = {
   picking: boolean;
   /** 未保存かどうかを受け取る。BoardPage から呼ばれる。 */
   handleDirtyChange: (dirty: boolean) => void;
+  /** 手直しした下書きがあるかを受け取る。BoardPage から呼ばれる（#432）。 */
+  handleDraftsEditedChange: (edited: boolean) => void;
   /** ボードを開く。一覧から呼ぶ。 */
   open: (id: string, options?: OpenOptions) => Promise<void>;
   /** ボードを閉じて一覧へ戻る。 */
@@ -139,6 +160,10 @@ export function useBoardNavigation({
   // **state ではなく ref で持つ。** 描くたびに再描画する必要が無いのに加えて、
   // state だと通信の待ちを挟んだ判定が、待ち始めた時点の値を見てしまう。
   const unsaved = useRef(false);
+  // 開いているボードに手直しした下書きがあるか（#432）。未保存と同じく BoardPage から
+  // 上がり、同じ理由で ref で持つ。**未保存とは分けて持つ。** 失うものが違うので、
+  // 確認の文言を分ける（`discardMessage`）。
+  const editedDrafts = useRef(false);
   // URL に書いてあったボードを開きにいったかどうか（ADR 0059）。
   //
   // **1 度きり。** ログイン直後に 1 回だけ読み、以後は URL を書く側に回る。
@@ -172,21 +197,24 @@ export function useBoardNavigation({
     unsaved.current = dirty;
   }, []);
 
+  /** 手直しした下書きがあるかを覚える。同じ関数を渡し続ける理由は上と同じ。 */
+  const handleDraftsEditedChange = useCallback((edited: boolean) => {
+    editedDrafts.current = edited;
+  }, []);
+
   /**
-   * 未保存の変更を捨ててよいかを確かめる。捨てないなら false。
+   * 未保存の変更と手直しした下書きを捨ててよいかを確かめる。捨てないなら false。
    *
    * **確認とキャンバスを外すことのあいだに待ちを挟まない。** 挟むと、待って
    * いるあいだに描き足したぶんを確認なしで捨てる。JS は 1 本なので、間に
    * await が無ければ描き込む隙も無い。
    *
    * 保存はしない。自動で保存すると、捨てるつもりの試し描きまで残る
-   * （中核思想 3）。
+   * （中核思想 3）。下書きも保存しない（#432、ADR 0021 の追記）。
    */
   const confirmDiscard = useCallback(() => {
-    if (!unsaved.current) return true;
-    return window.confirm(
-      "未保存の変更があります。このまま移動すると、描いた内容は失われます。",
-    );
+    const message = discardMessage(unsaved.current, editedDrafts.current);
+    return message === null || window.confirm(message);
   }, []);
 
   /**
@@ -438,7 +466,8 @@ export function useBoardNavigation({
    * 開いているボードの作成先を選ぶダイアログを開く（ADR 0100）。
    *
    * **ボードの画面は外さない。** 外すと絵解きの結果と手直しが消え、選んだあとに
-   * 絵解き直す（課金される）ことになる。
+   * 絵解き直す（課金される）ことになる。外さないので、未保存でも手直しした下書きが
+   * あっても訊かない（`confirmDiscard` を通さない）。
    *
    * **開いていることは URL に載せるが、履歴には積まない**（ADR 0059）。同じボードの
    * 中のモードなので、読み込み直しで戻せれば足りる。積むと、選び終えた後の
@@ -596,6 +625,7 @@ export function useBoardNavigation({
       current,
       picking,
       handleDirtyChange,
+      handleDraftsEditedChange,
       open,
       closeBoard,
       createBoard,
@@ -610,6 +640,7 @@ export function useBoardNavigation({
       current,
       picking,
       handleDirtyChange,
+      handleDraftsEditedChange,
       open,
       closeBoard,
       createBoard,
