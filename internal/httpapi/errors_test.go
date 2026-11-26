@@ -122,10 +122,11 @@ var wantMappings = map[string]wantMapping{
 		usecase.ErrCreationIncomplete, http.StatusBadGateway, apitypes.ErrorCodeCreationIncomplete},
 }
 
-// notMapped は境界に出てこないので表に載せない sentinel。
+// notMapped は境界の本文に出てこないので表に載せない sentinel。
 //
-// **どれもユースケース層が自分のエラーに写し替えて返す**ので、ハンドラまで
-// 届かない。届くようになったら表に足す判断が要る。
+// **ほとんどはユースケース層が自分のエラーに写し替えて返す**ので、ハンドラまで
+// 届かない。届くようになったら表に足す判断が要る。届くが JSON の本文にならない
+// ものは、どこで扱うかを理由に書く。
 var notMapped = map[string]string{
 	"port.ErrConflict":      "usecase.ErrSceneConflict / ErrPremiseConflict に写して返す（ADR 0020 / 0093）",
 	"port.ErrAlreadyExists": "usecase.ErrAlreadyMember に写して返す",
@@ -134,6 +135,8 @@ var notMapped = map[string]string{
 	"port.ErrLLMTruncated":  "usecase.ErrLLMTruncated に写して返す",
 	"port.ErrLLMRefused":    "usecase.ErrLLMRefused に写して返す",
 	"port.ErrLLMOverloaded": "usecase.ErrLLMOverloaded に写して返す",
+	// ログインのコールバックはブラウザのトップレベル遷移で、JSON を返さない。
+	"usecase.ErrLoginNotAllowed": "failAuth がログインの画面へ理由つきで戻す（#492）",
 }
 
 func TestErrorMappings(t *testing.T) {

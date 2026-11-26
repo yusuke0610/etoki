@@ -226,9 +226,13 @@ func (f *fakeSessions) savedCredentials(userID string) port.Credentials {
 	return f.creds[userID]
 }
 
+// allowedSubject はログインを通す相手。defaultProvider の利用者と同じ。
+const allowedSubject = "42"
+
 func newAuthService(t *testing.T, p *fakeProvider, s *fakeSessions) *usecase.AuthService {
 	t.Helper()
-	return usecase.NewAuthService(p, s, usecase.WithAuthClock(func() time.Time { return authNow }))
+	return usecase.NewAuthService(p, s, []string{allowedSubject},
+		usecase.WithAuthClock(func() time.Time { return authNow }))
 }
 
 func defaultProvider() *fakeProvider {
@@ -306,7 +310,7 @@ func TestStart_LimitsLoginStarts(t *testing.T) {
 
 	sessions := newFakeSessions()
 	now := authNow
-	svc := usecase.NewAuthService(defaultProvider(), sessions,
+	svc := usecase.NewAuthService(defaultProvider(), sessions, []string{allowedSubject},
 		usecase.WithAuthClock(func() time.Time { return now }))
 
 	for i := range usecase.MaxLoginStarts {
@@ -424,6 +428,155 @@ func TestResolve_IgnoresUnknownToken(t *testing.T) {
 		user, err := svc.Resolve(t.Context(), token)
 		if err != nil || user != nil {
 			t.Errorf("Resolve(%q) = (%+v, %v), want (nil, nil)", token, user, err)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ログインを通す相手（#492）
+// ---------------------------------------------------------------------------
+
+// startedState はログインを始め、保存された state を返す。
+func startedState(t *testing.T, svc *usecase.AuthService, sessions *fakeSessions) string {
+	t.Helper()
+
+	if _, err := svc.Start(t.Context(), "", ""); err != nil {
+		t.Fatalf("Start() = %v", err)
+	}
+	sessions.mu.Lock()
+	defer sessions.mu.Unlock()
+	for s := range sessions.states {
+		return s
+	}
+	t.Fatal("state が保存されていない")
+	return ""
+}
+
+// 通す相手でなければ断る。**断った相手について何も書かないことまで見る。**
+// 利用者を作ってから断る実装は、エラーの検査だけでは素通りする。残った行は
+// 招待の引き当てに現れ、保存したトークンは他人の GitHub の権限そのもの。
+func TestComplete_RejectsUserNotAllowed(t *testing.T) {
+	t.Parallel()
+
+	for name, identity := range map[string]port.Identity{
+		"別の利用者": {Provider: "fake", Subject: "99", Login: "hubot"},
+		// Subject は基盤の中でだけ一意。別の基盤の同じ番号を通さない。
+		"別の基盤の同じ番号": {Provider: "other", Subject: allowedSubject, Login: "octocat"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			provider, sessions := defaultProvider(), newFakeSessions()
+			provider.identity = identity
+			svc := newAuthService(t, provider, sessions)
+
+			_, err := svc.Complete(t.Context(), "code-1", startedState(t, svc, sessions), "")
+			if !errors.Is(err, usecase.ErrLoginNotAllowed) {
+				t.Fatalf("Complete() = %v, want ErrLoginNotAllowed", err)
+			}
+			// 断った相手が誰だったかはログで追えるようにする。
+			if !strings.Contains(err.Error(), identity.Login) {
+				t.Errorf("断った相手の login がエラーに無い: %v", err)
+			}
+
+			if len(sessions.users) != 0 {
+				t.Errorf("断った相手を利用者にしている: %+v", sessions.users)
+			}
+			if sessions.saves != 0 {
+				t.Errorf("断った相手の資格情報を保存している: %d 回", sessions.saves)
+			}
+			if len(sessions.sessions) != 0 {
+				t.Errorf("断った相手にセッションを渡している: %+v", sessions.sessions)
+			}
+		})
+	}
+}
+
+// 通す相手を渡さなかったら誰も通さない。開く側に倒すと、設定を書き忘れた
+// だけで誰でもログインできた頃に戻る。
+func TestComplete_RejectsEveryoneWithoutAllowedSubject(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		allowed []string
+		subject string
+	}{
+		"一覧が空": {allowed: nil, subject: allowedSubject},
+		// 空の ID は「通す相手」ではない。認証基盤が空の Subject を返したときに、
+		// 空を書いた一覧と一致して通らないようにする。
+		"空の ID": {allowed: []string{""}, subject: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			provider, sessions := defaultProvider(), newFakeSessions()
+			provider.identity.Subject = tc.subject
+			svc := usecase.NewAuthService(provider, sessions, tc.allowed,
+				usecase.WithAuthClock(func() time.Time { return authNow }))
+
+			_, err := svc.Complete(t.Context(), "code-1", startedState(t, svc, sessions), "")
+			if !errors.Is(err, usecase.ErrLoginNotAllowed) {
+				t.Fatalf("Complete() = %v, want ErrLoginNotAllowed", err)
+			}
+			if len(sessions.users) != 0 || len(sessions.sessions) != 0 {
+				t.Errorf("通す相手が無いのに書いている: users=%d sessions=%d",
+					len(sessions.users), len(sessions.sessions))
+			}
+		})
+	}
+}
+
+// 通す相手を変えた日に、外した人のセッションを生かさない。同じ DB を、通す
+// 相手だけを変えた別の組み立てから見る（再起動して設定を変えたのと同じ）。
+func TestResolve_IgnoresSessionOfUserNoLongerAllowed(t *testing.T) {
+	t.Parallel()
+
+	provider, sessions := defaultProvider(), newFakeSessions()
+	before := newAuthService(t, provider, sessions)
+
+	result, err := before.Complete(t.Context(), "code-1", startedState(t, before, sessions), "")
+	if err != nil {
+		t.Fatalf("Complete() = %v", err)
+	}
+	// 前提。変える前は解決できる。
+	if user, err := before.Resolve(t.Context(), result.Token); err != nil || user == nil {
+		t.Fatalf("変える前の Resolve() = (%+v, %v), want 利用者", user, err)
+	}
+
+	after := usecase.NewAuthService(provider, sessions, []string{"99"},
+		usecase.WithAuthClock(func() time.Time { return authNow }))
+	user, err := after.Resolve(t.Context(), result.Token)
+	if err != nil || user != nil {
+		t.Fatalf("変えたあとの Resolve() = (%+v, %v), want (nil, nil)", user, err)
+	}
+}
+
+// MCP のトークンの持ち主もセッションと同じ相手で照らす（ADR 0076）。
+func TestFindAllowedUser(t *testing.T) {
+	t.Parallel()
+
+	sessions := newFakeSessions()
+	allowed, err := sessions.UpsertUser(t.Context(), port.User{
+		Provider: "fake", Subject: allowedSubject, Login: "octocat",
+	})
+	if err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	other, err := sessions.UpsertUser(t.Context(), port.User{
+		Provider: "fake", Subject: "99", Login: "hubot",
+	})
+	if err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	svc := newAuthService(t, defaultProvider(), sessions)
+
+	got, err := svc.FindAllowedUser(t.Context(), allowed.ID)
+	if err != nil || got == nil || got.ID != allowed.ID {
+		t.Errorf("通す相手 = (%+v, %v), want %s", got, err, allowed.ID)
+	}
+	for name, id := range map[string]string{"通さない相手": other.ID, "居ない利用者": "user-missing"} {
+		if got, err := svc.FindAllowedUser(t.Context(), id); err != nil || got != nil {
+			t.Errorf("%s = (%+v, %v), want (nil, nil)", name, got, err)
 		}
 	}
 }

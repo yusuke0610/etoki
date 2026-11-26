@@ -20,6 +20,14 @@ const sessionCookie = "etoki_session"
 // callbackPath はコールバックのパス。redirect_uri の組み立てにも使う。
 const callbackPath = "/api/auth/callback"
 
+// loginDeniedLocation は、通さない相手だったときに戻す先（#492）。
+//
+// **クエリの形は画面と揃える**（`web/src/app/location.ts` の `parseLoginDenied`）。
+// 画面はこれを読んで「このアカウントでは使えない」と出し、URL から消す。
+// 黙って `/` に戻すと、ログイン画面が出直すだけで何が起きたのかが分からず、
+// 押し直しても GitHub が同じアカウントで通して同じところへ戻る。
+const loginDeniedLocation = "/?login=denied"
+
 // getSession はログイン状態を返す。
 //
 // 常に 200。未ログインを 401 で伝えると、認証を設定していない構成の起動時にも
@@ -197,6 +205,15 @@ func (h *handlers) clearSessionCookie(c *gin.Context) {
 // failAuth はログインの失敗を HTTP ステータスに写す。
 func (h *handlers) failAuth(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, usecase.ErrLoginNotAllowed):
+		// 誰が入ろうとしたかを残す。通す相手は 1 人なので、これが出たら自分の
+		// 書き損じか、URL を見つけた他人のどちらか。
+		h.logger.WarnContext(c.Request.Context(), "login rejected: account not allowed",
+			slog.String("path", c.Request.URL.Path), slog.Any("error", err))
+
+		// ブラウザのトップレベル遷移なので JSON は返さず、理由をつけて画面に戻す。
+		c.Redirect(http.StatusFound, loginDeniedLocation)
+
 	case errors.Is(err, usecase.ErrInvalidInput), errors.Is(err, port.ErrNotAuthenticated):
 		// state が古い、または code を使い切った。攻撃かもしれないので記録する
 		// が、正規の利用者が認可画面を開いたまま放置しただけでも起きる。

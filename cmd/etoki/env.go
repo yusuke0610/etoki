@@ -116,9 +116,10 @@ func positiveDuration(name string) (time.Duration, error) {
 func setupHints() etoki.SetupHints {
 	return etoki.SetupHints{
 		// どちらかがあれば組み立てる（newLLMClient）。
-		LLM:            fmt.Sprintf("set %s or %s", llm.EnvAPIKey, llm.EnvBaseURL),
-		GitHub:         "set " + github.EnvToken,
-		Auth:           fmt.Sprintf("set %s and %s", githubauth.EnvClientID, githubauth.EnvClientSecret),
+		LLM:    fmt.Sprintf("set %s or %s", llm.EnvAPIKey, llm.EnvBaseURL),
+		GitHub: "set " + github.EnvToken,
+		Auth: fmt.Sprintf("set %s, %s and %s",
+			githubauth.EnvClientID, githubauth.EnvClientSecret, githubauth.EnvAllowedUserID),
 		AllowedOrigins: fmt.Sprintf("set %s if etoki is bound beyond loopback", envAllowedOrigins),
 	}
 }

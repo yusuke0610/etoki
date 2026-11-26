@@ -69,6 +69,14 @@ func newAuthRouter(
 	return httpapi.NewRouter(deps), sessions
 }
 
+// testAllowedSubjects はテストのルーターがログインを通す相手。
+//
+// 本番の組み立て口は 1 人しか通さない（#492）。ここで複数を通すのは、共有の
+// テストが 2 人目以降のログインを要るため（usecase.NewAuthService の doc）。
+// stubProvider の既定の利用者（42）、共有のテストの利用者（1〜3）、
+// otherUserProvider（99）。**通さない相手のテストはこれ以外の番号を使う。**
+var testAllowedSubjects = []string{"42", "1", "2", "3", "99"}
+
 // newAuthDeps は newAuthRouter の組み立てを返す。認可サーバー（ADR 0076）を
 // 足したルーターを作るのに、同じ組み立てから始める。
 func newAuthDeps(
@@ -80,6 +88,19 @@ func newAuthDeps(
 	if err := sqlite.Migrate(t.Context(), db); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
+
+	deps, sessions := authDepsOn(t, db, provider, testAllowedSubjects)
+	return deps, sessions, db
+}
+
+// authDepsOn は db の上に組み立てる。provider が nil なら認証を設定しない構成。
+//
+// 同じ DB に、通す相手だけを変えた別の組み立てを作るのに使う（設定を変えて
+// 再起動したのと同じ）。
+func authDepsOn(
+	t *testing.T, db *sql.DB, provider port.IdentityProvider, allowed []string,
+) (httpapi.Deps, port.SessionRepository) {
+	t.Helper()
 
 	boards := sqlite.NewBoardRepository(db)
 	mappings := sqlite.NewMappingRepository(db)
@@ -104,14 +125,14 @@ func newAuthDeps(
 		}
 
 		sessions = sqlite.NewSessionRepository(db, box)
-		auth := usecase.NewAuthService(provider, sessions)
+		auth := usecase.NewAuthService(provider, sessions, allowed)
 		deps.Auth = auth
 		// 招待は認証が無いと意味を持たない。組み立ての条件を etoki.New と
 		// 揃えておかないと、ここだけ 503 にならない構成になる（ADR 0017）。
 		deps.Members = usecase.NewBoardMemberService(boards, auth, usecase.NewBoardLocks())
 	}
 
-	return deps, sessions, db
+	return deps, sessions
 }
 
 // login は実際にログインを通し、セッション cookie を返す。
@@ -370,6 +391,42 @@ func TestCallback_RedirectsWhenExchangeFails(t *testing.T) {
 	}
 }
 
+// 通さない相手は、セッションを張らずに理由つきで画面へ戻す（#492）。黙って `/`
+// に戻すと、ログイン画面が出直すだけで何が起きたのかが分からない。**ログインを
+// 始めたときの戻り先にも行かせない。** 戻り先の画面はログインしていないと開けない。
+func TestCallback_RedirectsWithReasonWhenUserNotAllowed(t *testing.T) {
+	t.Parallel()
+
+	// 7 は testAllowedSubjects に無い。
+	provider := &stubProvider{identity: &port.Identity{
+		Provider: "github", Subject: "7", Login: "mallory", DisplayName: "Mallory",
+	}}
+	r, _ := newAuthRouter(t, provider)
+
+	rec := do(t, r, http.MethodPost, "/api/auth/login",
+		map[string]string{"returnTo": "/?board=board-1"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", rec.Code, rec.Body)
+	}
+	u, err := url.Parse(decode[map[string]any](t, rec)["authorizeUrl"].(string))
+	if err != nil {
+		t.Fatalf("parse authorize url: %v", err)
+	}
+
+	rec = do(t, r, http.MethodGet, "/api/auth/callback?code=c1&state="+u.Query().Get("state"), nil)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 (%s)", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Location"); got != "/?login=denied" {
+		t.Errorf("Location = %q, want /?login=denied", got)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "etoki_session" && c.Value != "" {
+			t.Error("通さない相手にセッションを張っている")
+		}
+	}
+}
+
 // state の発行は書き込み。GET にすると外部ページの <img> から叩ける。
 func TestLogin_IsNotReachableByGet(t *testing.T) {
 	t.Parallel()
@@ -453,7 +510,7 @@ func TestExpiredSessionIsRejected(t *testing.T) {
 
 	// 有効期間を跨いだ時刻から見ると解決できない。
 	future := time.Now().Add(usecase.SessionTTL + time.Hour)
-	expired := usecase.NewAuthService(&stubProvider{}, sessions,
+	expired := usecase.NewAuthService(&stubProvider{}, sessions, testAllowedSubjects,
 		usecase.WithAuthClock(func() time.Time { return future }))
 
 	user, err := expired.Resolve(t.Context(), cookie.Value)
@@ -507,7 +564,7 @@ func TestBoards_AreIsolatedBetweenUsers(t *testing.T) {
 		return httpapi.NewRouter(httpapi.Deps{
 			Boards:      usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 			Annotations: usecase.NewAnnotationService(boards, mappings),
-			Auth:        usecase.NewAuthService(provider, sessions),
+			Auth:        usecase.NewAuthService(provider, sessions, testAllowedSubjects),
 		})
 	}
 

@@ -684,6 +684,38 @@ func TestMCP_SurvivesLogout(t *testing.T) {
 	}
 }
 
+// トークンの持ち主が通す相手から外れたら、`/mcp` も通さない（#492）。トークンは
+// 同意した時点のログインで発行されるので、通す相手を変えたあとも残る。同じ DB を、
+// 通す相手だけを変えた組み立てから見る（設定を変えて再起動したのと同じ）。
+func TestMCP_RejectsTokenOfUserNoLongerAllowed(t *testing.T) {
+	t.Parallel()
+
+	r, _, db := newOAuthRouter(t, oauthRouterOptions{})
+	_, tokens := connectClient(t, r, signIn(t, r))
+	bearer := map[string]string{"Authorization": "Bearer " + tokens.AccessToken}
+
+	// 前提。変える前は通る。通らないまま緑になると、照らしていない実装でも通る。
+	if rec := mcpListTools(t, r, bearer); rec.Code != http.StatusOK {
+		t.Fatalf("変える前の /mcp: status = %d, want 200 (%s)", rec.Code, rec.Body)
+	}
+
+	// stubProvider の既定の利用者（42）を外す。
+	deps, _ := authDepsOn(t, db, &stubProvider{}, []string{"1"})
+	deps.OAuth = usecaseOAuthServer(sqlite.NewOAuthGrantRepository(db))
+	after := httpapi.NewRouter(deps)
+
+	rec := mcpListTools(t, after, bearer)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("変えたあとの /mcp: status = %d, want 401 (%s)", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("WWW-Authenticate"); !strings.Contains(got, `error="invalid_token"`) {
+		t.Errorf("WWW-Authenticate = %q, want invalid_token", got)
+	}
+	if strings.Contains(rec.Body.String(), "list_boards") {
+		t.Error("弾いたのに道具の一覧が出ている")
+	}
+}
+
 // refresh token で取り直したトークンも `/mcp` を通る。口を通した往復の確認。
 func TestToken_RefreshOverHTTP(t *testing.T) {
 	t.Parallel()

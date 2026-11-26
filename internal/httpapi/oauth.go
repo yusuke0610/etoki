@@ -437,6 +437,20 @@ func (h *handlers) requireBearer(next http.Handler) gin.HandlerFunc {
 			unauthorizedBearer(c, metadata, "invalid_token")
 			return
 		}
+		// **トークンの持ち主も、ログインと同じ相手で照らす**（#492）。トークンは
+		// 同意した時点のログインで発行されるので、通す相手を変えたあとも残りうる。
+		// 認可サーバーを組み立てるのは認証ありの構成だけなので、h.auth は nil でない。
+		owner, err := h.auth.FindAllowedUser(c.Request.Context(), verified.UserID)
+		if err != nil {
+			h.logger.ErrorContext(c.Request.Context(), "resolve mcp token owner",
+				slog.String("path", c.Request.URL.Path), slog.Any("error", err))
+			c.String(http.StatusInternalServerError, "internal error\n")
+			return
+		}
+		if owner == nil {
+			unauthorizedBearer(c, metadata, "invalid_token")
+			return
+		}
 		if !containsScope(verified.Scopes, usecase.OAuthScopeRead) {
 			c.Header("WWW-Authenticate", fmt.Sprintf(
 				`Bearer error="insufficient_scope", scope=%q, resource_metadata=%q`,
