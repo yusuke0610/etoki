@@ -796,6 +796,39 @@ describe("useBoardNavigation", () => {
       expect(hook.result.current.current).toEqual(board("b2"));
       expect(url()).toBe("/?board=b2");
     });
+
+    // 切れると: 戻る / 進むは移る前に世代を全部進めるので、未保存の確認で断って
+    // 同じボードに残っても応答を捨て、サーバーは新しい作成先なのに画面は前の作成先を
+    // 出し続ける（#481 の full review）。作るときに食い違いで断られる。
+    it("設定を待つあいだに戻る / 進むで移ろうとして断ったら、応答はボードに入れる", async () => {
+      const { hook } = setup();
+      await openFromList(hook, board("b1"));
+      act(() => hook.result.current.startPicking());
+      act(() => hook.result.current.handleDirtyChange(true));
+      confirm.mockReturnValue(false);
+      const setting = deferred<BoardDetail>();
+      vi.spyOn(boardsApi, "setTarget").mockReturnValueOnce(setting.promise);
+
+      let changed!: Promise<void>;
+      act(() => {
+        changed = hook.result.current.changeTarget(target);
+      });
+      act(() => browserMovesTo("/"));
+      await settle();
+      expect(confirm).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        setting.resolve(detail("b1", { projectTitle: "新しい作成先" }));
+        await changed;
+      });
+
+      expect(hook.result.current.current?.id).toBe("b1");
+      expect(hook.result.current.current?.projectTitle).toBe("新しい作成先");
+      // ダイアログと URL は動かさない。移る途中かどうかを応答の時点では言えず、
+      // 書き換えると、移った先の履歴を上書きしうる。断って戻した場所（ダイアログ
+      // を開いたボード）のままにし、閉じるのは「やめる」。
+      expect(hook.result.current.picking).toBe(true);
+      expect(url()).toBe("/?board=b1&picking=1");
+    });
   });
 
   describe("ログアウト", () => {

@@ -459,9 +459,17 @@ export function useBoardNavigation({
    * 取り直す必要が無い。画像と版は持ち越す（`replaceBoard` と同じ理由。作成先の
    * 設定は版を進めない、ADR 0092）。
    *
-   * **待つあいだに移っていたら、画面には反映しない。** 戻る / 進むや一覧へ戻る
-   * 操作は世代を進めるので、移ったことはそれで分かる。作成先そのものはもう
-   * 変わっているので、一覧は読み直す。
+   * **ボードに入れるかは、開いているのがそのボードかで決める。** 作成先は
+   * サーバーではもう変わっているので、同じボードを開いている限り入れる。世代で
+   * 決めると、戻る / 進むで移ろうとして未保存の確認で断ったとき（世代は移る前に
+   * 進む）に応答を捨て、画面が前の作成先を出し続ける（#481 の full review）。
+   * 移っていれば（一覧・別のボード）入れない。一覧は作成先でまとめて見せる
+   * （ADR 0019）ので、どちらでも読み直す。
+   *
+   * **ダイアログと URL は、待つあいだに移ろうとしていなければ（世代がいまの
+   * もの）だけ閉じる。** 移る途中かどうかを応答の時点では言えず、URL を書き換え
+   * ると、移った先の履歴を上書きしうる。断って戻った場合はダイアログが開いた
+   * まま残り、「やめる」で閉じる。
    */
   const changeTarget = useCallback(
     async (target: BoardTarget) => {
@@ -469,15 +477,14 @@ export function useBoardNavigation({
 
       const generation = openings.start(OPENING);
       const board = await boardsApi.setTarget(current.id, target);
-      // 一覧は作成先でまとめて見せる（ADR 0019）ので、移っていても読み直す。
       void reload();
-      if (!openings.isCurrent(OPENING, generation)) return;
 
       setCurrent((open) =>
         open?.id === board.id
           ? { ...board, files: open.files, updatedAt: open.updatedAt }
           : open,
       );
+      if (!openings.isCurrent(OPENING, generation)) return;
       setPicking(false);
       showLocation({ boardId: board.id, picking: false }, "replace");
     },
