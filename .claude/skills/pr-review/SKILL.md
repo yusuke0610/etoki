@@ -91,9 +91,19 @@ gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$
 のはここになる。`status.sh` はこのコメントの印で決着を判定する（`/pr-watch` の
 「full review の読み方」）。
 
+**書く前に、`gh` でログインしているアカウントが PR の作者かを確かめる。**
+`status.sh` は PR の作者が書いたまとめしか数えない（印は誰でも書ける）。違って
+いたら投稿せず、まとめの本文を添えて PR の作者に投稿を頼む。
+
+```sh
+gh api user --jq .login
+gh api repos/yusuke0610/etoki/pulls/<番号> --jq .user.login   # 同じであること
+gh api repos/yusuke0610/etoki/pulls/<番号> --jq .head.sha      # 印に書く head
+```
+
 ```sh
 gh api -X POST repos/yusuke0610/etoki/issues/<番号>/comments -F body=@- <<'EOF'
-<!-- etoki:findings-settled -->
+<!-- etoki:findings-settled head=<いまの head の 40 桁の sha> -->
 full review（<終わった時刻>）の指摘を決着させました。
 
 - 直した（N 件）: <指摘の要約> → <直したコミット>
@@ -103,7 +113,10 @@ full review のあとのコミットは、指摘への直し<と main の取り�
 EOF
 ```
 
-- **印（1 行目）を消さない。** 無いと決着に数えられない。
+- **印（1 行目）を消さない。** 無いと決着に数えられない。**印の head は、直しを
+  全部 push し終えたあとに取り直した 40 桁にする。** `status.sh` はこれがいまの
+  head と一致するときだけ決着と読む。最後の 1 文が言えるのはこの head までの
+  コミットについてだけだから。
 - **最後の 1 文が本当であるときだけ書く。** 直し以外を積んだなら、まとめで
   済ませずに `/pr-watch` に依頼し直してもらう。`status.sh` は中身を確かめられない。
 - **本文にだけ載った指摘（nitpick、diff の外）も数える。** スレッドが無いので、
@@ -112,9 +125,9 @@ EOF
   `status.sh` はまとめを投稿した時刻（`created_at`）で数えるので、編集しても
   古い時刻のまま数えられない。
 - **依頼し直したら、次の full review が終わってから書き直す。** 前のまとめは数えない。
-- **まとめのあとに直しを push したら、新しいまとめを書き直す。** まとめが言えるのは
-  書いた時点の head までで、`status.sh` はまとめのあとに head が進んだ PR を決着と
-  読まない。直し以外を積んだなら、書き直さずに依頼し直す。
+- **まとめのあとに直しを push したら、新しいまとめを書き直す。** 印の head と
+  いまの head が違うと、`status.sh` は決着と読まない。直し以外を積んだなら、
+  書き直さずに依頼し直す。
 
 ## 決着した指摘を規約に還す
 

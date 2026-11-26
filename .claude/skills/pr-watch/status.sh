@@ -80,9 +80,10 @@ unresolved_threads() {
 #   SUM  要約のコメント。最後に読んだ commit を添える。「between A and B」の B、
 #        それが無ければ `"coveredCommitId":"<sha>","kind":"reviewed"` の sha。
 #        どちらも無ければ「?」（読んだ head と言わない）
-#   SET  人が書いた、指摘を決着させたまとめ（印 `<!-- etoki:findings-settled -->`
-#        を持つもの）。書き手を添え、数えるのは PR の作者が書いたものだけにする
-#        （リポジトリは公開で、誰でも印を書ける）
+#   SET  人が書いた、指摘を決着させたまとめ（印
+#        `<!-- etoki:findings-settled head=<40 桁の sha> -->` を持つもの）。書き手と、
+#        印に書かれた head を添える（無ければ「-」）。数えるのは PR の作者が書いた
+#        ものだけにする（リポジトリは公開で、誰でも印を書ける）
 # **要約は印（`summarize by coderabbit.ai`）で見分け、返信より先に判定する。**
 # 要約は本文に「rate limited」を含むことがあり、後に回すと LIM に取られて
 # 要約が無いことになる（「between A and B」を持たない要約もある）。
@@ -101,8 +102,9 @@ classify='.[]
 	    then "REQ\t\(.created_at)\t\(.updated_at)\t-\t\($ep)"
 	  elif ($who | test("\\[bot\\]$") | not) and ($b | test("^\\s*@coderabbitai\\s+review\\b"))
 	    then "REV\t\(.created_at)\t\(.updated_at)\t-\t\($ep)"
-	  elif ($who | test("\\[bot\\]$") | not) and ($b | test("<!-- etoki:findings-settled -->"))
-	    then "SET\t\(.created_at)\t\(.updated_at)\t\($who)\t\($ep)"
+	  elif ($who | test("\\[bot\\]$") | not) and ($b | test("<!-- etoki:findings-settled[ >-]"))
+	    then "SET\t\(.created_at)\t\(.updated_at)\t\($who)\t\($ep)\t\(
+	      ($b | capture("<!-- etoki:findings-settled head=(?<h>[0-9a-f]{40}) -->") | .h) // "-")"
 	  elif $who != "coderabbitai[bot]" then empty
 	  elif ($b | test("summarize by coderabbit\\.ai|Reviewing files that changed"))
 	    then "SUM\t\(.created_at)\t\(.updated_at)\t\(
@@ -173,17 +175,6 @@ findings_since() {
 			else print n + 0
 		}' <<<"$inline
 $body"
-}
-
-# その時刻と同じかより後に、この PR の枝が force push された回数。前にこの枝に
-# あった commit へ戻すと、その commit の check-suite は古いままで head の時刻には
-# 出ないので、timeline で見る。取れなかったら失敗で返す（0 回と読まないように。
-# pipefail なので gh の失敗がそのまま返る）。
-forced_since() {
-	local pr="$1" since="$2"
-	gh api --paginate "repos/$nwo/issues/$pr/timeline?per_page=100" \
-		--jq '.[] | select(.event == "head_ref_force_pushed") | .created_at' |
-		awk -v s="$since" '$1 >= s { n++ } END { print n + 0 }'
 }
 
 # CI の状態。check-run が 1 本も無いのは、衝突で pull_request のワークフローが
@@ -280,11 +271,11 @@ for pr in "${prs[@]}"; do
 
 	# 依頼のうち最後のもの、その後に来た最初の返信、要約、PR の作者が書いた最後の
 	# まとめを拾う。ISO 8601 の UTC 時刻なので、文字列の比較で前後が決まる。
-	read -r req_at reply reply_at reply_extra sum_at sum_sha reply_ep sum_ep rev_at set_at < <(awk -F'\t' -v author="$pr_author" '
+	read -r req_at reply reply_at reply_extra sum_at sum_sha reply_ep sum_ep rev_at set_at set_head < <(awk -F'\t' -v author="$pr_author" '
 		$1 == "REQ" { req = $2 }
 		$1 == "REV" { rev = $2 }
 		$1 == "SUM" { sum_at = $3; sum_sha = $4; sum_ep = $5 }
-		$1 == "SET" && $4 == author { set = $2 }
+		$1 == "SET" && $4 == author { set = $2; set_head = $6 }
 		{ kind[NR] = $1; c[NR] = $2; u[NR] = $3; x[NR] = $4; e[NR] = $5 }
 		END {
 			r = "-"; ra = "-"; rx = "-"; re = 0
@@ -292,7 +283,7 @@ for pr in "${prs[@]}"; do
 				if ((kind[i] == "FIN" || kind[i] == "RUN" || kind[i] == "LIM") && c[i] >= req) {
 					r = kind[i]; ra = u[i]; rx = x[i]; re = e[i]; gsub(/ /, "_", rx); break
 				}
-			print (req == "" ? "-" : req), r, ra, rx, (sum_at == "" ? "-" : sum_at), (sum_sha == "" ? "-" : sum_sha), re, sum_ep + 0, (rev == "" ? "-" : rev), (set == "" ? "-" : set)
+			print (req == "" ? "-" : req), r, ra, rx, (sum_at == "" ? "-" : sum_at), (sum_sha == "" ? "-" : sum_sha), re, sum_ep + 0, (rev == "" ? "-" : rev), (set == "" ? "-" : set), (set_head == "" ? "-" : set_head)
 		}' <<<"$events")
 
 	# full review の判定。順番に意味がある（SKILL.md「full review の読み方」）。
@@ -319,7 +310,9 @@ for pr in "${prs[@]}"; do
 				stale="依頼のあとに head が進んだ"
 			# force push で、前にこの枝にあった commit へ戻すと、その commit の
 			# check-suite は依頼より前のまま。依頼のあとの force push は head が変わったと読む。
-			elif ! forced="$(forced_since "$pr" "$req_at")"; then
+			elif ! forced="$(gh api --paginate "repos/$nwo/issues/$pr/timeline?per_page=100" \
+				--jq '.[] | select(.event == "head_ref_force_pushed") | .created_at' |
+				awk -v r="$req_at" '$1 >= r { n++ } END { print n + 0 }')"; then
 				stale="force push の有無を取れなかった"
 			elif [ "$forced" != "0" ]; then
 				stale="依頼のあとに force push された"
@@ -345,19 +338,16 @@ for pr in "${prs[@]}"; do
 			# まとめは full review が終わったあとのものだけを数える。前のものは、
 			# 前の full review の指摘を決着させたまとめでしかない。
 			elif [ "$set_at" != "-" ] && [[ ! "$set_at" < "$reply_at" ]]; then
-				# まとめが言えるのは、書いた時点の head までのこと（「full review のあとの
-				# コミットは直しだけ」）。まとめのあとに head が進んだら、その分は
-				# まとめに含まれない。直しか直し以外かは status.sh では見分けられない
-				# ので、決着とは言わず、まとめを書き直すか依頼し直すかを人に決めさせる。
-				# 同じ秒の push も「まとめのあと」に数える（前後を言えない）。
-				if [ "$head_time" = "?" ]; then
-					fr="決着待ち(指摘 ${found} 件 / head の時刻を取れず、まとめのあとに進んだかを言えない)"
-				elif [[ ! "$set_at" > "$head_time" ]]; then
-					fr="決着待ち(指摘 ${found} 件 / まとめのあとに head が進んだ。直しだけなら新しいまとめを書く。直し以外を積んだなら依頼し直す)"
-				elif ! forced_set="$(forced_since "$pr" "$set_at")"; then
-					fr="決着待ち(指摘 ${found} 件 / まとめのあとの force push の有無を取れなかった)"
-				elif [ "$forced_set" != "0" ]; then
-					fr="決着待ち(指摘 ${found} 件 / まとめのあとに force push された。直しだけなら新しいまとめを書く。直し以外を積んだなら依頼し直す)"
+				# まとめが言えるのは、印に書いた head までのこと（「full review のあとの
+				# コミットは直しだけ」）。いまの head がそれと違えば、まとめに含まれない
+				# コミットがある。時刻では比べない。前にこの枝にあった commit へ通常の
+				# push で戻すと、その commit の check-suite は古いままで、まとめより前に
+				# 見える。直しか直し以外かは status.sh では見分けられないので、決着とは
+				# 言わず、まとめを書き直すか依頼し直すかを人に決めさせる。
+				if [ "$set_head" = "-" ]; then
+					fr="決着待ち(指摘 ${found} 件 / まとめの印に head が無い。印に head を書いてまとめを書き直す)"
+				elif [ "$set_head" != "$head" ]; then
+					fr="決着待ち(指摘 ${found} 件 / まとめは ${set_head:0:7} まで。直しだけなら新しいまとめを書く。直し以外を積んだなら依頼し直す)"
 				else
 					fr="決着済み(指摘 ${found} 件。まとめ $set_at)"
 				fi
