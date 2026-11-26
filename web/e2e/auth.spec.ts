@@ -78,6 +78,7 @@ test.describe("ログイン", () => {
     await expect(notice).toContainText("このアカウントでは etoki を使えません");
     // 押し直す前に何をすればよいかまで言う。言わないと同じ断りに戻る。
     await expect(notice).toContainText("GitHub で別のアカウントに切り替えてから");
+    await expect(notice).toContainText("もう一度ログインしてください");
     await expect.poll(() => new URL(page.url()).search).toBe(`?board=${BOARD_ID}`);
 
     const started = page.waitForRequest(

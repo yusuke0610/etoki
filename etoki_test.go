@@ -765,7 +765,7 @@ func TestNewRefusesExposureWithSetupHint(t *testing.T) {
 		// want は案内に載っているべき文字列。空なら確かめない。
 		want string
 	}{
-		"案内を渡した":    {hint: "hint-for-auth", want: "hint-for-auth"},
+		"案内を渡した":    {hint: "hint-for-auth", want: "configure authentication (hint-for-auth)"},
 		"案内を渡していない": {hint: ""},
 	}
 
@@ -782,8 +782,12 @@ func TestNewRefusesExposureWithSetupHint(t *testing.T) {
 			}
 
 			msg := err.Error()
-			// 何が起きる構成なのかと、抜け道（ループバックに戻す）も言う。
-			for _, want := range []string{"0.0.0.0:8080", "every board", etoki.DefaultAddr} {
+			// 何が起きる構成なのかと、打ち手を 2 つとも言う（認証を設定する、
+			// ループバックに戻す）。片方が欠けると、残った打ち手しか選べない。
+			for _, want := range []string{
+				"0.0.0.0:8080", "every board",
+				"configure authentication", "or bind to " + etoki.DefaultAddr,
+			} {
 				if !strings.Contains(msg, want) {
 					t.Errorf("error = %q, want it to contain %q", msg, want)
 				}
