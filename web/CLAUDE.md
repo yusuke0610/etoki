@@ -310,8 +310,9 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 **自動保存もローカルの下書きも持たない。** 代わりに、失う直前に確認を出す。
 自動で保存しないと決めた以上、知らせる責任が対になる。
 
-- `dirty` のあいだと、作成の実行中だけ `beforeunload` を登録する
-  （`useDirtyScene` の `useConfirmLeave`。**渡すのは `BoardPage`**）。
+- `dirty` のあいだ、作成の実行中、手直しした下書きがあるあいだ（下の項目）だけ
+  `beforeunload` を登録する（`useDirtyScene` の `useConfirmLeave`。**渡すのは
+  `BoardPage`**）。
   リロード・タブを閉じる・戻るはアプリ側で止められない。**作成中を外さない**
   （ADR 0051）。絵解きが保存を挟むので、作成を押す時点ではふつう保存済みで、
   未保存だけを見ていると何も訊かれない。
