@@ -28,11 +28,14 @@ type InterpretationJobs struct {
 }
 
 // NewInterpretationJobs は InterpretationJobs を作る。
+//
+// ジョブの上限は svc の 1 回の上限と呼ぶ回数から導く（jobTimeout）。
 func NewInterpretationJobs(svc *InterpretationService, opts ...JobsOption) *InterpretationJobs {
 	return &InterpretationJobs{
 		svc: svc,
 		table: newJobTable[InterpretationJobInput, InterpretationResult](
-			"interpretation", svc.limits, svc.logger, ErrInterpretationFailed, opts),
+			"interpretation", svc.limits, svc.logger, ErrInterpretationFailed,
+			jobTimeout(svc.maxAttempts, svc.callTimeout), opts),
 	}
 }
 

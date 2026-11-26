@@ -28,11 +28,14 @@ type DiagramJobs struct {
 }
 
 // NewDiagramJobs は DiagramJobs を作る。
+//
+// ジョブの上限は svc の 1 回の上限と呼ぶ回数から導く（jobTimeout）。
 func NewDiagramJobs(svc *DiagramService, opts ...JobsOption) *DiagramJobs {
 	return &DiagramJobs{
 		svc: svc,
 		table: newJobTable[DiagramRequest, DiagramDraft](
-			"diagram draft", svc.limits, svc.logger, ErrDiagramFailed, opts),
+			"diagram draft", svc.limits, svc.logger, ErrDiagramFailed,
+			jobTimeout(svc.maxAttempts, svc.callTimeout), opts),
 	}
 }
 

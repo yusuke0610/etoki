@@ -83,11 +83,18 @@ func TestREADME_EnvDefaultsMatchConstants(t *testing.T) {
 		"ETOKI_DB_PATH":             defaultDBPath,
 		"ETOKI_LLM_BASE_URL":        llm.DefaultBaseURL,
 		"ETOKI_LLM_MODEL":           llm.DefaultModel,
+		"ETOKI_LLM_TIMEOUT":         etoki.DefaultLLMCallTimeout.String(),
 		"ETOKI_LLM_MAX_CONCURRENT":  strconv.Itoa(etoki.DefaultLLMMaxConcurrent),
 		"ETOKI_LLM_RATE_WINDOW":     etoki.DefaultLLMRateWindow.String(),
 		"ETOKI_GITHUB_KIND_FIELD":   etoki.DefaultKindFieldName,
 		"ETOKI_GITHUB_PARENT_FIELD": etoki.DefaultParentFieldName,
 		"ETOKI_GITHUB_BASE_URL":     github.DefaultBaseURL,
+	}
+	// 期間は書き方が揃わない（README は 1h、Duration.String は 1h0m0s）ので、
+	// 値として比べる。
+	durations := map[string]time.Duration{
+		"ETOKI_LLM_TIMEOUT":     etoki.DefaultLLMCallTimeout,
+		"ETOKI_LLM_RATE_WINDOW": etoki.DefaultLLMRateWindow,
 	}
 
 	rows := readmeEnvRows(t)
@@ -103,11 +110,9 @@ func TestREADME_EnvDefaultsMatchConstants(t *testing.T) {
 	for _, r := range rows {
 		expected := want[r.name]
 
-		// 期間は書き方が揃わない（README は 1h、Duration.String は 1h0m0s）
-		// ので、値として比べる。
-		if r.name == "ETOKI_LLM_RATE_WINDOW" {
+		if d, ok := durations[r.name]; ok {
 			got, err := time.ParseDuration(r.def)
-			if err != nil || got != etoki.DefaultLLMRateWindow {
+			if err != nil || got != d {
 				t.Errorf("%s: README の既定値 %q が %s と一致しない", r.name, r.def, expected)
 			}
 			continue

@@ -62,3 +62,41 @@ func TestLLMLimits(t *testing.T) {
 		})
 	}
 }
+
+// 1 回の呼び出しを待つ上限も**未設定と 0 を区別する**（ADR 0104）。未設定は既定の
+// まま（0 を渡す）で、0 以下と読めない値は落とす。0 を「待たない」や「無制限」と
+// 読ませると、どちらに読むかで意味が逆向きになる。
+func TestLLMCallTimeout(t *testing.T) {
+	cases := map[string]struct {
+		env  string
+		want time.Duration
+		err  bool
+	}{
+		"未設定はゼロ値（既定のまま）": {env: "", want: 0},
+		"設定した値をそのまま渡す":   {env: "20m", want: 20 * time.Minute},
+		"0 は誤り":          {env: "0s", err: true},
+		"負の値":            {env: "-1m", err: true},
+		"単位の無い数":         {env: "300", err: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// t.Setenv は並行実行を禁じるので t.Parallel は呼ばない。
+			t.Setenv("ETOKI_LLM_TIMEOUT", tc.env)
+
+			got, err := llmCallTimeout()
+			if tc.err {
+				if err == nil {
+					t.Fatalf("llmCallTimeout() = %s, want error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("llmCallTimeout() = %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("llmCallTimeout() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}

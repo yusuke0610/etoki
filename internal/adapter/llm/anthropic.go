@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/yusuke0610/etoki/internal/baseurl"
 	"github.com/yusuke0610/etoki/internal/loopback"
@@ -31,7 +30,7 @@ import (
 // 既定値。ETOKI_LLM_* で差し替えられる。
 const (
 	// DefaultBaseURL は Messages API のホスト。
-	DefaultBaseURL = "https://api.anthropic.com"
+	DefaultBaseURL = "https://" + anthropicHost
 	// DefaultModel は既定のモデル（ADR 0005）。
 	DefaultModel = "claude-opus-5"
 	// DefaultMaxTokens は 1 回の応答で許す上限。
@@ -42,14 +41,16 @@ const (
 	DefaultMaxTokens = 16000
 )
 
+// anthropicHost は Anthropic の Messages API のホスト名。
+//
+// 思考を切る設定（ThinkingDisabled）を、ここへ向けたときに断るのにも使う。
+const anthropicHost = "api.anthropic.com"
+
 // anthropicVersion は Messages API が要求するバージョンヘッダ。
 const anthropicVersion = "2023-06-01"
 
-// defaultTimeout は 1 回の呼び出しを待つ上限。
-//
-// thinking が有効なモデルは応答までに分単位かかることがある。短く切ると
-// 正常な応答を取りこぼす。
-const defaultTimeout = 5 * time.Minute
+// ThinkingDisabled は Config.Thinking に置ける唯一の値。思考を切らせる（ADR 0104）。
+const ThinkingDisabled = "disabled"
 
 // maxResponseBytes は応答ボディを読む上限。
 const maxResponseBytes = 10 << 20 // 10 MiB
@@ -63,9 +64,10 @@ const maxRedirects = 10
 // EnvBaseURL と EnvAPIKey を公開しているのは、配線（cmd/etoki）が「LLM が
 // 設定されていない」ときの案内を同じ名前から組むため（ADR 0083）。
 const (
-	EnvBaseURL = "ETOKI_LLM_BASE_URL"
-	EnvAPIKey  = "ETOKI_LLM_API_KEY" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
-	envModel   = "ETOKI_LLM_MODEL"
+	EnvBaseURL  = "ETOKI_LLM_BASE_URL"
+	EnvAPIKey   = "ETOKI_LLM_API_KEY" //nolint:gosec // 環境変数の名前で、資格情報の値ではない（G101）
+	envModel    = "ETOKI_LLM_MODEL"
+	envThinking = "ETOKI_LLM_THINKING"
 )
 
 // Config は Client の設定。
@@ -88,7 +90,17 @@ type Config struct {
 	// MaxTokens は 1 回の応答の上限。0 以下なら DefaultMaxTokens。
 	MaxTokens int
 
-	// HTTPClient は差し替え用。nil なら既定のタイムアウトを持つものを作る。
+	// Thinking は思考（thinking）の送り方。空なら送らない（既定）。
+	//
+	// ThinkingDisabled なら {"type": "disabled"} を送り、思考を切らせる。手元の
+	// LLM 向けの設定で、Anthropic の接続先では New が断る（ADR 0104）。ほかの値も
+	// New が断る。
+	Thinking string
+
+	// HTTPClient は差し替え用。nil なら待つ上限を持たないものを作る。
+	//
+	// 1 回の呼び出しを待つ上限はユースケース層が ctx で掛ける（ADR 0104）。ここに
+	// Timeout を持たせると、短いほうで切れる。
 	//
 	// x-api-key 以外の認証を使う基盤に載せ替えるときは、ここに RoundTripper を
 	// 差してヘッダを付け替える。etoki 側のコードは触らずに済む（ADR 0008）。
@@ -100,9 +112,10 @@ type Config struct {
 // 値の検証は行わない。未設定の項目は空のまま返し、既定への差し戻しは New が行う。
 func ConfigFromEnv() Config {
 	return Config{
-		BaseURL: os.Getenv(EnvBaseURL),
-		APIKey:  os.Getenv(EnvAPIKey),
-		Model:   os.Getenv(envModel),
+		BaseURL:  os.Getenv(EnvBaseURL),
+		APIKey:   os.Getenv(EnvAPIKey),
+		Model:    os.Getenv(envModel),
+		Thinking: os.Getenv(envThinking),
 	}
 }
 
@@ -112,7 +125,9 @@ type Client struct {
 	apiKey    string
 	model     string
 	maxTokens int
-	http      *http.Client
+	// thinking は送る thinking。nil なら送らない。
+	thinking *thinkingParam
+	http     *http.Client
 }
 
 // New は Config を検証して Client を作る。
@@ -143,18 +158,27 @@ func New(cfg Config) (*Client, error) {
 			u.Redacted())
 	}
 
+	thinking, err := thinkingFor(cfg.Thinking, u.Hostname())
+	if err != nil {
+		return nil, err
+	}
+
 	c := &Client{
 		baseURL:   strings.TrimRight(base, "/"),
 		apiKey:    cfg.APIKey,
 		model:     orDefault(cfg.Model, DefaultModel),
 		maxTokens: cfg.MaxTokens,
+		thinking:  thinking,
 		http:      cfg.HTTPClient,
 	}
 	if c.maxTokens <= 0 {
 		c.maxTokens = DefaultMaxTokens
 	}
+	// **待つ上限をここで持たない**（ADR 0104）。1 回の呼び出しを待つ上限は
+	// ユースケース層が ctx で掛ける。ここにも持たせると、設定で延ばしてもこちらが
+	// 先に切る。
 	if c.http == nil {
-		c.http = &http.Client{Timeout: defaultTimeout}
+		c.http = &http.Client{}
 	}
 	if c.apiKey != "" {
 		c.http = keepKeyWithinOrigin(c.http)
@@ -196,6 +220,31 @@ func keepKeyWithinOrigin(hc *http.Client) *http.Client {
 		return nil
 	}
 	return &guarded
+}
+
+// thinkingFor は Config.Thinking を、送る thinking に読み替える。空なら送らない。
+//
+// **知らない値は断る。** 読めない値を既定（送らない）に倒すと、切ったつもりの
+// 思考が黙って残る。
+//
+// **Anthropic の接続先では断る。** claude-opus-5 は明示的に思考を切ると、本文に
+// <thinking> タグが混ざることがある（apiRequest のコメント）。見分けられるのは
+// 接続先のホスト名までで、その先が Anthropic へ転送するプロキシかどうかは
+// 分からない。ホスト名は大文字小文字を区別せず、末尾の点も同じ名前として見る。
+func thinkingFor(setting, host string) (*thinkingParam, error) {
+	switch setting {
+	case "":
+		return nil, nil
+	case ThinkingDisabled:
+		if strings.EqualFold(strings.TrimSuffix(host, "."), anthropicHost) {
+			return nil, fmt.Errorf("etoki: llm thinking %q is not accepted for %s: "+
+				"claude models may mix thinking tags into the text when thinking is disabled explicitly",
+				setting, anthropicHost)
+		}
+		return &thinkingParam{Type: ThinkingDisabled}, nil
+	default:
+		return nil, fmt.Errorf("etoki: unknown llm thinking %q: only %q is accepted", setting, ThinkingDisabled)
+	}
 }
 
 // orDefault は s が空なら fallback を返す。
@@ -286,6 +335,7 @@ func (c *Client) buildRequest(req port.VisionRequest) apiRequest {
 		MaxTokens: c.maxTokens,
 		System:    req.System,
 		Messages:  []apiMessage{{Role: "user", Content: blocks}},
+		Thinking:  c.thinking,
 	}
 }
 
@@ -390,13 +440,21 @@ func truncate(s string, n int) string {
 
 // apiRequest は POST /v1/messages のリクエストボディ。
 //
-// thinking は送らない。claude-opus-5 は既定で有効であり、明示的に無効化すると
-// 本文に <thinking> タグが混ざることがある。JSON を読み取るこの用途では致命的。
+// thinking は既定では送らない。claude-opus-5 は既定で有効であり、明示的に無効化
+// すると本文に <thinking> タグが混ざることがある。JSON を読み取るこの用途では
+// 致命的。送るのは Config.Thinking を設定したときだけで、Anthropic の接続先では
+// New が断る（ADR 0104）。
 type apiRequest struct {
-	Model     string       `json:"model"`
-	MaxTokens int          `json:"max_tokens"`
-	System    string       `json:"system,omitempty"`
-	Messages  []apiMessage `json:"messages"`
+	Model     string         `json:"model"`
+	MaxTokens int            `json:"max_tokens"`
+	System    string         `json:"system,omitempty"`
+	Messages  []apiMessage   `json:"messages"`
+	Thinking  *thinkingParam `json:"thinking,omitempty"`
+}
+
+// thinkingParam はリクエストの thinking。送るのは思考を切るときだけ。
+type thinkingParam struct {
+	Type string `json:"type"`
 }
 
 type apiMessage struct {

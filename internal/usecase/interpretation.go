@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/yusuke0610/etoki/internal/domain"
 	"github.com/yusuke0610/etoki/port"
@@ -62,6 +63,9 @@ type InterpretationService struct {
 	// 共有する。** 別々に持たせると、合計では上限の倍だけ叩ける。
 	limits      *LLMLimiter
 	maxAttempts int
+	// callTimeout は LLM の 1 回の呼び出しを待つ上限（ADR 0104）。ジョブの上限も
+	// これと maxAttempts から導く（InterpretationJobs）。
+	callTimeout time.Duration
 	logger      *slog.Logger
 }
 
@@ -115,6 +119,16 @@ func WithMaxAttempts(n int) InterpretationServiceOption {
 	}
 }
 
+// WithCallTimeout は LLM の 1 回の呼び出しを待つ上限を差し替える。0 以下は
+// 無視する（既定は DefaultLLMCallTimeout）。
+func WithCallTimeout(d time.Duration) InterpretationServiceOption {
+	return func(s *InterpretationService) {
+		if d > 0 {
+			s.callTimeout = d
+		}
+	}
+}
+
 // WithLogger は実績の記録先を差し替える。nil は無視する。
 //
 // 解釈は LLM を叩く外部呼び出しで課金を伴うので、呼んだ実績はどこかに残る
@@ -141,6 +155,7 @@ func NewInterpretationService(
 		llm:         llm,
 		limits:      limits,
 		maxAttempts: defaultMaxAttempts,
+		callTimeout: DefaultLLMCallTimeout,
 		logger:      slog.Default(),
 	}
 	for _, opt := range opts {
@@ -358,6 +373,7 @@ func (s *InterpretationService) complete(
 
 	return llmRetry[domain.Interpretation]{
 		maxAttempts: s.maxAttempts,
+		callTimeout: s.callTimeout,
 		parse: func(text string) (domain.Interpretation, error) {
 			return parseInterpretation(text, a.Granularity, previous)
 		},

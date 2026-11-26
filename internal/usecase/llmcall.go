@@ -5,9 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/yusuke0610/etoki/port"
 )
+
+// DefaultLLMCallTimeout は LLM の 1 回の呼び出しを待つ上限の既定値（ADR 0104）。
+//
+// thinking が有効なモデルは応答までに分単位かかることがある。短く切ると正常な
+// 応答を取りこぼす。手元の LLM ではこれでも足りないことがあるので、設定で
+// 延ばせるようにしてある。
+const DefaultLLMCallTimeout = 5 * time.Minute
+
+// errCallTimedOut は、1 回の呼び出しの上限に当たったことを ctx の原因として持つ印。
+// ジョブの上限や取り消しで切れたのかと分けて、文言を足すために使う。
+//
+// **context.DeadlineExceeded を包み、文言も同じにしておく。** net/http は ctx が
+// 切れると ctx.Err() ではなく原因（context.Cause）を返す。別の文言の印にすると、
+// 実物のアダプタを通ったときだけ DeadlineExceeded を辿れなくなり、詳細にも印の
+// 名前が出る。
+var errCallTimedOut = fmt.Errorf("%w", context.DeadlineExceeded)
 
 // LLM の呼び出しが失敗した原因のうち、打ち手が違うもの（ADR 0087）。
 //
@@ -94,13 +111,19 @@ func llmCallError(attempt int, err error) error {
 // T は読み取った結果。
 //
 // **解釈と図のドラフト生成はどちらもここを通す**（llmCallError と同じ理由）。
-// 「呼ぶ前に数える」「呼び出しの失敗は再送しない」を 2 つのループに書くと、片方
-// だけ直したときに、図だけが実績を少なく出す、再送で課金を重ねる、という食い違いに
-// なる（ADR 0031 / 0044 / 0087）。種類ごとに違うのは下の 4 つだけで、骨組みは
-// 持たせない。
+// 「呼ぶ前に数える」「1 回ごとに上限を掛ける」「呼び出しの失敗は再送しない」を
+// 2 つのループに書くと、片方だけ直したときに、図だけが実績を少なく出す、再送で
+// 課金を重ねる、という食い違いになる（ADR 0031 / 0044 / 0087 / 0104）。種類ごとに
+// 渡すのは下のものだけで、骨組みは持たせない。
 type llmRetry[T any] struct {
 	// maxAttempts は呼ぶ回数の上限。初回を含む。
 	maxAttempts int
+	// callTimeout は 1 回の呼び出しを待つ上限（ADR 0104）。
+	//
+	// **呼び出しごとに掛ける。** 実行全体に掛けると、1 回ずつは収まる遅い応答が、
+	// 再送を重ねたところで切れる。LLMClient の実装に任せると、差し込んだ実装では
+	// 効かない。
+	callTimeout time.Duration
 	// parse は応答を読む。読めなければ、直させる指摘をエラーで返す。
 	parse func(text string) (T, error)
 	// retryText は直前の出力と指摘を添えた、次に送る本文を組み立てる。
@@ -130,7 +153,7 @@ func (r llmRetry[T]) run(
 		// 対して実際に何回叩いているのかが読めない。
 		usage.attempts = attempt
 
-		resp, err := llm.Complete(ctx, req)
+		resp, err := r.callOnce(ctx, llm, req)
 		if err != nil {
 			// 接続やモデル側の失敗は指摘で直る問題ではないので再送しない。
 			return zero, usage, llmCallError(attempt, err)
@@ -147,6 +170,25 @@ func (r llmRetry[T]) run(
 	}
 
 	return zero, usage, fmt.Errorf("%w (%d attempts): %w", r.exhausted, r.maxAttempts, last)
+}
+
+// callOnce は 1 回の上限を掛けて LLM を 1 回呼ぶ。
+//
+// 上限に当たったら、その値を文言に足す。待ちきれなかったのか向こうが断ったのかを、
+// 畳んだ詳細から見分けられるようにするため（どれだけ延ばせばよいかの手掛かりにも
+// なる）。元のエラーは %w のまま包み、context.DeadlineExceeded を辿れるように
+// しておく。**ジョブの上限や取り消しで切れたときは足さない。** 原因で見分ける。
+func (r llmRetry[T]) callOnce(
+	ctx context.Context, llm port.LLMClient, req port.VisionRequest,
+) (port.VisionResponse, error) {
+	callCtx, cancel := context.WithTimeoutCause(ctx, r.callTimeout, errCallTimedOut)
+	defer cancel()
+
+	resp, err := llm.Complete(callCtx, req)
+	if err != nil && errors.Is(context.Cause(callCtx), errCallTimedOut) {
+		return resp, fmt.Errorf("no response within %s (the limit for one call): %w", r.callTimeout, err)
+	}
+	return resp, err
 }
 
 // llmUsage は 1 回の実行で LLM に払ったぶん。

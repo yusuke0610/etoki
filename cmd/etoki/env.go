@@ -52,17 +52,9 @@ func llmLimits() (etoki.LLMLimits, error) {
 	if err != nil {
 		return etoki.LLMLimits{}, err
 	}
-
-	var window time.Duration
-	if raw := os.Getenv("ETOKI_LLM_RATE_WINDOW"); raw != "" {
-		window, err = time.ParseDuration(raw)
-		if err != nil {
-			return etoki.LLMLimits{}, fmt.Errorf("ETOKI_LLM_RATE_WINDOW: %w", err)
-		}
-		if window <= 0 {
-			return etoki.LLMLimits{}, fmt.Errorf(
-				"ETOKI_LLM_RATE_WINDOW must be positive, got %q", raw)
-		}
+	window, err := positiveDuration("ETOKI_LLM_RATE_WINDOW")
+	if err != nil {
+		return etoki.LLMLimits{}, err
 	}
 
 	return etoki.LLMLimits{
@@ -70,6 +62,12 @@ func llmLimits() (etoki.LLMLimits, error) {
 		RateLimit:     rateLimit,
 		RateWindow:    window,
 	}, nil
+}
+
+// llmCallTimeout は LLM の 1 回の呼び出しを待つ上限を読む（ADR 0104）。未設定なら
+// 0 で、既定（etoki.DefaultLLMCallTimeout）のままになる。
+func llmCallTimeout() (time.Duration, error) {
+	return positiveDuration("ETOKI_LLM_TIMEOUT")
 }
 
 // positiveInt は 1 以上の整数として環境変数を読む。未設定なら 0。
@@ -90,6 +88,24 @@ func positiveInt(name string) (int, error) {
 		return 0, fmt.Errorf("%s must be at least 1, got %q", name, raw)
 	}
 	return n, nil
+}
+
+// positiveDuration は正の長さ（time.ParseDuration の書き方）として環境変数を
+// 読む。未設定なら 0。読めない値と 0 以下は、positiveInt と同じ理由で落とす。
+func positiveDuration(name string) (time.Duration, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return 0, nil
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("%s must be positive, got %q", name, raw)
+	}
+	return d, nil
 }
 
 // setupHints は「設定されていない」ときに添える案内を、各アダプタが読む
