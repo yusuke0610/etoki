@@ -1,9 +1,22 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { authApi } from "../api/boards";
 import { describeFailure, type Failure } from "../api/errorMessage";
 import { ErrorNotice } from "../app/ErrorNotice";
+import { parseLoginDenied, withoutLoginDenied } from "../app/location";
 import { Wordmark } from "../app/Wordmark";
+
+/**
+ * 通さない相手だったときの断り（#492）。
+ *
+ * **切り替えてから、まで言う。** そのまま押し直すと、GitHub が同じアカウントで
+ * 認可を通し、同じ断りに戻ってくる。
+ */
+const DENIED: Failure = {
+  message:
+    "このアカウントでは etoki を使えません。GitHub で別のアカウントに切り替えてから、もう一度ログインしてください。",
+  detail: "",
+};
 
 /**
  * ログインを促す画面。
@@ -15,10 +28,30 @@ import { Wordmark } from "../app/Wordmark";
 export function LoginPage() {
   const [error, setError] = useState<Failure | null>(null);
   const [starting, setStarting] = useState(false);
+  // 通さない相手だったとして戻ってきたか。**読むのは開いたときの 1 度だけ。**
+  // 読んだら URL から消すので、読み直すと消えている。
+  const [denied, setDenied] = useState(() => parseLoginDenied(window.location.search));
+
+  // 印を URL に残さない。残すと読み込み直すたびに同じ断りが出て、下の戻り先
+  // （いま見えている場所）にも載る。積まずに置き換える（引き返す先ではない）。
+  //
+  // **state から URL を導く effect ではない**（`web/CLAUDE.md`「開いているボードと
+  // URL」が禁じている形）。開いたときに 1 度だけ、サーバーが付けてきた印を外す。
+  // 押して `denied` が下りても URL は触らない。
+  useEffect(() => {
+    if (!denied) return;
+    const { pathname, search, hash } = window.location;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      pathname + withoutLoginDenied(search) + hash,
+    );
+  }, [denied]);
 
   const start = useCallback(async () => {
     setStarting(true);
     setError(null);
+    setDenied(false);
     try {
       // **いま見えている場所を戻り先として渡す**（ADR 0059）。セッションが
       // 切れてここへ落ちた人は、ボードの URL を開いたまま立っている。渡さないと
@@ -76,6 +109,7 @@ export function LoginPage() {
           <path className="art-text" d="M223 59h54M223 66h38" />
         </svg>
 
+        {denied && <ErrorNotice failure={DENIED} />}
         {error && <ErrorNotice failure={error} />}
 
         <button

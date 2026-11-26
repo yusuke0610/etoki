@@ -4,6 +4,7 @@ import { installApi } from "./helpers/api";
 import { boardListHeading, chooseTarget, startNewBoard } from "./helpers/board";
 import {
   AUTHORIZE_URL,
+  BOARD_ID,
   BOARD_NAME,
   authRequiredMock,
   baseMock,
@@ -56,6 +57,44 @@ test.describe("ログイン", () => {
     await page.getByRole("button", { name: "GitHub でログイン" }).click();
 
     await expect.poll(() => sentTo).toBe(AUTHORIZE_URL);
+  });
+
+  // 通さない相手は、サーバーが `/?login=denied` へ戻してくる（#492）。黙って
+  // ログイン画面を出し直すと、何が起きたのかが分からない。**印は URL から消し、
+  // ログインし直すときの戻り先にも載せない。**
+  test("通さない相手として戻ってきたら、理由を出して印を URL から消す", async ({
+    page,
+  }) => {
+    await installApi(page, authRequiredMock());
+    await page.route(
+      (url) => url.host === "github.test",
+      (route) =>
+        route.fulfill({ status: 200, contentType: "text/html", body: "<html></html>" }),
+    );
+
+    await page.goto(`/?board=${BOARD_ID}&login=denied`);
+
+    const notice = page.locator(".login-card .error-message");
+    await expect(notice).toContainText("このアカウントでは etoki を使えません");
+    // 押し直す前に何をすればよいかまで言う。言わないと同じ断りに戻る。
+    await expect(notice).toContainText("GitHub で別のアカウントに切り替えてから");
+    await expect.poll(() => new URL(page.url()).search).toBe(`?board=${BOARD_ID}`);
+
+    const started = page.waitForRequest(
+      (req) =>
+        req.method() === "POST" && new URL(req.url()).pathname === "/api/auth/login",
+    );
+    await page.getByRole("button", { name: "GitHub でログイン" }).click();
+    expect((await started).postDataJSON()).toEqual({ returnTo: `/?board=${BOARD_ID}` });
+  });
+
+  // 印が無ければ断りは出さない。常に出す実装でも、出る側だけなら通る。
+  test("ふつうに開いたログイン画面には断りを出さない", async ({ page }) => {
+    await installApi(page, authRequiredMock());
+    await page.goto("/");
+
+    await expect(page.getByRole("button", { name: "GitHub でログイン" })).toBeVisible();
+    await expect(page.getByText("このアカウントでは etoki を使えません")).toHaveCount(0);
   });
 
   test("ログイン済みなら、ボード一覧が使える", async ({ page }) => {
