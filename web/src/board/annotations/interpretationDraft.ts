@@ -438,3 +438,39 @@ export function selectedActions(draft: Draft): SelectedActions {
   const update = selected.filter((d) => targetItemIdOf(d) !== undefined).length;
   return { create: selected.length - update, update };
 }
+
+/** その項目を、この下書きから GitHub へ送ったか（作れた・届いたか分からない）。 */
+function isSent(d: DraftItem): boolean {
+  return Boolean(d.createdItemId) || Boolean(d.unconfirmed);
+}
+
+/**
+ * 下書きが、絵解いた答えから手直しされているか（#432）。離れる前と保存の前に
+ * 確認を出すかを、これで決める（ADR 0021 の追記）。`original` は絵解いた答えを
+ * そのまま下書きにしたもの（`createDraft`）。
+ *
+ * 数えるのは、まだ送っていない項目のタイトル・本文・種別・「更新する / 新しく
+ * 作る」。**選択は、この下書きからまだ何も送っていないあいだだけ数える。** 作る
+ * ものを選ぶのも手間の一部だが、作ったあとに残る選択は作った残りで、失っても
+ * 困らない。**送った項目は数えない。** 手直しは GitHub に届いているか、送った
+ * ところまで記録に残っている。
+ */
+export function draftEdited(draft: Draft, original: Draft): boolean {
+  const sentAny = draft.items.some(isSent);
+  const before = new Map(original.items.map((d) => [d.item.localId, d]));
+
+  return draft.items.some((d) => {
+    if (isSent(d)) return false;
+    const o = before.get(d.item.localId);
+    // 絵解いた答えに無い項目は無い（下書きは項目を足させない）が、在ったなら
+    // 手で足したもので、失えば戻らない。
+    if (o === undefined) return true;
+    return (
+      d.item.title !== o.item.title ||
+      d.item.body !== o.item.body ||
+      d.item.kind !== o.item.kind ||
+      d.updatesPrevious !== o.updatesPrevious ||
+      (!sentAny && d.selected !== o.selected)
+    );
+  });
+}

@@ -58,6 +58,8 @@ type InterpretationSectionProps = {
   /** 走っている解釈を取り消す（#330）。 */
   onCancelInterpretation: () => void;
   onCreate: (interpretationId: number, interpretation: Interpretation) => void;
+  /** 下書きを手直ししたかを知らせる（#432）。 */
+  onDraftEdited: (annotationId: string, edited: boolean) => void;
 };
 
 /**
@@ -166,6 +168,7 @@ export function InterpretationSection({
   onSelectInterpretation,
   onCancelInterpretation,
   onCreate,
+  onDraftEdited,
 }: InterpretationSectionProps) {
   const running = state?.running ?? false;
   const runs = state?.runs ?? [];
@@ -274,6 +277,7 @@ export function InterpretationSection({
           targetLabel={targetLabel}
           interpret={interpret}
           onCreate={(interpretation) => onCreate(selected.id, interpretation)}
+          onEditedChange={onDraftEdited}
         />
       )}
     </div>

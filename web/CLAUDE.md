@@ -310,15 +310,26 @@ etoki が足している（`web/src/board/useCanvasScroll.ts`）。Excalidraw 0.
 **自動保存もローカルの下書きも持たない。** 代わりに、失う直前に確認を出す。
 自動で保存しないと決めた以上、知らせる責任が対になる。
 
-- `dirty` のあいだと、作成の実行中だけ `beforeunload` を登録する
-  （`useDirtyScene` の `useConfirmLeave`。**2 つを渡すのは `BoardPage`**）。
+- `dirty` のあいだ、作成の実行中、手直しした下書きがあるあいだ（下の項目）だけ
+  `beforeunload` を登録する（`useDirtyScene` の `useConfirmLeave`。**渡すのは
+  `BoardPage`**）。
   リロード・タブを閉じる・戻るはアプリ側で止められない。**作成中を外さない**
   （ADR 0051）。絵解きが保存を挟むので、作成を押す時点ではふつう保存済みで、
   未保存だけを見ていると何も訊かれない。
+- **手直しした下書きも同じく訊く**（#432、ADR 0021 の追記）。離れる前と、保存の
+  前（保存は引いた解釈を捨てるので、手直しも消える）。判定は `draftEdited`
+  （`interpretationDraft.ts`）1 つで、下書きは `DraftEditor` が持ったまま手直し
+  したかだけを上げる（`useEditedDrafts`）。`App` へは未保存と別の口
+  （`onDraftsEditedChange`）で渡し、`confirmDiscard` は失うものを言い分ける
+  （`discardMessage`）。**保存の確認は保存の入口（`useSceneSave` の `save`）が
+  訊く。** 何を訊くかは `BoardPage` が `confirm` で渡す。保存を呼ぶ側で包まない。
+  包むと、包みを通らない口（失敗の通知の「再試行」）から確認なしに保存される
+  （#485 の full review）。
 - キャンバスが外れる導線は `web/src/app/useBoardNavigation.ts` にある
   （**一覧へ戻る**、新しいボードの作成先選択、ログアウト、**ブラウザの戻る /
   進む**）。**通す前に `confirmDiscard` を通す。** 導線を足したらここにも足す。
-  「作成先を変更」だけは `dirty` でボタンを止める形で揃えてある。ボードから
+  「作成先を変更」は `dirty` でボタンを止めたうえで、手直しした下書きのぶんだけ
+  `confirmDiscard` を通す（#432）。ボードから
   ボードへ直接移る導線は無い（一覧を必ず挟む、ADR 0064）。**届く順で変わる
   競合は `web/src/app/useBoardNavigation.test.ts` が押さえる。** 導線を足したら、
   確認を断ったときと、読み込み中に別の導線が割り込んだときもそこに足す。
