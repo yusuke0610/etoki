@@ -12,7 +12,8 @@ import {
   saveButton,
   saveScene,
 } from "./helpers/board";
-import { baseMock } from "./helpers/fixtures";
+import { annotationsOfScene } from "./helpers/boardData";
+import { BOARD_ID, annotatedScene, baseMock, board } from "./helpers/fixtures";
 
 /**
  * 手直しした下書きを、確認なしに失わない（#432、ADR 0021 の追記）。
@@ -143,7 +144,13 @@ test.describe("手直しした下書き", () => {
   test("未保存のあいだの「保存」も「絵解き」も、保存の前に訊き、断れば保存しない", async ({
     page,
   }) => {
-    const mock = await openBoardWithMock(page, baseMock());
+    // 注釈が 1 件の構成。保存が通れば「絵解き」はその詳細を開く（一覧ではなく）
+    // ので、開かないことを詳細で見られる。保存済みの一覧もシーンに揃える
+    // （`ekidoki.spec.ts` と同じ）。
+    const single = baseMock();
+    single.details[BOARD_ID] = { ...board(), scene: annotatedScene() };
+    single.annotations[BOARD_ID] = annotationsOfScene(annotatedScene());
+    const mock = await openBoardWithMock(page, single);
     const detail = await editDraft(page);
     await detail.getByRole("button", { name: "閉じる" }).click();
     await drawRectangle(page);
@@ -160,6 +167,9 @@ test.describe("手直しした下書き", () => {
     ]);
     expect(mock.saveRequests).toHaveLength(0);
     // 断ったので、絵解きの面も開かない（保存できなかったら進まない、ADR 0077）。
+    // **面そのものを見る。** 「未保存」の表示だけだと、断ったのに面を開く退行でも
+    // 残るので通る（#485 の full review）。
+    await expect(detail).toHaveCount(0);
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 

@@ -71,4 +71,18 @@ describe("useEditedDrafts", () => {
     expect(result.current.report).toBe(report);
     expect(result.current.hasEdited).toBe(hasEdited);
   });
+
+  // 切れると: 束を受け取る `BoardPage` の依存が描き直しのたびに変わり、束から
+  // 作るもの（確認の登録など）を作り直す（web/CLAUDE.md「束は、入力が変わらない
+  // 描き直しで同じものを返す」、#485 の full review）。**`onChange` は外で作って
+  // 同じものを渡す。** 描くたびに作ると、入力が変わったことになる。
+  it("入力が変わらない描き直しでは、同じ束を返す", () => {
+    const onChange = vi.fn();
+    const { result, rerender } = renderHook(() => useEditedDrafts(onChange));
+    const before = result.current;
+
+    rerender();
+
+    expect(result.current).toBe(before);
+  });
 });
