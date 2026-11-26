@@ -22,6 +22,16 @@ type Props = {
 const HEADING_ID = "target-picker-heading";
 
 /**
+ * 見出しが無いときのダイアログの名前。**見出しの文言と同じにする。**
+ *
+ * 見出しは選択部品（`RepositoryPicker`）が描くので、選択部品が落ちて境界の
+ * 代わりの表示になると、`aria-labelledby` の参照先ごと消える（#481 の full
+ * review）。参照先があるうちは `aria-labelledby` が勝つので、ふだんの名前は
+ * 変わらない。
+ */
+const DIALOG_NAME = "作成先を選ぶ";
+
+/**
  * 作成先を選ぶダイアログ（ADR 0100）。
  *
  * **ボードの画面を外さない。** 以前は別の画面で、選ぶあいだキャンバスごと
@@ -76,6 +86,7 @@ export function TargetPickerDialog({ open, boardName, onSelected, onClose }: Pro
       ref={dialog}
       className="modal-dialog target-picker-dialog"
       aria-labelledby={HEADING_ID}
+      aria-label={DIALOG_NAME}
       onCancel={(e) => {
         if (saving.current) e.preventDefault();
       }}

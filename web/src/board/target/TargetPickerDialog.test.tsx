@@ -56,4 +56,19 @@ describe("TargetPickerDialog", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("この部分を表示できませんでした");
     expect(screen.getByRole("button", { name: "再表示" })).toBeInTheDocument();
   });
+
+  // 切れると: 名前の参照先（見出し）は選択部品が描くので、落ちると見出しごと
+  // 消え、読み上げでは何のダイアログか分からなくなる（#481 の full review）。
+  it("選択部品が落ちても、ダイアログは名前を持つ", () => {
+    render(
+      <TargetPickerDialog
+        open
+        boardName="ブレスト"
+        onSelected={() => Promise.resolve()}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "作成先を選ぶ" })).toBeInTheDocument();
+  });
 });
