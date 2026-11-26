@@ -19,8 +19,23 @@ export async function installMemberRoutes(page: Page, mock: ApiMock): Promise<vo
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/access$/.test(url.pathname),
     async (route) => {
+      // 契約は GET だけ。ほかはキャッチオールに落とす（`.claude/rules/e2e-mocks.md`）。
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+
       const id = boardIdOf(route);
       const role = mock.details[id]?.role ?? "owner";
+      const configured = mock.access?.[id];
+      // **断る応答は、作成先が未選択でも先に返す**（サーバーと同じ）。サーバーは
+      // 権限の判定が落ちると、作成先を見る前にその失敗を返す（`member.go` の
+      // `h.fail`）。未選択の分岐より後に置くと、未選択のボードで 403 / 500 の画面を
+      // 確かめられない（#481 の full review）。
+      if (configured && configured.status >= 400) {
+        await json(route, configured.status, configured.body);
+        return;
+      }
       // **作成先が未選択なら、決めておいた答えより先に unknown を返す**（サーバーと
       // 同じ、ADR 0017）。作成先はボードを開いたまま選ぶ（ADR 0100）ので、決めて
       // おいた答えを未選択のうちから返すと、選んだあとに訊き直さない画面でも緑になる。
@@ -29,7 +44,6 @@ export async function installMemberRoutes(page: Page, mock: ApiMock): Promise<vo
         return;
       }
 
-      const configured = mock.access?.[id];
       if (configured) {
         await json(route, configured.status, configured.body);
         return;
