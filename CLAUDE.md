@@ -44,7 +44,6 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
 | `.claude/rules/`                   | レビュー由来の落とし穴と、狭い範囲でだけ要る約束（触ると読み込まれる） |
 | `.claude/rules/toolchain.md`       | ツールチェーン上の非自明な設定（消すと壊れるもの）                     |
-| `.claude/rules/auth-wiring.md`     | 認証の配線の約束                                                       |
 | `.claude/skills/rv/`               | 実装後のセルフレビュー（`/rv`）                                        |
 | `.claude/skills/mutate/`           | 守りを壊してテストが落ちるかを確かめる（`/mutate`）                    |
 | `.claude/skills/pr-review/`        | PR に付いたレビュー指摘への対応                                        |
@@ -240,9 +239,19 @@ GitHub の形しか差せなくなる。
   （ADR 0071）。**画面の cookie で `/mcp` を通さず、`/api` は Bearer を受けない。**
   **同意は毎回人に訊く。** 登録は誰でもできるので、自動で許すと code を横取りされる。
 
-配線（`cmd/etoki`）の約束は `.claude/rules/auth-wiring.md`。ボードのメンバーと権限は
-`internal/CLAUDE.md`。Gin ハンドラと MCP の入口の約束、Origin 検証は
-`.claude/rules/http-handlers.md`。
+配線（`cmd/etoki`）の約束:
+
+- **`Authenticator` は 1 つだけ作る。** GitHub クライアントの `TokenSource` と
+  `etoki.Options.Auth` に同じものを渡す。2 つ作るとトークン更新の直列化が効かず、
+  GitHub が使い捨てにした refresh token を掴む。
+- **リポジトリ一覧は `github.Config.Mode` で分岐する。** GitHub App では
+  インストール経由の REST、PAT では GraphQL。「使えるリポジトリ」の定義が
+  GitHub 側で違うため。判断するのは `cmd/etoki` だけ。
+- **OAuth を設定したら PAT は無視する。** フォールバックにすると作成の主体が
+  リクエストごとに変わり、誰が作ったのか追えなくなる。
+
+ボードのメンバーと権限は `internal/CLAUDE.md`。Gin ハンドラと MCP の入口の約束、
+Origin 検証は `.claude/rules/http-handlers.md`。
 
 ## 貢献の手順
 

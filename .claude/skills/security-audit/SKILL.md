@@ -110,8 +110,7 @@ gh api --paginate repos/yusuke0610/etoki/security-advisories \
 | 開くもの                                 | 見るもの                                                                                                              |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | #64 本文の「点検したい観点」             | 観点の一覧。足すならそこに足す                                                                                        |
-| ルートの `CLAUDE.md`「認証について」     | 継ぎ目と前提                                                                                                          |
-| `.claude/rules/auth-wiring.md`           | 認証の配線の約束                                                                                                      |
+| ルートの `CLAUDE.md`「認証について」     | 継ぎ目と配線の約束                                                                                                    |
 | `internal/CLAUDE.md`                     | メンバーと権限                                                                                                        |
 | `.claude/rules/http-handlers.md`         | ハンドラの約束と Origin 検証                                                                                          |
 | `.claude/rules/validation-boundaries.md` | 入力の検証をどこに置くか                                                                                              |
