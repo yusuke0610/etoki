@@ -237,6 +237,10 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
 | major の更新                             | 変更履歴の破壊的変更。lint / test が緑でも、使っている API が変わっていないか                    |
 | `web/bun.lock` が動く                    | 入れたら `bun install` を知らせる（5）                                                           |
 
+**依存の更新と生成物の作り直しのほかに、人が変更を足した PR は軽いに当たらない**
+（`CONTRIBUTING.md`「マージ」）。full review を通せないので、マージせずに表へ
+「ユーザーの判断待ち」で載せる。
+
 どれにも当たらず CI が緑なら、ほかの PR と同じく表に載せて確認を取る。
 
 ## やらないこと

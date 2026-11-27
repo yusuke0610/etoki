@@ -209,7 +209,11 @@ full review の代わりにならない。
 
 **Dependabot の PR には full review を依頼しない。** CodeRabbit は bot が作った
 PR を飛ばし、依頼しても「Review skipped」で終わる（#424）。代わりに変更履歴を
-読み、etoki の使い方と照らす（`/land` の「Dependabot の PR」）。
+読み、etoki の使い方と照らす（`/land` の「Dependabot の PR」）。**軽いに当たる
+のは、Dependabot が上げた依存と、その更新に要る生成物の作り直し
+（`make codegen`）だけ。** 人がそれ以外の変更（アプリのコードの手直しなど）を
+足したら、重さはその変更で決める。ふつうか重いに当たれば、full review を
+通せないので Claude はマージせず、ユーザーに渡す。
 
 **なぜこの形か（2026-11-25）。** それまでは「最新の head に対する full review で
 指摘が 0 件」だけを条件にしていた。直して push するたびに full review をやり直し、
