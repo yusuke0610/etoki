@@ -143,7 +143,6 @@ PR ごとの初回指摘数を記録する。**先回りの観点（`.claude/rul
 | [#416](https://github.com/yusuke0610/etoki/pull/416) |        3 |      3 |        0 |      0 | web/CLAUDE.md（詰め替えで字を測る前に書体の読み込みを待つ）。ADR に実装の名前を書いた件と規約を関数名で書いた件は docs-consistency に既にある                                                                                                                                                                                  |
 | [#417](https://github.com/yusuke0610/etoki/pull/417) |        8 |      8 |        0 |      0 | 還さず。前提の検査（`t.Fatalf`）と値での断言は test-effectiveness に既にある。ファイルを分けたときに doc コメントと web/CLAUDE.md の境界の一覧が付いてこなかった件は単発。ADR 0027 も書き換える要求は撤回され、web/CLAUDE.md の側だけ直した                                                                                    |
 | [#419](https://github.com/yusuke0610/etoki/pull/419) |        4 |      4 |        0 |      0 | validation-boundaries（繰り返し書き出すものは組み立てる前に測る）/ docs-consistency（改めた ADR の本文には印を付ける）。ジョブの再利用の説明の直し忘れは docs-consistency に既にある。ADR 0047 は本文を書き直さず印を付けて直し、CodeRabbit が受け入れた                                                                       |
-| [#498](https://github.com/yusuke0610/etoki/pull/498) |        2 |      2 |        0 |      0 | 還さず。2 件とも test-effectiveness（案内の文は打ち手の句を全部断言する）に既にある                                                                                                                                                                                                                                            |
 
 **#96 より前は数えていない。** ADR 0033 の棚卸し（37 PR）は系統だけを見ていて、
 PR ごとの件数を残していない。
