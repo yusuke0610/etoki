@@ -103,3 +103,4 @@
 | [0103](0103-accept-nothing-to-create.md)                         | 「作るものは無い」を解釈の答えとして受け取る                                 | 採用                 |
 | [0104](0104-llm-call-timeout-and-thinking.md)                    | LLM を待つ上限は設定にして呼び出しごとに掛け、思考は手元でだけ切らせる       | 採用                 |
 | [0105](0105-only-the-owner-signs-in.md)                          | ログインを 1 人に絞り、認証なしで外に開かない                                | 採用                 |
+| [0108](0108-single-user-cloud-tool.md)                           | 作者 1 人がクラウドで使うツールにし、手元は開発のために残す                  | 採用                 |

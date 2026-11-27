@@ -19,9 +19,46 @@ draft issue に変換するツールです。
 3. **システムは自動で判断せず、状態を見せて開発者に選ばせる。** 自動同期・自動更新・
    自動作成は行わない。
 
+## クラウドで動かす
+
+etoki は、作者 1 人がクラウドに載せて使います
+（[ADR 0108](docs/adr/0108-single-user-cloud-tool.md)）。下の「開発」の手順でも
+手元で動きますが、それは開発と確かめのためです。
+
+載せる先の構成（いまは Google Cloud Run）は、このリポジトリに置いていません。
+ここに書くのは、どこに載せるときにも etoki の作りから決まることです。
+
+- **認証を設定する。** ループバックの外で待ち受けるなら必須で、無ければ起動
+  しません（[ADR 0105](docs/adr/0105-only-the-owner-signs-in.md)）。手順は
+  [GitHub App でログインする](#github-app-でログインする)にあります。
+- **載せた先の URL を渡す。** `ETOKI_PUBLIC_URL` に https の URL を、
+  `ETOKI_ALLOWED_ORIGINS` にそのオリジンを渡します。TLS を基盤の側で終端するなら、
+  `ETOKI_PUBLIC_URL` を渡さないと、etoki は認可の戻り先を http で組み、
+  セッションの cookie に Secure を付けません。
+- **1 台で動かす。** 解釈と図の生成のジョブ、ボードごとの排他、LLM の上限は
+  プロセスのメモリにあります。2 台に分かれると、片方で始めたジョブをもう片方
+  から受け取れず、排他と上限も台ごとに分かれます。
+- **DB のファイルを残す。** 作成の記録は取り直せません
+  （[ADR 0023](docs/adr/0023-record-created-issue-body.md)）。止まるたびに
+  ディスクが消える基盤なら、外へ複製し続け、起動のたびに戻します。
+- **応答を返したあとも CPU を止めない。** 解釈と図の生成は、受け付けた
+  リクエストが返ったあとで走ります
+  （[ADR 0085](docs/adr/0085-interpretation-as-server-side-job.md)・
+  [ADR 0091](docs/adr/0091-diagram-draft-as-server-side-job.md)）。
+- **起動の前に `etoki migrate` を当てる。** etoki は移行を自分では当てず、
+  足りなければ起動しません。
+- **止めるときは待たせる。** 作成の途中で止められると、作れたぶんを記録して
+  から止まります。待つ上限は `etoki.go` の `shutdownTimeout` です。基盤の猶予が
+  それより短いと、記録が間に合わないことがあります。
+- **画面も etoki に配らせる。** `ETOKI_WEB_DIR` にビルドした成果物を渡します
+  （[dev サーバーを使わずに動かす](#dev-サーバーを使わずに動かす)）。
+
+コンテナイメージは、まだこのリポジトリで作っていません。
+
 ## 開発
 
-[Nix](https://nixos.org/) があれば他に何もインストールする必要はありません。
+手元で動かすのは、開発と確かめのためです。[Nix](https://nixos.org/) があれば
+他に何もインストールする必要はありません。
 
 ```sh
 nix develop      # 開発用シェルに入る（Go / Bun / SQLite / lint などが揃う）
@@ -104,14 +141,15 @@ direnv allow
 `ETOKI_GITHUB_TOKEN` で draft issue を作り、`ETOKI_LLM_API_KEY` で LLM を
 叩けてしまいます。秘密の値を 1 つ渡し忘れただけでこの構成になるので、警告では
 なく起動を止めます（[ADR 0105](docs/adr/0105-only-the-owner-signs-in.md)）。
-タブレットや別の端末、クラウドから開きたいなら、GitHub App を設定してログインを
+クラウドに載せるときや別の端末から開くときは、GitHub App を設定してログインを
 要求してください（後述）。ループバック（既定の `127.0.0.1`）で待ち受けるなら、
-これまでどおり認証なしで動きます。
+認証なしで動きます。手元で開発するときの形です。
 
 ### dev サーバーを使わずに動かす
 
-`make dev` は Vite の開発サーバー（:5173）が画面を配ります。**人に使わせる
-インスタンスでは、ビルドした成果物を etoki 自身に配らせてください。**
+`make dev` は Vite の開発サーバー（:5173）が画面を配ります。**クラウドに載せた
+etoki では、ビルドした成果物を etoki 自身に配らせてください。** 手元の
+`make start` は、その形を確かめるためのものです。
 
 ```sh
 make start   # make build のあと ETOKI_WEB_DIR=web/dist で起動する
@@ -147,6 +185,7 @@ GitHub App を設定しているなら、Callback URL と `ETOKI_PUBLIC_URL` も
 ファイルにあります。**作成の記録は取り直せません。** どの注釈からどの draft issue
 を作ったかは作成の瞬間にしか控えられず、GitHub 側の draft issue は etoki から
 消せないので残ります（[ADR 0023](docs/adr/0023-record-created-issue-body.md)）。
+クラウドに載せるときの残し方は[クラウドで動かす](#クラウドで動かす)にあります。
 
 `make clean` はこのファイルに触りません。消すターゲットは `make reset-db CONFIRM=1`
 に分けてあり、消す先は `ETOKI_DB_PATH` ではなく `make migrate` と同じ `DB_PATH`
@@ -247,7 +286,8 @@ make dev
 
 etoki が話すのは **Anthropic Messages API 形状**です（`POST {BASE_URL}/v1/messages`）。
 ローカルのモデルに繋ぐには、その形状で受けられるプロキシを間に置き、そちらへ
-向けます。認証を要求しないなら API キーは未設定のままで構いません。
+向けます。認証を要求しないなら API キーは未設定のままで構いません。手元で
+開発するときの道具です（[ADR 0108](docs/adr/0108-single-user-cloud-tool.md)）。
 
 ```sh
 export ETOKI_LLM_BASE_URL=http://localhost:4000
