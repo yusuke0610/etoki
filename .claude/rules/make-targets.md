@@ -3,13 +3,17 @@ paths:
   - "Makefile"
   # recipe から呼ぶシェル。try-fake の起動はここへ移した（ADR 0097）。
   - "scripts/*.sh"
+  # Playwright の設定。webServer の command から make を呼ぶと、子の make に
+  # 値を渡す側になる（#426 の playwright.stack.config.ts）。
+  - "web/playwright*.config.ts"
 ---
 
 # Makefile の recipe
 
 Makefile のターゲットと、そこから呼ぶシェル（`scripts/*.sh`）で実際に踏んだ穴。
 `##` の説明と `CLAUDE.md` のコマンド説明のずれは `docs-consistency.md` が見て
-いるので、ここでは recipe の中身だけを扱う。
+いるので、ここでは recipe の中身だけを扱う。Playwright の設定は、webServer から
+子の make に値を渡すところだけを見る（`web/playwright*.config.ts`）。
 
 ## 複数のプロセスを背景で起動するターゲット
 
