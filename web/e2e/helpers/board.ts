@@ -62,18 +62,6 @@ export async function openPanelTab(page: Page, name: string): Promise<Locator> {
 }
 
 /**
- * キャンバスのメニューの「共有…」からダイアログを開き、その枠を返す（#248）。
- * メンバーの一覧と招待はこの中にある。**閉じたら中身は外れる**ので、開くたびに
- * 一覧を引き直す。
- */
-export async function openShareDialog(page: Page): Promise<Locator> {
-  await chooseFromMenu(page, "共有…");
-  const dialog = page.getByRole("dialog", { name: "共有", exact: true });
-  await expect(dialog).toBeVisible();
-  return dialog;
-}
-
-/**
  * キャンバスのメニューの「etoki の使い方」からダイアログを開き、その枠を返す
  * （ADR 0094）。右のパネルの「使い方を見る」からも開ける。
  */

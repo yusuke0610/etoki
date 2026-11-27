@@ -102,7 +102,7 @@
 /*
  * カード（#200）。**押せるのはボード名のボタンで、それがカード全体を覆う**
  * （`::after`）。ボタンの中身を名前だけにして、見えている文字と名前を揃えるため
- * （WCAG 2.5.3、#311）。ロールや状態は覆いの下にあるので、どこを押しても
+ * （WCAG 2.5.3、#311）。更新時刻や状態は覆いの下にあるので、どこを押しても
  * ボタンに届く。
  */
 .board-card {
@@ -129,13 +129,6 @@
  */
 .board-card.unselected {
   border-style: dashed;
-}
-
-.board-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
 }
 
 .board-card-open {

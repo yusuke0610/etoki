@@ -1,9 +1,7 @@
 import { MainMenu } from "@excalidraw/excalidraw";
 import type { ReactNode } from "react";
 
-import type { BoardRole } from "../api/types";
 import type { RunningOperation } from "./exclusion";
-import { isOwner } from "./members/roles";
 import {
   backToListIcon,
   changeTargetIcon,
@@ -14,7 +12,6 @@ import {
   premiseIcon,
   refreshTargetIcon,
   renameIcon,
-  shareIcon,
   tableIcon,
 } from "./menuIcons";
 import type { DeletionState } from "./useBoardManagement";
@@ -22,15 +19,11 @@ import type { DeletionState } from "./useBoardManagement";
 type Props = {
   /** ボード一覧へ戻る。未保存の確認は親が通す。 */
   onClose: () => void;
-  canEdit: boolean;
-  role: BoardRole;
   targetLocked: boolean;
   /** 名前の編集を始める。 */
   onRename: () => void;
   /** ボードの背景のダイアログを開く（`PremiseDialog`、ADR 0093）。 */
   onPremise: () => void;
-  /** 共有のダイアログを開く（`ShareDialog`、#248）。 */
-  onShare: () => void;
   /** 使い方のダイアログを開く（`UsageGuideDialog`、ADR 0094）。 */
   onOpenGuide: () => void;
   /** GitHub が使えない理由。使えるなら null（ADR 0030）。 */
@@ -62,7 +55,7 @@ type Props = {
  *
  * **押せない理由は、しまった先で本文として出す**（ADR 0066）。メニューは
  * 開けばフォーカスが入るので、キーボードと読み上げには届く。形はヘッダーに
- * あったころと同じで、権限や設定で押せない操作はボタンごと出さずに理由の文を
+ * あったころと同じで、状態や設定で押せない操作はボタンごと出さずに理由の文を
  * 出し、一時的に押せない操作は押せないボタンと理由を `aria-describedby` で結ぶ。
  *
  * **独自のメニューを渡すと既定の中身は丸ごと置き換わる。** 残すものは
@@ -80,12 +73,9 @@ type Props = {
  */
 export function BoardMenu({
   onClose,
-  canEdit,
-  role,
   targetLocked,
   onRename,
   onPremise,
-  onShare,
   onOpenGuide,
   creationUnavailable,
   onRefreshTarget,
@@ -108,48 +98,18 @@ export function BoardMenu({
         ボード一覧へ戻る
       </MainMenu.Item>
       <MainMenu.Separator />
-      {/*
-        名前はブレストの中身に属する表示物なので、editor にも直させる
-        （作成先の変更は owner だけ、ADR 0017）。押せる人にだけ出す。
-
-        **読むだけの人には、消した編集系の理由を 1 文だけ出す**（#295）。
-        名前の変更・取り込み・表（とキャンバスの背景・リセット）は消えるのに、並ぶ owner 専用の操作には理由が
-        ある、では形が揃わない（`.claude/rules/async-ui.md`）。項目ごとに同じ
-        文を並べると埋もれるので（ADR 0030）、最初に編集系が並ぶここに
-        まとめる。右のパネルの帯はスマホでは畳まれていて見えない（ADR 0075）
-        ので、その代わりにはならない。
-      */}
-      {canEdit ? (
-        <MainMenu.Item className="etoki-menu-item" icon={renameIcon} onSelect={onRename}>
-          名前を変更
-        </MainMenu.Item>
-      ) : (
-        <MenuNote>{VIEWER_EDIT_NOTE}</MenuNote>
-      )}
+      <MainMenu.Item className="etoki-menu-item" icon={renameIcon} onSelect={onRename}>
+        名前を変更
+      </MainMenu.Item>
       {/*
         ボードの背景（ADR 0093）。ブレストの外に置くボードの設定なので、名前と
-        並べる。**誰にでも出す。** 読むのは viewer にも許し、書き換えの口は
-        開いた先で editor 以上にだけ出す（共有と同じ形）。
+        並べる。
       */}
       <MainMenu.Item className="etoki-menu-item" icon={premiseIcon} onSelect={onPremise}>
         ボードの背景…
       </MainMenu.Item>
-      {/*
-        共有はボードそのものの管理なので、右のパネル（ボードの中身に対する作業）
-        ではなくここから開く（#248、ADR 0078）。**誰にでも出す。** 一覧は読む
-        だけの人にも見え、招待と解除はダイアログの中で owner にだけ出る
-        （ADR 0017）。共有が組み立てられていない構成でも口は消さず、開いた先で
-        理由を出す（ADR 0030）。
-      */}
-      <MainMenu.Item className="etoki-menu-item" icon={shareIcon} onSelect={onShare}>
-        共有…
-      </MainMenu.Item>
       <MainMenu.Separator />
-      {!isOwner(role) ? (
-        // 作成先を変えられるのは owner だけ（ADR 0017）。押せるのに 403 で
-        // 断るより、押せないことを見せるほうが状態として正しい。
-        <MenuNote>作成先を変えられるのはオーナーだけです</MenuNote>
-      ) : targetLocked ? (
+      {targetLocked ? (
         // 固定済みなら変更手段を出さない。押せるのに 409 で断るより、
         // 押せないことを見せるほうが状態として正しい。
         //
@@ -199,9 +159,6 @@ export function BoardMenu({
       {/*
         持ち出しと取り込みの口はここ 1 つ（ADR 0045）。ライブラリの既定の
         項目（開く・保存）はこのメニューに並べていない。
-
-        書き出しは viewer にも出す。見えているものを出すだけなので、
-        共有した相手に新しく見せるものが無い（ADR 0017）。
       */}
       <MainMenu.Item
         className="etoki-menu-item"
@@ -211,33 +168,27 @@ export function BoardMenu({
       >
         書き出し
       </MainMenu.Item>
-      {canEdit && (
-        <>
-          <MainMenu.Item
-            className="etoki-menu-item"
-            icon={importIcon}
-            onSelect={onImport}
-            // **作成中は取り込ませない。** キャンバスを置き換えるので、
-            // 保存を止めているのと同じ理由で止める（作られた内容と記録
-            // されるハッシュが食い違いうる）。
-            disabled={!canvasReady || running !== null}
-            aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
-          >
-            {importing ? "取り込み中…" : "取り込み"}
-          </MainMenu.Item>
-          {importBlocked !== null && (
-            <MenuNote id="import-blocked">{importBlocked}</MenuNote>
-          )}
-          <MainMenu.Item
-            className="etoki-menu-item"
-            icon={tableIcon}
-            onSelect={onAddTable}
-            disabled={!canvasReady}
-          >
-            表
-          </MainMenu.Item>
-        </>
-      )}
+      <MainMenu.Item
+        className="etoki-menu-item"
+        icon={importIcon}
+        onSelect={onImport}
+        // **作成中は取り込ませない。** キャンバスを置き換えるので、
+        // 保存を止めているのと同じ理由で止める（作られた内容と記録
+        // されるハッシュが食い違いうる）。
+        disabled={!canvasReady || running !== null}
+        aria-describedby={importBlocked !== null ? "import-blocked" : undefined}
+      >
+        {importing ? "取り込み中…" : "取り込み"}
+      </MainMenu.Item>
+      {importBlocked !== null && <MenuNote id="import-blocked">{importBlocked}</MenuNote>}
+      <MainMenu.Item
+        className="etoki-menu-item"
+        icon={tableIcon}
+        onSelect={onAddTable}
+        disabled={!canvasReady}
+      >
+        表
+      </MainMenu.Item>
       <MainMenu.Separator />
       <MainMenu.DefaultItems.SaveAsImage />
       <MainMenu.DefaultItems.SearchMenu />
@@ -250,44 +201,29 @@ export function BoardMenu({
         etoki の使い方
       </MainMenu.Item>
       <MainMenu.DefaultItems.Help />
-      {canEdit && <MainMenu.DefaultItems.ClearCanvas />}
+      <MainMenu.DefaultItems.ClearCanvas />
       <MainMenu.Separator />
       <MainMenu.DefaultItems.ToggleTheme />
-      {canEdit && <MainMenu.DefaultItems.ChangeCanvasBackground />}
+      <MainMenu.DefaultItems.ChangeCanvasBackground />
       <MainMenu.Separator />
       {/*
-        ボードごと畳むのは owner だけ（ADR 0042）。**押した時点では消さない。**
-        何が残るのかを引いてから確認を出す。
-
-        **消すなら理由を出す**（ADR 0017 / 0030）。権限で押せない操作は、
-        ボタンを黙って消さずに押せない理由のほうを見せる。
+        ボードごと畳む（ADR 0042）。**押した時点では消さない。** 何が残るのかを
+        引いてから確認を出す。
 
         **最後に区切って置く。** 取り消せない操作を、日常の操作と同じ並びの
         途中に置かない。
       */}
-      {isOwner(role) ? (
-        <MainMenu.Item
-          className="etoki-menu-item danger"
-          icon={deleteBoardIcon}
-          onSelect={onAskDelete}
-          disabled={deletion !== null}
-        >
-          {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
-        </MainMenu.Item>
-      ) : (
-        <MenuNote>ボードを削除できるのはオーナーだけです</MenuNote>
-      )}
+      <MainMenu.Item
+        className="etoki-menu-item danger"
+        icon={deleteBoardIcon}
+        onSelect={onAskDelete}
+        disabled={deletion !== null}
+      >
+        {deletion?.status === "loading" ? "確認中…" : "ボードを削除"}
+      </MainMenu.Item>
     </MainMenu>
   );
 }
-
-/**
- * 読むだけの人に、メニューから消した編集系の操作の理由を言う文（#295）。
- *
- * 並ぶ owner 専用の文（「〜できるのはオーナーだけです」）と形を揃える。
- * 「編集できる」はロールの表示名（`ROLE_LABELS`）と同じ語。
- */
-const VIEWER_EDIT_NOTE = "名前の変更・取り込み・表などを使えるのは、編集できる人だけです";
 
 /**
  * メニューの中に出す、押せない理由の文（ADR 0066）。

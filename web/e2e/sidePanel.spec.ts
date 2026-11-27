@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 import { openBoardWithMock, openPanelTab } from "./helpers/board";
-import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
+import { BOARD_ID, baseMock } from "./helpers/fixtures";
 
 /**
  * 右のパネル（`SidePanel`、ADR 0065）。「絵解いた」（注釈）と「etoki AI」（図の
- * ドラフト）をタブで並べる。メンバーは共有のダイアログ（`share.spec.ts`、#248）。
+ * ドラフト）をタブで並べる。
  *
  * **守りたいのは「切り替えても手元の作業が消えない」こと。** Excalidraw の
  * `Sidebar` に載せなかった理由がそれで（閉じるとタブの中身ごと外れる）、1 度
@@ -48,19 +48,16 @@ test.describe("右のパネル", () => {
     await expect(annotations).toBeFocused();
   });
 
-  // 切れると: 注釈が 1 件も無いボードを読むだけの人が開くと、「絵解いた」は案内の
-  // 本文だけで、中にフォーカスできるものが無い。タブから Tab キーを押しても、
-  // キーボードだけの人はパネルの中身（案内）へ移れず、次の領域へ飛ぶ。
-  // **読むだけの人で開く。** 編集できる人には「使い方を見る」が出る（ADR 0094）。
-  test("フォーカスできるものが無いパネルも、Tab キーで移れる", async ({ page }) => {
+  // 切れると: 「絵解いた」の先頭（「絵 0 件」の見出しと案内）はフォーカスできない
+  // ので、タブから Tab キーを押すと中の「使い方を見る」まで飛び、キーボードだけの
+  // 人は見出しと案内を読み飛ばす（WAI-ARIA の tabs パターンの推奨）。
+  test("先頭がフォーカスできないパネルも、Tab キーでパネルへ移れる", async ({ page }) => {
     const mock = baseMock();
     mock.annotations = { [BOARD_ID]: [] };
-    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
     await openBoardWithMock(page, mock);
 
     const panel = page.getByRole("tabpanel", { name: "絵解いた", exact: true });
     await expect(panel).toBeVisible();
-    await expect(panel.getByRole("button")).toHaveCount(0);
 
     await page.getByRole("tab", { name: "絵解いた", exact: true }).focus();
     // タブの列の右に「パネルを閉じる」がある（#202）。焦点の順は見た目の並びの

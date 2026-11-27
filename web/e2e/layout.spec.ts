@@ -144,7 +144,7 @@ test.describe("置き方と Excalidraw の判定が揃っている", () => {
     await expect(boardLayout(page)).toHaveAttribute("data-layout", "phone");
     await expect(excalidraw(page)).toHaveClass(/excalidraw--mobile/);
     // 下の帯の中身は上の帯にある。
-    await expect(boardBar(page)).toContainText("オーナー");
+    await expect(boardBar(page)).toContainText("acme/web");
   });
 
   test("同じ大きさでも、注意の帯が無ければ重ねる", async ({ page }) => {
@@ -159,8 +159,8 @@ test.describe("置き方と Excalidraw の判定が揃っている", () => {
 test.describe("重ねる", () => {
   test.use({ viewport: { width: 1024, height: 768 } });
 
-  // 浮かせたパネルが、右上の島（「絵解き」と「未保存」）も下の帯（ロール・作成先・
-  // 大きさ）も覆わない（ADR 0021 / 0064）。**位置で見る。** パネルは Excalidraw の
+  // 浮かせたパネルが、右上の島（「絵解き」と「未保存」）も下の帯（作成先・大きさ）も
+  // 覆わない（ADR 0021 / 0064）。**位置で見る。** パネルは Excalidraw の
   // UI より下に置いているので、重なっていても島は上に出て押せてしまい、押せるか
   // では気づけない。
   test("パネルを開いたままでも、右上の島と下の帯に重ならない", async ({ page }) => {
@@ -295,12 +295,11 @@ test.describe("スマホ", () => {
   });
 
   // モバイル用 UI では `Footer` が描かれない。中身を上の帯に移していないと、
-  // 自分のロールと作る先が画面から消える（ADR 0064 / 0065）。
-  test("下の帯の中身（ロール・作成先）が上の帯に出ている", async ({ page }) => {
+  // 作る先が画面から消える（ADR 0064 / 0065）。
+  test("下の帯の中身（作成先）が上の帯に出ている", async ({ page }) => {
     await openBoardWithMock(page, baseMock());
 
     await expect(page.locator(".excalidraw .board-context")).toHaveCount(0);
-    await expect(boardBar(page)).toContainText("オーナー");
     await expect(boardBar(page)).toContainText("acme/web");
   });
 
@@ -396,7 +395,7 @@ test.describe("スマホ", () => {
     await expect(page.getByText("未保存", { exact: true })).toBeVisible();
   });
 
-  // 通知は下に出す。上の帯（ボード名・未保存・「保存」・「絵解き」と、ロール・作成先）は状態を
+  // 通知は下に出す。上の帯（ボード名・未保存・「保存」・「絵解き」と、作成先）は状態を
   // 出しているので覆わない。
   test("通知は上の帯に重ならない", async ({ page }) => {
     const notification = await showSaveFailure(page);
@@ -455,6 +454,6 @@ test.describe("スマホの横長", () => {
   test("「絵解き」と下の帯の中身が見えている", async ({ page }) => {
     await openBoardWithMock(page, baseMock(), BOARD_NAME);
     await ekidokiButton(page).click({ trial: true });
-    await expect(boardBar(page)).toContainText("オーナー");
+    await expect(boardBar(page)).toContainText("acme/web");
   });
 });

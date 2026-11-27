@@ -137,8 +137,6 @@ type Props = {
   runs: RunsProps;
   /** 未保存の変更があるか。「絵解く」が保存してから読むことを案内する（ADR 0077）。 */
   stale: boolean;
-  /** 編集できるか。viewer は false（ADR 0017）。 */
-  canEdit: boolean;
   projectLink: ProjectLink | null;
   /** 作る先の見出し（`acme/web › #1 ロードマップ`）。作成先が未選択なら null。 */
   targetLabel: string | null;
@@ -171,7 +169,6 @@ export function AnnotationDetail({
   creation,
   runs,
   stale,
-  canEdit,
   projectLink,
   targetLabel,
 }: Props) {
@@ -254,7 +251,6 @@ export function AnnotationDetail({
             creation={creation}
             runs={runs}
             stale={stale}
-            canEdit={canEdit}
             projectLink={projectLink}
             targetLabel={targetLabel}
           />

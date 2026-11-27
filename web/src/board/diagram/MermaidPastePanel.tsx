@@ -31,7 +31,7 @@ type Props = {
  * （`DiagramTab`）。
  *
  * **LLM を通さない。** なので LLM を設定していなくても使える
- * （`capabilities` で止めない）。viewer には出さない（描いても保存できない）。
+ * （`capabilities` で止めない）。
  *
  * **置くまでキャンバスは変わらない。置いても保存はしない**（中核思想 3）。
  * 種別（`kind`）も付けない。`erDiagram` を貼っても、ER 図だと決めるのは

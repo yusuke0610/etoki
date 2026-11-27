@@ -20,7 +20,6 @@ import {
   saveScene,
   ekidokiButton,
   openPremiseDialog,
-  openShareDialog,
   openUsageGuide,
 } from "./helpers/board";
 import {
@@ -218,20 +217,6 @@ test.describe("押せない理由が本文として読める", () => {
       detail.getByRole("button", { name: "キャンバスで見る" }),
       "このフレームはキャンバスにありません。",
     );
-  });
-
-  // 読むだけの参加者（ADR 0017）。粒度と種別は見えるが変えられない。何も
-  // 言わずに灰色にすると、壊れているのか権限なのかが分からない。
-  test("粒度と種別：読むだけの権限のとき", async ({ page }) => {
-    const mock = baseMock();
-    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
-    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
-    await openBoardWithMock(page, mock);
-
-    const detail = await openAnnotationDetail(page, "ログイン");
-    for (const name of ["粒度", "種別"]) {
-      await expectBlockedReason(detail.getByLabel(name), "読むだけの権限で開いています");
-    }
   });
 
   // 取り消せない操作と保存は相互に排他する（`.claude/rules/async-ui.md`）。
@@ -606,22 +591,6 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    /*
-     * 読むだけの権限でメニューを開いた状態（#295）。消した編集系の理由と
-     * owner 専用の理由がどちらも本文で出る。上の検査は owner で開くので、
-     * どちらの文も一度も掛かっていない。
-     */
-    test("読むだけの権限でメニューを開いた状態", async ({ page }) => {
-      const mock = baseMock();
-      mock.details[BOARD_ID] = { ...board(), role: "viewer" };
-      mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
-      await openBoardWithMock(page, mock);
-      const menu = await openBoardMenu(page);
-      await menu.getByText("編集できる人だけです", { exact: false }).waitFor();
-
-      await expectNoAxeViolations(page);
-    });
-
     test("ボードの一覧", async ({ page }) => {
       await installApi(page, baseMock());
 
@@ -883,44 +852,6 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoAxeViolations(page);
     });
 
-    // メンバーのパネルも独立した領域で、開くまで DOM に出ない。行ごとのボタンが
-    // 並ぶ唯一の画面でもある（`.claude/rules/async-ui.md` の「行固有の
-    // accessible name」）。
-    test("共有のダイアログを開いた状態", async ({ page }) => {
-      const mock = baseMock();
-      mock.members = {
-        [BOARD_ID]: [
-          {
-            userId: "user-alice",
-            login: "alice",
-            displayName: "Alice",
-            role: "owner",
-            createdAt: "2026-08-01T09:00:00Z",
-          },
-          {
-            userId: "user-bob",
-            login: "bob",
-            displayName: "Bob",
-            role: "editor",
-            createdAt: "2026-08-03T09:00:00Z",
-          },
-        ],
-      };
-      await openBoardWithMock(page, mock);
-
-      await openShareDialog(page);
-      await page.getByText("Bob").waitFor();
-
-      await expectNoAxeViolations(page);
-
-      // 招待する前の確認（ADR 0053）も、確認を押すまで DOM に出ない。
-      await page.getByLabel("招待する login").fill("carol");
-      await page.getByRole("button", { name: "確認する" }).click();
-      await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
-
-      await expectNoAxeViolations(page);
-    });
-
     // 使い方のダイアログ（ADR 0094）も開くまで DOM に出ない。見出し・リスト・
     // 用語の並びがあり、文字の色のコントラストもここで見る。
     test("使い方のダイアログを開いた状態", async ({ page }) => {
@@ -946,19 +877,6 @@ for (const colorScheme of ["light", "dark"] as const) {
       mock.details[BOARD_ID] = { ...board(), premise: "ほかの人の背景" };
       await dialog.getByRole("button", { name: "保存", exact: true }).click();
       await dialog.getByRole("region", { name: "いまの背景" }).waitFor();
-
-      await expectNoAxeViolations(page);
-    });
-
-    // 読むだけの人には、欄の代わりに本文と理由が出る。上の検査では一度も出ない。
-    test("読むだけの権限でボードの背景のダイアログを開いた状態", async ({ page }) => {
-      const mock = baseMock();
-      mock.details[BOARD_ID] = { ...board(), role: "viewer", premise: "acme/web" };
-      mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
-      await openBoardWithMock(page, mock);
-
-      const dialog = await openPremiseDialog(page);
-      await dialog.getByText("編集できる人だけです", { exact: false }).waitFor();
 
       await expectNoAxeViolations(page);
     });

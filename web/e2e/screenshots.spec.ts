@@ -22,7 +22,6 @@ import {
   saveScene,
   startNewBoard,
   openPremiseDialog,
-  openShareDialog,
   openUsageGuide,
 } from "./helpers/board";
 import {
@@ -572,55 +571,12 @@ test.describe("スクリーンショット", () => {
     await shot(page, "62-usage-guide");
   });
 
-  // 共有の画面。誰と共有しているか、自分に何ができるかが見えている必要がある
-  // （ADR 0017）。
-  test("メンバーの一覧を撮る", async ({ page }) => {
-    const mock = baseMock();
-    mock.members = {
-      [BOARD_ID]: [
-        {
-          userId: "user-alice",
-          login: "alice",
-          displayName: "Alice",
-          role: "owner",
-          createdAt: "2026-08-01T09:00:00Z",
-        },
-        {
-          userId: "user-bob",
-          login: "bob",
-          displayName: "Bob",
-          role: "editor",
-          createdAt: "2026-08-03T09:00:00Z",
-        },
-        {
-          userId: "user-carol",
-          login: "carol",
-          displayName: "Carol",
-          role: "viewer",
-          createdAt: "2026-08-04T09:00:00Z",
-        },
-      ],
-    };
-
-    await openBoardWithMock(page, mock);
-    await openShareDialog(page);
-    await page.getByText("Carol").waitFor();
-    await shot(page, "11-members");
-
-    // 招待する前に、login が当たった相手を見せる（ADR 0053）。
-    await page.getByLabel("招待する login").fill("dave");
-    await page.getByRole("button", { name: "確認する" }).click();
-    await page.getByRole("group", { name: "招待する相手の確認" }).waitFor();
-    await shot(page, "11-members-invitee");
-  });
-
-  // 招待された側にリポジトリのアクセス権は要らない。ブレストと解釈まではでき、
+  // GitHub の資格情報に Project への書き込み権限が無いと、ブレストと解釈まではでき、
   // 作成だけができない。**その理由が読める**ことを撮る。
   test("作成の権限が無い状態を撮る", async ({ page }) => {
     const mock = baseMock();
-    mock.details[BOARD_ID] = { ...board(), role: "editor" };
     mock.access = {
-      [BOARD_ID]: { status: 200, body: { role: "editor", projectAccess: "denied" } },
+      [BOARD_ID]: { status: 200, body: { role: "owner", projectAccess: "denied" } },
     };
 
     await openBoardWithMock(page, mock);
@@ -629,30 +585,9 @@ test.describe("スクリーンショット", () => {
     await shot(page, "12-creation-denied");
   });
 
-  // 読むだけの参加者。編集・解釈・作成の導線がまとめて消える。
-  test("読むだけの権限で開いた画面を撮る", async ({ page }) => {
-    const mock = baseMock();
-    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
-    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
-
-    await openBoardWithMock(page, mock);
-    await page
-      .getByText(
-        "読むだけの権限で開いています。編集・絵解き・作成はできず、etoki AI も使えません。",
-      )
-      .waitFor();
-    await shot(page, "13-viewer");
-
-    // 消した編集系の操作の理由（#295）。owner 専用の理由と並ぶ姿を残す。
-    const menu = await openBoardMenu(page);
-    await menu.getByText("編集できる人だけです", { exact: false }).waitFor();
-    await shot(page, "56-viewer-menu");
-  });
-
   // 一覧を作成先ごとの節に分けた姿（ADR 0019、#200）。ボードが 1 枚の 01 では
-  // 節が 1 つしか出ず、まとまっていることが見えない。カードの件数とロールの
-  // 出し分け（0 件の状態は出さない、注釈なし、読めない、未選択の破線）も
-  // 1 枚に並べる。
+  // 節が 1 つしか出ず、まとまっていることが見えない。カードの件数の出し分け
+  // （0 件の状態は出さない、注釈なし、読めない、未選択の破線）も 1 枚に並べる。
   test("作成先ごとにまとまった一覧を撮る", async ({ page }) => {
     const mock = baseMock();
     const another = {
@@ -680,14 +615,7 @@ test.describe("スクリーンショット", () => {
       ...mock.boards,
       summarize(legacy),
     ];
-    const shared = {
-      ...board(),
-      id: "board-shared",
-      name: "共有された通知の設計",
-      role: "viewer" as const,
-    };
-    mock.boards.splice(2, 0, summarize(shared));
-    for (const b of [another, otherRepo, legacy, shared]) {
+    for (const b of [another, otherRepo, legacy]) {
       mock.details[b.id] = b;
       mock.annotations[b.id] = [];
     }

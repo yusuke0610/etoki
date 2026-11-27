@@ -21,7 +21,7 @@ type Props = {
   panelOpen: boolean;
   /** そのタブでパネルを全面に開く。 */
   onOpen: (tab: SidePanelTab) => void;
-  /** 下の帯の中身（ロール・作成先・大きさ、`BoardContext`）。 */
+  /** 下の帯の中身（作成先・大きさ、`BoardContext`）。 */
   context: ReactNode;
 };
 

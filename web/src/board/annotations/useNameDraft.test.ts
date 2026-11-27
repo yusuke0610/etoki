@@ -120,7 +120,7 @@ describe("useNameDraft", () => {
     act(() => hook.result.current.start());
     act(() => hook.result.current.change("支払い"));
 
-    // 注釈から外した・キャンバスから消えた・読むだけに変わった。
+    // 注釈から外した・キャンバスから消えた。
     hook.rerender({ name: "決済", canRename: false });
     expect(hook.result.current.draft).toBeNull();
 

@@ -65,8 +65,6 @@ type Props = {
   runs: RunsProps;
   /** 未保存の変更があるとき、状態表示は古い可能性がある。 */
   stale: boolean;
-  /** 編集できるか。viewer は false（ADR 0017）。 */
-  canEdit: boolean;
   /** 作成先へのリンク。組めなければ null（ADR 0025）。 */
   projectLink: ProjectLink | null;
   /** 注釈 1 件の詳細（`AnnotationDetail`）を開く。 */
@@ -89,7 +87,6 @@ export function AnnotationPanel({
   frames,
   runs,
   stale,
-  canEdit,
   projectLink,
   onOpenDetail,
   onOpenGuide,
@@ -102,20 +99,6 @@ export function AnnotationPanel({
     <aside className="panel">
       {/* 見出しは見た目だけ隠す。右のパネルのタブに同じ名前が出ている（`SidePanel`）。 */}
       <h2 className="visually-hidden">絵解いた</h2>
-
-      {/*
-        **「etoki AI」のタブを消した理由もここで言う**（#295）。読むだけの人の
-        タブは「絵解いた」1 つだけなので、パネルを開けば（スマホでは上の帯の
-        ボタンを押せば）必ずこの帯が目に入る。キャンバスのメニューには書かない。
-        メニューにある操作の理由ではないので、何の話か分からない。
-      */}
-      {!canEdit && (
-        <p className="hint" role="status">
-          {
-            "読むだけの権限で開いています。編集・絵解き・作成はできず、etoki AI も使えません。"
-          }
-        </p>
-      )}
 
       <section className="panel-section">
         {/*
@@ -218,11 +201,7 @@ export function AnnotationPanel({
       */}
       <section className="panel-section">
         <h3>選択中のフレーム</h3>
-        {!canEdit ? (
-          <p className="hint">
-            フレームを絵にしたり外したりできるのは、編集できる人だけです。
-          </p>
-        ) : frames.markable.length === 0 && frames.unmarkable.length === 0 ? (
+        {frames.markable.length === 0 && frames.unmarkable.length === 0 ? (
           <>
             <p className="hint">
               フレームツール（F）で囲んでから、そのフレームを選択してください。

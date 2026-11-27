@@ -14,7 +14,6 @@ function props(
     renaming: false,
     onRename: vi.fn(),
     dirty: true,
-    canEdit: true,
     onSave: vi.fn(),
     onEkidoki: vi.fn(),
     canSave: true,
@@ -55,15 +54,6 @@ describe("BoardStatus の「保存」", () => {
 
     expect(saveButton()).toBeNull();
     expect(screen.getByRole("button", { name: "絵解き" })).toBeDefined();
-  });
-
-  // 保存できないロールには、押せないボタンを並べない（「絵解き」と同じ）。
-  it("保存できないロールには、未保存でも出さない", () => {
-    render(<BoardStatus {...props({ canEdit: false })} />);
-
-    expect(saveButton()).toBeNull();
-    expect(screen.queryByRole("button", { name: "絵解き" })).toBeNull();
-    expect(screen.getByText("未保存")).toBeDefined();
   });
 
   // **見える文にショートカットを出さない。** キーボードの無い端末で、押せない口を

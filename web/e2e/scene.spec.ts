@@ -17,7 +17,6 @@ import {
   saveButton,
   saveScene,
   waitForBoard,
-  ekidokiButton,
 } from "./helpers/board";
 import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
 
@@ -439,21 +438,27 @@ test.describe("シーンの保存", () => {
 
   // **押せないときも既定の動作は止める。** 「保存できなかった」の代わりに
   // ブラウザの保存ダイアログが出るのは、押せない理由を見せるどころではない。
-  // viewer には保存そのものが無い（ADR 0017）ので、ここがいちばん外しやすい。
-  test("viewer が押しても保存せず、ブラウザの既定にも落とさない", async ({ page }) => {
-    const mock = baseMock();
-    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
-    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
-
-    await installApi(page, mock);
+  // 押せないあいだ（保存中）に押して確かめる。
+  test("押せないあいだに押しても、ブラウザの既定に落とさない", async ({ page }) => {
+    await installApi(page, baseMock());
     await page.goto("/");
     await openBoard(page, BOARD_NAME);
-    await expect(ekidokiButton(page)).toHaveCount(0);
+    await drawRectangle(page);
+
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await holdSave(page, held);
 
     const requests: string[] = [];
     page.on("request", (req) => {
       if (req.method() === "PUT") requests.push(req.url());
     });
+
+    await page.locator(".excalidraw canvas").first().press("ControlOrMeta+s");
+    // 保存しているあいだ、右上の「絵解き」は「準備中…」と名乗る（#247）。
+    await expect(page.getByRole("button", { name: "準備中…" })).toBeVisible();
 
     // 既定の動作が止まったかは、押した側で見るしかない。ブラウザの保存
     // ダイアログは Playwright からは観測できない。
@@ -478,7 +483,10 @@ test.describe("シーンの保存", () => {
     });
 
     expect(prevented).toBe(true);
-    expect(requests).toEqual([]);
+    release();
+    await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+    // 押せないあいだの 1 回は保存を重ねない。
+    expect(requests).toHaveLength(1);
   });
 
   // 保存中にもう一度押しても、2 本目を投げない（issue #145）。

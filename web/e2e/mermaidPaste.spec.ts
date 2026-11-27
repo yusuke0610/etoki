@@ -331,17 +331,4 @@ test.describe("mermaid を貼る", () => {
     await openPaste(page);
     await expect(page.getByLabel("貼る mermaid")).toHaveValue(broken);
   });
-
-  // 描けないのに置けると、置いたものを保存できずに黙って捨てる（ADR 0017）。
-  test("viewer には出さない", async ({ page }) => {
-    const mock = baseMock();
-    const viewer = { ...board(), role: "viewer" as const };
-    mock.details[BOARD_ID] = viewer;
-    mock.boards = [{ ...(mock.boards[0] ?? {}), ...viewer, role: "viewer" }];
-    await openBoardWithMock(page, mock);
-
-    // 貼る口は図のドラフトのタブの中にあり、そのタブが viewer には無い。
-    await expect(page.getByRole("tab", { name: "etoki AI" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "mermaid を貼る" })).toHaveCount(0);
-  });
 });

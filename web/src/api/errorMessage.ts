@@ -77,7 +77,7 @@ export function missingProjectFieldsMessage(
  *
  * **`Record` にすることが担保。** `ErrorCode` は `api/openapi.yaml` からの
  * 生成物なので、契約に code を足して文言を書き忘れると `tsc` が落ちる
- * （`web/src/board/members/roles.ts` の ROLE_LABELS と同じ形）。
+ * （`web/src/board/diagram/diagramLabels.ts` の `DIAGRAM_KIND_LABELS` と同じ形）。
  *
  * 書くのは**次に何をすればよいか**。同じステータスでも打ち手が違うから code を
  * 分けたのであって、原因の言い換えだけでは分けた意味が無い。

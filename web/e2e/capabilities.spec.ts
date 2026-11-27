@@ -11,7 +11,6 @@ import {
   openAnnotationDetail,
   openBoardMenu,
   openBoardWithMock,
-  openShareDialog,
   waitForBoard,
 } from "./helpers/board";
 import { BOARD_ID, baseMock, board, unselectedBoard } from "./helpers/fixtures";
@@ -346,29 +345,6 @@ test.describe("設定していない機能", () => {
     await expect(menu.getByText("GitHub が未設定です。").first()).toBeVisible();
   });
 
-  // 口は黙って消さず、開いた先で理由を出す（ADR 0030）。図のドラフトで LLM が
-  // 未設定のときと同じ形。
-  test("共有が未設定なら、共有のダイアログを開いた先で理由を出す", async ({ page }) => {
-    const mock = baseMock();
-    mock.capabilities = {
-      status: 200,
-      body: {
-        interpretation: true,
-        diagramDraft: true,
-        creation: true,
-        sharing: false,
-        mcpConnections: false,
-      },
-    };
-    await openBoardWithMock(page, mock);
-
-    const panel = await openShareDialog(page);
-    await expect(panel.getByText("共有には認証の設定が必要です")).toBeVisible();
-    // **開いてから「無い」を見る。** 閉じているあいだ中身は DOM に無いので、
-    // 開かずに見ると一覧を出していても通る。
-    await expect(page.getByRole("region", { name: "メンバー" })).toHaveCount(0);
-  });
-
   // 確かめられなかったことを「使えない」として見せない（中核思想 3）。
   // これまでどおり押せて、押した後に理由が出る。
   test("使える機能を引けなくても、操作は止めない", async ({ page }) => {
@@ -378,8 +354,5 @@ test.describe("設定していない機能", () => {
 
     const detail = await openAnnotationDetail(page, "ログイン");
     await expect(detail.getByRole("button", { name: "絵解く" })).toBeEnabled();
-    await detail.getByRole("button", { name: "閉じる" }).click();
-    await openShareDialog(page);
-    await expect(page.getByRole("region", { name: "メンバー" })).toBeVisible();
   });
 });

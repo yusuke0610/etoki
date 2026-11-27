@@ -10,10 +10,6 @@ const SAVING_REASON_ID = "premise-saving-reason";
 type Props = {
   /** 書きかけと保存（`usePremise`）。開閉もここが持つ。 */
   editor: PremiseEditor;
-  /** 書き換えられるか。読むだけの人には中身と理由だけを出す（ADR 0093）。 */
-  canEdit: boolean;
-  /** いまの背景。読むだけの人に見せる。 */
-  premise: string;
 };
 
 /**
@@ -21,16 +17,16 @@ type Props = {
  * 「ボードの背景…」（`BoardMenu`）。
  *
  * **キャンバスにも右のパネルにも置かない。** 背景はブレストの外に置くもので
- * （中核思想 1）、たまに書き換えるボードそのものの設定。開く場所は共有と同じ
- * （ADR 0078）。
+ * （中核思想 1）、たまに書き換えるボードそのものの設定。ボードそのものの管理は
+ * メニューからダイアログで開く（ADR 0078）。
  *
- * **ブラウザの `<dialog>` をモーダルで開く**（`ShareDialog` と同じ）。共有と
- * 違って**書きかけはダイアログの外（`usePremise`）で持つ**ので、閉じても消えない。
+ * **ブラウザの `<dialog>` をモーダルで開く。** **書きかけはダイアログの外
+ * （`usePremise`）で持つ**ので、閉じても消えない。
  *
  * **空でも催促しない**（中核思想 1）。書くかどうかは人が決め、etoki は既定の文も
  * 例文も入れない。入れた時点で、読み方を決めているのが etoki になる。
  */
-export function PremiseDialog({ editor, canEdit, premise }: Props) {
+export function PremiseDialog({ editor }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { open, closeEditor, saving } = editor;
   useEffect(() => {
@@ -49,8 +45,8 @@ export function PremiseDialog({ editor, canEdit, premise }: Props) {
       // ここ 1 か所に集まる。
       onClose={() => {
         closeEditor();
-        // **焦点をメニューの口へ戻す**（`ShareDialog` と同じ）。開いた項目は
-        // メニューごと消えているので、戻さないと焦点は body に落ちる。
+        // **焦点をメニューの口へ戻す。** 開いた項目はメニューごと消えているので、
+        // 戻さないと焦点は body に落ちる。
         document
           .querySelector<HTMLElement>('.excalidraw [data-testid="main-menu-trigger"]')
           ?.focus();
@@ -76,30 +72,7 @@ export function PremiseDialog({ editor, canEdit, premise }: Props) {
       </p>
       {/* 落ちてもキャンバスごと外れないよう、ダイアログの中で包む（ADR 0027）。 */}
       <ErrorBoundary name="ボードの背景" recovery="remount">
-        {canEdit ? (
-          <PremiseForm editor={editor} onClose={() => dialog.current?.close()} />
-        ) : (
-          <>
-            <PremiseText premise={premise} />
-            {/*
-              読むのは viewer にも許す（ADR 0093）。書き換えの口は出さず、なぜ無い
-              のかを言う（`.claude/rules/async-ui.md` の「理由を出す約束は、消した
-              ボタンにも掛かる」）。
-            */}
-            <p className="hint">
-              ボードの背景を書き換えられるのは、編集できる人だけです。
-            </p>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="quiet"
-                onClick={() => dialog.current?.close()}
-              >
-                閉じる
-              </button>
-            </div>
-          </>
-        )}
+        <PremiseForm editor={editor} onClose={() => dialog.current?.close()} />
       </ErrorBoundary>
     </dialog>
   );

@@ -1,9 +1,7 @@
-import type { BoardRole, ProjectAccess } from "../api/types";
+import type { ProjectAccess } from "../api/types";
 import { formatSceneSize } from "../excalidraw/size";
-import { ROLE_LABELS } from "./members/roles";
 
 type Props = {
-  role: BoardRole;
   /** 作る先の見出し（「owner/repo › #1 Project」）。作成先が未選択なら null。 */
   targetLabel: string | null;
   /** `targetLabel` が null のときに出すリポジトリ名。 */
@@ -26,7 +24,6 @@ type Props = {
  * 要素を `useMemo` で持つのは `BoardPage`。
  */
 export function BoardContext({
-  role,
   targetLabel,
   repository,
   linkHref,
@@ -37,11 +34,6 @@ export function BoardContext({
 }: Props) {
   return (
     <div className="board-context etoki-ui">
-      {/*
-        自分が何をできるのかは、操作して断られる前に見えている必要がある。
-        共有すると「開けるが書けない」が普通に起きる（ADR 0017）。
-      */}
-      <span className="badge badge-role">{ROLE_LABELS[role]}</span>
       {/*
         どこに作られるのかは、作る直前ではなく常に見えている必要がある。
         作った draft issue は取り消せない（ADR 0009）。

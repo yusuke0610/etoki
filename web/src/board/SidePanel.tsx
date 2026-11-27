@@ -53,7 +53,7 @@ export function PanelOpenerLabel({ tab, upright }: { tab: TabSpec; upright: bool
 }
 
 type Props = {
-  /** 出すタブ。権限で使えないもの（viewer の図のドラフト）は渡さない。 */
+  /** 出すタブ。 */
   tabs: TabSpec[];
   active: SidePanelTab;
   onSelect: (tab: SidePanelTab) => void;
@@ -82,8 +82,7 @@ export const SIDE_PANEL_ID = "side-panel";
  *
  * 以前はメンバーが上から帯、図のドラフトが左から縦、注釈が右と、開く場所が
  * ばらばらで、開くたびにキャンバスの形が変わった。**開く場所を 1 つにする。**
- * メンバー（共有）はボードそのものの管理なので、メニューからダイアログで開く
- * （#248、ADR 0078）。
+ * ボードそのものの管理（背景など）は、メニューからダイアログで開く（ADR 0078）。
  *
  * **1 度開いたタブは描いたまま隠す。** 隠すたびに外すと、手直し中の下書きや
  * 入力中の文がタブを切り替えただけで消える。Excalidraw の `Sidebar` に載せ
@@ -247,10 +246,10 @@ export function SidePanel({
             aria-labelledby={`side-tab-${tab.id}`}
             className="side-panel-body"
             hidden={tab.id !== active}
-            // 中にフォーカスできるものが無いタブ（何も描いていない注釈の一覧など）でも、
+            // 先頭がフォーカスできないタブ（見出しから始まる注釈の一覧など）でも、
             // タブから Tab キーでパネルへ移れるようにする。WAI-ARIA の tabs
-            // パターンの推奨。外すと、キーボードだけの人はそのパネルの理由に
-            // 届かない。
+            // パターンの推奨。外すと、キーボードだけの人は中の最初のボタンまで
+            // 飛び、その手前の見出しと案内を読み飛ばす。
             // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
             tabIndex={0}
           >

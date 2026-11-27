@@ -41,7 +41,6 @@ function props(): ComponentProps<typeof AnnotationDetail> {
     },
     runs: { states: {}, onLoad: vi.fn() },
     stale: false,
-    canEdit: true,
     projectLink: null,
     targetLabel: "acme/web › #1 ロードマップ",
   };
@@ -118,14 +117,6 @@ describe("AnnotationDetail", () => {
     );
 
     expect(screen.getByRole("button", { name: "ログイン" })).toBeEnabled();
-  });
-
-  // 読むだけのロールは名前を変えられない。理由は本文に出ている（ADR 0030 / 0039）。
-  it("読むだけのロールでは、名前を押せるものにしない", () => {
-    render(<AnnotationDetail {...props()} canEdit={false} />);
-
-    expect(screen.queryByRole("button", { name: "ログイン" })).not.toBeInTheDocument();
-    expect(screen.getByText("ログイン", { selector: "span" })).toBeInTheDocument();
   });
 
   // 1 文字ごとに書くと、打つたびに未保存になり、「元に戻す」に 1 文字ずつ積まれる。
@@ -223,12 +214,15 @@ describe("AnnotationDetail", () => {
     const { rerender } = render(<AnnotationDetail {...detailProps} />);
 
     fireEvent.change(startRename(), { target: { value: "書きかけ" } });
-    rerender(<AnnotationDetail {...detailProps} canEdit={false} />);
+    // 保存の前に注釈から外した（キャンバスには在るが、名前を書く先が無い）。
+    rerender(
+      <AnnotationDetail {...detailProps} frames={{ ...detailProps.frames, names: {} }} />,
+    );
 
     expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
     expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
 
-    rerender(<AnnotationDetail {...detailProps} canEdit={true} />);
+    rerender(<AnnotationDetail {...detailProps} />);
     expect(screen.queryByLabelText("名前")).not.toBeInTheDocument();
     expect(detailProps.frames.onChangeName).not.toHaveBeenCalled();
   });
@@ -743,25 +737,6 @@ describe("AnnotationDetail", () => {
 
       expect(screen.getByRole("button", { name: "絵解く" })).toHaveFocus();
     });
-  });
-
-  it("読むだけの権限では帯を出さず、その理由を出す", () => {
-    render(<AnnotationDetail {...props()} canEdit={false} />);
-
-    expect(screen.queryByRole("button", { name: "絵解く" })).toBeNull();
-    expect(
-      screen.getByText(
-        "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
-      ),
-    ).toBeInTheDocument();
-    // 押せない粒度と種別も同じ文を指す。
-    for (const name of ["粒度", "種別"]) {
-      const select = screen.getByRole("combobox", { name });
-      expect(select).toBeDisabled();
-      expect(select).toHaveAccessibleDescription(
-        "読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。",
-      );
-    }
   });
 
   // ボードの背景（ADR 0093）。押す前に見せるのは背景だけで、結果には何を添えたかを

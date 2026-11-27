@@ -51,7 +51,6 @@ type Props = {
   initialData: unknown;
   onChange: ExcalidrawProps["onChange"];
   theme: Theme;
-  canEdit: boolean;
   onError: BoardErrorHandler;
   renderTopRightUI: ExcalidrawProps["renderTopRightUI"];
   /**
@@ -75,7 +74,6 @@ export function BoardCanvas({
   initialData,
   onChange,
   theme,
-  canEdit,
   onError,
   renderTopRightUI,
   children,
@@ -114,9 +112,6 @@ export function BoardCanvas({
         // 項目はこれでは消えないので、`board.css` で隠している。
         aiEnabled={false}
         onPaste={handlePaste}
-        // viewer には描かせない。描けるのに保存できないと、描いた内容を
-        // 黙って捨てることになる（ADR 0017）。
-        viewModeEnabled={!canEdit}
         renderTopRightUI={renderTopRightUI}
       >
         {children}
