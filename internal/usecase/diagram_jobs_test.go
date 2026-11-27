@@ -275,33 +275,6 @@ func TestDiagramJobs_RejectsBeforeCreatingJob(t *testing.T) {
 	}
 }
 
-// 生成は LLM を叩く外部呼び出しで課金も伴う。viewer は始めることも、覗くことも
-// できない（ADR 0017）。
-func TestDiagramJobs_ViewerCannotUse(t *testing.T) {
-	t.Parallel()
-
-	jobs, boards := newDiagramJobs(t, &fakeLLM{responses: []string{validMermaid}})
-	ctx := asUser(t.Context(), "u1")
-	job, err := jobs.Start(ctx, "board-1", req("段取り"))
-	if err != nil {
-		t.Fatalf("Start() = %v", err)
-	}
-	boards.role = port.RoleViewer
-
-	if _, err := jobs.Start(ctx, "board-1", req("別の段取り")); !errors.Is(err, usecase.ErrForbidden) {
-		t.Errorf("Start() = %v, want ErrForbidden", err)
-	}
-	if _, err := jobs.List(ctx, "board-1"); !errors.Is(err, usecase.ErrForbidden) {
-		t.Errorf("List() = %v, want ErrForbidden", err)
-	}
-	if _, err := jobs.Get(ctx, "board-1", job.ID); !errors.Is(err, usecase.ErrForbidden) {
-		t.Errorf("Get() = %v, want ErrForbidden", err)
-	}
-	if err := jobs.Discard(ctx, "board-1", job.ID); !errors.Is(err, usecase.ErrForbidden) {
-		t.Errorf("Discard() = %v, want ErrForbidden", err)
-	}
-}
-
 func TestDiagramJobs_HidesJobsFromOthers(t *testing.T) {
 	t.Parallel()
 

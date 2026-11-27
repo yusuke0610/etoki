@@ -35,8 +35,6 @@ type handlers struct {
 	creations *usecase.CreationService
 	// catalog は作成先の候補一覧。nil でもよい。その場合は 503 を返す。
 	catalog *usecase.GitHubCatalogService
-	// members はボードの共有。nil でもよい。その場合は 503 を返す。
-	members *usecase.BoardMemberService
 	// access はそのボードで何ができるか。GitHub が未設定でも組み立てる。
 	//
 	// GitHub 側を確かめられないことは「分からない」として返るので、ここを

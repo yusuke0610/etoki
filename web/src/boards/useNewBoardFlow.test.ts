@@ -27,7 +27,6 @@ const target: BoardTarget = {
 const created: BoardDetail = {
   id: "b-new",
   name: "新しいボード",
-  role: "owner",
   createdAt: "2026-10-07T00:00:00Z",
   updatedAt: "2026-10-07T00:00:00Z",
   ...target,

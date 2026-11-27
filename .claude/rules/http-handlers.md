@@ -48,8 +48,8 @@ paths:
   `internal/CLAUDE.md`）。
 - **`*_not_configured` を名乗れるのは、capabilities が材料にしている nil だけ。**
   `etoki.New` が必ず渡す依存（`Access`）が nil なのは設定の不足ではなく配線の
-  不具合なので、ログを残して 500 に落とす。ここで共有未設定を名乗ると、
-  「共有は使える」と案内した直後に「共有は未設定」と返る組み合わせができる。
+  不具合なので、ログを残して 500 に落とす。ここで `*_not_configured` を名乗ると、
+  「使える」と案内した機能が「未設定」と返る組み合わせができる。
 - **`/api` 全体に掛かるものは、認証の要否で分かれる前の親グループ 1 箇所に置く。**
   `noStore()`（`Cache-Control: no-store`）と `limitBody()`（本文の読み込みの
   既定の上限）がこれで、新しいグループは `r.Group("/api/...")` で生やさず親
@@ -68,7 +68,7 @@ paths:
   `httptest.NewRequest` の既定は `example.com` なので、入れ忘れると Origin 検証で
   403 になる。**入れる場所はリクエストを組み立てた場所。** `do`
   （`router_test.go`）を通す経路はヘルパーが入れているので、呼び出し側で重ねない。
-  リクエストを直に組む経路（`auth_test.go` / `member_test.go`）は、その場で
+  リクエストを直に組む経路（`auth_test.go`）は、その場で
   `req.Host = loopbackHost` を書く。
 - **画面の配信は `NoRoute` に置く**（ADR 0032）。ルートに当たらなかったものだけを
   見る位置なので、静的ファイルが API のパスを覆わない。**`/api` と `/healthz` は

@@ -113,9 +113,11 @@ func WithAuthClock(f func() time.Time) AuthServiceOption {
 // **空なら誰も通らない。** 空を設定の誤りとして弾くのは組み立て口
 // （etoki.NewAuthenticator）で、ここでは閉じる側に倒すだけにする。
 //
-// **組み立て口が渡すのは 1 人だけ**（#492）。ここで複数を受けるのは、共有
-// （ADR 0017）が 2 人目を前提にしていて、そのテストが 2 人目のログインを要る
-// ため。共有を外すとき（#495）に 1 人へ戻す。
+// **組み立て口が渡すのは 1 人だけ**（#492）。ここで複数を受けるのは、2 人目の
+// ログインを要るテストが残っているため。MCP の許可が利用者ごとに分かれること
+// （ADR 0076）と、ボードを所有者で絞ること（ADR 0016）を見ている。共有
+// （ADR 0017）は外した（ADR 0107）。残りの 2 つを畳むとき（#494・#496）に
+// 1 人へ戻す。
 func NewAuthService(
 	provider port.IdentityProvider, sessions port.SessionRepository, allowedSubjects []string,
 	opts ...AuthServiceOption,
@@ -289,9 +291,9 @@ func (s *AuthService) Complete(
 		return LoginResult{}, err
 	}
 
-	// **照らすのは利用者を作る前。** 断った相手を users に残すと、招待の引き当て
-	// （FindUserByLogin）に現れる。資格情報も保存しない。他人の GitHub トークンを
-	// 預かる理由が無い。
+	// **照らすのは利用者を作る前。** 断った相手を users に残すと、login で相手を
+	// 引く管理用のコマンド（`etoki claim` など、FindUserByLogin）に現れる。
+	// 資格情報も保存しない。他人の GitHub トークンを預かる理由が無い。
 	if !s.allows(identity.Provider, identity.Subject) {
 		return LoginResult{}, fmt.Errorf("%w: %s user %q (id %s)",
 			ErrLoginNotAllowed, identity.Provider, identity.Login, identity.Subject)
@@ -363,19 +365,6 @@ func (s *AuthService) FindAllowedUser(ctx context.Context, userID string) (*port
 		return nil, nil
 	}
 	return user, nil
-}
-
-// FindUserByLogin は login で利用者を引く。存在しなければ (nil, nil)。
-//
-// 招待の相手を指すのに使う。認証基盤の識別子はここが知っているので、
-// 呼ぶ側が provider を持ち回らずに済む。
-func (s *AuthService) FindUserByLogin(ctx context.Context, login string) (*port.User, error) {
-	return s.sessions.FindUserByLogin(ctx, s.provider.Name(), login)
-}
-
-// FindUsers は ID をまとめて引く。メンバー一覧に表示名を添えるのに使う。
-func (s *AuthService) FindUsers(ctx context.Context, ids []string) ([]port.User, error) {
-	return s.sessions.FindUsers(ctx, ids)
 }
 
 // Logout はセッションを破棄する。

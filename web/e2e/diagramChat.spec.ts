@@ -332,7 +332,6 @@ test.describe("図のドラフト", () => {
         interpretation: false,
         diagramDraft: false,
         creation: true,
-        sharing: true,
         mcpConnections: false,
       },
     };

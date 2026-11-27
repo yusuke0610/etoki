@@ -11,7 +11,7 @@ import (
 )
 
 // このファイルは、usecase のテストが共有するフェイクと入力を置く場所。
-// 対象に固有のフェイク（blockingMembers や racingBoards など）は、使うテストの
+// 対象に固有のフェイク（racingBoards など）は、使うテストの
 // ファイルに置いたままにする。
 
 var baseTime = time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
@@ -49,12 +49,8 @@ const validLLMOutput = `{"summary":"決済まわりの課題出し。SDK 更新�
 type fakeBoards struct {
 	board *port.Board
 	// owner はこのボードのメンバーである操作者。既定は空文字（認証なし）。
-	owner string
-	// role は操作者のロール。空なら owner として扱う。ロール不足を確かめる
-	// テストだけがここを変える。
-	role    port.BoardRole
-	members []port.BoardMember
-	writes  int
+	owner  string
+	writes int
 	// display は最後に書かれた表示用スナップショット。
 	display port.BoardTargetDisplay
 	// files はボードが持っている画像（ADR 0074）。ID → 中身。
@@ -64,17 +60,12 @@ type fakeBoards struct {
 }
 
 // Find は操作者も突き合わせる。実装と同じ形にしておかないと、絞り忘れを
-// フェイクが吸収してしまう（ADR 0016 / 0017）。
+// フェイクが吸収してしまう（ADR 0016）。
 func (f *fakeBoards) Find(_ context.Context, actor, id string) (*port.BoardAccess, error) {
 	if f.board == nil || f.board.ID != id || f.owner != actor {
 		return nil, nil
 	}
-
-	role := f.role
-	if role == "" {
-		role = port.RoleOwner
-	}
-	return &port.BoardAccess{Board: *f.board, Role: role}, nil
+	return &port.BoardAccess{Board: *f.board}, nil
 }
 
 func (f *fakeBoards) Create(context.Context, port.Board, string) error {
@@ -200,48 +191,6 @@ func (f *fakeBoards) Delete(_ context.Context, actor, id string) error {
 }
 
 func (f *fakeBoards) List(context.Context, string) ([]port.BoardAccess, error) { return nil, nil }
-
-func (f *fakeBoards) ListMembers(_ context.Context, boardID string) ([]port.BoardMember, error) {
-	if f.board == nil || f.board.ID != boardID {
-		return nil, nil
-	}
-	return f.members, nil
-}
-
-func (f *fakeBoards) AddMember(_ context.Context, m port.BoardMember) error {
-	for _, existing := range f.members {
-		if existing.UserID == m.UserID {
-			return port.ErrAlreadyExists
-		}
-	}
-	f.writes++
-	f.members = append(f.members, m)
-	return nil
-}
-
-func (f *fakeBoards) UpdateMemberRole(
-	_ context.Context, _, userID string, role port.BoardRole,
-) error {
-	for i, m := range f.members {
-		if m.UserID == userID {
-			f.writes++
-			f.members[i].Role = role
-			return nil
-		}
-	}
-	return port.ErrNotFound
-}
-
-func (f *fakeBoards) RemoveMember(_ context.Context, _, userID string) error {
-	for i, m := range f.members {
-		if m.UserID == userID {
-			f.writes++
-			f.members = append(f.members[:i], f.members[i+1:]...)
-			return nil
-		}
-	}
-	return port.ErrNotFound
-}
 
 func (f *fakeBoards) CountUnowned(context.Context) (int, error) { return 0, nil }
 

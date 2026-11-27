@@ -14,13 +14,11 @@ import (
 // 境界の DTO は api/openapi.yaml から生成した apitypes を使う。ここで型を
 // 手書きすると、フロントの型との一致を人が保つことになる（ADR 0011）。
 
-// role は操作者ごとに変わるので、ボードと一緒に受け取る。画面はこれで
-// 出し入れを分ける（ADR 0017）。
+// toSummary はボードの共通部分を詰め替える。
 func toSummary(a port.BoardAccess) apitypes.BoardSummary {
 	return apitypes.BoardSummary{
 		ID:              a.Board.ID,
 		Name:            a.Board.Name,
-		Role:            apitypes.BoardRole(a.Role),
 		CreatedAt:       a.Board.CreatedAt,
 		UpdatedAt:       a.Board.UpdatedAt,
 		RepositoryOwner: a.Board.Target.RepositoryOwner,
@@ -52,7 +50,6 @@ func toDetail(a port.BoardAccess, targetLocked, overLimit bool) apitypes.BoardDe
 	return apitypes.BoardDetail{
 		ID:              s.ID,
 		Name:            s.Name,
-		Role:            s.Role,
 		CreatedAt:       s.CreatedAt,
 		UpdatedAt:       s.UpdatedAt,
 		RepositoryOwner: s.RepositoryOwner,
@@ -86,7 +83,6 @@ func toBoardWithFiles(d apitypes.BoardDetail, files []port.BoardFile) apitypes.B
 	return apitypes.BoardWithFiles{
 		ID:              d.ID,
 		Name:            d.Name,
-		Role:            d.Role,
 		CreatedAt:       d.CreatedAt,
 		UpdatedAt:       d.UpdatedAt,
 		RepositoryOwner: d.RepositoryOwner,
@@ -117,7 +113,6 @@ func toListEntry(e usecase.BoardListEntry) apitypes.BoardListEntry {
 	out := apitypes.BoardListEntry{
 		ID:              s.ID,
 		Name:            s.Name,
-		Role:            s.Role,
 		CreatedAt:       s.CreatedAt,
 		UpdatedAt:       s.UpdatedAt,
 		RepositoryOwner: s.RepositoryOwner,
@@ -197,9 +192,8 @@ func (h *handlers) createBoard(c *gin.Context) {
 
 	// 作ったばかりのボードに run はありえないので、照会せず false でよい。
 	// 上限も同じで、シーンは上限内であることを確かめてから作り、画像はまだ
-	// 1 枚も無い。作った本人は必ず owner（BoardService.Create）。
-	c.JSON(http.StatusCreated,
-		toDetail(port.BoardAccess{Board: b, Role: port.RoleOwner}, false, false))
+	// 1 枚も無い。
+	c.JSON(http.StatusCreated, toDetail(port.BoardAccess{Board: b}, false, false))
 }
 
 func (h *handlers) listBoards(c *gin.Context) {

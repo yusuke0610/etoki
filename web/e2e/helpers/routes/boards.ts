@@ -47,8 +47,6 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
     return {
       id: `board-new-${issued}`,
       name,
-      // 作った本人は必ず owner（ADR 0017）。
-      role: "owner",
       createdAt: "2026-08-05T10:00:00Z",
       updatedAt: "2026-08-05T10:00:00Z",
       scene: scene ?? emptyScene(),
@@ -287,10 +285,7 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
         return;
       }
 
-      await json(route, 200, {
-        role: mock.details[id]?.role ?? "owner",
-        projectAccess: "unknown",
-      } satisfies BoardAccess);
+      await json(route, 200, { projectAccess: "unknown" } satisfies BoardAccess);
     },
   );
 

@@ -107,12 +107,12 @@ func NewAnnotationService(boards port.BoardRepository, mappings port.MappingRepo
 // なので、キャンバスから frame を消しても記録は残る（ADR 0007）。消えたことを
 // 理由に読めなくすると、いちばん辿りたい場面で辿れない。
 //
-// 認可は状態の一覧と同じ viewer 以上。sync_runs をメンバーで絞らないのも同じ
-// （board を取れるのはメンバーだけなので、二重に絞らない）。
+// 認可は状態の一覧と同じ。sync_runs をメンバーで絞らないのも同じ（board を
+// 取れるのはメンバーだけなので、二重に絞らない）。
 func (s *AnnotationService) ListRuns(
 	ctx context.Context, boardID, annotationID string,
 ) ([]port.SyncRun, error) {
-	if _, err := s.access(ctx, boardID, port.RoleViewer); err != nil {
+	if _, err := s.access(ctx, boardID); err != nil {
 		return nil, err
 	}
 
@@ -130,8 +130,7 @@ func (s *AnnotationService) ListRuns(
 func (s *AnnotationService) ListStates(
 	ctx context.Context, boardID string,
 ) ([]AnnotationState, []DetachedAnnotation, error) {
-	// 状態を見るだけなので viewer でよい。
-	acc, err := s.access(ctx, boardID, port.RoleViewer)
+	acc, err := s.access(ctx, boardID)
 	if err != nil {
 		return nil, nil, err
 	}

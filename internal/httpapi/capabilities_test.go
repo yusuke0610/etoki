@@ -30,7 +30,6 @@ func TestGetCapabilities(t *testing.T) {
 			Creations: usecase.NewCreationService(
 				boards, mappings, gh, usecase.NewBoardLocks()),
 			Catalog: usecase.NewGitHubCatalogService(gh, usecase.ProjectFieldNames{}, nil),
-			Members: usecase.NewBoardMemberService(boards, nil, usecase.NewBoardLocks()),
 			Access:  usecase.NewBoardAccessService(boards, gh, nil),
 		}
 	}
@@ -45,7 +44,7 @@ func TestGetCapabilities(t *testing.T) {
 			name: "全部そろっている",
 			drop: func(*httpapi.Deps) {},
 			want: apitypes.Capabilities{
-				Interpretation: true, DiagramDraft: true, Creation: true, Sharing: true},
+				Interpretation: true, DiagramDraft: true, Creation: true},
 		},
 		{
 			// README が言う「LLM を設定しなくても起動する」構成。ブレストと
@@ -53,7 +52,7 @@ func TestGetCapabilities(t *testing.T) {
 			name: "LLM が未設定",
 			drop: func(d *httpapi.Deps) { d.Interpretations, d.Diagrams = nil, nil },
 			want: apitypes.Capabilities{
-				Interpretation: false, DiagramDraft: false, Creation: true, Sharing: true},
+				Interpretation: false, DiagramDraft: false, Creation: true},
 		},
 		{
 			// **解釈と生成は畳まない。** cmd/etoki は同じ LLM から両方を
@@ -62,19 +61,19 @@ func TestGetCapabilities(t *testing.T) {
 			name: "解釈だけ組み立てられていない",
 			drop: func(d *httpapi.Deps) { d.Interpretations = nil },
 			want: apitypes.Capabilities{
-				Interpretation: false, DiagramDraft: true, Creation: true, Sharing: true},
+				Interpretation: false, DiagramDraft: true, Creation: true},
 		},
 		{
 			name: "生成だけ組み立てられていない",
 			drop: func(d *httpapi.Deps) { d.Diagrams = nil },
 			want: apitypes.Capabilities{
-				Interpretation: true, DiagramDraft: false, Creation: true, Sharing: true},
+				Interpretation: true, DiagramDraft: false, Creation: true},
 		},
 		{
 			name: "GitHub が未設定",
 			drop: func(d *httpapi.Deps) { d.Creations, d.Catalog = nil, nil },
 			want: apitypes.Capabilities{
-				Interpretation: true, DiagramDraft: true, Creation: false, Sharing: true},
+				Interpretation: true, DiagramDraft: true, Creation: false},
 		},
 		{
 			// 作成先の候補だけ引けない配線は cmd/etoki には無いが、Deps は
@@ -82,23 +81,16 @@ func TestGetCapabilities(t *testing.T) {
 			name: "作成先の候補だけ引けない",
 			drop: func(d *httpapi.Deps) { d.Catalog = nil },
 			want: apitypes.Capabilities{
-				Interpretation: true, DiagramDraft: true, Creation: false, Sharing: true},
+				Interpretation: true, DiagramDraft: true, Creation: false},
 		},
 		{
-			// 認証を設定していない構成。共有する相手がいない（ADR 0016 / 0017）。
-			name: "共有が組み立てられていない",
-			drop: func(d *httpapi.Deps) { d.Members = nil },
-			want: apitypes.Capabilities{
-				Interpretation: true, DiagramDraft: true, Creation: true, Sharing: false},
-		},
-		{
-			// Access は別の口（/boards/{id}/access）の材料で、共有の
-			// エンドポイントは Members だけを見る。**ここを false にすると、
-			// 使えないと案内したのに /members が成功する。**
+			// Access は別の口（/boards/{id}/access）の材料で、ここで返すどの値の
+			// 材料でもない。**落としても案内は変えない。** 変えると、使えないと
+			// 案内した機能が実際には使える。
 			name: "access だけ組み立てられていない",
 			drop: func(d *httpapi.Deps) { d.Access = nil },
 			want: apitypes.Capabilities{
-				Interpretation: true, DiagramDraft: true, Creation: true, Sharing: true},
+				Interpretation: true, DiagramDraft: true, Creation: true},
 		},
 	}
 
@@ -121,19 +113,17 @@ func TestGetCapabilities(t *testing.T) {
 	}
 }
 
-// Access が組み立てられていないのは「共有が未設定」ではない。
+// Access が組み立てられていないのは「設定の不足」ではない。
 //
-// 共有が使えるかは Members だけで決まる（上の表）。この口が
-// sharing_not_configured を名乗ると、**「共有は使える」と案内した直後に
-// 「共有は未設定」と返る**組み合わせができる。組み立て漏れは配線の不具合なので
-// 500 に落とす。
-func TestGetBoardAccess_NotWiredIsNotSharingNotConfigured(t *testing.T) {
+// capabilities はこの口を材料にしていない（上の表）。この口が
+// `*_not_configured` を名乗ると、**「使える」と案内した機能が「未設定」と返る**
+// 組み合わせができる。組み立て漏れは配線の不具合なので 500 に落とす。
+func TestGetBoardAccess_NotWiredIsInternal(t *testing.T) {
 	t.Parallel()
 
 	boards, mappings := newRepos(t)
 	deps := httpapi.Deps{
-		Boards:  usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
-		Members: usecase.NewBoardMemberService(boards, nil, usecase.NewBoardLocks()),
+		Boards: usecase.NewBoardService(boards, mappings, usecase.NewBoardLocks()),
 		// Access は渡さない。etoki.New は必ず渡すので production では起きない。
 	}
 	r := httpapi.NewRouter(deps)
@@ -163,7 +153,7 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body)
 	}
 	caps := decode[apitypes.Capabilities](t, rec)
-	if caps.Interpretation || caps.DiagramDraft || caps.Creation || caps.Sharing || caps.McpConnections {
+	if caps.Interpretation || caps.DiagramDraft || caps.Creation || caps.McpConnections {
 		t.Fatalf("素の構成なのに使えることになっている: %+v", caps)
 	}
 
@@ -179,8 +169,6 @@ func TestGetCapabilities_MatchesUnavailableEndpoints(t *testing.T) {
 		{http.MethodPost, "/api/boards/" + id + "/diagram-draft", apitypes.ErrorCodeLlmNotConfigured},
 		{http.MethodGet, "/api/github/repositories", apitypes.ErrorCodeGithubNotConfigured},
 		{http.MethodGet, "/api/github/projects/PVT_1/fields", apitypes.ErrorCodeGithubNotConfigured},
-		{http.MethodGet, "/api/boards/" + id + "/members", apitypes.ErrorCodeSharingNotConfigured},
-		{http.MethodGet, "/api/boards/" + id + "/invitee?login=bob", apitypes.ErrorCodeSharingNotConfigured},
 		{http.MethodGet, "/api/oauth/grants", apitypes.ErrorCodeMcpConnectionsNotConfigured},
 		{http.MethodGet, "/api/oauth/authorization?request=x", apitypes.ErrorCodeMcpConnectionsNotConfigured},
 		{http.MethodPost, "/api/oauth/authorization", apitypes.ErrorCodeMcpConnectionsNotConfigured},

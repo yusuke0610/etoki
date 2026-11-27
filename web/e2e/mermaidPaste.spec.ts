@@ -281,7 +281,6 @@ test.describe("mermaid を貼る", () => {
         interpretation: false,
         diagramDraft: false,
         creation: true,
-        sharing: true,
         mcpConnections: false,
       },
     };

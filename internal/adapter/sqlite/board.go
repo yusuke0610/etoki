@@ -26,11 +26,10 @@ var _ port.BoardRepository = (*BoardRepository)(nil)
 // summaryColumns はシーン以外の列。Find と List で同じ並びを使う。
 //
 // scanSummary が並び順に依存するので、片方だけ足すと取り違える。
-// 末尾の role はボードの列ではなく、操作者から見たロール（ADR 0017）。
 const summaryColumns = `b.id, b.name,
 	b.repository_owner, b.repository_name, b.project_id,
 	b.project_number, b.project_title, b.project_url,
-	b.created_at, b.updated_at, m.role`
+	b.created_at, b.updated_at`
 
 // boardColumns は Find が SELECT する列。シーンと背景を末尾に足す。
 //
@@ -44,12 +43,13 @@ const boardColumns = summaryColumns + `, b.scene, b.premise`
 
 // memberJoin は操作者がメンバーであるボードだけに絞る結合。
 //
-// 参照系はすべてこれを通す。WHERE で絞る形と違い、結合を書き忘れると
-// role が取れずコンパイルも SQL も通らない。
+// 参照系はすべてこれを通す。**ロールを読まなくなったので、結合を書き忘れても
+// SQL は通る**（ADR 0107）。絞り忘れは、他人のボードが見えないことを見る
+// テスト（TestBoards_AreInvisibleToOtherOwners など）が落とす。
 const memberJoin = `FROM boards b
 	JOIN board_members m ON m.board_id = b.id AND m.user_id = ?`
 
-// Create は新しいボードを保存し、owner を RoleOwner のメンバーにする。
+// Create は新しいボードを保存し、owner をそのボードの持ち主のメンバーにする。
 func (r *BoardRepository) Create(ctx context.Context, b port.Board, owner string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -76,7 +76,7 @@ func (r *BoardRepository) Create(ctx context.Context, b port.Board, owner string
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO board_members (board_id, user_id, role, created_at)
 		 VALUES (?, ?, ?, ?)`,
-		b.ID, owner, string(port.RoleOwner), formatTime(b.CreatedAt),
+		b.ID, owner, ownerRole, formatTime(b.CreatedAt),
 	); err != nil {
 		return fmt.Errorf("insert owner of board %s: %w", b.ID, err)
 	}
@@ -107,9 +107,6 @@ func (r *BoardRepository) UpdateScene(
 
 	// メンバーであることを WHERE に入れる。ここは Find を通らずに直接 UPDATE
 	// する経路なので、絞り忘れると他人のボードを書き換えられる（ADR 0016）。
-	//
-	// **ロールは見ない。** editor 以上かどうかはユースケース層が
-	// BoardRole.AtLeast で判断する。ここに書くと判定が 2 箇所になる（ADR 0017）。
 	//
 	// 版の照合も同じ 1 文に置く。先に SELECT して比べる形にすると、比べてから
 	// 書くまでの隙間に入った保存を上書きする。照合したい相手はその隙間に
@@ -251,8 +248,7 @@ func (r *BoardRepository) readable(ctx context.Context, actor, id string) (bool,
 // Delete はボードを消す。
 //
 // **メンバーであることを WHERE に入れる。** Find を通らずに直接 DELETE する
-// 経路なので、絞り忘れると他人のボードを消せる（ADR 0016）。**ロールは見ない。**
-// owner だけかはユースケース層が判断する（ADR 0017）。
+// 経路なので、絞り忘れると他人のボードを消せる（ADR 0016）。
 //
 // board_members / sync_runs / sync_items は外部キーの ON DELETE CASCADE で
 // 一緒に消える。**ここで消す順を書かない。** 書くと消える範囲の定義がスキーマと

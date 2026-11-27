@@ -41,7 +41,7 @@ func TestBoardAccess(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			boards := &fakeBoards{board: tt.board, role: port.RoleEditor}
+			boards := &fakeBoards{board: tt.board}
 			svc := usecase.NewBoardAccessService(boards, tt.github, nil)
 
 			got, err := svc.Get(t.Context(), "board-1")
@@ -53,27 +53,7 @@ func TestBoardAccess(t *testing.T) {
 			if got.ProjectAccess != tt.want {
 				t.Errorf("ProjectAccess = %q, want %q", got.ProjectAccess, tt.want)
 			}
-			if got.Role != port.RoleEditor {
-				t.Errorf("Role = %q, want editor", got.Role)
-			}
 		})
-	}
-}
-
-// viewer でも自分の権限は見られる。何ができないのかが分からないと、
-// できない理由を画面に出せない。
-func TestBoardAccess_AllowsViewer(t *testing.T) {
-	t.Parallel()
-
-	boards := &fakeBoards{board: newBoard(interpretScene), role: port.RoleViewer}
-	svc := usecase.NewBoardAccessService(boards, &fakeGitHub{canWrite: true}, nil)
-
-	got, err := svc.Get(t.Context(), "board-1")
-	if err != nil {
-		t.Fatalf("Get() = %v", err)
-	}
-	if got.Role != port.RoleViewer {
-		t.Errorf("Role = %q, want viewer", got.Role)
 	}
 }
 

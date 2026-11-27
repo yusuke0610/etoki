@@ -19,7 +19,7 @@ test.describe("作成先に書けるか", () => {
   test("書き込み権限が無いと、作成の代わりに理由が出る", async ({ page }) => {
     const mock = baseMock();
     mock.access = {
-      [BOARD_ID]: { status: 200, body: { role: "owner", projectAccess: "denied" } },
+      [BOARD_ID]: { status: 200, body: { projectAccess: "denied" } },
     };
 
     await openBoardWithMock(page, mock);
@@ -53,7 +53,7 @@ test.describe("作成先に書けるか", () => {
     test(`下の帯の「書けません」：${projectAccess}`, async ({ page }) => {
       const mock = baseMock();
       mock.access = {
-        [BOARD_ID]: { status: 200, body: { role: "owner", projectAccess } },
+        [BOARD_ID]: { status: 200, body: { projectAccess } },
       };
       const accessed = page.waitForResponse((r) =>
         /^\/api\/boards\/[^/]+\/access$/.test(new URL(r.url()).pathname),

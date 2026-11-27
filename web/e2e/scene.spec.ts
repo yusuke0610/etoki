@@ -224,7 +224,7 @@ test.describe("シーンの保存", () => {
     await expect(page.getByText("他の人がこのボードを保存しました")).toBeHidden();
   });
 
-  // 共有ボードでは 2 人が同時に描くのが普通に起きる（ADR 0017）。後勝ちで
+  // 同じボードを 2 つのタブや端末で開いて描くのは普通に起きる。後勝ちで
   // 上書きすると、消えるのは相手の作業すべてになる（ADR 0020）。
   test("他の人が先に保存していると、上書きせずに知らせる", async ({ page }) => {
     const mock = await openBoardWithMock(page, baseMock());

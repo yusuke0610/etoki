@@ -205,8 +205,8 @@ export type ApiMock = {
   /**
    * そのボードで何ができるか。ボード ID をキーにする。
    *
-   * 無いボードは role をボードの値から、projectAccess を unknown として返す。
-   * 全 spec に権限を書かせないため。
+   * 無いボードは projectAccess を unknown として返す。全 spec に権限を書かせない
+   * ため。
    */
   access?: Record<string, Reply<BoardAccess>>;
   /** 改名を失敗させたいときに指定する。 */

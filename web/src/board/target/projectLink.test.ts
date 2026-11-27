@@ -7,7 +7,6 @@ function target(over: Partial<BoardSummary> = {}): BoardSummary {
   return {
     id: "board-1",
     name: "b",
-    role: "owner",
     createdAt: "2026-08-01T09:00:00Z",
     updatedAt: "2026-08-01T09:00:00Z",
     repositoryOwner: "acme",

@@ -23,7 +23,6 @@ function withoutGitHub(mock: ApiMock): ApiMock {
       interpretation: true,
       diagramDraft: true,
       creation: false,
-      sharing: true,
       mcpConnections: false,
     },
   };
@@ -49,7 +48,6 @@ test.describe("設定していない機能", () => {
         interpretation: false,
         diagramDraft: false,
         creation: true,
-        sharing: true,
         mcpConnections: false,
       },
     };
@@ -92,7 +90,6 @@ test.describe("設定していない機能", () => {
         interpretation: true,
         diagramDraft: true,
         creation: false,
-        sharing: true,
         mcpConnections: false,
       },
     };
@@ -328,7 +325,6 @@ test.describe("設定していない機能", () => {
         interpretation: true,
         diagramDraft: true,
         creation: false,
-        sharing: true,
         mcpConnections: false,
       },
     };

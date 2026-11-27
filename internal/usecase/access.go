@@ -8,20 +8,11 @@ import (
 	"github.com/yusuke0610/etoki/port"
 )
 
-// 認可に固有のエラー。
-var (
-	// ErrBoardNotFound は対象のボードが存在しないことを表す。
-	//
-	// **メンバーでないボードもこれになる。** 権限エラーと区別すると、ID を
-	// 総当たりして他人のボードの存在を確かめられる（ADR 0016 / 0017）。
-	ErrBoardNotFound = errors.New("etoki: board not found")
-
-	// ErrForbidden はメンバーではあるが、その操作にロールが足りないことを表す。
-	//
-	// **ボードの存在をすでに知っている相手にだけ返る。** 何が足りないのかを
-	// 隠す理由が無いので、ErrBoardNotFound に丸めない（ADR 0017）。
-	ErrForbidden = errors.New("etoki: insufficient role")
-)
+// ErrBoardNotFound は対象のボードが存在しないことを表す。
+//
+// **メンバーでないボードもこれになる。** 区別すると、ID を総当たりして他人の
+// ボードの存在を確かめられる（ADR 0016）。
+var ErrBoardNotFound = errors.New("etoki: board not found")
 
 // actorOf は ctx から操作者を返す。
 //
@@ -33,58 +24,49 @@ func actorOf(ctx context.Context) string {
 	return actor
 }
 
-// boardGuard はボードを引き当て、操作者のロールを確かめる。
+// boardGuard はボードを引き当て、操作者がメンバーかを確かめる。
 //
 // ボードに触るユースケースはすべてこれを埋め込み、**`boards.Find` を直に
-// 呼ばない。** 判定を 1 箇所に閉じておかないと、足した操作だけロールを見ない、
-// という取りこぼしが起きる。
+// 呼ばない。** 判定を 1 箇所に閉じておかないと、足した操作だけ引き当てられ
+// なかったボードを「無い」と返し損ねる、という取りこぼしが起きる。
+//
+// **見るのはメンバーかどうかだけ。** メンバーなら、どの操作も通す（ADR 0107）。
 type boardGuard struct {
 	boards port.BoardRepository
 }
 
-// access は操作者から見たボードを、min 以上のロールを確かめてから返す。
+// access は操作者から見たボードを、メンバーであることを確かめてから返す。
 //
-// メンバーでなければ ErrBoardNotFound、ロールが足りなければ ErrForbidden。
-func (g boardGuard) access(
-	ctx context.Context, boardID string, min port.BoardRole,
-) (*port.BoardAccess, error) {
+// メンバーでなければ ErrBoardNotFound。
+func (g boardGuard) access(ctx context.Context, boardID string) (*port.BoardAccess, error) {
 	a, err := g.boards.Find(ctx, actorOf(ctx), boardID)
 	if err != nil {
 		return nil, err
 	}
-	return authorize(a, boardID, min)
+	return found(a, boardID)
 }
 
 // accessWithFiles は access と同じ判定のうえで、ボードを画像ごと返す。
 //
 // 画像まで要るのはボードを開くときだけ（ADR 0074）。**判定は access と同じ
-// authorize を通す。** 口が 2 つになっても、ロールの見方は 1 つのまま保つ。
+// found を通す。** 口が 2 つになっても、判定は 1 つのまま保つ。
 func (g boardGuard) accessWithFiles(
-	ctx context.Context, boardID string, min port.BoardRole,
+	ctx context.Context, boardID string,
 ) (*port.BoardAccess, []port.BoardFile, error) {
 	a, files, err := g.boards.FindWithFiles(ctx, actorOf(ctx), boardID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if a, err = authorize(a, boardID, min); err != nil {
+	if a, err = found(a, boardID); err != nil {
 		return nil, nil, err
 	}
 	return a, files, nil
 }
 
-// authorize は引き当てたボードに min 以上のロールで触れるかを確かめる。
-//
-// 引き当てられなければ ErrBoardNotFound、ロールが足りなければ ErrForbidden。
-func authorize(
-	a *port.BoardAccess, boardID string, min port.BoardRole,
-) (*port.BoardAccess, error) {
+// found は引き当てられたかを確かめる。引き当てられなければ ErrBoardNotFound。
+func found(a *port.BoardAccess, boardID string) (*port.BoardAccess, error) {
 	if a == nil {
 		return nil, fmt.Errorf("%w: %s", ErrBoardNotFound, boardID)
 	}
-	if !a.Role.AtLeast(min) {
-		return nil, fmt.Errorf("%w: %s needs %s, actor is %s",
-			ErrForbidden, boardID, min, a.Role)
-	}
-
 	return a, nil
 }

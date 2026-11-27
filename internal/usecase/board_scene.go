@@ -15,7 +15,7 @@ import (
 
 // ErrSceneConflict は保存の基準にした版が古いことを表す。
 //
-// ボードは共有できるので（ADR 0017）、2 人が同時に描くのは例外ではない。保存は
+// 同じボードを 2 つのタブや端末で開いて同時に描くのは例外ではない。保存は
 // シーン全体を書くため、後勝ちで通すと消えるのは「相手が触った要素」ではなく
 // 相手の作業すべてになる。黙って一方を採るのではなく、食い違っていることを
 // 呼び出し側に返す（ADR 0020）。
@@ -62,7 +62,7 @@ func (s *BoardService) SaveScene(
 	if base.IsZero() {
 		return SavedScene{}, fmt.Errorf("%w: baseUpdatedAt is required", ErrInvalidInput)
 	}
-	if _, err := s.access(ctx, id, port.RoleEditor); err != nil {
+	if _, err := s.access(ctx, id); err != nil {
 		return SavedScene{}, err
 	}
 

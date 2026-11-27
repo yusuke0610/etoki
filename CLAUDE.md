@@ -39,7 +39,7 @@ React フロントエンドからなる、単一ユーザー向けのローカ�
 | ---------------------------------- | ---------------------------------------------------------------------- |
 | `CONTRIBUTING.md`                  | 仕様の正本・ブランチ・コミット・PR 本文・レビュー対応・マージ・CI      |
 | `.github/pull_request_template.md` | PR 本文の雛形                                                          |
-| `internal/CLAUDE.md`               | 3 状態判定のデータフロー、メンバーと権限                               |
+| `internal/CLAUDE.md`               | 3 状態判定のデータフロー、ボードの持ち主と権限                         |
 | `web/CLAUDE.md`                    | E2E テスト、報告にブラウザの実行結果を添える、vite / playwright の設定 |
 | `api/CLAUDE.md`                    | OpenAPI が正本、生成器のバージョン                                     |
 | `.claude/rules/`                   | レビュー由来の落とし穴と、狭い範囲でだけ要る約束（触ると読み込まれる） |
@@ -249,7 +249,7 @@ GitHub の形しか差せなくなる。
 - **OAuth を設定したら PAT は無視する。** フォールバックにすると作成の主体が
   リクエストごとに変わり、誰が作ったのか追えなくなる。
 
-ボードのメンバーと権限は `internal/CLAUDE.md`。Gin ハンドラと MCP の入口の約束、
+ボードの持ち主と権限は `internal/CLAUDE.md`。Gin ハンドラと MCP の入口の約束、
 Origin 検証は `.claude/rules/http-handlers.md`。
 
 ## ツールチェーン上の非自明な設定
@@ -344,8 +344,6 @@ Origin 検証は `.claude/rules/http-handlers.md`。
 - 差分の自動検知による自動再同期
 - draft issue へのラベル付与（GitHub の仕様上できない。識別が必要なら
   Projects v2 のカスタムフィールドを使う）
-- 招待リンク（単回・期限つきトークン）。誰が入ってくるかを etoki が決められない
-  （ADR 0017）
+- ボードの共有（招待・ロール）。ログインできるのは 1 人だけで、招待できる相手が
+  いない（ADR 0107）
 - GitHub 側の権限を etoki に複製すること。必ず古くなる（ADR 0017）
-- 誰が draft issue を作ったかの記録。共有すると問いとして立つが、必要なら
-  `sync_runs.created_by_user_id` を足す判断を別に行う

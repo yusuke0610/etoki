@@ -51,7 +51,7 @@ func (f *fakeBoardShelf) List(_ context.Context, actor string) ([]port.BoardAcce
 	out := make([]port.BoardAccess, 0, len(f.listed))
 	for _, b := range f.listed {
 		b.Scene = ""
-		out = append(out, port.BoardAccess{Board: b, Role: port.RoleOwner})
+		out = append(out, port.BoardAccess{Board: b})
 	}
 	return out, nil
 }
@@ -62,7 +62,7 @@ func (f *fakeBoardShelf) Find(_ context.Context, actor, id string) (*port.BoardA
 	if !ok || actor != f.owner {
 		return nil, nil
 	}
-	return &port.BoardAccess{Board: b, Role: port.RoleOwner}, nil
+	return &port.BoardAccess{Board: b}, nil
 }
 
 // shelf は listed の全部を Find でも引けるようにして並べる。

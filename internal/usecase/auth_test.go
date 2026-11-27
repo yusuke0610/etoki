@@ -454,7 +454,8 @@ func startedState(t *testing.T, svc *usecase.AuthService, sessions *fakeSessions
 
 // 通す相手でなければ断る。**断った相手について何も書かないことまで見る。**
 // 利用者を作ってから断る実装は、エラーの検査だけでは素通りする。残った行は
-// 招待の引き当てに現れ、保存したトークンは他人の GitHub の権限そのもの。
+// login で相手を引く管理用のコマンド（`etoki claim` など）に現れ、保存した
+// トークンは他人の GitHub の権限そのもの。
 func TestComplete_RejectsUserNotAllowed(t *testing.T) {
 	t.Parallel()
 

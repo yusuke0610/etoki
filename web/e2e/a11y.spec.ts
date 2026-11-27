@@ -63,7 +63,6 @@ test.describe("押せない理由が本文として読める", () => {
         interpretation: false,
         diagramDraft: false,
         creation: true,
-        sharing: true,
         mcpConnections: false,
       },
     };
@@ -87,7 +86,6 @@ test.describe("押せない理由が本文として読める", () => {
         interpretation: false,
         diagramDraft: false,
         creation: true,
-        sharing: true,
         mcpConnections: false,
       },
     };
@@ -623,7 +621,6 @@ for (const colorScheme of ["light", "dark"] as const) {
           interpretation: true,
           diagramDraft: true,
           creation: false,
-          sharing: true,
           mcpConnections: false,
         },
       };

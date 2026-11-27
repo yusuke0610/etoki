@@ -154,7 +154,7 @@ func (s *CreationService) Create(
 
 	// 作れるかどうかを最終的に決めるのは GitHub。ここで見るのは etoki 側の
 	// メンバーシップだけで、リポジトリの権限は複製しない（ADR 0017）。
-	acc, err := s.access(ctx, boardID, port.RoleEditor)
+	acc, err := s.access(ctx, boardID)
 	if err != nil {
 		return nil, err
 	}

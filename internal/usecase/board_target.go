@@ -43,9 +43,7 @@ func (s *BoardService) SetTarget(ctx context.Context, id string, t port.BoardTar
 	}
 	defer release()
 
-	// 作成先はそのボードで作られる draft issue の行き先そのものなので、
-	// 変えられるのは owner だけ（ADR 0017）。
-	if _, err := s.access(ctx, id, port.RoleOwner); err != nil {
+	if _, err := s.access(ctx, id); err != nil {
 		return err
 	}
 
@@ -90,8 +88,7 @@ func (s *BoardService) RefreshTargetDisplay(
 	}
 	defer release()
 
-	// 作成先にまつわる操作なので owner だけ。変更と揃える（ADR 0017）。
-	a, err := s.access(ctx, id, port.RoleOwner)
+	a, err := s.access(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -130,10 +127,9 @@ const projectURLHost = "github.com"
 // validateProjectURL は作成先 URL が GitHub のものかを見る。
 //
 // **これが唯一の門番。** 保存された値はフロントがそのまま `href` に入れるので、
-// ここを通り抜けたものは開発者のブラウザで開かれる。owner は招待した相手に
-// 画面を見せられる（ADR 0017）ので、`javascript:` を保存できると招待した相手の
-// ブラウザで実行できてしまう。外部ドメインを通すと、「GitHub でこの Project を
-// 開く」という文言で別の場所へ送れる。
+// ここを通り抜けたものは開発者のブラウザで開かれる。`javascript:` を保存
+// できると、そのブラウザで実行できてしまう。外部ドメインを通すと、「GitHub で
+// この Project を開く」という文言で別の場所へ送れる。
 //
 // **フロント側には同じ判定を置かない。** この列は新規なので、壊れた値が入る
 // 経路はここしか無い。両側に置くと判定が 2 箇所になり、片方だけ変わる。

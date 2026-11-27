@@ -55,7 +55,6 @@ function detail(id: string, patch: Partial<BoardDetail> = {}): BoardDetail {
   return {
     id,
     name: id,
-    role: "owner",
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-07T00:00:00Z",
     repositoryOwner: "acme",

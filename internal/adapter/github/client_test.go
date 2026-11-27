@@ -152,8 +152,8 @@ func TestHTTPErrors(t *testing.T) {
 			want:    []string{"403", "retry-after: 60"},
 		},
 		{
-			// レート制限ではない 403。招待されただけでリポジトリに権限が無い
-			// 利用者はここに来る（ADR 0017）。
+			// レート制限ではない 403。GitHub を叩く資格情報にリポジトリの権限が
+			// 無いとここに来る（ADR 0017）。
 			name:   "403 権限不足",
 			status: http.StatusForbidden,
 			body:   `{"message":"Resource not accessible by integration"}`,

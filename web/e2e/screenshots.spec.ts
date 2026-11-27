@@ -472,7 +472,6 @@ test.describe("スクリーンショット", () => {
         interpretation: false,
         diagramDraft: false,
         creation: false,
-        sharing: false,
         mcpConnections: false,
       },
     };
@@ -494,7 +493,6 @@ test.describe("スクリーンショット", () => {
         interpretation: false,
         diagramDraft: false,
         creation: false,
-        sharing: false,
         mcpConnections: false,
       },
     };
@@ -576,7 +574,7 @@ test.describe("スクリーンショット", () => {
   test("作成の権限が無い状態を撮る", async ({ page }) => {
     const mock = baseMock();
     mock.access = {
-      [BOARD_ID]: { status: 200, body: { role: "owner", projectAccess: "denied" } },
+      [BOARD_ID]: { status: 200, body: { projectAccess: "denied" } },
     };
 
     await openBoardWithMock(page, mock);

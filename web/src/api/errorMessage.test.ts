@@ -250,7 +250,6 @@ describe("ERROR_MESSAGES", () => {
       ERROR_MESSAGES.llm_not_configured,
       ERROR_MESSAGES.github_not_configured,
       ERROR_MESSAGES.auth_not_configured,
-      ERROR_MESSAGES.sharing_not_configured,
       ERROR_MESSAGES.mcp_connections_not_configured,
     ];
 
@@ -268,7 +267,6 @@ describe("ERROR_MESSAGES", () => {
     ["llm_not_configured", "LLM が未設定"],
     ["github_not_configured", "GitHub が未設定"],
     ["auth_not_configured", "認証が未設定"],
-    ["sharing_not_configured", "共有には認証の設定が必要"],
     ["mcp_connections_not_configured", "MCP のクライアントへの接続には認証の設定が必要"],
   ] as const)(
     "%s は足りないもの（%s）と起動する側で設定することを言い、何で満たすかは言わない",

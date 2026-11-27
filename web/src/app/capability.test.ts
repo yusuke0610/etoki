@@ -8,7 +8,6 @@ const all: Capabilities = {
   interpretation: true,
   diagramDraft: true,
   creation: true,
-  sharing: true,
   mcpConnections: true,
 };
 
@@ -28,9 +27,6 @@ describe("unavailableReason", () => {
     expect(unavailableReason({ ...all, creation: false }, "creation")).toBe(
       ERROR_MESSAGES.github_not_configured,
     );
-    expect(unavailableReason({ ...all, sharing: false }, "sharing")).toBe(
-      ERROR_MESSAGES.sharing_not_configured,
-    );
     expect(unavailableReason({ ...all, mcpConnections: false }, "mcpConnections")).toBe(
       ERROR_MESSAGES.mcp_connections_not_configured,
     );
@@ -43,12 +39,11 @@ describe("unavailableReason", () => {
       interpretation: false,
       diagramDraft: false,
       creation: false,
-      sharing: false,
       mcpConnections: false,
     };
-    const messages = (
-      ["interpretation", "creation", "sharing", "mcpConnections"] as const
-    ).map((f) => unavailableReason(none, f));
+    const messages = (["interpretation", "creation", "mcpConnections"] as const).map(
+      (f) => unavailableReason(none, f),
+    );
 
     expect(new Set(messages).size).toBe(messages.length);
 
@@ -65,6 +60,6 @@ describe("unavailableReason", () => {
     expect(unavailableReason(null, "interpretation")).toBeNull();
     expect(unavailableReason(null, "diagramDraft")).toBeNull();
     expect(unavailableReason(null, "creation")).toBeNull();
-    expect(unavailableReason(null, "sharing")).toBeNull();
+    expect(unavailableReason(null, "mcpConnections")).toBeNull();
   });
 });

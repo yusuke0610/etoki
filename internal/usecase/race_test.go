@@ -110,7 +110,7 @@ func (r *racingBoards) Find(_ context.Context, actor, id string) (*port.BoardAcc
 	if r.board.ID != id || actor != "" {
 		return nil, nil
 	}
-	return &port.BoardAccess{Board: r.board, Role: port.RoleOwner}, nil
+	return &port.BoardAccess{Board: r.board}, nil
 }
 
 func (r *racingBoards) UpdateTarget(_ context.Context, _, _ string, t port.BoardTarget) error {
@@ -161,20 +161,6 @@ func (r *racingBoards) FileSizes(context.Context, string) (map[string]int64, err
 }
 
 func (r *racingBoards) List(context.Context, string) ([]port.BoardAccess, error) { return nil, nil }
-
-func (r *racingBoards) ListMembers(context.Context, string) ([]port.BoardMember, error) {
-	return nil, nil
-}
-
-func (r *racingBoards) AddMember(context.Context, port.BoardMember) error { return nil }
-
-func (r *racingBoards) UpdateMemberRole(
-	context.Context, string, string, port.BoardRole,
-) error {
-	return nil
-}
-
-func (r *racingBoards) RemoveMember(context.Context, string, string) error { return nil }
 
 func (r *racingBoards) CountUnowned(context.Context) (int, error) { return 0, nil }
 

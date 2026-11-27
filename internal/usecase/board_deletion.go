@@ -2,8 +2,6 @@ package usecase
 
 import (
 	"context"
-
-	"github.com/yusuke0610/etoki/port"
 )
 
 // BoardDeletion は削除で etoki から失われるもの（ADR 0042）。
@@ -29,16 +27,13 @@ type BoardDeletion struct {
 // **押される前に見せるための口**（ADR 0042、中核思想 3）。削除は取り消せず、
 // GitHub 側に作った draft issue も消せないので、何が残るのかを先に出す。
 //
-// **owner だけ。** 削除そのものと揃える。押せない相手に、押したときに何が
-// 起きるかだけを見せる理由が無い。
-//
 // **引いた時点の件数であって、削除の前提条件ではない。** 引いてから削除するまで
 // に作成が走れば増えるが、返した件数を Delete で照合しない。照合すると、増えた
 // ぶんを見せ直すために削除が断られることになり、畳めないボードを残さないという
 // 目的（ADR 0042）から遠のく。作成の直列化が守っているのは記録の整合であって、
 // この件数ではない。
 func (s *BoardService) Deletion(ctx context.Context, id string) (BoardDeletion, error) {
-	if _, err := s.access(ctx, id, port.RoleOwner); err != nil {
+	if _, err := s.access(ctx, id); err != nil {
 		return BoardDeletion{}, err
 	}
 
@@ -72,9 +67,6 @@ func (s *BoardService) Deletion(ctx context.Context, id string) (BoardDeletion, 
 
 // Delete はボードを消す。
 //
-// **owner だけ**（ADR 0017）。ボードごと畳む操作なので、シーンを書き換え
-// られる editor ではなく、招待も作成先の変更もできる相手に限る。
-//
 // **run があっても拒まない。** 拒むと、いちばん畳みたいボード（作成先を
 // 間違えたまま 1 回作ってしまったボード）が永久に残る。失われるものは
 // Deletion で見せ、決めるのは開発者にする（ADR 0042、中核思想 3）。
@@ -89,7 +81,7 @@ func (s *BoardService) Delete(ctx context.Context, id string) error {
 	}
 	defer release()
 
-	if _, err := s.access(ctx, id, port.RoleOwner); err != nil {
+	if _, err := s.access(ctx, id); err != nil {
 		return err
 	}
 

@@ -280,9 +280,8 @@ func TestSetTarget_RejectsIncompleteTarget(t *testing.T) {
 }
 
 // 作成先 URL はリクエストから来る。保存された値はフロントがそのまま href に
-// 入れるので、ここが唯一の門番になる（ADR 0025）。owner は招待した相手に画面を
-// 見せられる（ADR 0017）ため、`javascript:` を保存できると相手のブラウザで走る。
-// 外部ドメインは「GitHub でこの Project を開く」の文言で別の場所へ送れる。
+// 入れるので、ここが唯一の門番になる（ADR 0025）。`javascript:` を保存できると
+// 開いたブラウザで走る。外部ドメインは「GitHub でこの Project を開く」の文言で別の場所へ送れる。
 func TestSetTarget_RejectsUnsafeProjectURL(t *testing.T) {
 	t.Parallel()
 
@@ -358,7 +357,7 @@ func TestSetTarget_RejectsUnknownBoard(t *testing.T) {
 	}
 }
 
-// 共有ボードの同時編集は後勝ちにしない。保存はシーン全体を書くので、通すと
+// 2 つのタブや端末での同時編集は後勝ちにしない。保存はシーン全体を書くので、通すと
 // 消えるのは「相手が触った要素」ではなく相手の作業すべてになる（ADR 0020）。
 func TestSaveScene_RejectsStaleBase(t *testing.T) {
 	t.Parallel()
