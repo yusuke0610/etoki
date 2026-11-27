@@ -348,6 +348,13 @@ for pr in "${prs[@]}"; do
 					fr="決着待ち(指摘 ${found} 件 / まとめの印に head が無い。印に head を書いてまとめを書き直す)"
 				elif [ "$set_head" != "$head" ]; then
 					fr="決着待ち(指摘 ${found} 件 / まとめは ${set_head:0:7} まで。直しだけなら新しいまとめを書く。直し以外を積んだなら依頼し直す)"
+				# まとめが決着させたのは、書いた時点で付いていた指摘まで。そのあとに
+				# 付いた指摘（本文にだけ載るものはスレッドに出ない）は含まれない。
+				# 同じ秒のものも「まとめのあと」に数える（findings_since は >= で数える）。
+				elif ! after_set="$(findings_since "$pr" "$set_at")"; then
+					fr="決着待ち(指摘 ${found} 件 / まとめのあとの指摘の数を取れなかった)"
+				elif [ "$after_set" != "0" ]; then
+					fr="決着待ち(指摘 ${found} 件 / まとめのあとに指摘が ${after_set} 件付いた。決着させて新しいまとめを書く)"
 				else
 					fr="決着済み(指摘 ${found} 件。まとめ $set_at)"
 				fi
