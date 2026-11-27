@@ -26,11 +26,28 @@ description: 開いている PR がマージの条件を満たすかを判定し
 .claude/skills/pr-watch/status.sh
 ```
 
-PR ごとに次を全部満たすかを見る。
+PR ごとに、**まず変更の重さを決める**（`CONTRIBUTING.md`「マージ」の表）。
+差分のファイルの中でいちばん重いものに合わせ、迷ったら重いほうに倒す。
 
-- **`=> full review 0 件` が出ている。** 最新の head に対する full review で
-  指摘が 0 件、という条件の判定は `/pr-watch` の「full review の読み方」に
-  従う。**`走行中` や `枠切れ` を 0 件と読まない**（#256）。
+```sh
+# 名前を変えたファイルは、変える前の名前（previous_filename）でも重さを見る。
+gh api --paginate "repos/yusuke0610/etoki/pulls/<番号>/files?per_page=100" \
+  --jq '.[] | .filename, (.previous_filename // empty)'
+gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq .changed_files
+```
+
+**一覧が取り切れていなければ、重さを決めない。** この API は 3,000 ファイルで
+打ち切る。取れた件数（`previous_filename` を除く）が `changed_files` に届かない
+とき、取れなかったときは、軽いともふつうとも言わず、重いとしてユーザーに渡す。
+
+そのうえで、次を全部満たすかを見る。
+
+- **重さに応じた review の条件を満たす。** ふつうと重いは `=> full review 決着`
+  が出ている。判定は `/pr-watch` の「full review の読み方」に従う。**`走行中` や
+  `枠切れ` を決着と読まない**（#256）。軽いと Dependabot は full review を
+  見ない（Dependabot は下の「Dependabot の PR」）。
+- **重い PR は Claude がマージしない。** 条件を満たしたら、表に「ユーザーが
+  マージする」と載せて渡す。
 - **base が `main`。** 積んだ上の段は、下の段が入って `/sync-prs` で base を
   移すまで条件を満たさない。
 - **`mergeable` が `clean`、CI が緑。**
@@ -51,12 +68,13 @@ PR ごとに次を全部満たすかを見る。
 
 マージ順と base の表を出す。**止めている PR も載せる。**
 
-| 順  | PR  | base    | head（40 桁） | 状態             | 先に入れるもの            |
-| --- | --- | ------- | ------------- | ---------------- | ------------------------- |
-| 1   | #A  | main    | `<sha>`       | 条件を満たす     | -                         |
-| 2   | #B  | main    | `<sha>`       | 条件を満たす     | #A（#A が足す関数を呼ぶ） |
-| -   | #C  | #B の枝 | `<sha>`       | まだマージしない | #B（積み）                |
-| -   | #D  | main    | `<sha>`       | まだマージしない | ユーザーの判断待ち        |
+| 順  | PR  | 重さ   | base    | head（40 桁） | 状態                 | 先に入れるもの            |
+| --- | --- | ------ | ------- | ------------- | -------------------- | ------------------------- |
+| 1   | #A  | 軽い   | main    | `<sha>`       | 条件を満たす         | -                         |
+| 2   | #B  | ふつう | main    | `<sha>`       | 条件を満たす         | #A（#A が足す関数を呼ぶ） |
+| 3   | #E  | 重い   | main    | `<sha>`       | ユーザーがマージする | -                         |
+| -   | #C  | ふつう | #B の枝 | `<sha>`       | まだマージしない     | #B（積み）                |
+| -   | #D  | ふつう | main    | `<sha>`       | まだマージしない     | ユーザーの判断待ち        |
 
 **head は条件を判定した時点の 40 桁で載せる。** マージの直前に取り直した head と
 比べるのはこの値で、比べないと、確認を待つあいだに push された未レビューの head を
@@ -90,12 +108,12 @@ usecase テストがコンパイルできなくなった（#373 → #374）。�
 取り直す。** 1 本目も同じ。確認を取っているあいだに push や base の付け替えが
 入りうるし、head が同じでも新しい指摘や落ちた check-run が付きうる。**head が表の
 40 桁と違っていたら、マージせずに条件の判定とユーザーの確認からやり直す。**
-base や `mergeable` が違っていたら、表を作り直す。**`status.sh` に
-`=> full review 0 件` と `ci=緑` が出なくなっていたら、マージせずに止めて、表と
-確認を作り直す。**
+base や `mergeable` が違っていたら、表を作り直す。**`status.sh` に、重さに
+応じた条件（ふつうは `=> full review 決着` と `ci=緑`、軽いと Dependabot は
+`ci=緑`）が出なくなっていたら、マージせずに止めて、表と確認を作り直す。**
 
 ```sh
-.claude/skills/pr-watch/status.sh <番号>   # => full review 0 件 と ci=緑 が出ているか
+.claude/skills/pr-watch/status.sh <番号>   # 重さに応じた条件が出ているか
 gh api "repos/{owner}/{repo}/pulls/<番号>" --jq '"\(.head.sha) \(.base.ref) \(.mergeable)"'
 # sha を渡すと、確かめた head から動いていたときに GitHub が断る。
 # status.sh が出すのは先頭 7 桁なので、上で取り直した 40 桁を渡す。
@@ -180,8 +198,9 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
      --jq '.check_runs[] | "\(.started_at) \(.status) \(.conclusion) \(.name)"'
    ```
 
-**head は変わらないので、full review はやり直さなくてよい。** 取り込み
-（`/sync-prs`）との違いはそこ。
+**head は変わらないので、full review の決着もそのまま残る。** 取り込み
+（`/sync-prs`）は head を進めるので、0 件で決着していた PR にもまとめが要る
+ようになる。違いはそこ。
 
 ## マージしたと言われたら
 
@@ -195,28 +214,47 @@ git fetch origin main && git branch -r --contains <merge_commit_sha>   # origin/
 
 ## Dependabot の PR
 
-**同じ条件で判断する。別の手順にはしない。** Dependabot の PR も、Claude が
-マージしてよいのは最新の head への full review が 0 件のものだけ。CodeRabbit は
-bot の PR を「Bot user detected」で飛ばすので、枠を使うなら `/pr-watch` で
-依頼する。
+**full review の代わりに、CI と中身で判断する**（`CONTRIBUTING.md`「マージ」の
+軽い）。CodeRabbit は bot の PR を飛ばし、`@coderabbitai full review` を依頼しても
+「Review skipped」で終わる（#424）。**依頼しない。**
 
-そのうえで、中身ごとに見るものがある（ADR 0035）。**落ちているのは知らせで
+見るのは 2 つ。ほかの条件（base・`mergeable`・CI がいまの main とのマージ結果で
+走っている・表に載っている）はほかの PR と同じ。
+
+- **CI が緑。** main が進んでいたら、Update branch で main を取り込んでから回し
+  直す。`@dependabot rebase` には応じないことがある（#424）。
+
+  ```sh
+  gh api -X PUT "repos/yusuke0610/etoki/pulls/<番号>/update-branch" \
+    -f expected_head_sha=<いまの head の 40 桁>
+  ```
+
+- **下の表の「見るもの」を確かめ終えた。** main が進んでいたら、major の更新は
+  破壊的変更と etoki の使い方を照らし直す。そのあいだに入ったコードが、消えた
+  API を使い始めているかもしれない。
+
+中身ごとに見るものは次のとおり（ADR 0035）。**落ちているのは知らせで
 あって、設定の不具合ではない**（`CONTRIBUTING.md`「依存の更新」）。
 
 | 中身                                     | 見るもの                                                                                         |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 生成器（`openapi-typescript`）が上がった | codegen drift で落ちる。その枝で `make codegen` を回して push する。head が変わるので依頼し直す  |
+| 生成器（`openapi-typescript`）が上がった | codegen drift で落ちる。その枝で `make codegen` を回して push し、CI を見る                      |
 | Go の更新                                | devShell の Go（nixpkgs）より新しい版を要求していないか。要求するなら nixpkgs を上げるまで止める |
 | 固定しているもの（`@playwright/test`）   | 出てこないはず。出てきたら設定の漏れ。理由は `web/CLAUDE.md`                                     |
 | major の更新                             | 変更履歴の破壊的変更。lint / test が緑でも、使っている API が変わっていないか                    |
 | `web/bun.lock` が動く                    | 入れたら `bun install` を知らせる（5）                                                           |
 
-どれにも当たらず、CI が緑で full review が 0 件なら、ほかの PR と同じく表に
-載せて確認を取る。
+**依存の更新と生成物の作り直しのほかに人が変更を足した PR は、足した変更の重さで
+決める**（`CONTRIBUTING.md`「マージ」）。文書だけを足したなら軽いのまま。ふつうか
+重いに当たれば full review を通せないので、マージせずに表へ「ユーザーの判断待ち」で
+載せる。
+
+どれにも当たらず CI が緑なら、ほかの PR と同じく表に載せて確認を取る。
 
 ## やらないこと
 
 - **条件を満たさない PR のマージ**（`CONTRIBUTING.md`「マージ」）。
+- **重い PR のマージ。** 条件を満たしても、表に載せてユーザーに渡す。
 - **確認なしのマージ。**
 - **squash 以外でのマージ。** 積んだ上の段の取り込み方（`/sync-prs`）は、
   下の段が squash で入ることを前提にしている。

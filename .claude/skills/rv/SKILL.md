@@ -105,5 +105,5 @@ git diff --cached
 - UI を触ったなら `make test-e2e` の結果と、`web/e2e-output/screenshots/` の
   スクリーンショット（`web/CLAUDE.md`「報告にブラウザの実行結果を添える」）
 
-**この件数が、PR に付いた初回指摘数と並ぶ。** 記録の付け方は
-`.claude/skills/pr-review/SKILL.md`（`docs/review-findings.md`）。
+**この件数は、PR に付いた指摘と見比べるためのもの。** PR ごとの初回指摘数の
+記録（`docs/review-findings.md`）は 2026-11-25 に止めた。
