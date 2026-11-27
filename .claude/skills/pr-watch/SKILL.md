@@ -32,8 +32,11 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
 ので、依頼するのは常に full review。
 
 **軽い PR（文書・規約とスキル・テストだけ）と Dependabot の PR には依頼しない。**
-条件は CI だけで、枠を使っても条件は変わらない。Dependabot の PR は CodeRabbit が
-飛ばし、依頼しても「Review skipped」で終わる（#424）。
+軽い PR は条件が CI だけで、枠を使っても条件は変わらない。Dependabot の PR は
+CodeRabbit が飛ばし、依頼しても「Review skipped」で終わる（#424）。軽いのは
+Dependabot の PR のうち依存の更新と生成物の作り直しだけのもので、人がほかの変更を
+足したものは full review を通せないまま `/land` がユーザーに渡す
+（`CONTRIBUTING.md`「マージ」）。
 
 ## 状態を見る
 
@@ -171,11 +174,16 @@ gh api -X POST "repos/{owner}/{repo}/issues/<番号>/comments" -f body='@coderab
 
 1. **依頼したら、返信が `Full review finished` か `rate limited` になるまで待つ。**
    `status.sh <番号>` の `fr` が `走行中` から変わるのを見る。
-2. **`Full review finished` が出たら、`status.sh` の `=>` で判定する。**
-   - `full review 決着` → 「決着したら」へ。
-   - `決着待ち` → `/pr-review` で全部決着させ、まとめを書く。**直して push しても
-     依頼し直さない。** 依頼し直すのは、直し以外を積んだときだけ（上の「full
-     review の読み方」）。
+2. **`Full review finished` が出たら、`status.sh` の `=>` と `fr` で判定する。**
+   `=>` に出るのは決着したときの `full review 決着` だけで、決着していなければ
+   空になる。そのときは `fr` と `threads` で次を選ぶ。
+   - `=>` が `full review 決着` → 「決着したら」へ。
+   - `fr` が `決着待ち(…)` → `/pr-review` で全部決着させ、まとめを書く。**直して
+     push しても依頼し直さない。** 依頼し直すのは、直し以外を積んだときだけ
+     （上の「full review の読み方」）。`fr` の括弧の中に、まとめを書き直すか依頼し
+     直すかの手がかりが出る。
+   - `fr` が `済(…)` か `決着済み(…)` なのに `=>` が空 → 未解決のスレッドが
+     残っている（`threads` が 0 でない）。`/pr-review` で決着させて解決する。
 3. **`rate limited` なら、`available in N minutes` の後に依頼し直す。** 枠の
    読みが外れたということなので、そのあいだに他の PR に依頼しない。
 

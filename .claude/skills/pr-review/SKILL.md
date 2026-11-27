@@ -32,8 +32,9 @@ description: PR に付いた CodeRabbit の full review の指摘を、1 件ず�
 両方取る（#127）。
 
 ```sh
-gh api repos/yusuke0610/etoki/pulls/<番号>/comments -q '.[] | "\(.path):\(.line)\n\(.body)"'
-gh api repos/yusuke0610/etoki/pulls/<番号>/reviews -q '.[] | "\(.user.login):\n\(.body)"'
+# 既定では 30 件で打ち切られるので、全ページを取る。
+gh api --paginate "repos/yusuke0610/etoki/pulls/<番号>/comments?per_page=100" -q '.[] | "\(.path):\(.line)\n\(.body)"'
+gh api --paginate "repos/yusuke0610/etoki/pulls/<番号>/reviews?per_page=100" -q '.[] | "\(.user.login):\n\(.body)"'
 ```
 
 CodeRabbit は増分レビューなので、2 回目以降は**前回から変わった範囲しか

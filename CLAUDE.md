@@ -293,7 +293,7 @@ Origin 検証は `.claude/rules/http-handlers.md`。
 - **PR 本文は `.github/pull_request_template.md` の見出しに沿って埋める。**
   該当しない節は消す。各節に何を書くかは `CONTRIBUTING.md`。
 - **マージの条件は変更の重さで分ける。** 軽い（文書・規約・テストだけ・
-  Dependabot）は CI が緑、ふつうは full review の指摘が決着して CI が緑なら、
+  Dependabot の依存の更新だけ）は CI が緑、ふつうは full review の指摘が決着して CI が緑なら、
   Claude がマージする。重い（GitHub への書き込み・マイグレーション・認証）は
   仕上げてユーザーに渡す。条件は `CONTRIBUTING.md`。
 
