@@ -51,7 +51,8 @@ code に落ちない、というのは ADR 0034 で決着している。畳ん�
 
 保存する文字列は `ErrCreationIncomplete` で包んだ Go のエラー全体で、GitHub の
 応答本文と etoki の内部文言からなる。**認証情報は入らない**（トークンは
-`GitHubTokenSource` の内側にあり、エラーに載せる経路が無い）。
+`GitHubTokenSource` の内側にあり、エラーに載せる経路が無い。ADR 0106 で継ぎ目を
+外したあとも、トークンは GitHub クライアントの内側にだけある）。
 
 ### 既存の run は NULL のまま「不明」として読む
 

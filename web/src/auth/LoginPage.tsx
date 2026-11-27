@@ -127,7 +127,7 @@ export function LoginPage() {
 
         <p className="hint login-note">
           {
-            "ログインすると、あなたの権限でリポジトリと Projects v2 を読み書きします。見えるのは etoki をインストールしたリポジトリだけです。"
+            "ログインは、あなたが誰かを確かめるだけです。GitHub への読み書きは、etoki に設定した PAT で行います。"
           }
         </p>
       </div>

@@ -21,9 +21,9 @@ import (
 const (
 	// SessionTTL はセッションの有効期間。
 	//
-	// GitHub の user-to-server トークンは 8 時間で失効するが、refresh token が
-	// あるうちは更新できる。セッションをそれに合わせて短くすると、作業中に
-	// 何度もログインさせることになる。
+	// ログインは誰であるかを確かめるだけで、認証基盤のトークンの寿命とは
+	// 結びつけない（ADR 0106）。短くすると、作業中に何度もログインさせることに
+	// なる。
 	SessionTTL = 14 * 24 * time.Hour
 
 	// StateTTL は OAuth の state を受け付ける期間。
@@ -31,11 +31,6 @@ const (
 	// 認可画面での操作にかかる時間。長くすると、盗まれた state が使える窓が
 	// 広がるだけで得るものが無い。
 	StateTTL = 10 * time.Minute
-
-	// refreshMargin は失効の何分前から更新するか。
-	//
-	// ちょうどで切ると、更新せずに投げたリクエストが往復のあいだに失効する。
-	refreshMargin = 5 * time.Minute
 
 	// MaxLoginStarts は StateTTL のあいだに始められるログインの回数
 	// （issue #147）。
@@ -64,10 +59,8 @@ var ErrLoginNotAllowed = errors.New("etoki: this account is not allowed to sign 
 
 // AuthService はログインとセッションを担う。
 //
-// port.GitHubTokenSource も兼ねる。「誰であるか」と「GitHub をどのトークンで
-// 叩くか」は別の継ぎ目だが（ADR 0015）、GitHub App で認証する既定の構成では
-// 同じ資格情報から両方が決まる。別の基盤に載せ替えるときは、この実装ごと
-// 差し替わる。
+// 決めるのは誰であるかだけ。GitHub を叩く資格情報は持たない。GitHub は
+// 配線が渡す PAT 1 本で叩く（ADR 0106）。
 type AuthService struct {
 	provider port.IdentityProvider
 	sessions port.SessionRepository
@@ -80,12 +73,6 @@ type AuthService struct {
 	// 外した人の入口が残らない。
 	allowedSubjects []string
 
-	// refreshing は利用者ごとの更新の直列化。
-	//
-	// GitHub は使った refresh token を無効にするので、並行する 2 本が同時に
-	// 更新すると片方が無効なトークンを掴む（ADR 0015）。
-	refreshing sync.Map // userID -> *sync.Mutex
-
 	// mu と loginStarts は StateTTL の窓の中で始まったログインの時刻。
 	//
 	// **状態はメモリだけ。再起動で消える。** 依る前提は BoardLocks / LLMLimiter と
@@ -96,8 +83,6 @@ type AuthService struct {
 	mu          sync.Mutex
 	loginStarts []time.Time
 }
-
-var _ port.GitHubTokenSource = (*AuthService)(nil)
 
 // AuthServiceOption は AuthService の依存を差し替える。
 type AuthServiceOption func(*AuthService)
@@ -284,14 +269,13 @@ func (s *AuthService) Complete(
 		return LoginResult{}, fmt.Errorf("%w: state is unknown or expired", ErrInvalidInput)
 	}
 
-	identity, creds, err := s.provider.Exchange(ctx, code, redirectURI)
+	identity, err := s.provider.Exchange(ctx, code, redirectURI)
 	if err != nil {
 		return LoginResult{}, err
 	}
 
 	// **照らすのは利用者を作る前。** 断った相手を users に残すと、招待の引き当て
-	// （FindUserByLogin）に現れる。資格情報も保存しない。他人の GitHub トークンを
-	// 預かる理由が無い。
+	// （FindUserByLogin）に現れる。
 	if !s.allows(identity.Provider, identity.Subject) {
 		return LoginResult{}, fmt.Errorf("%w: %s user %q (id %s)",
 			ErrLoginNotAllowed, identity.Provider, identity.Login, identity.Subject)
@@ -306,10 +290,6 @@ func (s *AuthService) Complete(
 		UpdatedAt:   now,
 	})
 	if err != nil {
-		return LoginResult{}, err
-	}
-
-	if err := s.sessions.SaveCredentials(ctx, user.ID, creds, now); err != nil {
 		return LoginResult{}, err
 	}
 
@@ -380,71 +360,13 @@ func (s *AuthService) FindUsers(ctx context.Context, ids []string) ([]port.User,
 
 // Logout はセッションを破棄する。
 //
-// GitHub 側のトークンは取り消さない。同じ利用者が別の端末からも使っている
-// 可能性があり、片方のログアウトで全部を切るのは意図に合わない。
+// 消すのはこのセッションだけ。同じ利用者が別の端末からも使っている可能性が
+// あり、片方のログアウトで全部を切るのは意図に合わない。
 func (s *AuthService) Logout(ctx context.Context, token string) error {
 	if token == "" {
 		return nil
 	}
 	return s.sessions.DeleteSession(ctx, HashSessionToken(token))
-}
-
-// Token は現在の利用者の GitHub トークンを返す。port.GitHubTokenSource の実装。
-//
-// 失効間際なら更新して保存し直す。
-func (s *AuthService) Token(ctx context.Context) (string, error) {
-	userID, ok := port.UserIDFromContext(ctx)
-	if !ok || userID == "" {
-		return "", port.ErrNotAuthenticated
-	}
-
-	// 更新は利用者ごとに 1 本に絞る。並行して更新すると、GitHub が使い捨てに
-	// した refresh token を掴んだ側が失敗する。
-	value, _ := s.refreshing.LoadOrStore(userID, &sync.Mutex{})
-	mu, ok := value.(*sync.Mutex)
-	if !ok {
-		return "", errors.New("etoki: refresh lock has unexpected type")
-	}
-	mu.Lock()
-	defer mu.Unlock()
-
-	creds, err := s.sessions.FindCredentials(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-	if creds == nil {
-		return "", fmt.Errorf("%w: no stored credentials", port.ErrNotAuthenticated)
-	}
-
-	if !s.needsRefresh(*creds) {
-		return creds.AccessToken, nil
-	}
-
-	now := s.now()
-	if !creds.RefreshExpiresAt.IsZero() && !creds.RefreshExpiresAt.After(now) {
-		return "", fmt.Errorf("%w: refresh token expired", port.ErrNotAuthenticated)
-	}
-
-	next, err := s.provider.Refresh(ctx, creds.RefreshToken)
-	if err != nil {
-		return "", err
-	}
-	if err := s.sessions.SaveCredentials(ctx, userID, next, now); err != nil {
-		return "", err
-	}
-
-	return next.AccessToken, nil
-}
-
-// needsRefresh は更新が要るかを返す。
-//
-// 失効情報を持たない資格情報は更新しない。App 側で「Expire user authorization
-// tokens」を切っている構成が該当する。
-func (s *AuthService) needsRefresh(c port.Credentials) bool {
-	if !c.Refreshable() {
-		return false
-	}
-	return !c.ExpiresAt.After(s.now().Add(refreshMargin))
 }
 
 // HashSessionToken はセッション token を保存できる形にする。

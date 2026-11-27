@@ -42,40 +42,18 @@ const maxResponseBytes = 10 << 20 // 10 MiB
 // ErrTokenRequired はトークンが設定されていないことを表す。
 var ErrTokenRequired = errors.New("etoki: github token is required")
 
-// Mode は「使えるリポジトリ」の決まり方。
-//
-// GitHub App と PAT で定義そのものが違うので、アダプタの中で推測せず外から
-// 渡す。判断できるのは、認証をどう設定したかを知っている cmd/etoki だけ
-// （ADR 0015）。
-type Mode int
-
-const (
-	// ModePAT は PAT で叩く構成。利用者が見えるリポジトリすべてが対象。
-	ModePAT Mode = iota
-	// ModeApp は GitHub App の user-to-server トークンで叩く構成。
-	// アプリをインストールしたリポジトリだけが対象。
-	ModeApp
-)
-
 // Config は Client の設定。
 type Config struct {
 	// BaseURL は GitHub API のルート。空なら DefaultBaseURL。
 	//
-	// GraphQL は {BaseURL}/graphql、REST は {BaseURL}{path} に送る。GHES に
+	// GraphQL は {BaseURL}/graphql に送る。GHES に
 	// 向けられるとは言わない。認可側（auth/github）のホストを差し替える口が
 	// 無く、GHES で確かめてもいない。
 	BaseURL string
-	// Token は Authorization ヘッダに載せるトークン。
+	// Token は Authorization ヘッダに載せる PAT。必須。
 	//
-	// TokenSource を指定するなら空でよい。両方あれば TokenSource が勝つ。
+	// 誰がログインしていても、GitHub はこの 1 本で叩く（ADR 0106）。
 	Token string
-	// TokenSource はリクエストごとにトークンを引く。
-	//
-	// 利用者ごとにトークンが変わる構成（OAuth）で使う。nil なら Token を
-	// 固定で使う（ADR 0015）。
-	TokenSource port.GitHubTokenSource
-	// Mode は「使えるリポジトリ」の決まり方。既定は ModePAT。
-	Mode Mode
 	// HTTPClient は差し替え用。nil なら既定のタイムアウトを持つものを作る。
 	HTTPClient *http.Client
 }
@@ -90,17 +68,11 @@ func ConfigFromEnv() Config {
 	}
 }
 
-// staticToken は Config.Token をトークン源として扱うためのラッパー。
-type staticToken string
-
-func (t staticToken) Token(context.Context) (string, error) { return string(t), nil }
-
 // Client は GitHub Projects v2 を GraphQL で操作する。
 type Client struct {
-	base   string
-	tokens port.GitHubTokenSource
-	mode   Mode
-	http   *http.Client
+	base  string
+	token string
+	http  *http.Client
 }
 
 // New は Config を検証して Client を作る。
@@ -108,13 +80,8 @@ type Client struct {
 // BaseURL は起動時に検証する。綴り間違いを実行時まで持ち越すと、作成先の
 // 一覧や作成の失敗として現れて原因の切り分けが遠回りになる。
 func New(cfg Config) (*Client, error) {
-	tokens := cfg.TokenSource
-	if tokens == nil {
-		if cfg.Token == "" {
-			return nil, fmt.Errorf("%w: set Config.Token, Config.TokenSource, or %s",
-				ErrTokenRequired, EnvToken)
-		}
-		tokens = staticToken(cfg.Token)
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("%w: set Config.Token or %s", ErrTokenRequired, EnvToken)
 	}
 
 	base := cfg.BaseURL
@@ -134,10 +101,9 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	c := &Client{
-		base:   strings.TrimRight(base, "/"),
-		tokens: tokens,
-		mode:   cfg.Mode,
-		http:   cfg.HTTPClient,
+		base:  strings.TrimRight(base, "/"),
+		token: cfg.Token,
+		http:  cfg.HTTPClient,
 	}
 	if c.http == nil {
 		c.http = &http.Client{Timeout: defaultTimeout}
@@ -173,13 +139,7 @@ func (c *Client) do(ctx context.Context, query string, vars map[string]any, out 
 	}
 	req.Header.Set("content-type", "application/json")
 
-	// トークンはリクエストごとに引く。OAuth では利用者ごとに変わり、失効
-	// 間際なら差し替わる（ADR 0015）。
-	token, err := c.tokens.Token(ctx)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("authorization", "Bearer "+token)
+	req.Header.Set("authorization", "Bearer "+c.token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {

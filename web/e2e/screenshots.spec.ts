@@ -257,7 +257,7 @@ test.describe("スクリーンショット", () => {
       body: {
         code: "forbidden_project",
         error:
-          "etoki: forbidden: github graphql: FORBIDDEN: Resource not accessible by integration",
+          "etoki: forbidden: github graphql: FORBIDDEN: Resource not accessible by personal access token",
       },
     };
     mock.projects["acme/api"] = { status: 200, body: [] };

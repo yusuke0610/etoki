@@ -14,8 +14,8 @@ var ErrNotAuthenticated = errors.New("etoki: not authenticated")
 
 // ErrForbidden は下流サービスが権限を理由に拒んだことを表す。
 //
-// etoki は実行者のトークンで GitHub を叩くので（ADR 0015）、リポジトリへの
-// アクセス権が無ければここに来る。**etoki 側にその権限を複製しない**と決めた
+// etoki は設定した PAT で GitHub を叩くので（ADR 0106）、その PAT にリポジトリ
+// へのアクセス権が無ければここに来る。**etoki 側にその権限を複製しない**と決めた
 // 以上、拒否は実行時にしか分からない（ADR 0017）。500 に丸めると、権限の
 // 問題だと分からない。
 var ErrForbidden = errors.New("etoki: forbidden by the upstream service")
@@ -38,30 +38,6 @@ type Identity struct {
 	DisplayName string
 }
 
-// Credentials は認証の結果として得た、下流サービスを叩くための資格情報。
-//
-// RefreshToken と 2 つの期限は、失効しない基盤ではゼロ値でよい。
-// ゼロ値なら「更新しない」を意味する。
-type Credentials struct {
-	// AccessToken は下流サービスに送るトークン。
-	AccessToken string
-	// RefreshToken は AccessToken を更新するためのトークン。
-	RefreshToken string
-	// ExpiresAt は AccessToken の失効時刻。ゼロ値なら失効しない。
-	ExpiresAt time.Time
-	// RefreshExpiresAt は RefreshToken の失効時刻。ゼロ値なら失効しない。
-	RefreshExpiresAt time.Time
-}
-
-// Refreshable は更新できる資格情報かどうかを返す。
-//
-// 名前は「失効するか」ではなく「更新できるか」。RefreshToken が無ければ、
-// 失効時刻を持っていても etoki にできることは無く、判定として使えない。
-// App 側で失効を切った構成では両方ともゼロ値になる。
-func (c Credentials) Refreshable() bool {
-	return !c.ExpiresAt.IsZero() && c.RefreshToken != ""
-}
-
 // IdentityProvider は利用者を外部の認証基盤に問い合わせる。
 //
 // OAuth2 / OIDC のような「送り出して引き換える」2 段を想定している。
@@ -74,29 +50,14 @@ type IdentityProvider interface {
 	// AuthorizeURL は利用者を送り出す先を返す。
 	AuthorizeURL(state, redirectURI string) string
 
-	// Exchange はコールバックで受け取った code を利用者と資格情報に引き換える。
+	// Exchange はコールバックで受け取った code を利用者に引き換える。
 	//
 	// redirectURI は AuthorizeURL に渡したものと同じ値。基盤によっては
 	// 引き換え時にも一致を要求される。
-	Exchange(ctx context.Context, code, redirectURI string) (Identity, Credentials, error)
-
-	// Refresh は資格情報を更新する。
 	//
-	// Credentials.Refreshable() が false の基盤では呼ばれない。呼ばれたくない
-	// 実装は ErrNotAuthenticated を返してよい。再ログインに落ちる。
-	Refresh(ctx context.Context, refreshToken string) (Credentials, error)
-}
-
-// GitHubTokenSource は GitHub を叩くトークンを返す。
-//
-// ctx から利用者を引く。IdentityProvider とは別の継ぎ目にしてあるので、
-// 「別の基盤で認証し、GitHub へは固定のトークンで書く」構成が作れる（ADR 0015）。
-type GitHubTokenSource interface {
-	// Token は現在の利用者のトークンを返す。
-	//
-	// 失効間際なら更新してから返してよい。特定できなければ
-	// ErrNotAuthenticated を返す。
-	Token(ctx context.Context) (string, error)
+	// **返すのは誰であるかだけ。** 引き換えで基盤のトークンを得ても、etoki は
+	// それを下流を叩く資格情報にしない（ADR 0106）。誰であるかを確かめたら捨てる。
+	Exchange(ctx context.Context, code, redirectURI string) (Identity, error)
 }
 
 // Session は 1 つのログイン。
@@ -182,16 +143,6 @@ type SessionRepository interface {
 	// DeleteSession はセッションを消す。存在しなくても誤りとしない。
 	DeleteSession(ctx context.Context, tokenHash string) error
 
-	// SaveCredentials は利用者の資格情報を保存する。既存なら置き換える。
-	//
-	// 暗号化は実装の責務。平文で置いてはならない（ADR 0015）。
-	SaveCredentials(ctx context.Context, userID string, c Credentials, now time.Time) error
-	// FindCredentials は利用者の資格情報を返す。無ければ (nil, nil)。
-	//
-	// 保存はあるが開けない（暗号化の鍵を入れ替えた、など）ときは
-	// ErrNotAuthenticated を包んで返す。再ログインに落ち、封をし直される。
-	FindCredentials(ctx context.Context, userID string) (*Credentials, error)
-
 	// ConsumeState は state を照合して削除し、保存してあった内容を返す。
 	//
 	// 単回使用。一度使った state で 2 回目は (nil, nil) を返す。期限切れも同じ。
@@ -215,11 +166,13 @@ type userIDKey struct{}
 
 // ContextWithUserID は etoki 側の利用者 ID を載せた context を返す。
 //
-// port に置くのは、外部リポジトリが GitHubTokenSource を自前実装するときに
-// 読む必要があるため。internal/ は他モジュールから import できない（ADR 0001）。
+// port に置いたのは、外部リポジトリが GitHubTokenSource を自前実装するときに
+// 読むためだった。その口は外したので（ADR 0106）、いまの読み手は internal/ の
+// 中（ボードの認可と LLM の上限）だけ。置き場所は公開 API 面の約束を外すとき
+// （#493）に見直す。
 //
 // Identity.Subject は認証基盤の ID であって etoki の users.id ではない。
-// トークンを引くのに後者が要るので、載せるのはこちら。
+// ボードの持ち主やメンバーが指すのは後者なので、載せるのはこちら。
 func ContextWithUserID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, userIDKey{}, id)
 }

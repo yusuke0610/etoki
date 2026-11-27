@@ -19,7 +19,6 @@ import (
 	"github.com/yusuke0610/etoki"
 	githubauth "github.com/yusuke0610/etoki/internal/adapter/auth/github"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
-	"github.com/yusuke0610/etoki/internal/secret"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
@@ -886,18 +885,13 @@ func fakeAuthenticator(t *testing.T) *etoki.Authenticator {
 		t.Fatalf("githubauth.New: %v", err)
 	}
 
-	box, err := secret.New(make([]byte, secret.KeySize))
-	if err != nil {
-		t.Fatalf("secret.New: %v", err)
-	}
-
 	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "auth.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	auth, err := etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box),
+	auth, err := etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db),
 		provider.AllowedSubject())
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %v", err)
@@ -916,17 +910,13 @@ func TestNewAuthenticator_RequiresAllowedSubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("githubauth.New: %v", err)
 	}
-	box, err := secret.New(make([]byte, secret.KeySize))
-	if err != nil {
-		t.Fatalf("secret.New: %v", err)
-	}
 	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "auth.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	if auth, err := etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box), ""); err == nil {
+	if auth, err := etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db), ""); err == nil {
 		t.Fatalf("NewAuthenticator(\"\") = %v, want error", auth)
 	}
 }
