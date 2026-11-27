@@ -34,9 +34,9 @@ does not receive automatic reviews」と「Trigger review」の欄を出した�
 **軽い PR（文書・規約とスキル・テストだけ）と Dependabot の PR には依頼しない。**
 軽い PR は条件が CI だけで、枠を使っても条件は変わらない。Dependabot の PR は
 CodeRabbit が飛ばし、依頼しても「Review skipped」で終わる（#424）。軽いのは
-Dependabot の PR のうち依存の更新と生成物の作り直しだけのもので、人がほかの変更を
-足したものは full review を通せないまま `/land` がユーザーに渡す
-（`CONTRIBUTING.md`「マージ」）。
+Dependabot の PR のうち依存の更新と生成物の作り直しだけのもの。人がほかの変更を
+足したものは、足した変更の重さで決める。ふつうか重いに当たれば、full review を
+通せないまま `/land` がユーザーに渡す（`CONTRIBUTING.md`「マージ」）。
 
 ## 状態を見る
 
@@ -182,8 +182,10 @@ gh api -X POST "repos/{owner}/{repo}/issues/<番号>/comments" -f body='@coderab
      push しても依頼し直さない。** 依頼し直すのは、直し以外を積んだときだけ
      （上の「full review の読み方」）。`fr` の括弧の中に、まとめを書き直すか依頼し
      直すかの手がかりが出る。
-   - `fr` が `済(…)` か `決着済み(…)` なのに `=>` が空 → 未解決のスレッドが
-     残っている（`threads` が 0 でない）。`/pr-review` で決着させて解決する。
+   - `fr` が `済(…)` か `決着済み(…)` で、`threads` が 1 以上 → 未解決の
+     スレッドが残っている。`/pr-review` で決着させて解決する。
+   - `threads` が `?` → スレッドの数を取れなかった。残っているとも 0 件とも
+     読まず、`status.sh` を取り直す。
 3. **`rate limited` なら、`available in N minutes` の後に依頼し直す。** 枠の
    読みが外れたということなので、そのあいだに他の PR に依頼しない。
 
