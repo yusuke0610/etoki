@@ -30,8 +30,15 @@ PR ごとに、**まず変更の重さを決める**（`CONTRIBUTING.md`「マ�
 差分のファイルの中でいちばん重いものに合わせ、迷ったら重いほうに倒す。
 
 ```sh
-gh api --paginate "repos/yusuke0610/etoki/pulls/<番号>/files?per_page=100" --jq '.[].filename'
+# 名前を変えたファイルは、変える前の名前（previous_filename）でも重さを見る。
+gh api --paginate "repos/yusuke0610/etoki/pulls/<番号>/files?per_page=100" \
+  --jq '.[] | .filename, (.previous_filename // empty)'
+gh api "repos/yusuke0610/etoki/pulls/<番号>" --jq .changed_files
 ```
+
+**一覧が取り切れていなければ、重さを決めない。** この API は 3,000 ファイルで
+打ち切る。取れた件数（`previous_filename` を除く）が `changed_files` に届かない
+とき、取れなかったときは、軽いともふつうとも言わず、重いとしてユーザーに渡す。
 
 そのうえで、次を全部満たすかを見る。
 

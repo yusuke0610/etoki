@@ -226,7 +226,7 @@ PR を作ったセッションは、見回りのセッションに次を渡す�
 - **`bun install` が要るか。** `web/bun.lock` が動いた PR
 - **まだ直していない指摘や、ユーザー待ちの判断があるか**
 - **full review の扱い。** `/sync-prs` で取り込んだ PR は、`/sync-prs` の表の
-  「full review」の列（まとめを書く・依頼し直す・要らない）
+  「full review」の列（まとめを書く・依頼し直す・変わらない）
 
 受け取った側は `status.sh` で状態を取り直し、マージ順の表に載せる。**full review の
 扱いを受け取ったら、`status.sh` の `fr` より優先する。** `status.sh` は、衝突を
