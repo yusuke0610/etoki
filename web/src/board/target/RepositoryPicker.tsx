@@ -242,8 +242,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           ) : (
             <p className="hint">
               {"リポジトリが 1 つも見つかりませんでした。"}
-              {"GitHub App を入れたリポジトリがあるか、"}
-              {"PAT で動かしているなら repo の read 権限があるかを確認してください。"}
+              {"etoki に設定した PAT に、repo の read 権限があるかを確認してください。"}
             </p>
           )
         ) : visible.length === 0 ? (

@@ -338,6 +338,11 @@ test.describe("作成先の選択", () => {
     await openUnselected(page);
 
     await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeVisible();
+    await expect(
+      page.getByText(
+        "etoki に設定した PAT に、repo の read 権限があるかを確認してください",
+      ),
+    ).toBeVisible();
   });
 
   // 切れると: 見ていない範囲が残っているのに「権限を確認してください」と案内し、
