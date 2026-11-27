@@ -5,7 +5,7 @@ import type { DiagramKind } from "../../api/types";
  *
  * **`Record` にすることが担保。** `DiagramKind` は `api/openapi.yaml` からの
  * 生成物なので、契約に種類を足して名前を書き忘れると `tsc` が落ちる
- * （`ROLE_LABELS` と同じ形）。
+ * （`web/src/board/annotations/annotationLabel.ts` の `STATE_LABEL` と同じ形）。
  *
  * **どの mermaid 記法で書かれるかはここに書かない。** 記法を選ぶのはサーバー
  * （ADR 0041）で、画面が知っているとその判断が 2 箇所になる。

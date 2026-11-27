@@ -32,7 +32,6 @@ export function AnnotationFace({
   creation,
   runs,
   stale,
-  canEdit,
   projectLink,
   targetLabel,
 }: {
@@ -47,7 +46,6 @@ export function AnnotationFace({
   creation: CreationProps;
   runs: RunsProps;
   stale: boolean;
-  canEdit: boolean;
   projectLink: ProjectLink | null;
   targetLabel: string | null;
 }) {
@@ -55,7 +53,6 @@ export function AnnotationFace({
   const headingId = `annotation-detail-title-${id}`;
   const labelId = `annotation-detail-label-${id}`;
   const missingId = `annotation-detail-missing-${id}`;
-  const viewerId = `annotation-detail-viewer-${id}`;
   const unmarkedId = `annotation-detail-unmarked-${id}`;
   const itemsRegionId = `annotation-detail-items-${id}`;
   const runsRegionId = `annotation-detail-runs-${id}`;
@@ -90,7 +87,7 @@ export function AnnotationFace({
   const heading = name.trim() === "" ? numberLabel : name;
   // 名前を変える口は見出しの隣のラベル（#305）。押すと欄になる。書きかけと
   // 確定は `useNameDraft`、描き分けは `AnnotationNameLabel`。
-  const canRename = canEdit && onCanvas && !unmarked;
+  const canRename = onCanvas && !unmarked;
   const nameDraft = useNameDraft({
     id,
     name,
@@ -184,11 +181,8 @@ export function AnnotationFace({
         <div className="annotation-detail-meta">
           <label className="granularity">
             粒度
-            {/* 押せない理由は本文の下にある読むだけの案内を指す（ADR 0039）。 */}
             <select
               value={granularity}
-              disabled={!canEdit}
-              aria-describedby={canEdit ? undefined : viewerId}
               onChange={(e) =>
                 frames.onChangeGranularity(id, e.target.value as Granularity)
               }
@@ -211,8 +205,6 @@ export function AnnotationFace({
             種別
             <select
               value={kind ?? ""}
-              disabled={!canEdit}
-              aria-describedby={canEdit ? undefined : viewerId}
               onChange={(e) => {
                 const nextKind = (e.target.value || undefined) as DiagramKind | undefined;
                 frames.onChangeKind(id, nextKind);
@@ -263,7 +255,7 @@ export function AnnotationFace({
             </button>
           )}
         </div>
-        {canEdit && unmarked && (
+        {unmarked && (
           <p className="hint" id={unmarkedId}>
             このフレームは絵から外してあります。名前を変えるには、もう一度絵にしてください。
           </p>
@@ -320,47 +312,38 @@ export function AnnotationFace({
           </p>
         )}
 
-        {canEdit ? (
-          <InterpretationSection
-            annotationId={id}
-            granularity={a.granularity}
-            syncState={a.state}
-            state={interpretation.states[id]}
-            creation={creation.states[id]}
-            saving={creation.saving}
-            creationBlocked={creation.blocked}
-            projectAccess={creation.projectAccess}
-            creationUnavailable={creation.unavailable}
-            previous={items}
-            projectLink={projectLink}
-            targetLabel={targetLabel}
-            stale={stale}
-            interpretationUnavailable={interpretation.unavailable}
-            premise={interpretation.premise}
-            interpretationBusyElsewhere={Object.entries(interpretation.states).some(
-              ([otherId, other]) => otherId !== id && other.running,
-            )}
-            // 名前の書きかけは、読む前に確定する。帯のボタンは押しても焦点を
-            // 奪わない（`DetailBand`）ので、欄を離れたときの確定が走らない。
-            onInterpret={() => {
-              nameDraft.commit();
-              interpretation.onInterpret(id);
-            }}
-            onSelectInterpretation={(runId) => interpretation.onSelect(id, runId)}
-            onCancelInterpretation={() => interpretation.onCancel(id)}
-            onCreate={(interpretationId, result) =>
-              creation.onCreate(id, interpretationId, result)
-            }
-            onDraftEdited={creation.onDraftEdited}
-          />
-        ) : (
-          // 解釈は LLM を叩く外部呼び出しで、作成は取り消せない（ADR 0017）。
-          // 読むだけの人には帯を出さず、なぜ無いのかを言う。押せない名前・粒度・
-          // 種別もここを指す。
-          <p className="hint" id={viewerId}>
-            読むだけの権限で開いています。名前・粒度・種別は変えられず、絵解きと作成もできません。
-          </p>
-        )}
+        <InterpretationSection
+          annotationId={id}
+          granularity={a.granularity}
+          syncState={a.state}
+          state={interpretation.states[id]}
+          creation={creation.states[id]}
+          saving={creation.saving}
+          creationBlocked={creation.blocked}
+          projectAccess={creation.projectAccess}
+          creationUnavailable={creation.unavailable}
+          previous={items}
+          projectLink={projectLink}
+          targetLabel={targetLabel}
+          stale={stale}
+          interpretationUnavailable={interpretation.unavailable}
+          premise={interpretation.premise}
+          interpretationBusyElsewhere={Object.entries(interpretation.states).some(
+            ([otherId, other]) => otherId !== id && other.running,
+          )}
+          // 名前の書きかけは、読む前に確定する。帯のボタンは押しても焦点を
+          // 奪わない（`DetailBand`）ので、欄を離れたときの確定が走らない。
+          onInterpret={() => {
+            nameDraft.commit();
+            interpretation.onInterpret(id);
+          }}
+          onSelectInterpretation={(runId) => interpretation.onSelect(id, runId)}
+          onCancelInterpretation={() => interpretation.onCancel(id)}
+          onCreate={(interpretationId, result) =>
+            creation.onCreate(id, interpretationId, result)
+          }
+          onDraftEdited={creation.onDraftEdited}
+        />
       </div>
     </section>
   );

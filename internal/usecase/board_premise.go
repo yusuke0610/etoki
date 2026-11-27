@@ -31,9 +31,6 @@ var ErrPremiseTooLarge = errors.New("etoki: board premise is too large")
 // ErrPremiseConflict を返す。**照合は永続化層の書き込みと同じ 1 文に任せる。**
 // ここで読んで比べると、比べてから書くまでの隙間に入った編集を上書きする。
 //
-// **editor 以上。** 改名と同じで、作成先のように取り消せない作成の行き先を
-// 決めるものではない。
-//
 // 背景はハッシュに入らない（ADR 0093）ので、書き換えても注釈の 3 状態は
 // 変わらない。版（updated_at）も進めない（ADR 0092）。
 func (s *BoardService) SetPremise(ctx context.Context, id, base, premise string) error {
@@ -42,7 +39,7 @@ func (s *BoardService) SetPremise(ctx context.Context, id, base, premise string)
 		return err
 	}
 
-	if _, err := s.access(ctx, id, port.RoleEditor); err != nil {
+	if _, err := s.access(ctx, id); err != nil {
 		return err
 	}
 

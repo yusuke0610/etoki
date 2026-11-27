@@ -9,7 +9,7 @@ import (
 	"github.com/yusuke0610/etoki/port"
 )
 
-// Find は ID でボードを操作者のロールつきで引く。
+// Find は ID でボードを、操作者がメンバーなら引く。
 func (r *BoardRepository) Find(
 	ctx context.Context, actor, id string,
 ) (*port.BoardAccess, error) {
@@ -19,7 +19,7 @@ func (r *BoardRepository) Find(
 	a, err := scanBoard(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		// 「無い」と「メンバーでない」を区別しない。区別すると、ID を総当たり
-		// して他人のボードの存在を確かめられる（ADR 0016 / 0017）。
+		// して他人のボードの存在を確かめられる（ADR 0016）。
 		return nil, nil
 	}
 	if err != nil {
@@ -139,7 +139,6 @@ func (r *BoardRepository) List(ctx context.Context, actor string) ([]port.BoardA
 func scanSummary(s rowScanner, extra ...any) (port.BoardAccess, error) {
 	var (
 		a                    port.BoardAccess
-		role                 string
 		createdAt, updatedAt string
 	)
 	dest := append([]any{&a.Board.ID, &a.Board.Name,
@@ -147,12 +146,10 @@ func scanSummary(s rowScanner, extra ...any) (port.BoardAccess, error) {
 		&a.Board.Target.ProjectID,
 		&a.Board.Target.ProjectNumber, &a.Board.Target.ProjectTitle,
 		&a.Board.Target.ProjectURL,
-		&createdAt, &updatedAt, &role}, extra...)
+		&createdAt, &updatedAt}, extra...)
 	if err := s.Scan(dest...); err != nil {
 		return port.BoardAccess{}, err
 	}
-
-	a.Role = port.BoardRole(role)
 
 	var err error
 	if a.Board.CreatedAt, err = parseTime(createdAt); err != nil {

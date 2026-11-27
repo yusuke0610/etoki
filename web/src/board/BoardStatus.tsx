@@ -7,7 +7,6 @@ type Props = {
   renaming: boolean;
   onRename: () => void;
   dirty: boolean;
-  canEdit: boolean;
   /** 「保存」。保存だけをする（`⌘/Ctrl+S` と同じ口、ADR 0089）。 */
   onSave: () => void;
   /** 「絵解き」。未保存なら保存してから、絵解きの面を開く（`BoardPage`、#247）。 */
@@ -52,7 +51,6 @@ export function BoardStatus({
   renaming,
   onRename,
   dirty,
-  canEdit,
   onSave,
   onEkidoki,
   canSave,
@@ -112,51 +110,47 @@ export function BoardStatus({
         </form>
       )}
       {dirty && <span className="dirty">未保存</span>}
-      {canEdit && (
-        <>
-          {/*
-            保存だけの口（ADR 0089）。**未保存のあいだだけ出す。** 保存済みなら
-            押しても書くものが無く、「絵解き」の隣に押す意味の無いボタンが残る。
+      {/*
+        保存だけの口（ADR 0089）。**未保存のあいだだけ出す。** 保存済みなら
+        押しても書くものが無く、「絵解き」の隣に押す意味の無いボタンが残る。
 
-            **ふつうの格にする**（主となる操作は 1 つの面に 1 つ、#203）。緑は
-            「絵解き」のまま。
+        **ふつうの格にする**（主となる操作は 1 つの面に 1 つ、#203）。緑は
+        「絵解き」のまま。
 
-            ショートカットは `aria-keyshortcuts` で伝え、見える文にはしない。
-            キーボードの無い端末で、押せない口を案内することになる（#296）。
-            修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
-            それを見ていない。
-          */}
-          {dirty && (
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={!canSave}
-              aria-describedby={describedBy}
-              aria-keyshortcuts="Control+S Meta+S"
-            >
-              {saving ? "保存中…" : "保存"}
-            </button>
-          )}
-          {/*
-            取り消せない操作と保存は相互に排他する。**押せない理由を title に
-            隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
-            フォーカスも当たらないので、キーボードと読み上げには届かない。
-          */}
-          <button
-            type="button"
-            className="primary"
-            onClick={onEkidoki}
-            disabled={!canSave}
-            aria-describedby={describedBy}
-          >
-            {saving ? "準備中…" : "絵解き"}
-          </button>
-          {saveBlocked !== null && (
-            <span className="hint" id="save-blocked">
-              {saveBlocked}
-            </span>
-          )}
-        </>
+        ショートカットは `aria-keyshortcuts` で伝え、見える文にはしない。
+        キーボードの無い端末で、押せない口を案内することになる（#296）。
+        修飾キーは両方書く。どちらが効くかは OS で決まるが、etoki は
+        それを見ていない。
+      */}
+      {dirty && (
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canSave}
+          aria-describedby={describedBy}
+          aria-keyshortcuts="Control+S Meta+S"
+        >
+          {saving ? "保存中…" : "保存"}
+        </button>
+      )}
+      {/*
+        取り消せない操作と保存は相互に排他する。**押せない理由を title に
+        隠さない**（ADR 0039）。ホバーでしか読めず、disabled なボタンは
+        フォーカスも当たらないので、キーボードと読み上げには届かない。
+      */}
+      <button
+        type="button"
+        className="primary"
+        onClick={onEkidoki}
+        disabled={!canSave}
+        aria-describedby={describedBy}
+      >
+        {saving ? "準備中…" : "絵解き"}
+      </button>
+      {saveBlocked !== null && (
+        <span className="hint" id="save-blocked">
+          {saveBlocked}
+        </span>
       )}
     </div>
   );

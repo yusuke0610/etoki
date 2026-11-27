@@ -390,10 +390,8 @@ func TestMigrate_ExistingBoardsAreUnselectedAndUnowned(t *testing.T) {
 		t.Error("未選択のはずが Selected() が true")
 	}
 	// 0005 は所有者をメンバー行に移す。空文字の所有者は「認証なしの所有者」
-	// 1 人としてそのまま owner になる（ADR 0016 / 0017）。
-	if b.Role != port.RoleOwner {
-		t.Errorf("Role = %q, want %q", b.Role, port.RoleOwner)
-	}
+	// 1 人としてそのままメンバーになる（ADR 0016）。上の Find（操作者は空文字）で
+	// 引けたことがそれを示す。
 
 	// 所有者が無いので、認証を有効にすると引き受けの対象として数えられる。
 	n, err := sqlite.NewBoardRepository(db).CountUnowned(t.Context())

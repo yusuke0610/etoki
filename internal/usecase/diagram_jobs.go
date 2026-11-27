@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
-
-	"github.com/yusuke0610/etoki/port"
 )
 
 // DiagramJob は 1 回の図のドラフト生成の、いまの様子。Input は送られた入力そのもの。
@@ -79,7 +77,7 @@ func diagramJobKey(req DiagramRequest) string {
 
 // Get はジョブを 1 件返す。**読んでも消えない**（jobTable.get）。
 func (j *DiagramJobs) Get(ctx context.Context, boardID, jobID string) (DiagramJob, error) {
-	if _, err := j.svc.access(ctx, boardID, port.RoleEditor); err != nil {
+	if _, err := j.svc.access(ctx, boardID); err != nil {
 		return DiagramJob{}, err
 	}
 	return j.table.get(ctx, boardID, jobID)
@@ -87,7 +85,7 @@ func (j *DiagramJobs) Get(ctx context.Context, boardID, jobID string) (DiagramJo
 
 // List は操作者の、そのボードのジョブを始めた順に返す。結果は含めず、入力は含める。
 func (j *DiagramJobs) List(ctx context.Context, boardID string) ([]DiagramJob, error) {
-	if _, err := j.svc.access(ctx, boardID, port.RoleEditor); err != nil {
+	if _, err := j.svc.access(ctx, boardID); err != nil {
 		return nil, err
 	}
 	return j.table.list(ctx, boardID), nil
@@ -95,7 +93,7 @@ func (j *DiagramJobs) List(ctx context.Context, boardID string) ([]DiagramJob, e
 
 // Discard はジョブを要らないものとして捨てる。走っていれば止める。
 func (j *DiagramJobs) Discard(ctx context.Context, boardID, jobID string) error {
-	if _, err := j.svc.access(ctx, boardID, port.RoleEditor); err != nil {
+	if _, err := j.svc.access(ctx, boardID); err != nil {
 		return err
 	}
 	return j.table.discard(ctx, boardID, jobID)

@@ -40,13 +40,13 @@ type OpenOptions = {
 /**
  * 作成先の選び直しを始められるボードか。
  *
- * **条件は `BoardPage` が「作成先を変更」を出す条件と同じ**（owner だけ、
- * 固定前だけ。ADR 0014 / 0017）。URL から入る口だけを緩めると、画面から
- * 押せないはずの操作にそこからだけ入れてしまい、進んだ先で 403 / 409 を
- * 受け取る（中核思想 3）。**ずれたことは `web/e2e/url.spec.ts` が落とす。**
+ * **条件は `BoardPage` が「作成先を変更」を出す条件と同じ**（固定前だけ。
+ * ADR 0014）。URL から入る口だけを緩めると、画面から押せないはずの操作に
+ * そこからだけ入れてしまい、進んだ先で 409 を受け取る（中核思想 3）。
+ * **ずれたことは `web/e2e/url.spec.ts` が落とす。**
  */
 function canOpenTargetPicker(board: BoardDetail): boolean {
-  return board.role === "owner" && !board.targetLocked;
+  return !board.targetLocked;
 }
 
 /**

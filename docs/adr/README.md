@@ -20,7 +20,7 @@
 | [0014](0014-board-scoped-github-target.md)                       | 作成先の Projects v2 はボードごとに持ち、最初の作成で固定する                | 採用                 |
 | [0015](0015-pluggable-auth-seams.md)                             | 認証は 3 つの継ぎ目で受け、GitHub App を既定実装にする                       | 採用                 |
 | [0016](0016-boards-have-owners.md)                               | 単一ユーザー前提を捨て、ボードに所有者を持たせる                             | 採用                 |
-| [0017](0017-board-sharing-and-permissions.md)                    | ボードを共有し、etoki の権限と GitHub の権限を別々に持つ                     | 採用                 |
+| [0017](0017-board-sharing-and-permissions.md)                    | ボードを共有し、etoki の権限と GitHub の権限を別々に持つ                     | 一部置き換え（0107） |
 | [0018](0018-annotation-image-for-interpretation.md)              | 注釈範囲の画像はフロントで書き出し、保存済みシーンと揃ってからだけ渡す       | 採用                 |
 | [0019](0019-group-boards-by-target.md)                           | ボードは作成先でまとめて見せ、Project の表示名はスナップショットで持つ       | 採用                 |
 | [0020](0020-detect-scene-save-conflicts.md)                      | シーンの保存は版を照合し、衝突を検知だけする                                 | 採用                 |
@@ -56,7 +56,7 @@
 | [0050](0050-walk-through-against-fake-upstream.md)               | 通しの確認は偽の上流で手元から行い、偽物はアダプタとの往復で守る             | 採用                 |
 | [0051](0051-stop-creation-on-disconnect-and-record.md)           | 接続が切れたら作成を止め、作れたぶんは切れない文脈で記録する                 | 採用                 |
 | [0052](0052-do-not-recreate-from-the-same-draft.md)              | 作った項目は同じ下書きから新規に作らせない                                   | 採用                 |
-| [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる                  | 採用                 |
+| [0053](0053-confirm-login-before-granting.md)                    | login は最後にログインした 1 人に絞り、渡す前に相手を見せる                  | 一部置き換え（0107） |
 | [0054](0054-report-repository-list-truncation.md)                | 作成先の候補は打ち切りを添えて返し、絞り込みは手元で行う                     | 採用                 |
 | [0055](0055-theme-follows-os-and-canvas.md)                      | 配色は OS に従い、キャンバスと 1 つの値を共有し、シーンには載せない          | 採用                 |
 | [0056](0056-record-writes-with-unknown-delivery.md)              | 届いたか分からない書き込みも記録し、停止の猶予をその後始末から導く           | 採用                 |
@@ -81,7 +81,7 @@
 | [0075](0075-board-layout-follows-excalidraw-breakpoint.md)       | ボードの置き方は Excalidraw のモバイル判定の式に揃える                       | 採用                 |
 | [0076](0076-mcp-oauth-authorization-server.md)                   | 認証ありの構成では、etoki が認可サーバーになって `/mcp` を OAuth で開く      | 採用                 |
 | [0077](0077-ekidoki-saves-before-interpreting.md)                | 「絵解き」は保存を挟み、未保存のときだけ保存してから進む                     | 採用                 |
-| [0078](0078-share-dialog-and-panel-names.md)                     | メンバーは「共有」のダイアログで開き、パネルの名前を使う人の言葉に寄せる     | 採用                 |
+| [0078](0078-share-dialog-and-panel-names.md)                     | メンバーは「共有」のダイアログで開き、パネルの名前を使う人の言葉に寄せる     | 一部置き換え（0107） |
 | [0079](0079-name-annotations-on-the-frame.md)                    | 囲みの名前は絵解きの面で付け、frame の name にそのまま書く                   | 採用                 |
 | [0080](0080-canvas-scroll-by-keys-and-edges.md)                  | キャンバスの移動を etoki が足す（矢印キーと、ドラッグ中の端）                | 採用                 |
 | [0082](0082-logo-as-outlined-svg.md)                             | ロゴは字を輪郭にした SVG で持ち、色は絵の側に固定する                        | 置き換え済み（0084） |
@@ -103,3 +103,4 @@
 | [0103](0103-accept-nothing-to-create.md)                         | 「作るものは無い」を解釈の答えとして受け取る                                 | 採用                 |
 | [0104](0104-llm-call-timeout-and-thinking.md)                    | LLM を待つ上限は設定にして呼び出しごとに掛け、思考は手元でだけ切らせる       | 採用                 |
 | [0105](0105-only-the-owner-signs-in.md)                          | ログインを 1 人に絞り、認証なしで外に開かない                                | 採用                 |
+| [0107](0107-no-board-sharing.md)                                 | ボードの共有を外し、ロールで操作を分けない                                   | 採用                 |

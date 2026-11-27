@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { drawRectangle, openBoardWithMock, saveScene } from "./helpers/board";
-import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
+import { BOARD_ID, baseMock } from "./helpers/fixtures";
 import type { ApiMock } from "./helpers/api";
 
 /**
@@ -101,23 +101,6 @@ test.describe("矢印キーでのスクロール", () => {
 
     await expect(page.getByRole("tab", { name: "etoki AI" })).toBeFocused();
     expect(await overlayOrigin(page)).toEqual(before);
-  });
-
-  // キーボードでボードを見て回る手段がほかに無いので、読むだけのロールでも
-  // 使えるようにしてある。
-  test("読むだけのロールでも、矢印キーでキャンバスが動く", async ({ page }) => {
-    const mock = baseMock();
-    mock.details[BOARD_ID] = { ...board(), role: "viewer" };
-    mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
-    await openBoardWithMock(page, mock);
-    await focusEmptyCanvas(page);
-    const before = await overlayOrigin(page);
-
-    await page.keyboard.press("ArrowLeft");
-
-    await expect
-      .poll(async () => (await overlayOrigin(page)).x)
-      .toBeCloseTo(before.x + 100, 0);
   });
 });
 

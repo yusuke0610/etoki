@@ -546,13 +546,10 @@ func TestBoards_AreInvisibleToOtherOwners(t *testing.T) {
 		t.Errorf("他人のボードが見えている: %+v", got)
 	}
 
-	// 所有者本人には見える。作った人は owner のメンバーになる。
+	// 所有者本人には見える。作った人はメンバーになる。
 	got, err = repo.Find(t.Context(), "user-a", "board-a")
 	if err != nil || got == nil {
 		t.Fatalf("Find(所有者) = (%+v, %v), want ボード", got, err)
-	}
-	if got.Role != port.RoleOwner {
-		t.Errorf("Role = %q, want %q", got.Role, port.RoleOwner)
 	}
 }
 
@@ -677,13 +674,13 @@ func TestClaimUnowned(t *testing.T) {
 	seedOwnedBoard(t, db, "board-legacy-2", "")
 	seedOwnedBoard(t, db, "board-owned", "user-b")
 
-	// 認証なしの利用者が誰かのボードに招かれている行。数えないものは
-	// 引き受けもしない。数と述語がずれると、owner のつもりで viewer の行を
-	// 受け取ることになる。
-	if err := repo.AddMember(t.Context(), port.BoardMember{
-		BoardID: "board-owned", UserID: "", Role: port.RoleViewer, CreatedAt: baseTime,
-	}); err != nil {
-		t.Fatalf("AddMember: %v", err)
+	// 認証なしの利用者が誰かのボードに招かれていた行（共有を外す前の DB に
+	// 残りうる、ADR 0107）。数えないものは引き受けもしない。数と述語がずれると、
+	// 持ち主のつもりで招かれていた行を受け取ることになる。
+	if _, err := db.ExecContext(t.Context(),
+		`INSERT INTO board_members (board_id, user_id, role, created_at)
+		 VALUES ('board-owned', '', 'viewer', '2026-08-01T00:00:00Z')`); err != nil {
+		t.Fatalf("insert invited member: %v", err)
 	}
 
 	n, err := repo.CountUnowned(t.Context())
@@ -773,7 +770,7 @@ func upsertAs(
 
 // 改名で空いた login を別人が取った（#142）。A は bob から改名したが、etoki には
 // 入り直していないので、手元の行は bob のまま残る。**B がログインした時点で
-// bob を引いたら B が返らなければならない。** A が返ると、B のつもりの招待や
+// bob を引いたら B が返らなければならない。** A が返ると、B のつもりの
 // claim で A に権限が渡る。
 func TestFindUserByLogin_PrefersTheLatestHolderAfterRename(t *testing.T) {
 	t.Parallel()
@@ -811,8 +808,7 @@ func TestFindUserByLogin_PrefersTheLatestHolderAfterRename(t *testing.T) {
 }
 
 // GitHub の login は大文字小文字を区別しない。区別すると、Alice でログインした
-// 人を alice で招待したときに「まだログインしていない」と断られ、owner は相手に
-// 頼みに行く（#142）。
+// 人を alice で claim したときに「まだログインしていない」と断られる（#142）。
 func TestFindUserByLogin_IgnoresCase(t *testing.T) {
 	t.Parallel()
 
@@ -929,122 +925,6 @@ func TestMigrate_KeepsLoginOnlyOnTheLatestHolder(t *testing.T) {
 		 VALUES ('dup', 'github', '9', 'CAROL', '', '2026-03-01T00:00:00Z', '2026-03-01T00:00:00Z')`,
 	); err == nil {
 		t.Error("大文字小文字違いの同じ login を直接 INSERT できた")
-	}
-}
-
-// メンバーの読み書きは SQLite 側にしか無い。ユースケースのフェイクでは
-// 主キーの衝突も対象の不在も再現できないので、ここで実体に当てる。
-func TestBoardMembers_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	db := newDB(t)
-	repo := sqlite.NewBoardRepository(db)
-	seedOwnedBoard(t, db, "board-a", "user-a")
-
-	err := repo.AddMember(t.Context(), port.BoardMember{
-		BoardID: "board-a", UserID: "user-b", Role: port.RoleEditor,
-		CreatedAt: baseTime.Add(time.Minute),
-	})
-	if err != nil {
-		t.Fatalf("AddMember: %v", err)
-	}
-
-	// 並びは古い順。作った人が先頭に来る。
-	got, err := repo.ListMembers(t.Context(), "board-a")
-	if err != nil {
-		t.Fatalf("ListMembers: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("ListMembers = %d 件, want 2", len(got))
-	}
-	if got[0].UserID != "user-a" || got[0].Role != port.RoleOwner {
-		t.Errorf("先頭 = %+v, want user-a の owner", got[0])
-	}
-	if got[1].UserID != "user-b" || got[1].Role != port.RoleEditor {
-		t.Errorf("2 件目 = %+v, want user-b の editor", got[1])
-	}
-	if !got[1].CreatedAt.Equal(baseTime.Add(time.Minute)) {
-		t.Errorf("CreatedAt = %v, want %v", got[1].CreatedAt, baseTime.Add(time.Minute))
-	}
-
-	if err := repo.UpdateMemberRole(t.Context(), "board-a", "user-b", port.RoleViewer); err != nil {
-		t.Fatalf("UpdateMemberRole: %v", err)
-	}
-	if got, err = repo.ListMembers(t.Context(), "board-a"); err != nil {
-		t.Fatalf("ListMembers: %v", err)
-	}
-	if got[1].Role != port.RoleViewer {
-		t.Errorf("更新後の Role = %q, want %q", got[1].Role, port.RoleViewer)
-	}
-
-	if err := repo.RemoveMember(t.Context(), "board-a", "user-b"); err != nil {
-		t.Fatalf("RemoveMember: %v", err)
-	}
-	if got, err = repo.ListMembers(t.Context(), "board-a"); err != nil {
-		t.Fatalf("ListMembers: %v", err)
-	}
-	if len(got) != 1 || got[0].UserID != "user-a" {
-		t.Errorf("外した後の ListMembers = %+v", got)
-	}
-}
-
-// 黙って上書きすると、呼び出し側が「招待した」と「ロールを変えた」を
-// 区別できなくなる。
-func TestAddMember_RejectsDuplicate(t *testing.T) {
-	t.Parallel()
-
-	db := newDB(t)
-	repo := sqlite.NewBoardRepository(db)
-	seedOwnedBoard(t, db, "board-a", "user-a")
-
-	err := repo.AddMember(t.Context(), port.BoardMember{
-		BoardID: "board-a", UserID: "user-a", Role: port.RoleViewer, CreatedAt: baseTime,
-	})
-	if !errors.Is(err, port.ErrAlreadyExists) {
-		t.Fatalf("AddMember(重複) = %v, want ErrAlreadyExists", err)
-	}
-
-	// ロールは書き換わっていない。
-	got, err := repo.ListMembers(t.Context(), "board-a")
-	if err != nil {
-		t.Fatalf("ListMembers: %v", err)
-	}
-	if len(got) != 1 || got[0].Role != port.RoleOwner {
-		t.Errorf("ListMembers = %+v, want user-a の owner 1 件", got)
-	}
-}
-
-// 存在しない行への更新が黙って成功すると、呼び出し側は保存できたと思い込む。
-func TestBoardMembers_MissingIsNotFound(t *testing.T) {
-	t.Parallel()
-
-	db := newDB(t)
-	repo := sqlite.NewBoardRepository(db)
-	seedOwnedBoard(t, db, "board-a", "user-a")
-
-	err := repo.UpdateMemberRole(t.Context(), "board-a", "user-x", port.RoleViewer)
-	if !errors.Is(err, port.ErrNotFound) {
-		t.Errorf("UpdateMemberRole(未知) = %v, want ErrNotFound", err)
-	}
-
-	if err := repo.RemoveMember(t.Context(), "board-a", "user-x"); !errors.Is(err, port.ErrNotFound) {
-		t.Errorf("RemoveMember(未知) = %v, want ErrNotFound", err)
-	}
-}
-
-// 無いボードへの招待は外部キーで弾く。通ると、ボードを消したあとに残る
-// メンバー行と同じ「指し先の無い行」を自分で作ることになる。
-func TestAddMember_RejectsUnknownBoard(t *testing.T) {
-	t.Parallel()
-
-	repo := sqlite.NewBoardRepository(newDB(t))
-
-	err := repo.AddMember(t.Context(), port.BoardMember{
-		BoardID: "no-such-board", UserID: "user-a",
-		Role: port.RoleEditor, CreatedAt: baseTime,
-	})
-	if err == nil {
-		t.Fatal("AddMember: want foreign key error, got nil")
 	}
 }
 

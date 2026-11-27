@@ -71,11 +71,11 @@ func newAuthRouter(
 
 // testAllowedSubjects はテストのルーターがログインを通す相手。
 //
-// 本番の組み立て口は 1 人しか通さない（#492）。ここで複数を通すのは、共有の
-// テストが 2 人目以降のログインを要るため（usecase.NewAuthService の doc）。
-// stubProvider の既定の利用者（42）、共有のテストの利用者（1〜3）、
+// 本番の組み立て口は 1 人しか通さない（#492）。ここで複数を通すのは、2 人目の
+// ログインを要るテストがあるため（usecase.NewAuthService の doc）。
+// stubProvider の既定の利用者（42）、signInAs で入る利用者（1・2）、
 // otherUserProvider（99）。**通さない相手のテストはこれ以外の番号を使う。**
-var testAllowedSubjects = []string{"42", "1", "2", "3", "99"}
+var testAllowedSubjects = []string{"42", "1", "2", "99"}
 
 // newAuthDeps は newAuthRouter の組み立てを返す。認可サーバー（ADR 0076）を
 // 足したルーターを作るのに、同じ組み立てから始める。
@@ -125,11 +125,7 @@ func authDepsOn(
 		}
 
 		sessions = sqlite.NewSessionRepository(db, box)
-		auth := usecase.NewAuthService(provider, sessions, allowed)
-		deps.Auth = auth
-		// 招待は認証が無いと意味を持たない。組み立ての条件を etoki.New と
-		// 揃えておかないと、ここだけ 503 にならない構成になる（ADR 0017）。
-		deps.Members = usecase.NewBoardMemberService(boards, auth, usecase.NewBoardLocks())
+		deps.Auth = usecase.NewAuthService(provider, sessions, allowed)
 	}
 
 	return deps, sessions
@@ -163,6 +159,68 @@ func signIn(t *testing.T, r *gin.Engine) *http.Cookie {
 	}
 	t.Fatal("セッション cookie が返っていない")
 	return nil
+}
+
+// signInAs は identity を差し替えてログインし、cookie を返す。
+//
+// 2 人目のログインを要るテスト（MCP の許可が利用者ごとに分かれること、ボードを
+// 所有者で絞ること）が使う。通す相手は testAllowedSubjects に入れておく。
+func signInAs(
+	t *testing.T, r *gin.Engine, p *stubProvider, subject, login string,
+) *http.Cookie {
+	t.Helper()
+
+	p.identity = &port.Identity{
+		Provider: "github", Subject: subject, Login: login, DisplayName: login,
+	}
+	return signIn(t, r)
+}
+
+// createBoardAs はログイン済みの利用者としてボードを 1 枚作り、ID を返す。
+//
+// cookie を取らない createBoard（router_test.go）とは別に持つ。誰が作ったのかが
+// 要るテストが使う。
+func createBoardAs(t *testing.T, r *gin.Engine, cookie *http.Cookie, name string) string {
+	t.Helper()
+
+	rec := doJSON(t, r, http.MethodPost, "/api/boards", cookie, newBoardBody(name))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("createBoard: %d %s", rec.Code, rec.Body)
+	}
+
+	id, _ := decode[map[string]any](t, rec)["id"].(string)
+	if id == "" {
+		t.Fatalf("id が返っていない: %s", rec.Body)
+	}
+	return id
+}
+
+// doJSON は cookie と JSON ボディを付けてリクエストする。
+//
+// 既存の do はボディを取るが cookie を取らず、withCookie は逆。両方要るテストが
+// 使う。
+func doJSON(
+	t *testing.T, r *gin.Engine, method, path string, cookie *http.Cookie, body any,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	// httptest の既定の Host は example.com。指定を忘れると origin.go が 403 で
+	// 弾く。
+	req.Host = loopbackHost
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
 }
 
 // withCookie は cookie を付けてリクエストする。

@@ -9,7 +9,6 @@ import {
   openBoardWithMock,
   ekidokiButton,
   openPremiseDialog,
-  openShareDialog,
   openPanelTab,
   openUsageGuide,
   saveButton,
@@ -144,37 +143,6 @@ test.describe("ボタンの格", () => {
     const confirm = page.getByRole("alertdialog");
     await expect(confirm.getByRole("button", { name: "削除する" })).toHaveClass(DANGER);
     await expect(confirm.getByRole("button", { name: "やめる" })).toHaveClass(QUIET);
-  });
-
-  test("メンバーを外すのは取り消せない操作", async ({ page }) => {
-    const mock = baseMock();
-    mock.members = {
-      [BOARD_ID]: [
-        {
-          userId: "user-alice",
-          login: "alice",
-          displayName: "Alice",
-          role: "owner",
-          createdAt: "2026-08-01T09:00:00Z",
-        },
-        {
-          userId: "user-bob",
-          login: "bob",
-          displayName: "Bob",
-          role: "editor",
-          createdAt: "2026-08-03T09:00:00Z",
-        },
-      ],
-    };
-    await openBoardWithMock(page, mock);
-
-    const panel = await openShareDialog(page);
-    await panel.getByText("Bob").waitFor();
-    const remove = panel.getByRole("button", { name: /を外す$/ });
-    await expect(remove.first()).toBeVisible();
-    for (const button of await remove.all()) {
-      await expect(button).toHaveClass(DANGER);
-    }
   });
 });
 

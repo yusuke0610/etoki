@@ -20,7 +20,6 @@ function props(): ComponentProps<typeof AnnotationPanel> {
     },
     runs: { states: {}, onLoad: vi.fn() },
     stale: false,
-    canEdit: true,
     projectLink: null,
     onOpenDetail: vi.fn(),
     onOpenGuide: vi.fn(),
@@ -68,13 +67,5 @@ describe("AnnotationPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "使い方を見る" }));
 
     expect(panelProps.onOpenGuide).toHaveBeenCalledTimes(1);
-  });
-
-  // 読むだけの人にはフレームを絵にする操作が無いので、手順への案内も出さない。
-  // 使い方はメニューから開ける。
-  it("読むだけの人には、使い方のボタンを出さない", () => {
-    render(<AnnotationPanel {...props()} canEdit={false} />);
-
-    expect(screen.queryByRole("button", { name: "使い方を見る" })).toBeNull();
   });
 });

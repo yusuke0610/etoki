@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import type {
+  BoardAccess,
   BoardDeletion,
   BoardDetail,
   BoardTarget,
@@ -15,7 +16,7 @@ import type {
 import type { ApiMock } from "../api";
 import { annotationsOfScene, emptyScene, listEntry, summarize } from "../boardData";
 import { githubUnset } from "./github";
-import { boardIdOf, json, ownerOnly } from "./respond";
+import { boardIdOf, json } from "./respond";
 
 /**
  * ボードの背景の長さの上限（`usecase.MaxPremiseRunes`、ADR 0093）。
@@ -25,7 +26,10 @@ import { boardIdOf, json, ownerOnly } from "./respond";
  */
 const PREMISE_LIMIT = 4000;
 
-/** ボードそのもの（一覧・作成・取得・改名・背景・削除）と、シーンの保存・作成先。 */
+/**
+ * ボードそのもの（一覧・作成・取得・改名・背景・削除）と、シーンの保存・作成先・
+ * 権限。
+ */
 export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<void> {
   let issued = 0;
 
@@ -43,8 +47,6 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
     return {
       id: `board-new-${issued}`,
       name,
-      // 作った本人は必ず owner（ADR 0017）。
-      role: "owner",
       createdAt: "2026-08-05T10:00:00Z",
       updatedAt: "2026-08-05T10:00:00Z",
       scene: scene ?? emptyScene(),
@@ -166,10 +168,6 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
           await json(route, mock.deleteError.status, mock.deleteError.body);
           return;
         }
-        if (detail.role !== "owner") {
-          await ownerOnly(route);
-          return;
-        }
 
         // **本当に消す。** 204 を返すだけのモックにすると、一覧を引き直して
         // いないフロントでも緑になる（ADR 0042）。
@@ -207,7 +205,7 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
   );
 
   // ボードの背景（ADR 0093）。**判定はサーバーと同じ順にする。** 長さ（入力だけで
-  // 決まる）→ ロール → 照合。照合を素通しにすると、フロントが基準を送っていなくても、
+  // 決まる）→ 照合。照合を素通しにすると、フロントが基準を送っていなくても、
   // 古い基準を送り続けていても緑になる。
   await page.route(
     (url) => /^\/api\/boards\/[^/]+\/premise$/.test(url.pathname),
@@ -254,14 +252,6 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
         } satisfies ErrorResponse);
         return;
       }
-      // 書けるのは editor 以上（改名と同じ、ADR 0093）。
-      if (detail.role === "viewer") {
-        await json(route, 403, {
-          code: "forbidden_role",
-          error: "editor or above",
-        } satisfies ErrorResponse);
-        return;
-      }
       if (req.basePremise !== detail.premise) {
         await json(route, 409, {
           code: "premise_conflict",
@@ -275,6 +265,27 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
       const next: BoardDetail = { ...detail, premise };
       mock.details[id] = next;
       await json(route, 200, next);
+    },
+  );
+
+  // 権限はボードの取得とは別に訊かれる。GitHub が未設定・不通でもボードは
+  // 開ける必要があるため（ADR 0017）。
+  await page.route(
+    (url) => /^\/api\/boards\/[^/]+\/access$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+
+      const id = boardIdOf(route);
+      const configured = mock.access?.[id];
+      if (configured) {
+        await json(route, configured.status, configured.body);
+        return;
+      }
+
+      await json(route, 200, { projectAccess: "unknown" } satisfies BoardAccess);
     },
   );
 
@@ -295,13 +306,6 @@ export async function installBoardRoutes(page: Page, mock: ApiMock): Promise<voi
           code: "not_found",
           error: "not found",
         } satisfies ErrorResponse);
-        return;
-      }
-
-      // 削除そのものと同じく owner だけ（ADR 0042）。モックだけ緩くすると、
-      // 導線が owner 以外に漏れても E2E が緑のまま通る。
-      if (detail.role !== "owner") {
-        await ownerOnly(route);
         return;
       }
 

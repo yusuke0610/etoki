@@ -15,7 +15,7 @@ export type BoardLayout = "side" | "overlay" | "phone";
  *
  * **写すのは、切り替える境目を Excalidraw と同じにするため。** 別の境目を持つと、
  * Excalidraw だけがモバイル用 UI に切り替わった幅ができる。モバイル用 UI では
- * `Footer` が描かれないので、下の帯の中身（ロール・作成先・大きさ）が消える。
+ * `Footer` が描かれないので、下の帯の中身（作成先・大きさ）が消える。
  *
  * ライブラリを上げて定数が変わると、ここだけが古くなる。気づくのは
  * `web/e2e/layout.spec.ts` の「Excalidraw と判定が揃っている」で、実物の

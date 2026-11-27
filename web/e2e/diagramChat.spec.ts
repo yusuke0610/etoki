@@ -13,7 +13,7 @@ import { BOARD_ID, BOARD_NAME, baseMock, board } from "./helpers/fixtures";
  * プロンプトから図のドラフトを作るチャット（ADR 0041）。
  *
  * **確かめるのは画面側の約束。** 生成した瞬間にキャンバスへ流し込まないこと、
- * 置いても保存しないこと、未保存でも使えること、viewer に出さないこと。
+ * 置いても保存しないこと、未保存でも使えること。
  * LLM とのやりとりそのものはユースケース層の単体テストの担当。
  */
 
@@ -332,7 +332,6 @@ test.describe("図のドラフト", () => {
         interpretation: false,
         diagramDraft: false,
         creation: true,
-        sharing: true,
         mcpConnections: false,
       },
     };
@@ -412,19 +411,4 @@ test.describe("図のドラフト", () => {
       expect(kinds.filter((t) => t === "arrow").length).toBeGreaterThan(0);
     });
   }
-
-  // 生成は LLM を叩く外部呼び出しで課金も伴う。**viewer には出さない**
-  // （ADR 0017、解釈と同じ理由）。
-  test("viewer には出さない", async ({ page }) => {
-    const mock = baseMock();
-    const viewer = { ...board(), role: "viewer" as const };
-    mock.details[BOARD_ID] = viewer;
-    mock.boards = [{ ...(mock.boards[0] ?? {}), ...viewer, role: "viewer" }];
-    await openBoardWithMock(page, mock);
-
-    // タブごと出さない。**タブの並びが出ていることを先に見る。** 並びが
-    // 描かれていないだけなら、出していても「無い」で通る。
-    await expect(page.getByRole("tab", { name: "絵解いた", exact: true })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "etoki AI", exact: true })).toHaveCount(0);
-  });
 });

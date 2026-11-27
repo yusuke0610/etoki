@@ -77,7 +77,7 @@ export function missingProjectFieldsMessage(
  *
  * **`Record` にすることが担保。** `ErrorCode` は `api/openapi.yaml` からの
  * 生成物なので、契約に code を足して文言を書き忘れると `tsc` が落ちる
- * （`web/src/board/members/roles.ts` の ROLE_LABELS と同じ形）。
+ * （`web/src/board/diagram/diagramLabels.ts` の `DIAGRAM_KIND_LABELS` と同じ形）。
  *
  * 書くのは**次に何をすればよいか**。同じステータスでも打ち手が違うから code を
  * 分けたのであって、原因の言い換えだけでは分けた意味が無い。
@@ -85,17 +85,16 @@ export function missingProjectFieldsMessage(
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   invalid_input: "送った内容に不備があります。",
   // `/api` の既定の上限を超える本文。**scene_too_large と言い分ける。**
-  // あちらは貼った画像の話だが、こちらに当たるのは名前・作成先・招待・作成の
-  // 項目のような、本来その大きさに収まるもの。
+  // あちらは貼った画像の話だが、こちらに当たるのは名前・作成先・作成の項目の
+  // ような、本来その大きさに収まるもの。
   request_too_large: "送った内容が大きすぎます。量を減らして試してください。",
   login_required: "ログインが必要です。ログインし直してください。",
-  // 403 の 2 層は直す場所が違う（ADR 0017）。畳まずに言い分ける。
-  forbidden_role: "このボードでの権限が足りません。オーナーに頼んでください。",
+  // 403 は cross-site の拒否と直す場所が違う。畳まずに言い分ける。
   forbidden_project:
     "GitHub がこの Project への書き込みを拒みました。リポジトリの権限を確かめてください。",
   cross_site_rejected: "別のサイトからの操作として拒否されました。",
   not_found: "見つかりませんでした。消されたか、権限がありません。",
-  // 409 の 7 つ。打ち手が全部違うので、ここが畳まれると画面は何も案内できない。
+  // 409 はいくつもある。打ち手が全部違うので、ここが畳まれると画面は何も案内できない。
   scene_conflict: "他の人が先に保存しました。いまの内容を控えて、開き直してください。",
   target_locked: "作成先はもう変えられません。最初の draft issue を作ったためです。",
   target_mismatch: "作成先が変わっています。ボードを開き直してください。",
@@ -103,12 +102,6 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "絵解きのあとにボードが変わりました。絵解きからやり直してください。",
   previous_item_unknown:
     "更新先がこの絵のものではありません。絵解きからやり直してください。",
-  already_member: "すでにメンバーです。",
-  // 確認してから押すまでのあいだに、改名で空いた login を別人が取った（ADR 0053）。
-  // 確認で見せた相手とは違うので、もう一度確かめてもらう。
-  invitee_changed:
-    "確認したあとで、この login の持ち主が変わりました。もう一度確認してください。",
-  last_owner: "最後のオーナーは外せません。先に別のオーナーを立ててください。",
   // 大きさで弾かれた。**上限に届くのはほぼ貼った画像なので、そこまで言い切る。**
   // 「ボードが大きすぎます」だけでは、描いたものを減らせと読めてしまう。
   scene_too_large:
@@ -175,8 +168,6 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   llm_not_configured: "LLM が未設定です。etoki を起動する側で設定してください。",
   github_not_configured: "GitHub が未設定です。etoki を起動する側で設定してください。",
   auth_not_configured: "認証が未設定です。etoki を起動する側で設定してください。",
-  sharing_not_configured:
-    "共有には認証の設定が必要です。etoki を起動する側で設定してください。",
   mcp_connections_not_configured:
     "MCP のクライアントへの接続には認証の設定が必要です。etoki を起動する側で設定してください。",
 };

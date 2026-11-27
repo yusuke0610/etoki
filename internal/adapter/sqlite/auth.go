@@ -44,7 +44,8 @@ func (r *SessionRepository) UpsertUser(ctx context.Context, u port.User) (port.U
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// updated_at は触らない。「最後にログインした時刻」で、招待の確認に出す。
+	// updated_at は触らない。「最後にログインした時刻」で、`etoki claim` の確認に
+	// 出す。
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET login = ''
 		 WHERE provider = ? AND subject <> ? AND login <> '' AND login = ? COLLATE NOCASE`,

@@ -90,12 +90,12 @@ test.describe("メニューのアイコン", () => {
   // 項目の寸法を写しているので、ライブラリを上げて寸法が変わるとここが落ちる。
   test("押せない理由の文の頭が、項目の名前の頭と揃う", async ({ page }) => {
     const mock = baseMock();
-    // オーナーでなければ「作成先を変更」の代わりに理由の文が出る。
-    mock.details[BOARD_ID] = { ...board(), role: "editor" };
+    // 作成先が固定済みなら「作成先を変更」の代わりに理由の文が出る。
+    mock.details[BOARD_ID] = { ...board(), targetLocked: true };
     await openBoardWithMock(page, mock);
     const menu = await openBoardMenu(page);
 
-    const note = menu.getByText("作成先を変えられるのはオーナーだけです");
+    const note = menu.getByText("作成先は確定（draft issue を作成済み）");
     const name = item(menu, "書き出し").locator(".dropdown-menu-item__text");
     expect(Math.abs((await textLeft(note)) - (await textLeft(name)))).toBeLessThan(1);
   });

@@ -221,29 +221,10 @@ test.describe("ボード", () => {
     ]);
     const unselected = page.getByRole("region", { name: "作成先が未選択" });
     await expect(unselected.getByRole("button", { name: legacy.name })).toBeVisible();
-    // 開くと作成先の選択から始まることを、押す前に言う（オーナーなので選べる）。
+    // 開くと作成先の選択から始まることを、押す前に言う。
     await expect(
       unselected.getByRole("button", { name: legacy.name }),
     ).toHaveAccessibleDescription(/開くと作成先を選べます/);
-  });
-
-  // 作成先を選べるのはオーナーだけ（ADR 0017）。押した先で選べないのに
-  // 「選べます」と書くと、案内が嘘になる。
-  test("オーナーでなければ、未選択のカードは作成先をオーナーが選ぶと書く", async ({
-    page,
-  }) => {
-    const mock = baseMock();
-    const legacy = { ...unselectedBoard(), role: "editor" as const };
-    mock.boards = [...mock.boards, summarize(legacy)];
-    mock.details[legacy.id] = legacy;
-    mock.annotations[legacy.id] = [];
-
-    await installApi(page, mock);
-    await page.goto("/");
-
-    await expect(
-      page.locator(".board-list").getByRole("button", { name: legacy.name }),
-    ).toHaveAccessibleDescription(/作成先はオーナーが選びます/);
   });
 
   // 開く前に、どのボードに手を打つものがあるかが分かる（#200、中核思想 3）。
@@ -267,61 +248,43 @@ test.describe("ボード", () => {
     await installApi(page, mock);
     await page.goto("/");
 
-    // カードは名前のボタンを持つ項目。ロールや状態はボタンの外にある（#311）。
+    // カードは名前のボタンを持つ項目。状態はボタンの外にある（#311）。
     const card = (name: string) =>
       page
         .locator(".board-list li")
         .filter({ has: page.getByRole("button", { name, exact: true }) });
     // 3 状態とも 1 件ずつあるボード。並びは未作成・作成済み・変更あり。
-    await expect(card(BOARD_NAME).locator(".badge:not(.badge-role)")).toHaveText([
+    await expect(card(BOARD_NAME).locator(".badge")).toHaveText([
       "未作成 1",
       "作成済み 1",
       "変更あり 1",
     ]);
-    await expect(card(partial.name).locator(".badge:not(.badge-role)")).toHaveText([
-      "未作成 1",
-    ]);
+    await expect(card(partial.name).locator(".badge")).toHaveText(["未作成 1"]);
     // すべて 0 件なら「絵なし」。何も出さないと、読めなかったのと区別できない。
-    await expect(card(empty.name).locator(".badge:not(.badge-role)")).toHaveText([
-      "絵なし",
-    ]);
+    await expect(card(empty.name).locator(".badge")).toHaveText(["絵なし"]);
     // 読めなかったボードは 0 件に化けさせない。一覧のほかのボードは出る（#207）。
     await expect(card(broken.name)).toContainText("絵の状態を読めません");
-    await expect(card(broken.name).locator(".badge:not(.badge-role)")).toHaveCount(0);
+    await expect(card(broken.name).locator(".badge")).toHaveCount(0);
   });
 
-  // 自分が何をできるのかは、開く前から見えている（ADR 0017、#200）。
-  test("カードには自分のロールと更新時刻が出る", async ({ page }) => {
-    const mock = baseMock();
-    for (const role of ["editor", "viewer"] as const) {
-      const b = { ...board(), id: `board-${role}`, name: `${role} のブレスト`, role };
-      mock.boards.push(summarize(b));
-      mock.details[b.id] = b;
-    }
-
-    await installApi(page, mock);
+  test("カードには更新時刻が出る", async ({ page }) => {
+    await installApi(page, baseMock());
     await page.goto("/");
 
-    // カードは名前のボタンを持つ項目。ロールや状態はボタンの外にある（#311）。
-    const card = (name: string) =>
-      page
-        .locator(".board-list li")
-        .filter({ has: page.getByRole("button", { name, exact: true }) });
-    await expect(card(BOARD_NAME).locator(".badge-role")).toHaveText("オーナー");
-    await expect(card("editor のブレスト").locator(".badge-role")).toHaveText(
-      "編集できる",
-    );
-    await expect(card("viewer のブレスト").locator(".badge-role")).toHaveText("読むだけ");
+    // カードは名前のボタンを持つ項目。更新時刻と状態はボタンの外にある（#311）。
+    const card = page
+      .locator(".board-list li")
+      .filter({ has: page.getByRole("button", { name: BOARD_NAME, exact: true }) });
 
     // 更新時刻は経過で書き、機械が読める形も添える。経過の書き方の境目は
     // vitest（`updatedLabel.test.ts`）が見ている。
-    const updated = card(BOARD_NAME).locator("time");
+    const updated = card.locator("time");
     await expect(updated).toHaveAttribute("datetime", board().updatedAt);
     await expect(updated).toHaveText(/^更新: /);
-    // 名前はボード名だけ。ロール・更新時刻・状態は説明として結ぶ。
-    const open = card(BOARD_NAME).getByRole("button");
+    // 名前はボード名だけ。更新時刻・状態は説明として結ぶ。
+    const open = card.getByRole("button");
     await expect(open).toHaveAccessibleName(BOARD_NAME);
-    await expect(open).toHaveAccessibleDescription(/オーナー 更新: .* 未作成 1/);
+    await expect(open).toHaveAccessibleDescription(/^更新: .* 未作成 1/);
   });
 
   // ボードで作成してから戻ると、件数が変わっている。読み直さないと「未作成 1」が
@@ -345,7 +308,7 @@ test.describe("ボード", () => {
       page
         .locator(".board-list li")
         .filter({ has: page.getByRole("button", { name: BOARD_NAME, exact: true }) })
-        .locator(".badge:not(.badge-role)"),
+        .locator(".badge"),
     ).toHaveText(["作成済み 3"]);
   });
 
@@ -384,7 +347,7 @@ test.describe("ボード", () => {
     const badges = page
       .locator(".board-list li")
       .filter({ has: page.getByRole("button", { name: BOARD_NAME, exact: true }) })
-      .locator(".badge:not(.badge-role)");
+      .locator(".badge");
     await expect(badges).toHaveText(["作成済み 3"]);
 
     // 止めていた古い応答を、ここで届ける。

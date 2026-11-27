@@ -55,7 +55,6 @@ function detail(id: string, patch: Partial<BoardDetail> = {}): BoardDetail {
   return {
     id,
     name: id,
-    role: "owner",
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-07T00:00:00Z",
     repositoryOwner: "acme",
@@ -456,10 +455,9 @@ describe("useBoardNavigation", () => {
       expect(boardsApi.get).not.toHaveBeenCalled();
     });
 
-    // 条件は `BoardPage` が「作成先を変更」を出す条件と同じ（ADR 0014 / 0017）。
+    // 条件は `BoardPage` が「作成先を変更」を出す条件と同じ（ADR 0014）。
     it.each([
-      { name: "owner で作成先が固定されていない", patch: {}, picking: true },
-      { name: "編集できる人", patch: { role: "editor" as const }, picking: false },
+      { name: "作成先が固定されていない", patch: {}, picking: true },
       { name: "作成先が固定済み", patch: { targetLocked: true }, picking: false },
     ])(
       "作成先の選び直しから始めるのは、選び直せるボードだけ（$name）",

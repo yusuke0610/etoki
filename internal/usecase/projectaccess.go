@@ -17,8 +17,8 @@ type ProjectAccess string
 const (
 	// ProjectAccessAllowed は書けることを表す。
 	ProjectAccessAllowed ProjectAccess = "allowed"
-	// ProjectAccessDenied は書けないことを表す。招待されただけで、リポジトリの
-	// アクセス権を持たない利用者がこれになる。
+	// ProjectAccessDenied は書けないことを表す。GitHub の資格情報に、その
+	// Project への書き込み権限が無い。
 	ProjectAccessDenied ProjectAccess = "denied"
 	// ProjectAccessUnknown は確かめられなかったことを表す。
 	//
@@ -30,16 +30,13 @@ const (
 
 // BoardAccessState は操作者から見たボードの権限。
 type BoardAccessState struct {
-	// Role は etoki 側のロール。
-	Role port.BoardRole
 	// ProjectAccess は GitHub 側の書き込み可否。
 	ProjectAccess ProjectAccess
 }
 
-// BoardAccessService はボードに対する権限を、etoki 側と GitHub 側の両方で返す。
+// BoardAccessService は作成先の Project に書けるかを返す（ADR 0017）。
 //
-// 2 つを 1 つの値に畳まない。「開けるが書けない」が普通に起きる状態なので、
-// 畳むとそれを画面に出せなくなる（ADR 0017）。
+// **判定ではなく状態。** 実際に作れるかは作成時に GitHub が返したものが正しい。
 type BoardAccessService struct {
 	boardGuard
 	// github は nil でもよい。未設定なら ProjectAccessUnknown を返す。
@@ -63,15 +60,12 @@ func NewBoardAccessService(
 
 // Get は操作者から見たボードの権限を返す。
 func (s *BoardAccessService) Get(ctx context.Context, boardID string) (BoardAccessState, error) {
-	acc, err := s.access(ctx, boardID, port.RoleViewer)
+	acc, err := s.access(ctx, boardID)
 	if err != nil {
 		return BoardAccessState{}, err
 	}
 
-	return BoardAccessState{
-		Role:          acc.Role,
-		ProjectAccess: s.projectAccess(ctx, acc.Board.Target),
-	}, nil
+	return BoardAccessState{ProjectAccess: s.projectAccess(ctx, acc.Board.Target)}, nil
 }
 
 // projectAccess は GitHub 側の書き込み可否を確かめる。

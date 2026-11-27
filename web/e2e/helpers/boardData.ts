@@ -15,7 +15,6 @@ export function summarize(b: BoardDetail): BoardSummary {
   return {
     id: b.id,
     name: b.name,
-    role: b.role,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
     repositoryOwner: b.repositoryOwner,

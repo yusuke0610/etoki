@@ -27,7 +27,7 @@ const HEADING_ID = "usage-guide-heading";
  * 粒度・種別の見出しは表（`STATE_LABEL` など）から引く。書き写すと、表を
  * 直した日にここだけが古くなる。
  *
- * 器と閉じ方は `ShareDialog` と同じ（ブラウザの `<dialog>` をモーダルで開く）。
+ * 器と閉じ方は `PremiseDialog` と同じ（ブラウザの `<dialog>` をモーダルで開く）。
  */
 export function UsageGuideDialog({ open, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -57,7 +57,7 @@ export function UsageGuideDialog({ open, onClose }: Props) {
       ref={dialog}
       className="modal-dialog usage-guide"
       aria-labelledby={HEADING_ID}
-      // Esc も「閉じる」もここに集まる（`ShareDialog` と同じ）。
+      // Esc も「閉じる」もここに集まる（`PremiseDialog` と同じ）。
       onClose={() => {
         onClose();
         // **開いた口へ焦点を戻す。** パネルの案内から開いたならそのボタンへ。

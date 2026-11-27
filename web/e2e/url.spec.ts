@@ -274,26 +274,8 @@ test.describe("ボードの URL", () => {
       expect(search(page)).toBe(`?board=${BOARD_ID}`);
     });
 
-    // 作成先を変えられるのは owner だけ（ADR 0017）。**URL から入る口だけを
+    // 固定済みなら変更手段そのものが無い（ADR 0014）。**URL から入る口だけを
     // 緩めない。** 緩めると、画面から押せないはずの操作にそこからだけ入れる。
-    test("viewer は URL から選択画面に入れない", async ({ page }) => {
-      const mock = baseMock();
-      mock.details[BOARD_ID] = { ...board(), role: "viewer" };
-      mock.boards = mock.boards.map((b) => ({ ...b, role: "viewer" }));
-
-      await installApi(page, mock);
-      await page.goto(`/?board=${BOARD_ID}&picking=1`);
-
-      await expect(
-        page.getByRole("heading", { name: BOARD_NAME, level: 1 }),
-      ).toBeVisible();
-      await expect(page.locator(".picker")).toHaveCount(0);
-      // 通らなかった指定は URL からも落とす。残すと、読み込み直すたびに
-      // 通らない指定を送り直すことになる。
-      expect(search(page)).toBe(`?board=${BOARD_ID}`);
-    });
-
-    // 固定済みなら変更手段そのものが無い（ADR 0014）。上と同じ穴。
     test("作成先が固定されていたら URL から選択画面に入れない", async ({ page }) => {
       const mock = baseMock();
       mock.details[BOARD_ID] = { ...board(), targetLocked: true };
@@ -305,6 +287,8 @@ test.describe("ボードの URL", () => {
         page.getByRole("heading", { name: BOARD_NAME, level: 1 }),
       ).toBeVisible();
       await expect(page.locator(".picker")).toHaveCount(0);
+      // 通らなかった指定は URL からも落とす。残すと、読み込み直すたびに
+      // 通らない指定を送り直すことになる。
       expect(search(page)).toBe(`?board=${BOARD_ID}`);
     });
   });

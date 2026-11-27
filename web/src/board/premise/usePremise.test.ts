@@ -23,7 +23,6 @@ function deferred<T>() {
 const board: BoardDetail = {
   id: "b1",
   name: "ロードマップ",
-  role: "editor",
   createdAt: "2026-10-01T00:00:00Z",
   updatedAt: "2026-10-07T00:00:00Z",
   repositoryOwner: "acme",

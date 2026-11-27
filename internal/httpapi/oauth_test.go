@@ -330,8 +330,8 @@ func TestMCP_BearerSeesOnlyOwnBoards(t *testing.T) {
 	r, provider, _ := newOAuthRouter(t, oauthRouterOptions{publicURL: "http://" + loopbackHost})
 	alice := signInAs(t, r, provider, "1", "alice")
 	bob := signInAs(t, r, provider, "2", "bob")
-	mine := createSharedBoard(t, r, alice, "alice のボード")
-	theirs := createSharedBoard(t, r, bob, "bob のボード")
+	mine := createBoardAs(t, r, alice, "alice のボード")
+	theirs := createBoardAs(t, r, bob, "bob のボード")
 
 	_, tokens := connectClient(t, r, alice)
 	session := connectMCPWithToken(t, r, tokens.AccessToken)

@@ -14,8 +14,6 @@ import type {
   BoardAccess,
   BoardDetail,
   BoardWithFiles,
-  BoardMember,
-  BoardRole,
   BoardListEntry,
   BoardTarget,
   BoardTargetDisplay,
@@ -26,15 +24,12 @@ import type {
   GenerateDiagramRequest,
   Interpretation,
   InterpretationJob,
-  Invitee,
-  InviteMemberRequest,
   Project,
   ProjectFieldsCheck,
   RenameBoardRequest,
   RepositoryList,
   SaveSceneRequest,
   SaveSceneResponse,
-  SetMemberRoleRequest,
   SetPremiseRequest,
   SyncRun,
 } from "./types";
@@ -175,8 +170,8 @@ export const boardsApi = {
   /**
    * ボードを削除する。
    *
-   * **owner だけ**（ADR 0017）。**GitHub 側の draft issue は消えない**ので、
-   * 押す前に `deletion` で何が残るかを見せて確認させる（ADR 0042）。
+   * **GitHub 側の draft issue は消えない**ので、押す前に `deletion` で何が残るかを
+   * 見せて確認させる（ADR 0042）。
    */
   delete: (id: string) => request<void>(`/api/boards/${id}`, { method: "DELETE" }),
 
@@ -338,45 +333,6 @@ export const boardsApi = {
     request<CreatedRun>(`/api/boards/${boardId}/annotations/${annotationId}/items`, {
       method: "POST",
       body: JSON.stringify(interpretation),
-    }),
-};
-
-/**
- * ボードの共有。
- *
- * 招待される側にリポジトリのアクセス権は要らない。ブレストに呼ぶ相手と
- * GitHub に書ける相手は同じではない（ADR 0017）。認証を設定していない構成では
- * すべて 503 が返る。
- */
-export const membersApi = {
-  list: (boardId: string) => request<BoardMember[]>(`/api/boards/${boardId}/members`),
-
-  /**
-   * 招待の前に、login が誰に当たるのかを引く（ADR 0053）。相手は一度 etoki に
-   * ログインしている必要がある。
-   */
-  lookupInvitee: (boardId: string, login: string) =>
-    request<Invitee>(`/api/boards/${boardId}/invitee?login=${encodeURIComponent(login)}`),
-
-  /**
-   * `lookupInvitee` で確かめた相手を招待する。**userId を必ず送る。** いまその
-   * login を持つ相手と違えば、サーバーが `invitee_changed` で断る。
-   */
-  invite: (boardId: string, login: string, userId: string, role: BoardRole) =>
-    request<BoardMember>(`/api/boards/${boardId}/members`, {
-      method: "POST",
-      body: JSON.stringify({ login, userId, role } satisfies InviteMemberRequest),
-    }),
-
-  setRole: (boardId: string, userId: string, role: BoardRole) =>
-    request<BoardMember>(`/api/boards/${boardId}/members/${encodeURIComponent(userId)}`, {
-      method: "PUT",
-      body: JSON.stringify({ role } satisfies SetMemberRoleRequest),
-    }),
-
-  remove: (boardId: string, userId: string) =>
-    request<void>(`/api/boards/${boardId}/members/${encodeURIComponent(userId)}`, {
-      method: "DELETE",
     }),
 };
 

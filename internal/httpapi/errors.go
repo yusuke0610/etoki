@@ -37,26 +37,25 @@ type errorMapping struct {
 // **表に無かったときの既定だけ**で、そこは fail / failCatalog が持つ。
 //
 // **ステータスだけでは打ち手が決まらない。** 409 には「開き直す」「諦める」
-// 「解釈からやり直す」「入力を変える」が同居しており、403 は etoki のロール不足と
-// GitHub 側の拒否で直す場所が違う（ADR 0017）。画面が打ち手を分けられるよう、
-// ステータスと一緒に code を返す。
+// 「解釈からやり直す」「入力を変える」が同居しており、403 は cross-site の拒否と
+// GitHub 側の拒否で直す場所が違う。画面が打ち手を分けられるよう、ステータスと
+// 一緒に code を返す。
 //
 // 先に一致したものを採る。sentinel は互いに入れ子にならない（ユースケース層が
 // port のエラーを自分のものに写し替えて返す）ので、並び順に依存する組は無い。
 var errorMappings = []errorMapping{
 	{usecase.ErrInvalidInput, http.StatusBadRequest, apitypes.ErrorCodeInvalidInput},
 
-	// メンバーでないボードもここに来る。403 と区別すると、ID を総当たりして
-	// 他人のボードの存在を確かめられる（ADR 0016 / 0017）。
+	// メンバーでないボードもここに来る。区別すると、ID を総当たりして他人の
+	// ボードの存在を確かめられる（ADR 0016）。
 	{usecase.ErrBoardNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 	{usecase.ErrAnnotationNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 	// 他人のジョブも別のボードのジョブもここに来る（ADR 0085）。
 	{usecase.ErrJobNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 	{port.ErrNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 
-	// 403 は 2 層ある。**畳まない。** etoki のロール不足は owner に頼めば済み、
-	// GitHub の拒否はリポジトリ側の権限を直すしかない。直す場所が違う（ADR 0017）。
-	{usecase.ErrForbidden, http.StatusForbidden, apitypes.ErrorCodeForbiddenRole},
+	// GitHub の拒否。直すのはリポジトリ側の権限か、GitHub の資格情報（ADR 0017）。
+	// cross-site の拒否（cross_site_rejected）とは直す場所が違うので畳まない。
 	{port.ErrForbidden, http.StatusForbidden, apitypes.ErrorCodeForbiddenProject},
 
 	// セッションが失効した、あるいはトークンを更新できなかった。画面が
@@ -75,9 +74,6 @@ var errorMappings = []errorMapping{
 	{usecase.ErrTargetMismatch, http.StatusConflict, apitypes.ErrorCodeTargetMismatch},
 	{usecase.ErrContentHashMismatch, http.StatusConflict, apitypes.ErrorCodeContentHashMismatch},
 	{usecase.ErrPreviousItemUnknown, http.StatusConflict, apitypes.ErrorCodePreviousItemUnknown},
-	{usecase.ErrAlreadyMember, http.StatusConflict, apitypes.ErrorCodeAlreadyMember},
-	{usecase.ErrInviteeChanged, http.StatusConflict, apitypes.ErrorCodeInviteeChanged},
-	{usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
 
 	// 既定の上限を超える本文。**scene_too_large に畳まない。** あちらは「貼った
 	// 画像を減らす」、こちらは「送っているものがそもそも想定外」で、画面が
@@ -189,15 +185,6 @@ func (h *handlers) githubNotConfigured(c *gin.Context) {
 func (h *handlers) authNotConfigured(c *gin.Context) {
 	notConfigured(c, apitypes.ErrorCodeAuthNotConfigured,
 		"authentication is not configured", h.hints.Auth)
-}
-
-// sharingNotConfigured は共有が組み立てられていないときの案内。
-//
-// 招待は「誰であるか」が決まって初めて意味を持つ。認証を設定していない構成は
-// 利用者 1 人なので、共有する相手がいない（ADR 0016 / 0017）。
-func (h *handlers) sharingNotConfigured(c *gin.Context) {
-	notConfigured(c, apitypes.ErrorCodeSharingNotConfigured,
-		"sharing requires authentication", h.hints.Auth)
 }
 
 // notConfigured は設定不足の本文に、配線から受け取った案内を添える（ADR 0083）。

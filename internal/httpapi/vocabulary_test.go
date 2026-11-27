@@ -51,9 +51,6 @@ func TestVocabulary_MatchesContract(t *testing.T) {
 			name: "SyncState", dir: "internal/domain",
 		},
 		{
-			name: "BoardRole", dir: "port",
-		},
-		{
 			// 作成先の Project のフィールドの確認（ADR 0088）。境界に出るのは
 			// usecase の型で、domain / port には無い。
 			name: "ProjectFieldRequirement", dir: "internal/usecase",

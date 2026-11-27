@@ -20,7 +20,6 @@ import {
 import { useExclusion } from "./exclusion";
 import { useEditedDrafts } from "./annotations/useEditedDrafts";
 import { useInterpretations } from "./annotations/useInterpretations";
-import { ShareDialog } from "./members/ShareDialog";
 import { UsageGuideDialog } from "./UsageGuideDialog";
 import { type DiagramMode } from "./diagram/DiagramTab";
 import { useDiagramDraft } from "./diagram/useDiagramDraft";
@@ -40,7 +39,6 @@ import { useCreation } from "./annotations/useCreation";
 import { useRunHistories } from "./annotations/useRunHistories";
 import { railBadgesOf } from "./panelState";
 import { projectLink } from "./target/projectLink";
-import { canEditBoard } from "./members/roles";
 import { useBoardDeletion, useRename, useTargetRefresh } from "./useBoardManagement";
 import { useBoardNotify } from "./useBoardNotify";
 import { useBoardTransfer } from "./useBoardTransfer";
@@ -159,8 +157,6 @@ export function BoardPage({
   theme,
   onThemeChange,
 }: Props) {
-  const canEdit = canEditBoard(board.role);
-
   // 画面全体に出す失敗は通知へ（`useBoardNotify`、ADR 0058）。**束のまま
   // 持たない。** 中の関数を依存に置くフックが多い。
   const { onError, dismissHere, dismissKey } = useBoardNotify();
@@ -232,13 +228,9 @@ export function BoardPage({
     closePhonePanel,
     showTab,
   } = usePanelLayout();
-  // 共有のダイアログ（`ShareDialog`、#248）。開くのはキャンバスのメニュー。
-  // **関数を安定させる。** メニューは `useMemo` で持つ（ADR 0065）。
-  const [shareOpen, setShareOpen] = useState(false);
-  const openShare = useCallback(() => setShareOpen(true), []);
-  const closeShare = useCallback(() => setShareOpen(false), []);
   // 使い方のダイアログ（`UsageGuideDialog`、ADR 0094）。開くのはキャンバスの
   // メニューと、右のパネルの「選択中のフレーム」の案内。勝手には開かない。
+  // **関数を安定させる。** メニューは `useMemo` で持つ（ADR 0065）。
   const [guideOpen, setGuideOpen] = useState(false);
   const openGuide = useCallback(() => setGuideOpen(true), []);
   const closeGuide = useCallback(() => setGuideOpen(false), []);
@@ -330,9 +322,8 @@ export function BoardPage({
     updateElements,
     // 置いた図を見せる。スマホでは全面のパネルがキャンバスを隠している（#199）。
     onPlaced: closePhonePanel,
-    // 未設定のうちは引かない。capabilities が届くまで（null）も待つ。viewer には
-    // 生成の口を出さない（下の `canEdit`）ので、引いても見せる先が無い。
-    enabled: capabilities?.diagramDraft === true && canEdit,
+    // 未設定のうちは引かない。capabilities が届くまで（null）も待つ。
+    enabled: capabilities?.diagramDraft === true,
   });
 
   // 表を置く・フレームへ寄せる（`useCanvasCommands`）。
@@ -468,7 +459,7 @@ export function BoardPage({
    * 止める（対角も `useExclusion` が弾く）ので、`running` を見れば足りる
    * （`exclusion.ts`）。
    */
-  const canSave = canEdit && api !== null && exclusive.running === null;
+  const canSave = api !== null && exclusive.running === null;
 
   // Ctrl / Cmd + S で保存する（`useSaveShortcut`、issue #145）。
   useSaveShortcut(canSave, save);
@@ -499,7 +490,6 @@ export function BoardPage({
   // （ADR 0041）。片方から推し量ると、使えると案内したほうが 503 を返す。
   const diagramUnavailable = unavailableReason(capabilities, "diagramDraft");
   const creationUnavailable = unavailableReason(capabilities, "creation");
-  const sharingUnavailable = unavailableReason(capabilities, "sharing");
 
   const annotationIdsOnCanvas = new Set(
     currentElements()
@@ -576,7 +566,6 @@ export function BoardPage({
         renaming={renaming}
         onRename={() => void rename()}
         dirty={dirty}
-        canEdit={canEdit}
         onSave={() => void save()}
         onEkidoki={() => void startEkidoki()}
         canSave={canSave}
@@ -591,7 +580,6 @@ export function BoardPage({
       renaming,
       rename,
       dirty,
-      canEdit,
       save,
       startEkidoki,
       canSave,
@@ -600,11 +588,10 @@ export function BoardPage({
     ],
   );
 
-  // 下に出す。ロール・作成先・大きさ（`BoardContext`）。作り直さない理由は上と同じ。
+  // 下に出す。作成先・大きさ（`BoardContext`）。作り直さない理由は上と同じ。
   const footerUI = useMemo(
     () => (
       <BoardContext
-        role={board.role}
         targetLabel={targetLabel}
         repository={`${board.repositoryOwner}/${board.repositoryName}`}
         linkHref={linkHref}
@@ -615,7 +602,6 @@ export function BoardPage({
       />
     ),
     [
-      board.role,
       board.repositoryOwner,
       board.repositoryName,
       board.targetLocked,
@@ -633,12 +619,9 @@ export function BoardPage({
     () => (
       <BoardMenu
         onClose={onClose}
-        canEdit={canEdit}
-        role={board.role}
         targetLocked={board.targetLocked}
         onRename={() => setNameDraft(board.name)}
         onPremise={openPremise}
-        onShare={openShare}
         onOpenGuide={openGuide}
         creationUnavailable={creationUnavailable}
         onRefreshTarget={() => void refreshTargetDisplay()}
@@ -658,12 +641,9 @@ export function BoardPage({
     ),
     [
       onClose,
-      canEdit,
       board.name,
-      board.role,
       setNameDraft,
       openPremise,
-      openShare,
       openGuide,
       board.targetLocked,
       api,
@@ -717,9 +697,9 @@ export function BoardPage({
 
   /*
    * 「絵解いた」（注釈）と「etoki AI」（図のドラフト）は右の 1 か所にタブで並べる
-   * （ADR 0065）。共有はボードそのものの管理なので、ここではなくメニューから
-   * ダイアログで開く（#248、ADR 0078）。スマホの上の帯（`BoardBar`）も、同じ
-   * タブから開くボタンを作る。中身と境界の包み方は `PanelTabContents`。
+   * （ADR 0065）。ボードそのものの管理（背景や使い方）は、ここではなくメニューから
+   * ダイアログで開く（ADR 0078）。スマホの上の帯（`BoardBar`）も、同じタブから
+   * 開くボタンを作る。中身と境界の包み方は `PanelTabContents`。
    */
   const panelTabs: TabSpec[] = [
     {
@@ -743,72 +723,64 @@ export function BoardPage({
           }}
           runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
           stale={dirty}
-          canEdit={canEdit}
           projectLink={link}
           onOpenDetail={openDetail}
           onOpenGuide={openGuide}
         />
       ),
     },
-    // 図のドラフト。**viewer には出さない**（ADR 0017）。生成は LLM を
-    // 叩く外部呼び出しで課金も伴うので、解釈と同じ扱いにする。LLM が
-    // 未設定でもタブは出す。**黙って消さず、開いた先で理由を見せる**
-    // （ADR 0030、中核思想 3）。mermaid を貼る口（ADR 0062）も同じタブに
-    // 置く。LLM を通さないので未設定でも使えるが、描かせないのと同じ
-    // 理由で viewer には出さない。
-    ...(canEdit
-      ? [
-          {
-            id: "diagram" as const,
-            label: "etoki AI",
-            content: (
-              <DiagramTabContent
-                mode={diagramMode}
-                onModeChange={setDiagramMode}
-                chat={{
-                  chat,
-                  prompt: diagramPrompt,
-                  onPromptChange: setDiagramPrompt,
-                  onChangeKind: handleChangeKind,
-                  onSend: generateDiagram,
-                  onPlace: () => void placeDraft(),
-                  placed: draftPlaced,
-                  unavailable: diagramUnavailable,
-                }}
-                paste={{
-                  text: pasteText,
-                  onChangeText: setPasteText,
-                  onPlace: pasteMermaid,
-                }}
-              />
-            ),
-          },
-        ]
-      : []),
+    // 図のドラフト。LLM が未設定でもタブは出す。**黙って消さず、開いた先で
+    // 理由を見せる**（ADR 0030、中核思想 3）。mermaid を貼る口（ADR 0062）も
+    // 同じタブに置く。LLM を通さないので未設定でも使える。
+    {
+      id: "diagram",
+      label: "etoki AI",
+      content: (
+        <DiagramTabContent
+          mode={diagramMode}
+          onModeChange={setDiagramMode}
+          chat={{
+            chat,
+            prompt: diagramPrompt,
+            onPromptChange: setDiagramPrompt,
+            onChangeKind: handleChangeKind,
+            onSend: generateDiagram,
+            onPlace: () => void placeDraft(),
+            placed: draftPlaced,
+            unavailable: diagramUnavailable,
+          }}
+          paste={{
+            text: pasteText,
+            onChangeText: setPasteText,
+            onPlace: pasteMermaid,
+          }}
+        />
+      ),
+    },
   ];
 
   return (
     <div className="board" data-layout={layout}>
-      {canEdit && (
-        // **入力そのものは出さない。** 押す口はメニューの「取り込み」1 つで、
-        // ここはファイルを選ばせるためだけに置いてある。**メニューの中に
-        // 置かない。** メニューは押すと閉じて中身ごと外れるので、選んだ
-        // ファイルを受け取る前に入力が消える。
-        <input
-          ref={fileInput}
-          type="file"
-          aria-label="取り込む .excalidraw ファイル"
-          accept=".excalidraw,application/json"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            // 選び直しで同じファイルをもう一度選べるようにする。値を
-            // 残すと、2 回目の選択で change が発火しない。
-            e.target.value = "";
-            if (file) void importScene(file);
-          }}
-        />
-      )}
+      {/*
+        **入力そのものは出さない。** 押す口はメニューの「取り込み」1 つで、
+        ここはファイルを選ばせるためだけに置いてある。**メニューの中に
+        置かない。** メニューは押すと閉じて中身ごと外れるので、選んだ
+        ファイルを受け取る前に入力が消える。
+      */}
+      <input
+        ref={fileInput}
+        type="file"
+        aria-label="取り込む .excalidraw ファイル"
+        accept=".excalidraw,application/json"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // 選び直しで同じファイルをもう一度選べるようにする。値を
+          // 残すと、2 回目の選択で change が発火しない。
+          e.target.value = "";
+          if (file) void importScene(file);
+        }}
+      />
 
       {deletion !== null && deletion.status !== "loading" && (
         <DeleteConfirm
@@ -859,7 +831,6 @@ export function BoardPage({
                 initialData={initialData}
                 onChange={handleChange}
                 theme={theme}
-                canEdit={canEdit}
                 onError={onError}
                 renderTopRightUI={renderTopRightUI}
                 overlayBoxes={overlayBoxes}
@@ -890,7 +861,6 @@ export function BoardPage({
                   creation={creation}
                   runs={{ states: runHistories, onLoad: (id) => void loadRuns(id) }}
                   stale={dirty}
-                  canEdit={canEdit}
                   projectLink={link}
                   targetLabel={targetLabel}
                 />
@@ -916,15 +886,8 @@ export function BoardPage({
               openRequest={panelOpenRequest}
               tabs={panelTabs}
             />
-            <ShareDialog
-              open={shareOpen}
-              onClose={closeShare}
-              boardId={board.id}
-              role={board.role}
-              unavailable={sharingUnavailable}
-            />
             <UsageGuideDialog open={guideOpen} onClose={closeGuide} />
-            <PremiseDialog editor={premise} canEdit={canEdit} premise={board.premise} />
+            <PremiseDialog editor={premise} />
           </div>
         </div>
       </div>

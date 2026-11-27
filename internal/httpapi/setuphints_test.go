@@ -65,11 +65,6 @@ func TestSetupHints(t *testing.T) {
 			hint: hints.Auth,
 		},
 		{
-			name: "共有", method: http.MethodGet, path: "/api/boards/b/members",
-			status: http.StatusServiceUnavailable, code: apitypes.ErrorCodeSharingNotConfigured,
-			hint: hints.Auth,
-		},
-		{
 			name: "MCP の許可", method: http.MethodGet, path: "/api/oauth/grants",
 			status: http.StatusServiceUnavailable,
 			code:   apitypes.ErrorCodeMcpConnectionsNotConfigured,

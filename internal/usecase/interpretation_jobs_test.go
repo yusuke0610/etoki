@@ -317,18 +317,6 @@ func TestJobs_RejectsBeforeCreatingJob(t *testing.T) {
 	}
 }
 
-func TestJobs_ViewerCannotStart(t *testing.T) {
-	t.Parallel()
-
-	jobs, boards := newJobs(t, &fakeLLM{responses: []string{validLLMOutput}})
-	boards.role = port.RoleViewer
-
-	_, err := jobs.Start(asUser(t.Context(), "u1"), "board-1", "annot-1", nil)
-	if !errors.Is(err, usecase.ErrForbidden) {
-		t.Errorf("Start() = %v, want ErrForbidden", err)
-	}
-}
-
 func TestJobs_FailureKeepsReasonKind(t *testing.T) {
 	t.Parallel()
 
@@ -479,8 +467,7 @@ func TestJobs_HidesJobsFromOthers(t *testing.T) {
 	t.Parallel()
 
 	llm := newGatedLLM(validLLMOutput)
-	jobs, boards := newJobs(t, llm)
-	boards.members = []port.BoardMember{{BoardID: "board-1", UserID: "u2", Role: port.RoleEditor}}
+	jobs, _ := newJobs(t, llm)
 	owner := asUser(t.Context(), "u1")
 
 	job, err := jobs.Start(owner, "board-1", "annot-1", nil)

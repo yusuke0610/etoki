@@ -124,7 +124,7 @@ func (s *BoardService) Create(
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	// 作った本人が owner になる。ロールの初期値をここ以外で決めさせない。
+	// 作った本人がメンバー（owner）になる。
 	if err := s.boards.Create(ctx, b, actorOf(ctx)); err != nil {
 		return port.Board{}, err
 	}
@@ -132,11 +132,11 @@ func (s *BoardService) Create(
 	return b, nil
 }
 
-// Find は ID でボードを操作者のロールつきで引く。
+// Find は ID でボードを、操作者がメンバーなら引く。
 //
 // メンバーでなければ ErrBoardNotFound。
 func (s *BoardService) Find(ctx context.Context, id string) (*port.BoardAccess, error) {
-	return s.access(ctx, id, port.RoleViewer)
+	return s.access(ctx, id)
 }
 
 // OpenedBoard は開いたボード。シーンに加えて、貼った画像をすべて持つ。
@@ -154,7 +154,7 @@ type OpenedBoard struct {
 // **画像を返すのはここだけ。** 改名や作成先の設定の応答は Find で引き直すので
 // 画像を運ばない。開いたあとのキャンバスはすでに画像を持っている。
 func (s *BoardService) Open(ctx context.Context, id string) (OpenedBoard, error) {
-	a, files, err := s.accessWithFiles(ctx, id, port.RoleViewer)
+	a, files, err := s.accessWithFiles(ctx, id)
 	if err != nil {
 		return OpenedBoard{}, err
 	}
@@ -193,10 +193,6 @@ func (s *BoardService) OverLimit(ctx context.Context, a port.BoardAccess) (bool,
 
 // Rename はボードの名前を変える。
 //
-// **変えられるのは editor 以上。** 作成先の変更（owner だけ、ADR 0017）と
-// 揃えないのは、名前が取り消せない作成の行き先を決めるものではないため。
-// シーンを書き換えられる相手に、表示名だけ直させない理由が無い。
-//
 // **更新時刻は進めない**（port.BoardRepository.UpdateName）。あれはシーンの版
 // なので、名前を直しただけで進めると、開いている別のメンバーの次の保存が
 // 理由なく 409 になる。
@@ -206,7 +202,7 @@ func (s *BoardService) Rename(ctx context.Context, id, name string) error {
 		return err
 	}
 
-	if _, err := s.access(ctx, id, port.RoleEditor); err != nil {
+	if _, err := s.access(ctx, id); err != nil {
 		return err
 	}
 

@@ -5,7 +5,7 @@ import type { NameDraft } from "./useNameDraft";
  *
  * 変えられるなら名前そのものがボタンで、押すと欄になる。書きかけと確定は
  * `useNameDraft` が持つ。変えられないなら名前を出すだけで、理由は本文に出す
- * （読むだけ・注釈から外した・キャンバスに無い）。
+ * （注釈から外した・キャンバスに無い）。
  */
 export function AnnotationNameLabel({
   labelId,
@@ -69,8 +69,7 @@ export function AnnotationNameLabel({
   }
 
   return (
-    // 変えられない理由は本文に出している（読むだけ・注釈から外した・
-    // キャンバスに無い）。
+    // 変えられない理由は本文に出している（注釈から外した・キャンバスに無い）。
     <span id={labelId} className="annotation-detail-label">
       {heading}
     </span>

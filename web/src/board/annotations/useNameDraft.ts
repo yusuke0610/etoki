@@ -55,14 +55,14 @@ export function useNameDraft({
   id: string;
   /** いまの名前（キャンバスの値。まだ分からなければ保存済みの値）。 */
   name: string;
-  /** 名前を変えられるか（編集できる・キャンバスに在る・注釈から外していない）。 */
+  /** 名前を変えられるか（キャンバスに在る・注釈から外していない）。 */
   canRename: boolean;
   /** frame の名前を書き換える。確定したときだけ呼ぶ。 */
   onChangeName: (frameId: string, name: string) => void;
 }): NameDraft {
   const [draft, setDraft] = useState<string | null>(null);
-  // 書いている途中で押せる条件を失ったら（読むだけに変わった・注釈から外した・
-  // キャンバスから消えた）、書きかけを捨てて欄を閉じる。書く口が書けない対象に
+  // 書いている途中で押せる条件を失ったら（注釈から外した・キャンバスから
+  // 消えた）、書きかけを捨てて欄を閉じる。書く口が書けない対象に
   // 確定させると入力が黙って消え、条件が戻ったとき古い書きかけが欄ごと復活する。
   // effect ではなく描画中に捨てるのは、1 回ぶんの古い欄を描かないため。
   if (!canRename && draft !== null) setDraft(null);

@@ -13,8 +13,8 @@ import { BOARD_ID, baseMock, board } from "./helpers/fixtures";
  * 「ボードの背景…」から開く。
  *
  * **守りたいのは、書きかけを黙って失わないことと、先に保存した人の背景を黙って
- * 上書きしないこと。** viewer の出し分けは `sharing.spec.ts`、絵解きの面に
- * 添えたものを見せるのは `interpretation.spec.ts` が見ている。
+ * 上書きしないこと。** 絵解きの面に添えたものを見せるのは `interpretation.spec.ts`
+ * が見ている。
  */
 
 function input(dialog: Locator): Locator {

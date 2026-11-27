@@ -44,7 +44,7 @@ export function DeleteConfirm({ name, deletion, onConfirm, onCancel }: Props) {
     >
       <h2 id="delete-confirm-title">「{name}」を削除しますか</h2>
       <p>
-        {"シーンもメンバーも実行の記録も消えます。"}
+        {"シーンも実行の記録も消えます。"}
         <strong>取り消せません。</strong>
       </p>
       {recorded > 0 && (

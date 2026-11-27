@@ -42,16 +42,14 @@ var wantMappings = map[string]wantMapping{
 	"port.ErrNotFound": {
 		port.ErrNotFound, http.StatusNotFound, apitypes.ErrorCodeNotFound},
 
-	// 403 の 2 層。畳むと直す場所の違いが画面から消える（ADR 0017）。
-	"usecase.ErrForbidden": {
-		usecase.ErrForbidden, http.StatusForbidden, apitypes.ErrorCodeForbiddenRole},
+	// GitHub の拒否。cross-site の拒否と畳むと、直す場所の違いが画面から消える。
 	"port.ErrForbidden": {
 		port.ErrForbidden, http.StatusForbidden, apitypes.ErrorCodeForbiddenProject},
 
 	"port.ErrNotAuthenticated": {
 		port.ErrNotAuthenticated, http.StatusUnauthorized, apitypes.ErrorCodeLoginRequired},
 
-	// 409 は 7 つある。ステータスだけでは打ち手が決まらない代表。
+	// 409 はいくつもある。ステータスだけでは打ち手が決まらない代表。
 	"usecase.ErrSceneConflict": {
 		usecase.ErrSceneConflict, http.StatusConflict, apitypes.ErrorCodeSceneConflict},
 	"usecase.ErrPremiseConflict": {
@@ -65,12 +63,6 @@ var wantMappings = map[string]wantMapping{
 		usecase.ErrContentHashMismatch, http.StatusConflict, apitypes.ErrorCodeContentHashMismatch},
 	"usecase.ErrPreviousItemUnknown": {
 		usecase.ErrPreviousItemUnknown, http.StatusConflict, apitypes.ErrorCodePreviousItemUnknown},
-	"usecase.ErrAlreadyMember": {
-		usecase.ErrAlreadyMember, http.StatusConflict, apitypes.ErrorCodeAlreadyMember},
-	"usecase.ErrInviteeChanged": {
-		usecase.ErrInviteeChanged, http.StatusConflict, apitypes.ErrorCodeInviteeChanged},
-	"usecase.ErrLastOwner": {
-		usecase.ErrLastOwner, http.StatusConflict, apitypes.ErrorCodeLastOwner},
 
 	// 413 の 3 つ。**畳まない。** 「貼った画像を減らす」「会話をやり直す」
 	// 「送っているものを見直す」で打ち手が違う。
@@ -128,8 +120,7 @@ var wantMappings = map[string]wantMapping{
 // 届かない。届くようになったら表に足す判断が要る。届くが JSON の本文にならない
 // ものは、どこで扱うかを理由に書く。
 var notMapped = map[string]string{
-	"port.ErrConflict":      "usecase.ErrSceneConflict / ErrPremiseConflict に写して返す（ADR 0020 / 0093）",
-	"port.ErrAlreadyExists": "usecase.ErrAlreadyMember に写して返す",
+	"port.ErrConflict": "usecase.ErrSceneConflict / ErrPremiseConflict に写して返す（ADR 0020 / 0093）",
 	// LLMClient の実装が名乗る原因。ユースケース層が入れ子にせず写し替える
 	// （llmCallError、ADR 0087）。
 	"port.ErrLLMTruncated":  "usecase.ErrLLMTruncated に写して返す",

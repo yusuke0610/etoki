@@ -6,18 +6,18 @@ import (
 	"testing"
 
 	"github.com/yusuke0610/etoki/internal/usecase"
-	"github.com/yusuke0610/etoki/port"
 )
 
-// ロールごとに何ができるかを 1 つの表で固定する（ADR 0017）。
+// ボードに触る操作を 1 つの表に並べ、メンバーなら通り、メンバーでなければ
+// 「無い」で返ることを固定する（ADR 0016 / 0107）。
 //
-// **通る側ではなく落ちる側を書く。** 判定は boardGuard に閉じているので、
-// 操作を足したときにロールを見ないまま通る取りこぼしは、ここに行が増えないこと
-// ではなく、期待した 403 が出ないことで現れる。
-func TestRolePermissions(t *testing.T) {
+// **落ちる側を書く。** 判定は boardGuard に閉じているので、操作を足したときに
+// 判定を通さないまま引き当てる取りこぼしは、ここに行が増えないことではなく、
+// 非メンバーに ErrBoardNotFound が返らないことで現れる。
+func TestBoardGuard(t *testing.T) {
 	t.Parallel()
 
-	// call は 1 つの操作。ロールだけを変えて同じものを呼ぶ。
+	// call は 1 つの操作。操作者だけを変えて同じものを呼ぶ。
 	type call struct {
 		name string
 		do   func(ctx context.Context, boards *fakeBoards) error
@@ -88,62 +88,19 @@ func TestRolePermissions(t *testing.T) {
 		}},
 	}
 
-	// allowed はその操作を通せる最小のロール。表の本体。
-	allowed := map[string]port.BoardRole{
-		"閲覧":    port.RoleViewer,
-		"開く":    port.RoleViewer,
-		"注釈の状態": port.RoleViewer,
-		"実行履歴":  port.RoleViewer,
-		// 名前はブレストの中身に属する表示物で、取り消せない作成の行き先を
-		// 決めるものではない。シーンを書き換えられる editor に、表示名だけ
-		// 直させない理由が無い（作成先の変更は owner だけ）。
-		"改名": port.RoleEditor,
-		// 背景も改名と同じ。解釈に効くが、取り消せない作成の行き先を決める
-		// ものではない（ADR 0093）。
-		"背景の書き換え": port.RoleEditor,
-		"シーン保存":   port.RoleEditor,
-		"解釈":      port.RoleEditor,
-		// 生成も LLM を叩く外部呼び出しで課金を伴う。閲覧者に外部呼び出しを
-		// 許すのは「閲覧」ではない（解釈と同じ理由）。
-		"図のドラフト": port.RoleEditor,
-		"作成":     port.RoleEditor,
-		"作成先の変更": port.RoleOwner,
-		// ボードごと畳む操作なので、シーンを書き換えられる editor ではなく、
-		// 招待も作成先の変更もできる相手に限る（ADR 0042）。
-		"削除": port.RoleOwner,
-		// 押せない相手に、押したときに何が起きるかだけを見せる理由が無い。
-		// 削除そのものと揃える。
-		"削除で失われるもの": port.RoleOwner,
-	}
-
-	roles := []port.BoardRole{port.RoleOwner, port.RoleEditor, port.RoleViewer}
-
 	for _, c := range calls {
-		for _, role := range roles {
-			t.Run(c.name+"/"+string(role), func(t *testing.T) {
-				t.Parallel()
+		// メンバーなら、どの操作も通す（ADR 0107）。ロールで分けない。
+		t.Run(c.name+"/メンバー", func(t *testing.T) {
+			t.Parallel()
 
-				boards := &fakeBoards{board: newBoard(interpretScene), role: role}
-				err := c.do(t.Context(), boards)
+			boards := &fakeBoards{board: newBoard(interpretScene)}
+			if err := c.do(t.Context(), boards); err != nil {
+				t.Fatalf("%s = %v, want 通る", c.name, err)
+			}
+		})
 
-				if role.AtLeast(allowed[c.name]) {
-					if errors.Is(err, usecase.ErrForbidden) {
-						t.Fatalf("%s は %s に許すはずが 403: %v", c.name, role, err)
-					}
-					return
-				}
-
-				if !errors.Is(err, usecase.ErrForbidden) {
-					t.Fatalf("%s を %s に許している: err = %v", c.name, role, err)
-				}
-				if boards.writes != 0 {
-					t.Errorf("弾いたのに書き込んでいる: writes = %d", boards.writes)
-				}
-			})
-		}
-
-		// メンバーでなければ、ロール不足ではなく「無い」として返す。区別すると
-		// ID を総当たりして他人のボードの存在を確かめられる（ADR 0016 / 0017）。
+		// メンバーでなければ「無い」として返す。区別すると ID を総当たりして
+		// 他人のボードの存在を確かめられる（ADR 0016）。
 		t.Run(c.name+"/非メンバー", func(t *testing.T) {
 			t.Parallel()
 
@@ -153,8 +110,8 @@ func TestRolePermissions(t *testing.T) {
 			if !errors.Is(err, usecase.ErrBoardNotFound) {
 				t.Fatalf("%s = %v, want ErrBoardNotFound", c.name, err)
 			}
-			if errors.Is(err, usecase.ErrForbidden) {
-				t.Error("メンバーでないことを 403 で伝えている")
+			if boards.writes != 0 {
+				t.Errorf("弾いたのに書き込んでいる: writes = %d", boards.writes)
 			}
 		})
 	}

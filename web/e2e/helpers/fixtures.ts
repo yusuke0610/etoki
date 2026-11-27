@@ -34,7 +34,6 @@ export function board(): BoardDetail {
   return {
     id: BOARD_ID,
     name: BOARD_NAME,
-    role: "owner",
     createdAt: "2026-08-01T09:00:00Z",
     updatedAt: "2026-08-05T09:30:00Z",
     scene: statesScene(),
@@ -534,7 +533,6 @@ export function baseMock(): ApiMock {
         interpretation: true,
         diagramDraft: true,
         creation: true,
-        sharing: true,
         mcpConnections: false,
       },
     },

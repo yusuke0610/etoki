@@ -180,9 +180,7 @@ func NewDiagramService(
 // （ADR 0044）、404 や 400 で返るリクエストは枠を消費しない。取るのは
 // DiagramJobs.Start（jobTable.start）で、prepare の直後に取る。
 func (s *DiagramService) prepare(ctx context.Context, boardID string, req DiagramRequest) error {
-	// 生成は LLM を叩く外部呼び出しなので editor 以上に限る。viewer に許すのは
-	// 「閲覧」ではない（ADR 0017、解釈と同じ理由）。
-	if _, err := s.access(ctx, boardID, port.RoleEditor); err != nil {
+	if _, err := s.access(ctx, boardID); err != nil {
 		return err
 	}
 

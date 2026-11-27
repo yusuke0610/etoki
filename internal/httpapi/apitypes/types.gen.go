@@ -22,27 +22,6 @@ func (e AnnotationImageMediaType) Valid() bool {
 	}
 }
 
-// Defines values for BoardRole.
-const (
-	BoardRoleEditor BoardRole = "editor"
-	BoardRoleOwner  BoardRole = "owner"
-	BoardRoleViewer BoardRole = "viewer"
-)
-
-// Valid indicates whether the value is a known member of the BoardRole enum.
-func (e BoardRole) Valid() bool {
-	switch e {
-	case BoardRoleEditor:
-		return true
-	case BoardRoleOwner:
-		return true
-	case BoardRoleViewer:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for DiagramJobStatus.
 const (
 	DiagramJobStatusFailed    DiagramJobStatus = "failed"
@@ -93,7 +72,6 @@ func (e DiagramKind) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
-	ErrorCodeAlreadyMember               ErrorCode = "already_member"
 	ErrorCodeAuthNotConfigured           ErrorCode = "auth_not_configured"
 	ErrorCodeConcurrencyLimited          ErrorCode = "concurrency_limited"
 	ErrorCodeContentHashMismatch         ErrorCode = "content_hash_mismatch"
@@ -102,14 +80,11 @@ const (
 	ErrorCodeDiagramChatTooLong          ErrorCode = "diagram_chat_too_long"
 	ErrorCodeDiagramFailed               ErrorCode = "diagram_failed"
 	ErrorCodeForbiddenProject            ErrorCode = "forbidden_project"
-	ErrorCodeForbiddenRole               ErrorCode = "forbidden_role"
 	ErrorCodeGithubNotConfigured         ErrorCode = "github_not_configured"
 	ErrorCodeGithubUnavailable           ErrorCode = "github_unavailable"
 	ErrorCodeInternal                    ErrorCode = "internal"
 	ErrorCodeInterpretationFailed        ErrorCode = "interpretation_failed"
 	ErrorCodeInvalidInput                ErrorCode = "invalid_input"
-	ErrorCodeInviteeChanged              ErrorCode = "invitee_changed"
-	ErrorCodeLastOwner                   ErrorCode = "last_owner"
 	ErrorCodeLlmNotConfigured            ErrorCode = "llm_not_configured"
 	ErrorCodeLlmOverloaded               ErrorCode = "llm_overloaded"
 	ErrorCodeLlmRefused                  ErrorCode = "llm_refused"
@@ -126,7 +101,6 @@ const (
 	ErrorCodeRequestTooLarge             ErrorCode = "request_too_large"
 	ErrorCodeSceneConflict               ErrorCode = "scene_conflict"
 	ErrorCodeSceneTooLarge               ErrorCode = "scene_too_large"
-	ErrorCodeSharingNotConfigured        ErrorCode = "sharing_not_configured"
 	ErrorCodeTargetLocked                ErrorCode = "target_locked"
 	ErrorCodeTargetMismatch              ErrorCode = "target_mismatch"
 	ErrorCodeTargetNotSelected           ErrorCode = "target_not_selected"
@@ -135,8 +109,6 @@ const (
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
-	case ErrorCodeAlreadyMember:
-		return true
 	case ErrorCodeAuthNotConfigured:
 		return true
 	case ErrorCodeConcurrencyLimited:
@@ -153,8 +125,6 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case ErrorCodeForbiddenProject:
 		return true
-	case ErrorCodeForbiddenRole:
-		return true
 	case ErrorCodeGithubNotConfigured:
 		return true
 	case ErrorCodeGithubUnavailable:
@@ -164,10 +134,6 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeInterpretationFailed:
 		return true
 	case ErrorCodeInvalidInput:
-		return true
-	case ErrorCodeInviteeChanged:
-		return true
-	case ErrorCodeLastOwner:
 		return true
 	case ErrorCodeLlmNotConfigured:
 		return true
@@ -200,8 +166,6 @@ func (e ErrorCode) Valid() bool {
 	case ErrorCodeSceneConflict:
 		return true
 	case ErrorCodeSceneTooLarge:
-		return true
-	case ErrorCodeSharingNotConfigured:
 		return true
 	case ErrorCodeTargetLocked:
 		return true
@@ -490,26 +454,17 @@ type AuthUser struct {
 	Provider string `json:"provider"`
 }
 
-// BoardAccess そのボードで何ができるか。etoki 側と GitHub 側を別々に返す
+// BoardAccess そのボードで何ができるか。いまは作成先の Project に書けるかだけ
 type BoardAccess struct {
 	// ProjectAccess 作成先の Project に書けるかどうかの、いまの状態。
 	//
 	// - `allowed` … 書ける
-	// - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
-	//   持たない利用者がこれになる
+	// - `denied` … 書けない。GitHub の資格情報に、その Project への書き込み
+	//   権限が無い
 	// - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
 	//   問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
 	//   倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
 	ProjectAccess ProjectAccess `json:"projectAccess"`
-
-	// Role ボードに対する権限の強さ（ADR 0017）。
-	//
-	// - `owner` … 招待とロール変更、作成先の変更ができる
-	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-	//   最終的に決めるのは GitHub
-	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-	//   あり、閲覧者に許すのは「閲覧」ではない
-	Role BoardRole `json:"role"`
 }
 
 // BoardAnnotations ボード 1 枚ぶんの注釈。**シーンに在るものと、消えたのに GitHub 側には
@@ -585,15 +540,6 @@ type BoardDetail struct {
 	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
 	RepositoryOwner string `json:"repositoryOwner"`
 
-	// Role ボードに対する権限の強さ（ADR 0017）。
-	//
-	// - `owner` … 招待とロール変更、作成先の変更ができる
-	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-	//   最終的に決めるのは GitHub
-	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-	//   あり、閲覧者に許すのは「閲覧」ではない
-	Role BoardRole `json:"role"`
-
 	// Scene Excalidraw のシーン JSON をそのまま入れた文字列。**貼った画像の
 	// 実体（`files`）は入らない。** 画像はボードを開く口
 	// （`getBoard` の `BoardWithFiles.files`）だけが返す（ADR 0074）
@@ -657,49 +603,9 @@ type BoardListEntry struct {
 	RepositoryName string `json:"repositoryName"`
 
 	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
-	RepositoryOwner string `json:"repositoryOwner"`
-
-	// Role ボードに対する権限の強さ（ADR 0017）。
-	//
-	// - `owner` … 招待とロール変更、作成先の変更ができる
-	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-	//   最終的に決めるのは GitHub
-	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-	//   あり、閲覧者に許すのは「閲覧」ではない
-	Role      BoardRole `json:"role"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	RepositoryOwner string    `json:"repositoryOwner"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
-
-// BoardMember ボードのメンバー 1 人
-type BoardMember struct {
-	CreatedAt   time.Time `json:"createdAt"`
-	DisplayName string    `json:"displayName"`
-
-	// Login 認証基盤上のログイン名。表示用。移行前のボードなど、利用者を
-	// 引けない場合は空文字になる
-	Login string `json:"login"`
-
-	// Role ボードに対する権限の強さ（ADR 0017）。
-	//
-	// - `owner` … 招待とロール変更、作成先の変更ができる
-	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-	//   最終的に決めるのは GitHub
-	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-	//   あり、閲覧者に許すのは「閲覧」ではない
-	Role BoardRole `json:"role"`
-
-	// UserID etoki が発番した ID。指し先にはこれを使う
-	UserID string `json:"userId"`
-}
-
-// BoardRole ボードに対する権限の強さ（ADR 0017）。
-//
-//   - `owner` … 招待とロール変更、作成先の変更ができる
-//   - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-//     最終的に決めるのは GitHub
-//   - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-//     あり、閲覧者に許すのは「閲覧」ではない
-type BoardRole string
 
 // BoardSummary ボードの共通部分。一覧（`BoardListEntry`）と詳細（`BoardDetail`）の
 // 両方がこれを取り込む。シーンは大きいので含めない。
@@ -735,17 +641,8 @@ type BoardSummary struct {
 	RepositoryName string `json:"repositoryName"`
 
 	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
-	RepositoryOwner string `json:"repositoryOwner"`
-
-	// Role ボードに対する権限の強さ（ADR 0017）。
-	//
-	// - `owner` … 招待とロール変更、作成先の変更ができる
-	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-	//   最終的に決めるのは GitHub
-	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-	//   あり、閲覧者に許すのは「閲覧」ではない
-	Role      BoardRole `json:"role"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	RepositoryOwner string    `json:"repositoryOwner"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 // BoardTarget draft issue の作成先。設定のリクエストボディ。
@@ -832,15 +729,6 @@ type BoardWithFiles struct {
 	// RepositoryOwner 作成先リポジトリの所有者。未選択なら空文字
 	RepositoryOwner string `json:"repositoryOwner"`
 
-	// Role ボードに対する権限の強さ（ADR 0017）。
-	//
-	// - `owner` … 招待とロール変更、作成先の変更ができる
-	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-	//   最終的に決めるのは GitHub
-	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-	//   あり、閲覧者に許すのは「閲覧」ではない
-	Role BoardRole `json:"role"`
-
 	// Scene Excalidraw のシーン JSON をそのまま入れた文字列。**貼った画像の
 	// 実体（`files`）は入らない。** 画像はボードを開く口
 	// （`getBoard` の `BoardWithFiles.files`）だけが返す（ADR 0074）
@@ -889,10 +777,6 @@ type Capabilities struct {
 	// 許可の保存先が未設定。**認証なしの構成では false。** そのときの
 	// `/mcp` は許可なしで開いている（ADR 0071）ので、取り消すものが無い
 	McpConnections bool `json:"mcpConnections"`
-
-	// Sharing ボードを共有できるか。false は認証が未設定。招待は「誰であるか」が
-	// 決まって初めて意味を持つ（ADR 0016 / 0017）
-	Sharing bool `json:"sharing"`
 }
 
 // CreateBoardRequest ボード作成のリクエストボディ。
@@ -1073,9 +957,9 @@ type DiagramTurn struct {
 //
 // ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
 // 「解釈からやり直す」「入力を変える」が同居していて、利用者がすべきことは
-// すべて違う。403 も etoki のロール不足（`forbidden_role`）と GitHub 側の
-// 拒否（`forbidden_project`）で直す場所が違い、2 層に分けて持つと決めた
-// （ADR 0017）のに、文言に畳むと画面でその区別が消える。
+// すべて違う。403 も cross-site の拒否（`cross_site_rejected`）と GitHub 側の
+// 拒否（`forbidden_project`）で直す場所が違い、文言に畳むと画面でその区別が
+// 消える。
 //
 // **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
 // 畳むと画面が「何を設定すればよいか」を言えなくなる。
@@ -1094,9 +978,9 @@ type ErrorResponse struct {
 	//
 	// ステータスだけでは打ち手が決まらない。409 には「開き直す」「諦める」
 	// 「解釈からやり直す」「入力を変える」が同居していて、利用者がすべきことは
-	// すべて違う。403 も etoki のロール不足（`forbidden_role`）と GitHub 側の
-	// 拒否（`forbidden_project`）で直す場所が違い、2 層に分けて持つと決めた
-	// （ADR 0017）のに、文言に畳むと画面でその区別が消える。
+	// すべて違う。403 も cross-site の拒否（`cross_site_rejected`）と GitHub 側の
+	// 拒否（`forbidden_project`）で直す場所が違い、文言に畳むと画面でその区別が
+	// 消える。
 	//
 	// **`*_not_configured` を 1 つに畳まない。** 設定するものが違うので、
 	// 畳むと画面が「何を設定すればよいか」を言えなくなる。
@@ -1273,40 +1157,6 @@ type InterpretedItem struct {
 	Title          string `json:"title"`
 }
 
-// InviteMemberRequest 招待のリクエストボディ
-type InviteMemberRequest struct {
-	// Login 招待する相手の login。一度 etoki にログインしている必要がある
-	Login string `json:"login"`
-
-	// Role ボードに対する権限の強さ（ADR 0017）。
-	//
-	// - `owner` … 招待とロール変更、作成先の変更ができる
-	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-	//   最終的に決めるのは GitHub
-	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-	//   あり、閲覧者に許すのは「閲覧」ではない
-	Role BoardRole `json:"role"`
-
-	// UserID `lookupInvitee` で確認した相手の ID。いまその login を持つ相手と
-	// 違えば 409（`invitee_changed`）
-	UserID string `json:"userId"`
-}
-
-// Invitee 招待する前に見せる、login が当たった利用者
-type Invitee struct {
-	DisplayName string `json:"displayName"`
-
-	// LastSignedInAt 最後に etoki にログインした時刻。login はこのときのもので、いまの
-	// 持ち主かどうかは GitHub にしか分からない
-	LastSignedInAt time.Time `json:"lastSignedInAt"`
-
-	// Login 最後にログインしたときの login
-	Login string `json:"login"`
-
-	// UserID etoki が発番した ID。招待のときにそのまま送り返す
-	UserID string `json:"userId"`
-}
-
 // ItemKind GitHub に作る draft issue の種別。作るのは epic と issue の 2 階層のみ
 // （ADR 0006）。
 type ItemKind string
@@ -1406,8 +1256,8 @@ type Project struct {
 // ProjectAccess 作成先の Project に書けるかどうかの、いまの状態。
 //
 //   - `allowed` … 書ける
-//   - `denied` … 書けない。招待されただけで、リポジトリのアクセス権を
-//     持たない利用者がこれになる
+//   - `denied` … 書けない。GitHub の資格情報に、その Project への書き込み
+//     権限が無い
 //   - `unknown` … 確かめられなかった。GitHub が未設定、作成先が未選択、
 //     問い合わせに失敗した、のどれか。**allowed / denied のどちらにも
 //     倒さない。** 倒すと、確かめていないことを確かめたように見せることになる
@@ -1546,18 +1396,6 @@ type SessionStatus struct {
 	User *AuthUser `json:"user,omitempty"`
 }
 
-// SetMemberRoleRequest ロール変更のリクエストボディ
-type SetMemberRoleRequest struct {
-	// Role ボードに対する権限の強さ（ADR 0017）。
-	//
-	// - `owner` … 招待とロール変更、作成先の変更ができる
-	// - `editor` … ブレストと解釈と draft issue の作成ができる。作成できるかを
-	//   最終的に決めるのは GitHub
-	// - `viewer` … 読むだけ。解釈も許さない。解釈は LLM を叩く外部呼び出しで
-	//   あり、閲覧者に許すのは「閲覧」ではない
-	Role BoardRole `json:"role"`
-}
-
 // SetPremiseRequest ボードの背景の書き換えのリクエストボディ（ADR 0093）。
 //
 // 背景だけを持つ。シーンや作成先を一緒に送れる形にすると、この経路でも
@@ -1679,9 +1517,6 @@ type RepositoryName = string
 // RepositoryOwner defines model for RepositoryOwner.
 type RepositoryOwner = string
 
-// UserID defines model for UserId.
-type UserID = string
-
 // BadRequest 失敗したときの本文。打ち手は `code` で分け、`error` は手掛かりに留める。
 type BadRequest = ErrorResponse
 
@@ -1724,12 +1559,6 @@ type CompleteLoginParams struct {
 	State string `form:"state" json:"state"`
 }
 
-// LookupInviteeParams defines parameters for LookupInvitee.
-type LookupInviteeParams struct {
-	// Login 招待する相手の login。大文字小文字は区別しない
-	Login string `form:"login" json:"login"`
-}
-
 // GetOAuthAuthorizationParams defines parameters for GetOAuthAuthorization.
 type GetOAuthAuthorizationParams struct {
 	// Request `/oauth/authorize` に付いていたクエリ文字列そのもの
@@ -1753,12 +1582,6 @@ type CreateItemsJSONRequestBody = Interpretation
 
 // GenerateDiagramDraftJSONRequestBody defines body for GenerateDiagramDraft for application/json ContentType.
 type GenerateDiagramDraftJSONRequestBody = GenerateDiagramRequest
-
-// InviteBoardMemberJSONRequestBody defines body for InviteBoardMember for application/json ContentType.
-type InviteBoardMemberJSONRequestBody = InviteMemberRequest
-
-// SetBoardMemberRoleJSONRequestBody defines body for SetBoardMemberRole for application/json ContentType.
-type SetBoardMemberRoleJSONRequestBody = SetMemberRoleRequest
 
 // SetBoardPremiseJSONRequestBody defines body for SetBoardPremise for application/json ContentType.
 type SetBoardPremiseJSONRequestBody = SetPremiseRequest

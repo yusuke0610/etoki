@@ -5,7 +5,6 @@ import type {
   BoardAccess,
   BoardDeletion,
   BoardDetail,
-  BoardMember,
   BoardSummary,
   Capabilities,
   CreatedRun,
@@ -34,7 +33,6 @@ import { installAnnotationRoutes } from "./routes/annotations";
 import { installBoardRoutes } from "./routes/boards";
 import { installDiagramRoutes } from "./routes/diagram";
 import { installGitHubRoutes } from "./routes/github";
-import { installMemberRoutes } from "./routes/members";
 import { installOAuthRoutes } from "./routes/oauth";
 import { json } from "./routes/respond";
 import { installSessionRoutes } from "./routes/session";
@@ -207,23 +205,10 @@ export type ApiMock = {
   /**
    * そのボードで何ができるか。ボード ID をキーにする。
    *
-   * 無いボードは role をボードの値から、projectAccess を unknown として返す。
-   * 全 spec に権限を書かせないため。
+   * 無いボードは projectAccess を unknown として返す。全 spec に権限を書かせない
+   * ため。
    */
   access?: Record<string, Reply<BoardAccess>>;
-  /** ボード ID をキーにしたメンバー一覧。 */
-  members?: Record<string, BoardMember[]>;
-  /** メンバー一覧の取得を失敗させたいときに指定する。 */
-  membersListError?: Reply<never>;
-  /** 招待を失敗させたいときに指定する。 */
-  inviteError?: Reply<never>;
-  /**
-   * 招待する前の引き当てを失敗させたいときに指定する（ADR 0053）。
-   *
-   * 無ければ、どの login も `user-<login>` として引き当てる。一度ログインした
-   * 相手を spec ごとに並べさせないため。
-   */
-  lookupInviteeError?: Reply<never>;
   /** 改名を失敗させたいときに指定する。 */
   renameError?: Reply<never>;
   /**
@@ -297,7 +282,6 @@ export async function installApi(page: Page, mock: ApiMock): Promise<ApiMock> {
   // まとまりの順番は結果を変えない。要るのはキャッチオールより後であることだけ。
   await installBoardRoutes(page, mock);
   await installAnnotationRoutes(page, mock);
-  await installMemberRoutes(page, mock);
   await installDiagramRoutes(page, mock);
   await installSessionRoutes(page, mock);
   await installGitHubRoutes(page, mock);

@@ -27,11 +27,6 @@ func (h *handlers) getCapabilities(c *gin.Context) {
 		// 作成先の候補（catalog）も同じ GitHub の設定で決まる。片方だけ nil に
 		// なる配線は cmd/etoki には無いので、1 つにまとめて返す。
 		Creation: h.creations != nil && h.catalog != nil,
-		// 見るのは h.members だけ。**共有のエンドポイント（/members と
-		// /invitee）が 503 になる材料がそれだから。** h.access は別の口（/boards/{id}/access）の
-		// 材料で、ここに混ぜると「共有は使えない」と案内したのに /members は
-		// 成功する、という食い違いを作れる。
-		Sharing: h.members != nil,
 		// 材料は `/api/oauth/*` が 503 になるものそのもの（h.oauth）。認証なしの
 		// 構成では NewRouter が nil にしている。
 		McpConnections: h.oauth != nil,

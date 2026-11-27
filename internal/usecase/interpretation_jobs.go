@@ -92,7 +92,7 @@ func (j *InterpretationJobs) Start(
 func (j *InterpretationJobs) Get(
 	ctx context.Context, boardID, jobID string,
 ) (InterpretationJob, error) {
-	if _, err := j.svc.access(ctx, boardID, port.RoleEditor); err != nil {
+	if _, err := j.svc.access(ctx, boardID); err != nil {
 		return InterpretationJob{}, err
 	}
 	return j.table.get(ctx, boardID, jobID)
@@ -100,7 +100,7 @@ func (j *InterpretationJobs) Get(
 
 // List は操作者の、そのボードのジョブを始めた順に返す。結果は含めない。
 func (j *InterpretationJobs) List(ctx context.Context, boardID string) ([]InterpretationJob, error) {
-	if _, err := j.svc.access(ctx, boardID, port.RoleEditor); err != nil {
+	if _, err := j.svc.access(ctx, boardID); err != nil {
 		return nil, err
 	}
 	return j.table.list(ctx, boardID), nil
@@ -108,7 +108,7 @@ func (j *InterpretationJobs) List(ctx context.Context, boardID string) ([]Interp
 
 // Discard はジョブを要らないものとして捨てる。走っていれば止める。
 func (j *InterpretationJobs) Discard(ctx context.Context, boardID, jobID string) error {
-	if _, err := j.svc.access(ctx, boardID, port.RoleEditor); err != nil {
+	if _, err := j.svc.access(ctx, boardID); err != nil {
 		return err
 	}
 	return j.table.discard(ctx, boardID, jobID)

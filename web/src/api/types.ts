@@ -171,23 +171,8 @@ export type LoginRequest = Schemas["LoginRequest"];
 /** 認可画面へ送り出すための URL。 */
 export type LoginResponse = Schemas["LoginResponse"];
 
-/** ボードに対する権限の強さ。owner / editor / viewer の 3 つ。 */
-export type BoardRole = Schemas["BoardRole"];
-
-/** ボードのメンバー 1 人。 */
-export type BoardMember = Schemas["BoardMember"];
-
-/** 招待する前に見せる、login が当たった利用者（ADR 0053）。 */
-export type Invitee = Schemas["Invitee"];
-
 /** ボード作成のリクエストボディ。作成先を省けるのは GitHub が未設定の構成だけ（ADR 0090）。 */
 export type CreateBoardRequest = Schemas["CreateBoardRequest"];
-
-/** 招待のリクエストボディ。 */
-export type InviteMemberRequest = Schemas["InviteMemberRequest"];
-
-/** ロール変更のリクエストボディ。 */
-export type SetMemberRoleRequest = Schemas["SetMemberRoleRequest"];
 
 /** 作成先の Project に書けるかどうかの、いまの状態。判定ではない。 */
 export type ProjectAccess = Schemas["ProjectAccess"];
@@ -198,7 +183,7 @@ export type ProjectFieldRequirement = Schemas["ProjectFieldRequirement"];
 /** 作成先の Project のフィールドを確かめた結果。判定ではない（ADR 0088）。 */
 export type ProjectFieldsCheck = Schemas["ProjectFieldsCheck"];
 
-/** そのボードで何ができるか。etoki 側と GitHub 側を別々に持つ。 */
+/** そのボードで何ができるか。いまは作成先の Project に書けるかだけ。 */
 export type BoardAccess = Schemas["BoardAccess"];
 
 /** 同意の画面に出す、MCP のクライアントの認可の要求（ADR 0076）。 */

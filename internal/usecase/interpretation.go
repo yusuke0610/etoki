@@ -191,9 +191,7 @@ type preparedInterpretation struct {
 func (s *InterpretationService) prepare(
 	ctx context.Context, boardID, annotationID string, images []port.Image,
 ) (preparedInterpretation, error) {
-	// 解釈は LLM を叩く外部呼び出しなので editor 以上に限る。viewer に許すのは
-	// 「閲覧」ではない（ADR 0017）。
-	acc, err := s.access(ctx, boardID, port.RoleEditor)
+	acc, err := s.access(ctx, boardID)
 	if err != nil {
 		return preparedInterpretation{}, err
 	}
