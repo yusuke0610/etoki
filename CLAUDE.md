@@ -337,7 +337,7 @@ Origin 検証は `.claude/rules/http-handlers.md`。
 - 特定クラウド基盤前提の実装（Bedrock / Vertex AI アダプタ等）
 - デプロイ先の構成、CI/CD のデプロイ部分（lint / test を回す CI は可）
 - 複数人で使うための仕組み。etoki は 1 人で使う前提で組む（ADR 0108）。いまある
-  仕組み（所有者、利用者ごとの資格情報や上限など）は #491 の sub-issue で畳む
+  仕組み（所有者、利用者ごとの上限など）は #491 の sub-issue で畳む
 - Postgres 実装（インターフェースのみ用意）
 - GitHub → ボードへの逆方向同期
 - ボードのスナップショット / バージョニング
