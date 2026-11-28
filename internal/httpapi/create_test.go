@@ -883,8 +883,7 @@ func TestListRepositories(t *testing.T) {
 }
 
 // 打ち切ったことを画面まで運ぶ（ADR 0054）。黙って切ると、目当てが出ない
-// 利用者は「権限が無いのか」「インストールしていないのか」「上限の外なのか」を
-// 区別できない（中核思想 3）。
+// 利用者は「権限が無いのか」「上限の外なのか」を区別できない（中核思想 3）。
 func TestListRepositories_ReportsTruncation(t *testing.T) {
 	t.Parallel()
 

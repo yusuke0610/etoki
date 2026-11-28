@@ -220,19 +220,18 @@ frame と中身を同時に作るなら帰属を推測する場面は無い、�
 MCP のトークンの持ち主の 3 箇所で照らす。照らす場所を認証基盤のアダプタに
 移さないこと（セッションとトークンが照らされなくなる）。
 
-GitHub App を設定するとログインを要求する（ADR 0015）。継ぎ目は **3 つに割って
-ある**。1 つにまとめないこと。まとめると「GitHub 以外を差せる」と言いながら
-GitHub の形しか差せなくなる。
+GitHub App を設定するとログインを要求する（ADR 0015）。**ログインは誰であるかを
+決めるだけで、GitHub は認証の有無によらず PAT 1 本で叩く**（ADR 0106）。ログインで
+受け取った GitHub のトークンは、誰であるかを確かめたら捨てる。**保存も更新も
+しない。** 利用者ごとのトークンに戻すなら ADR 0106 の判断ごと見直す。
 
-| 差し替える対象                  | 継ぎ目                   |
-| ------------------------------- | ------------------------ |
-| 誰であるかを決める基盤          | `port.IdentityProvider`  |
-| GitHub を叩くトークンの出どころ | `port.GitHubTokenSource` |
-| セッションの置き場所            | `port.SessionRepository` |
+| 差し替える対象         | 継ぎ目                   |
+| ---------------------- | ------------------------ |
+| 誰であるかを決める基盤 | `port.IdentityProvider`  |
+| セッションの置き場所   | `port.SessionRepository` |
 
 - **利用者は `context.Context` で運ぶ。** 出入口は `port.ContextWithUserID` /
-  `port.UserIDFromContext`。`port/` に置いてあるのは、外部リポジトリが
-  `GitHubTokenSource` を自前実装するときに読む必要があるため。
+  `port.UserIDFromContext`。読むのはボードの認可と LLM の上限。
 - **MCP の入口（`/mcp`）は、認証ありの構成では etoki が発行したトークンでだけ
   通す**（ADR 0076）。etoki が認可サーバーになり、「誰であるか」は既存のログイン
   （`port.IdentityProvider`）で決め、利用者は同じく `port.ContextWithUserID` で運ぶ。
@@ -242,14 +241,9 @@ GitHub の形しか差せなくなる。
 
 配線（`cmd/etoki`）の約束:
 
-- **`Authenticator` は 1 つだけ作る。** GitHub クライアントの `TokenSource` と
-  `etoki.Options.Auth` に同じものを渡す。2 つ作るとトークン更新の直列化が効かず、
-  GitHub が使い捨てにした refresh token を掴む。
-- **リポジトリ一覧は `github.Config.Mode` で分岐する。** GitHub App では
-  インストール経由の REST、PAT では GraphQL。「使えるリポジトリ」の定義が
-  GitHub 側で違うため。判断するのは `cmd/etoki` だけ。
-- **OAuth を設定したら PAT は無視する。** フォールバックにすると作成の主体が
-  リクエストごとに変わり、誰が作ったのか追えなくなる。
+- **GitHub クライアントは `ETOKI_GITHUB_TOKEN` だけで組み立てる。** 認証の設定を
+  見て分岐しない。作成先の候補は PAT の持ち主が見えるリポジトリ（GraphQL）の
+  1 本で、App のインストール経由の経路は持たない（ADR 0106）。
 
 ボードのメンバーと権限は `internal/CLAUDE.md`。Gin ハンドラと MCP の入口の約束、
 Origin 検証は `.claude/rules/http-handlers.md`。

@@ -76,11 +76,17 @@ describe("describeFailure", () => {
     ).toBe(`プロジェクトを取得できませんでした: ${ERROR_MESSAGES.github_unavailable}`);
   });
 
-  // 原因を決めつけない（#293）。書く権限と、GitHub App で個人アカウントの
-  // Project に触れないことの両方を並べる。
+  // 原因を決めつけない（#293）。書く権限と、fine-grained PAT では個人アカウントの
+  // Project を扱えないことの両方を並べる。打ち手（classic PAT の project スコープ）も
+  // 句で見る。語だけを見ると「classic PAT は使えません」に変えても通る。
   it("Project の取得を拒まれた場面では、権限と個人アカウントの両方を言う", () => {
-    expect(PROJECT_LIST_MESSAGES.forbidden_project).toContain("書く権限");
-    expect(PROJECT_LIST_MESSAGES.forbidden_project).toContain("個人アカウント");
+    expect(PROJECT_LIST_MESSAGES.forbidden_project).toContain("PAT に書く権限が無い");
+    expect(PROJECT_LIST_MESSAGES.forbidden_project).toContain(
+      "fine-grained PAT で個人アカウントの Project を辿った",
+    );
+    expect(PROJECT_LIST_MESSAGES.forbidden_project).toContain(
+      "classic PAT の project スコープが要ります",
+    );
   });
 
   // 例外の中身は画面に出さない（`web/CLAUDE.md`）。畳んだ側にも置かない。

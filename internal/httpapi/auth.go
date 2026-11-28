@@ -277,7 +277,7 @@ func resolveSession(auth *usecase.AuthService, logger *slog.Logger) gin.HandlerF
 
 		c.Set(userContextKey, *user)
 
-		// 下流（port.GitHubTokenSource）は context から利用者を引く。
+		// 下流（ボードの認可、usecase.boardGuard）は context から利用者を引く。
 		// gin.Context ではなく Request の context に載せる必要がある。
 		ctx := port.ContextWithUserID(c.Request.Context(), user.ID)
 		c.Request = c.Request.WithContext(ctx)

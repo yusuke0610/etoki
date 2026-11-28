@@ -17,7 +17,6 @@ import (
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
 	"github.com/yusuke0610/etoki/internal/httpapi"
 	"github.com/yusuke0610/etoki/internal/httpapi/apitypes"
-	"github.com/yusuke0610/etoki/internal/secret"
 	"github.com/yusuke0610/etoki/internal/usecase"
 	"github.com/yusuke0610/etoki/port"
 )
@@ -38,24 +37,17 @@ func (s *stubProvider) AuthorizeURL(state, redirectURI string) string {
 		"&redirect_uri=" + url.QueryEscape(redirectURI)
 }
 
-func (s *stubProvider) Exchange(
-	_ context.Context, _, redirectURI string,
-) (port.Identity, port.Credentials, error) {
+func (s *stubProvider) Exchange(_ context.Context, _, redirectURI string) (port.Identity, error) {
 	s.redirectURI = redirectURI
 	if s.exchangeErr != nil {
-		return port.Identity{}, port.Credentials{}, s.exchangeErr
+		return port.Identity{}, s.exchangeErr
 	}
 	if s.identity != nil {
-		return *s.identity, port.Credentials{AccessToken: "ghu_1"}, nil
+		return *s.identity, nil
 	}
 	return port.Identity{
-			Provider: "github", Subject: "42", Login: "octocat", DisplayName: "Octo Cat",
-		},
-		port.Credentials{AccessToken: "ghu_1"}, nil
-}
-
-func (s *stubProvider) Refresh(context.Context, string) (port.Credentials, error) {
-	return port.Credentials{}, port.ErrNotAuthenticated
+		Provider: "github", Subject: "42", Login: "octocat", DisplayName: "Octo Cat",
+	}, nil
 }
 
 // newAuthRouter は認証つきのルーターを返す。
@@ -115,16 +107,7 @@ func authDepsOn(
 
 	var sessions port.SessionRepository
 	if provider != nil {
-		key := make([]byte, secret.KeySize)
-		for i := range key {
-			key[i] = byte(i)
-		}
-		box, err := secret.New(key)
-		if err != nil {
-			t.Fatalf("secret.New: %v", err)
-		}
-
-		sessions = sqlite.NewSessionRepository(db, box)
+		sessions = sqlite.NewSessionRepository(db)
 		auth := usecase.NewAuthService(provider, sessions, allowed)
 		deps.Auth = auth
 		// 招待は認証が無いと意味を持たない。組み立ての条件を etoki.New と
@@ -530,13 +513,10 @@ func TestExpiredSessionIsRejected(t *testing.T) {
 // 別の subject を返すものを差し替えて使う。
 type otherUserProvider struct{ stubProvider }
 
-func (p *otherUserProvider) Exchange(
-	context.Context, string, string,
-) (port.Identity, port.Credentials, error) {
+func (p *otherUserProvider) Exchange(context.Context, string, string) (port.Identity, error) {
 	return port.Identity{
-			Provider: "github", Subject: "99", Login: "hubot", DisplayName: "Hubot",
-		},
-		port.Credentials{AccessToken: "ghu_2"}, nil
+		Provider: "github", Subject: "99", Login: "hubot", DisplayName: "Hubot",
+	}, nil
 }
 
 // ログインした A が、B のボード ID を知っていても触れないこと。
@@ -549,15 +529,9 @@ func TestBoards_AreIsolatedBetweenUsers(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	key := make([]byte, secret.KeySize)
-	box, err := secret.New(key)
-	if err != nil {
-		t.Fatalf("secret.New: %v", err)
-	}
-
 	boards := sqlite.NewBoardRepository(db)
 	mappings := sqlite.NewMappingRepository(db)
-	sessions := sqlite.NewSessionRepository(db, box)
+	sessions := sqlite.NewSessionRepository(db)
 
 	// 同じ DB に向いた 2 つのルーター。利用者だけが違う。
 	newFor := func(provider port.IdentityProvider) *gin.Engine {

@@ -3,13 +3,17 @@ paths:
   - "Makefile"
   # recipe から呼ぶシェル。try-fake の起動はここへ移した（ADR 0097）。
   - "scripts/*.sh"
+  # Playwright の設定。webServer の command から make を呼ぶと、子の make に
+  # 値を渡す側になる（#426 の playwright.stack.config.ts）。
+  - "web/playwright*.config.ts"
 ---
 
 # Makefile の recipe
 
 Makefile のターゲットと、そこから呼ぶシェル（`scripts/*.sh`）で実際に踏んだ穴。
 `##` の説明と `CLAUDE.md` のコマンド説明のずれは `docs-consistency.md` が見て
-いるので、ここでは recipe の中身だけを扱う。
+いるので、ここでは recipe の中身だけを扱う。Playwright の設定は、webServer から
+子の make に値を渡すところだけを見る（`web/playwright*.config.ts`）。
 
 ## 複数のプロセスを背景で起動するターゲット
 
@@ -27,12 +31,19 @@ Makefile のターゲットと、そこから呼ぶシェル（`scripts/*.sh`）
   手元で別名に設定している人がいると、継いだ名前で引いて見つからず、その先で
   止まる。外す理由が違うものはコメントも分けて書く
   （#138、`scripts/fake-stack.sh`）。
+- **`set -e` を使わないシェルでは、後ろが頼る結果を 1 つずつ確かめる。**
+  `tmp=$(mktemp -d)` が失敗しても進み、空の `tmp` から `/etoki.db` を開いて、
+  一時領域の外に DB を作って残した（#426）。
 
 ## 上書きできる変数
 
 - **上書きを前提にした変数（`?=` で置くもの、`make X=…` で渡すもの）は、
   読む recipe すべてで `"$(X)"` と引用してシェルに渡す。** 1 箇所だけ直すと、
   同じ変数を読む別のターゲットに同じ指摘が来る（#157）。
+- **子の make に値を渡すなら、環境変数ではなく引数で渡す。** 親を `make X=…` と
+  呼ぶと、その指定は MAKEFLAGS で子にも届き、環境変数に勝つ。子の引数は
+  それにも勝つ。Playwright の webServer が呼ぶ make のように、make の外を挟んで
+  いても届く（#426）。
 
 ## 利用者のデータに触るターゲット
 

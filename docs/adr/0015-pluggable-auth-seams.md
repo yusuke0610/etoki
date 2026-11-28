@@ -1,7 +1,14 @@
 # 0015. 認証は 3 つの継ぎ目で受け、GitHub App を既定実装にする
 
-- ステータス: 採用
+- ステータス: 一部置き換え（[ADR 0106](0106-github-with-one-pat.md)）
 - 日付: 2026-08-08
+
+> **ADR 0106 で改めた節がある。** 「GitHub を叩くトークンの出どころ」の継ぎ目
+> （`port.GitHubTokenSource`）、「OAuth を設定したら PAT は無視する」、「資格情報は
+> 暗号化して保存する」、結果のうち `Config.Mode` による分岐とトークン更新の直列化は、
+> もう効いていない。GitHub は PAT 1 本で叩き、ログインは誰であるかを決めるだけに
+> した。誰であるかの継ぎ目（`IdentityProvider`）・セッションの置き場所
+> （`SessionRepository`）・Origin ガードとの関係は生きている。
 
 ## 文脈
 

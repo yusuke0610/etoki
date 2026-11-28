@@ -18,16 +18,8 @@ var authNow = time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
 // fakeProvider は決められた利用者を返す IdentityProvider。
 type fakeProvider struct {
 	identity port.Identity
-	creds    port.Credentials
-	// refreshed は Refresh が返す資格情報。
-	refreshed port.Credentials
-	// refreshErr が非 nil なら Refresh が失敗する。
-	refreshErr error
-	// refreshDelay は Refresh にかける時間。並行呼び出しの窓を広げるために使う。
-	refreshDelay time.Duration
 
 	mu           sync.Mutex
-	refreshCalls int
 	exchangeCode string
 }
 
@@ -37,45 +29,19 @@ func (f *fakeProvider) AuthorizeURL(state, redirectURI string) string {
 	return "https://example.test/authorize?state=" + state + "&redirect_uri=" + redirectURI
 }
 
-func (f *fakeProvider) Exchange(
-	_ context.Context, code, _ string,
-) (port.Identity, port.Credentials, error) {
+func (f *fakeProvider) Exchange(_ context.Context, code, _ string) (port.Identity, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.exchangeCode = code
-	return f.identity, f.creds, nil
-}
-
-func (f *fakeProvider) Refresh(context.Context, string) (port.Credentials, error) {
-	f.mu.Lock()
-	f.refreshCalls++
-	err, out, delay := f.refreshErr, f.refreshed, f.refreshDelay
-	f.mu.Unlock()
-
-	// 更新には往復がかかる。直列化されていなければ、この間に他の呼び出しが
-	// 同じ古い資格情報を読んで一緒に更新に走る。
-	time.Sleep(delay)
-
-	if err != nil {
-		return port.Credentials{}, err
-	}
-	return out, nil
-}
-
-func (f *fakeProvider) calls() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.refreshCalls
+	return f.identity, nil
 }
 
 // fakeSessions は port.SessionRepository のメモリ実装。
 type fakeSessions struct {
 	mu       sync.Mutex
-	users    map[string]port.User        // id -> user
-	sessions map[string]port.Session     // tokenHash -> session
-	creds    map[string]port.Credentials // userID -> credentials
-	states   map[string]port.OAuthState  // state -> 保存した内容
-	saves    int
+	users    map[string]port.User       // id -> user
+	sessions map[string]port.Session    // tokenHash -> session
+	states   map[string]port.OAuthState // state -> 保存した内容
 	seq      int
 }
 
@@ -83,7 +49,6 @@ func newFakeSessions() *fakeSessions {
 	return &fakeSessions{
 		users:    map[string]port.User{},
 		sessions: map[string]port.Session{},
-		creds:    map[string]port.Credentials{},
 		states:   map[string]port.OAuthState{},
 	}
 }
@@ -176,29 +141,6 @@ func (f *fakeSessions) DeleteSession(_ context.Context, tokenHash string) error 
 	return nil
 }
 
-func (f *fakeSessions) SaveCredentials(
-	_ context.Context, userID string, c port.Credentials, _ time.Time,
-) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.creds[userID] = c
-	f.saves++
-	return nil
-}
-
-func (f *fakeSessions) FindCredentials(
-	_ context.Context, userID string,
-) (*port.Credentials, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	c, ok := f.creds[userID]
-	if !ok {
-		return nil, nil
-	}
-	return &c, nil
-}
-
 func (f *fakeSessions) SaveState(_ context.Context, st port.OAuthState) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -220,12 +162,6 @@ func (f *fakeSessions) ConsumeState(
 	return &saved, nil
 }
 
-func (f *fakeSessions) savedCredentials(userID string) port.Credentials {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.creds[userID]
-}
-
 // allowedSubject はログインを通す相手。defaultProvider の利用者と同じ。
 const allowedSubject = "42"
 
@@ -239,18 +175,6 @@ func defaultProvider() *fakeProvider {
 	return &fakeProvider{
 		identity: port.Identity{
 			Provider: "fake", Subject: "42", Login: "octocat", DisplayName: "Octo Cat",
-		},
-		creds: port.Credentials{
-			AccessToken:      "access-1",
-			RefreshToken:     "refresh-1",
-			ExpiresAt:        authNow.Add(8 * time.Hour),
-			RefreshExpiresAt: authNow.Add(180 * 24 * time.Hour),
-		},
-		refreshed: port.Credentials{
-			AccessToken:      "access-2",
-			RefreshToken:     "refresh-2",
-			ExpiresAt:        authNow.Add(8 * time.Hour),
-			RefreshExpiresAt: authNow.Add(180 * 24 * time.Hour),
 		},
 	}
 }
@@ -482,9 +406,6 @@ func TestComplete_RejectsUserNotAllowed(t *testing.T) {
 			if len(sessions.users) != 0 {
 				t.Errorf("断った相手を利用者にしている: %+v", sessions.users)
 			}
-			if sessions.saves != 0 {
-				t.Errorf("断った相手の資格情報を保存している: %d 回", sessions.saves)
-			}
 			if len(sessions.sessions) != 0 {
 				t.Errorf("断った相手にセッションを渡している: %+v", sessions.sessions)
 			}
@@ -578,184 +499,6 @@ func TestFindAllowedUser(t *testing.T) {
 		if got, err := svc.FindAllowedUser(t.Context(), id); err != nil || got != nil {
 			t.Errorf("%s = (%+v, %v), want (nil, nil)", name, got, err)
 		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// port.GitHubTokenSource としての振る舞い
-// ---------------------------------------------------------------------------
-
-func TestToken_RequiresIdentity(t *testing.T) {
-	t.Parallel()
-
-	svc := newAuthService(t, defaultProvider(), newFakeSessions())
-
-	if _, err := svc.Token(t.Context()); !errors.Is(err, port.ErrNotAuthenticated) {
-		t.Fatalf("Token() = %v, want ErrNotAuthenticated", err)
-	}
-}
-
-func TestToken_ReturnsStoredTokenWhenFresh(t *testing.T) {
-	t.Parallel()
-
-	provider, sessions := defaultProvider(), newFakeSessions()
-	svc := newAuthService(t, provider, sessions)
-
-	if err := sessions.SaveCredentials(t.Context(), "user-1", provider.creds, authNow); err != nil {
-		t.Fatalf("SaveCredentials: %v", err)
-	}
-
-	ctx := port.ContextWithUserID(t.Context(), "user-1")
-	got, err := svc.Token(ctx)
-	if err != nil {
-		t.Fatalf("Token() = %v", err)
-	}
-	if got != "access-1" {
-		t.Errorf("Token() = %q, want access-1", got)
-	}
-	if provider.calls() != 0 {
-		t.Errorf("まだ有効なのに更新している: %d 回", provider.calls())
-	}
-}
-
-// ちょうどで切ると、更新せずに投げたリクエストが往復のあいだに失効する。
-func TestToken_RefreshesBeforeExpiry(t *testing.T) {
-	t.Parallel()
-
-	provider, sessions := defaultProvider(), newFakeSessions()
-	svc := newAuthService(t, provider, sessions)
-
-	expiring := provider.creds
-	expiring.ExpiresAt = authNow.Add(1 * time.Minute) // 余裕（5 分）の内側
-	if err := sessions.SaveCredentials(t.Context(), "user-1", expiring, authNow); err != nil {
-		t.Fatalf("SaveCredentials: %v", err)
-	}
-
-	ctx := port.ContextWithUserID(t.Context(), "user-1")
-	got, err := svc.Token(ctx)
-	if err != nil {
-		t.Fatalf("Token() = %v", err)
-	}
-	if got != "access-2" {
-		t.Errorf("Token() = %q, want access-2", got)
-	}
-
-	// 更新後の資格情報を保存し直す。次回また更新すると、GitHub が使い捨てに
-	// した refresh token を再送することになる。
-	if saved := sessions.savedCredentials("user-1"); saved.AccessToken != "access-2" ||
-		saved.RefreshToken != "refresh-2" {
-		t.Errorf("保存された資格情報 = %+v, want access-2 / refresh-2", saved)
-	}
-}
-
-// 失効情報を持たない資格情報は更新しない。App 側で失効を切っている構成。
-func TestToken_DoesNotRefreshNonExpiringCredentials(t *testing.T) {
-	t.Parallel()
-
-	provider, sessions := defaultProvider(), newFakeSessions()
-	svc := newAuthService(t, provider, sessions)
-
-	if err := sessions.SaveCredentials(t.Context(), "user-1",
-		port.Credentials{AccessToken: "forever"}, authNow); err != nil {
-		t.Fatalf("SaveCredentials: %v", err)
-	}
-
-	ctx := port.ContextWithUserID(t.Context(), "user-1")
-	got, err := svc.Token(ctx)
-	if err != nil {
-		t.Fatalf("Token() = %v", err)
-	}
-	if got != "forever" {
-		t.Errorf("Token() = %q, want forever", got)
-	}
-	if provider.calls() != 0 {
-		t.Errorf("失効しない資格情報を更新している: %d 回", provider.calls())
-	}
-}
-
-// GitHub は使った refresh token を無効にする。並行して更新すると、片方が
-// 無効なトークンを掴む（ADR 0015）。
-func TestToken_SerializesConcurrentRefresh(t *testing.T) {
-	t.Parallel()
-
-	provider, sessions := defaultProvider(), newFakeSessions()
-	svc := newAuthService(t, provider, sessions)
-
-	provider.refreshDelay = 20 * time.Millisecond
-
-	expiring := provider.creds
-	expiring.ExpiresAt = authNow.Add(1 * time.Minute)
-	if err := sessions.SaveCredentials(t.Context(), "user-1", expiring, authNow); err != nil {
-		t.Fatalf("SaveCredentials: %v", err)
-	}
-
-	ctx := port.ContextWithUserID(t.Context(), "user-1")
-
-	const n = 8
-	var (
-		wg    sync.WaitGroup
-		start = make(chan struct{})
-	)
-	errs := make([]error, n)
-	got := make([]string, n)
-
-	wg.Add(n)
-	for i := range n {
-		go func() {
-			defer wg.Done()
-			// 全部を同時に走らせる。順に呼ぶと、直列化が無くても 1 回で済んで
-			// しまい、テストが何も確かめないものになる。
-			<-start
-			got[i], errs[i] = svc.Token(ctx)
-		}()
-	}
-	close(start)
-	wg.Wait()
-
-	for i, err := range errs {
-		if err != nil {
-			t.Fatalf("Token()[%d] = %v", i, err)
-		}
-		if got[i] != "access-2" {
-			t.Errorf("Token()[%d] = %q, want access-2", i, got[i])
-		}
-	}
-
-	if calls := provider.calls(); calls != 1 {
-		t.Errorf("Refresh を %d 回呼んでいる, want 1", calls)
-	}
-}
-
-func TestToken_FailsWhenRefreshTokenExpired(t *testing.T) {
-	t.Parallel()
-
-	provider, sessions := defaultProvider(), newFakeSessions()
-	svc := newAuthService(t, provider, sessions)
-
-	dead := provider.creds
-	dead.ExpiresAt = authNow.Add(-time.Hour)
-	dead.RefreshExpiresAt = authNow.Add(-time.Minute)
-	if err := sessions.SaveCredentials(t.Context(), "user-1", dead, authNow); err != nil {
-		t.Fatalf("SaveCredentials: %v", err)
-	}
-
-	ctx := port.ContextWithUserID(t.Context(), "user-1")
-	if _, err := svc.Token(ctx); !errors.Is(err, port.ErrNotAuthenticated) {
-		t.Fatalf("Token() = %v, want ErrNotAuthenticated", err)
-	}
-	if provider.calls() != 0 {
-		t.Error("refresh token が失効しているのに更新を試みている")
-	}
-}
-
-func TestToken_FailsWithoutStoredCredentials(t *testing.T) {
-	t.Parallel()
-
-	svc := newAuthService(t, defaultProvider(), newFakeSessions())
-
-	ctx := port.ContextWithUserID(t.Context(), "user-1")
-	if _, err := svc.Token(ctx); !errors.Is(err, port.ErrNotAuthenticated) {
-		t.Fatalf("Token() = %v, want ErrNotAuthenticated", err)
 	}
 }
 
