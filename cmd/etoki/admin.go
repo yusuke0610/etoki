@@ -152,13 +152,7 @@ func openAuthDB(ctx context.Context, command string) (*sql.DB, *sqlite.SessionRe
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("%s requires authentication to be configured", command)
 	}
-
-	box, err := newSecretBox()
-	if err != nil {
-		_ = db.Close()
-		return nil, nil, err
-	}
-	return db, sqlite.NewSessionRepository(db, box), nil
+	return db, sqlite.NewSessionRepository(db), nil
 }
 
 // grantRow は一覧と確認に出す 1 行。許可に、許した利用者の login を添える。

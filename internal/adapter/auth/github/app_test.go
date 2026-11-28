@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	githubauth "github.com/yusuke0610/etoki/internal/adapter/auth/github"
 	"github.com/yusuke0610/etoki/port"
@@ -230,7 +229,7 @@ func TestExchange(t *testing.T) {
 		"/user": `{"id":583231,"login":"octocat","name":"The Octocat"}`,
 	})
 
-	id, creds, err := p.Exchange(t.Context(), "code-1", "http://127.0.0.1/api/auth/callback")
+	id, err := p.Exchange(t.Context(), "code-1", "http://127.0.0.1/api/auth/callback")
 	if err != nil {
 		t.Fatalf("Exchange() = %v", err)
 	}
@@ -244,17 +243,6 @@ func TestExchange(t *testing.T) {
 	}
 	if id.Provider != githubauth.ProviderName {
 		t.Errorf("Provider = %q, want %q", id.Provider, githubauth.ProviderName)
-	}
-
-	if creds.AccessToken != "ghu_1" || creds.RefreshToken != "ghr_1" {
-		t.Errorf("Credentials = %+v", creds)
-	}
-	if !creds.Refreshable() {
-		t.Error("失効する資格情報なのに Expiring() が false")
-	}
-	// 8 時間ちょうどを期待すると時計に依存する。幅で見る。
-	if d := time.Until(creds.ExpiresAt); d < 7*time.Hour || d > 9*time.Hour {
-		t.Errorf("ExpiresAt までの残り = %v, want 約 8 時間", d)
 	}
 
 	form := got.requests()[0].Form
@@ -275,33 +263,12 @@ func TestExchange_FallsBackToLogin(t *testing.T) {
 		"/user":                     `{"id":1,"login":"octocat","name":""}`,
 	})
 
-	id, _, err := p.Exchange(t.Context(), "code-1", "")
+	id, err := p.Exchange(t.Context(), "code-1", "")
 	if err != nil {
 		t.Fatalf("Exchange() = %v", err)
 	}
 	if id.DisplayName != "octocat" {
 		t.Errorf("DisplayName = %q, want octocat", id.DisplayName)
-	}
-}
-
-// App 側で「Expire user authorization tokens」を切ると expires_in が返らない。
-func TestExchange_HandlesNonExpiringTokens(t *testing.T) {
-	t.Parallel()
-
-	p, _ := newProvider(t, map[string]string{
-		"/login/oauth/access_token": `{"access_token":"ghu_forever","token_type":"bearer"}`,
-		"/user":                     `{"id":1,"login":"octocat"}`,
-	})
-
-	_, creds, err := p.Exchange(t.Context(), "code-1", "")
-	if err != nil {
-		t.Fatalf("Exchange() = %v", err)
-	}
-	if creds.Refreshable() {
-		t.Error("失効しない資格情報が Expiring() を返している")
-	}
-	if !creds.ExpiresAt.IsZero() || creds.RefreshToken != "" {
-		t.Errorf("Credentials = %+v, want 期限も refresh も無し", creds)
 	}
 }
 
@@ -314,7 +281,7 @@ func TestExchange_RejectsErrorBodyWith200(t *testing.T) {
 			"error_description":"The client_id and/or client_secret passed are incorrect."}`,
 	})
 
-	_, _, err := p.Exchange(t.Context(), "code-1", "")
+	_, err := p.Exchange(t.Context(), "code-1", "")
 	if err == nil {
 		t.Fatal("Exchange() = nil, want error")
 	}
@@ -323,8 +290,7 @@ func TestExchange_RejectsErrorBodyWith200(t *testing.T) {
 	}
 }
 
-// 使い切った code / refresh token は再ログインで直る。sentinel に寄せて
-// UI が案内できるようにする。
+// 使い切った code は再ログインで直る。sentinel に寄せて UI が案内できるようにする。
 func TestExchange_MapsRecoverableErrorsToSentinel(t *testing.T) {
 	t.Parallel()
 
@@ -332,7 +298,7 @@ func TestExchange_MapsRecoverableErrorsToSentinel(t *testing.T) {
 		"/login/oauth/access_token": `{"error":"bad_verification_code"}`,
 	})
 
-	if _, _, err := p.Exchange(t.Context(), "code-1", ""); !errors.Is(err, port.ErrNotAuthenticated) {
+	if _, err := p.Exchange(t.Context(), "code-1", ""); !errors.Is(err, port.ErrNotAuthenticated) {
 		t.Fatalf("Exchange() = %v, want ErrNotAuthenticated", err)
 	}
 }
@@ -342,58 +308,11 @@ func TestExchange_RequiresCode(t *testing.T) {
 
 	p, got := newProvider(t, nil)
 
-	if _, _, err := p.Exchange(t.Context(), "", ""); err == nil {
+	if _, err := p.Exchange(t.Context(), "", ""); err == nil {
 		t.Fatal("Exchange() = nil, want error")
 	}
 	if len(got.requests()) != 0 {
 		t.Errorf("code が空なのにリクエストを送っている: %d 回", len(got.requests()))
-	}
-}
-
-func TestRefresh(t *testing.T) {
-	t.Parallel()
-
-	p, got := newProvider(t, map[string]string{
-		"/login/oauth/access_token": `{"access_token":"ghu_2","refresh_token":"ghr_2",
-			"expires_in":28800,"refresh_token_expires_in":15811200}`,
-	})
-
-	creds, err := p.Refresh(t.Context(), "ghr_1")
-	if err != nil {
-		t.Fatalf("Refresh() = %v", err)
-	}
-	if creds.AccessToken != "ghu_2" || creds.RefreshToken != "ghr_2" {
-		t.Errorf("Credentials = %+v", creds)
-	}
-
-	form := got.requests()[0].Form
-	if form.Get("grant_type") != "refresh_token" || form.Get("refresh_token") != "ghr_1" {
-		t.Errorf("更新のフォーム = %v", form)
-	}
-}
-
-func TestRefresh_RejectsExpiredRefreshToken(t *testing.T) {
-	t.Parallel()
-
-	p, _ := newProvider(t, map[string]string{
-		"/login/oauth/access_token": `{"error":"bad_refresh_token"}`,
-	})
-
-	if _, err := p.Refresh(t.Context(), "ghr_dead"); !errors.Is(err, port.ErrNotAuthenticated) {
-		t.Fatalf("Refresh() = %v, want ErrNotAuthenticated", err)
-	}
-}
-
-func TestRefresh_RequiresToken(t *testing.T) {
-	t.Parallel()
-
-	p, got := newProvider(t, nil)
-
-	if _, err := p.Refresh(t.Context(), ""); !errors.Is(err, port.ErrNotAuthenticated) {
-		t.Fatalf("Refresh() = %v, want ErrNotAuthenticated", err)
-	}
-	if len(got.requests()) != 0 {
-		t.Errorf("refresh token が空なのにリクエストを送っている: %d 回", len(got.requests()))
 	}
 }
 
@@ -419,7 +338,7 @@ func TestDoesNotLeakClientSecret(t *testing.T) {
 		t.Fatalf("New() = %v", err)
 	}
 
-	_, _, exchangeErr := p.Exchange(t.Context(), "code-1", "")
+	_, exchangeErr := p.Exchange(t.Context(), "code-1", "")
 	if exchangeErr == nil {
 		t.Fatal("Exchange() = nil, want error")
 	}
