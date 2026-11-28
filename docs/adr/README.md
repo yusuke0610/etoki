@@ -104,3 +104,4 @@
 | [0104](0104-llm-call-timeout-and-thinking.md)                    | LLM を待つ上限は設定にして呼び出しごとに掛け、思考は手元でだけ切らせる       | 採用                 |
 | [0105](0105-only-the-owner-signs-in.md)                          | ログインを 1 人に絞り、認証なしで外に開かない                                | 採用                 |
 | [0106](0106-github-with-one-pat.md)                              | GitHub は PAT 1 本で叩き、ログインは誰であるかを決めるだけにする             | 採用                 |
+| [0108](0108-single-user-cloud-tool.md)                           | 1 人専用のツールにしてクラウドで使い、手元は開発のために残す                 | 採用                 |
