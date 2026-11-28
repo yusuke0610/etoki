@@ -22,7 +22,6 @@ import (
 	"github.com/yusuke0610/etoki/internal/adapter/github"
 	"github.com/yusuke0610/etoki/internal/adapter/llm"
 	"github.com/yusuke0610/etoki/internal/adapter/sqlite"
-	"github.com/yusuke0610/etoki/internal/secret"
 	"github.com/yusuke0610/etoki/port"
 )
 
@@ -63,8 +62,8 @@ environment:
                                そのとき窓は既定になる
   ETOKI_LLM_RATE_WINDOW        回数を数える窓（既定: ` + etoki.DefaultLLMRateWindow.String() + `）
                                単独では設定できない（回数の上限が要る）
-  ETOKI_GITHUB_TOKEN    GitHub のトークン（repo の read と Projects の read/write）
-                        認証を設定した場合は使わない
+  ETOKI_GITHUB_TOKEN    GitHub の classic PAT（scope は repo と project）
+                        認証を設定しても、GitHub はこの 1 本で叩く
   ETOKI_GITHUB_BASE_URL GitHub API のルート（既定: ` + github.DefaultBaseURL + `）
                         /graphql を持つ先。http はループバックだけ。
                         GHES では確かめていない
@@ -72,7 +71,6 @@ environment:
   ETOKI_GITHUB_APP_CLIENT_SECRET  同 client secret
   ETOKI_ALLOWED_GITHUB_USER_ID    ログインを通す 1 人の GitHub の数値 ID（認証を使うなら必須）
                                   それ以外の人はログインできない
-  ETOKI_TOKEN_ENCRYPTION_KEY      トークンを暗号化する鍵（base64 の 32 バイト）
   ETOKI_PUBLIC_URL                認可から戻ってくる先。空ならリクエストの Host から組む
   ETOKI_GITHUB_KIND_FIELD    種別のカスタムフィールド名（既定: ` + etoki.DefaultKindFieldName + `）
   ETOKI_GITHUB_PARENT_FIELD  親のカスタムフィールド名（既定: ` + etoki.DefaultParentFieldName + `）
@@ -82,9 +80,9 @@ LLM や GitHub を未設定のままでも起動する。その場合、解釈�
 
 draft issue の作成先はボードごとに画面で選ぶ。環境変数では指定しない。
 
-GitHub App を設定するとログインを要求し、GitHub は利用者ごとのトークンで叩く。
-そのとき ETOKI_GITHUB_TOKEN は使わない。認証を設定しなければ従来どおり PAT で
-動く。認証の設定が揃っていないとき（片方だけ、通す利用者が無い）と、認証なしで
+GitHub App を設定するとログインを要求する。App は誰であるかを確かめるだけで、
+GitHub への読み書きは認証の有無によらず ETOKI_GITHUB_TOKEN の PAT で行う。
+認証の設定が揃っていないとき（片方だけ、通す利用者が無い）と、認証なしで
 ループバックの外へ広げたときは、起動しない。
 `
 
@@ -181,7 +179,7 @@ func serve(ctx context.Context) error {
 		return err
 	}
 
-	githubClient, err := newGitHubClient(auth)
+	githubClient, err := newGitHubClient()
 	if err != nil {
 		return err
 	}
@@ -302,8 +300,8 @@ func newLLMClient() (port.LLMClient, error) {
 
 // newAuthenticator は環境変数から認証を組み立てる。
 //
-// GitHub App が未設定なら nil を返す。認証しない構成になり、これまでどおり
-// PAT で動く（ADR 0015）。
+// GitHub App が未設定なら nil を返し、認証しない構成になる。GitHub を叩く
+// PAT は認証の有無と関係なく newGitHubClient が読む（ADR 0106）。
 func newAuthenticator(db *sql.DB) (*etoki.Authenticator, error) {
 	cfg := githubauth.ConfigFromEnv()
 	if !cfg.Configured() {
@@ -318,34 +316,18 @@ func newAuthenticator(db *sql.DB) (*etoki.Authenticator, error) {
 		return nil, err
 	}
 
-	// 認証を使うなら鍵は必須。無いまま起動して平文で保存する、を起こさない。
-	box, err := newSecretBox()
-	if err != nil {
-		return nil, err
-	}
-
-	return etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db, box),
+	return etoki.NewAuthenticator(provider, sqlite.NewSessionRepository(db),
 		provider.AllowedSubject())
 }
 
 // newGitHubClient は環境変数から GitHub クライアントを組み立てる。
 //
-// auth があればそれをトークン源にする。無ければ PAT。どちらも無ければ nil を
-// 返し、作成のエンドポイントが「設定されていない」と返す。LLM と同じ扱い。
-//
-// Mode を決めるのはここだけ。「使えるリポジトリ」の定義が GitHub App と PAT で
-// 違うが、それを知っているのは認証をどう設定したかを見ているこの層だけ
-// （ADR 0015）。
-func newGitHubClient(auth *etoki.Authenticator) (port.GitHubClient, error) {
+// PAT が無ければ nil を返し、作成のエンドポイントが「設定されていない」と返す。
+// LLM と同じ扱い。**認証を設定していても PAT で叩く**（ADR 0106）。ログインは
+// 誰であるかを確かめるだけで、GitHub を叩く資格情報にはしない。
+func newGitHubClient() (port.GitHubClient, error) {
 	cfg := github.ConfigFromEnv()
-
-	if auth != nil {
-		// 認証を設定したら PAT は使わない。作成の主体がリクエストごとに
-		// 変わると、誰が作ったのかを追えなくなる。
-		cfg.Token = ""
-		cfg.TokenSource = auth
-		cfg.Mode = github.ModeApp
-	} else if cfg.Token == "" {
+	if cfg.Token == "" {
 		return nil, nil
 	}
 
@@ -354,17 +336,4 @@ func newGitHubClient(auth *etoki.Authenticator) (port.GitHubClient, error) {
 		return nil, err
 	}
 	return c, nil
-}
-
-// newSecretBox は保存する資格情報に封をする道具を作る。
-//
-// 認証を使う経路（serve と claim）から共通で呼ぶ。鍵の扱いを 2 箇所に書くと、
-// 片方だけ緩められる余地ができる。
-func newSecretBox() (secret.Box, error) {
-	key, err := secret.DecodeKey(os.Getenv(envEncryptionKey))
-	if err != nil {
-		return secret.Box{}, fmt.Errorf("%w\n  %s に base64 の 32 バイトを設定してください",
-			err, envEncryptionKey)
-	}
-	return secret.New(key)
 }

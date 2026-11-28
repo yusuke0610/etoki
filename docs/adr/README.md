@@ -18,7 +18,7 @@
 | [0012](0012-e2e-tests-mock-the-backend.md)                       | E2E はバックエンドを起動せず、契約の型でモックする                           | 採用                 |
 | [0013](0013-reject-cross-site-browser-requests.md)               | ブラウザ由来の cross-site リクエストを Host と Origin で弾く                 | 採用                 |
 | [0014](0014-board-scoped-github-target.md)                       | 作成先の Projects v2 はボードごとに持ち、最初の作成で固定する                | 採用                 |
-| [0015](0015-pluggable-auth-seams.md)                             | 認証は 3 つの継ぎ目で受け、GitHub App を既定実装にする                       | 採用                 |
+| [0015](0015-pluggable-auth-seams.md)                             | 認証は 3 つの継ぎ目で受け、GitHub App を既定実装にする                       | 一部置き換え（0106） |
 | [0016](0016-boards-have-owners.md)                               | 単一ユーザー前提を捨て、ボードに所有者を持たせる                             | 採用                 |
 | [0017](0017-board-sharing-and-permissions.md)                    | ボードを共有し、etoki の権限と GitHub の権限を別々に持つ                     | 採用                 |
 | [0018](0018-annotation-image-for-interpretation.md)              | 注釈範囲の画像はフロントで書き出し、保存済みシーンと揃ってからだけ渡す       | 採用                 |
@@ -103,3 +103,4 @@
 | [0103](0103-accept-nothing-to-create.md)                         | 「作るものは無い」を解釈の答えとして受け取る                                 | 採用                 |
 | [0104](0104-llm-call-timeout-and-thinking.md)                    | LLM を待つ上限は設定にして呼び出しごとに掛け、思考は手元でだけ切らせる       | 採用                 |
 | [0105](0105-only-the-owner-signs-in.md)                          | ログインを 1 人に絞り、認証なしで外に開かない                                | 採用                 |
+| [0106](0106-github-with-one-pat.md)                              | GitHub は PAT 1 本で叩き、ログインは誰であるかを決めるだけにする             | 採用                 |

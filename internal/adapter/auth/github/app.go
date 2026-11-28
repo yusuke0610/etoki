@@ -175,103 +175,70 @@ func (p *Provider) AuthorizeURL(state, redirectURI string) string {
 	return p.authBase + "/login/oauth/authorize?" + q.Encode()
 }
 
-// Exchange はコールバックの code を利用者と資格情報に引き換える。
-func (p *Provider) Exchange(
-	ctx context.Context, code, redirectURI string,
-) (port.Identity, port.Credentials, error) {
+// Exchange はコールバックの code を利用者に引き換える。
+//
+// 引き換えで得た user-to-server トークンは、持ち主を引く（GET /user）のに
+// 1 回使って捨てる。GitHub を叩く資格情報は PAT で、ログインとは別（ADR 0106）。
+func (p *Provider) Exchange(ctx context.Context, code, redirectURI string) (port.Identity, error) {
 	if code == "" {
-		return port.Identity{}, port.Credentials{}, errors.New("github auth: code is required")
+		return port.Identity{}, errors.New("github auth: code is required")
 	}
 
-	creds, err := p.token(ctx, url.Values{
+	token, err := p.token(ctx, url.Values{
 		"client_id":     {p.clientID},
 		"client_secret": {p.clientSecret},
 		"code":          {code},
 		"redirect_uri":  {redirectURI},
 	})
 	if err != nil {
-		return port.Identity{}, port.Credentials{}, err
+		return port.Identity{}, err
 	}
 
-	id, err := p.viewer(ctx, creds.AccessToken)
-	if err != nil {
-		return port.Identity{}, port.Credentials{}, err
-	}
-
-	return id, creds, nil
-}
-
-// Refresh は資格情報を更新する。
-//
-// GitHub は使った refresh token を無効にする。呼び出し側は利用者ごとに
-// 直列化する必要がある（ADR 0015）。
-func (p *Provider) Refresh(ctx context.Context, refreshToken string) (port.Credentials, error) {
-	if refreshToken == "" {
-		return port.Credentials{}, fmt.Errorf("%w: no refresh token", port.ErrNotAuthenticated)
-	}
-
-	return p.token(ctx, url.Values{
-		"client_id":     {p.clientID},
-		"client_secret": {p.clientSecret},
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {refreshToken},
-	})
+	return p.viewer(ctx, token)
 }
 
 // tokenResponse はトークン交換の応答。
 //
 // 失敗も HTTP 200 で返り、error フィールドに入る。ステータスコードだけを見て
 // 成功と判断すると、空のトークンで先に進んでしまう。
+//
+// refresh_token と期限も返るが読まない。トークンを保存も更新もしないので
+// （ADR 0106）、読む先が無い。
 type tokenResponse struct {
-	AccessToken           string `json:"access_token"`
-	RefreshToken          string `json:"refresh_token"`
-	ExpiresIn             int64  `json:"expires_in"`
-	RefreshTokenExpiresIn int64  `json:"refresh_token_expires_in"`
-	TokenType             string `json:"token_type"`
+	AccessToken string `json:"access_token"`
 
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 }
 
-// token はトークンの発行・更新の共通部分。
-func (p *Provider) token(ctx context.Context, form url.Values) (port.Credentials, error) {
+// token は code をアクセストークンに引き換える。
+func (p *Provider) token(ctx context.Context, form url.Values) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		p.authBase+"/login/oauth/access_token", strings.NewReader(form.Encode()))
 	if err != nil {
-		return port.Credentials{}, fmt.Errorf("github auth: build request: %w", err)
+		return "", fmt.Errorf("github auth: build request: %w", err)
 	}
 	req.Header.Set("content-type", "application/x-www-form-urlencoded")
 	req.Header.Set("accept", "application/json")
 
 	var out tokenResponse
 	if err := p.do(req, &out); err != nil {
-		return port.Credentials{}, err
+		return "", err
 	}
 
-	// GitHub は失効した refresh token にも 200 を返し、error に入れてくる。
+	// GitHub は使い切った・期限の切れた code にも 200 を返し、error に入れてくる。
 	if out.Error != "" {
-		if out.Error == "bad_refresh_token" || out.Error == "bad_verification_code" {
-			// 再ログインで直る種類。UI が案内できるよう sentinel に寄せる。
-			return port.Credentials{}, fmt.Errorf("%w: github: %s", port.ErrNotAuthenticated, out.Error)
+		if out.Error == "bad_verification_code" {
+			// もう一度ログインすれば直る種類。UI が案内できるよう sentinel に寄せる。
+			return "", fmt.Errorf("%w: github: %s", port.ErrNotAuthenticated, out.Error)
 		}
-		return port.Credentials{}, fmt.Errorf("github auth: %s: %s", out.Error, out.ErrorDescription)
+		return "", fmt.Errorf("github auth: %s: %s", out.Error, out.ErrorDescription)
 	}
 	if out.AccessToken == "" {
-		return port.Credentials{}, errors.New("github auth: response had no access token")
+		return "", errors.New("github auth: response had no access token")
 	}
 
-	// 「Expire user authorization tokens」を切った App では expires_in と
-	// refresh_token が返らない。その場合は失効しないものとして扱う。
-	now := time.Now()
-	creds := port.Credentials{AccessToken: out.AccessToken, RefreshToken: out.RefreshToken}
-	if out.ExpiresIn > 0 {
-		creds.ExpiresAt = now.Add(time.Duration(out.ExpiresIn) * time.Second)
-	}
-	if out.RefreshTokenExpiresIn > 0 {
-		creds.RefreshExpiresAt = now.Add(time.Duration(out.RefreshTokenExpiresIn) * time.Second)
-	}
-
-	return creds, nil
+	return out.AccessToken, nil
 }
 
 // viewerResponse は GET /user の応答のうち必要なぶん。

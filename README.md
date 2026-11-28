@@ -74,12 +74,11 @@ direnv allow
 | `ETOKI_LLM_MAX_CONCURRENT`       | `1`                         | 1 人が同時に走らせられる解釈・図の生成の数                         |
 | `ETOKI_LLM_RATE_LIMIT`           | （なし）                    | 窓のあいだに始められる回数。未設定なら無制限。単独で設定してよい   |
 | `ETOKI_LLM_RATE_WINDOW`          | `1h`                        | 回数を数える窓。単独では設定できない（回数の上限が要る）           |
-| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub のトークン。認証を設定した場合は使わない                    |
+| `ETOKI_GITHUB_TOKEN`             | （なし）                    | GitHub の classic PAT。認証を設定しても、GitHub はこの 1 本で叩く  |
 | `ETOKI_GITHUB_BASE_URL`          | `https://api.github.com`    | GitHub API のルート。http はループバックだけ。GHES は未確認        |
 | `ETOKI_GITHUB_APP_CLIENT_ID`     | （なし）                    | GitHub App の client ID。設定するとログインを要求する              |
 | `ETOKI_GITHUB_APP_CLIENT_SECRET` | （なし）                    | 同 client secret                                                   |
 | `ETOKI_ALLOWED_GITHUB_USER_ID`   | （なし）                    | ログインを通す 1 人の GitHub の数値 ID。認証を使うなら必須         |
-| `ETOKI_TOKEN_ENCRYPTION_KEY`     | （なし）                    | 保存するトークンの暗号化鍵（base64 の 32 バイト）                  |
 | `ETOKI_PUBLIC_URL`               | （なし）                    | 認可から戻る先。空ならリクエストの Host から組む                   |
 | `ETOKI_GITHUB_KIND_FIELD`        | `Kind`                      | 種別のカスタムフィールド名                                         |
 | `ETOKI_GITHUB_PARENT_FIELD`      | `Parent`                    | 親のカスタムフィールド名                                           |
@@ -322,15 +321,24 @@ export ETOKI_LLM_TIMEOUT=20m
 
 ### GitHub Projects v2 を使う
 
-draft issue の作成にはトークンが要ります。
+draft issue の作成には classic PAT が要ります。scope は **`repo`** と
+**`project`** です。
 
 ```sh
 export ETOKI_GITHUB_TOKEN=ghp_...
 ```
 
-トークンに必要な権限は **repo の read** と **Projects の read/write** です
-（fine-grained PAT なら `Metadata: Read-only` と `Projects: Read and write`）。
-repo の read はリポジトリの一覧に使います。無いと選択肢が 1 件も出ません。
+**ログイン（後述）を設定しても、GitHub はこの PAT 1 本で叩きます**
+（[ADR 0106](docs/adr/0106-github-with-one-pat.md)）。`repo` はリポジトリの一覧に
+使います。無いと選択肢が 1 件も出ません。classic にしているのは、個人アカウント
+所有の Projects v2 を扱えるのが classic PAT だけだからです。org / リポジトリ所有の
+Project だけを使うなら、fine-grained PAT（`Metadata: Read-only` と
+`Projects: Read and write`）でも動きます。
+
+作成先の候補に出るのは、PAT の持ち主が見えるリポジトリです。候補が多いときは途中で
+一覧を打ち切り、打ち切ったことを選択の画面に出します。**打ち切った先に何が残って
+いるかはサーバーにも分かりません**（辿るのをやめているため）。目当てが出ないときは
+絞り込みで探してください（[ADR 0054](docs/adr/0054-report-repository-list-truncation.md)）。
 
 **作成先は環境変数では指定しません。** ボードごとに画面で選びます
 （[ADR 0014](docs/adr/0014-board-scoped-github-target.md)）。ボードを開くと
@@ -360,13 +368,12 @@ repo の read はリポジトリの一覧に使います。無いと選択肢が
 
 ### GitHub App でログインする
 
-PAT を手で貼る代わりに、GitHub の画面でログインさせられます。設定すると
-**PAT は使わなくなり**、未ログインのリクエストは 401 になります
-（[ADR 0015](docs/adr/0015-pluggable-auth-seams.md)）。
-
-OAuth App ではなく **GitHub App** を使います。PAT に求めている粒度をそのまま
-要求できるのは GitHub App だけで、OAuth App では全リポジトリの読み書きを
-預かることになるためです。
+GitHub の画面でログインさせ、ログインしていないリクエストを 401 にできます
+（[ADR 0015](docs/adr/0015-pluggable-auth-seams.md)）。**App が決めるのは誰で
+あるかだけです。** GitHub への読み書きは、ログインを設定しても
+`ETOKI_GITHUB_TOKEN` の PAT で行います（[ADR 0106](docs/adr/0106-github-with-one-pat.md)）。
+ログインで GitHub から受け取ったトークンは、誰であるかを確かめたら捨て、保存も
+しません。
 
 **ログインできるのは 1 人だけです。** `ETOKI_ALLOWED_GITHUB_USER_ID` に渡した
 GitHub の利用者だけが通り、それ以外の人は GitHub で認可を済ませても etoki に
@@ -379,28 +386,19 @@ GitHub の利用者だけが通り、それ以外の人は GitHub で認可を�
 使えません」と出ます。GitHub のアカウントを切り替えてからやり直してください。
 切り替えずに押し直すと、GitHub が同じアカウントで通すので同じところへ戻ります。
 
-**作成先の Projects v2 は Organization 所有である必要があります。** 個人
-アカウントの Project は GitHub App からは触れません（後述）。
-
 1. [GitHub App を作る](https://github.com/settings/apps/new)
    - **Callback URL**: ブラウザがいるポートに合わせる。`make dev` と
      `make start` での値は[上の表](#dev-サーバーを使わずに動かす)
    - **Repository permissions**: `Metadata: Read-only`
-   - **Organization permissions**: `Projects: Read and write`
    - Webhook は要りません（Active のチェックを外す）
-2. 使いたいリポジトリにインストールする。**候補に出るのはここで許可した
-   リポジトリだけ**です。候補が多いときは途中で一覧を打ち切り、打ち切った
-   ことを選択の画面に出します。**打ち切った先に何が残っているかはサーバーにも
-   分かりません**（辿るのをやめているため）。目当てが出ないときは、まず
-   絞り込みで探し、それでも出なければインストールの設定を見てください
-   （[ADR 0054](docs/adr/0054-report-repository-list-truncation.md)）。
+2. 自分のアカウントにインストールする。GitHub への読み書きは PAT で行うので、
+   どのリポジトリを許可しても作成先の候補は変わりません。
 3. 環境変数を設定する。
 
 ```sh
 export ETOKI_GITHUB_APP_CLIENT_ID=Iv23li...
 export ETOKI_GITHUB_APP_CLIENT_SECRET=...
 export ETOKI_ALLOWED_GITHUB_USER_ID=1234567     # あなたの GitHub の数値 ID
-export ETOKI_TOKEN_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
 export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき（上の表）
 ```
 
@@ -408,80 +406,11 @@ export ETOKI_PUBLIC_URL=http://127.0.0.1:5173   # make dev のとき（上の表
 無い、その値が数値の ID の形でない、通す利用者だけを書いて App を設定していない、
 のどれでも起動時に落ちます。
 
-鍵は保存するトークンの暗号化に使います。**未設定だと起動時に落ちます。**
-黙って平文で保存しないためです。鍵を変えると保存済みのトークンは開けなくなり、
-再ログインが必要になります。
-
-鍵を入れ替える手順は次のとおりです。
-
-1. 新しい鍵を作って `ETOKI_TOKEN_ENCRYPTION_KEY` を差し替え、再起動する
-2. 各利用者は、GitHub を使う操作（作成先の候補や作成）でログインを求められる
-   ので、ログインし直す。そのとき新しい鍵で封をし直します
-
-**ログイン状態そのもの（セッション）は鍵を使わないので、再起動しても切れません。**
-GitHub を使わない操作（描く・保存する・解釈する）はそのまま続けられます。
-
-鍵が漏れたときは、鍵の入れ替えだけでは足りません。DB も一緒に漏れていれば、
-保存されていたトークンは古い鍵で読めてしまいます。GitHub 側でもトークンを
-失効させてください。**App の設定に、全員の認可をまとめて取り消す手段は
-ありません。** 各利用者が GitHub の Settings → Applications → Authorized
-GitHub Apps から取り消すか、App の所有者が利用者ごとに REST API の
-[Delete an app authorization](https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization)
-で取り消します（client ID と client secret で認証し、その利用者のアクセス
-トークンを渡す）。
-
-トークンは既定で 8 時間で失効しますが、`refresh_token` で自動更新するので
-再ログインは要りません。App の設定で「Expire user authorization tokens」を
-切っている場合も動きます。
-
-#### 個人アカウントの Projects v2 は使えない
-
-**GitHub App からはユーザー所有の Projects v2 に触れません。** GitHub App の
-権限には Projects v2 をユーザー所有のスコープで許可する項目が無く、Repository
-と Organization の permissions にしか `Projects` が現れないためです。
-
-`https://github.com/users/<login>/projects/N` を作成先にしようとすると、
-リポジトリの一覧までは通り、Project の取得が 403（`forbidden_project`）で
-拒まれます。作成先の選択画面には「プロジェクトを取得できませんでした: GitHub が
-このリポジトリの Project を見せませんでした。書く権限が無いか、GitHub App で
-動かしているなら個人アカウントの Project には触れません」と出ます。権限を
-見直しても直りません。詳細を開くと次の本文が見えます。
-
-```text
-github graphql: FORBIDDEN: Resource not accessible by integration
-```
-
-Project が 0 件のうちは空の 200 が返るので、**Project を作った瞬間に失敗し
-始めます。** 設定を触っていないのに壊れたように見えますが、原因はこれです。
-
-対処は Organization 所有にすることです。
-
-1. Organization を作る（**Free で足ります**。Projects v2 も使えます）
-2. リポジトリを移す。Settings → Danger Zone → Transfer ownership で
-   **1 つずつ**移せます。org を作っても全部を移す必要はありません
-3. **Project は org 側で作り直す。** Projects v2 にユーザー ↔ org の移管は
-   ありません。作ったらリポジトリに紐づけます。紐づけないと候補に出ません
-   （etoki が引くのは `repository.projectsV2` のため）
-4. App を org にインストールする
-
-4 で 2 つ引っかかります。**App を「Only on this account」で作っていると org に
-入れられません。** Where can this app be installed? を Any account に変えて
-ください。App を org 所有で作れば開かずに済みますが、client ID / secret を
-取り直すことになります。
-
-もう 1 つは権限です。**Organization permissions の `Projects` を足します。**
-Repository permissions にも同名の項目がありますが、org 所有の Projects v2 に
-効くのは Organization 側です。**権限を後から変えた場合、インストール側で承認
-するまで反映されません。** [installations](https://github.com/settings/installations)
-にバナーが出ていないか確認してください。
-
-最後にブラウザで**ログアウトして入り直します。** 新しいインストールと権限は
-トークンに反映されるので、サーバーの再起動では直りません。
-
-個人アカウントのまま試したいなら、GitHub App ではなく **PAT** を使ってください
-（認証は無効になり、ログイン画面は出ません）。ユーザー所有の Projects v2 を
-扱うには classic PAT の `repo` と `project` スコープが要ります。上の表に書いた
-fine-grained PAT の権限は、org / リポジトリ所有の Project 向けです。
+以前の版は、ログインした人ごとの GitHub のトークンを暗号化して DB に持って
+いました。`make migrate` で表ごと消えます。`ETOKI_TOKEN_ENCRYPTION_KEY` は
+もう読まないので外してください。消したトークンは GitHub 側ではまだ有効なので、
+気になるなら GitHub の Settings → Applications → Authorized GitHub Apps から
+App の認可を取り消してください（次にログインするとき認可し直します）。
 
 #### 認証を有効にすると、それ以前のボードは見えなくなる
 
@@ -524,8 +453,9 @@ ID を知っていても 404 になります（[ADR 0017](docs/adr/0017-board-sh
 | 招待・解除・ロール変更       | ✓        |            |          |
 | ボードの削除                 | ✓        |            |          |
 
-※ **作成できるかを最終的に決めるのは GitHub です。** etoki は実行者のトークンで
-叩くので、その Project に書けない人の作成は GitHub 側が拒みます。画面には
+※ **作成できるかを最終的に決めるのは GitHub です。** etoki は設定した PAT で
+叩くので、GitHub が見るのは押した人ではなく PAT の権限です。PAT がその Project に
+書けなければ、GitHub 側が拒みます。画面には
 「この Project に書き込む権限がありません」と理由が出て、ブレストと絵解きは
 そのまま続けられます。
 

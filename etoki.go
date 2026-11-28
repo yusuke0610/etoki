@@ -150,12 +150,9 @@ type Options struct {
 	// Auth はログインとセッション。ループバックで待ち受けるなら任意。NewAuthenticator で作る。
 	//
 	// nil なら認証しない。いまの単一ユーザー動作のままになる。指定すると
-	// 全 API がログインを要求し、GitHub は利用者ごとのトークンで叩く
-	// （ADR 0015）。**Addr がループバック以外なら必須**で、nil なら New が
-	// ErrExposedWithoutAuth を返す。
-	//
-	// GitHub クライアントの TokenSource にも同じものを渡す。呼び出し側で
-	// 組み立ててもらうのはそのためで、ここで作ると 2 つできてしまう。
+	// 全 API がログインを要求する。GitHub を叩く資格情報は変わらず GitHub
+	// クライアントの PAT（ADR 0106）。**Addr がループバック以外なら必須**で、
+	// nil なら New が ErrExposedWithoutAuth を返す。
 	Auth *Authenticator
 
 	// OAuthGrants は MCP のクライアントに発行する許可の保存先（ADR 0076）。任意。
@@ -235,10 +232,6 @@ type SetupHints = httpapi.SetupHints
 type Authenticator = usecase.AuthService
 
 // NewAuthenticator は Authenticator を作る。
-//
-// 返り値は port.GitHubTokenSource でもある。GitHub クライアントの
-// Config.TokenSource と Options.Auth の両方に、同じものを渡す。別々に作ると
-// トークン更新の直列化が効かなくなる（ADR 0015）。
 //
 // allowedSubject はログインを通す 1 人の、認証基盤での ID（port.Identity.Subject）。
 // GitHub App なら数値の利用者 ID。**それ以外の人はログインできない**（#492）。

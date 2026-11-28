@@ -16,9 +16,6 @@ import (
 // このファイルは環境変数を読むものを置く。名前を知っているのは配線だけで
 // （ADR 0083）、usage と README の表は readme_test.go が結んでいる。
 
-// envEncryptionKey は保存するトークンを暗号化する鍵。
-const envEncryptionKey = "ETOKI_TOKEN_ENCRYPTION_KEY"
-
 // envPublicURL は認可から戻ってくる先の組み立てに使う。
 const envPublicURL = "ETOKI_PUBLIC_URL"
 

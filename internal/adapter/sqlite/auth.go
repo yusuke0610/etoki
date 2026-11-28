@@ -10,23 +10,21 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/yusuke0610/etoki/internal/secret"
 	"github.com/yusuke0610/etoki/port"
 )
 
 // SessionRepository は port.SessionRepository の SQLite 実装。
 //
-// 資格情報は secret.Box で封をしてから書く。平文で置かないのは、共有サーバーに
-// なる前提があるため（ADR 0015）。
+// 持つのは利用者・セッション・OAuth の state だけ。認証基盤のトークンは
+// 持たない（ADR 0106）。
 type SessionRepository struct {
 	db    *sql.DB
-	box   secret.Box
 	newID func() string
 }
 
 // NewSessionRepository は SessionRepository を作る。
-func NewSessionRepository(db *sql.DB, box secret.Box) *SessionRepository {
-	return &SessionRepository{db: db, box: box, newID: uuid.NewString}
+func NewSessionRepository(db *sql.DB) *SessionRepository {
+	return &SessionRepository{db: db, newID: uuid.NewString}
 }
 
 var _ port.SessionRepository = (*SessionRepository)(nil)
@@ -253,85 +251,6 @@ func (r *SessionRepository) DeleteSession(ctx context.Context, tokenHash string)
 	return nil
 }
 
-// SaveCredentials は利用者の資格情報を封をして保存する。
-func (r *SessionRepository) SaveCredentials(
-	ctx context.Context, userID string, c port.Credentials, now time.Time,
-) error {
-	access, err := r.box.Seal(c.AccessToken)
-	if err != nil {
-		return fmt.Errorf("seal access token: %w", err)
-	}
-	refresh, err := r.box.Seal(c.RefreshToken)
-	if err != nil {
-		return fmt.Errorf("seal refresh token: %w", err)
-	}
-
-	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO github_tokens
-		   (user_id, access_token, refresh_token, expires_at, refresh_expires_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT (user_id) DO UPDATE SET
-		   access_token = excluded.access_token,
-		   refresh_token = excluded.refresh_token,
-		   expires_at = excluded.expires_at,
-		   refresh_expires_at = excluded.refresh_expires_at,
-		   updated_at = excluded.updated_at`,
-		userID, access, refresh,
-		formatOptionalTime(c.ExpiresAt), formatOptionalTime(c.RefreshExpiresAt), formatTime(now),
-	)
-	if err != nil {
-		return fmt.Errorf("save credentials for %s: %w", userID, err)
-	}
-
-	return nil
-}
-
-// FindCredentials は利用者の資格情報を返す。無ければ (nil, nil)。
-func (r *SessionRepository) FindCredentials(
-	ctx context.Context, userID string,
-) (*port.Credentials, error) {
-	row := r.db.QueryRowContext(ctx,
-		`SELECT access_token, refresh_token, expires_at, refresh_expires_at
-		 FROM github_tokens WHERE user_id = ?`, userID)
-
-	var access, refresh, expiresAt, refreshExpiresAt string
-	err := row.Scan(&access, &refresh, &expiresAt, &refreshExpiresAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("find credentials for %s: %w", userID, err)
-	}
-
-	var c port.Credentials
-	if c.AccessToken, err = r.box.Open(access); err != nil {
-		// 鍵を変えた、あるいは DB を差し替えた。開けないものは無いのと同じに
-		// 扱い、再ログインに落とす。中身を推測して復旧しようとしない。
-		return nil, unreadableCredentials(userID, err)
-	}
-	if c.RefreshToken, err = r.box.Open(refresh); err != nil {
-		return nil, unreadableCredentials(userID, err)
-	}
-	if c.ExpiresAt, err = parseOptionalTime(expiresAt); err != nil {
-		return nil, err
-	}
-	if c.RefreshExpiresAt, err = parseOptionalTime(refreshExpiresAt); err != nil {
-		return nil, err
-	}
-
-	return &c, nil
-}
-
-// unreadableCredentials は開けなかった資格情報を未認証として返す。
-//
-// **再ログインに落とすには port.ErrNotAuthenticated を名乗る必要がある。** 名乗らないと
-// GitHub を叩く操作が 500 で返り、画面が再ログインに案内できない（#64）。鍵を
-// 入れ替えたあとに打てる手は再ログインだけで、再ログインすれば新しい鍵で封をし直す。
-// 開けなかった原因も包んで残す。ログで「失効」と「鍵の入れ替え」を見分けるため。
-func unreadableCredentials(userID string, err error) error {
-	return fmt.Errorf("%w: open credentials for %s: %w", port.ErrNotAuthenticated, userID, err)
-}
-
 // SaveState は発行した state を保存する。
 //
 // CreateSession と同じく、書き込むついでに期限切れを掃除する。ConsumeState
@@ -384,22 +303,4 @@ func (r *SessionRepository) ConsumeState(
 	}
 
 	return &port.OAuthState{State: state, ReturnTo: returnTo}, nil
-}
-
-// formatOptionalTime はゼロ値を空文字にする。
-//
-// 失効しない構成では期限が無い。NULL 許容にせず空文字で表すのは、
-// 「値が無い」の表し方をボードの作成先（ADR 0014）と揃えるため。
-func formatOptionalTime(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return formatTime(t)
-}
-
-func parseOptionalTime(s string) (time.Time, error) {
-	if s == "" {
-		return time.Time{}, nil
-	}
-	return parseTime(s)
 }

@@ -201,8 +201,8 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           候補を取り切っていないことを出す（ADR 0054）。**絞り込みの手前に
           置く。** 打った語で出てこなかったときに、初めて読む場所ではなく
           最初から見えている必要がある。目当てが出ない理由が「権限が無い」
-          「インストールしていない」「見た範囲の外」のどれなのかを、利用者が
-          区別できるようにする（中核思想 3）。
+          「見た範囲の外」のどちらなのかを、利用者が区別できるようにする
+          （中核思想 3）。
         */}
         {truncated && (
           <p className="hint">
@@ -242,8 +242,7 @@ export function RepositoryPicker({ title, onSelected, onCancel }: Props) {
           ) : (
             <p className="hint">
               {"リポジトリが 1 つも見つかりませんでした。"}
-              {"GitHub App を入れたリポジトリがあるか、"}
-              {"PAT で動かしているなら repo の read 権限があるかを確認してください。"}
+              {"etoki に設定した PAT に、repo の read 権限があるかを確認してください。"}
             </p>
           )
         ) : visible.length === 0 ? (

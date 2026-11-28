@@ -338,6 +338,11 @@ test.describe("作成先の選択", () => {
     await openUnselected(page);
 
     await expect(page.getByText("リポジトリが 1 つも見つかりませんでした")).toBeVisible();
+    await expect(
+      page.getByText(
+        "etoki に設定した PAT に、repo の read 権限があるかを確認してください",
+      ),
+    ).toBeVisible();
   });
 
   // 切れると: 見ていない範囲が残っているのに「権限を確認してください」と案内し、
@@ -359,8 +364,8 @@ test.describe("作成先の選択", () => {
   });
 
   // 候補を取り切っていないことを画面に出す（ADR 0054）。黙って切ると、目当てが
-  // 出ない利用者は「権限が無い」「インストールしていない」「見た範囲の外」を
-  // 区別できず、見当違いの設定を疑うことになる（中核思想 3）。
+  // 出ない利用者は「権限が無い」「見た範囲の外」を区別できず、見当違いの設定を
+  // 疑うことになる（中核思想 3）。
   test("一覧を打ち切ったら、その旨を出す", async ({ page }) => {
     const mock = withUnselected();
     mock.repositories = { status: 200, body: { ...repositories(), truncated: true } };
@@ -424,7 +429,7 @@ test.describe("作成先の選択", () => {
     await expect(picker(page).getByText("書く権限がありません")).toBeVisible();
   });
 
-  // 切れると: GitHub App で個人アカウントの Project を辿って拒まれたのに、
+  // 切れると: fine-grained PAT で個人アカウントの Project を辿って拒まれたのに、
   // リポジトリの権限を見直すよう案内する。見直しても直らない（#293）。
   test("Project の取得を拒まれたら、権限と個人アカウントの両方を言う", async ({
     page,
@@ -435,7 +440,7 @@ test.describe("作成先の選択", () => {
       body: {
         code: "forbidden_project",
         error:
-          "etoki: forbidden: github graphql: FORBIDDEN: Resource not accessible by integration",
+          "etoki: forbidden: github graphql: FORBIDDEN: Resource not accessible by personal access token",
       },
     };
 
@@ -449,7 +454,7 @@ test.describe("作成先の選択", () => {
     const alert = page.getByRole("alert");
     await expect(alert).toContainText("プロジェクトを取得できませんでした");
     await expect(alert).toContainText("書く権限が無いか");
-    await expect(alert).toContainText("個人アカウントの Project には触れません");
+    await expect(alert).toContainText("classic PAT の project スコープが要ります");
     // 作成で拒まれたときの文（リポジトリの権限だけを言う）は出さない。
     await expect(alert).not.toContainText("リポジトリの権限を確かめてください");
     // 取れなかったのに読み込み中と出し続けない。

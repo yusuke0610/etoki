@@ -189,10 +189,10 @@ export type MessageOverrides = Partial<Record<ErrorCode, string>>;
  *
  * **ADR 0034 の「場面ごとの上書きを対応表の外に置く」。** 同じ
  * `forbidden_project` でも、作成で拒まれたなら直すのは Project の権限だが、
- * ここで拒まれるのは GitHub App で個人アカウントの Project を辿ったときにも
- * 起きる。そちらは権限を見直しても直らず、Organization 所有に移すしかない
- * （README「個人アカウントの Projects v2 は使えない」）。表の文を変えると
- * 作成の場面が嘘になるので、この場面でだけ差し替える。
+ * ここで拒まれるのは fine-grained PAT で個人アカウントの Project を辿ったときにも
+ * 起きる。そちらは権限を足しても直らず、classic PAT に替えるしかない
+ * （README「GitHub Projects v2 を使う」、ADR 0106）。表の文を変えると作成の
+ * 場面が嘘になるので、この場面でだけ差し替える。
  *
  * **どちらの原因かを決めつけない。** Project の URL（`/users/`）から言い当て
  * られそうに見えるが、etoki は owner が user か org かを知らない（ADR 0025）。
@@ -200,7 +200,7 @@ export type MessageOverrides = Partial<Record<ErrorCode, string>>;
  */
 export const PROJECT_LIST_MESSAGES: MessageOverrides = {
   forbidden_project:
-    "GitHub がこのリポジトリの Project を見せませんでした。書く権限が無いか、GitHub App で動かしているなら個人アカウントの Project には触れません（Organization の Project なら使えます）。",
+    "GitHub がこのリポジトリの Project を見せませんでした。PAT に書く権限が無いか、fine-grained PAT で個人アカウントの Project を辿ったかのどちらかです（個人アカウントの Project には classic PAT の project スコープが要ります）。",
 };
 
 /**
